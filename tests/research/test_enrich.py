@@ -54,3 +54,24 @@ def test_enrich_uses_cache_unless_refresh(tmp_path):
     assert calls["n"] == 0 and r[0].brief_path and "(cached)" in r[0].synthesis
     r2 = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 1                     # refresh forces re-assessment
+
+
+def test_enrich_redacts_filing_fetch_errors(tmp_path):
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    def boom(ticker, **kw):
+        raise RuntimeError("edgar failed for token=sk-ant-SECRET123")
+    results = enrich([_Card("A", 90)], cfg, top_n=1, fetch=boom,
+                     assess_fn=lambda *a, **k: None)
+    assert results[0].skipped.startswith("filing error:")
+    assert "sk-ant-SECRET123" not in results[0].skipped   # redacted
+    assert results[0].brief_path is None
+
+
+def test_enrich_marks_assessment_failure(tmp_path):
+    from shortlist.research.models import FilingText
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    fetch = lambda t, **k: FilingText(t, f"acc-{t}", "2025-10-31", business="b")
+    results = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True,
+                     fetch=fetch, assess_fn=lambda *a, **k: None)
+    assert results[0].skipped == "assessment failed"
+    assert results[0].brief_path is None
