@@ -1,0 +1,30 @@
+[project]
+name = "shortlist"
+version = "0.1.0"
+description = "Moat + momentum/value + insider stock screener feeding the investment-research skill"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+edgar = ["edgartools>=3.0"]
+fred = ["fredapi>=0.5"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+shortlist = "shortlist.screen:main"
+shortlist-harness = "shortlist.data.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

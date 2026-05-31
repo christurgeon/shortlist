@@ -1,0 +1,42 @@
+# Each threshold is [low, high]: the metric is mapped linearly to 0..100 over
+# this range and clamped. Tune to taste. Returns/margins are FRACTIONS (0.20=20%).
+
+thresholds:
+  # Quality
+  roe:                 [0.10, 0.35]
+  net_margin:          [0.00, 0.30]
+  interest_coverage:   [2.0, 15.0]
+  debt_to_equity:      [3.0, 0.0]      # inverted: less leverage scores higher
+
+  # Moat proxies
+  gross_margin:            [0.20, 0.70]
+  gross_margin_stability:  [0.50, 1.00]
+  roic:                    [0.05, 0.30]
+
+  # Momentum
+  price_vs_200dma:     [-0.10, 0.30]
+  rel_strength_6m:     [-0.15, 0.25]
+  eps_revision:        [-0.05, 0.10]
+
+  # Value
+  upside_to_target:    [0.00, 0.40]
+  fcf_yield:           [0.02, 0.08]
+  pe_vs_history:       [-0.20, 0.30]   # positive = cheaper than own 5y median
+
+  # Insider
+  insider_sentiment:   [-0.30, 0.30]
+  insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
+
+weights:
+  quality:      0.25
+  moat:         0.25
+  opportunity:  0.30   # max(momentum, value) — qualifies on either axis
+  insider:      0.20
+
+gates:
+  min_market_cap:          2.0e+9
+  max_debt_to_equity:      5.0
+  min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
+
+# Default provider chain for live runs (override with --provider).
+providers: [fmp, finnhub, edgar]
