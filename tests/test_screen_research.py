@@ -45,12 +45,12 @@ def test_run_research_phase_prints_maps_paths_and_handles_cache(capsys, monkeypa
     monkeypatch.setattr(screen, "_run_enrich", lambda cards, cfg, n, refresh: fake_results)
 
     paths = screen._run_research_phase([_card()], {"research": {}}, n=3, refresh=False)
-    out = capsys.readouterr().out
+    err = capsys.readouterr().err
     assert paths == {"AAPL": "research/AAPL/x.md", "MSFT": "research/MSFT/y.md"}
-    assert "AAPL" in out and "Solid moat." in out      # printed synthesis
-    assert "0.04" in out                                # cost surfaced
-    assert "cached" in out.lower()                      # cached name marked
-    assert "no 10-K" in out                             # skip reason shown
+    assert "AAPL" in err and "Solid moat." in err
+    assert "0.04" in err
+    assert "cached" in err.lower()
+    assert "no 10-K" in err
 
 
 def test_run_research_phase_skips_when_unavailable(capsys, monkeypatch):
@@ -59,3 +59,16 @@ def test_run_research_phase_skips_when_unavailable(capsys, monkeypatch):
     paths = screen._run_research_phase([_card()], {}, n=2, refresh=False)
     assert paths == {}
     assert "skipping research" in capsys.readouterr().err.lower()
+
+
+def test_run_research_phase_survives_enrich_exception(capsys, monkeypatch):
+    from shortlist import screen
+    monkeypatch.setattr(screen, "_research_available", lambda: True)
+    def boom(cards, cfg, n, refresh):
+        raise RuntimeError("edgar blew up with token=sk-ant-SECRET99")
+    monkeypatch.setattr(screen, "_run_enrich", boom)
+    paths = screen._run_research_phase([_card()], {}, n=1, refresh=False)
+    assert paths == {}
+    err = capsys.readouterr().err
+    assert "research phase failed" in err
+    assert "sk-ant-SECRET99" not in err          # redacted
