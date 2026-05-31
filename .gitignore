@@ -11,7 +11,8 @@ dist/
 .venv/
 venv/
 
-# Snapshot output / screen results
-snapshots/
+# Snapshot output / screen results (anchored to top level so they don't match
+# the src/shortlist/research package dir)
+/snapshots/
 *.csv
-research/
+/research/
