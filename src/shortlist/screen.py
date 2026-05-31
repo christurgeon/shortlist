@@ -76,6 +76,13 @@ def _f(x):
     return f"{x:.0f}" if x is not None else "-"
 
 
+def _positive_int(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return n
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
@@ -84,7 +91,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")
     ap.add_argument("--json", action="store_true", help="emit JSON to stdout instead of a table")
-    ap.add_argument("--research", type=int, metavar="N",
+    ap.add_argument("--research", type=_positive_int, metavar="N",
                     help="after ranking, generate a qualitative brief for the top N non-gated names")
     ap.add_argument("--refresh", action="store_true",
                     help="regenerate research briefs even if a cached one exists")

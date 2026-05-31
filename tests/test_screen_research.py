@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.models import ScoreCard, StockMetrics
 from shortlist.screen import _card_dict, build_arg_parser
 
@@ -59,6 +61,13 @@ def test_run_research_phase_skips_when_unavailable(capsys, monkeypatch):
     paths = screen._run_research_phase([_card()], {}, n=2, refresh=False)
     assert paths == {}
     assert "skipping research" in capsys.readouterr().err.lower()
+
+
+def test_research_rejects_non_positive():
+    ap = build_arg_parser()
+    for bad in ["0", "-1"]:
+        with pytest.raises(SystemExit):
+            ap.parse_args(["--tickers", "AAPL", "--research", bad])
 
 
 def test_run_research_phase_survives_enrich_exception(capsys, monkeypatch):

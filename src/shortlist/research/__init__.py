@@ -27,7 +27,7 @@ def is_available() -> bool:
     if not claude_cli.is_available():
         return False
     try:
-        import edgar  # noqa: F401
+        from edgar import Company, set_identity  # noqa: F401
     except ImportError:
         return False
     return True
