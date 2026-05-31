@@ -70,6 +70,19 @@ class FMPProvider(Provider):
             m.roic = km.get("returnOnInvestedCapitalTTM")
             m.fcf_yield = km.get("freeCashFlowYieldTTM")
 
+        # 5-year median PE for pe_vs_history() in value scoring.
+        hist_ratios = self._get("ratios", symbol=ticker, period="annual", limit=5)
+        if isinstance(hist_ratios, list):
+            pes = [r["priceToEarningsRatio"] for r in hist_ratios if r.get("priceToEarningsRatio")]
+            if len(pes) >= 2:
+                pes_sorted = sorted(pes)
+                mid = len(pes_sorted) // 2
+                m.pe_median_5y = (
+                    pes_sorted[mid]
+                    if len(pes_sorted) % 2
+                    else (pes_sorted[mid - 1] + pes_sorted[mid]) / 2
+                )
+
         # Margin stability + recent profitability from annual history (moat proxies).
         income = self._get("income-statement", symbol=ticker, period="annual", limit=5)
         if isinstance(income, list) and len(income) >= 3:
@@ -115,7 +128,7 @@ class FMPProvider(Provider):
             pass
 
         return self._tag(
-            m, "name", "price", "market_cap", "pe_ttm", "price_vs_200dma",
+            m, "name", "price", "market_cap", "pe_ttm", "pe_median_5y", "price_vs_200dma",
             "roe", "gross_margin", "net_margin", "debt_to_equity",
             "interest_coverage", "peg", "roic", "fcf_yield",
             "gross_margin_stability", "fcf_positive", "target_median",

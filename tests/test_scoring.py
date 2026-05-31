@@ -31,6 +31,7 @@ CONFIG = {
         "upside_to_target": [0.0, 1.0],
         "fcf_yield": [0.0, 1.0],
         "pe_vs_history": [0.0, 1.0],
+        "peg": [2.0, 0.0],  # inverted; 0 → 100, 2 → 0. metrics_all_50 leaves peg=None so excluded.
         "insider_sentiment": [-1.0, 1.0],
         "insider_net_ratio": [-0.001, 0.001],
     },
@@ -186,6 +187,22 @@ def test_clean_metrics_trip_no_gates():
     card = score(metrics_all_50(), CONFIG)
     assert card.gates == []
     assert card.passed
+
+
+def test_peg_contributes_to_value_score():
+    # peg band [3.0, 0.5]: 0.5 → 100 (cheap growth), 3.0 → 0 (expensive growth).
+    # Lower PEG = better value, so the band is inverted like debt_to_equity.
+    t = {
+        "peg": [3.0, 0.5],
+        "upside_to_target": [0.0, 1.0],
+        "fcf_yield": [0.0, 1.0],
+        "pe_vs_history": [0.0, 1.0],
+    }
+    # Only peg is set; other value inputs None → peg drives the score alone.
+    assert value_score(StockMetrics(ticker="T", peg=0.5), t) == 100.0
+    assert value_score(StockMetrics(ticker="T", peg=3.0), t) == 0.0
+    # Midpoint PEG midway through the inverted band.
+    assert value_score(StockMetrics(ticker="T", peg=1.75), t) == pytest.approx(50.0)
 
 
 # --- integration: real config.yaml + mock provider -----------------------

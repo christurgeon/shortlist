@@ -54,6 +54,7 @@ def value_score(m: StockMetrics, t: dict) -> Optional[float]:
         _norm(m.upside_to_target(), *t["upside_to_target"]),
         _norm(m.fcf_yield, *t["fcf_yield"]),
         _norm(m.pe_vs_history(), *t["pe_vs_history"]),
+        _norm(m.peg, *t["peg"]),
     ])
 
 

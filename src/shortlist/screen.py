@@ -48,9 +48,24 @@ def _print_table(cards: list[ScoreCard]) -> None:
         return
 
     table = Table(title="Moat + opportunity screen", title_style="bold")
-    for col in ("Rank", "Ticker", "Composite", "Quality", "Moat",
-                "Momentum", "Value", "Insider", "Upside", "Flags"):
-        table.add_column(col, justify="right" if col != "Ticker" else "left")
+    _cols = [
+        # (header, justify, min_width)
+        ("Rank",    "right", None),
+        ("Ticker",  "left",  6),
+        ("Score",   "right", 5),
+        ("Qual",    "right", 4),
+        ("Moat",    "right", 4),
+        ("Momt",    "right", 4),
+        ("Value",   "right", 5),
+        ("Insdr",   "right", 5),
+        ("Upside",  "right", 6),
+        ("Flags",   "left",  5),
+    ]
+    for header, justify, min_width in _cols:
+        kwargs = {"justify": justify}
+        if min_width is not None:
+            kwargs["min_width"] = min_width
+        table.add_column(header, **kwargs)
     for i, c in enumerate(cards, 1):
         up = c.metrics.upside_to_target() if c.metrics else None
         style = "dim red" if c.gates else None
