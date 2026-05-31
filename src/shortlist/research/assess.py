@@ -9,6 +9,9 @@ from . import claude_cli
 from .claude_cli import CliResult
 from .models import FilingText, QualitativeAssessment, SCHEMA_HINT, assessment_from_payload
 
+# Evidence quotes shorter than this are too trivial to count as grounding.
+_MIN_EVIDENCE_CHARS = 12
+
 SYSTEM_PROMPT = (
     "You are an equity analyst summarizing ONE SEC 10-K filing. Use ONLY the "
     "filing text provided in the user message — no outside knowledge, no figures "
@@ -51,7 +54,7 @@ def _verify_grounding(assessment: QualitativeAssessment, filing: FilingText) -> 
     unverified = 0
     for finding in (*assessment.risks, *assessment.red_flags):
         ev = _norm(finding.evidence)
-        finding.verified = bool(ev) and ev in haystack
+        finding.verified = len(ev) >= _MIN_EVIDENCE_CHARS and ev in haystack
         if not finding.verified:
             unverified += 1
     assessment.unverified_count = unverified

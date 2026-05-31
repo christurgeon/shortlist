@@ -1,6 +1,5 @@
 import json
 
-from shortlist.research import assess as assess_mod
 from shortlist.research.assess import _salvage_json, assess
 from shortlist.research.claude_cli import CliResult
 from shortlist.research.models import FilingText
@@ -41,7 +40,7 @@ def test_salvage_returns_none_when_no_object():
     assert _salvage_json("no braces here") is None
 
 
-def test_assess_happy_path_and_grounding(monkeypatch):
+def test_assess_happy_path_and_grounding():
     runner = _runner_returning(json.dumps(GOOD))
     a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
     assert a is not None
@@ -53,20 +52,35 @@ def test_assess_happy_path_and_grounding(monkeypatch):
     assert a.unverified_count == 1
 
 
-def test_assess_salvages_fenced_json(monkeypatch):
+def test_assess_salvages_fenced_json():
     runner = _runner_returning("```json\n" + json.dumps(GOOD) + "\n```")
     a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
     assert a is not None and a.business_model_summary.startswith("Designs")
 
 
 def test_assess_retries_then_gives_up_returns_none():
-    calls = {"n": 0}
+    prompts = []
     def runner(prompt, system, model, timeout_s):
-        calls["n"] += 1
+        prompts.append(prompt)
         return CliResult(text="totally not json", stop_reason="end_turn", model=model)
     a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
     assert a is None
-    assert calls["n"] == 2          # one retry, then give up
+    assert len(prompts) == 2                          # one retry, then give up
+    assert "could not be parsed" in prompts[1]        # retry prompt has feedback
+
+
+def test_assess_trivial_evidence_is_not_verified():
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
+        "risks": [{"claim": "Vague risk", "evidence": "the"}],   # substring of filing, but trivially short
+        "red_flags": [],
+        "management_capital_allocation": "x", "synthesis": "x",
+    }
+    runner = _runner_returning(json.dumps(payload))
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None
+    assert a.risks[0].verified is False
+    assert a.unverified_count == 1
 
 
 def test_assess_skips_on_runner_error():
