@@ -30,3 +30,32 @@ def test_card_dict_includes_research_path_when_present():
 def test_card_dict_omits_research_path_when_absent():
     d = _card_dict(_card())
     assert "research_path" not in d
+
+
+def test_run_research_phase_prints_maps_paths_and_handles_cache(capsys, monkeypatch):
+    from shortlist import screen
+    from shortlist.research import ResearchResult
+
+    fake_results = [
+        ResearchResult("AAPL", brief_path="research/AAPL/x.md", cost_usd=0.04, synthesis="Solid moat."),
+        ResearchResult("MSFT", brief_path="research/MSFT/y.md", from_cache=True),
+        ResearchResult("GEV", skipped="no 10-K"),
+    ]
+    monkeypatch.setattr(screen, "_research_available", lambda: True)
+    monkeypatch.setattr(screen, "_run_enrich", lambda cards, cfg, n, refresh: fake_results)
+
+    paths = screen._run_research_phase([_card()], {"research": {}}, n=3, refresh=False)
+    out = capsys.readouterr().out
+    assert paths == {"AAPL": "research/AAPL/x.md", "MSFT": "research/MSFT/y.md"}
+    assert "AAPL" in out and "Solid moat." in out      # printed synthesis
+    assert "0.04" in out                                # cost surfaced
+    assert "cached" in out.lower()                      # cached name marked
+    assert "no 10-K" in out                             # skip reason shown
+
+
+def test_run_research_phase_skips_when_unavailable(capsys, monkeypatch):
+    from shortlist import screen
+    monkeypatch.setattr(screen, "_research_available", lambda: False)
+    paths = screen._run_research_phase([_card()], {}, n=2, refresh=False)
+    assert paths == {}
+    assert "skipping research" in capsys.readouterr().err.lower()

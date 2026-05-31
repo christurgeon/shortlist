@@ -111,14 +111,58 @@ def main(argv: list[str] | None = None) -> int:
 
     cards = run(tickers, providers, config)
 
+    research_paths: dict = {}
+    if args.research:
+        research_paths = _run_research_phase(cards, config, args.research, args.refresh)
+
     if args.csv:
         _write_csv(cards, args.csv)
         print(f"wrote {args.csv}")
     if args.json:
-        print(json.dumps([_card_dict(c) for c in cards], indent=2))
+        print(json.dumps([_card_dict(c, research_paths) for c in cards], indent=2))
     else:
         _print_table(cards)
     return 0
+
+
+def _research_available() -> bool:
+    try:
+        from .research import is_available
+    except ImportError:
+        return False
+    return is_available()
+
+
+def _run_enrich(cards, config, n, refresh):
+    from .research import enrich
+    return enrich(cards, config, top_n=n, refresh=refresh)
+
+
+def _run_research_phase(cards, config, n: int, refresh: bool) -> dict:
+    """Run the qualitative research phase over the top-N non-gated cards.
+    Returns {ticker: brief_path} for names that produced (or have a cached)
+    brief. Prints a human-readable summary; never raises."""
+    if not _research_available():
+        print("  ! skipping research: `claude` CLI or edgartools unavailable",
+              file=sys.stderr)
+        return {}
+    results = _run_enrich(cards, config, n, refresh)
+    paths: dict = {}
+    total = 0.0
+    print("\nQualitative research")
+    for r in results:
+        if r.skipped:
+            print(f"  {r.ticker:<6} skipped: {r.skipped}")
+            continue
+        paths[r.ticker] = r.brief_path
+        if r.from_cache:
+            print(f"  {r.ticker:<6} (cached)  {r.brief_path}")
+            continue
+        total += r.cost_usd
+        print(f"  {r.ticker:<6} ${r.cost_usd:.4f}  {r.brief_path}\n           {r.synthesis}")
+    if total:
+        print(f"  research cost: ${total:.4f}")
+    return paths
 
 
 def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
