@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 Guidance for working in this repo. See `README.md` (screener) and `HARNESS.md`
 (data layer) for the user-facing docs.
 
@@ -30,11 +32,30 @@ not in two places.
 ```bash
 uv sync                      # core + dev deps (pytest); uv.lock pins everything
 uv sync --extra edgar        # add the SEC EDGAR insider source
-uv run pytest                # 5 tests (data-harness layer only; scorer untested)
+uv run pytest                # runs 5 tests (data-harness layer + scoring)
+uv run pytest tests/test_scoring.py::test_norm_endpoints_midpoint_and_clamp  # single test
 uv run shortlist --demo     # offline, no keys
 ```
 
 `pip install -e .` still works as a fallback — `pyproject.toml` is standard.
+
+## Screener data flow
+
+`screen.run()` drives the screener layer:
+1. `Provider.fetch(ticker)` → `StockMetrics` (flat dataclass; unavailable fields stay `None`)
+2. `merge.merge(per_provider_list)` → single `StockMetrics` filled by priority
+3. `scoring.score(metrics, config)` → `ScoreCard` (five 0–100 sub-scores + composite + gates)
+
+`opportunity = max(momentum, value)` so a name qualifies on **either** axis rather
+than being averaged down. Composite is a weighted blend (default quality 0.25 /
+moat 0.25 / opportunity 0.30 / insider 0.20). **Gates** are hard filters
+(negative FCF, sub-threshold market cap, over-leverage, heavy insider selling)
+that flag a name regardless of score.
+
+When a sub-score has no inputs (all `None`), it is excluded and the composite
+weight is redistributed across the remaining components — never silently zeroed.
+
+Tune thresholds, weights, and gates in `config.yaml` — no code changes needed.
 
 ## Secrets
 
@@ -94,6 +115,14 @@ hit first. **Finnhub's 60/min is comfortable** either way.
   divided by 100 (`_pct`). Don't double-convert.
 - Equity-centric moat/quality proxies are blank for banks/insurers (e.g. SCHW);
   coverage correctly flags this. Sector-aware thresholds are the real fix.
+
+## Extension providers (scaffolded, not wired)
+
+`providers/extensions.py` contains `QuiverProvider` and `FredProvider` stubs with
+the interface and the specific signals to implement. Quiver (congressional trades,
+gov-contract awards) and FRED (10y yield, 2s10s curve) are the highest-leverage
+next additions, in that order. Both are registered in `providers/__init__.py:_REGISTRY`
+and can be activated with `--provider quiver` or `--provider fred` once implemented.
 
 ## Qualitative research layer (`shortlist/research/`)
 
