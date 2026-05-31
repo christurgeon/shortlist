@@ -7,6 +7,75 @@ shortlist to the skill's filing-level deep dive.
 
 It does the mechanical part so the judgment part is spent on fewer, better names.
 
+## How it works
+
+**User flow** — what goes in, what comes out, what's optional:
+
+```mermaid
+flowchart TD
+    A(["uv run shortlist"])
+    A --> B{Demo or Live?}
+
+    B -->|"--demo"| C["Mock provider\nno keys needed"]
+    B -->|"--tickers + --provider"| D["FMP · Finnhub · EDGAR\nQuiver · FRED (scaffolded)"]
+
+    C --> E["merge() → StockMetrics\npriority-fill across providers"]
+    D --> E
+
+    E --> F["score() → ScoreCard\nQuality · Moat · Opportunity · Insider\nGates: FCF · leverage · insider-sell"]
+
+    F --> G[Ranked shortlist]
+
+    G --> I[Rich table]
+    G --> J["--json stdout"]
+    G --> K["--csv file"]
+
+    G -->|"--research N"| H["Claude CLI (headless)\nreads 10-K via EDGAR\nbrief → stderr + research/ dir"]
+```
+
+**Architecture** — two parallel stacks that don't share fetching code, with a shared Form 4 module:
+
+```mermaid
+flowchart LR
+    subgraph screener ["Screener  ·  shortlist CLI  ·  sync requests"]
+        direction TB
+        SP1["FMP Provider"]
+        SP2["Finnhub Provider"]
+        SP3["EDGAR Provider"]
+        SP4["Mock Provider"]
+        MG["merge.py\npriority-fill → StockMetrics"]
+        SC["scoring.py\nQuality · Moat · Opportunity · Insider\nopportunity = max(momentum, value)"]
+        CARD["ScoreCard\n+ Gates"]
+
+        SP1 --> MG
+        SP2 --> MG
+        SP3 --> MG
+        SP4 --> MG
+        MG --> SC
+        SC --> CARD
+    end
+
+    subgraph harness ["Data harness  ·  shortlist-harness CLI  ·  async httpx"]
+        direction TB
+        HS1["FMP Source"]
+        HS2["Finnhub Source"]
+        HS3["EDGAR Source\nasyncio.to_thread"]
+        HS4["Mock Source"]
+        HM["merge_snapshots()\nTickerSnapshot"]
+        STORE["store.py\npersistence"]
+
+        HS1 --> HM
+        HS2 --> HM
+        HS3 --> HM
+        HS4 --> HM
+        HM --> STORE
+    end
+
+    F4["_form4.py\nshared Form 4 aggregation"]
+    F4 --> SP3
+    F4 --> HS3
+```
+
 ## Quick start
 
 ```bash
