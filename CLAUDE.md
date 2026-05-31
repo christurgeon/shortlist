@@ -32,7 +32,7 @@ not in two places.
 ```bash
 uv sync                      # core + dev deps (pytest); uv.lock pins everything
 uv sync --extra edgar        # add the SEC EDGAR insider source
-uv run pytest                # runs 5 tests (data-harness layer + scoring)
+uv run pytest                # data-harness layer + scoring + provider tests
 uv run pytest tests/test_scoring.py::test_norm_endpoints_midpoint_and_clamp  # single test
 uv run shortlist --demo     # offline, no keys
 ```
@@ -113,6 +113,12 @@ hit first. **Finnhub's 60/min is comfortable** either way.
 - Margins/returns are stored as **fractions** (0.42 == 42%). **FMP `/stable/`
   already returns fractions** (use as-is); **Finnhub returns percentages** and is
   divided by 100 (`_pct`). Don't double-convert.
+- **`market_cap` is stored in absolute dollars** (matching FMP's `quote.marketCap`).
+  **Finnhub reports market cap in millions** and is multiplied by 1e6 (`_millions`).
+  The `below_min_mktcap` gate and the insider net-flow ratio both assume dollars, so
+  Finnhub is the free fallback denominator when FMP gates a symbol (`402` Special
+  Endpoint) — without it, EDGAR's insider dollars can't be normalized and the
+  insider sub-score goes `null`.
 - Equity-centric moat/quality proxies are blank for banks/insurers (e.g. SCHW);
   coverage correctly flags this. Sector-aware thresholds are the real fix.
 

@@ -40,6 +40,7 @@ class FinnhubProvider(Provider):
 
         metric = self._get("stock/metric", symbol=ticker, metric="all").get("metric", {})
         if metric:
+            m.market_cap = _millions(metric.get("marketCapitalization"))
             m.roe = _pct(metric.get("roeTTM"))
             m.roic = _pct(metric.get("roiTTM"))
             m.gross_margin = _pct(metric.get("grossMarginTTM"))
@@ -79,7 +80,7 @@ class FinnhubProvider(Provider):
                 m.eps_revision = (cur_net - prev_net) / total
 
         return self._tag(
-            m, "price", "roe", "roic", "gross_margin", "net_margin",
+            m, "price", "market_cap", "roe", "roic", "gross_margin", "net_margin",
             "debt_to_equity", "insider_sentiment", "rating_buy", "rating_hold",
             "rating_sell", "eps_revision",
         )
@@ -88,3 +89,9 @@ class FinnhubProvider(Provider):
 def _pct(x: Optional[float]) -> Optional[float]:
     """Finnhub returns margins/returns as percentages; convert to fractions."""
     return x / 100.0 if x is not None else None
+
+
+def _millions(x: Optional[float]) -> Optional[float]:
+    """Finnhub reports market cap in millions of USD; store absolute dollars to
+    match FMP's quote.marketCap (the gate and net-insider ratio expect dollars)."""
+    return x * 1.0e6 if x is not None else None
