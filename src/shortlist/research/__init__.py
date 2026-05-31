@@ -18,6 +18,7 @@ class ResearchResult:
     brief_path: Optional[str] = None
     cost_usd: float = 0.0
     synthesis: str = ""
+    from_cache: bool = False
     skipped: Optional[str] = None   # human-readable reason if not produced
 
 
@@ -38,7 +39,8 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     `fetch`/`assess_fn` are injectable for testing. One failure never aborts the
     batch — each name yields a ResearchResult (with `skipped` set on failure)."""
     root = config.get("research", {}).get("output_root", "research")
-    selected = [c for c in cards if not c.gates][:top_n]
+    ranked = sorted(cards, key=lambda c: c.composite, reverse=True)
+    selected = [c for c in ranked if not c.gates][:top_n]
     results: list[ResearchResult] = []
     for card in selected:
         try:
@@ -51,7 +53,7 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
             continue
         if not refresh and report.is_cached(card.ticker, filing.accession, root):
             bp = report.brief_path(card.ticker, filing.accession, root)
-            results.append(ResearchResult(card.ticker, brief_path=str(bp), synthesis="(cached)"))
+            results.append(ResearchResult(card.ticker, brief_path=str(bp), from_cache=True))
             continue
         assessment = assess_fn(card, filing, config)
         if assessment is None:

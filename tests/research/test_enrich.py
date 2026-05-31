@@ -51,7 +51,7 @@ def test_enrich_uses_cache_unless_refresh(tmp_path):
         return _assessment(card.ticker)
     fetch = lambda t, **k: FilingText(t, "acc-A", "2025-10-31", business="b")
     r = enrich([_Card("A", 90)], cfg, top_n=1, refresh=False, fetch=fetch, assess_fn=fake_assess)
-    assert calls["n"] == 0 and r[0].brief_path and "(cached)" in r[0].synthesis
+    assert calls["n"] == 0 and r[0].brief_path and r[0].from_cache is True
     r2 = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 1                     # refresh forces re-assessment
 
@@ -68,7 +68,6 @@ def test_enrich_redacts_filing_fetch_errors(tmp_path):
 
 
 def test_enrich_marks_assessment_failure(tmp_path):
-    from shortlist.research.models import FilingText
     cfg = {"research": {"output_root": str(tmp_path)}}
     fetch = lambda t, **k: FilingText(t, f"acc-{t}", "2025-10-31", business="b")
     results = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True,
