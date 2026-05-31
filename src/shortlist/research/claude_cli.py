@@ -44,7 +44,7 @@ def run(prompt: str, system: str, model: str, timeout_s: float) -> CliResult:
     ]
     try:
         proc = subprocess.run(
-            argv, input=prompt, capture_output=True, text=True,
+            argv, input=prompt, capture_output=True, text=True, encoding="utf-8",
             timeout=timeout_s, cwd=tempfile.gettempdir(),
         )
     except FileNotFoundError:

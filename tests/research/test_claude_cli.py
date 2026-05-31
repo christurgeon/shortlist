@@ -1,7 +1,6 @@
 import json
+import os
 import subprocess
-
-import pytest
 
 from shortlist.research import claude_cli
 
@@ -42,7 +41,7 @@ def test_run_locks_down_invocation(monkeypatch):
     assert "--bare" not in argv                      # must NOT force API-key auth
     assert captured["kwargs"]["input"] == "P"         # prompt via stdin
     assert captured["kwargs"]["timeout"] == 9
-    assert captured["kwargs"]["cwd"]                  # neutral cwd set
+    assert os.path.isabs(captured["kwargs"]["cwd"])   # neutral, absolute cwd
 
 
 def test_run_is_error_envelope(monkeypatch):
@@ -73,6 +72,14 @@ def test_run_timeout(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
     assert res.error and "timed out" in res.error.lower()
+
+
+def test_run_nonzero_exit_redacts_stderr(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k:
+        _completed(returncode=1, stderr="Error: sk-ant-abc123 unauthorized"))
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.error and "exited 1" in res.error
+    assert "sk-ant-abc123" not in res.error   # redaction verified
 
 
 def test_is_available(monkeypatch):
