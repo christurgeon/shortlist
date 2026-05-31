@@ -124,6 +124,12 @@ gov-contract awards) and FRED (10y yield, 2s10s curve) are the highest-leverage
 next additions, in that order. Both are registered in `providers/__init__.py:_REGISTRY`
 and can be activated with `--provider quiver` or `--provider fred` once implemented.
 
+## Skills
+
+- **`/run`** — end-to-end screener skill. Gather tickers → check env → run
+  `uv run shortlist --json` → interpret results (scores, gates, opportunity axis,
+  null sub-scores, coverage gaps). Lives at `.claude/skills/run/SKILL.md`.
+
 ## Qualitative research layer (`shortlist/research/`)
 
 Opt-in `--research N` enriches top-N non-gated names with a Claude-written 10-K
