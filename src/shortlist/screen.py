@@ -76,7 +76,7 @@ def _f(x):
     return f"{x:.0f}" if x is not None else "-"
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
     ap.add_argument("--provider", help="comma-separated provider chain; overrides config")
@@ -84,6 +84,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")
     ap.add_argument("--json", action="store_true", help="emit JSON to stdout instead of a table")
+    ap.add_argument("--research", type=int, metavar="N",
+                    help="after ranking, generate a qualitative brief for the top N non-gated names")
+    ap.add_argument("--refresh", action="store_true",
+                    help="regenerate research briefs even if a cached one exists")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_arg_parser()
     args = ap.parse_args(argv)
 
     load_env()  # pick up API keys from a .env file if present
@@ -112,15 +121,18 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _card_dict(c: ScoreCard) -> dict:
+def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     up = c.metrics.upside_to_target() if c.metrics else None
-    return {
+    d = {
         "ticker": c.ticker, "composite": c.composite, "quality": c.quality,
         "moat": c.moat, "momentum": c.momentum, "value": c.value,
         "opportunity": c.opportunity, "insider": c.insider,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
     }
+    if research_paths and c.ticker in research_paths:
+        d["research_path"] = research_paths[c.ticker]
+    return d
 
 
 def _write_csv(cards: list[ScoreCard], path: str) -> None:
