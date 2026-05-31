@@ -78,9 +78,18 @@ Tune thresholds, weights, and gates in `config.yaml` — no code changes needed.
   Recommendations come from `grades-consensus` (`strongBuy/buy/hold/sell`).
 - **FMP insider trading is a paid endpoint** (`402` on free plans). It's wrapped
   to skip quietly — EDGAR is the authoritative, free insider source instead.
-- **FMP's free plan also gates many symbols** (e.g. GEV) per-symbol with a `402`
-  "Special Endpoint" — fundamentals/statements come back empty and coverage drops
-  to "thin." Not a bug; major large-caps (AAPL/MSFT/LMT) work on the free tier.
+- **FMP's free plan also gates many symbols** (e.g. GEV, AXON, MELI, ISRG, SCHW,
+  TMO) per-symbol with a `402` "Special Endpoint" — fundamentals/statements come
+  back empty and coverage drops to "thin." Not a bug; major large-caps
+  (AAPL/MSFT/LMT) work on the free tier. **Diagnosing it:** the symbol 402s on the
+  basic `/stable/quote` endpoint while other symbols on the same key return `200`
+  — so it's per-symbol gating, *not* a quota/key problem. The visible fallout is a
+  **`null` `value` sub-score** (and `null` `upside_to_target`): PE-vs-history, FCF
+  yield, and analyst-target upside all live on FMP, so when the symbol is gated the
+  whole value axis has no inputs and `opportunity` collapses to `momentum`. The
+  only fix is **FMP's paid Starter tier (~$14–20/mo)**, which lifts the gating —
+  no code change recovers it. (`market_cap` is the exception: Finnhub backfills it,
+  which is why the insider sub-score survives gating but `value` does not.)
 
 ## Insider merge (harness)
 

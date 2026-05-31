@@ -112,6 +112,8 @@ Gates flag a ticker for scrutiny — they don't exclude it from ranking.
 ### Coverage gaps
 If a ticker had `402` responses from FMP, note it — that symbol is gated on the free plan and data will be thin.
 
+**Null `value` + FMP `402`s = symbol gating, not a bug.** When `value` (and `upside_to_target`) come back `null` *and* you saw `402` warnings on stderr for that symbol, don't hunt for a code fault. PE-vs-history, FCF yield, and analyst-target upside all live on FMP, so a gated symbol has no value-axis inputs and `opportunity` collapses to `momentum`. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. State plainly that the **only** fix is FMP's paid Starter tier (~$14–20/mo) — no code change recovers `value`. Note that `market_cap` and the `insider` sub-score still populate because Finnhub backfills the market cap, so a `null` `value` with a non-null `insider` is the signature of FMP gating.
+
 ---
 
 ## Score reference
