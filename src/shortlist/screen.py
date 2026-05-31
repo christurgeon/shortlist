@@ -76,7 +76,14 @@ def _f(x):
     return f"{x:.0f}" if x is not None else "-"
 
 
-def main(argv: list[str] | None = None) -> int:
+def _positive_int(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return n
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
     ap.add_argument("--provider", help="comma-separated provider chain; overrides config")
@@ -84,6 +91,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")
     ap.add_argument("--json", action="store_true", help="emit JSON to stdout instead of a table")
+    ap.add_argument("--research", type=_positive_int, metavar="N",
+                    help="after ranking, generate a qualitative brief for the top N non-gated names")
+    ap.add_argument("--refresh", action="store_true",
+                    help="regenerate research briefs even if a cached one exists")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_arg_parser()
     args = ap.parse_args(argv)
 
     load_env()  # pick up API keys from a .env file if present
@@ -102,25 +118,79 @@ def main(argv: list[str] | None = None) -> int:
 
     cards = run(tickers, providers, config)
 
+    research_paths: dict = {}
+    if args.research:
+        research_paths = _run_research_phase(cards, config, args.research, args.refresh)
+
     if args.csv:
         _write_csv(cards, args.csv)
         print(f"wrote {args.csv}")
     if args.json:
-        print(json.dumps([_card_dict(c) for c in cards], indent=2))
+        print(json.dumps([_card_dict(c, research_paths) for c in cards], indent=2))
     else:
         _print_table(cards)
     return 0
 
 
-def _card_dict(c: ScoreCard) -> dict:
+def _research_available() -> bool:
+    try:
+        from .research import is_available
+    except ImportError:
+        return False
+    return is_available()
+
+
+def _run_enrich(cards, config, n, refresh):
+    from .research import enrich
+    return enrich(cards, config, top_n=n, refresh=refresh)
+
+
+def _run_research_phase(cards, config, n: int, refresh: bool) -> dict:
+    """Run the qualitative research phase over the top-N non-gated cards.
+    Returns {ticker: brief_path} for names that produced (or have a cached)
+    brief. All console output goes to stderr so it never contaminates --json
+    stdout. Never raises."""
+    if not _research_available():
+        print("  ! skipping research: `claude` CLI or edgartools unavailable",
+              file=sys.stderr)
+        return {}
+    try:
+        results = _run_enrich(cards, config, n, refresh)
+    except Exception as e:
+        print(f"  ! research phase failed: {redact_secrets(e)}", file=sys.stderr)
+        return {}
+    paths: dict[str, str] = {}
+    total = 0.0
+    if results:
+        print("\nQualitative research", file=sys.stderr)
+    for r in results:
+        if r.skipped:
+            print(f"  {r.ticker:<6} skipped: {r.skipped}", file=sys.stderr)
+            continue
+        paths[r.ticker] = r.brief_path
+        if r.from_cache:
+            print(f"  {r.ticker:<6} (cached)  {r.brief_path}", file=sys.stderr)
+            continue
+        total += r.cost_usd
+        print(f"  {r.ticker:<6} ${r.cost_usd:.4f}  {r.brief_path}\n"
+              f"           {r.synthesis}", file=sys.stderr)
+    if total:
+        print(f"  research cost: ${total:.4f}", file=sys.stderr)
+    return paths
+
+
+def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     up = c.metrics.upside_to_target() if c.metrics else None
-    return {
+    d = {
         "ticker": c.ticker, "composite": c.composite, "quality": c.quality,
         "moat": c.moat, "momentum": c.momentum, "value": c.value,
         "opportunity": c.opportunity, "insider": c.insider,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
     }
+    if research_paths and c.ticker in research_paths:
+        d["research_path"] = research_paths[c.ticker]
+    return d
 
 
 def _write_csv(cards: list[ScoreCard], path: str) -> None:
