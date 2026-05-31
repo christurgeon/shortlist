@@ -94,3 +94,15 @@ hit first. **Finnhub's 60/min is comfortable** either way.
   divided by 100 (`_pct`). Don't double-convert.
 - Equity-centric moat/quality proxies are blank for banks/insurers (e.g. SCHW);
   coverage correctly flags this. Sector-aware thresholds are the real fix.
+
+## Qualitative research layer (`shortlist/research/`)
+
+Opt-in `--research N` enriches top-N non-gated names with a Claude-written 10-K
+brief. It uses the **`claude` CLI in headless mode, not the Anthropic API SDK**
+(no key; uses the user's CLI auth). The runner (`research/claude_cli.py`) MUST
+keep the lockdown flags — `--tools "" --strict-mcp-config --max-turns 1`, prompt
+on stdin, neutral cwd, and NO `--bare` (bare forces ANTHROPIC_API_KEY). The whole
+package is lazy-imported so the core screener works without `claude`/edgartools.
+Briefs are cached by filing accession (not date); facts are quote-verified
+against the filing, interpretive prose is labeled. The research summary prints to
+stderr (keeps `--json` stdout clean). Output under `research/` (gitignored).

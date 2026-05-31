@@ -73,6 +73,23 @@ selling) that flag a name regardless of score.
 
 Tune everything in `config.yaml` — no code changes needed to re-weight.
 
+## Qualitative research (`--research N`)
+
+After ranking, `--research N` reads each of the top N non-gated names' latest
+10-K (business, MD&A, risk factors) via SEC EDGAR and uses the local `claude`
+CLI to write a qualitative brief — moat read, material risks, red flags,
+management/capital-allocation, business model, and a synthesis. It **stands
+alongside** the numeric score (never re-ranks). Output: `research/<TICKER>/
+<accession>.md` (+ `.json`), cached by filing so re-runs are free; `--refresh`
+regenerates.
+
+Factual findings (risks/red flags) carry a verbatim filing quote that is
+verified to actually appear in the filing; unverifiable ones are flagged. Needs
+the `claude` CLI on PATH (uses your existing CLI auth — no API key) and the
+`[edgar]` extra. Briefs are LLM-generated aids for the deep dive, not advice.
+
+    uv run shortlist --tickers GEV,LMT,GOOGL --provider fmp,finnhub,edgar --research 3
+
 ## Reading the output
 
 The composite ranks **business quality + opportunity**. It deliberately does
