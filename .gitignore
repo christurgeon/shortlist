@@ -16,3 +16,6 @@ venv/
 /snapshots/
 *.csv
 /research/
+
+# Scratch: pulled raw data samples (data-source exploration)
+/scratch/
