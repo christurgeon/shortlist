@@ -8,14 +8,15 @@ from typing import Optional
 _SECRET_PARAMS = ("apikey", "token", "api_key")
 _SECRET_RE = re.compile(rf"((?:{'|'.join(_SECRET_PARAMS)})=)[^&\s]+", re.IGNORECASE)
 
+# Bare API tokens that may appear in CLI/subprocess output (not as URL params).
+_TOKEN_RE = re.compile(r"sk-ant-[A-Za-z0-9_-]+")
+
 
 def redact_secrets(text: object) -> str:
-    """Strip API keys/tokens from a string (e.g. an HTTP error containing a URL).
-
-    Provider errors from requests/httpx embed the full request URL — including
-    `?apikey=...` — so anything printed from them must pass through here first.
-    """
-    return _SECRET_RE.sub(r"\1<redacted>", str(text))
+    """Strip API keys/tokens from a string (e.g. an HTTP error containing a URL,
+    or a leaked Anthropic token in subprocess output)."""
+    s = _SECRET_RE.sub(r"\1<redacted>", str(text))
+    return _TOKEN_RE.sub("<redacted>", s)
 
 
 def load_env(path: Optional[str] = None) -> Optional[str]:
