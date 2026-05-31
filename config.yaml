@@ -40,3 +40,11 @@ gates:
 
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]
+
+# Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
+research:
+  model: claude-sonnet-4-6     # pinned full ID (not the drifting "sonnet" alias)
+  timeout_s: 180
+  output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
+  max_risks: 8
+  max_red_flags: 8
