@@ -6,7 +6,16 @@ from shortlist.data.models import (
 def test_short_interest_defaults():
     si = ShortInterest()
     assert si.settlement_date is None and si.short_shares is None
-    assert si.split_flag is False and si.revised is False
+    assert si.split_flag is None and si.revised is None
+
+
+def test_empty_short_interest_not_merged():
+    from shortlist.data.models import ShortInterest, SourceResult, TickerSnapshot, merge_snapshots
+    r = SourceResult(source="finra",
+                     partial=TickerSnapshot(ticker="AAA", short_interest=ShortInterest()))
+    snap = merge_snapshots("AAA", [r], priority=["finra"])
+    assert snap.short_interest is None
+    assert "short_interest" not in snap.provenance
 
 
 def test_short_interest_not_in_coverage_denominator():

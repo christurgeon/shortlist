@@ -125,8 +125,8 @@ class ShortInterest:
     prev_short_shares: Optional[float] = None     # previousShortPositionQuantity (prior cycle)
     avg_daily_volume: Optional[float] = None      # averageDailyVolumeQuantity
     days_to_cover: Optional[float] = None          # daysToCoverQuantity — FINRA-supplied, NOT recomputed
-    split_flag: bool = False                       # stockSplitFlag — counts not comparable across a split
-    revised: bool = False                          # revisionFlag — figure revised after publication
+    split_flag: Optional[bool] = None    # stockSplitFlag — counts not comparable across a split
+    revised: Optional[bool] = None       # revisionFlag — figure revised after publication
 
 
 # --- Snapshot -------------------------------------------------------------
