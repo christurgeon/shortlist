@@ -196,6 +196,35 @@ still be a poor *addition* if it doubles an exposure you already hold. Use the
 ranking to surface candidates; use the skill (and your own allocation judgment)
 to decide what actually goes in.
 
+## Autonomous scout
+
+The scout stack discovers candidates from free signal feeds, screens them through
+the existing scorer, and ships a daily Telegram report — no watchlist needed.
+Full design and rationale: [`docs/AUTONOMOUS_SCOUT.md`](docs/AUTONOMOUS_SCOUT.md).
+
+```bash
+# Offline demo — no keys, prints a ranked shortlist (GEV / LMT / GOOGL basket):
+uv run shortlist-scout --demo
+
+# Live run — reads keys from .env, discovers candidates, deep-screens, delivers to Telegram:
+uv run shortlist-scout
+```
+
+**Strictly free.** The scout uses Yahoo Finance (keyless), EDGAR Form 4 daily
+index (free SEC feed), Finnhub news volume (free tier), and Wikipedia pageviews
+(no key). FMP's free plan limits deep-screening to roughly **15 tickers/day** —
+that is intentional: the signal funnel surfaces only the most interesting names
+rather than burning quota on noise.
+
+**Kill-switch.** To skip the Claude research phase without redeploying:
+
+```bash
+touch scout/STOP_RESEARCH        # file-based; persists
+SCOUT_NO_RESEARCH=1 shortlist-scout  # env var; one run
+```
+
+For systemd deployment (timer fires at 22:30 UTC daily), see [`deploy/README.md`](deploy/README.md).
+
 ## Limitations
 
 - Moat/quality proxies are equity-centric and misfire on banks/insurers

@@ -1,0 +1,11 @@
+[Unit]
+Description=shortlist autonomous scout — daily candidate discovery + report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=oracle
+WorkingDirectory=/opt/oracle/shortlist
+ExecStart=/opt/oracle/shortlist/.venv/bin/shortlist-scout
+# OnFailure alert mirrors the oracle-daily-report pattern (see deploy/README.md)
