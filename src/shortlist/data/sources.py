@@ -269,10 +269,11 @@ def _edgar_semaphore() -> asyncio.Semaphore:
 
 
 class EdgarSource(Source):
-    """Authoritative SEC Form 4 insider data. Free, but the blocking `edgartools`
-    work runs in a worker thread (the harness is async) and is rate-limited via a
-    shared semaphore. Supplies only the insider transaction facts — `sentiment_mspr`
-    is Finnhub's signal and is composed in by the custom insider merger."""
+    """Authoritative SEC Form 4 insider data plus annual financials. Free, but the
+    blocking `edgartools` work runs in a worker thread (the harness is async) and
+    is rate-limited via a shared semaphore. `sentiment_mspr` is Finnhub's signal
+    and is composed in by the custom insider merger. Financials failures are
+    isolated — they never drop a successfully fetched insider result."""
 
     name = "edgar"
 
@@ -288,7 +289,9 @@ class EdgarSource(Source):
         async with _edgar_semaphore():
             return await asyncio.to_thread(self._fetch_sync, ticker)
 
-    def _fetch_sync(self, ticker: str) -> SourceResult:
+    def _fetch_insider(self, ticker: str) -> SourceResult:
+        """Fetch Form 4 insider data. Always returns a SourceResult with a
+        non-None res.partial (on all branches, including the except branch)."""
         from edgar import Company
         from ..providers._form4 import aggregate_form4
 
@@ -315,6 +318,48 @@ class EdgarSource(Source):
             ))
         else:
             res.partial = TickerSnapshot(ticker=ticker)
+        return res
+
+    def _fetch_financials_object(self, ticker: str):
+        """Seam for mocking: returns an edgartools Financials (or raises)."""
+        from edgar import Company
+        return Company(ticker).get_financials()
+
+    def _build_financials_snapshot(self, ticker: str, fin) -> "TickerSnapshot":
+        """Map an edgartools Financials onto a Statements-only snapshot. Pure given
+        `fin`. Values are absolute USD (no scaling)."""
+        from ..providers._edgar_facts import extract_financials
+        try:
+            shares = fin.get_shares_outstanding_diluted()
+        except Exception:
+            shares = None
+        ef = extract_financials(
+            fin.income_statement().to_dataframe(),
+            fin.cashflow_statement().to_dataframe(),
+            shares_diluted=shares,
+        )
+        snap = TickerSnapshot(ticker=ticker)
+        if ef.fiscal_period_end:
+            snap.statements = Statements(
+                fiscal_years=[int(d[:4]) for d in ef.fiscal_period_end],
+                fiscal_period_end=ef.fiscal_period_end,
+                revenue=ef.revenue,
+                net_income=ef.net_income,
+                operating_cash_flow=ef.operating_cash_flow,
+                free_cash_flow=ef.free_cash_flow,
+                diluted_eps=ef.diluted_eps,
+            )
+        return snap
+
+    def _fetch_sync(self, ticker: str) -> SourceResult:
+        res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
+        # Financials are isolated: a failure here must never drop the insider result.
+        try:
+            fin_snap = self._build_financials_snapshot(ticker, self._fetch_financials_object(ticker))
+            if fin_snap.statements is not None:
+                res.partial.statements = fin_snap.statements
+        except Exception as e:
+            res.errors.append(f"edgar-financials: {e}")
         return res
 
 
