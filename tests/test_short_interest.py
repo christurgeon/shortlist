@@ -58,3 +58,16 @@ def test_scorecard_flags_default_empty_and_do_not_affect_passed():
     assert c.flags == []
     c.flags = ["crowded_short"]
     assert c.passed is True            # flags are advisory: passed depends only on gates
+
+
+def test_config_yaml_has_flags_and_finra():
+    import yaml
+    from pathlib import Path
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cs = cfg["flags"]["crowded_short"]
+    assert cs["min_short_pct_outstanding"] == 0.10
+    assert cs["min_days_to_cover"] == 5.0
+    assert cs["require_rising"] is True
+    assert cs["max_staleness_days"] == 35
+    assert "finra" in cfg["harness_sources"]
+    assert "finra" in cfg["scout"]["deep_screen_sources"]
