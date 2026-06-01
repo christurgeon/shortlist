@@ -2,7 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a per-ticker `events` section to the harness `TickerSnapshot` — recent 8-K / SC 13D / SC 13G / Form 144 from the SEC filing index — surfaced as pure-enrichment flags in `--json`, the screener table, and the research brief, with zero impact on any existing score or gate.
+> **STATUS (2026-06-01): NOT STARTED — execution held by user decision.** Task 8 (surfacing) collides
+> with the in-flight short-interest branch, which is mid-way through establishing the shared
+> `ScoreCard.flags` populate+render mechanism that event advisories must reuse. Decision: **wait for the
+> short-interest flags mechanism to land, then execute the whole plan on top of it** (subagent-driven,
+> on a worktree). Tasks 1–7 + 9 are dependency-free; Task 8 is re-pointed at `ScoreCard.flags` and
+> finalized against the landed mechanism. Resume trigger: short-interest `flags` is populated in
+> `score()` and rendered in `_print_table`/`_card_dict`.
+
+**Goal:** Add a per-ticker `events` section to the harness `TickerSnapshot` — recent 8-K / SC 13D / SC 13G / Form 144 from the SEC filing index — surfaced as pure-enrichment soft flags (via `ScoreCard.flags`) in the screener table, a structured `--json` events block, and the research brief, with zero impact on any existing score or gate.
 
 **Architecture:** A new failure-isolated section on `EdgarSource` (mirrors the existing financials block) feeds a new `Events` dataclass on `TickerSnapshot`. A module-level pure builder does all classification/filtering (unit-testable without network). The event flags ride to the scorer through the existing `bridge.snapshot_to_metrics` → `StockMetrics` → `ScoreCard.metrics` path; nothing in `scoring.py` changes. Reached from the screener via `--engine harness`, exactly like Yahoo.
 
@@ -815,137 +823,94 @@ git commit -m "feat: bridge EDGAR event flags onto StockMetrics (enrichment, def
 
 ---
 
-## Task 8: Surface events in `--json` and the screener `Flags` column
+## Task 8: Surface events (⛔ BLOCKED — finalize against the short-interest `ScoreCard.flags` mechanism)
 
-**Files:**
-- Modify: `src/shortlist/screen.py` (`_card_dict`, `_print_table`, `_print_plain`)
+> **BLOCKED ON DEPENDENCY (decided 2026-06-01).** Commit `880163a` added `ScoreCard.flags` (soft
+> advisories, e.g. `crowded_short`; NOT disqualifying) as a **field only** — the short-interest branch
+> has not yet wired (a) how `score()` populates `flags` from metrics, nor (b) how `_print_table` /
+> `_card_dict` render `flags`. Event advisories are the **same kind of soft flag** and must reuse that
+> mechanism, not invent a parallel `_event_chips`-into-the-gates-cell path. So this task is **deferred
+> until the short-interest flags populate+render mechanism lands**, then finalized against it. Tasks
+> 1–7 and 9 (data layer + bridge + research) are unblocked and run first. The earlier `_event_chips`
+> approach is intentionally dropped to avoid two divergent flag mechanisms + a guaranteed `score()` /
+> `_print_table` merge conflict.
+
+**Intended approach (finalize once the dependency lands):**
+- Event advisories ride `ScoreCard.flags`. Populate them where the short-interest work populates
+  `crowded_short` (likely a `check_flags(m, ...)`-style helper invoked in `score()`): append
+  `"recent_8k"`, `"activist_13d"`, `"passive_13g"`, `"planned_insider_sale_144"` from the
+  `StockMetrics` event fields set by Task 7. Reuse that helper — do not add a second one.
+- Rendering: whatever path the short-interest branch establishes for `ScoreCard.flags` in
+  `_print_table` / `_print_plain` will then surface event flags automatically (neutral, distinct from
+  red `gates`). Add no separate `_event_chips` rendering.
+- **`--json` structured block (independent of the flags mechanism — keep concrete):** `_card_dict`
+  gains an `events` block carrying the full `recent` filing list (richer than the flag labels), emitted
+  only when present. This rides on `c.metrics.filing_events` (Task 7) and does not touch `score()`, so
+  it can land without the dependency.
+
+**Files (when unblocked):**
+- Modify: `src/shortlist/scoring.py` (event flags into the short-interest flags helper)
+- Modify: `src/shortlist/screen.py` (`_card_dict` events block; rendering inherited from short-interest)
 - Test: `tests/test_edgar_events.py`
 
-- [ ] **Step 1: Write the failing surfacing tests**
+- [ ] **Step 1 (when unblocked): Re-verify the landed flags mechanism**
+
+Read the short-interest branch's `score()`/flags helper and `_print_table`/`_card_dict` flags rendering.
+Record the exact helper name and call site here before writing code. (Cannot be specified now — that is
+the reason for the hold.)
+
+- [ ] **Step 2 (independent — may land now): `--json` structured events block + test**
 
 Append to `tests/test_edgar_events.py`:
 
 ```python
-from shortlist.models import StockMetrics
-from shortlist.models import ScoreCard
-from shortlist.screen import _card_dict, _event_chips
+from shortlist.models import ScoreCard, StockMetrics
+from shortlist.screen import _card_dict
 
 
 def _card_with_events():
     m = StockMetrics(ticker="AAPL")
     m.activist_13d = True
     m.recent_8k = True
-    m.filing_events = [{"form": "SC 13D", "filed": "2026-05-26",
-                        "accession": "x", "url": "u"}]
+    m.filing_events = [{"form": "SC 13D", "filed": "2026-05-26", "accession": "x", "url": "u"}]
     return ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None,
                      growth=None, momentum=None, value=None, opportunity=None,
                      insider=None, metrics=m)
 
 
 def test_card_dict_emits_events_block_only_when_present():
-    with_ev = _card_dict(_card_with_events())
-    assert with_ev["events"]["activist_13d"] is True
-    assert with_ev["events"]["recent"][0]["form"] == "SC 13D"
-
-    plain = ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None,
-                      growth=None, momentum=None, value=None, opportunity=None,
-                      insider=None, metrics=StockMetrics(ticker="AAPL"))
+    assert _card_dict(_card_with_events())["events"]["recent"][0]["form"] == "SC 13D"
+    plain = ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None, growth=None,
+                      momentum=None, value=None, opportunity=None, insider=None,
+                      metrics=StockMetrics(ticker="AAPL"))
     assert "events" not in _card_dict(plain)
-
-
-def test_event_chips_builds_neutral_labels():
-    assert _event_chips(_card_with_events().metrics) == ["13D", "8K"]
-    assert _event_chips(StockMetrics(ticker="AAPL")) == []
 ```
 
-- [ ] **Step 2: Run to verify it fails**
-
-Run: `uv run pytest tests/test_edgar_events.py -k "card_dict_emits or event_chips" -v`
-Expected: FAIL — `cannot import name '_event_chips'`.
-
-- [ ] **Step 3: Implement the chips helper and JSON block**
-
-In `src/shortlist/screen.py`, add a module-level helper (near `_card_dict`):
+In `_card_dict`, before `return d`:
 
 ```python
-def _event_chips(m) -> list[str]:
-    """Neutral filing-event chips for the Flags column (distinct from red gates)."""
-    if m is None:
-        return []
-    chips = []
-    if getattr(m, "activist_13d", None):
-        chips.append("13D")
-    if getattr(m, "passive_13g", None):
-        chips.append("13G")
-    if getattr(m, "recent_8k", None):
-        chips.append("8K")
-    if getattr(m, "planned_insider_sale_144", None):
-        chips.append("144")
-    return chips
-```
-
-In `_card_dict`, before `return d`, add the events block (emitted only when there are events):
-
-```python
-    if c.metrics is not None and (c.metrics.filing_events or _event_chips(c.metrics)):
+    if c.metrics is not None and c.metrics.filing_events:
         d["events"] = {
             "recent_8k": bool(c.metrics.recent_8k),
             "activist_13d": bool(c.metrics.activist_13d),
             "passive_13g": bool(c.metrics.passive_13g),
             "planned_insider_sale_144": bool(c.metrics.planned_insider_sale_144),
-            "recent": c.metrics.filing_events or [],
+            "recent": c.metrics.filing_events,
         }
 ```
 
-- [ ] **Step 4: Wire the chips into the table and plain output**
+- [ ] **Step 3 (when unblocked): wire event flags into the short-interest flags helper + render path**
 
-In `_print_table`, replace the `Flags` cell construction so gate chips stay red and event chips are neutral (adversarial #5 — use inline rich markup, drop the row-wide red style):
+(Write against the mechanism recorded in Step 1; add a test asserting an events-bearing card carries
+the event labels in `ScoreCard.flags` and they render in the table — no separate `_event_chips`.)
 
-```python
-    for i, c in enumerate(cards, 1):
-        up = c.metrics.upside_to_target() if c.metrics else None
-        gate_chips = [f"[dim red]{g}[/dim red]" for g in c.gates]
-        flag_cell = ",".join(gate_chips + _event_chips(c.metrics)) or "-"
-        table.add_row(
-            str(i), c.ticker, f"{c.composite:.1f}",
-            _f(c.quality), _f(c.moat), _f(c.growth), _f(c.momentum), _f(c.value), _f(c.insider),
-            f"{up*100:.0f}%" if up is not None else "-",
-            flag_cell,
-        )
-```
+- [ ] **Step 4: Run + commit**
 
-> Removing the row-level `style=` means gated rows are no longer fully dim-red; the gate chips carry the red instead. If you prefer to keep whole-row emphasis for gated names, keep `style="dim red" if c.gates else None` and accept that event chips inherit it on gated rows — pick one and note it in the commit. The plan's default is per-cell markup.
-
-In `_print_plain`, append event chips to the flags field:
-
-```python
-    for i, c in enumerate(cards, 1):
-        flags = ",".join(c.gates + _event_chips(c.metrics)) or "-"
-        print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
-              f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
-              f"{_f(c.insider):>5}  {flags}")
-```
-
-- [ ] **Step 5: Run to verify the tests pass**
-
-Run: `uv run pytest tests/test_edgar_events.py -k "card_dict_emits or event_chips" -v`
-Expected: PASS.
-
-- [ ] **Step 6: Smoke-test the table renders (no events, offline)**
-
-Run: `uv run shortlist --demo`
-Expected: table prints without error; `Flags` column shows gate chips as before (demo/mock has no events).
-
-- [ ] **Step 7: Run the full suite**
-
-Run: `uv run pytest -q`
-Expected: all pass.
-
-- [ ] **Step 8: Commit**
+Run: `uv run pytest -q` (expected all pass), then:
 
 ```bash
-git add src/shortlist/screen.py tests/test_edgar_events.py
-git commit -m "feat: surface EDGAR events in --json and the Flags column"
+git add src/shortlist/scoring.py src/shortlist/screen.py tests/test_edgar_events.py
+git commit -m "feat: surface EDGAR events via ScoreCard.flags + --json events block"
 ```
 
 ---
