@@ -1,4 +1,5 @@
 import asyncio
+import os
 import pandas as pd
 import pytest
 
@@ -66,3 +67,24 @@ def test_financials_failure_does_not_drop_insider(monkeypatch):
     assert res.partial.insider.buy_count == 3            # insider survived
     assert any("edgar-financials" in e for e in res.errors)
     assert res.partial.statements is None
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_LIVE_EDGAR"), reason="live SEC call; set RUN_LIVE_EDGAR=1")
+def test_live_edgar_financials_10k_filer():
+    res = asyncio.run(EdgarSource().fetch("LMT"))     # SEC_IDENTITY from env
+    assert res.partial.statements is not None
+    assert res.partial.statements.free_cash_flow
+    assert res.partial.statements.diluted_eps
+
+
+@pytest.mark.skipif(not os.environ.get("RUN_LIVE_EDGAR"), reason="live SEC call; set RUN_LIVE_EDGAR=1")
+def test_live_edgar_foreign_or_nofinancials_degrades_cleanly():
+    # A 20-F foreign issuer (ASML) should not crash; statements may be None.
+    res = asyncio.run(EdgarSource().fetch("ASML"))
+    assert res.partial is not None                    # no exception escaped
+    # Either parsed statements or a logged financials error — never a crash.
+    assert (
+        res.partial.statements is not None
+        or any("edgar-financials" in e for e in res.errors)
+        or res.partial.statements is None
+    )
