@@ -71,16 +71,29 @@ def _verify_grounding(assessment: QualitativeAssessment, filing: FilingText) -> 
     assessment.unverified_count = unverified
 
 
-def _build_user_prompt(filing: FilingText, config: dict) -> str:
+def _build_user_prompt(filing: FilingText, config: dict, card=None) -> str:
     rcfg = config.get("research", {})
+    quant = _short_interest_note(card)
     return (
         f"Ticker: {filing.ticker}\nAccession: {filing.accession}\n\n"
+        f"{quant}"
         f"=== ITEM 1 — BUSINESS ===\n{filing.business}\n\n"
         f"=== ITEM 7 — MD&A ===\n{filing.mda}\n\n"
         f"=== ITEM 1A — RISK FACTORS ===\n{filing.risk_factors}\n\n"
         f"Return at most {rcfg.get('max_risks', 8)} risks and "
         f"{rcfg.get('max_red_flags', 8)} red_flags, most material first."
     )
+
+
+def _short_interest_note(card) -> str:
+    m = getattr(card, "metrics", None) if card else None
+    if not m or m.short_pct_outstanding is None or m.days_to_cover is None:
+        return ""
+    trend = "rising" if m.short_interest_rising else "not rising"
+    return ("=== QUANT CONTEXT (facts; not from the filing) ===\n"
+            f"Short interest: {m.short_pct_outstanding * 100:.1f}% of shares, "
+            f"{m.days_to_cover:.1f} days to cover, {trend}. "
+            "Weigh whether the filing's risks corroborate or refute the bear case.\n\n")
 
 
 def assess(card, filing: FilingText, config: dict,
@@ -91,7 +104,7 @@ def assess(card, filing: FilingText, config: dict,
     rcfg = config.get("research", {})
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
-    user_prompt = _build_user_prompt(filing, config)
+    user_prompt = _build_user_prompt(filing, config, card)
 
     prompt = user_prompt
     for _ in range(2):
