@@ -42,7 +42,7 @@ def load_watchlist(spec: str) -> list[str]:
     if spec == "default":
         path = Path(__file__).parent / "accumulate_watchlist.txt"
         return [ln.strip().upper() for ln in path.read_text().splitlines()
-                if ln.strip() and not ln.startswith("#")]
+                if ln.strip() and not ln.strip().startswith("#")]
     return [t.strip().upper() for t in spec.split(",") if t.strip()]
 
 
@@ -68,7 +68,8 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
     collect_fn is injectable for testing; defaults to the real collector.
     """
     day = _today_iso()
-    sel = tickers[:max_tickers] if max_tickers else list(tickers)
+    # `None` = no cap; an explicit 0 means "capture nothing" (not "all").
+    sel = list(tickers) if max_tickers is None else tickers[:max_tickers]
     run = AccumulationRun(day=day, attempted=len(sel))
     for raw in sel:
         tk = raw.upper()

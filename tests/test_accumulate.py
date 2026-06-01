@@ -147,6 +147,13 @@ def test_load_watchlist_default_and_csv():
     assert load_watchlist("gev, lmt") == ["GEV", "LMT"]
 
 
+def test_max_tickers_zero_captures_nothing(tmp_path):
+    snaps = {t: _snap(t) for t in ("AAA", "BBB")}
+    r = accumulate(["AAA", "BBB"], ["mock"], tmp_path, max_tickers=0,
+                   collect_fn=_fake_collect(snaps))
+    assert r.attempted == 0 and r.captured == []
+
+
 def test_cli_parser_run_and_status_defaults():
     ap = build_arg_parser()
     r = ap.parse_args(["run"])

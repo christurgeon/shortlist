@@ -20,7 +20,10 @@ def save(snapshot: TickerSnapshot, root: str | Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{day}.json"
     data = json.dumps(snapshot.to_dict(), indent=2, default=str)
-    tmp = out_dir / f".{day}.json.tmp"
+    # PID-unique temp so an overlapping run (e.g. manual + timer) can't clobber a
+    # half-written temp. Suffix MUST stay `.tmp` (not `.json`) or the `*.json` globs
+    # in load()/captured_days() would pick it up.
+    tmp = out_dir / f".{day}.{os.getpid()}.json.tmp"
     tmp.write_text(data)
     os.replace(tmp, path)               # atomic on POSIX within the same directory
     return path
