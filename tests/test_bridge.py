@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.models import StockMetrics
 from shortlist.data.models import (
     Analyst, Fundamentals, Insider, Price, Profile, Statements, TickerSnapshot,
@@ -99,3 +101,25 @@ def test_bridge_empty_snapshot_does_not_raise():
     assert m.ticker == "ZZZ"
     assert m.price is None and m.roe is None
     assert m.gross_margin_stability is None and m.fcf_positive is None
+
+
+def test_bridge_derives_fcf_yield_from_edgar_when_fmp_absent():
+    # Absolute USD on BOTH sides (verified EDGAR units) -> quotient is a fraction.
+    snap = TickerSnapshot(
+        ticker="GEV",
+        profile=Profile(market_cap=20_000_000_000.0),       # $20B
+        fundamentals=Fundamentals(fcf_yield=None),           # FMP gated -> no fcf_yield
+        statements=Statements(free_cash_flow=[1_000_000_000.0]),  # $1B FCF
+    )
+    m = snapshot_to_metrics(snap)
+    assert m.fcf_yield == pytest.approx(0.05)                # 1e9 / 20e9
+
+
+def test_bridge_keeps_fmp_fcf_yield_when_present():
+    snap = TickerSnapshot(
+        ticker="AAPL",
+        profile=Profile(market_cap=20_000_000_000.0),
+        fundamentals=Fundamentals(fcf_yield=0.03),
+        statements=Statements(free_cash_flow=[1_000_000_000.0]),
+    )
+    assert snapshot_to_metrics(snap).fcf_yield == 0.03       # FMP wins, no override

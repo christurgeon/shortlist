@@ -69,6 +69,14 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         if st.free_cash_flow:
             fcf0 = st.free_cash_flow[0]
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
+        # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
+        # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
+        # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave
+        # nothing (m.fcf_yield set from f.fcf_yield earlier keeps FMP's priority).
+        if m.fcf_yield is None and st.free_cash_flow and m.market_cap:
+            fcf0 = st.free_cash_flow[0]
+            if fcf0 is not None:
+                m.fcf_yield = fcf0 / m.market_cap
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
     return m
