@@ -71,3 +71,81 @@ def test_config_yaml_has_flags_and_finra():
     assert cs["max_staleness_days"] == 35
     assert "finra" in cfg["harness_sources"]
     assert "finra" in cfg["scout"]["deep_screen_sources"]
+
+
+import asyncio
+from shortlist.data.sources import (
+    FinraSource, _finra_latest_partition, _finra_norm_symbol,
+    _finra_row_to_si, _finra_index,
+)
+
+
+def test_finra_latest_partition_picks_max():
+    payload = {"availablePartitions": [
+        {"partitions": ["2026-04-30"]}, {"partitions": ["2026-05-15"]},
+        {"partitions": ["2026-04-15"]}]}
+    assert _finra_latest_partition(payload) == "2026-05-15"
+    assert _finra_latest_partition({"availablePartitions": []}) is None
+
+
+def test_finra_norm_symbol_collapses_separators():
+    assert _finra_norm_symbol("brk.b") == "BRKB"
+    assert _finra_norm_symbol("BRK-B") == "BRKB"
+
+
+def test_finra_row_to_si_and_index():
+    row = {"symbolCode": "AAPL", "settlementDate": "2026-05-15",
+           "currentShortPositionQuantity": "138782718",
+           "previousShortPositionQuantity": "134675274",
+           "averageDailyVolumeQuantity": "50565316",
+           "daysToCoverQuantity": "2.74", "stockSplitFlag": "", "revisionFlag": ""}
+    si = _finra_row_to_si(row)
+    assert si.short_shares == 138782718.0 and si.days_to_cover == 2.74
+    assert si.split_flag is False
+    idx = _finra_index([row])
+    assert idx["AAPL"]["symbolCode"] == "AAPL"
+
+
+def _finra_mock(monkeypatch, src, pages):
+    """pages: list of row-lists returned per offset call (simulates pagination)."""
+    async def fake_parts():
+        return {"availablePartitions": [{"partitions": ["2026-05-15"]}]}
+    async def fake_page(settlement, offset):
+        i = offset // src.PAGE
+        return pages[i] if i < len(pages) else []
+    monkeypatch.setattr(src, "_fetch_partitions", fake_parts)
+    monkeypatch.setattr(src, "_fetch_page", fake_page)
+
+
+def test_finra_source_builds_short_interest(tmp_path, monkeypatch):
+    src = FinraSource(cache_dir=str(tmp_path))
+    full = [{"symbolCode": f"S{i}", "settlementDate": "2026-05-15",
+             "currentShortPositionQuantity": str(i)} for i in range(src.PAGE)]
+    tail = [{"symbolCode": "AAPL", "settlementDate": "2026-05-15",
+             "currentShortPositionQuantity": "138782718", "daysToCoverQuantity": "2.74"}]
+    _finra_mock(monkeypatch, src, [full, tail])     # two pages: 5000 then 1 (short page ends loop)
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.source == "finra"
+    assert res.partial.short_interest is not None
+    assert res.partial.short_interest.days_to_cover == 2.74
+    asyncio.run(src.aclose())
+
+
+def test_finra_absent_symbol_is_none_not_error(tmp_path, monkeypatch):
+    src = FinraSource(cache_dir=str(tmp_path))
+    _finra_mock(monkeypatch, src, [[{"symbolCode": "AAPL", "settlementDate": "2026-05-15"}]])
+    res = asyncio.run(src.fetch("ZZZZ"))
+    assert res.partial.short_interest is None
+    assert res.errors == []
+    asyncio.run(src.aclose())
+
+
+def test_finra_load_error_is_non_fatal(tmp_path, monkeypatch):
+    src = FinraSource(cache_dir=str(tmp_path))
+    async def boom():
+        raise RuntimeError("network down")
+    monkeypatch.setattr(src, "_fetch_partitions", boom)
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.partial.short_interest is None
+    assert res.errors and "finra" in res.errors[0]
+    asyncio.run(src.aclose())
