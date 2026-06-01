@@ -12,7 +12,7 @@ from typing import Any, Awaitable, Callable, Optional
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
 from .models import (
-    Analyst, Fundamentals, Insider, InsiderTxn, Price, Profile,
+    Analyst, Events, FilingEvent, Fundamentals, Insider, InsiderTxn, Price, Profile,
     ShortInterest, SourceResult, Statements, TickerSnapshot,
 )
 
@@ -260,6 +260,56 @@ def _edgar_semaphore() -> asyncio.Semaphore:
     if _edgar_gate.get("loop") is not loop:
         _edgar_gate.update(loop=loop, sem=asyncio.Semaphore(_EDGAR_MAX_CONCURRENCY))
     return _edgar_gate["sem"]
+
+
+# form prefix (upper) -> Events boolean attribute. Prefix match absorbs /A amendments;
+# both the "SC 13x" and SEC's "SCHEDULE 13x" spellings are handled (exact-match fetch
+# can return either; see spec §3.1).
+_EVENT_FORM_PREFIXES = (
+    ("SC 13D", "activist_13d"), ("SCHEDULE 13D", "activist_13d"),
+    ("SC 13G", "passive_13g"), ("SCHEDULE 13G", "passive_13g"),
+    ("8-K", "recent_8k"),
+    ("144", "planned_insider_sale_144"),
+)
+
+
+def classify_event_form(form: str) -> Optional[str]:
+    """Map a filing form string to its Events flag attribute, or None if not an
+    event form. Case-insensitive prefix match (captures /A amendments)."""
+    f = (form or "").strip().upper()
+    for prefix, attr in _EVENT_FORM_PREFIXES:
+        if f.startswith(prefix):
+            return attr
+    return None
+
+
+def build_events_section(records: list[dict], lookback_days: int,
+                         today: date) -> Optional[Events]:
+    """Pure: filter records to the lookback window, classify, and build an Events.
+    Returns None when there are no in-window event filings — NEVER an all-falsy
+    Events (load-bearing for the merge's _has_data check; spec §4)."""
+    cutoff = today - timedelta(days=lookback_days)
+    kept: list[tuple[str, FilingEvent]] = []
+    for r in records:
+        attr = classify_event_form(r.get("form", ""))
+        if attr is None:
+            continue
+        filed = r.get("filed")
+        try:
+            if date.fromisoformat(filed) < cutoff:
+                continue
+        except (TypeError, ValueError):
+            continue
+        kept.append((attr, FilingEvent(
+            form=r.get("form", ""), filed=filed,
+            accession=r.get("accession"), url=r.get("url"))))
+    if not kept:
+        return None
+    kept.sort(key=lambda p: p[1].filed, reverse=True)   # newest-first
+    ev = Events(recent=[fe for _, fe in kept])
+    for attr, _ in kept:
+        setattr(ev, attr, True)
+    return ev
 
 
 class EdgarSource(Source):
