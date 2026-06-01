@@ -7,11 +7,20 @@ from .models import Coverage, ScoreCard
 
 def classify_failure(exc: Exception) -> str:
     """Map a provider fetch exception to a status. HTTP 402 (FMP paid/gated
-    symbol) -> "gated_402"; anything else -> "error". Detection is by status
-    code (not string parsing) and needs no `requests` import: requests.HTTPError
-    exposes `.response.status_code`, and other exceptions simply lack it."""
+    symbol) -> "gated_402"; HTTP 429 (rate limit / quota) -> "rate_limited_429";
+    anything else -> "error". Detection is by status code (not string parsing)
+    and needs no `requests` import: requests.HTTPError exposes
+    `.response.status_code`, and other exceptions simply lack it.
+
+    429 is kept distinct from both gating and generic errors because its fix is
+    different: it's a transient throttle (per-minute burst) or exhausted daily
+    quota — retry / wait / raise the tier ceiling — not a per-symbol gate."""
     status = getattr(getattr(exc, "response", None), "status_code", None)
-    return "gated_402" if status == 402 else "error"
+    if status == 402:
+        return "gated_402"
+    if status == 429:
+        return "rate_limited_429"
+    return "error"
 
 
 _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
@@ -21,12 +30,24 @@ _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 # (drives both the note and the stderr line); "ok" is intentionally absent. Add any
 # new status here only — both `_build_note` and `coverage_note_line` key off it, so
 # they can never silently disagree about which statuses to surface.
-_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty", "error": "fetch error"}
+_STATUS_LABEL = {
+    "gated_402": "gated (402)",
+    "rate_limited_429": "rate-limited (429)",
+    "empty": "empty",
+    "error": "fetch error",
+}
 
 _FMP_NOTE = (
     "FMP gated this symbol (402); analyst-target upside and PEG still need FMP "
     "Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered "
     "from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+)
+
+_FMP_RATE_LIMIT_NOTE = (
+    "FMP rate-limited this run (429) — the request budget is exhausted, NOT the "
+    "symbol gated. Free tier allows ~5 calls/min and 250/day; re-run the affected "
+    "tickers in a smaller batch (per-minute throttle) or after the daily reset "
+    "(quota exhaustion). FMP Starter tier raises both ceilings."
 )
 
 
@@ -60,9 +81,13 @@ def _build_note(providers: dict) -> Optional[str]:
     flagged = {n: s for n, s in providers.items() if s in _STATUS_LABEL}
     if not flagged:
         return None
-    # FMP recognized-pattern note takes precedence over the generic multi-provider note.
-    # Only fire for gated_402/empty — an fmp "error" is a transient fetch failure,
-    # not a tier-gating issue, so it must NOT claim "needs Starter tier".
+    # FMP recognized-pattern notes take precedence over the generic multi-provider note.
+    # A 429 is throttling (retry/wait), distinct from gating (needs Starter) — so it
+    # gets its own note and must NOT claim the symbol is gated.
+    if providers.get("fmp") == "rate_limited_429":
+        return _FMP_RATE_LIMIT_NOTE
+    # Only fire the gating note for gated_402/empty — an fmp "error" is a transient
+    # fetch failure, not a tier-gating issue, so it must NOT claim "needs Starter tier".
     if providers.get("fmp") in ("gated_402", "empty"):
         return _FMP_NOTE
     return f"{', '.join(sorted(flagged))}: supplied no usable data for this symbol"

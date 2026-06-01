@@ -155,11 +155,20 @@ the caching layer.
 ## Scale / rate limits (the honest catch)
 
 Free tiers are fine for individual names or a small watchlist, but don't scale to
-a full universe. The harness makes **~13 FMP calls per ticker**, so FMP's
-**250/day** free limit is roughly **19 tickers/day**. Screening the whole S&P 500
-daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute and
-bandwidth limits) or the **caching layer** from the hardening list — whichever you
-hit first. **Finnhub's 60/min is comfortable** either way.
+a full universe. The harness makes **~13 FMP calls per ticker** (the screener ~8,
+since the paid insider call is gated off by default); FMP's **250/day** free limit
+is therefore roughly **19 tickers/day** on the harness path. Screening the whole
+S&P 500 daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute
+and bandwidth limits) or the **caching layer** — whichever you hit first.
+**Finnhub's 60/min is comfortable** either way.
+
+When the limit *is* hit, FMP returns **`429`** and the screener now degrades
+honestly rather than failing hard: `FMPProvider._get` retries with `Retry-After`-aware
+backoff (`fmp.max_retries`), `fetch()` keeps whatever legs already succeeded, and
+coverage reports a distinct `rate_limited_429` status (vs. `402` gating). But retry
+can't manufacture quota — the real fix for **repeated** runs is caching, which is
+**specced as a future work stream in `docs/DATA_SOURCES.md` §6** (not yet built).
+Start there for the daily-quota problem.
 
 ## Data scale conventions
 

@@ -51,6 +51,17 @@ gates:
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]
 
+# FMP provider knobs.
+fmp:
+  # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
+  # the free, authoritative insider source — so leave this off to avoid burning a
+  # guaranteed-to-fail request per ticker against the daily quota. Flip to true only
+  # on a paid FMP tier where the endpoint actually returns data.
+  fetch_insider: false
+  # Retries on a 429 (per-minute throttle) before giving up; backoff honors any
+  # Retry-After header. Daily-quota 429s won't clear, so this is deliberately small.
+  max_retries: 2
+
 # Default source chain for `--engine harness` (yahoo first => wins the price merge).
 harness_sources: [yahoo, fmp, finnhub, edgar]
 

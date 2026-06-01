@@ -19,7 +19,7 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
     providers = []
     for name in provider_names:
         try:
-            providers.extend(build_providers([name]))
+            providers.extend(build_providers([name], config))
         except Exception as e:  # missing key or uninstalled SDK -> skip the source
             print(f"  ! skipping provider '{name}': {redact_secrets(e)}", file=sys.stderr)
     if not providers:
