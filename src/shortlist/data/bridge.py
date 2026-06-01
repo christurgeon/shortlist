@@ -1,8 +1,33 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from ..models import StockMetrics
-from ..stats import cagr, gross_margin_stability, growth_persistence
+from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
 from .models import TickerSnapshot
+
+
+def _close_near(monthly_closes: list, iso_date: str) -> Optional[float]:
+    """Close from the sampled history nearest (by absolute day distance) to iso_date.
+    None if no usable point or the target date is unparseable."""
+    from datetime import date
+    if not monthly_closes:
+        return None
+    try:
+        target = date.fromisoformat(iso_date)
+    except (TypeError, ValueError):
+        return None
+    best = None
+    for d_iso, close in monthly_closes:
+        if close is None:
+            continue
+        try:
+            gap = abs((date.fromisoformat(d_iso) - target).days)
+        except (TypeError, ValueError):
+            continue
+        if best is None or gap < best[0]:
+            best = (gap, float(close))
+    return best[1] if best else None
 
 
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
@@ -77,6 +102,19 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             fcf0 = st.free_cash_flow[0]
             if fcf0 is not None:
                 m.fcf_yield = fcf0 / m.market_cap
+        # PE-vs-history from EDGAR EPS + Yahoo closes when FMP gated the symbol.
+        # pr is in scope from the function top. pe_ttm uses latest ANNUAL EPS as a
+        # TTM proxy (documented approximation).
+        eps, ends = st.diluted_eps, st.fiscal_period_end
+        if m.pe_ttm is None and pr and pr.price and eps and eps[0]:
+            m.pe_ttm = pr.price / eps[0]
+        if m.pe_median_5y is None and pr and eps and ends and len(eps) == len(ends):
+            annual_pe = []
+            for e, end in zip(eps, ends):
+                px = _close_near(pr.monthly_closes, end)
+                if px and e:
+                    annual_pe.append(px / e)
+            m.pe_median_5y = median_pe(annual_pe)   # None if < 2 points (min_points=2)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
     return m
