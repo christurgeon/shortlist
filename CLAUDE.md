@@ -182,9 +182,28 @@ When the limit *is* hit, FMP returns **`429`** and the screener now degrades
 honestly rather than failing hard: `FMPProvider._get` retries with `Retry-After`-aware
 backoff (`fmp.max_retries`), `fetch()` keeps whatever legs already succeeded, and
 coverage reports a distinct `rate_limited_429` status (vs. `402` gating). But retry
-can't manufacture quota — the real fix for **repeated** runs is caching, which is
-**specced as a future work stream in `docs/DATA_SOURCES.md` §6** (not yet built).
-Start there for the daily-quota problem.
+can't manufacture quota — the real fix for **repeated** runs is caching, which **now
+exists** (see "Caching" below).
+
+## Caching (`cache.py`)
+
+A persistent SQLite HTTP-response cache (`src/shortlist/cache.py`) wraps the FMP and
+Finnhub `_get` boundaries on **both** stacks, so a warm re-run of the same basket
+within TTL makes **zero** upstream calls. **On by default** (`.cache/http.sqlite`,
+gitignored); `--no-cache` disables it for a run and `--refresh-cache` bypasses reads
+and repopulates. `--demo` runs with the cache off (offline). TTLs are per data
+half-life and config-driven (`config.yaml: cache.ttl.<bucket>`); the endpoint→bucket
+map is keyed on `(provider, path)` in `cache.py`. A configured process-global
+singleton (`configure_default_cache`/`get_default_cache`) means every entrypoint —
+the harness CLI, accumulate, scout — gets caching without build-path plumbing.
+
+Two things to keep right when editing: (1) **never cache soft failures** — FMP/Finnhub
+return 200-OK with empty `[]`/`{}` or `{"error": …}` on gating/no-coverage, so the
+`_is_cacheable` predicate (not `raise_for_status` alone) gates writes; (2) the **`v1:`
+key prefix** in `cache_key` must be bumped to `v2:` whenever a `_get`/normalizer output
+shape changes, or stale-shape payloads are served until TTL. Design + rationale:
+`docs/superpowers/specs/2026-06-01-http-cache-design.md`. Yahoo/FINRA keep their own
+disk caches; EDGAR (free, uncapped) is intentionally uncached.
 
 ## Data scale conventions
 
