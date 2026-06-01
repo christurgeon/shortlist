@@ -325,7 +325,7 @@ class EdgarSource(Source):
         from edgar import Company
         return Company(ticker).get_financials()
 
-    def _build_financials_snapshot(self, ticker: str, fin) -> "TickerSnapshot":
+    def _build_financials_snapshot(self, ticker: str, fin) -> TickerSnapshot:
         """Map an edgartools Financials onto a Statements-only snapshot. Pure given
         `fin`. Values are absolute USD (no scaling)."""
         from ..providers._edgar_facts import extract_financials
@@ -349,6 +349,7 @@ class EdgarSource(Source):
                 free_cash_flow=ef.free_cash_flow,
                 diluted_eps=ef.diluted_eps,
             )
+        # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap
 
     def _fetch_sync(self, ticker: str) -> SourceResult:
