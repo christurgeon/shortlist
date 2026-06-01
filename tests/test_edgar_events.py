@@ -229,3 +229,41 @@ def test_events_have_zero_score_impact():
             before.momentum, before.value, before.insider) == \
            (after.composite, after.quality, after.moat, after.growth,
             after.momentum, after.value, after.insider)
+
+
+from shortlist.models import ScoreCard, StockMetrics
+from shortlist.scoring import check_flags
+from shortlist.screen import _card_dict
+
+
+def _metrics_with_events():
+    m = StockMetrics(ticker="AAPL")
+    m.activist_13d = True
+    m.recent_8k = True
+    m.filing_events = [{"form": "SC 13D", "filed": "2026-05-26", "accession": "x", "url": "u"}]
+    return m
+
+
+def test_check_flags_emits_event_advisories():
+    flags = check_flags(_metrics_with_events(), {})
+    assert "activist_13d" in flags
+    assert "recent_8k" in flags
+    assert "passive_13g" not in flags          # not set
+
+
+def test_check_flags_no_events_no_advisories():
+    assert check_flags(StockMetrics(ticker="AAPL"), {}) == []
+
+
+def _card_with_events():
+    return ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None, growth=None,
+                     momentum=None, value=None, opportunity=None, insider=None,
+                     metrics=_metrics_with_events())
+
+
+def test_card_dict_emits_events_block_only_when_present():
+    assert _card_dict(_card_with_events())["events"]["recent"][0]["form"] == "SC 13D"
+    plain = ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None, growth=None,
+                      momentum=None, value=None, opportunity=None, insider=None,
+                      metrics=StockMetrics(ticker="AAPL"))
+    assert "events" not in _card_dict(plain)
