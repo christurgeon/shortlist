@@ -27,8 +27,8 @@ def test_run_backtest_recovers_positive_ic_for_planted_signal():
              "CCC": _hist("CCC", 0.02)}
     spy = _hist("SPY", 0.01)
     src = MomentumSignalSource(hists, spy, THRESH, min_history=200)
-    grid = observation_grid(date(2019, 9, 1), date(2021, 3, 1), step_months=3)
-    report = run_backtest([src], hists, spy, grid, horizons=[3],
+    report = run_backtest([src], hists, spy, start=date(2019, 9, 1),
+                          end=date(2021, 3, 1), horizons=[3],
                           n_buckets=3, return_mode="excess", xs_min_breadth=3,
                           price_asof=date(2026, 6, 1))
     r = [x for x in report.reports if x.signal == "momentum" and x.horizon == 3][0]

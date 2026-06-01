@@ -61,14 +61,19 @@ def _fwd_return(hist: PriceHistory, spy: PriceHistory, t: date, horizon: int,
 
 
 def run_backtest(sources: list[SignalSource], histories: dict[str, PriceHistory],
-                 spy: PriceHistory, grid: list[date], *, horizons: list[int],
-                 n_buckets: int = 5, return_mode: str = "excess",
+                 spy: PriceHistory, *, start: date, end: date, horizons: list[int],
+                 step_months: Optional[int] = None, n_buckets: int = 5,
+                 return_mode: str = "excess",
                  xs_min_breadth: int = _TRUST_MIN_BREADTH,
                  price_asof: Optional[date] = None) -> BacktestReport:
+    """Build a non-overlapping observation grid per horizon (step = the horizon,
+    so windows never overlap and the t-stat stays valid) unless step_months pins a
+    fixed grid. Signals use data <= T; forward returns use only data > T."""
     reports: list[SignalReport] = []
     universe = sorted(histories.keys())
     for src in sources:
         for h in horizons:
+            grid = observation_grid(start, end, step_months or h)
             # collect rows: (date, ticker, signal_value, fwd_return)
             rows: list[tuple[date, str, float, float]] = []
             for t in grid:
