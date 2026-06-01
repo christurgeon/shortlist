@@ -321,11 +321,17 @@ class EdgarSource(Source):
 
     name = "edgar"
 
-    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183):
+    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183,
+                 config: Optional[dict] = None):
         self.identity = identity or os.environ.get("SEC_IDENTITY")
         if not self.identity:
             raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
         self.lookback_days = lookback_days
+        ev = (config or {}).get("edgar_events", {})
+        self._event_forms = ev.get(
+            "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"])
+        self._event_lookback_days = ev.get("lookback_days", 90)
+        self._index_limit = ev.get("index_limit", 40)
         from edgar import set_identity  # lazy: edgartools is an optional dep
         set_identity(self.identity)  # process-global mutable state — set once, here
 
@@ -396,6 +402,32 @@ class EdgarSource(Source):
         # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap
 
+    def _raw_filings(self, ticker: str):
+        """Network seam (mockable): the filtered edgartools filings object."""
+        from edgar import Company
+        return Company(ticker).get_filings(form=self._event_forms)
+
+    def _fetch_filings_index(self, ticker: str) -> list[dict]:
+        """Normalize the edgartools result (None | single EntityFiling | collection)
+        into a plain list of {form, filed, accession, url} dicts."""
+        res = self._raw_filings(ticker)
+        if res is None:
+            return []
+        items = res if hasattr(res, "__iter__") and not hasattr(res, "form") else [res]
+        out: list[dict] = []
+        for f in list(items)[: self._index_limit]:
+            fd = getattr(f, "filing_date", None)
+            out.append({
+                "form": getattr(f, "form", "") or "",
+                "filed": fd.isoformat() if hasattr(fd, "isoformat") else (fd or ""),
+                "accession": getattr(f, "accession_no", None),
+                "url": getattr(f, "url", None),
+            })
+        return out
+
+    def _build_events_from_records(self, records: list[dict]):
+        return build_events_section(records, self._event_lookback_days, date.today())
+
     def _fetch_sync(self, ticker: str) -> SourceResult:
         res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
         # Financials are isolated: a failure here must never drop the insider result.
@@ -405,6 +437,13 @@ class EdgarSource(Source):
                 res.partial.statements = fin_snap.statements
         except Exception as e:
             res.errors.append(f"edgar-financials: {e}")
+        # Events are isolated: a failure here must never drop insider/statements.
+        try:
+            ev = self._build_events_from_records(self._fetch_filings_index(ticker))
+            if ev is not None:
+                res.partial.events = ev
+        except Exception as e:
+            res.errors.append(f"edgar-events: {e}")
         return res
 
 

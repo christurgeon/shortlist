@@ -101,3 +101,73 @@ def test_merge_without_events_leaves_section_none():
     merged = merge_snapshots("AAPL", [fmp], priority=["fmp"])
     assert merged.events is None
     assert "events" not in merged.provenance
+
+
+from datetime import date as _date
+
+from shortlist.data.models import Insider, SourceResult
+from shortlist.data.sources import EdgarSource
+
+
+class _FakeFiling:
+    """edgartools EntityFiling-like (has .form, so the normalizer treats it as single)."""
+    def __init__(self, form, d):
+        self.form = form
+        self.filing_date = d           # a datetime.date (has .isoformat)
+        self.accession_no = "acc"
+        self.url = "https://sec.gov/x"
+
+
+class _StubEdgar(EdgarSource):
+    """EdgarSource with network seams stubbed; bypasses __init__/identity. Overrides
+    only `_raw_filings` so the REAL `_fetch_filings_index` normalization is exercised."""
+    def __init__(self, *, raw=None, insider_snap=None, raise_index=False):
+        self._raw = raw
+        self._insider_snap = insider_snap
+        self._raise_index = raise_index
+        self._event_forms = ["8-K", "SC 13D"]
+        self._event_lookback_days = 90
+        self._index_limit = 40
+
+    def _fetch_insider(self, ticker):
+        res = SourceResult(source="edgar")
+        res.partial = self._insider_snap or TickerSnapshot(ticker=ticker)
+        return res
+
+    def _fetch_financials_object(self, ticker):
+        raise RuntimeError("financials skipped in this test")
+
+    def _raw_filings(self, ticker):
+        if self._raise_index:
+            raise RuntimeError("SEC down")
+        return self._raw
+
+
+def test_events_failure_does_not_drop_insider():
+    snap = TickerSnapshot(ticker="AAPL")
+    snap.insider = Insider(net_value_6m=1.0, buy_count=1, sell_count=0)
+    src = _StubEdgar(insider_snap=snap, raise_index=True)
+    res = src._fetch_sync("AAPL")
+    assert res.partial.insider.net_value_6m == 1.0          # insider survived
+    assert res.partial.events is None
+    assert any("edgar-events:" in e for e in res.errors)
+
+
+def test_events_populate_from_index():
+    src = _StubEdgar(raw=[_FakeFiling("8-K", _date.today())])  # today => always in-window
+    res = src._fetch_sync("AAPL")
+    assert res.partial.events is not None
+    assert res.partial.events.recent_8k is True
+    assert res.partial.events.recent[0].form == "8-K"
+
+
+def test_fetch_filings_index_normalizes_none_single_collection():
+    src = _StubEdgar()
+    src._raw = None                                          # None -> []
+    assert src._fetch_filings_index("AAPL") == []
+    src._raw = _FakeFiling("8-K", _date(2026, 5, 30))        # single -> one-element list
+    out = src._fetch_filings_index("AAPL")
+    assert len(out) == 1 and out[0]["form"] == "8-K" and out[0]["filed"] == "2026-05-30"
+    src._raw = [_FakeFiling("8-K", _date(2026, 5, 30)),      # collection -> full list
+                _FakeFiling("144", _date(2026, 5, 1))]
+    assert [r["form"] for r in src._fetch_filings_index("AAPL")] == ["8-K", "144"]
