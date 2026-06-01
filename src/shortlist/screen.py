@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from .coverage import build_coverage, classify_failure, coverage_note_line
 from .env import load_env, redact_secrets
 from .merge import merge
 from .models import ScoreCard
@@ -27,14 +28,19 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
     cards: list[ScoreCard] = []
     for t in tickers:
         per_provider = []
+        outcomes: dict[str, str] = {}        # reset per ticker — must not leak
         for p in providers:
             try:
                 per_provider.append(p.fetch(t))
+                outcomes[p.name] = "ok"
             except Exception as e:  # one bad source shouldn't kill the run
+                outcomes[p.name] = classify_failure(e)
                 print(f"  ! {p.name} failed for {t}: {redact_secrets(e)}", file=sys.stderr)
         if not per_provider:
             continue
-        cards.append(score(merge(per_provider), config))
+        card = score(merge(per_provider), config)
+        card.coverage = build_coverage(outcomes, card)
+        cards.append(card)
     cards.sort(key=lambda c: c.composite, reverse=True)
     return cards
 
@@ -87,6 +93,15 @@ def _print_plain(cards: list[ScoreCard]) -> None:
               f"{_f(c.insider):>5}  {','.join(c.gates) or '-'}")
 
 
+def _print_coverage_notes(cards: list[ScoreCard]) -> None:
+    flagged = [c for c in cards if c.coverage is not None]
+    if not flagged:
+        return
+    print("\nCoverage notes", file=sys.stderr)
+    for c in flagged:
+        print(coverage_note_line(c.ticker, c.coverage), file=sys.stderr)
+
+
 def _f(x):
     return f"{x:.0f}" if x is not None else "-"
 
@@ -132,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
                      else config.get("providers", ["fmp"]))
 
     cards = run(tickers, providers, config)
+    _print_coverage_notes(cards)
 
     research_paths: dict = {}
     if args.research:
@@ -205,6 +221,11 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     }
     if research_paths and c.ticker in research_paths:
         d["research_path"] = research_paths[c.ticker]
+    if c.coverage is not None:
+        cov = {"providers": c.coverage.providers, "unavailable": c.coverage.unavailable}
+        if c.coverage.note:
+            cov["note"] = c.coverage.note
+        d["coverage"] = cov
     return d
 
 

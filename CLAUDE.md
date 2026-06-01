@@ -46,6 +46,13 @@ uv run shortlist --demo     # offline, no keys
 2. `merge.merge(per_provider_list)` → single `StockMetrics` filled by priority
 3. `scoring.score(metrics, config)` → `ScoreCard` (five 0–100 sub-scores + composite + gates)
 
+A `coverage` diagnostic (`coverage.py`) annotates each `ScoreCard`: per-provider
+fetch status (`ok`/`gated_402`/`empty`/`error`, the latter derived from the fetch
+exception and the `metrics.sources` audit trail), the null output fields, and an
+interpretive note. It surfaces in `--json` (a `coverage` block, emitted only when a
+provider had trouble) and as a stderr `Coverage notes` summary — so a null `value`
+reads as "FMP gated this symbol," not an unexplained gap.
+
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis rather
 than being averaged down. Composite is a weighted blend (default quality 0.25 /
 moat 0.25 / opportunity 0.30 / insider 0.20). **Gates** are hard filters
