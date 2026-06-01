@@ -85,7 +85,8 @@ research:
   max_risks: 8
   max_red_flags: 8
 
-# Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
+# EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
+# docs/superpowers/specs/2026-06-01-edgar-events-design.md.
 edgar_events:
   lookback_days: 90
   index_limit: 40
@@ -96,6 +97,7 @@ edgar_events:
     stale_after_8k: false
     activist_13d_note: false
 
+# Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
 scout:
   daily_x: 15
   research_top_n: 3
