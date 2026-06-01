@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import math
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -29,7 +30,11 @@ def parse_chart(raw: Any) -> tuple[list[date], list[float]]:
     dates: list[date] = []
     closes: list[float] = []
     for t, c in zip(ts, adj):
-        if isinstance(c, (int, float)) and isinstance(t, (int, float)):
+        # exclude bool (isinstance(True, int)) and NaN/Inf (json allows them) —
+        # a NaN close would survive `is not None` and silently corrupt the IC.
+        if (isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c)
+                and isinstance(t, (int, float)) and not isinstance(t, bool)
+                and math.isfinite(t)):
             dates.append(datetime.fromtimestamp(t, tz=timezone.utc).date())
             closes.append(float(c))
     return dates, closes

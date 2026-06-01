@@ -128,6 +128,11 @@ def run_backtest(sources: list[SignalSource], histories: dict[str, PriceHistory]
         "Forward returns are excess (over SPY)." if return_mode == "excess"
         else "Forward returns are raw (absolute).",
         "Adjusted close is total-return adjusted (splits + dividends).",
+        "Time-series IC t-stat assumes per-name independence (names share factor "
+        "exposure over common windows) — it is anti-conservative; weight the mean "
+        "IC and hit-rate over the TS t-stat.",
+        "Quantile spread pools all (date, name) rows into one sort, not a "
+        "time-averaged cross-sectional spread.",
     ]
     return BacktestReport(universe=universe, price_asof=price_asof, horizons=horizons,
                           return_mode=return_mode, reports=reports, caveats=caveats)

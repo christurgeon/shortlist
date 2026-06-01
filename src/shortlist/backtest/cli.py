@@ -57,8 +57,9 @@ async def _load_histories(tickers, cache_dir, today):
 
 
 def _grid_start(earliest: date) -> date:
-    # need ~200 trading days (~11 calendar months) before the first signal
-    return _add_months(earliest, 11)
+    # need >= 200 trading days before the first signal; ~14 calendar months
+    # comfortably clears 200 trading days (11 months ~= 160, too few).
+    return _add_months(earliest, 14)
 
 
 def _write_csv(report, path):
@@ -89,6 +90,9 @@ def main(argv=None) -> int:
 
     tickers = load_universe(args.tickers or args.universe)
     horizons = [int(h) for h in args.horizons.split(",")]
+    if any(h < 1 for h in horizons):
+        print("--horizons must be positive integer months (>= 1)", file=sys.stderr)
+        return 2
     today = datetime.now(tz=timezone.utc).date().isoformat()
     config = yaml.safe_load(Path(args.config).read_text())
     thresholds = config["thresholds"]

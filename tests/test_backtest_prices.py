@@ -18,6 +18,14 @@ def test_parse_chart_pairs_and_drops_only_null_close():
     assert len(dates) == len(closes)
 
 
+def test_parse_chart_drops_nan_and_inf_keeps_alignment():
+    raw = _chart([(86400, 100.0), (172800, float("nan")),
+                  (259200, float("inf")), (345600, 105.0)])
+    dates, closes = parse_chart(raw)
+    assert closes == [100.0, 105.0]                        # NaN/Inf excluded
+    assert dates == [date(1970, 1, 2), date(1970, 1, 5)]   # still aligned
+
+
 def _hist():
     start = date(2020, 1, 1)
     dates, closes = [], []

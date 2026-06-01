@@ -37,6 +37,7 @@ def test_aggregate_ic_known_values():
     assert abs(s.mean - 0.2) < 1e-9
     assert s.n == 3
     assert s.hit_rate == 1.0
+    assert abs(s.std - 0.1) < 1e-9            # SAMPLE stdev (n-1), not population
     assert abs(s.icir - (0.2 / s.std)) < 1e-9
     assert abs(s.t_stat - s.icir * (3 ** 0.5)) < 1e-9
 

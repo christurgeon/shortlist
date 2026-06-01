@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from statistics import mean, pstdev
+from statistics import mean, stdev
 from typing import Optional
 
 
@@ -68,7 +68,7 @@ def aggregate_ic(ics: list[float]) -> Optional[ICStats]:
     if not vals:
         return None
     m = mean(vals)
-    sd = pstdev(vals) if len(vals) > 1 else 0.0
+    sd = stdev(vals) if len(vals) > 1 else 0.0   # SAMPLE stdev: valid one-sample t
     icir = (m / sd) if sd > 0 else None
     t_stat = (icir * math.sqrt(len(vals))) if icir is not None else None
     hit = sum(1 for v in vals if v > 0) / len(vals)

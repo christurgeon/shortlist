@@ -178,10 +178,12 @@ touches.
 >
 > **Validated today:** the **momentum** axis, on a real ~80-name large-cap
 > universe (price-only, keyless). First result (excess of SPY, full daily
-> history): cross-sectional IC is *insignificant* across 1/3/6/12m (|t| < 0.5),
-> while short-horizon **time-series IC is significantly negative** (1m ≈ −0.023
-> t≈−4, 3m ≈ −0.031 t≈−3) — large-cap short-term mean-reversion. Honest evidence
-> that the raw momentum bands deserve scrutiny — exactly what this gap was for.
+> history): cross-sectional IC is *insignificant* across 1/3/6/12m (|t| < 1.1),
+> while short-horizon **time-series IC is negative and directionally consistent**
+> (1m ≈ −0.023, 3m ≈ −0.031; only 30%/37% of names show a positive IC) — large-cap
+> short-term mean-reversion. (The TS t-stat assumes name-independence and is
+> anti-conservative, so lean on the mean IC + hit-rate.) Honest evidence that the
+> raw momentum bands deserve scrutiny — exactly what this gap was for.
 >
 > **Built, tested, guarded (Phase 2, blocked on data):** weight-fitting
 > (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
