@@ -10,6 +10,20 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-01-edgar-events-design.md` (read it first; this plan implements it including the §11 adversarial reconciliations).
 
+> **IMPORTANT — tree moved since authoring (post-plan-review reconciliation).** The parallel
+> short-interest work landed (`c1649f5`) and **already built the generic aux-section infrastructure**
+> this plan needs: `_AUX_DEFAULTS` (a dict of non-coverage sections), the `from_dict` aux round-trip
+> loop, and a generic `merge_snapshots` aux loop that merges every `_AUX_DEFAULTS` entry via
+> `_pick_first`. So `events` is wired by **extending** that infrastructure, not building it:
+> - Task 2 **adds `"events": Events` to the existing `_AUX_DEFAULTS`** (does not redefine it) and adds
+>   **only** the nested `events.recent` rebuild to `from_dict` (the aux loop already exists).
+> - Task 4 needs **no merge code** — the generic aux loop merges `events` for free once registered;
+>   it keeps only regression tests.
+> - Task 6 must also fix `tests/test_screen_engine.py::fake_collect` (it breaks when `run_harness`
+>   passes `config=`).
+> Line numbers below are approximate (the short-interest + fmp-429 commits shifted them); match on the
+> quoted code, not the line.
+
 ---
 
 ## File structure
@@ -17,7 +31,7 @@
 | File | Responsibility |
 |---|---|
 | `conftest.py` *(new, repo root)* | Register + default-skip the `live` pytest marker |
-| `src/shortlist/data/models.py` | `FilingEvent` + `Events` dataclasses; `TickerSnapshot.events`; `_AUX_DEFAULTS`; `from_dict` events rebuild; pure `build_events_section`/`classify_event_form` could live here OR in sources.py — **placed in `sources.py`** to keep model file free of edgartools-shaped logic; `merge_snapshots` aux line |
+| `src/shortlist/data/models.py` | `FilingEvent` + `Events` dataclasses; `TickerSnapshot.events`; **extend** existing `_AUX_DEFAULTS` with `events`; add nested `events.recent` rebuild to `from_dict`. (The aux `from_dict` loop and the `merge_snapshots` aux loop already exist — no new merge code.) Pure builder lives in `sources.py`. |
 | `src/shortlist/data/sources.py` | `classify_event_form` + `build_events_section` (pure); `EdgarSource.__init__(config=…)`; `_fetch_filings_index` (network seam + normalization); events block in `_fetch_sync`; `build_sources(names, config=…)` |
 | `src/shortlist/data/collector.py` | `collect`/`collect_async` accept + forward `config` |
 | `src/shortlist/screen.py` | `run_harness` forwards `config`; `_card_dict` events block; `Flags` column chips |
@@ -165,32 +179,30 @@ class Events:
     planned_insider_sale_144: bool = False  # Form 144 (and /A) in window
 ```
 
-Add the field to `TickerSnapshot` (after `price`):
+Add the field to `TickerSnapshot` immediately after the existing `short_interest` aux field (keep aux sections grouped):
 
 ```python
-    price: Optional[Price] = None
-    events: Optional[Events] = None    # auxiliary: NOT a KEY_OBJECT (see _AUX_DEFAULTS)
+    short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
 ```
 
-- [ ] **Step 4: Wire `_AUX_DEFAULTS` and `from_dict`**
+- [ ] **Step 4: Extend `_AUX_DEFAULTS` and add the nested `events.recent` rebuild**
 
-After the existing `_DEFAULTS = {...}` block add:
+`_AUX_DEFAULTS` already exists (short-interest work). **Extend** it — do not redefine — to add `events`:
 
 ```python
-# Auxiliary (non-coverage) top-level sections: round-tripped by from_dict but
-# deliberately excluded from KEY_OBJECTS so they never move coverage()/missing().
-_AUX_DEFAULTS = {"events": Events}
+_AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events}
 ```
 
-In `TickerSnapshot.from_dict`, after the `for name, klass in _DEFAULTS.items(): ...` loop and the existing `insider.recent` rebuild block, add:
+The `from_dict` aux loop (`for name, klass in _AUX_DEFAULTS.items(): ...`) already exists and will now also rebuild the top-level `events` object. **Only the nested list needs help:** after the existing `insider.recent` rebuild block in `from_dict`, add the `events.recent` rebuild (mirrors `insider.recent`):
 
 ```python
-        for name, klass in _AUX_DEFAULTS.items():
-            snap.__dict__[name] = _build(klass, d.get(name))
         ev = d.get("events")
         if snap.events is not None and ev and ev.get("recent"):
             snap.events.recent = [_build(FilingEvent, e) for e in ev["recent"]]
 ```
+
+> Do **not** add another `_AUX_DEFAULTS` loop — it already runs. Adding a second definition of `_AUX_DEFAULTS` would drop `short_interest` from round-trip and break `tests/test_short_interest.py`.
 
 - [ ] **Step 5: Run to verify the tests pass**
 
@@ -355,13 +367,14 @@ git commit -m "feat: pure EDGAR event builder (classify + lookback, None-discipl
 
 ---
 
-## Task 4: Merge `events` through `merge_snapshots`
+## Task 4: Verify `events` merges through the existing aux loop (no source change)
+
+The generic `merge_snapshots` aux loop already merges every `_AUX_DEFAULTS` entry via `_pick_first` + provenance. Once Task 2 registered `events` in `_AUX_DEFAULTS`, events merge for free. This task adds **regression tests only** — no source edit. (The `_build_events` None-discipline from Task 3 guarantees a present `Events` is never all-falsy, so `_pick_first`/`_has_data` can't select an empty section.)
 
 **Files:**
-- Modify: `src/shortlist/data/models.py` (`merge_snapshots`)
 - Test: `tests/test_edgar_events.py`
 
-- [ ] **Step 1: Write the failing merge test**
+- [ ] **Step 1: Write the merge regression tests**
 
 Append to `tests/test_edgar_events.py`:
 
@@ -389,42 +402,21 @@ def test_merge_without_events_leaves_section_none():
     assert "events" not in merged.provenance
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 2: Run to verify the tests pass (against the existing aux loop)**
 
 Run: `uv run pytest tests/test_edgar_events.py -k merge -v`
-Expected: FAIL — `merged.events is None` (the merge doesn't handle events yet).
+Expected: PASS (both). If they fail, Task 2's `_AUX_DEFAULTS` extension was not applied correctly — fix that, do not add merge code here.
 
-- [ ] **Step 3: Add the aux-section merge line**
-
-In `src/shortlist/data/models.py`, inside `merge_snapshots`, after the `for name in KEY_OBJECTS:` loop and before the `for r in ordered:` raw/errors loop, add:
-
-```python
-    # Auxiliary (non-coverage) sections: pick-first from the highest-priority
-    # source that has data. Only EDGAR supplies `events` today. _build_events'
-    # None-discipline guarantees a present Events is never all-falsy, so
-    # _pick_first/_has_data can't select an empty section.
-    ev_instances = [(r.source, getattr(r.partial, "events", None)) for r in ordered if r.partial]
-    merged_ev, ev_contrib = _pick_first(ev_instances)
-    if merged_ev is not None:
-        snap.events = merged_ev
-        snap.provenance["events"] = ev_contrib
-```
-
-- [ ] **Step 4: Run to verify the tests pass**
-
-Run: `uv run pytest tests/test_edgar_events.py -k merge -v`
-Expected: PASS (both tests).
-
-- [ ] **Step 5: Run the full suite**
+- [ ] **Step 3: Run the full suite**
 
 Run: `uv run pytest -q`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/shortlist/data/models.py tests/test_edgar_events.py
-git commit -m "feat: merge EDGAR events as an auxiliary (non-coverage) section"
+git add tests/test_edgar_events.py
+git commit -m "test: regression-cover EDGAR events merge via the aux loop"
 ```
 
 ---
@@ -440,20 +432,33 @@ git commit -m "feat: merge EDGAR events as an auxiliary (non-coverage) section"
 Append to `tests/test_edgar_events.py`:
 
 ```python
-from shortlist.data.models import Insider
+from datetime import date as _date
+
+from shortlist.data.models import Insider, SourceResult
+from shortlist.data.sources import EdgarSource
 
 
-class _StubEdgar(__import__("shortlist.data.sources", fromlist=["EdgarSource"]).EdgarSource):
-    """EdgarSource with network seams stubbed; bypasses __init__/identity."""
-    def __init__(self, index_result, insider_snap=None):
-        self._index_result = index_result
+class _FakeFiling:
+    """edgartools EntityFiling-like (has .form, so the normalizer treats it as single)."""
+    def __init__(self, form, d):
+        self.form = form
+        self.filing_date = d           # a datetime.date (has .isoformat)
+        self.accession_no = "acc"
+        self.url = "https://sec.gov/x"
+
+
+class _StubEdgar(EdgarSource):
+    """EdgarSource with network seams stubbed; bypasses __init__/identity. Overrides
+    only `_raw_filings` so the REAL `_fetch_filings_index` normalization is exercised."""
+    def __init__(self, *, raw=None, insider_snap=None, raise_index=False):
+        self._raw = raw
         self._insider_snap = insider_snap
+        self._raise_index = raise_index
         self._event_forms = ["8-K", "SC 13D"]
         self._event_lookback_days = 90
         self._index_limit = 40
 
     def _fetch_insider(self, ticker):
-        from shortlist.data.models import SourceResult, TickerSnapshot
         res = SourceResult(source="edgar")
         res.partial = self._insider_snap or TickerSnapshot(ticker=ticker)
         return res
@@ -462,20 +467,15 @@ class _StubEdgar(__import__("shortlist.data.sources", fromlist=["EdgarSource"]).
         raise RuntimeError("financials skipped in this test")
 
     def _raw_filings(self, ticker):
-        # stand-in for the edgartools call inside _fetch_filings_index
-        return self._index_result
+        if self._raise_index:
+            raise RuntimeError("SEC down")
+        return self._raw
 
 
 def test_events_failure_does_not_drop_insider():
-    from shortlist.data.models import TickerSnapshot
     snap = TickerSnapshot(ticker="AAPL")
     snap.insider = Insider(net_value_6m=1.0, buy_count=1, sell_count=0)
-
-    class _Boom(_StubEdgar):
-        def _fetch_filings_index(self, ticker):
-            raise RuntimeError("SEC down")
-
-    src = _Boom(index_result=None, insider_snap=snap)
+    src = _StubEdgar(insider_snap=snap, raise_index=True)
     res = src._fetch_sync("AAPL")
     assert res.partial.insider.net_value_6m == 1.0          # insider survived
     assert res.partial.events is None
@@ -483,23 +483,32 @@ def test_events_failure_does_not_drop_insider():
 
 
 def test_events_populate_from_index():
-    today_recs = [{"form": "8-K", "filed": "2026-05-30", "accession": "x", "url": "u"}]
+    src = _StubEdgar(raw=[_FakeFiling("8-K", _date.today())])  # today => always in-window
+    res = src._fetch_sync("AAPL")
+    assert res.partial.events is not None
+    assert res.partial.events.recent_8k is True
+    assert res.partial.events.recent[0].form == "8-K"
 
-    class _OK(_StubEdgar):
-        def _fetch_filings_index(self, ticker):
-            return build_events_section  # placeholder; replaced below
-    # Use the real _fetch_filings_index by feeding _raw_filings + real builder:
-    src = _StubEdgar(index_result=today_recs)
-    ev = src._build_events_from_records(today_recs)
-    assert ev is not None and ev.recent_8k is True
+
+def test_fetch_filings_index_normalizes_none_single_collection():
+    src = _StubEdgar()
+    src._raw = None                                          # None -> []
+    assert src._fetch_filings_index("AAPL") == []
+    src._raw = _FakeFiling("8-K", _date(2026, 5, 30))        # single -> one-element list
+    out = src._fetch_filings_index("AAPL")
+    assert len(out) == 1 and out[0]["form"] == "8-K" and out[0]["filed"] == "2026-05-30"
+    src._raw = [_FakeFiling("8-K", _date(2026, 5, 30)),      # collection -> full list
+                _FakeFiling("144", _date(2026, 5, 1))]
+    assert [r["form"] for r in src._fetch_filings_index("AAPL")] == ["8-K", "144"]
 ```
 
-> Note: the stub overrides `_fetch_filings_index` for the failure case and uses a small `_raw_filings` seam + `_build_events_from_records` helper for the happy path, so no network is touched. Implement those seams in Step 3.
+> The stub overrides only `_raw_filings`, so the real `_fetch_filings_index` (None/single/collection
+> normalization) and the real `_fetch_sync` isolation path are exercised without any network.
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `uv run pytest tests/test_edgar_events.py -k "events_failure or populate_from_index" -v`
-Expected: FAIL — `_build_events_from_records` / events handling not implemented.
+Run: `uv run pytest tests/test_edgar_events.py -k "events_failure or populate_from_index or normalizes" -v`
+Expected: FAIL — `_raw_filings`/`_fetch_filings_index`/events handling not implemented yet.
 
 - [ ] **Step 3: Implement the EdgarSource changes**
 
@@ -566,8 +575,8 @@ Add the isolated events block in `_fetch_sync` (after the financials `try/except
 
 - [ ] **Step 4: Run to verify the tests pass**
 
-Run: `uv run pytest tests/test_edgar_events.py -k "events_failure or populate_from_index" -v`
-Expected: PASS.
+Run: `uv run pytest tests/test_edgar_events.py -k "events_failure or populate_from_index or normalizes" -v`
+Expected: PASS (all three).
 
 - [ ] **Step 5: Run the full suite**
 
@@ -674,20 +683,31 @@ In `src/shortlist/screen.py`, `run_harness`, change the collect call:
     snapshots = collect(tickers, source_names, config=config)
 ```
 
-- [ ] **Step 5: Run to verify the tests pass**
+- [ ] **Step 5: Fix the existing `fake_collect` test stub (it breaks on the new `config=`)**
 
-Run: `uv run pytest tests/test_edgar_events.py -k build_sources -v`
-Expected: PASS (both).
+`tests/test_screen_engine.py` monkeypatches `collect` with a `fake_collect(tickers, source_names)` that has no `config` param — `run_harness` now passes `config=`, raising `TypeError`. Update its signature to accept and ignore config:
 
-- [ ] **Step 6: Run the full suite**
+```python
+    def fake_collect(tickers, source_names, config=None):
+        ...   # body unchanged
+```
+
+> Note: `src/shortlist/data/cli.py` (the `shortlist-harness` CLI) calls `collect(tickers, sources)` and never loads `config.yaml`. It is **intentionally left on module-default event settings** — its defaults equal the `config.yaml` defaults, so no behavior changes. Threading config into a CLI that has none is out of scope here.
+
+- [ ] **Step 6: Run to verify the tests pass**
+
+Run: `uv run pytest tests/test_edgar_events.py -k build_sources tests/test_screen_engine.py -v`
+Expected: PASS.
+
+- [ ] **Step 7: Run the full suite**
 
 Run: `uv run pytest -q`
 Expected: all pass (existing `collect`/`build_sources` callers use defaults).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/shortlist/data/sources.py src/shortlist/data/collector.py src/shortlist/screen.py tests/test_edgar_events.py
+git add src/shortlist/data/sources.py src/shortlist/data/collector.py src/shortlist/screen.py tests/test_screen_engine.py tests/test_edgar_events.py
 git commit -m "feat: thread config to EdgarSource via build_sources/collect/run_harness"
 ```
 
@@ -1130,4 +1150,13 @@ Expected: valid JSON; if AAPL has in-window filings, an `events` block appears o
 
 - **Spec coverage:** §2 model → Task 2; §3 fetch/builder → Tasks 3,5; §3.1 form strings → Tasks 3,10; §3.3 config plumbing → Task 6; §4 merge/coverage → Tasks 2,4; §5 bridge/surfacing/research → Tasks 7,8,9; §6 config → Task 10; §7 tests → woven through every task; §7.6 live marker → Task 1; §9 file map → all tasks; docs → Task 11. The spec's "carry flags onto ScoreCard" is intentionally **dropped** — flags ride on `card.metrics` (already attached by `score()`), so no `scoring.py` change is needed (strictly fewer edits; noted in Task 8).
 - **Placeholder scan:** none — every code step shows full code; the one stub-fixture note in Task 5 and the `FilingText` field caveat in Task 9 are explicit instructions, not deferrals.
-- **Type consistency:** `Events`/`FilingEvent` field names are identical across Tasks 2–8; `_event_chips`, `build_events_section`, `classify_event_form`, `_fetch_filings_index`, `_build_events_from_records` names are used consistently; `StockMetrics` event fields (`recent_8k`/`activist_13d`/`passive_13g`/`planned_insider_sale_144`/`filing_events`) match between Tasks 7, 8, 9.
+- **Type consistency:** `Events`/`FilingEvent` field names are identical across Tasks 2–8; `_event_chips`, `build_events_section`, `classify_event_form`, `_fetch_filings_index`, `_raw_filings`, `_build_events_from_records` names are used consistently; `StockMetrics` event fields (`recent_8k`/`activist_13d`/`passive_13g`/`planned_insider_sale_144`/`filing_events`) match between Tasks 7, 8, 9.
+
+## Plan-review reconciliation (end-to-end pass)
+
+An end-to-end review against the live tree (now at the short-interest + fmp-429 commits) corrected:
+- **Tree moved:** the aux-section infra (`_AUX_DEFAULTS`, `from_dict` aux loop, generic `merge_snapshots` aux loop) already exists → Task 2 **extends** `_AUX_DEFAULTS`; Task 4 is **tests-only** (no merge code).
+- **Existing-test breakage:** `run_harness(config=)` breaks `tests/test_screen_engine.py::fake_collect` → Task 6 Step 5 updates its signature.
+- **Test quality:** Task 5's happy-path test was time-fragile with dead code → rewritten deterministically (today-relative dates) with explicit `_fetch_filings_index` None/single/collection normalization coverage; the stub overrides `_raw_filings` so the real normalizer runs.
+- **Scope note:** `data/cli.py` (`shortlist-harness`) stays on module-default event settings by design (equal to config defaults); documented in Task 6, not expanded.
+- **Verified clean by the review:** edgartools attribute/heuristic correctness (`.form`/`.filing_date`/`.accession_no`/`.url`; `EntityFilings` iterable without `.form`), rich inline-markup rendering, `FilingText`/`ScoreCard`/`StockMetrics` fixtures, zero-score-impact, config has no schema validation, baseline suite green (290 passed / 3 skipped).
