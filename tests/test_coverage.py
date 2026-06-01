@@ -82,3 +82,16 @@ def test_build_coverage_handles_none_metrics():
     card = _card(ticker="X", metrics=None)
     cov = build_coverage({"fmp": "gated_402"}, card)  # must not raise
     assert "upside_to_target" in cov.unavailable
+
+
+from shortlist.coverage import coverage_note_line
+
+
+def test_coverage_note_line_renders_flagged_providers():
+    cov = Coverage(providers={"fmp": "gated_402", "finnhub": "ok"},
+                   unavailable=["value", "upside_to_target"], note="x")
+    line = coverage_note_line("SCHW", cov)
+    assert "SCHW" in line
+    assert "fmp gated (402)" in line
+    assert "value, upside_to_target" in line
+    assert "finnhub" not in line  # ok providers are not listed

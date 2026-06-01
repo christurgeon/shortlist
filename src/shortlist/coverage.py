@@ -56,3 +56,16 @@ def _build_note(providers: dict) -> Optional[str]:
         return _FMP_NOTE
     return (f"{', '.join(sorted(flagged))}: provider supplied no data for this "
             "symbol (see stderr)")
+
+
+_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty"}
+
+
+def coverage_note_line(ticker: str, cov: Coverage) -> str:
+    """One-line stderr rendering, e.g.
+    `  SCHW   fmp gated (402) -> value, upside_to_target unavailable`."""
+    flagged = [f"{n} {_STATUS_LABEL[s]}"
+               for n, s in sorted(cov.providers.items())
+               if s in _STATUS_LABEL]
+    unavail = ", ".join(cov.unavailable) or "—"
+    return f"  {ticker:<6} {'; '.join(flagged)} -> {unavail} unavailable"
