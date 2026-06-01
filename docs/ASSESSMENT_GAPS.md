@@ -188,8 +188,12 @@ touches.
 > **Built, tested, guarded (Phase 2, blocked on data):** weight-fitting
 > (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
 > snapshot-replay (`SnapshotSignalSource`) activate once point-in-time multi-axis
-> history accumulates (organic daily `store.py` captures or the EDGAR XBRL source
-> below). The plug sketch below is retained as the design rationale.
+> history accumulates. The **accumulation mechanism now exists** —
+> `shortlist-accumulate` (idempotent, point-in-time, free-tier-aware; design record
+> `docs/superpowers/specs/2026-06-01-snapshot-accumulation-design.md`) — but its
+> daily schedule is **dormant/opt-in** (`deploy/`), so the 24-date clock starts only
+> when an operator enables it (or runs it manually). The EDGAR XBRL source below is
+> the other path to that history. The plug sketch below is retained as rationale.
 
 Every weight (`0.25/0.25/0.30/0.20`) and every band in `config.yaml` is **asserted, never
 measured**. There is no backtest, no information coefficient (IC), no decile/quintile

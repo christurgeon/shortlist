@@ -141,6 +141,29 @@ EDGAR-XBRL source in `DATA_SOURCES.md` A1). Yahoo full daily history is fetched 
 `period1=0` epoch params — **never `range=max`**, which silently degrades to
 quarterly bars. Design record: `docs/superpowers/specs/2026-06-01-backtest-design.md`.
 
+### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
+
+The snapshot-replay/weight-fitting paths above stay guarded until the store holds
+≥ 24 organically-captured daily snapshots. `shortlist-accumulate` builds that
+history — an **idempotent, per-ticker-isolated, point-in-time** daily capture over
+`collect` + `store.save` (now an atomic write):
+
+```bash
+uv run shortlist-accumulate run     --root snapshots            # capture today (idempotent)
+uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed -> READY|NOT READY"
+```
+
+- **Point-in-time integrity:** captures **only the current UTC day** (`as_of` =
+  utcnow); a snapshot older than the run day is rejected — **no backfill**, because
+  backfilled/restated data would reintroduce look-ahead into the backtest.
+- **Idempotent + frugal:** an already-captured ticker is skipped *before* any API
+  call. Errors are isolated per ticker and routed through `redact_secrets`.
+- **Free-tier aware:** `--max-tickers` defaults to 15 (≈195 < FMP's 250/day);
+  default watchlist avoids the 402-gated symbols. Scale needs paid FMP or caching.
+- **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;
+  enabling a daily timer is an explicit opt-in (`deploy/README.md`). Design record:
+  `docs/superpowers/specs/2026-06-01-snapshot-accumulation-design.md`.
+
 ## Known limitations (next hardening pass)
 
 - Dataclasses, not pydantic — bad payloads normalize to `None` rather than failing loud.
