@@ -97,6 +97,50 @@ Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning
 verbatim `raw` plus a normalized `partial` `TickerSnapshot`, and register it in
 `_REGISTRY` in `sources.py`. (Yahoo, FMP, Finnhub, EDGAR, and Mock are all wired.)
 
+## Backtesting (`shortlist.backtest`, CLI `shortlist-backtest`)
+
+The screener's weights and bands are validated against forward returns here
+(closes `ASSESSMENT_GAPS.md` §2.1). The harness is **signal-agnostic**: the unit
+of currency is an `Observation(as_of, ticker, {signal: 0–100 sub-score})`, and
+every signal value is a sub-score produced by the **real** scoring functions —
+not a reimplementation — so a future point-in-time fundamentals source slots in
+without engine changes.
+
+```bash
+uv run shortlist-backtest --universe largecap --horizons 1,3,6,12   # rich table
+uv run shortlist-backtest --tickers AAPL,MSFT,LMT --json            # ad-hoc, JSON
+```
+
+What it computes per signal × horizon:
+- **Rank IC** (Spearman) — two flavours: **time-series** (does a name's own
+  momentum predict its own forward return; the primary metric for small
+  watchlists) and **cross-sectional** (across the universe per date; gated until
+  ≥ ~30 names/date). Aggregated to mean / std / ICIR / **t-stat** / **hit-rate**.
+- **Quantile spread** — equal-weighted top-minus-bottom forward return + monotonicity.
+
+How it stays honest:
+- **No look-ahead.** Signals use only closes `≤ T`; forward returns use only data
+  `> T`. The price layer reuses the live Yahoo leg math on a series **truncated at
+  T** (`sources.snapshot_from_closes` → `bridge.snapshot_to_metrics` →
+  `scoring.momentum_score`).
+- **Non-overlapping** observation grid (step = the horizon) so the t-stat is valid
+  without Newey-West.
+- **Excess-over-SPY** returns by default (the momentum signal is itself
+  benchmark-relative); `--return-mode raw` for absolute.
+- **Survivorship caveat** printed every run: the bundled `largecap` universe is
+  currently-listed names, so spreads are an upper bound — read results as
+  *relative signal validation*, not tradeable PnL. Below the trust floor (~30
+  names/date, ~24 periods) results are labelled **EXPLORATORY**.
+
+**Scope today (v1):** the **momentum axis** is validated on real data (price-only,
+keyless). The composite, fundamental sub-scores, **weight-fitting** (walk-forward
++ shrinkage toward the prior, `backtest/fit.py`) and the **snapshot-replay** source
+(`SnapshotSignalSource`) are built, tested, and **guarded** — they activate once
+point-in-time fundamentals accumulate (organic daily `store.py` captures or the
+EDGAR-XBRL source in `DATA_SOURCES.md` A1). Yahoo full daily history is fetched via
+`period1=0` epoch params — **never `range=max`**, which silently degrades to
+quarterly bars. Design record: `docs/superpowers/specs/2026-06-01-backtest-design.md`.
+
 ## Known limitations (next hardening pass)
 
 - Dataclasses, not pydantic — bad payloads normalize to `None` rather than failing loud.

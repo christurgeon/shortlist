@@ -163,7 +163,32 @@ touches.
 
 ### Tier 1 — credibility blockers
 
-#### 2.1 No validation that the score predicts anything  ★ highest leverage
+#### 2.1 No validation that the score predicts anything  ★ highest leverage  ✅ SHIPPED (v1: momentum axis)
+
+> **Status:** the backtest harness is implemented — `src/shortlist/backtest/`
+> (`shortlist-backtest` CLI), design record in
+> `docs/superpowers/specs/2026-06-01-backtest-design.md`, walkthrough in
+> `HARNESS.md` → "Backtesting". It reports **rank IC** (time-series and
+> cross-sectional, with mean/std/ICIR/**t-stat**/hit-rate) and **quantile
+> forward-return spreads** per signal × horizon, with no look-ahead (closes
+> truncated at *T*, returns only `> T`), non-overlapping per-horizon grids,
+> excess-over-SPY returns, and an explicit survivorship caveat. It is
+> **signal-agnostic** (`Observation(as_of, ticker, {signal: sub-score})`) and
+> reuses the **real** scoring chain, so it does not validate a reimplementation.
+>
+> **Validated today:** the **momentum** axis, on a real ~80-name large-cap
+> universe (price-only, keyless). First result (excess of SPY, full daily
+> history): cross-sectional IC is *insignificant* across 1/3/6/12m (|t| < 0.5),
+> while short-horizon **time-series IC is significantly negative** (1m ≈ −0.023
+> t≈−4, 3m ≈ −0.031 t≈−3) — large-cap short-term mean-reversion. Honest evidence
+> that the raw momentum bands deserve scrutiny — exactly what this gap was for.
+>
+> **Built, tested, guarded (Phase 2, blocked on data):** weight-fitting
+> (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
+> snapshot-replay (`SnapshotSignalSource`) activate once point-in-time multi-axis
+> history accumulates (organic daily `store.py` captures or the EDGAR XBRL source
+> below). The plug sketch below is retained as the design rationale.
+
 Every weight (`0.25/0.25/0.30/0.20`) and every band in `config.yaml` is **asserted, never
 measured**. There is no backtest, no information coefficient (IC), no decile/quintile
 forward-return spread. For a tool meant to guide capital this is the gap that makes every
