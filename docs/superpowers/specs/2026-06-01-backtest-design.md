@@ -95,7 +95,12 @@ Two contracts make the core extensible and the IC apples-to-apples:
 | `engine.py` | Build non-overlapping observation grid; join forward returns; compute time-series + cross-sectional IC and quantile spreads; assemble `BacktestReport`. | `prices`, `metrics`, `signals` |
 | `fit.py` | Walk-forward composite-weight fitting with shrinkage toward prior; **guarded** (refuses below breadth/period floors). | `metrics`, `scoring` |
 | `report.py` | Render `BacktestReport` as a rich table / JSON / CSV. | `rich` |
-| `universe.py` + `universe_largecap.txt` | Bundled default universe (curated current large-caps) for cross-sectional breadth, plus ad-hoc `--tickers`. | — |
+| `universe.py` + `universe_largecap.txt` | Bundled default universe (~80 curated current large-caps) for cross-sectional breadth, plus ad-hoc `--tickers`. | — |
+
+The three universe figures are related, not contradictory: the bundled list is
+**~80** so that after dropping names with < ~200 trading days of pre-*T* history,
+the surviving per-date cross-section still clears the **~30-name** reporting gate
+(§5) and the **~50-name** acceptance bar (§8).
 | CLI: `shortlist-backtest` → `backtest.cli:main` | Orchestrate; flags for universe, horizon, sampling, buckets, source, output. | all |
 
 ### A pre-req seam in `data/sources.py` (Task 0)
@@ -144,8 +149,9 @@ The same mechanism generalizes: `SnapshotSignalSource.observe` loads a stored
 `TickerSnapshot` at `as_of`, runs the identical `snapshot_to_metrics → score`
 chain, and emits **all** sub-scores + composite. It is fully implemented and
 unit-tested with synthetic snapshots, but the CLI **guards** it: it refuses to
-run against the store until ≥ `MIN_SNAPSHOT_DATES` distinct dates exist, printing
-why, so no one reports a "fitted weight from 8 names." It is also documented as
+run against the store until ≥ `MIN_SNAPSHOT_DATES` distinct dates exist (default
+**24**, matching the ≥~24-period trust floor in §5), printing why, so no one
+reports a "fitted weight from 8 names." It is also documented as
 valid **only** for organically-accumulated daily captures — never backfilled or
 restated data (that would reintroduce look-ahead).
 
@@ -159,9 +165,21 @@ restated data (that would reintroduce look-ahead).
   fetch as-of is **pinned into the report** for reproducibility (Yahoo re-adjusts
   old `adjclose` over time; a cached pull is the stable reference).
 - **`PriceHistory`** holds parallel `dates: list[date]` and `closes: list[float]`
-  (from `chart.result[0].timestamp` and `…adjclose`; lengths match, zero nulls
-  confirmed empirically). Day-cached on disk reusing Yahoo's cache dir/format; SPY
-  fetched **once** and shared across the universe.
+  (from `chart.result[0].timestamp` and `…adjclose`). **Paired filtering is
+  mandatory:** `zip(timestamp, adjclose)` and drop a pair only when its close is
+  non-numeric — never filter the two lists independently. The existing
+  `_closes_from_chart` (sources.py:473) drops nulls *positionally* and discards
+  timestamps, which would silently desynchronize dates from closes and make every
+  forward-return join wrong; `prices.py` therefore uses its own paired parser, not
+  `_closes_from_chart`. (Empirically zero nulls were observed on the full daily
+  pull, but Yahoo can return nulls on halts/bad ticker-days, so alignment must not
+  depend on that.) An acceptance test feeds a synthetic chart with an embedded
+  `None` close and asserts `dates`/`closes` stay aligned.
+- **Caching:** day-cached on disk in Yahoo's cache *directory* but under a
+  **distinct filename** (e.g. `{SYMBOL}-fullhist-{today}.json`) and using
+  `prices.py`'s own fetch params (`period1=0` / `range=10y`) — it must **not** reuse
+  `YahooSource._cache_path` or it would silently be satisfied by the 2y harness
+  cache. SPY is fetched **once** and shared across the universe.
 - **`price_on(target: date)`** returns the close at the nearest trading day within a
   **±5-trading-day tolerance**, else `None`.
 - **`forward_return(T, horizon_months)`**: target = `T + horizon_months` **calendar
