@@ -15,5 +15,7 @@ def test_send_posts_to_bot_api_and_returns_true():
     assert "42" in seen["body"] and "hello" in seen["body"]
 
 
-def test_send_without_creds_returns_false():
+def test_send_without_creds_returns_false(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
     assert send_telegram("x", token=None, chat_id=None) is False

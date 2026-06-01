@@ -9,9 +9,10 @@ from .models import Candidate, Emission
 def aggregate(emissions: list[Emission], weights: dict[str, float]) -> list[Candidate]:
     """Group emissions by ticker into Candidates; weight by per-signal config weight.
 
-    Weight lookup is by the signal's source prefix (before ':') falling back to the
-    full signal name, so 'yahoo:day_gainers' uses the 'yahoo_screener' weight via the
-    caller-supplied map keyed however the caller chooses (here: exact signal string).
+    Weight lookup uses the emission's exact ``signal`` string as the key into
+    ``weights``; if the signal is absent from the map, a default weight of 1.0 is
+    used.  The caller is responsible for keying ``weights`` with the same signal
+    names that emitters produce.
     """
     by_ticker: dict[str, Candidate] = {}
     for e in emissions:
