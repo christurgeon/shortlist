@@ -183,7 +183,8 @@ touches.
 > (1m ≈ −0.023, 3m ≈ −0.031; only 30%/37% of names show a positive IC) — large-cap
 > short-term mean-reversion. (The TS t-stat assumes name-independence and is
 > anti-conservative, so lean on the mean IC + hit-rate.) Honest evidence that the
-> raw momentum bands deserve scrutiny — exactly what this gap was for.
+> raw momentum bands deserve scrutiny — exactly what this gap was for. **Tracked as a
+> concrete action in §2.3** (score momentum sector-/universe-relative, then re-backtest).
 >
 > **Built, tested, guarded (Phase 2, blocked on data):** weight-fitting
 > (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
@@ -231,6 +232,18 @@ financials, but it's general). Hand-tuned absolute bands are also brittle.
   within sector (or the run universe) instead of mapping to a fixed band. Highest
   quality-per-effort fix; structurally subsumes the financials problem. Needs a universe run
   (caching + paid tier, `DATA_SOURCES.md`) to have enough peers to rank against.
+- **Concrete follow-up — momentum bands (from the §2.1 backtest result, ★ actionable):**
+  the first backtest found momentum's **cross-sectional IC insignificant** and its
+  **short-horizon time-series IC negative** across a large-cap universe (§2.1). The
+  most likely cause is exactly this gap: the *absolute* momentum bands
+  (`price_vs_200dma [-0.10, 0.30]`, `rel_strength_6m [-0.15, 0.25]`) **saturate** when
+  most mega-caps sit above the band in a bull tape, collapsing cross-sectional rank
+  variance. **Action:** score momentum **universe-/sector-relative** (the same
+  percentile approach proposed above), then re-run `shortlist-backtest` to check
+  whether a relative momentum IC emerges. Validate against the accumulation store once
+  it clears the 24-date threshold (`shortlist-accumulate status`). This ties the
+  finding (§2.1) → the remedy (§2.3 percentile scoring) → its data dependency
+  (snapshot accumulation) in one place.
 
 ### Tier 2 — measuring the wrong thing / missing checks
 

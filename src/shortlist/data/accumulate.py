@@ -53,6 +53,7 @@ class AccumulationRun:
     captured: list[tuple[str, float]] = field(default_factory=list)   # (ticker, coverage)
     skipped: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)       # (ticker, redacted err)
+    thin: list[tuple[str, float]] = field(default_factory=list)       # (ticker, coverage) — gated, NOT saved
 
     @property
     def mean_coverage(self) -> Optional[float]:
@@ -62,11 +63,17 @@ class AccumulationRun:
 
 def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
                force: bool = False, max_tickers: Optional[int] = DEFAULT_MAX_TICKERS,
-               collect_fn: Callable = collect) -> AccumulationRun:
+               min_coverage: float = 0.0,
+               collect_fn: Optional[Callable] = None) -> AccumulationRun:
     """Capture today's snapshot for each ticker. Idempotent and per-ticker isolated.
 
-    collect_fn is injectable for testing; defaults to the real collector.
+    min_coverage: snapshots below this coverage fraction are treated as THIN — not
+    saved and not counted toward readiness — so a fully/partly gated symbol (e.g.
+    FMP's per-symbol 402) can't silently pollute the backtest as if it were real
+    signal. The library default is 0.0 (no gate); the CLI applies an operational
+    default. collect_fn is injectable for testing; defaults to the real collector.
     """
+    cf = collect_fn or collect                        # resolved at call time (testable via monkeypatch)
     day = _today_iso()
     # `None` = no cap; an explicit 0 means "capture nothing" (not "all").
     sel = list(tickers) if max_tickers is None else tickers[:max_tickers]
@@ -77,7 +84,7 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
             run.skipped.append(tk)
             continue                                  # skip BEFORE any API call
         try:
-            snaps = collect_fn([tk], sources)
+            snaps = cf([tk], sources)
             if not snaps:
                 run.failed.append((tk, "no snapshot returned"))
                 continue
@@ -85,8 +92,12 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
             if snap.as_of[:10] < day:                 # integrity: never accept a past day
                 run.failed.append((tk, f"stale as_of {snap.as_of[:10]} < {day}"))
                 continue
+            cov = snap.coverage()
+            if cov < min_coverage:                    # thin: don't pollute the store/backtest
+                run.thin.append((tk, cov))
+                continue
             save(snap, root)
-            run.captured.append((tk, snap.coverage()))
+            run.captured.append((tk, cov))
         except Exception as e:                        # one bad ticker can't abort the run
             run.failed.append((tk, redact_secrets(e)))
     _append_run_log(root, run)
@@ -94,12 +105,14 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
 
 
 def _append_run_log(root: str | Path, run: AccumulationRun) -> None:
+    # Append-only; intentionally NOT rotated (one line/run ~= 365 lines/year).
     Path(root).mkdir(parents=True, exist_ok=True)
     rec = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "day": run.day, "attempted": run.attempted,
         "captured": len(run.captured), "skipped": len(run.skipped),
-        "failed": len(run.failed), "mean_coverage": run.mean_coverage,
+        "failed": len(run.failed), "thin": len(run.thin),
+        "mean_coverage": run.mean_coverage,
     }
     with open(Path(root) / "_runs.jsonl", "a") as f:
         f.write(json.dumps(rec) + "\n")
@@ -151,6 +164,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     run.add_argument("--root", default="snapshots", help="store root directory")
     run.add_argument("--max-tickers", dest="max_tickers", type=int,
                      default=DEFAULT_MAX_TICKERS)
+    run.add_argument("--min-coverage", dest="min_coverage", type=float, default=0.5,
+                     help="skip (don't save) snapshots below this coverage fraction "
+                          "so gated/thin symbols don't pollute the backtest "
+                          "(default 0.5; use 0 for price-only runs)")
     run.add_argument("--force", action="store_true",
                      help="re-capture even if today's snapshot already exists")
 
@@ -169,17 +186,19 @@ def main(argv=None) -> int:
 
     if args.cmd == "run":
         sources = [s.strip() for s in args.sources.split(",") if s.strip()]
-        run = accumulate(tickers, sources, args.root,
-                         force=args.force, max_tickers=args.max_tickers)
+        run = accumulate(tickers, sources, args.root, force=args.force,
+                         max_tickers=args.max_tickers, min_coverage=args.min_coverage)
         for tk, cov in run.captured:
             print(f"{tk:<6} captured  coverage={cov:>5.0%}")
+        for tk, cov in run.thin:
+            print(f"{tk:<6} THIN      coverage={cov:>5.0%} (< {args.min_coverage:.0%}, not saved)")
         for tk in run.skipped:
             print(f"{tk:<6} skipped   (already captured {run.day})")
         for tk, err in run.failed:
             print(f"{tk:<6} FAILED    {err}")
         mc = f"{run.mean_coverage:.0%}" if run.mean_coverage is not None else "-"
-        print(f"\n{run.day}: captured={len(run.captured)} skipped={len(run.skipped)} "
-              f"failed={len(run.failed)} mean_coverage={mc}")
+        print(f"\n{run.day}: captured={len(run.captured)} thin={len(run.thin)} "
+              f"skipped={len(run.skipped)} failed={len(run.failed)} mean_coverage={mc}")
         print(_DISABLED_BANNER, file=sys.stderr)
         return 0 if not run.failed else 1
 

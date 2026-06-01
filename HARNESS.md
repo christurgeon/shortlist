@@ -158,6 +158,9 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
   backfilled/restated data would reintroduce look-ahead into the backtest.
 - **Idempotent + frugal:** an already-captured ticker is skipped *before* any API
   call. Errors are isolated per ticker and routed through `redact_secrets`.
+- **Thin-gate:** snapshots below `--min-coverage` (default 0.5) are flagged THIN and
+  **not saved**, so a gated/empty symbol (FMP per-symbol 402) can't pollute the
+  backtest as if it were real signal. (Use `--min-coverage 0` for price-only runs.)
 - **Free-tier aware:** `--max-tickers` defaults to 15 (≈195 < FMP's 250/day);
   default watchlist avoids the 402-gated symbols. Scale needs paid FMP or caching.
 - **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;

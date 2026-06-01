@@ -60,27 +60,38 @@ watchlist, and a **disabled** deploy sample.
 ### `accumulate()` flow (per-ticker isolation, API-frugal)
 
 ```
-accumulate(tickers, sources, root, *, force=False, max_tickers=None, today=None) -> AccumulationRun
-  day = today or utcnow().date()        # always "now"; no past-day writes
-  for ticker in tickers[:max_tickers]:
+accumulate(tickers, sources, root, *, force=False, max_tickers=DEFAULT_MAX_TICKERS,
+           min_coverage=0.0, collect_fn=None) -> AccumulationRun
+  day = utcnow().date()                 # always "now"; no past-day writes, no date override
+  for ticker in (tickers if max_tickers is None else tickers[:max_tickers]):
       if not force and is_captured(ticker, root, day):
           skipped += 1; continue        # idempotent — and BEFORE any API call
       try:
-          snap = collect([ticker], sources)[0]   # per-ticker → one bad name can't abort the run
+          snap = (collect_fn or collect)([ticker], sources)[0]   # per-ticker → one bad name can't abort
+          if snap.as_of[:10] < day: failed.append(...); continue # integrity: reject a past day
+          if snap.coverage() < min_coverage: thin.append(...); continue  # don't pollute the backtest
           save(snap, root)                        # atomic
           captured.append((ticker, snap.coverage()))
       except Exception as e:
           failed.append((ticker, redact_secrets(e)))   # never leak a keyed URL
-  append run-log; return AccumulationRun(day, attempted, captured, skipped, failed, mean_coverage)
+  append run-log; return AccumulationRun(day, attempted, captured, skipped, failed, thin)
 ```
 
 - **Existence check precedes collect** so re-runs cost zero API calls — important
   under FMP's 250/day cap.
 - **Per-ticker collect** isolates failures (collector aborts a *batch* only if a
   Source raises; sources normally don't, but a daily job must survive the
-  unexpected) and bounds spend.
+  unexpected) and bounds spend. `collect_fn` is an injectable seam (default `collect`,
+  resolved at call time) so `accumulate()` *and* `main()` are testable.
 - **`max_tickers`** guards the FMP free-tier cliff (default cap **15** ⇒ ≤195
-  FMP calls < 250/day with margin). Documented; overridable for paid tiers.
+  FMP calls < 250/day with margin; `None` = uncapped, `0` = capture nothing).
+- **`min_coverage` gate:** a snapshot below this coverage fraction is **THIN** —
+  not saved and not counted toward readiness — so a fully/partly gated symbol
+  (FMP's per-symbol 402) can't silently pollute the backtest as real signal. The
+  library default is `0.0` (no gate); the **CLI default is `0.5`** (`--min-coverage`;
+  use `0` for deliberate price-only runs).
+- **No backfill:** the capture day is `utcnow` only; there is no `today`/`--date`
+  write override, and a snapshot older than the run day is rejected.
 - **Errors routed through `env.redact_secrets`** before logging (house rule).
 
 ### Observability — run-log + status
@@ -163,4 +174,21 @@ enabling a schedule.
 
 `env.redact_secrets()` wraps every error string the tool logs (collect/HTTP errors
 embed keyed URLs). Coverage stays honest — a thin/failed capture is recorded as
-such (low coverage, error logged), never silently dropped or fabricated.
+such (THIN bucket, not saved, surfaced to the operator), never silently dropped or
+fabricated.
+
+## 9. Deferred follow-ups (from the holistic review)
+
+Tracked here so they aren't lost; none block this feature:
+
+- **Single-source the `24` threshold.** `MIN_SNAPSHOT_DATES` is currently four
+  independent literals (`data/accumulate.py`, `backtest/fit.py:min_periods`,
+  `backtest/engine.py:_TRUST_MIN_PERIODS`, the `backtest/cli.py` guard string). They
+  agree today but can drift. Define once in a low layer (e.g. `data/`) and import
+  into both stacks. (Deferred: a clean fix touches already-merged backtest code.)
+- **`status --all`** should scan `<root>/` for ticker dirs, not just the passed
+  watchlist — a name captured then dropped from the watchlist is currently invisible
+  to `status` though the backtest can still load it.
+- **Operator failure alerting.** `deploy/` ships no `OnFailure=` hook; mirror the
+  root `CLAUDE.md` `oracle-alert-failure@.service` pattern so a failed (exit 1) daily
+  run pings the operator. Document in `deploy/README.md` when wiring it.

@@ -154,6 +154,32 @@ def test_max_tickers_zero_captures_nothing(tmp_path):
     assert r.attempted == 0 and r.captured == []
 
 
+def test_min_coverage_gate_skips_thin_and_does_not_save(tmp_path):
+    # a bare (no-fields) snapshot has ~0 coverage -> thin, must NOT pollute the store
+    cf = _fake_collect({"AAA": _snap("AAA", coverage_field=False)})
+    r = accumulate(["AAA"], ["mock"], tmp_path, min_coverage=0.5, collect_fn=cf)
+    assert r.captured == []
+    assert [t for t, _ in r.thin] == ["AAA"]
+    assert captured_days("AAA", tmp_path) == []        # not saved -> not counted toward 24
+
+
+def test_main_run_exit_0_and_status(tmp_path, monkeypatch):
+    monkeypatch.setattr(acc, "collect", _fake_collect({"AAA": _snap("AAA")}))
+    rc = acc.main(["run", "--tickers", "AAA", "--sources", "mock",
+                   "--root", str(tmp_path), "--min-coverage", "0"])
+    assert rc == 0
+    assert load("AAA", tmp_path)["ticker"] == "AAA"    # really saved via main()
+    rc2 = acc.main(["status", "--tickers", "AAA", "--root", str(tmp_path)])
+    assert rc2 == 0
+
+
+def test_main_run_all_failed_exits_1(tmp_path, monkeypatch):
+    monkeypatch.setattr(acc, "collect", _fake_collect({"BAD": RuntimeError("boom")}))
+    rc = acc.main(["run", "--tickers", "BAD", "--sources", "mock",
+                   "--root", str(tmp_path), "--min-coverage", "0"])
+    assert rc == 1                                     # failure surfaced to the operator/timer
+
+
 def test_cli_parser_run_and_status_defaults():
     ap = build_arg_parser()
     r = ap.parse_args(["run"])
