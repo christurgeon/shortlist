@@ -86,6 +86,16 @@ research:
   max_red_flags: 8
 
 # Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
+edgar_events:
+  lookback_days: 90
+  index_limit: 40
+  # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
+  # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
+  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"]
+  soft_notes:        # reserved; all OFF in v1 (pure enrichment)
+    stale_after_8k: false
+    activist_13d_note: false
+
 scout:
   daily_x: 15
   research_top_n: 3

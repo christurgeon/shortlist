@@ -1,3 +1,6 @@
+import os
+
+import pytest
 from datetime import date
 
 from shortlist.data.models import Events, FilingEvent, TickerSnapshot
@@ -288,3 +291,17 @@ def test_prompt_includes_recent_filings_when_events_present():
 def test_prompt_unchanged_when_no_events():
     base = _build_user_prompt(_filing(), {})
     assert "Recent SEC filings" not in base
+
+
+@pytest.mark.live
+def test_live_edgar_events_returns_event_forms():
+    """Re-pins the form-string contract against real SEC data. Run with
+    `uv run pytest -k live_edgar_events -m live` and SEC_IDENTITY set."""
+    if not os.environ.get("SEC_IDENTITY"):
+        pytest.skip("SEC_IDENTITY not set")
+    from shortlist.data.sources import EdgarSource
+    src = EdgarSource(config={"edgar_events": {"lookback_days": 3650, "index_limit": 50}})
+    records = src._fetch_filings_index("AAPL")
+    forms = {r["form"] for r in records}
+    assert any(f.startswith("8-K") for f in forms)
+    assert any("13" in f for f in forms)   # a 13D or 13G should appear over 10y
