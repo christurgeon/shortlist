@@ -54,15 +54,39 @@ dollar figure and the counts always describe the *same* trades — while
 independently. EDGAR's authoritative flow and Finnhub's sentiment thus compose.
 Async fan-out (`asyncio.gather`) runs tickers and sources concurrently.
 
-## EDGAR source rate limit
+## EDGAR source — insider trades and 10-K financials
 
-`EdgarSource` runs the synchronous `edgartools` work in a worker thread
+`EdgarSource` supplies two independent sections:
+
+1. **Form 4 insider trades** — the same aggregated buy/sell flow used by the screener's `EdgarProvider`, via the shared `providers/_form4.py` leaf module.
+2. **10-K financial statements** — revenue, net income, operating cash flow, free cash flow, and diluted EPS for the latest ~3 fiscal years (absolute USD), sourced from the company's most recent annual filing via `get_financials()`.
+
+Both sections are failure-isolated: a missing XBRL filing (Form 20-F foreign issuers, recent spin-offs) degrades the statements to `None` gracefully without affecting insider data or crashing the run.
+
+The source runs the synchronous `edgartools` work in a worker thread
 (`asyncio.to_thread`) and funnels all EDGAR fetches through a shared semaphore
 (`_EDGAR_MAX_CONCURRENCY`, default 3). SEC enforces ~10 req/s fair-access per IP
-and each ticker pulls many Form 4 filings, so the collector's per-ticker
+and each ticker pulls many filings, so the collector's per-ticker
 semaphore is *not* enough — the EDGAR gate is what keeps a universe run under the
-limit. Requires the `[edgar]` extra and `SEC_IDENTITY`; absent either, the source
-is skipped (not fatal).
+limit. The `get_financials()` call roughly doubles per-ticker EDGAR SEC requests
+vs. Form 4 alone; a full-universe run still needs the caching layer. Requires the
+`[edgar]` extra and `SEC_IDENTITY`; absent either, the source is skipped (not fatal).
+
+### Bridge derivations from EDGAR + Yahoo (value legs when FMP is absent)
+
+When `--engine harness` is used and FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` now derives two value-axis legs from free sources:
+
+- **`fcf_yield`** = latest-annual FCF (EDGAR 10-K) ÷ market cap (backfilled from Finnhub or Yahoo when FMP is absent).
+- **`pe_vs_history`** = current P/E vs. own trailing median, using EDGAR annual diluted EPS + Yahoo historical closes. `YahooSource` now fetches 5 years of monthly-sampled dated closes; the bridge matches each fiscal-year-end to the nearest available close to reconstruct annual P/E.
+
+**Limitations of the EDGAR+Yahoo value derivation:**
+
+- History is ~3 fiscal years (10-K depth), not 5 — the trailing P/E median window is shorter than FMP's.
+- Closes are monthly-sampled, not exact fiscal-year-end prices — P/E reconstruction is approximate.
+- `pe_ttm` uses the latest annual EPS as a TTM proxy, not true trailing-twelve-months earnings.
+- Symbols with no XBRL financials (Form 20-F foreign issuers, recent spin-offs) degrade both derived legs to `None` gracefully.
+- PEG and analyst-target upside still require FMP — they are not recoverable from free sources.
+- Adding `get_financials()` roughly doubles per-ticker EDGAR SEC requests; full-universe screening still requires the caching layer.
 
 ## Scoring a snapshot — the bridge
 
@@ -104,6 +128,9 @@ verbatim `raw` plus a normalized `partial` `TickerSnapshot`, and register it in
   on the keyed sources will still hit rate limits.
 - **FMP's free plan gates many symbols** (e.g. GEV) behind premium with a `402`
   "Special Endpoint" on a per-symbol basis — coverage correctly drops to "thin"
-  for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier.
+  for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier. On
+  `--engine harness`, `fcf_yield` and `pe_vs_history` are now partially recoverable
+  from free EDGAR + Yahoo data (see bridge derivations above); PEG and analyst-target
+  upside still require FMP.
 - Equity-centric fields are blank for banks (SCHW) — coverage correctly flags it; sector-aware extraction is the fix.
 - Mock data is illustrative, not verified.
