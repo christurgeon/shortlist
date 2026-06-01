@@ -415,7 +415,7 @@ class YahooSource(Source):
         except Exception:
             pass  # corrupt cache -> refetch
         r = await self._client.get(
-            f"{self.BASE}/{symbol}", params={"range": "2y", "interval": "1d"})
+            f"{self.BASE}/{symbol}", params={"range": "5y", "interval": "1d"})
         r.raise_for_status()
         raw = r.json()
         try:
@@ -436,9 +436,12 @@ class YahooSource(Source):
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
         try:
-            closes = await self._closes(ticker)
+            raw = await self._get_chart(ticker)
+            closes = _closes_from_chart(raw)
             spy = await self._spy()
             res.partial = _normalize_yahoo(ticker, closes, spy)
+            if res.partial.price is not None:
+                res.partial.price.monthly_closes = _monthly_closes_from_chart(raw)
             res.raw = {"close_count": len(closes)}
         except Exception as e:
             res.errors.append(f"yahoo: {redact_secrets(e)}")
@@ -523,6 +526,28 @@ def _closes_from_chart(raw: Any) -> list[float]:
     except (KeyError, IndexError, TypeError):
         return []
     return [c for c in series if isinstance(c, (int, float))]
+
+
+def _monthly_closes_from_chart(raw: Any) -> list[list]:
+    """Pair the chart's timestamp + adjclose arrays and down-sample to ~one point
+    per calendar month (last valid obs each month), oldest->newest as [iso, close].
+    Returns [] if timestamps are absent (older cached payloads / SPY-style fetches)."""
+    from datetime import datetime, timezone
+    try:
+        result = raw["chart"]["result"][0]
+        ts = result["timestamp"]
+        series = result["indicators"]["adjclose"][0]["adjclose"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    if not ts or not series:
+        return []
+    by_month: dict[str, list] = {}
+    for t, c in zip(ts, series):
+        if not isinstance(c, (int, float)):
+            continue
+        d = datetime.fromtimestamp(t, tz=timezone.utc).date()
+        by_month[f"{d.year}-{d.month:02d}"] = [d.isoformat(), float(c)]
+    return [by_month[k] for k in sorted(by_month)]
 
 
 def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float]) -> TickerSnapshot:
