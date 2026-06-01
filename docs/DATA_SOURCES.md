@@ -26,7 +26,7 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 |---|---|---|---|
 | **FMP** `/stable/` | free (250 calls/day, ~20 tickers/day) | both | profile, quote, TTM ratios, key-metrics, 5y statements, price-target + grades consensus, insider, price-change |
 | **Finnhub** | free (60/min) | both | profile, metrics, **insider sentiment (MSPR)**, recommendation trend, quote |
-| **SEC EDGAR** (Form 4) | free (≤10 req/s) | both | authoritative insider transaction flow |
+| **SEC EDGAR** (Form 4 + 10-K + events) | free (≤10 req/s) | both | authoritative insider transaction flow; 10-K XBRL financials (revenue/FCF/EPS); **filing-stream events: 8-K material events, SC 13D/13G activist/passive stakes, Form 144 planned insider sales** (harness only) |
 | **Yahoo Finance** chart | free, keyless | harness | price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown (computed by us, day-cached) |
 | **Mock** | offline | harness | demo fixtures |
 | Quiver / FRED | scaffolded, not wired | screener | congress/gov-contracts; macro overlay |
@@ -60,8 +60,11 @@ These are the holes that matter, ranked by how much they distort an assessment:
 5. **No smart-money or alt-data confirmation.** 13F institutional flow, short interest,
    congressional/gov-contract activity, and attention proxies are all absent — the
    differentiated layer where edge actually lives.
-6. **No news/event awareness.** An 8-K, a 13D activist stake, or a tone collapse in the news
-   can invalidate a fundamentals snapshot the day after we take it.
+6. **No news/event awareness.** ~~An 8-K, a 13D activist stake, or a tone collapse in the news
+   can invalidate a fundamentals snapshot the day after we take it.~~ **Partially closed (harness):**
+   8-K material events, SC 13D activist stakes, 13G passive stakes, and Form 144 planned insider
+   sales are now detected from EDGAR's filing stream and surfaced as soft advisory flags (see A1
+   events below). GDELT/news-tone sentiment remains open.
 
 The sources below close these in roughly that priority order.
 
@@ -75,6 +78,22 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
 ### Tier A — free & authoritative (no key, validated in `scratch/`)
 
 #### A1. SEC EDGAR XBRL — `companyfacts` / `frames` / `submissions`  ★ highest leverage
+
+**Financials half ✅ DONE** — `EdgarSource` populates `Statements` directly from XBRL 10-K
+filings (revenue, net income, operating cash flow, FCF, diluted EPS for the latest ~3 fiscal
+years). Symbols with no XBRL financials (foreign Form 20-F issuers, recent spin-offs) degrade
+gracefully to `None`. EDGAR is priority-1 in the harness merge so XBRL statements override
+FMP's where present.
+
+**Events half ✅ DONE** — `EdgarSource` now also emits an `events` section on `TickerSnapshot`
+(`recent_8k` / `activist_13d` / `passive_13g` / `planned_insider_sale_144` boolean flags plus a
+`recent` list of the matching filings). These are surfaced as **soft advisory flags** in
+`ScoreCard.flags` — rendered in the screener table and in the structured `--json` `events` block
+— and injected into the research brief for analyst context. They are enrichment signals only,
+not a new sub-score or hard gate. Design:
+[`docs/superpowers/specs/2026-06-01-edgar-events-design.md`](superpowers/specs/2026-06-01-edgar-events-design.md);
+plan: [`docs/superpowers/plans/2026-06-01-edgar-events.md`](superpowers/plans/2026-06-01-edgar-events.md).
+
 - **What:** `data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json` returns *every* standardized
   US-GAAP fact a company has ever reported; `frames` pulls one concept across all filers for
   a period (peer ranking); `submissions/CIK{cik}.json` is the full filing index.
@@ -82,17 +101,14 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
   and immune to the per-symbol gating that makes FMP's free tier drop coverage (e.g. GEV).
   It lets us (a) recompute any ratio ourselves with full provenance, (b) build the
   earnings-quality and bankruptcy composites in Tier D, and (c) detect material events from
-  the filing stream: **8-K** (material event), **SCHEDULE 13D** (activist), **13G** (passive
-  5%), **Form 144** (planned insider sale). In the live pull, AAPL's last 10 filings already
-  surfaced a 10-Q, an 8-K, a 13G, and three Form 144s — all event signals we ignore today.
+  the filing stream. In the live pull, AAPL's last 10 filings already surfaced a 10-Q, an 8-K,
+  a 13G, and three Form 144s — all now captured.
 - **Access:** free, keyless; requires a descriptive `User-Agent` with a contact email
   (SEC fair-access). ~10 req/s. We already set `SEC_IDENTITY`.
 - **Pull:** validated — `scratch/raw/sec/companyfacts.json` (3.7 MB), `submissions.json`.
   Latest annual revenue extracted: **$416.2B (FY end 2025-09-27)**.
-- **Wire-in:** new harness `Source` (`EdgarFactsSource`) populating `Statements` directly
-  from XBRL (no vendor dependency) and a new `events: list[FilingEvent]` section on
-  `TickerSnapshot`. Add a `recent_8k` / `activist_13d` flag the scorer can read. EDGAR is
-  already priority-1 in the merge, so XBRL statements would override FMP's where present.
+- **Still open from A1:** `frames` cross-filer peer ranking; Tier D composites (F/Z/M scores)
+  that need the extra balance-sheet fields.
 
 #### A2. FRED (St. Louis Fed) — macro & credit-regime overlay
 - **What:** keyless CSV at `fred.stlouisfed.org/graph/fredgraph.csv?id={SERIES}`. Key series:
@@ -282,12 +298,16 @@ Recommended sequencing (highest leverage first):
 1. **Close the harness parity gaps** — add an annual `ratios` fetch to `FMPSource` for
    `pe_median_5y` (restores the 4th `value` leg) and a 5y `roic_5y_avg`; then the harness
    can fully replace the screener fetch path.
-2. **A1 EDGAR XBRL + events** — authoritative financials + event flags; biggest single win.
+2. ✅ **A1 EDGAR XBRL + events** — **done.** Financials (10-K XBRL statements) and filing-stream
+   events (8-K / SC 13D / 13G / Form 144 advisory flags) both shipped in `EdgarSource`.
+   See A1 above.  ✅ **C1 short interest** — also shipped (`FinraSource` → `crowded_short` flag).
+   Next alt-data additions per the events design decision record (§10): Tier D composites
+   (F/Z/M scores), then B1 Alpha Vantage forward estimates.
 3. **A2 FRED macro overlay** — cheap, keyless, makes every score regime-aware.
 4. **D1–D3 composites** — pure analytical upgrade (F/Z/M scores); Altman/Beneish need A1's
    extra balance-sheet fields first.
 5. **B1 Alpha Vantage** — forward estimates + revisions (free key) to light up `eps_revision`.
-6. **C1/C3 short interest + 13F**, then **C2 Quiver** for the alt-data edge.
+6. **C3 13F institutional ownership**, then **C2 Quiver** for the alt-data edge.
 
 Every addition must respect two house rules from `CLAUDE.md`: route any error string that
 could contain a URL through `env.py:redact_secrets()`, and keep coverage **honest** —

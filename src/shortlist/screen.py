@@ -60,7 +60,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     from .data.collector import collect
     from .data.coverage_adapt import snapshot_to_coverage_inputs
 
-    snapshots = collect(tickers, source_names)
+    snapshots = collect(tickers, source_names, config=config)
     cards = []
     for s in snapshots:
         card = score(snapshot_to_metrics(s), config)
@@ -267,6 +267,14 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "gates": c.gates,
         "flags": c.flags,
     }
+    if c.metrics is not None and c.metrics.filing_events:
+        d["events"] = {
+            "recent_8k": bool(c.metrics.recent_8k),
+            "activist_13d": bool(c.metrics.activist_13d),
+            "passive_13g": bool(c.metrics.passive_13g),
+            "planned_insider_sale_144": bool(c.metrics.planned_insider_sale_144),
+            "recent": c.metrics.filing_events,
+        }
     if research_paths and c.ticker in research_paths:
         d["research_path"] = research_paths[c.ticker]
     if c.coverage is not None:

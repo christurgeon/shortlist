@@ -60,6 +60,15 @@ class StockMetrics:
     insider_net_6m: Optional[float] = None     # net USD: buys positive, sells negative
     insider_sentiment: Optional[float] = None  # -1..1, Finnhub MSPR-style net signal
 
+    # Filing-stream events (enrichment only; NOT scored — default None so the
+    # screener merge.py never stamps phantom provenance for them). Set by the
+    # harness bridge when snap.events is present.
+    recent_8k: Optional[bool] = None
+    activist_13d: Optional[bool] = None
+    passive_13g: Optional[bool] = None
+    planned_insider_sale_144: Optional[bool] = None
+    filing_events: Optional[list] = None   # list of {form, filed, accession, url} dicts
+
     # Short interest (FINRA consolidated; derived in bridge.py). Soft-flag inputs only.
     short_pct_outstanding: Optional[float] = None  # short_shares / (market_cap/price); under-states float
     days_to_cover: Optional[float] = None          # FINRA-supplied; 999.99 sentinel -> None

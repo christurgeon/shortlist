@@ -2,13 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **STATUS (2026-06-01): NOT STARTED — execution held by user decision.** Task 8 (surfacing) collides
-> with the in-flight short-interest branch, which is mid-way through establishing the shared
-> `ScoreCard.flags` populate+render mechanism that event advisories must reuse. Decision: **wait for the
-> short-interest flags mechanism to land, then execute the whole plan on top of it** (subagent-driven,
-> on a worktree). Tasks 1–7 + 9 are dependency-free; Task 8 is re-pointed at `ScoreCard.flags` and
-> finalized against the landed mechanism. Resume trigger: short-interest `flags` is populated in
-> `score()` and rendered in `_print_table`/`_card_dict`.
+> **STATUS (2026-06-01): CLEARED TO EXECUTE.** The short-interest work merged (PR #12, `8af64b6`); its
+> `ScoreCard.flags` populate (`scoring.py:check_flags`) + render (`screen.py:_flags_cell`, `_card_dict`)
+> mechanism is landed, so Task 8 now plugs into it conflict-free (event advisories append to
+> `check_flags`; rendering is automatic). All anchors re-verified against the squashed main. Baseline
+> suite green (313 passed / 3 skipped). Executing subagent-driven on a worktree.
 
 **Goal:** Add a per-ticker `events` section to the harness `TickerSnapshot` — recent 8-K / SC 13D / SC 13G / Form 144 from the SEC filing index — surfaced as pure-enrichment soft flags (via `ScoreCard.flags`) in the screener table, a structured `--json` events block, and the research brief, with zero impact on any existing score or gate.
 
@@ -54,67 +52,22 @@
 
 ---
 
-## Task 1: Register the `live` pytest marker (prerequisite)
+## Task 1: ✅ OBSOLETE — `live` marker already registered (no work)
 
-Adversarial finding #6: the repo has no `conftest.py`/pytest config, so a `@pytest.mark.live` test would run in CI and hit SEC. This task makes `live` tests skip unless `--run-live` is passed.
+The spec's adversarial finding #6 assumed no pytest config existed. **That is no longer true:** the
+short-interest merge (PR #12) added to `pyproject.toml`:
 
-**Files:**
-- Create: `conftest.py` (repo root)
-- Test: `tests/test_edgar_events.py` (new — start the file here)
-
-- [ ] **Step 1: Write `conftest.py`**
-
-```python
-# conftest.py — repo-root pytest config: gate network-hitting tests behind --run-live.
-import pytest
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--run-live", action="store_true", default=False,
-        help="run @pytest.mark.live tests that hit external networks (SEC, etc.)",
-    )
-
-
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "live: test hits an external network; skipped unless --run-live is passed")
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--run-live"):
-        return
-    skip_live = pytest.mark.skip(reason="needs --run-live")
-    for item in items:
-        if "live" in item.keywords:
-            item.add_marker(skip_live)
+```toml
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = ["live: hits real external APIs; skipped unless -m live"]
 ```
 
-- [ ] **Step 2: Write a sentinel test proving the gate works**
-
-Create `tests/test_edgar_events.py`:
-
-```python
-import pytest
-
-
-@pytest.mark.live
-def test_live_marker_is_skipped_by_default():
-    # If the conftest gate works, this never runs in a normal `pytest` invocation.
-    raise AssertionError("live test ran without --run-live")
-```
-
-- [ ] **Step 3: Run the suite and confirm the live test is skipped, not failed**
-
-Run: `uv run pytest tests/test_edgar_events.py -v`
-Expected: `test_live_marker_is_skipped_by_default SKIPPED (needs --run-live)`, 0 failures, no `PytestUnknownMarkWarning`.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add conftest.py tests/test_edgar_events.py
-git commit -m "test: register live pytest marker, default-skip network tests"
-```
+So the `live` marker is registered and live tests are **deselected by default**, run via
+`uv run pytest -m live` (see `tests/test_short_interest.py`). **Do NOT add a `conftest.py` or a
+`--run-live` option** — that creates a second, conflicting mechanism and breaks the documented
+`-m live` workflow. This task requires no change; `tests/test_edgar_events.py` is created by Task 2.
+Task 10's live smoke test just uses `@pytest.mark.live` and is gated by the existing `addopts`.
 
 ---
 
@@ -823,59 +776,57 @@ git commit -m "feat: bridge EDGAR event flags onto StockMetrics (enrichment, def
 
 ---
 
-## Task 8: Surface events (⛔ BLOCKED — finalize against the short-interest `ScoreCard.flags` mechanism)
+## Task 8: Surface events via `ScoreCard.flags` + a `--json` events block
 
-> **BLOCKED ON DEPENDENCY (decided 2026-06-01).** Commit `880163a` added `ScoreCard.flags` (soft
-> advisories, e.g. `crowded_short`; NOT disqualifying) as a **field only** — the short-interest branch
-> has not yet wired (a) how `score()` populates `flags` from metrics, nor (b) how `_print_table` /
-> `_card_dict` render `flags`. Event advisories are the **same kind of soft flag** and must reuse that
-> mechanism, not invent a parallel `_event_chips`-into-the-gates-cell path. So this task is **deferred
-> until the short-interest flags populate+render mechanism lands**, then finalized against it. Tasks
-> 1–7 and 9 (data layer + bridge + research) are unblocked and run first. The earlier `_event_chips`
-> approach is intentionally dropped to avoid two divergent flag mechanisms + a guaranteed `score()` /
-> `_print_table` merge conflict.
+The short-interest flags mechanism has **landed** (PR #12, `8af64b6`) and is exactly the shared path to
+reuse — no collision:
+- `scoring.py:check_flags(m, f)` returns soft advisories (e.g. `["crowded_short"]`), called in `score()`
+  as `flags=check_flags(m, config.get("flags") or {})` → populates `ScoreCard.flags`.
+- **Rendering is automatic:** `screen.py:_flags_cell(c)` = `",".join(list(c.gates) + list(c.flags)) or "-"`,
+  used by **both** `_print_table` and `_print_plain`; and `_card_dict` already emits `"flags": c.flags`.
 
-**Intended approach (finalize once the dependency lands):**
-- Event advisories ride `ScoreCard.flags`. Populate them where the short-interest work populates
-  `crowded_short` (likely a `check_flags(m, ...)`-style helper invoked in `score()`): append
-  `"recent_8k"`, `"activist_13d"`, `"passive_13g"`, `"planned_insider_sale_144"` from the
-  `StockMetrics` event fields set by Task 7. Reuse that helper — do not add a second one.
-- Rendering: whatever path the short-interest branch establishes for `ScoreCard.flags` in
-  `_print_table` / `_print_plain` will then surface event flags automatically (neutral, distinct from
-  red `gates`). Add no separate `_event_chips` rendering.
-- **`--json` structured block (independent of the flags mechanism — keep concrete):** `_card_dict`
-  gains an `events` block carrying the full `recent` filing list (richer than the flag labels), emitted
-  only when present. This rides on `c.metrics.filing_events` (Task 7) and does not touch `score()`, so
-  it can land without the dependency.
+So event advisories just append to `check_flags`'s output (renders everywhere for free), and the only
+`screen.py` edit is an additive structured `--json` `events` block (richer than the flag labels). **No
+`_event_chips`, no `_print_table`/`_print_plain` change.**
 
-**Files (when unblocked):**
-- Modify: `src/shortlist/scoring.py` (event flags into the short-interest flags helper)
-- Modify: `src/shortlist/screen.py` (`_card_dict` events block; rendering inherited from short-interest)
+**Files:**
+- Modify: `src/shortlist/scoring.py` (`check_flags` — append event advisories)
+- Modify: `src/shortlist/screen.py` (`_card_dict` — structured events block)
 - Test: `tests/test_edgar_events.py`
 
-- [ ] **Step 1 (when unblocked): Re-verify the landed flags mechanism**
-
-Read the short-interest branch's `score()`/flags helper and `_print_table`/`_card_dict` flags rendering.
-Record the exact helper name and call site here before writing code. (Cannot be specified now — that is
-the reason for the hold.)
-
-- [ ] **Step 2 (independent — may land now): `--json` structured events block + test**
+- [ ] **Step 1: Write the failing flags + json tests**
 
 Append to `tests/test_edgar_events.py`:
 
 ```python
 from shortlist.models import ScoreCard, StockMetrics
+from shortlist.scoring import check_flags
 from shortlist.screen import _card_dict
 
 
-def _card_with_events():
+def _metrics_with_events():
     m = StockMetrics(ticker="AAPL")
     m.activist_13d = True
     m.recent_8k = True
     m.filing_events = [{"form": "SC 13D", "filed": "2026-05-26", "accession": "x", "url": "u"}]
-    return ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None,
-                     growth=None, momentum=None, value=None, opportunity=None,
-                     insider=None, metrics=m)
+    return m
+
+
+def test_check_flags_emits_event_advisories():
+    flags = check_flags(_metrics_with_events(), {})
+    assert "activist_13d" in flags
+    assert "recent_8k" in flags
+    assert "passive_13g" not in flags          # not set
+
+
+def test_check_flags_no_events_no_advisories():
+    assert check_flags(StockMetrics(ticker="AAPL"), {}) == []
+
+
+def _card_with_events():
+    return ScoreCard(ticker="AAPL", composite=50.0, quality=None, moat=None, growth=None,
+                     momentum=None, value=None, opportunity=None, insider=None,
+                     metrics=_metrics_with_events())
 
 
 def test_card_dict_emits_events_block_only_when_present():
@@ -886,7 +837,26 @@ def test_card_dict_emits_events_block_only_when_present():
     assert "events" not in _card_dict(plain)
 ```
 
-In `_card_dict`, before `return d`:
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `uv run pytest tests/test_edgar_events.py -k "check_flags or card_dict_emits" -v`
+Expected: FAIL — `assert "activist_13d" in flags` (check_flags doesn't emit them) and `"events"` KeyError.
+
+- [ ] **Step 3: Append event advisories to `check_flags`**
+
+In `src/shortlist/scoring.py`, in `check_flags`, before `return out`, add:
+
+```python
+    # Filing-stream event advisories (set by the harness bridge; None on the screener
+    # path, so this is a no-op there). Presence-based — no config thresholds.
+    for attr in ("activist_13d", "recent_8k", "passive_13g", "planned_insider_sale_144"):
+        if getattr(m, attr, None):
+            out.append(attr)
+```
+
+- [ ] **Step 4: Add the structured `--json` events block**
+
+In `src/shortlist/screen.py`, in `_card_dict`, before `return d`, add:
 
 ```python
     if c.metrics is not None and c.metrics.filing_events:
@@ -899,14 +869,22 @@ In `_card_dict`, before `return d`:
         }
 ```
 
-- [ ] **Step 3 (when unblocked): wire event flags into the short-interest flags helper + render path**
+- [ ] **Step 5: Run to verify the tests pass**
 
-(Write against the mechanism recorded in Step 1; add a test asserting an events-bearing card carries
-the event labels in `ScoreCard.flags` and they render in the table — no separate `_event_chips`.)
+Run: `uv run pytest tests/test_edgar_events.py -k "check_flags or card_dict_emits" -v`
+Expected: PASS (all four).
 
-- [ ] **Step 4: Run + commit**
+- [ ] **Step 6: Smoke-test the table renders (offline)**
 
-Run: `uv run pytest -q` (expected all pass), then:
+Run: `uv run shortlist --demo`
+Expected: table prints; `Flags` column shows gate/flag chips as before (mock has no events). No error.
+
+- [ ] **Step 7: Run the full suite**
+
+Run: `uv run pytest -q`
+Expected: all pass.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/shortlist/scoring.py src/shortlist/screen.py tests/test_edgar_events.py
@@ -1035,7 +1013,7 @@ Append to `tests/test_edgar_events.py`:
 @pytest.mark.live
 def test_live_edgar_events_returns_event_forms():
     """Re-pins the §3.1 form-string contract against real SEC data. Run with
-    `uv run pytest -k live_edgar_events --run-live` and SEC_IDENTITY set."""
+    `uv run pytest -k live_edgar_events -m live` and SEC_IDENTITY set."""
     if not os.environ.get("SEC_IDENTITY"):
         pytest.skip("SEC_IDENTITY not set")
     from shortlist.data.sources import EdgarSource
@@ -1046,14 +1024,14 @@ def test_live_edgar_events_returns_event_forms():
     assert any("13" in f for f in forms)   # a 13D or 13G should appear over 10y
 ```
 
-- [ ] **Step 3: Confirm the live test skips by default**
+- [ ] **Step 3: Confirm the live test is deselected by default**
 
-Run: `uv run pytest tests/test_edgar_events.py -k live_edgar_events -v`
-Expected: `SKIPPED (needs --run-live)`.
+Run: `uv run pytest tests/test_edgar_events.py -q`
+Expected: the non-live tests pass; `test_live_edgar_events_returns_event_forms` is deselected (the repo's `addopts = "-m 'not live'"` excludes it — no SEC call in a normal run).
 
 - [ ] **Step 4: (Optional, manual) run the live test once**
 
-Run: `SEC_IDENTITY="you@example.com" uv run pytest tests/test_edgar_events.py -k live_edgar_events --run-live -v`
+Run: `SEC_IDENTITY="you@example.com" uv run pytest tests/test_edgar_events.py -k live_edgar_events -m live -v`
 Expected: PASS — confirms the form-string filter returns 8-K and a 13D/13G for AAPL. **If it fails**, the edgartools form-string contract changed; consult spec §3.1/§3.2 (raw `submissions.json` fallback).
 
 - [ ] **Step 5: Commit**

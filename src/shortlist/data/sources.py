@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 import json
 import os
 from abc import ABC, abstractmethod
@@ -12,7 +13,7 @@ from typing import Any, Awaitable, Callable, Optional
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
 from .models import (
-    Analyst, Fundamentals, Insider, InsiderTxn, Price, Profile,
+    Analyst, Events, FilingEvent, Fundamentals, Insider, InsiderTxn, Price, Profile,
     ShortInterest, SourceResult, Statements, TickerSnapshot,
 )
 
@@ -262,6 +263,56 @@ def _edgar_semaphore() -> asyncio.Semaphore:
     return _edgar_gate["sem"]
 
 
+# form prefix (upper) -> Events boolean attribute. Prefix match absorbs /A amendments;
+# both the "SC 13x" and SEC's "SCHEDULE 13x" spellings are handled (exact-match fetch
+# can return either; see spec §3.1).
+_EVENT_FORM_PREFIXES = (
+    ("SC 13D", "activist_13d"), ("SCHEDULE 13D", "activist_13d"),
+    ("SC 13G", "passive_13g"), ("SCHEDULE 13G", "passive_13g"),
+    ("8-K", "recent_8k"),
+    ("144", "planned_insider_sale_144"),
+)
+
+
+def classify_event_form(form: str) -> Optional[str]:
+    """Map a filing form string to its Events flag attribute, or None if not an
+    event form. Case-insensitive prefix match (captures /A amendments)."""
+    f = (form or "").strip().upper()
+    for prefix, attr in _EVENT_FORM_PREFIXES:
+        if f.startswith(prefix):
+            return attr
+    return None
+
+
+def build_events_section(records: list[dict], lookback_days: int,
+                         today: date) -> Optional[Events]:
+    """Pure: filter records to the lookback window, classify, and build an Events.
+    Returns None when there are no in-window event filings — NEVER an all-falsy
+    Events (load-bearing for the merge's _has_data check; spec §4)."""
+    cutoff = today - timedelta(days=lookback_days)
+    kept: list[tuple[str, FilingEvent]] = []
+    for r in records:
+        attr = classify_event_form(r.get("form", ""))
+        if attr is None:
+            continue
+        filed = r.get("filed")
+        try:
+            if date.fromisoformat(filed) < cutoff:
+                continue
+        except (TypeError, ValueError):
+            continue
+        kept.append((attr, FilingEvent(
+            form=r.get("form", ""), filed=filed,
+            accession=r.get("accession"), url=r.get("url"))))
+    if not kept:
+        return None
+    kept.sort(key=lambda p: p[1].filed, reverse=True)   # newest-first
+    ev = Events(recent=[fe for _, fe in kept])
+    for attr, _ in kept:
+        setattr(ev, attr, True)
+    return ev
+
+
 class EdgarSource(Source):
     """Authoritative SEC Form 4 insider data plus annual financials. Free, but the
     blocking `edgartools` work runs in a worker thread (the harness is async) and
@@ -271,11 +322,17 @@ class EdgarSource(Source):
 
     name = "edgar"
 
-    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183):
+    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183,
+                 config: Optional[dict] = None):
         self.identity = identity or os.environ.get("SEC_IDENTITY")
         if not self.identity:
             raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
         self.lookback_days = lookback_days
+        ev = (config or {}).get("edgar_events", {})
+        self._event_forms = ev.get(
+            "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"])
+        self._event_lookback_days = ev.get("lookback_days", 90)
+        self._index_limit = ev.get("index_limit", 40)
         from edgar import set_identity  # lazy: edgartools is an optional dep
         set_identity(self.identity)  # process-global mutable state — set once, here
 
@@ -346,6 +403,32 @@ class EdgarSource(Source):
         # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap
 
+    def _raw_filings(self, ticker: str):
+        """Network seam (mockable): the filtered edgartools filings object."""
+        from edgar import Company
+        return Company(ticker).get_filings(form=self._event_forms)
+
+    def _fetch_filings_index(self, ticker: str) -> list[dict]:
+        """Normalize the edgartools result (None | single EntityFiling | collection)
+        into a plain list of {form, filed, accession, url} dicts."""
+        res = self._raw_filings(ticker)
+        if res is None:
+            return []
+        items = res if hasattr(res, "__iter__") and not hasattr(res, "form") else [res]
+        out: list[dict] = []
+        for f in list(items)[: self._index_limit]:
+            fd = getattr(f, "filing_date", None)
+            out.append({
+                "form": getattr(f, "form", "") or "",
+                "filed": fd.isoformat() if hasattr(fd, "isoformat") else (fd or ""),
+                "accession": getattr(f, "accession_no", None),
+                "url": getattr(f, "url", None),
+            })
+        return out
+
+    def _build_events_from_records(self, records: list[dict]):
+        return build_events_section(records, self._event_lookback_days, date.today())
+
     def _fetch_sync(self, ticker: str) -> SourceResult:
         res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
         # Financials are isolated: a failure here must never drop the insider result.
@@ -355,6 +438,13 @@ class EdgarSource(Source):
                 res.partial.statements = fin_snap.statements
         except Exception as e:
             res.errors.append(f"edgar-financials: {e}")
+        # Events are isolated: a failure here must never drop insider/statements.
+        try:
+            ev = self._build_events_from_records(self._fetch_filings_index(ticker))
+            if ev is not None:
+                res.partial.events = ev
+        except Exception as e:
+            res.errors.append(f"edgar-events: {e}")
         return res
 
 
@@ -731,13 +821,18 @@ _REGISTRY = {
 }
 
 
-def build_sources(names: list[str]) -> list[Source]:
+def build_sources(names: list[str], config: Optional[dict] = None) -> list[Source]:
     out, skipped = [], []
     for n in names:
         if n not in _REGISTRY:
             raise ValueError(f"unknown source '{n}'. Known: {list(_REGISTRY)}")
+        cls = _REGISTRY[n]
         try:
-            out.append(_REGISTRY[n]())
+            # Only sources whose __init__ accepts `config` receive it; others stay zero-arg.
+            if "config" in inspect.signature(cls.__init__).parameters:
+                out.append(cls(config=config))
+            else:
+                out.append(cls())
         except Exception as e:
             skipped.append(f"{n} ({redact_secrets(str(e))})")
     if skipped:

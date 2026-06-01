@@ -85,6 +85,18 @@ research:
   max_risks: 8
   max_red_flags: 8
 
+# EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
+# docs/superpowers/specs/2026-06-01-edgar-events-design.md.
+edgar_events:
+  lookback_days: 90
+  index_limit: 40
+  # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
+  # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
+  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"]
+  soft_notes:        # reserved; all OFF in v1 (pure enrichment)
+    stale_after_8k: false
+    activist_13d_note: false
+
 # Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
 scout:
   daily_x: 15

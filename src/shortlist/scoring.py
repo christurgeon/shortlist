@@ -109,6 +109,11 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
                 and m.days_to_cover >= cs["min_days_to_cover"]
                 and rising_ok and fresh):
             out.append("crowded_short")
+    # Filing-stream event advisories (set by the harness bridge; None on the screener
+    # path, so this is a no-op there). Presence-based — no config thresholds.
+    for attr in ("activist_13d", "recent_8k", "passive_13g", "planned_insider_sale_144"):
+        if getattr(m, attr, None):
+            out.append(attr)
     return out
 
 

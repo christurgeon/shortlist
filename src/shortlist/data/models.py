@@ -129,6 +129,24 @@ class ShortInterest:
     revised: Optional[bool] = None       # revisionFlag — figure revised after publication
 
 
+@dataclass
+class FilingEvent:
+    form: str                          # "8-K", "SC 13D", "SC 13G", "144", ...
+    filed: str                         # ISO date (filing date)
+    accession: Optional[str] = None
+    url: Optional[str] = None          # public SEC index URL — carries no key
+
+
+@dataclass
+class Events:
+    """Recent SEC filing-stream events (enrichment, not a scored section)."""
+    recent: list[FilingEvent] = field(default_factory=list)  # in-window, newest-first
+    recent_8k: bool = False
+    activist_13d: bool = False         # SC 13D / SCHEDULE 13D (and /A) in window
+    passive_13g: bool = False          # SC 13G / SCHEDULE 13G (and /A) in window
+    planned_insider_sale_144: bool = False  # Form 144 (and /A) in window
+
+
 # --- Snapshot -------------------------------------------------------------
 
 # Which top-level objects must be present for a snapshot to be "assessment-ready".
@@ -150,6 +168,7 @@ class TickerSnapshot:
     insider: Optional[Insider] = None
     price: Optional[Price] = None
     short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -204,6 +223,9 @@ class TickerSnapshot:
         ins = d.get("insider")
         if snap.insider is not None and ins and ins.get("recent"):
             snap.insider.recent = [_build(InsiderTxn, t) for t in ins["recent"]]
+        ev = d.get("events")
+        if snap.events is not None and ev and ev.get("recent"):
+            snap.events.recent = [_build(FilingEvent, e) for e in ev["recent"]]
         snap.raw = d.get("raw", {}) or {}
         snap.provenance = d.get("provenance", {}) or {}
         snap.errors = d.get("errors", []) or []
@@ -219,7 +241,7 @@ _DEFAULTS = {
 # Auxiliary sections live on the snapshot and are merged, but are DELIBERATELY excluded
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
-_AUX_DEFAULTS = {"short_interest": ShortInterest}
+_AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:
