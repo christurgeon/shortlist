@@ -12,8 +12,9 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
 
     Two fields are DERIVED here because the harness has the raw material but not
     the field: gross_margin_stability (from Statements) and fcf_positive (most
-    recent FCF). Two are accepted None parity gaps the harness does not fetch:
-    pe_median_5y and roic_5y_avg. eps_revision is out of scope."""
+    recent FCF). eps_revision is the one accepted None parity gap (Alpha Vantage,
+    out of scope); pe_median_5y and roic_5y_avg now flow from FMPSource's annual
+    history fetches."""
     m = StockMetrics(ticker=snap.ticker)
 
     p = snap.profile
@@ -25,10 +26,12 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     f = snap.fundamentals
     if f:
         m.pe_ttm = f.pe_ttm
+        m.pe_median_5y = f.pe_median_5y
         m.peg = f.peg
         m.fcf_yield = f.fcf_yield
         m.roe = f.roe
         m.roic = f.roic
+        m.roic_5y_avg = f.roic_5y_avg
         m.gross_margin = f.gross_margin
         m.net_margin = f.net_margin
         m.debt_to_equity = f.debt_to_equity
@@ -61,5 +64,5 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             fcf0 = st.free_cash_flow[0]
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
 
-    # Accepted parity gaps (left None): pe_median_5y, roic_5y_avg, eps_revision.
+    # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
     return m

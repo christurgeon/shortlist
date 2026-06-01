@@ -29,9 +29,11 @@ class Profile:
 class Fundamentals:
     """TTM ratios + the quality/moat inputs an assessment needs."""
     pe_ttm: Optional[float] = None
+    pe_median_5y: Optional[float] = None   # 5y median PE, the pe_vs_history() anchor
     peg: Optional[float] = None
     roe: Optional[float] = None
     roic: Optional[float] = None
+    roic_5y_avg: Optional[float] = None    # 5y mean ROIC, smooths a TTM spike for moat
     gross_margin: Optional[float] = None
     net_margin: Optional[float] = None
     operating_margin: Optional[float] = None

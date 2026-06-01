@@ -80,12 +80,15 @@ The bridge **derives** two fields the snapshot doesn't store directly:
 `fcf_positive` (most-recent free cash flow). It surfaces Yahoo's `realized_vol`
 and `max_drawdown` as risk fields that are **populated but not yet scored**.
 
-Two **accepted parity gaps** vs. the screener (the harness doesn't fetch these, so
-they map to `None` and the scorer redistributes weight): `pe_median_5y` (harness
-`value` runs on 3 legs, not 4) and `roic_5y_avg` (moat falls back to TTM `roic`).
-Closing the first means adding an annual `ratios` fetch to `FMPSource` — a tracked
-follow-up. Harness-engine cards carry no `coverage` diagnostic; the snapshot's own
-`coverage()`/`missing()` remain available via `shortlist-harness`.
+`FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge now
+maps `pe_median_5y` (harness `value` runs on the full 4 legs, via the shared
+`shortlist.stats.median_pe` helper the screener also uses) and `roic_5y_avg` (moat
+uses the 5y ROIC average instead of falling back to TTM `roic`, via
+`shortlist.stats.avg_roic`). The one remaining **accepted parity gap** vs. the
+screener is `eps_revision` (Alpha Vantage, out of scope) — it maps to `None` and
+the scorer redistributes weight. Harness-engine cards carry no `coverage`
+diagnostic; the snapshot's own `coverage()`/`missing()` remain available via
+`shortlist-harness`.
 
 ## Adding a source
 

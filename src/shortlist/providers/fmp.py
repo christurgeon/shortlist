@@ -6,7 +6,7 @@ from typing import Any, Optional
 import requests
 
 from ..models import StockMetrics
-from ..stats import gross_margin_stability
+from ..stats import gross_margin_stability, median_pe
 from .base import Provider
 
 BASE = "https://financialmodelingprep.com/stable"
@@ -74,15 +74,7 @@ class FMPProvider(Provider):
         # 5-year median PE for pe_vs_history() in value scoring.
         hist_ratios = self._get("ratios", symbol=ticker, period="annual", limit=5)
         if isinstance(hist_ratios, list):
-            pes = [r["priceToEarningsRatio"] for r in hist_ratios if r.get("priceToEarningsRatio")]
-            if len(pes) >= 2:
-                pes_sorted = sorted(pes)
-                mid = len(pes_sorted) // 2
-                m.pe_median_5y = (
-                    pes_sorted[mid]
-                    if len(pes_sorted) % 2
-                    else (pes_sorted[mid - 1] + pes_sorted[mid]) / 2
-                )
+            m.pe_median_5y = median_pe([r.get("priceToEarningsRatio") for r in hist_ratios])
 
         # Margin stability + recent profitability from annual history (moat proxies).
         income = self._get("income-statement", symbol=ticker, period="annual", limit=5)

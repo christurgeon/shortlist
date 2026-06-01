@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..env import redact_secrets
+from ..stats import avg_roic, median_pe
 from .models import (
     Analyst, Fundamentals, Insider, InsiderTxn, Price, Profile,
     SourceResult, Statements, TickerSnapshot,
@@ -61,7 +62,9 @@ class FMPSource(Source):
             "profile": ("profile", {"symbol": ticker}),
             "quote": ("quote", {"symbol": ticker}),
             "ratios_ttm": ("ratios-ttm", {"symbol": ticker}),
+            "ratios_annual": ("ratios", {"symbol": ticker, "period": "annual", "limit": 5}),
             "key_metrics_ttm": ("key-metrics-ttm", {"symbol": ticker}),
+            "key_metrics_annual": ("key-metrics", {"symbol": ticker, "period": "annual", "limit": 5}),
             "income": ("income-statement", {"symbol": ticker, "period": "annual", "limit": 5}),
             "balance": ("balance-sheet-statement", {"symbol": ticker, "period": "annual", "limit": 5}),
             "cashflow": ("cash-flow-statement", {"symbol": ticker, "period": "annual", "limit": 5}),
@@ -94,11 +97,19 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     ratios = _first(raw.get("ratios_ttm"))
     km = _first(raw.get("key_metrics_ttm"))
     if ratios or km:
+        ratios_hist = raw.get("ratios_annual")
+        km_hist = raw.get("key_metrics_annual")
         snap.fundamentals = Fundamentals(
             pe_ttm=(ratios or {}).get("priceToEarningsRatioTTM"),
+            pe_median_5y=median_pe(
+                [r.get("priceToEarningsRatio") for r in ratios_hist]
+            ) if isinstance(ratios_hist, list) else None,
             peg=(ratios or {}).get("priceToEarningsGrowthRatioTTM"),
             roe=(km or {}).get("returnOnEquityTTM"),
             roic=(km or {}).get("returnOnInvestedCapitalTTM"),
+            roic_5y_avg=avg_roic(
+                [r.get("returnOnInvestedCapital") for r in km_hist]
+            ) if isinstance(km_hist, list) else None,
             gross_margin=(ratios or {}).get("grossProfitMarginTTM"),
             net_margin=(ratios or {}).get("netProfitMarginTTM"),
             operating_margin=(ratios or {}).get("operatingProfitMarginTTM"),
