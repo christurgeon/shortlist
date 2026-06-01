@@ -78,3 +78,26 @@ def test_build_never_returns_all_falsy_events():
     assert any([ev.recent_8k, ev.activist_13d, ev.passive_13g,
                 ev.planned_insider_sale_144])
     assert ev.recent  # and recent is non-empty
+
+
+from shortlist.data.models import SourceResult, merge_snapshots
+
+
+def test_events_merge_picks_edgar_and_records_provenance():
+    edgar = SourceResult(source="edgar")
+    edgar.partial = TickerSnapshot(ticker="AAPL")
+    edgar.partial.events = _sample_events()
+    fmp = SourceResult(source="fmp")
+    fmp.partial = TickerSnapshot(ticker="AAPL")          # no events
+    merged = merge_snapshots("AAPL", [fmp, edgar], priority=["yahoo", "edgar", "fmp"])
+    assert merged.events is not None
+    assert merged.events.activist_13d is True
+    assert merged.provenance["events"] == ["edgar"]
+
+
+def test_merge_without_events_leaves_section_none():
+    fmp = SourceResult(source="fmp")
+    fmp.partial = TickerSnapshot(ticker="AAPL")
+    merged = merge_snapshots("AAPL", [fmp], priority=["fmp"])
+    assert merged.events is None
+    assert "events" not in merged.provenance
