@@ -163,7 +163,7 @@ keyless). The composite, fundamental sub-scores, **weight-fitting** (walk-forwar
 point-in-time fundamentals accumulate (organic daily `store.py` captures or the
 EDGAR-XBRL source in `DATA_SOURCES.md` A1). Yahoo full daily history is fetched via
 `period1=0` epoch params — **never `range=max`**, which silently degrades to
-quarterly bars. Design record: `docs/superpowers/specs/2026-06-01-backtest-design.md`.
+quarterly bars.
 
 ### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
 
@@ -188,8 +188,7 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
 - **Free-tier aware:** `--max-tickers` defaults to 15 (≈195 < FMP's 250/day);
   default watchlist avoids the 402-gated symbols. Scale needs paid FMP or caching.
 - **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;
-  enabling a daily timer is an explicit opt-in (`deploy/README.md`). Design record:
-  `docs/superpowers/specs/2026-06-01-snapshot-accumulation-design.md`.
+  enabling a daily timer is an explicit opt-in (`deploy/README.md`).
 
 ## Known limitations (next hardening pass)
 
@@ -216,7 +215,22 @@ The EDGAR value-leg recovery (PR #9) landed with two deliberate follow-ups still
    `fmp: gated_402`. The automated tests + opt-in live SEC test pass, but a real
    CLI run on a 402-gated symbol hasn't been eyeballed.
 2. **Harness consolidation (Phases B/C)** — flipping `--engine harness` to the
-   default and retiring the screener providers/`merge.py` remain **gated behind the
-   handoff checklist** in `docs/superpowers/plans/2026-06-01-edgar-value-and-harness-consolidation.md`.
-   Requires explicit sign-off; do not action without completing the checklist
-   (parity spot-check + FMP/EDGAR rate-limit acceptance).
+   default (Phase B) and retiring the screener providers/`merge.py` (Phase C) are
+   **destructive / behavior-changing and require explicit user sign-off** — do not
+   auto-execute. The gating handoff checklist:
+
+   *Before Phase B (flip default engine):*
+   - [ ] Coverage-parity work (shipped in PR #9) merged and the full suite green
+   - [ ] Live EDGAR integration run passed once (10-K filer + 20-F degradation)
+   - [ ] Manual spot-check: harness vs screener composite on 5–10 names within tolerance
+   - [ ] User explicitly approves the engine flip
+
+   *Before Phase C (delete screener providers):*
+   - [ ] Phase B has run for several real universe screens without incident
+   - [ ] No coverage/score regressions observed
+   - [ ] User explicitly approves deleting `fmp.py`/`finnhub.py`/`edgar.py`/`merge.py`
+
+   When flipping (Phase B): keep `screener` selectable for one deprecation cycle, surface
+   the cost (harness is ~13 FMP + ~2× EDGAR calls/ticker — confirm acceptable or land
+   caching first), and update the README/`CLAUDE.md` "two layers" framing. When retiring
+   (Phase C): **keep** the shared leaves `providers/_form4.py` and `providers/_edgar_facts.py`.

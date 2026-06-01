@@ -33,8 +33,7 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 
 A `snapshot_to_metrics` **bridge** (`data/bridge.py`) now feeds the harness
 `TickerSnapshot` into the same scorer the screener uses, exposed via
-`shortlist --engine harness`. See
-`docs/superpowers/specs/2026-05-31-harness-scoring-bridge-yahoo-design.md`.
+`shortlist --engine harness` (walkthrough in `HARNESS.md`).
 
 Scored signals today: **quality** (ROE, net margin, interest coverage, D/E),
 **moat** (gross margin, margin stability, ROIC), **growth** (revenue/FCF/EPS CAGR +
@@ -118,9 +117,8 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
   FMP's per-symbol gating. It leads the harness merge priority for price fields and
   populates `Price.rel_strength_6m` / `realized_vol` / `max_drawdown` (the latter two are
   surfaced but not yet scored; a volatility risk gate is a tracked follow-up).
-- See `docs/superpowers/specs/2026-05-31-harness-scoring-bridge-yahoo-design.md` and the
-  matching plan for the implementation, including the `snapshot_to_metrics` bridge that
-  routes the harness snapshot into the scorer.
+- The `snapshot_to_metrics` bridge (`data/bridge.py`) routes the harness snapshot into the
+  scorer; see `HARNESS.md` for the walkthrough.
 
 #### A4. Wikimedia pageviews — attention / demand proxy
 - **What:** keyless `wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...` — daily

@@ -166,8 +166,7 @@ touches.
 #### 2.1 No validation that the score predicts anything  ★ highest leverage  ✅ SHIPPED (v1: momentum axis)
 
 > **Status:** the backtest harness is implemented — `src/shortlist/backtest/`
-> (`shortlist-backtest` CLI), design record in
-> `docs/superpowers/specs/2026-06-01-backtest-design.md`, walkthrough in
+> (`shortlist-backtest` CLI), walkthrough in
 > `HARNESS.md` → "Backtesting". It reports **rank IC** (time-series and
 > cross-sectional, with mean/std/ICIR/**t-stat**/hit-rate) and **quantile
 > forward-return spreads** per signal × horizon, with no look-ahead (closes
@@ -190,8 +189,8 @@ touches.
 > (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
 > snapshot-replay (`SnapshotSignalSource`) activate once point-in-time multi-axis
 > history accumulates. The **accumulation mechanism now exists** —
-> `shortlist-accumulate` (idempotent, point-in-time, free-tier-aware; design record
-> `docs/superpowers/specs/2026-06-01-snapshot-accumulation-design.md`) — but its
+> `shortlist-accumulate` (idempotent, point-in-time, free-tier-aware; walkthrough in
+> `HARNESS.md` → "Feeding the snapshot path") — but its
 > daily schedule is **dormant/opt-in** (`deploy/`), so the 24-date clock starts only
 > when an operator enables it (or runs it manually). The EDGAR XBRL source below is
 > the other path to that history. The plug sketch below is retained as rationale.

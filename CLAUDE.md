@@ -29,7 +29,30 @@ screener can score off the harness via `--engine harness` (`bridge.py:snapshot_t
 adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes). The shared Form 4 aggregation lives
 in `providers/_form4.py` — a dependency-free leaf module used by both the screener
 `EdgarProvider` and the harness `EdgarSource`; edit insider extraction logic there,
-not in two places.
+not in two places. The shared EDGAR financials leaf (`providers/_edgar_facts.py`,
+10-K statements) follows the same pattern.
+
+## Stacks built on the two layers
+
+Three further stacks **orchestrate** the two scoring layers — they add discovery,
+validation, and history, not new scoring:
+
+- **Backtest** (`shortlist.backtest.*`, CLI `shortlist-backtest`): validates the
+  scorer against forward returns (rank IC + quantile spreads) by replaying the
+  **real** scoring chain on price series truncated point-in-time. Signal-agnostic
+  (`Observation(as_of, ticker, {signal: sub-score})`). Momentum is validated today;
+  fundamental/weight-fitting paths are built but **guarded** on snapshot history.
+  See `HARNESS.md` → "Backtesting" and `docs/ASSESSMENT_GAPS.md` §2.1.
+- **Accumulation** (`shortlist.data.accumulate`, CLI `shortlist-accumulate`):
+  idempotent, point-in-time daily capture of `TickerSnapshot`s into `store.py` so the
+  guarded backtest paths can activate (≥24 daily snapshots). **Scheduling ships OFF**
+  — a disabled systemd sample lives in `deploy/`. See `HARNESS.md` → "Feeding the
+  snapshot path".
+- **Scout** (`shortlist.scout.*`, CLI `shortlist-scout`): autonomously discovers
+  candidate tickers from free signal feeds, deep-screens them via
+  `screen.run_harness`, runs the Claude research layer on the leaders, and ships a
+  daily Telegram report. Discovery + delivery only; reuses the existing scorer. Full
+  design in `docs/AUTONOMOUS_SCOUT.md`.
 
 ## Dev workflow (uv)
 
