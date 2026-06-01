@@ -94,7 +94,6 @@ def assess(card, filing: FilingText, config: dict,
     user_prompt = _build_user_prompt(filing, config)
 
     prompt = user_prompt
-    last_error: Optional[str] = None
     for _ in range(2):
         res = runner(prompt=prompt, system=SYSTEM_PROMPT, model=model, timeout_s=timeout)
         if res.error:
@@ -102,6 +101,7 @@ def assess(card, filing: FilingText, config: dict,
         if res.stop_reason == "max_tokens":
             return None                       # truncated → unreliable, skip
         salvaged = _salvage_json(res.text)
+        parse_error = "invalid JSON"
         if salvaged:
             try:
                 payload = json.loads(salvaged)
@@ -113,8 +113,8 @@ def assess(card, filing: FilingText, config: dict,
                 _verify_grounding(assessment, filing)
                 return assessment
             except (ValueError, json.JSONDecodeError) as e:
-                last_error = str(e)
+                parse_error = str(e)
         prompt = (user_prompt + "\n\nYour previous response could not be parsed "
-                  f"({last_error or 'invalid JSON'}). Return ONLY the JSON object, "
+                  f"({parse_error}). Return ONLY the JSON object, "
                   "with no prose and no code fences.")
     return None

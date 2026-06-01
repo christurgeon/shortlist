@@ -69,21 +69,26 @@ class FinnhubProvider(Provider):
             m.rating_hold = latest.get("hold")
             m.rating_sell = (latest.get("strongSell") or 0) + (latest.get("sell") or 0)
             if len(trend) >= 2:
-                prev = trend[1]
-                cur_net = (latest.get("strongBuy", 0) + latest.get("buy", 0)
-                           - latest.get("sell", 0) - latest.get("strongSell", 0))
-                prev_net = (prev.get("strongBuy", 0) + prev.get("buy", 0)
-                            - prev.get("sell", 0) - prev.get("strongSell", 0))
-                total = max(1, latest.get("strongBuy", 0) + latest.get("buy", 0)
-                            + latest.get("hold", 0) + latest.get("sell", 0)
-                            + latest.get("strongSell", 0))
-                m.eps_revision = (cur_net - prev_net) / total
+                total = max(1, _rec_total(latest))
+                m.eps_revision = (_rec_net(latest) - _rec_net(trend[1])) / total
 
         return self._tag(
             m, "price", "market_cap", "roe", "roic", "gross_margin", "net_margin",
             "debt_to_equity", "insider_sentiment", "rating_buy", "rating_hold",
             "rating_sell", "eps_revision",
         )
+
+
+def _rec_net(row: dict) -> int:
+    """Net bullishness of a recommendation-trend row (buys minus sells)."""
+    return (row.get("strongBuy", 0) + row.get("buy", 0)
+            - row.get("sell", 0) - row.get("strongSell", 0))
+
+
+def _rec_total(row: dict) -> int:
+    """Total analyst count across all recommendation buckets in a trend row."""
+    return (row.get("strongBuy", 0) + row.get("buy", 0) + row.get("hold", 0)
+            + row.get("sell", 0) + row.get("strongSell", 0))
 
 
 def _pct(x: Optional[float]) -> Optional[float]:

@@ -121,6 +121,10 @@ class Price:
 # Which top-level objects must be present for a snapshot to be "assessment-ready".
 KEY_OBJECTS = ("profile", "fundamentals", "statements", "analyst", "insider", "price")
 
+# `recent` is illustrative; the rest are internal derivation plumbing, not
+# assessment-ready signals -> excluded from coverage/missing accounting.
+_NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes")
+
 
 @dataclass
 class TickerSnapshot:
@@ -147,11 +151,7 @@ class TickerSnapshot:
                 # Count the object's declared fields as all-missing.
                 total += len(fields(_DEFAULTS[name]))
                 continue
-            for f in fields(obj):
-                # `recent` is illustrative; the three below are internal derivation
-                # plumbing, not assessment-ready signals -> excluded from coverage math.
-                if f.name in ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes"):
-                    continue
+            for f in _signal_fields(obj):
                 total += 1
                 filled += getattr(obj, f.name) not in (None, [], "")
         return round(filled / total, 3) if total else 0.0
@@ -163,11 +163,7 @@ class TickerSnapshot:
             if obj is None:
                 out.append(name)
                 continue
-            for f in fields(obj):
-                # `recent` is illustrative; the three below are internal derivation
-                # plumbing, not assessment-ready signals -> excluded from coverage math.
-                if f.name in ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes"):
-                    continue
+            for f in _signal_fields(obj):
                 if getattr(obj, f.name) in (None, [], ""):
                     out.append(f"{name}.{f.name}")
         return out
@@ -191,11 +187,7 @@ class TickerSnapshot:
             snap.__dict__[name] = _build(klass, d.get(name))
         ins = d.get("insider")
         if snap.insider is not None and ins and ins.get("recent"):
-            snap.insider.recent = [
-                InsiderTxn(**{k: v for k, v in t.items()
-                              if k in {f.name for f in fields(InsiderTxn)}})
-                for t in ins["recent"]
-            ]
+            snap.insider.recent = [_build(InsiderTxn, t) for t in ins["recent"]]
         snap.raw = d.get("raw", {}) or {}
         snap.provenance = d.get("provenance", {}) or {}
         snap.errors = d.get("errors", []) or []
@@ -206,6 +198,11 @@ _DEFAULTS = {
     "profile": Profile, "fundamentals": Fundamentals, "statements": Statements,
     "analyst": Analyst, "insider": Insider, "price": Price,
 }
+
+
+def _signal_fields(obj_or_cls: Any) -> list:
+    """Declared dataclass fields minus the non-signal plumbing ones."""
+    return [f for f in fields(obj_or_cls) if f.name not in _NON_SIGNAL_FIELDS]
 
 
 # --- Source output + merge ------------------------------------------------

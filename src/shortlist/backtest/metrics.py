@@ -46,9 +46,8 @@ def spearman_ic(signal: list[Optional[float]],
     pairs = [(s, f) for s, f in zip(signal, fwd) if s is not None and f is not None]
     if len(pairs) < 3:
         return None
-    s_vals = [p[0] for p in pairs]
-    f_vals = [p[1] for p in pairs]
-    ic = _pearson(rank(s_vals), rank(f_vals))
+    s_vals, f_vals = zip(*pairs)
+    ic = _pearson(rank(list(s_vals)), rank(list(f_vals)))
     return round(ic, 10) if ic is not None else None
 
 

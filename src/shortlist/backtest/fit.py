@@ -6,6 +6,7 @@ multi-axis history accumulates. Deterministic (no RNG).
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Optional
 
@@ -31,9 +32,9 @@ def _composite(sub: dict[str, float], w: dict[str, float]) -> float:
 
 
 def _ic_for_weights(rows, w) -> Optional[float]:
-    by_period: dict = {}
+    by_period: dict = defaultdict(list)
     for p, sub, fwd in rows:
-        by_period.setdefault(p, []).append((_composite(sub, w), fwd))
+        by_period[p].append((_composite(sub, w), fwd))
     ics = []
     for pairs in by_period.values():
         ic = spearman_ic([c for c, _ in pairs], [f for _, f in pairs])
@@ -52,7 +53,8 @@ def _coordinate_ascent(train, prior) -> dict[str, float]:
     """Deterministic coordinate ascent on weights maximizing in-sample IC."""
     w = dict(prior)
     best = _ic_for_weights(train, w)
-    best = best if best is not None else -1.0
+    if best is None:
+        best = -1.0
     for _ in range(20):
         improved = False
         for k in list(w):

@@ -15,15 +15,7 @@ _NAMED = {"largecap": "universe_largecap.txt"}
 def load_universe(spec: str) -> list[str]:
     if spec in _NAMED:
         path = Path(__file__).parent / _NAMED[spec]
-        out = []
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                out.append(line.upper())
-        seen, uniq = set(), []
-        for t in out:
-            if t not in seen:
-                seen.add(t)
-                uniq.append(t)
-        return uniq
+        tickers = (line.strip().upper() for line in path.read_text().splitlines())
+        tickers = [t for t in tickers if t and not t.startswith("#")]
+        return list(dict.fromkeys(tickers))    # de-dup, preserve first-seen order
     return [t.strip().upper() for t in spec.split(",") if t.strip()]

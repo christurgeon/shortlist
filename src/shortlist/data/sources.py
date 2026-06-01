@@ -7,7 +7,7 @@ import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
@@ -73,11 +73,7 @@ class FMPSource(Source):
             "insider": ("insider-trading/search", {"symbol": ticker, "page": 0, "limit": 100}),
             "price_change": ("stock-price-change", {"symbol": ticker}),
         }
-        for name, (path, params) in sections.items():
-            try:
-                res.raw[name] = await self._get(path, **params)
-            except Exception as e:
-                res.errors.append(f"fmp.{name}: {redact_secrets(e)}")
+        await _fetch_sections(res, self._get, sections)
         res.partial = _normalize_fmp(ticker, res.raw)
         return res
 
@@ -97,26 +93,27 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     ratios = _first(raw.get("ratios_ttm"))
     km = _first(raw.get("key_metrics_ttm"))
     if ratios or km:
+        ratios, km = ratios or {}, km or {}
         ratios_hist = raw.get("ratios_annual")
         km_hist = raw.get("key_metrics_annual")
         snap.fundamentals = Fundamentals(
-            pe_ttm=(ratios or {}).get("priceToEarningsRatioTTM"),
+            pe_ttm=ratios.get("priceToEarningsRatioTTM"),
             pe_median_5y=median_pe(
                 [r.get("priceToEarningsRatio") for r in ratios_hist]
             ) if isinstance(ratios_hist, list) else None,
-            peg=(ratios or {}).get("priceToEarningsGrowthRatioTTM"),
-            roe=(km or {}).get("returnOnEquityTTM"),
-            roic=(km or {}).get("returnOnInvestedCapitalTTM"),
+            peg=ratios.get("priceToEarningsGrowthRatioTTM"),
+            roe=km.get("returnOnEquityTTM"),
+            roic=km.get("returnOnInvestedCapitalTTM"),
             roic_5y_avg=avg_roic(
                 [r.get("returnOnInvestedCapital") for r in km_hist]
             ) if isinstance(km_hist, list) else None,
-            gross_margin=(ratios or {}).get("grossProfitMarginTTM"),
-            net_margin=(ratios or {}).get("netProfitMarginTTM"),
-            operating_margin=(ratios or {}).get("operatingProfitMarginTTM"),
-            debt_to_equity=(ratios or {}).get("debtToEquityRatioTTM"),
-            interest_coverage=(ratios or {}).get("interestCoverageRatioTTM"),
-            current_ratio=(ratios or {}).get("currentRatioTTM"),
-            fcf_yield=(km or {}).get("freeCashFlowYieldTTM"),
+            gross_margin=ratios.get("grossProfitMarginTTM"),
+            net_margin=ratios.get("netProfitMarginTTM"),
+            operating_margin=ratios.get("operatingProfitMarginTTM"),
+            debt_to_equity=ratios.get("debtToEquityRatioTTM"),
+            interest_coverage=ratios.get("interestCoverageRatioTTM"),
+            current_ratio=ratios.get("currentRatioTTM"),
+            fcf_yield=km.get("freeCashFlowYieldTTM"),
         )
     inc, bal, cf = raw.get("income"), raw.get("balance"), raw.get("cashflow")
     if isinstance(inc, list) and inc:
@@ -133,14 +130,15 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     pt = _first(raw.get("price_target"))
     grades = _first(raw.get("grades"))
     if pt or grades:
+        pt, grades = pt or {}, grades or {}
         snap.analyst = Analyst(
-            target_median=(pt or {}).get("targetMedian") or (pt or {}).get("targetConsensus"),
-            target_high=(pt or {}).get("targetHigh"),
-            target_low=(pt or {}).get("targetLow"),
-            buy=((grades or {}).get("strongBuy") or 0) + ((grades or {}).get("buy") or 0) or None,
-            hold=(grades or {}).get("hold"),
-            sell=((grades or {}).get("sell") or 0) + ((grades or {}).get("strongSell") or 0) or None,
-            consensus=(grades or {}).get("consensus"),
+            target_median=pt.get("targetMedian") or pt.get("targetConsensus"),
+            target_high=pt.get("targetHigh"),
+            target_low=pt.get("targetLow"),
+            buy=(grades.get("strongBuy") or 0) + (grades.get("buy") or 0) or None,
+            hold=grades.get("hold"),
+            sell=(grades.get("sell") or 0) + (grades.get("strongSell") or 0) or None,
+            consensus=grades.get("consensus"),
         )
     q = _first(raw.get("quote")) or {}
     chg = _first(raw.get("price_change")) or {}
@@ -205,11 +203,7 @@ class FinnhubSource(Source):
                 "symbol": ticker,
                 "from": (today - timedelta(days=183)).isoformat(), "to": today.isoformat()}),
         }
-        for name, (path, params) in calls.items():
-            try:
-                res.raw[name] = await self._get(path, **params)
-            except Exception as e:
-                res.errors.append(f"finnhub.{name}: {redact_secrets(e)}")
+        await _fetch_sections(res, self._get, calls)
         res.partial = _normalize_finnhub(ticker, res.raw)
         return res
 
@@ -450,6 +444,21 @@ class YahooSource(Source):
 
 
 # --- helpers --------------------------------------------------------------
+
+async def _fetch_sections(
+    res: SourceResult,
+    get: Callable[..., Awaitable[Any]],
+    sections: dict[str, tuple[str, dict[str, Any]]],
+) -> None:
+    """Fetch each named section into `res.raw`, recording per-section failures as
+    redacted `"<source>.<section>: <err>"` strings. One failed section never aborts
+    the rest."""
+    for name, (path, params) in sections.items():
+        try:
+            res.raw[name] = await get(path, **params)
+        except Exception as e:
+            res.errors.append(f"{res.source}.{name}: {redact_secrets(e)}")
+
 
 def _first(x: Any) -> Optional[dict]:
     if isinstance(x, list) and x:

@@ -33,6 +33,27 @@ def is_available() -> bool:
     return True
 
 
+def _enrich_card(card, config: dict, root: str, refresh: bool,
+                 fetch: Callable, assess_fn: Callable) -> ResearchResult:
+    """Research a single card. Never raises — failures become a skipped result."""
+    try:
+        filing = fetch(card.ticker)
+    except Exception as e:  # network/edgartools/identity errors
+        return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
+    if filing is None:
+        return ResearchResult(card.ticker, skipped="no 10-K")
+    if not refresh and report.is_cached(card.ticker, filing.accession, root):
+        bp = report.brief_path(card.ticker, filing.accession, root)
+        return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
+    assessment = assess_fn(card, filing, config)
+    if assessment is None:
+        return ResearchResult(card.ticker, skipped="assessment failed")
+    bp = report.write(assessment, root)
+    return ResearchResult(
+        card.ticker, brief_path=str(bp), cost_usd=assessment.cost_usd or 0.0,
+        synthesis=assessment.synthesis)
+
+
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
     """Enrich the top-N non-gated cards (already sorted by composite desc).
@@ -41,26 +62,4 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     root = config.get("research", {}).get("output_root", "research")
     ranked = sorted(cards, key=lambda c: c.composite, reverse=True)
     selected = [c for c in ranked if not c.gates][:top_n]
-    results: list[ResearchResult] = []
-    for card in selected:
-        try:
-            filing = fetch(card.ticker)
-        except Exception as e:  # network/edgartools/identity errors
-            results.append(ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}"))
-            continue
-        if filing is None:
-            results.append(ResearchResult(card.ticker, skipped="no 10-K"))
-            continue
-        if not refresh and report.is_cached(card.ticker, filing.accession, root):
-            bp = report.brief_path(card.ticker, filing.accession, root)
-            results.append(ResearchResult(card.ticker, brief_path=str(bp), from_cache=True))
-            continue
-        assessment = assess_fn(card, filing, config)
-        if assessment is None:
-            results.append(ResearchResult(card.ticker, skipped="assessment failed"))
-            continue
-        bp = report.write(assessment, root)
-        results.append(ResearchResult(
-            card.ticker, brief_path=str(bp), cost_usd=assessment.cost_usd or 0.0,
-            synthesis=assessment.synthesis))
-    return results
+    return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]

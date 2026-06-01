@@ -65,8 +65,7 @@ def _build_note(providers: dict) -> Optional[str]:
     # not a tier-gating issue, so it must NOT claim "needs Starter tier".
     if providers.get("fmp") in ("gated_402", "empty"):
         return _FMP_NOTE
-    return (f"{', '.join(sorted(flagged))}: supplied no usable data for this "
-            "symbol")
+    return f"{', '.join(sorted(flagged))}: supplied no usable data for this symbol"
 
 
 def coverage_note_line(ticker: str, cov: Coverage) -> str:

@@ -19,10 +19,6 @@ def merge(per_provider: list[StockMetrics], priority: dict | None = None) -> Sto
     """Combine several providers' StockMetrics for one ticker into a single
     record, taking each field from the highest-priority source that has it."""
     priority = priority or DEFAULT_PRIORITY
-    by_source = {m.sources.get("__provider__", _infer(m)): m for m in per_provider}
-    # Fall back to a name attached by the caller; otherwise index by position.
-    indexed = {getattr(m, "_provider", None) or i: m for i, m in enumerate(per_provider)}
-
     ticker = per_provider[0].ticker if per_provider else ""
     out = StockMetrics(ticker=ticker)
 
@@ -56,7 +52,3 @@ def _provider_of(m: StockMetrics) -> str:
     if not m.sources:
         return "unknown"
     return max(set(m.sources.values()), key=list(m.sources.values()).count)
-
-
-def _infer(m: StockMetrics) -> str:
-    return _provider_of(m)

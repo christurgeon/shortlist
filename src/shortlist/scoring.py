@@ -107,18 +107,22 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     val = value_score(m, t)
     # Chris's brief: momentum OR deep undervaluation. Take the stronger axis so a
     # name can qualify on either, rather than being averaged down by the weaker one.
-    opp = _avg([max((x for x in (mom, val) if x is not None), default=None)])
+    present = [x for x in (mom, val) if x is not None]
+    opp = max(present) if present else None
     ins = insider_score(m, t)
 
-    parts = {
-        "quality": (q, w["quality"]),
-        "moat": (mo, w["moat"]),
-        "growth": (gr, w["growth"]),
-        "opportunity": (opp, w["opportunity"]),
-        "insider": (ins, w["insider"]),
-    }
-    num = sum(s * weight for s, weight in parts.values() if s is not None)
-    den = sum(weight for s, weight in parts.values() if s is not None)
+    # Weighted blend over the sub-scores that have inputs; a None sub-score is
+    # excluded and its weight is redistributed across the rest (never zeroed).
+    parts = [
+        (q, w["quality"]),
+        (mo, w["moat"]),
+        (gr, w["growth"]),
+        (opp, w["opportunity"]),
+        (ins, w["insider"]),
+    ]
+    present = [(s, weight) for s, weight in parts if s is not None]
+    num = sum(s * weight for s, weight in present)
+    den = sum(weight for _, weight in present)
     composite = round(num / den, 1) if den else 0.0
 
     return ScoreCard(

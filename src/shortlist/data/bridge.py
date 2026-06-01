@@ -91,17 +91,15 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.fcf_cagr = cagr(st.free_cash_flow)
         m.eps_cagr = cagr(st.net_income)
         m.revenue_growth_persistence = growth_persistence(st.revenue)
+        fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
-            fcf0 = st.free_cash_flow[0]
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
         # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
         # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
         # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave
         # nothing (m.fcf_yield set from f.fcf_yield earlier keeps FMP's priority).
-        if m.fcf_yield is None and st.free_cash_flow and m.market_cap:
-            fcf0 = st.free_cash_flow[0]
-            if fcf0 is not None:
-                m.fcf_yield = fcf0 / m.market_cap
+        if m.fcf_yield is None and fcf0 is not None and m.market_cap:
+            m.fcf_yield = fcf0 / m.market_cap
         # PE-vs-history from EDGAR EPS + Yahoo closes when FMP gated the symbol.
         # pr is in scope from the function top. pe_ttm uses latest ANNUAL EPS as a
         # TTM proxy (documented approximation).

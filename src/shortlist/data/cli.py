@@ -36,8 +36,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             saved = ""
         cov = snap.coverage()
-        flag = "ok" if cov >= 0.8 else "thin"
-        miss = "" if cov >= 0.8 else f"  missing: {', '.join(snap.missing()[:6])}"
+        ok = cov >= 0.8
+        flag = "ok" if ok else "thin"
+        miss = "" if ok else f"  missing: {', '.join(snap.missing()[:6])}"
         srcs = ",".join(sorted({s for v in snap.provenance.values() for s in v})) or "-"
         print(f"{snap.ticker:<6} coverage={cov:>5.0%} [{flag}] sources={srcs}{saved}{miss}")
         if snap.errors:

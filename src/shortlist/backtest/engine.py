@@ -25,6 +25,24 @@ def observation_grid(start: date, end: date, step_months: int) -> list[date]:
     return grid
 
 
+def _collect_rows(src: SignalSource, universe: list[str],
+                  histories: dict[str, PriceHistory], spy: PriceHistory,
+                  grid: list[date], horizon: int,
+                  return_mode: str) -> list[tuple[date, str, float, float]]:
+    """Join signal values to forward returns over the grid: (date, ticker, value, fwd)."""
+    rows: list[tuple[date, str, float, float]] = []
+    for t in grid:
+        for tk in universe:
+            obs = src.observe(tk, t)
+            if obs is None or src.name not in obs.signals:
+                continue
+            fr = _fwd_return(histories[tk], spy, t, horizon, return_mode)
+            if fr is None:
+                continue
+            rows.append((t, tk, obs.signals[src.name], fr))
+    return rows
+
+
 @dataclass
 class SignalReport:
     signal: str
@@ -45,6 +63,11 @@ class BacktestReport:
     return_mode: str
     reports: list[SignalReport]
     caveats: list[str] = field(default_factory=list)
+
+
+def _pairs_ic(pairs: list[tuple[float, float]]) -> Optional[float]:
+    """Spearman IC over (signal, forward-return) pairs."""
+    return spearman_ic([p[0] for p in pairs], [p[1] for p in pairs])
 
 
 def _fwd_return(hist: PriceHistory, spy: PriceHistory, t: date, horizon: int,
@@ -74,17 +97,7 @@ def run_backtest(sources: list[SignalSource], histories: dict[str, PriceHistory]
     for src in sources:
         for h in horizons:
             grid = observation_grid(start, end, step_months or h)
-            # collect rows: (date, ticker, signal_value, fwd_return)
-            rows: list[tuple[date, str, float, float]] = []
-            for t in grid:
-                for tk in universe:
-                    obs = src.observe(tk, t)
-                    if obs is None or src.name not in obs.signals:
-                        continue
-                    fr = _fwd_return(histories[tk], spy, t, h, return_mode)
-                    if fr is None:
-                        continue
-                    rows.append((t, tk, obs.signals[src.name], fr))
+            rows = _collect_rows(src, universe, histories, spy, grid, h, return_mode)
 
             by_date: dict[date, list[tuple[float, float]]] = defaultdict(list)
             by_name: dict[str, list[tuple[float, float]]] = defaultdict(list)
@@ -93,15 +106,15 @@ def run_backtest(sources: list[SignalSource], histories: dict[str, PriceHistory]
                 by_name[tk].append((sv, fr))
 
             xs_ics, breadths = [], []
-            for t, pairs in by_date.items():
+            for pairs in by_date.values():
                 breadths.append(len(pairs))
                 if len(pairs) >= xs_min_breadth:
-                    ic = spearman_ic([p[0] for p in pairs], [p[1] for p in pairs])
+                    ic = _pairs_ic(pairs)
                     if ic is not None:
                         xs_ics.append(ic)
             ts_ics = []
-            for tk, pairs in by_name.items():
-                ic = spearman_ic([p[0] for p in pairs], [p[1] for p in pairs])
+            for pairs in by_name.values():
+                ic = _pairs_ic(pairs)
                 if ic is not None:
                     ts_ics.append(ic)
 

@@ -89,10 +89,11 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
     moat_raw = payload["moat"]
     if not isinstance(moat_raw, dict):
         raise ValueError("moat must be an object")
+    trajectory = moat_raw.get("trajectory")
     moat = Moat(
         summary=str(moat_raw.get("summary", "")),
         sources=[str(s) for s in (moat_raw.get("sources") or [])],
-        trajectory=moat_raw.get("trajectory") if moat_raw.get("trajectory") in TRAJECTORIES else None,
+        trajectory=trajectory if trajectory in TRAJECTORIES else None,
     )
     return QualitativeAssessment(
         ticker=ticker, as_of=as_of, filing_accession=accession, filing_date=filing_date,

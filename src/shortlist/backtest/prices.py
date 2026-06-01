@@ -19,6 +19,13 @@ _BASE = "https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) shortlist/0.1"
 
 
+def _is_finite_number(x: Any) -> bool:
+    """True for a real, finite int/float. Excludes bool (isinstance(True, int)) and
+    NaN/Inf (json allows them) — a NaN close would survive `is not None` and
+    silently corrupt the IC."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
 def parse_chart(raw: Any) -> tuple[list[date], list[float]]:
     """Return (dates, closes) PAIRED — drop a pair only when its close is non-numeric."""
     try:
@@ -30,11 +37,7 @@ def parse_chart(raw: Any) -> tuple[list[date], list[float]]:
     dates: list[date] = []
     closes: list[float] = []
     for t, c in zip(ts, adj):
-        # exclude bool (isinstance(True, int)) and NaN/Inf (json allows them) —
-        # a NaN close would survive `is not None` and silently corrupt the IC.
-        if (isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c)
-                and isinstance(t, (int, float)) and not isinstance(t, bool)
-                and math.isfinite(t)):
+        if _is_finite_number(c) and _is_finite_number(t):
             dates.append(datetime.fromtimestamp(t, tz=timezone.utc).date())
             closes.append(float(c))
     return dates, closes
