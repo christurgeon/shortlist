@@ -31,7 +31,7 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
     name_map = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
                 "finnhub_news": "finnhub_news", "wikipedia": "wikipedia", "quiver": "quiver"}
     return [name_map[k] for k, v in scout_cfg.get("signals", {}).items()
-            if v.get("enabled") and k in name_map and k != "quiver"]
+            if v.get("enabled") and k in name_map]
 
 
 def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
@@ -45,10 +45,8 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
 
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
+    # Non-trading days are fine: last_session() anchors to the most recent session.
     session = today if demo else last_session(today)
-
-    if not demo and not is_trading_day(today) and session != today:
-        pass  # non-trading 'today' is fine; we anchor to last_session
 
     state = ScoutState(Path(scout_cfg.get("state_path", "state/scout_state.json")))
     if not demo and state.run_completed(session):
@@ -191,13 +189,19 @@ def _research_phase(
         # Wrap the entire enrich() call in a ThreadPoolExecutor so we can enforce a
         # wall-clock ceiling (research_phase_budget_s).  N hung claude calls serialise
         # inside enrich(); without this timeout the phase budget is decorative config.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_enrich, cards, config, top_n=n, refresh=False)
-            try:
-                results = future.result(timeout=budget_s)
-            except concurrent.futures.TimeoutError:
-                future.cancel()
-                return {}, [], f"research skipped: phase budget {budget_s}s exceeded"
+        #
+        # IMPORTANT: do NOT use `with ThreadPoolExecutor(...) as pool:` — that context
+        # manager calls shutdown(wait=True) on exit, which blocks until the thread
+        # finishes even after a TimeoutError.  Instead construct explicitly and call
+        # shutdown(wait=False) so we abandon the hung thread immediately.
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(_enrich, cards, config, top_n=n, refresh=False)
+        try:
+            results = future.result(timeout=budget_s)
+            pool.shutdown(wait=False)
+        except concurrent.futures.TimeoutError:
+            pool.shutdown(wait=False, cancel_futures=True)
+            return {}, [], f"research skipped: phase budget {budget_s}s exceeded"
     except Exception as e:  # noqa: BLE001
         return {}, [], f"research failed: {redact_secrets(str(e))}"
 

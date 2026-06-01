@@ -251,3 +251,23 @@ class EdgarForm4Signal:
 
 
 register("edgar_form4", EdgarForm4Signal)
+
+
+class QuiverSignal:
+    """Stub for Quiver Quantitative signals (congressional trades, gov-contract awards).
+
+    Registered so config can reference ``quiver.enabled: false`` without a KeyError;
+    returns [] and available() == (False, "not implemented") until wired up.
+    See providers/extensions.py for the screener-layer counterpart.
+    """
+    name = "quiver"
+    is_discovery = True
+
+    def scan(self, session: date) -> list[Emission]:  # noqa: ARG002
+        return []
+
+    def available(self) -> tuple[bool, str]:
+        return (False, "not implemented")
+
+
+register("quiver", QuiverSignal)

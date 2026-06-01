@@ -5,6 +5,7 @@ on each mutation — small enough that this is simpler and safer than partial wr
 """
 from __future__ import annotations
 
+import copy
 import json
 import warnings
 from datetime import date, timedelta
@@ -25,7 +26,8 @@ class ScoutState:
             except json.JSONDecodeError as e:
                 # A corrupt ledger must not crash the daily run; start fresh.
                 warnings.warn(f"ScoutState: corrupt {self.path}, starting fresh: {e}")
-        return dict(_EMPTY)
+        # Deep-copy so nested lists/dicts are not shared across ScoutState instances.
+        return copy.deepcopy(_EMPTY)
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

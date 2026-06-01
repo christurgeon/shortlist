@@ -19,3 +19,18 @@ def test_build_signals_respects_disabled(monkeypatch):
     import pytest
     with pytest.raises(KeyError):
         build_signals(["does_not_exist"])
+
+
+def test_quiver_stub_resolves_and_is_not_implemented():
+    """quiver is registered as a stub: resolves via build_signals, available() == False."""
+    sigs = build_signals(["quiver"])
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig.name == "quiver"
+    assert sig.is_discovery is True
+    ran, detail = sig.available()
+    assert ran is False
+    assert "not implemented" in detail
+    # scan() must return an empty list, never crash
+    ems = sig.scan(date(2026, 5, 29))
+    assert ems == []

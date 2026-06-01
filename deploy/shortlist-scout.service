@@ -8,4 +8,4 @@ Type=oneshot
 User=oracle
 WorkingDirectory=/opt/oracle/shortlist
 ExecStart=/opt/oracle/shortlist/.venv/bin/shortlist-scout
-# OnFailure alert mirrors the oracle-daily-report pattern (see deploy/README.md)
+# To alert on failure, add: OnFailure=oracle-alert-failure@%n.service (see deploy/README.md)

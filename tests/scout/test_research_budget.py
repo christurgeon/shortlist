@@ -15,12 +15,13 @@ def _make_scout_cfg(budget_s: float) -> dict:
 
 
 def test_research_phase_times_out_and_returns_note():
-    """enrich sleeps longer than the budget -> timeout note, no hang."""
+    """enrich sleeps longer than the budget -> timeout note returned quickly (no blocking hang)."""
 
     def slow_enrich(cards, config, *, top_n, refresh):
         time.sleep(10)  # much longer than the tiny budget
         return []       # pragma: no cover
 
+    t0 = time.monotonic()
     briefs, researched, note = _research_phase(
         cards=[],
         config={},
@@ -28,9 +29,15 @@ def test_research_phase_times_out_and_returns_note():
         _is_available=lambda: True,
         _enrich=slow_enrich,
     )
+    elapsed = time.monotonic() - t0
+
     assert briefs == {}
     assert researched == []
     assert note is not None and "phase budget" in note and "exceeded" in note
+    # The call must return quickly after the budget expires — NOT block until the
+    # hung thread finishes.  Budget is 50ms; fake enrich sleeps 10s; if shutdown
+    # blocks we'd see ~10s elapsed.  Allow generous margin but well under 10s.
+    assert elapsed < 2.0, f"_research_phase blocked for {elapsed:.2f}s (expected < 2.0s)"
 
 
 def test_research_phase_completes_within_budget():
