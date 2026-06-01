@@ -120,6 +120,17 @@ export SEC_IDENTITY="you@you.com" # required by SEC for EDGAR
 
 A missing key just skips that provider with a warning, so set only what you need.
 
+### Command-line tools
+
+Four console scripts ship with the package (see `HARNESS.md` for the data-layer ones):
+
+| Command | Purpose |
+|---|---|
+| `shortlist` | The screener — rank a shortlist (`--demo`, `--engine harness`, `--research N`). |
+| `shortlist-harness` | Fetch one assessment-ready `TickerSnapshot` per ticker (`--out` to persist). |
+| `shortlist-backtest` | Validate scores against forward returns — rank IC + quantile spreads (`ASSESSMENT_GAPS.md` §2.1). |
+| `shortlist-accumulate` | Capture point-in-time snapshots daily so the snapshot-replay backtest accrues history. **Scheduling is off by default** (`deploy/`). |
+
 ## Why these data sources (the part that adds the value)
 
 The design principle is **each source contributes only the fields it's genuinely

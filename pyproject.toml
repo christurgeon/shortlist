@@ -22,6 +22,7 @@ dev = ["pytest>=8.0"]
 shortlist = "shortlist.screen:main"
 shortlist-harness = "shortlist.data.cli:main"
 shortlist-backtest = "shortlist.backtest.cli:main"
+shortlist-accumulate = "shortlist.data.accumulate:main"
 
 [build-system]
 requires = ["setuptools>=68"]
