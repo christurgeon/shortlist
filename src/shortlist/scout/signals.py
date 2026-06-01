@@ -31,8 +31,9 @@ class MockSignal:
         self._last = 0
 
     def scan(self, session: date) -> list[Emission]:
-        names = [("AAPL", 0.9, "+6.1% on 2.4x volume"),
-                 ("MSFT", 0.7, "+3.0% on 1.8x volume"),
+        # Tickers must match MockProvider's _SAMPLE so the demo deep-screen has data.
+        names = [("GEV",   0.9, "+6.1% on 2.4x volume"),
+                 ("LMT",   0.7, "+3.0% on 1.8x volume"),
                  ("GOOGL", 0.6, "most-active list")]
         ems = [Emission(t, "mock:demo", s, ev, is_discovery=True) for t, s, ev in names]
         self._last = len(ems)
