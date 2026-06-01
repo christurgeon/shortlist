@@ -118,8 +118,8 @@ per-ticker (thread race).
 ## Scale / rate limits (the honest catch)
 
 Free tiers are fine for individual names or a small watchlist, but don't scale to
-a full universe. The harness makes **~11 FMP calls per ticker**, so FMP's
-**250/day** free limit is roughly **20 tickers/day**. Screening the whole S&P 500
+a full universe. The harness makes **~13 FMP calls per ticker**, so FMP's
+**250/day** free limit is roughly **19 tickers/day**. Screening the whole S&P 500
 daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute and
 bandwidth limits) or the **caching layer** from the hardening list — whichever you
 hit first. **Finnhub's 60/min is comfortable** either way.

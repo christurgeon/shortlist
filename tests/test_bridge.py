@@ -17,7 +17,8 @@ def _full_snapshot() -> TickerSnapshot:
         ticker="AAA",
         profile=Profile(name="Triple A", sector="Tech", market_cap=1.0e11),
         fundamentals=Fundamentals(
-            pe_ttm=20.0, peg=1.5, fcf_yield=0.05, roe=0.30, roic=0.25,
+            pe_ttm=20.0, pe_median_5y=28.0, peg=1.5, fcf_yield=0.05,
+            roe=0.30, roic=0.25, roic_5y_avg=0.21,
             gross_margin=0.45, net_margin=0.22, debt_to_equity=0.4,
             interest_coverage=12.0,
         ),
@@ -43,7 +44,8 @@ def test_bridge_maps_direct_fields():
     assert m.name == "Triple A" and m.sector == "Tech"
     assert m.market_cap == 1.0e11 and m.price == 100.0
     assert m.pe_ttm == 20.0 and m.peg == 1.5 and m.fcf_yield == 0.05
-    assert m.roe == 0.30 and m.roic == 0.25
+    assert m.pe_median_5y == 28.0
+    assert m.roe == 0.30 and m.roic == 0.25 and m.roic_5y_avg == 0.21
     assert m.gross_margin == 0.45 and m.net_margin == 0.22
     assert m.debt_to_equity == 0.4 and m.interest_coverage == 12.0
     assert m.target_median == 120.0
@@ -70,11 +72,25 @@ def test_bridge_fcf_positive_false_when_recent_negative():
     assert snapshot_to_metrics(snap).fcf_positive is False
 
 
-def test_bridge_parity_gaps_are_none():
+def test_bridge_maps_annual_history_fields():
     m = snapshot_to_metrics(_full_snapshot())
-    assert m.pe_median_5y is None      # harness doesn't fetch ratios history
-    assert m.roic_5y_avg is None       # harness doesn't compute 5y roic
+    assert m.pe_median_5y == 28.0      # harness now fetches annual ratios
+    assert m.roic_5y_avg == 0.21       # harness now computes 5y roic average
+    # pe_vs_history() = pe_median_5y / pe_ttm - 1 = 28/20 - 1 = 0.4
+    assert abs(m.pe_vs_history() - 0.4) < 1e-9
+
+
+def test_bridge_remaining_parity_gap_is_none():
+    m = snapshot_to_metrics(_full_snapshot())
     assert m.eps_revision is None      # out of scope (Alpha Vantage)
+
+
+def test_bridge_history_fields_none_when_fundamentals_lack_them():
+    snap = _full_snapshot()
+    snap.fundamentals.pe_median_5y = None
+    snap.fundamentals.roic_5y_avg = None
+    m = snapshot_to_metrics(snap)
+    assert m.pe_median_5y is None and m.roic_5y_avg is None
     assert m.pe_vs_history() is None   # follows from pe_median_5y being None
 
 

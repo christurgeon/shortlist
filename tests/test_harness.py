@@ -58,3 +58,36 @@ def test_yahoo_leads_default_priority():
     from shortlist.data.collector import DEFAULT_PRIORITY
     # Yahoo must outrank FMP so its auditable price fields win the price merge.
     assert DEFAULT_PRIORITY.index("yahoo") < DEFAULT_PRIORITY.index("fmp")
+
+
+def test_normalize_fmp_populates_annual_history_fields():
+    from shortlist.data.sources import _normalize_fmp
+    raw = {
+        "ratios_ttm": [{"priceToEarningsRatioTTM": 20.0}],
+        "key_metrics_ttm": [{"returnOnInvestedCapitalTTM": 0.25}],
+        "ratios_annual": [
+            {"priceToEarningsRatio": 35.0}, {"priceToEarningsRatio": 25.0},
+            {"priceToEarningsRatio": 20.0}, {"priceToEarningsRatio": 30.0},
+            {"priceToEarningsRatio": 28.0},
+        ],
+        "key_metrics_annual": [
+            {"returnOnInvestedCapital": 0.10}, {"returnOnInvestedCapital": 0.20},
+            {"returnOnInvestedCapital": 0.30},
+        ],
+    }
+    snap = _normalize_fmp("TEST", raw)
+    assert snap.fundamentals.pe_median_5y == 28.0   # median of the 5 annual PEs
+    assert snap.fundamentals.roic_5y_avg == 0.20    # mean of the 3 annual ROICs
+
+
+def test_normalize_fmp_history_fields_none_when_annual_absent():
+    from shortlist.data.sources import _normalize_fmp
+    # TTM present but the annual sections errored out (missing from raw).
+    raw = {
+        "ratios_ttm": [{"priceToEarningsRatioTTM": 20.0}],
+        "key_metrics_ttm": [{"returnOnInvestedCapitalTTM": 0.25}],
+    }
+    snap = _normalize_fmp("TEST", raw)
+    assert snap.fundamentals.pe_ttm == 20.0          # TTM still works
+    assert snap.fundamentals.pe_median_5y is None     # no annual ratios -> None
+    assert snap.fundamentals.roic_5y_avg is None      # no annual key-metrics -> None
