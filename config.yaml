@@ -42,6 +42,9 @@ gates:
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]
 
+# Default source chain for `--engine harness` (yahoo first => wins the price merge).
+harness_sources: [yahoo, fmp, finnhub, edgar]
+
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 research:
   model: claude-sonnet-4-6     # pinned full ID (not the drifting "sonnet" alias)

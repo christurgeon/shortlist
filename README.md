@@ -17,7 +17,7 @@ flowchart TD
     A --> B{Demo or Live?}
 
     B -->|"--demo"| C["Mock provider\nno keys needed"]
-    B -->|"--tickers + --provider"| D["FMP · Finnhub · EDGAR\nQuiver · FRED (scaffolded)"]
+    B -->|"--tickers + --provider"| D["FMP · Finnhub · EDGAR · Yahoo\nQuiver · FRED (scaffolded)"]
 
     C --> E["merge() → StockMetrics\npriority-fill across providers"]
     D --> E
@@ -57,24 +57,36 @@ flowchart LR
 
     subgraph harness ["Data harness  ·  shortlist-harness CLI  ·  async httpx"]
         direction TB
+        HS0["Yahoo Source\nkeyless price/momentum"]
         HS1["FMP Source"]
         HS2["Finnhub Source"]
         HS3["EDGAR Source\nasyncio.to_thread"]
         HS4["Mock Source"]
         HM["merge_snapshots()\nTickerSnapshot"]
+        BR["bridge.py\nsnapshot_to_metrics"]
         STORE["store.py\npersistence"]
 
+        HS0 --> HM
         HS1 --> HM
         HS2 --> HM
         HS3 --> HM
         HS4 --> HM
         HM --> STORE
+        HM --> BR
     end
 
     F4["_form4.py\nshared Form 4 aggregation"]
     F4 --> SP3
     F4 --> HS3
+
+    BR -.->|"shortlist --engine harness"| SC
 ```
+
+The two stacks now feed the **same** scorer: `bridge.py:snapshot_to_metrics`
+converts a harness `TickerSnapshot` into the `StockMetrics` `scoring.py` consumes,
+so `shortlist --engine harness` ranks names off the richer, audited harness data
+(including the keyless, gating-immune **Yahoo** momentum source) instead of the
+screener providers. `--engine screener` (default) is unchanged.
 
 ## Quick start
 
@@ -93,6 +105,9 @@ uv run shortlist --demo
 # Live run — keys come from the environment or a .env file:
 cp .env.example .env             # then fill in your keys (.env is gitignored)
 uv run shortlist --tickers GEV,LMT,SCHW,TMO,GOOGL --provider fmp,finnhub,edgar --csv out.csv
+
+# Score off the richer harness stack (Yahoo-led, auditable momentum, gating-immune):
+uv run shortlist --tickers GEV,AXON --engine harness
 ```
 
 Keys can be set either way; an explicit `export` always wins over `.env`:
@@ -117,9 +132,10 @@ best at**, merged by priority (`merge.py`). Stacking sources beats any single AP
 | **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion |
 | **Quiver Quantitative** (optional edge) | congressional trades, **government-contract awards**, lobbying | gov-contract flow is a real, uncorrelated signal for defense/industrial names (LMT, GEV) that no fundamentals feed captures |
 | **FRED** (optional macro) | 10y yield, fed funds, 2s10s curve | overlay to tilt the whole run when rates move against rate-sensitive names — not per-stock |
-| **yfinance** (optional fallback) | price history for DMA/relative-strength | compute momentum without burning paid quota |
+| **Yahoo** chart (wired, harness) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
 
-FMP / Finnhub / EDGAR are fully wired. Quiver and FRED are scaffolded in
+FMP / Finnhub / EDGAR are fully wired in both stacks; **Yahoo** is wired in the
+harness (reachable via `--engine harness`). Quiver and FRED are scaffolded in
 `providers/extensions.py` with the interface and the specific signals to add —
 they're the highest-leverage next additions, in that order.
 

@@ -16,21 +16,29 @@ def classify_failure(exc: Exception) -> str:
 
 _SUBSCORE_FIELDS = ("quality", "moat", "momentum", "value", "insider")
 
+# Single source of truth for the per-provider fetch statuses that signal a coverage
+# problem, mapped to their human label. A status with a label here is "flagged"
+# (drives both the note and the stderr line); "ok" is intentionally absent. Add any
+# new status here only — both `_build_note` and `coverage_note_line` key off it, so
+# they can never silently disagree about which statuses to surface.
+_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty", "error": "fetch error"}
+
 _FMP_NOTE = (
-    "FMP gated this symbol (402); value axis (PE-vs-history, FCF yield, "
-    "target upside) needs FMP Starter tier"
+    "FMP gated this symbol (402); the value axis (PE-vs-history, FCF yield, "
+    "target upside) and FMP-sourced quality inputs (ROE/ROIC) need FMP Starter tier"
 )
 
 
-def build_coverage(outcomes: dict, card: ScoreCard) -> Optional[Coverage]:
+def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optional[Coverage]:
     """Assemble a Coverage record, or None when every provider is "ok".
 
     `outcomes` maps provider name -> raise-time status ("ok" on success, else the
-    classify_failure result). A provider that did not raise but contributed zero
-    fields to the merged metrics (per `card.metrics.sources`) is reclassified
-    "empty"."""
+    classify_failure result). `contributed` is the set of provider names whose own
+    fetch returned at least one field — judged BEFORE merge, so a provider that
+    fetched real data but lost every field to a higher-priority source still counts
+    as contributing. An "ok" provider absent from `contributed` returned nothing
+    usable and is reclassified "empty"."""
     providers = dict(outcomes)
-    contributed = set(card.metrics.sources.values()) if card.metrics else set()
     for name, status in list(providers.items()):
         if status == "ok" and name not in contributed:
             providers[name] = "empty"
@@ -48,7 +56,7 @@ def build_coverage(outcomes: dict, card: ScoreCard) -> Optional[Coverage]:
 
 
 def _build_note(providers: dict) -> Optional[str]:
-    flagged = {n: s for n, s in providers.items() if s in ("gated_402", "empty", "error")}
+    flagged = {n: s for n, s in providers.items() if s in _STATUS_LABEL}
     if not flagged:
         return None
     # FMP recognized-pattern note takes precedence over the generic multi-provider note.
@@ -56,11 +64,8 @@ def _build_note(providers: dict) -> Optional[str]:
     # not a tier-gating issue, so it must NOT claim "needs Starter tier".
     if providers.get("fmp") in ("gated_402", "empty"):
         return _FMP_NOTE
-    return (f"{', '.join(sorted(flagged))}: provider supplied no data for this "
-            "symbol (see stderr)")
-
-
-_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty", "error": "fetch error"}
+    return (f"{', '.join(sorted(flagged))}: supplied no usable data for this "
+            "symbol")
 
 
 def coverage_note_line(ticker: str, cov: Coverage) -> str:

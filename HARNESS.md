@@ -39,9 +39,13 @@ A `TickerSnapshot` (see `models.py`) with six normalized objects — `profile`,
 ## How sources combine (`merge_snapshots`)
 
 Each `Source` owns both fetching raw and normalizing its own payloads, then the
-collector merges by priority (`edgar > fmp > finnhub > mock`). Flat objects
+collector merges by priority (`yahoo > edgar > fmp > finnhub > mock`). Flat objects
 (`profile`, `fundamentals`, `analyst`, `price`) merge **field-by-field** — a gap
-in the primary source is filled from the next. `statements` takes the best single
+in the primary source is filled from the next. **Yahoo leads** so its keyless,
+auditable price/momentum (200dma, 6m rel-strength vs SPY, realized vol, max
+drawdown — all computed by us, day-cached under `.cache/yahoo/`) wins the `price`
+merge and survives FMP's per-symbol gating; FMP backfills any price field Yahoo
+lacks. `statements` takes the best single
 source (you don't interleave fiscal years). `insider` has a **bespoke merger**:
 the coupled transaction facts (`net_value_6m`, `buy_count`, `sell_count`,
 `recent`) come wholesale from the highest-priority source that has trades — so the
@@ -60,16 +64,40 @@ semaphore is *not* enough — the EDGAR gate is what keeps a universe run under 
 limit. Requires the `[edgar]` extra and `SEC_IDENTITY`; absent either, the source
 is skipped (not fatal).
 
+## Scoring a snapshot — the bridge
+
+`data/bridge.py:snapshot_to_metrics()` converts a `TickerSnapshot` into the flat
+`StockMetrics` the screener's scorer consumes, so the harness can feed the **same**
+`scoring.score()`:
+
+```bash
+uv run shortlist --tickers GEV,AXON --engine harness
+```
+
+The bridge **derives** two fields the snapshot doesn't store directly:
+`gross_margin_stability` (from 5y `Statements`, via the shared
+`shortlist.stats.gross_margin_stability` helper the screener also uses) and
+`fcf_positive` (most-recent free cash flow). It surfaces Yahoo's `realized_vol`
+and `max_drawdown` as risk fields that are **populated but not yet scored**.
+
+Two **accepted parity gaps** vs. the screener (the harness doesn't fetch these, so
+they map to `None` and the scorer redistributes weight): `pe_median_5y` (harness
+`value` runs on 3 legs, not 4) and `roic_5y_avg` (moat falls back to TTM `roic`).
+Closing the first means adding an annual `ratios` fetch to `FMPSource` — a tracked
+follow-up. Harness-engine cards carry no `coverage` diagnostic; the snapshot's own
+`coverage()`/`missing()` remain available via `shortlist-harness`.
+
 ## Adding a source
 
 Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning
 verbatim `raw` plus a normalized `partial` `TickerSnapshot`, and register it in
-`_REGISTRY` in `sources.py`. (FMP, Finnhub, and EDGAR are all wired.)
+`_REGISTRY` in `sources.py`. (Yahoo, FMP, Finnhub, EDGAR, and Mock are all wired.)
 
 ## Known limitations (next hardening pass)
 
 - Dataclasses, not pydantic — bad payloads normalize to `None` rather than failing loud.
-- No caching/backoff yet; a full universe run will hit rate limits.
+- No caching/backoff yet **except Yahoo** (day-cached on disk); a full universe run
+  on the keyed sources will still hit rate limits.
 - **FMP's free plan gates many symbols** (e.g. GEV) behind premium with a `402`
   "Special Endpoint" on a per-symbol basis — coverage correctly drops to "thin"
   for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier.

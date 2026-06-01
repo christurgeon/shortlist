@@ -42,6 +42,8 @@ class StockMetrics:
     price_vs_200dma: Optional[float] = None  # (price / 200dma) - 1
     rel_strength_6m: Optional[float] = None  # 6m return minus benchmark 6m return
     eps_revision: Optional[float] = None     # trailing estimate revision trend
+    realized_vol: Optional[float] = None     # annualized stdev of daily returns (risk, unscored)
+    max_drawdown: Optional[float] = None     # trailing ~1y peak-to-trough, negative (risk, unscored)
 
     # Analyst sentiment
     rating_buy: Optional[int] = None

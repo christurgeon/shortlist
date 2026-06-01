@@ -38,9 +38,27 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
                 print(f"  ! {p.name} failed for {t}: {redact_secrets(e)}", file=sys.stderr)
         if not per_provider:
             continue
+        # A provider "contributed" if its OWN fetch stamped at least one field
+        # (its sources dict). Judged pre-merge so a provider that returned data
+        # but lost every field to a higher-priority source isn't mislabeled empty.
+        contributed = {src for m in per_provider for src in m.sources.values()}
         card = score(merge(per_provider), config)
-        card.coverage = build_coverage(outcomes, card)
+        card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
+    cards.sort(key=lambda c: c.composite, reverse=True)
+    return cards
+
+
+def run_harness(tickers: list[str], source_names: list[str], config: dict) -> list[ScoreCard]:
+    """Score via the harness stack: collect TickerSnapshots, bridge each to
+    StockMetrics, then run the same scorer the screener uses. Harness cards carry
+    no `coverage` diagnostic (that lives on the screener path); the snapshot's own
+    coverage()/missing() remain available via shortlist-harness."""
+    from .data.bridge import snapshot_to_metrics
+    from .data.collector import collect
+
+    snapshots = collect(tickers, source_names)
+    cards = [score(snapshot_to_metrics(s), config) for s in snapshots]
     cards.sort(key=lambda c: c.composite, reverse=True)
     return cards
 
@@ -116,7 +134,10 @@ def _positive_int(value: str) -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
-    ap.add_argument("--provider", help="comma-separated provider chain; overrides config")
+    ap.add_argument("--provider", help="comma-separated provider/source chain; overrides config")
+    ap.add_argument("--engine", choices=["screener", "harness"], default="screener",
+                    help="screener = synchronous providers (default); "
+                         "harness = async sources + TickerSnapshot bridge")
     ap.add_argument("--config", default=str(Path(__file__).parent.parent.parent / "config.yaml"))
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")
@@ -136,17 +157,29 @@ def main(argv: list[str] | None = None) -> int:
 
     config = yaml.safe_load(Path(args.config).read_text())
 
+    if not args.demo and not args.tickers:
+        ap.error("--tickers is required unless --demo")
     if args.demo:
         tickers = ["GEV", "LMT", "SCHW", "TMO", "GOOGL"]
-        providers = ["mock"]
     else:
-        if not args.tickers:
-            ap.error("--tickers is required unless --demo")
         tickers = [t.strip().upper() for t in args.tickers.split(",")]
-        providers = (args.provider.split(",") if args.provider
-                     else config.get("providers", ["fmp"]))
 
-    cards = run(tickers, providers, config)
+    if args.engine == "harness":
+        if args.demo:
+            sources = ["mock"]
+        elif args.provider:
+            sources = args.provider.split(",")
+        else:
+            sources = config.get("harness_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+        cards = run_harness(tickers, sources, config)
+    else:
+        if args.demo:
+            providers = ["mock"]
+        elif args.provider:
+            providers = args.provider.split(",")
+        else:
+            providers = config.get("providers", ["fmp"])
+        cards = run(tickers, providers, config)
     _print_coverage_notes(cards)
 
     research_paths: dict = {}

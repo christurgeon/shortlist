@@ -106,6 +106,8 @@ class Price:
     ret_6m: Optional[float] = None
     ret_12m: Optional[float] = None
     rel_strength_6m: Optional[float] = None     # 6m return minus benchmark 6m return
+    realized_vol: Optional[float] = None        # annualized stdev of daily returns
+    max_drawdown: Optional[float] = None        # trailing ~1y peak-to-trough, negative
 
     def price_vs_200dma(self) -> Optional[float]:
         if self.price and self.ma200:

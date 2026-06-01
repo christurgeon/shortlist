@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import os
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Optional
 
 from ..env import redact_secrets
@@ -323,6 +325,70 @@ class MockSource(Source):
         return res
 
 
+# --- Yahoo: keyless OHLCV -> we compute momentum/risk ourselves ------------
+
+class YahooSource(Source):
+    """Keyless Yahoo chart OHLCV. Computes momentum/risk (rel strength vs SPY,
+    realized vol, max drawdown, 200dma) ourselves so the signals are auditable
+    and immune to FMP's per-symbol gating. Day-cached on disk; the SPY benchmark
+    is fetched once per run and reused across tickers."""
+
+    name = "yahoo"
+    BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
+    UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) shortlist/0.1"
+
+    def __init__(self, timeout: float = 15.0, cache_dir: str = ".cache/yahoo"):
+        import httpx  # lazy: only needed for live runs
+        self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": self.UA})
+        self._cache_dir = Path(cache_dir)
+        self._spy_closes: Optional[list[float]] = None
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    def _cache_path(self, symbol: str) -> Path:
+        return self._cache_dir / f"{symbol.upper()}-{date.today().isoformat()}.json"
+
+    async def _get_chart(self, symbol: str) -> Any:
+        """Raw chart payload, day-cached on disk. Override target in tests."""
+        cp = self._cache_path(symbol)
+        try:
+            if cp.exists():
+                return json.loads(cp.read_text())
+        except Exception:
+            pass  # corrupt cache -> refetch
+        r = await self._client.get(
+            f"{self.BASE}/{symbol}", params={"range": "2y", "interval": "1d"})
+        r.raise_for_status()
+        raw = r.json()
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            cp.write_text(json.dumps(raw))
+        except Exception:
+            pass  # cache write failure is non-fatal
+        return raw
+
+    async def _closes(self, symbol: str) -> list[float]:
+        return _closes_from_chart(await self._get_chart(symbol))
+
+    async def _spy(self) -> list[float]:
+        if self._spy_closes is None:
+            self._spy_closes = await self._closes("SPY")
+        return self._spy_closes
+
+    async def fetch(self, ticker: str) -> SourceResult:
+        res = SourceResult(source=self.name)
+        try:
+            closes = await self._closes(ticker)
+            spy = await self._spy()
+            res.partial = _normalize_yahoo(ticker, closes, spy)
+            res.raw = {"close_count": len(closes)}
+        except Exception as e:
+            res.errors.append(f"yahoo: {redact_secrets(e)}")
+            res.partial = TickerSnapshot(ticker=ticker)
+        return res
+
+
 # --- helpers --------------------------------------------------------------
 
 def _first(x: Any) -> Optional[dict]:
@@ -357,7 +423,71 @@ def _match(rows: Any, income_row: dict) -> Optional[dict]:
     return None
 
 
+# --- Yahoo price math (pure, unit-tested) ---------------------------------
+
+_YH_SIX_MONTHS = 126   # ~trading days in 6 months
+_YH_VOL_WINDOW = 252   # ~trading days in 1 year
+
+
+def _yh_sma(xs: list[float], n: int) -> Optional[float]:
+    return sum(xs[-n:]) / n if len(xs) >= n else None
+
+
+def _yh_ret_over(xs: list[float], n: int) -> Optional[float]:
+    return xs[-1] / xs[-1 - n] - 1.0 if len(xs) > n and xs[-1 - n] else None
+
+
+def _yh_annualized_vol(xs: list[float], window: int = _YH_VOL_WINDOW) -> Optional[float]:
+    rets = [xs[i] / xs[i - 1] - 1.0 for i in range(1, len(xs)) if xs[i - 1]][-window:]
+    if len(rets) < 2:
+        return None
+    mu = sum(rets) / len(rets)
+    var = sum((r - mu) ** 2 for r in rets) / (len(rets) - 1)
+    return (var ** 0.5) * (252 ** 0.5)
+
+
+def _yh_max_drawdown(xs: list[float], window: int = _YH_VOL_WINDOW) -> Optional[float]:
+    s = xs[-window:]
+    if len(s) < 2:
+        return None
+    peak = s[0]
+    mdd = 0.0
+    for px in s:
+        peak = max(peak, px)
+        if peak:
+            mdd = min(mdd, px / peak - 1.0)
+    return mdd
+
+
+def _closes_from_chart(raw: Any) -> list[float]:
+    try:
+        result = raw["chart"]["result"][0]
+        series = result["indicators"]["adjclose"][0]["adjclose"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    return [c for c in series if isinstance(c, (int, float))]
+
+
+def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float]) -> TickerSnapshot:
+    snap = TickerSnapshot(ticker=ticker)
+    if not closes:
+        return snap
+    stock_6m = _yh_ret_over(closes, _YH_SIX_MONTHS)
+    spy_6m = _yh_ret_over(spy_closes, _YH_SIX_MONTHS) if spy_closes else None
+    rel = stock_6m - spy_6m if (stock_6m is not None and spy_6m is not None) else None
+    snap.price = Price(
+        price=closes[-1],
+        ma200=_yh_sma(closes, 200),
+        ret_6m=stock_6m,
+        rel_strength_6m=rel,
+        realized_vol=_yh_annualized_vol(closes),
+        max_drawdown=_yh_max_drawdown(closes),
+    )
+    return snap
+
+
 _REGISTRY = {
+    "yahoo": YahooSource,
     "fmp": FMPSource, "finnhub": FinnhubSource, "edgar": EdgarSource, "mock": MockSource,
 }
 
