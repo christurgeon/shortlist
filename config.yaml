@@ -74,6 +74,21 @@ fmp:
 # Default source chain for `--engine harness` (yahoo first => wins the price merge).
 harness_sources: [yahoo, fmp, finnhub, edgar, finra]
 
+# Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
+# repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
+# --no-cache; force-repopulate with --refresh-cache. TTLs are per data half-life
+# (seconds). See docs/superpowers/specs/2026-06-01-http-cache-design.md.
+cache:
+  enabled: true
+  path: .cache/http.sqlite
+  ttl:
+    quote: 21600         # 6h  — quotes, price-change, live metric
+    fundamentals: 86400  # 1d  — ratios, key-metrics
+    analyst: 86400       # 1d  — grades, targets, recommendations, insider-sentiment
+    statements: 604800   # 7d  — income/balance/cashflow (change only on a filing)
+    profile: 604800      # 7d  — company profile
+    default: 86400       # 1d  — any unmapped endpoint
+
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 research:
   model: claude-sonnet-4-6     # pinned to the 4.6 family (not the cross-version "sonnet" alias).
