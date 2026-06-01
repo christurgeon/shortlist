@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 
 _SECRET_PARAMS = {"apikey", "token", "api_key"}
 
@@ -38,3 +39,52 @@ def _is_cacheable(payload: object) -> bool:
     if isinstance(payload, dict) and any(k.lower() == "error" for k in payload):
         return False
     return True
+
+
+# (provider, endpoint-path) -> bucket. Keyed on the pair, not path alone, because
+# "quote" is used by both FMP and Finnhub.
+_BUCKET_BY_KEY = {
+    ("fmp", "quote"): "quote",
+    ("fmp", "stock-price-change"): "quote",
+    ("finnhub", "quote"): "quote",
+    ("fmp", "ratios-ttm"): "fundamentals",
+    ("fmp", "ratios"): "fundamentals",
+    ("fmp", "key-metrics-ttm"): "fundamentals",
+    ("fmp", "key-metrics"): "fundamentals",
+    ("finnhub", "stock/metric"): "fundamentals",
+    ("fmp", "price-target-consensus"): "analyst",
+    ("fmp", "grades-consensus"): "analyst",
+    ("fmp", "insider-trading/search"): "analyst",
+    ("finnhub", "stock/recommendation"): "analyst",
+    ("finnhub", "stock/insider-sentiment"): "analyst",
+    ("fmp", "income-statement"): "statements",
+    ("fmp", "balance-sheet-statement"): "statements",
+    ("fmp", "cash-flow-statement"): "statements",
+    ("fmp", "profile"): "profile",
+    ("finnhub", "stock/profile2"): "profile",
+}
+
+_DEFAULT_TTLS = {
+    "quote": 21600,         # 6h  — quotes, price-change, live metric
+    "fundamentals": 86400,  # 1d  — ratios, key-metrics
+    "analyst": 86400,       # 1d  — grades, targets, recommendations, insider-sentiment
+    "statements": 604800,   # 7d  — income/balance/cashflow (change only on a filing)
+    "profile": 604800,      # 7d  — company profile
+    "default": 86400,       # 1d  — any unmapped endpoint
+}
+
+_warned_unmapped: set = set()
+
+
+def ttl_for(provider: str, endpoint: str, ttl_config: dict) -> float:
+    """Resolve the TTL (seconds) for an endpoint; ttl_config overrides per bucket.
+    An unmapped (provider, endpoint) falls to the 1d default and is logged once so a
+    new endpoint surfaces rather than silently inheriting a wrong TTL."""
+    bucket = _BUCKET_BY_KEY.get((provider, endpoint))
+    if bucket is None:
+        bucket = "default"
+        if (provider, endpoint) not in _warned_unmapped:
+            _warned_unmapped.add((provider, endpoint))
+            print(f"cache: unmapped endpoint {provider}/{endpoint} -> default TTL",
+                  file=sys.stderr)
+    return ttl_config.get(bucket, _DEFAULT_TTLS[bucket])

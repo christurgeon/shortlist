@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from shortlist.cache import cache_key, _is_cacheable
+from shortlist.cache import cache_key, _is_cacheable, ttl_for, _BUCKET_BY_KEY
 
 
 def test_cache_key_order_independent():
@@ -43,3 +43,43 @@ def test_not_cacheable(payload):
                                      {"errors": 0}])  # 'errors' != 'error' key
 def test_cacheable(payload):
     assert _is_cacheable(payload) is True
+
+
+def test_ttl_for_buckets():
+    cfg = {}  # no overrides -> hardcoded defaults
+    assert ttl_for("fmp", "quote", cfg) == 21600
+    assert ttl_for("finnhub", "quote", cfg) == 21600
+    assert ttl_for("fmp", "income-statement", cfg) == 604800
+    assert ttl_for("fmp", "ratios-ttm", cfg) == 86400
+    assert ttl_for("fmp", "unknown-endpoint", cfg) == 86400  # default bucket
+
+
+def test_ttl_for_respects_config_override():
+    cfg = {"quote": 60, "statements": 120}
+    assert ttl_for("fmp", "quote", cfg) == 60
+    assert ttl_for("fmp", "income-statement", cfg) == 120
+
+
+def test_bucket_map_covers_all_live_endpoints():
+    """Every (provider, path) emitted by the four wrapped _get call sites must be in
+    the bucket map, or it silently demotes to the 1d default."""
+    harness = {
+        ("fmp", "profile"), ("fmp", "quote"), ("fmp", "ratios-ttm"),
+        ("fmp", "ratios"), ("fmp", "key-metrics-ttm"), ("fmp", "key-metrics"),
+        ("fmp", "income-statement"), ("fmp", "balance-sheet-statement"),
+        ("fmp", "cash-flow-statement"), ("fmp", "price-target-consensus"),
+        ("fmp", "grades-consensus"), ("fmp", "insider-trading/search"),
+        ("fmp", "stock-price-change"),
+        ("finnhub", "stock/profile2"), ("finnhub", "quote"),
+        ("finnhub", "stock/metric"), ("finnhub", "stock/recommendation"),
+        ("finnhub", "stock/insider-sentiment"),
+    }
+    screener = {
+        ("fmp", "quote"), ("fmp", "ratios-ttm"), ("fmp", "key-metrics-ttm"),
+        ("fmp", "price-target-consensus"), ("fmp", "grades-consensus"),
+        ("fmp", "stock-price-change"),
+        ("finnhub", "quote"), ("finnhub", "stock/metric"),
+        ("finnhub", "stock/recommendation"), ("finnhub", "stock/insider-sentiment"),
+    }
+    for pk in harness | screener:
+        assert pk in _BUCKET_BY_KEY, f"{pk} missing from bucket map"
