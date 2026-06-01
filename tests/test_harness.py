@@ -91,3 +91,26 @@ def test_normalize_fmp_history_fields_none_when_annual_absent():
     assert snap.fundamentals.pe_ttm == 20.0          # TTM still works
     assert snap.fundamentals.pe_median_5y is None     # no annual ratios -> None
     assert snap.fundamentals.roic_5y_avg is None      # no annual key-metrics -> None
+
+
+def test_statements_and_price_carry_new_value_fields():
+    from shortlist.data.models import Statements, Price
+    s = Statements(diluted_eps=[7.46], fiscal_period_end=["2025-09-27"])
+    assert s.diluted_eps == [7.46]
+    assert s.fiscal_period_end == ["2025-09-27"]
+    p = Price(monthly_closes=[["2025-09-30", 255.0]])
+    assert p.monthly_closes == [["2025-09-30", 255.0]]
+
+
+def test_new_plumbing_fields_excluded_from_coverage_denominator():
+    # diluted_eps/fiscal_period_end/monthly_closes are internal derivation aids, not
+    # assessment-ready signals -> they must NOT change coverage() vs a baseline snapshot.
+    from shortlist.data.models import TickerSnapshot, Statements, Price, Fundamentals, Profile, Analyst, Insider
+    base = TickerSnapshot(ticker="X", profile=Profile(name="x"), fundamentals=Fundamentals(roe=0.2),
+                          statements=Statements(revenue=[1.0]), analyst=Analyst(buy=1),
+                          insider=Insider(buy_count=1), price=Price(price=1.0))
+    cov_before = base.coverage()
+    base.statements.diluted_eps = [1.0]
+    base.statements.fiscal_period_end = ["2025-01-01"]
+    base.price.monthly_closes = [["2025-01-01", 1.0]]
+    assert base.coverage() == cov_before     # excluded fields don't move the needle
