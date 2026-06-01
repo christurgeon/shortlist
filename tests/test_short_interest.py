@@ -140,6 +140,34 @@ def test_finra_absent_symbol_is_none_not_error(tmp_path, monkeypatch):
     asyncio.run(src.aclose())
 
 
+def test_finra_loads_cycle_once_per_run(tmp_path, monkeypatch):
+    src = FinraSource(cache_dir=str(tmp_path))
+    parts_calls = {"n": 0}
+    page_calls = {"n": 0}
+
+    async def fake_parts():
+        parts_calls["n"] += 1
+        return {"availablePartitions": [{"partitions": ["2026-05-15"]}]}
+
+    async def fake_page(settlement, offset):
+        page_calls["n"] += 1
+        return [{"symbolCode": "AAPL", "settlementDate": "2026-05-15",
+                 "currentShortPositionQuantity": "100", "daysToCoverQuantity": "2.0"},
+                {"symbolCode": "MSFT", "settlementDate": "2026-05-15",
+                 "currentShortPositionQuantity": "200", "daysToCoverQuantity": "3.0"}]
+
+    monkeypatch.setattr(src, "_fetch_partitions", fake_parts)
+    monkeypatch.setattr(src, "_fetch_page", fake_page)
+
+    a = asyncio.run(src.fetch("AAPL"))
+    b = asyncio.run(src.fetch("MSFT"))     # second ticker must reuse the loaded index
+    assert a.partial.short_interest is not None and b.partial.short_interest is not None
+    # The cycle is discovered + paged exactly once, then reused across tickers.
+    assert parts_calls["n"] == 1
+    assert page_calls["n"] == 1            # single page (2 rows < PAGE), fetched once total
+    asyncio.run(src.aclose())
+
+
 def test_finra_load_error_is_non_fatal(tmp_path, monkeypatch):
     src = FinraSource(cache_dir=str(tmp_path))
     async def boom():
