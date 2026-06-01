@@ -56,7 +56,6 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     snapshot_to_coverage_inputs adapter — so per-source fetch status (gated_402,
     empty, error) and unavailable sub-scores are surfaced identically on both
     paths."""
-    from .coverage import build_coverage
     from .data.bridge import snapshot_to_metrics
     from .data.collector import collect
     from .data.coverage_adapt import snapshot_to_coverage_inputs
