@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 import requests
 
+from ..cache import get_default_cache
 from ..models import StockMetrics
 from .base import Provider
 
@@ -19,17 +20,23 @@ class FinnhubProvider(Provider):
 
     name = "finnhub"
 
-    def __init__(self, api_key: Optional[str] = None, timeout: int = 15):
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 15, *, cache=None):
         self.key = api_key or os.environ.get("FINNHUB_API_KEY")
         if not self.key:
             raise RuntimeError("FINNHUB_API_KEY not set")
         self.timeout = timeout
+        self._cache = cache
 
     def _get(self, path: str, **params: Any) -> Any:
         params["token"] = self.key
-        r = requests.get(f"{BASE}/{path}", params=params, timeout=self.timeout)
-        r.raise_for_status()
-        return r.json()
+
+        def fetch():
+            r = requests.get(f"{BASE}/{path}", params=params, timeout=self.timeout)
+            r.raise_for_status()
+            return r.json()
+
+        cache = self._cache or get_default_cache()
+        return cache.get_or_fetch("finnhub", path, params, fetch)
 
     def fetch(self, ticker: str) -> StockMetrics:
         m = StockMetrics(ticker=ticker)

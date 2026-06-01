@@ -264,3 +264,39 @@ def test_sweep_removes_expired(tmp_path):
         n = cache._conn.execute("SELECT COUNT(*) FROM cache").fetchone()[0]
     assert n == 1
     cache.close()
+
+
+# --- Task 7: wired screener providers -------------------------------------------
+
+def test_fmp_provider_get_uses_cache(tmp_path):
+    from shortlist.providers.fmp import FMPProvider
+
+    real = HttpCache(str(tmp_path / "c.sqlite"))
+    p = FMPProvider.__new__(FMPProvider)  # bypass __init__/key requirement
+    p.key = "test"
+    p.timeout = 15
+    p.max_retries = 2
+    p._cache = real
+
+    calls = {"n": 0}
+
+    class FakeResp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{"price": 1}]
+
+    class FakeSession:
+        def get(self, *a, **k):
+            calls["n"] += 1
+            return FakeResp()
+
+    p._session = FakeSession()
+
+    assert p._get("quote", symbol="AAPL") == [{"price": 1}]
+    assert p._get("quote", symbol="AAPL") == [{"price": 1}]
+    assert calls["n"] == 1  # second call cached
+    real.close()
