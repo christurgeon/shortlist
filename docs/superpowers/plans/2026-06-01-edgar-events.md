@@ -52,67 +52,22 @@
 
 ---
 
-## Task 1: Register the `live` pytest marker (prerequisite)
+## Task 1: ✅ OBSOLETE — `live` marker already registered (no work)
 
-Adversarial finding #6: the repo has no `conftest.py`/pytest config, so a `@pytest.mark.live` test would run in CI and hit SEC. This task makes `live` tests skip unless `--run-live` is passed.
+The spec's adversarial finding #6 assumed no pytest config existed. **That is no longer true:** the
+short-interest merge (PR #12) added to `pyproject.toml`:
 
-**Files:**
-- Create: `conftest.py` (repo root)
-- Test: `tests/test_edgar_events.py` (new — start the file here)
-
-- [ ] **Step 1: Write `conftest.py`**
-
-```python
-# conftest.py — repo-root pytest config: gate network-hitting tests behind --run-live.
-import pytest
-
-
-def pytest_addoption(parser):
-    parser.addoption(
-        "--run-live", action="store_true", default=False,
-        help="run @pytest.mark.live tests that hit external networks (SEC, etc.)",
-    )
-
-
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "live: test hits an external network; skipped unless --run-live is passed")
-
-
-def pytest_collection_modifyitems(config, items):
-    if config.getoption("--run-live"):
-        return
-    skip_live = pytest.mark.skip(reason="needs --run-live")
-    for item in items:
-        if "live" in item.keywords:
-            item.add_marker(skip_live)
+```toml
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = ["live: hits real external APIs; skipped unless -m live"]
 ```
 
-- [ ] **Step 2: Write a sentinel test proving the gate works**
-
-Create `tests/test_edgar_events.py`:
-
-```python
-import pytest
-
-
-@pytest.mark.live
-def test_live_marker_is_skipped_by_default():
-    # If the conftest gate works, this never runs in a normal `pytest` invocation.
-    raise AssertionError("live test ran without --run-live")
-```
-
-- [ ] **Step 3: Run the suite and confirm the live test is skipped, not failed**
-
-Run: `uv run pytest tests/test_edgar_events.py -v`
-Expected: `test_live_marker_is_skipped_by_default SKIPPED (needs --run-live)`, 0 failures, no `PytestUnknownMarkWarning`.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add conftest.py tests/test_edgar_events.py
-git commit -m "test: register live pytest marker, default-skip network tests"
-```
+So the `live` marker is registered and live tests are **deselected by default**, run via
+`uv run pytest -m live` (see `tests/test_short_interest.py`). **Do NOT add a `conftest.py` or a
+`--run-live` option** — that creates a second, conflicting mechanism and breaks the documented
+`-m live` workflow. This task requires no change; `tests/test_edgar_events.py` is created by Task 2.
+Task 10's live smoke test just uses `@pytest.mark.live` and is gated by the existing `addopts`.
 
 ---
 
@@ -1058,7 +1013,7 @@ Append to `tests/test_edgar_events.py`:
 @pytest.mark.live
 def test_live_edgar_events_returns_event_forms():
     """Re-pins the §3.1 form-string contract against real SEC data. Run with
-    `uv run pytest -k live_edgar_events --run-live` and SEC_IDENTITY set."""
+    `uv run pytest -k live_edgar_events -m live` and SEC_IDENTITY set."""
     if not os.environ.get("SEC_IDENTITY"):
         pytest.skip("SEC_IDENTITY not set")
     from shortlist.data.sources import EdgarSource
@@ -1069,14 +1024,14 @@ def test_live_edgar_events_returns_event_forms():
     assert any("13" in f for f in forms)   # a 13D or 13G should appear over 10y
 ```
 
-- [ ] **Step 3: Confirm the live test skips by default**
+- [ ] **Step 3: Confirm the live test is deselected by default**
 
-Run: `uv run pytest tests/test_edgar_events.py -k live_edgar_events -v`
-Expected: `SKIPPED (needs --run-live)`.
+Run: `uv run pytest tests/test_edgar_events.py -q`
+Expected: the non-live tests pass; `test_live_edgar_events_returns_event_forms` is deselected (the repo's `addopts = "-m 'not live'"` excludes it — no SEC call in a normal run).
 
 - [ ] **Step 4: (Optional, manual) run the live test once**
 
-Run: `SEC_IDENTITY="you@example.com" uv run pytest tests/test_edgar_events.py -k live_edgar_events --run-live -v`
+Run: `SEC_IDENTITY="you@example.com" uv run pytest tests/test_edgar_events.py -k live_edgar_events -m live -v`
 Expected: PASS — confirms the form-string filter returns 8-K and a 13D/13G for AAPL. **If it fails**, the edgartools form-string contract changed; consult spec §3.1/§3.2 (raw `submissions.json` fallback).
 
 - [ ] **Step 5: Commit**
