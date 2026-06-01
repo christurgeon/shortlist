@@ -68,6 +68,17 @@ class StockMetrics:
 
 
 @dataclass
+class Coverage:
+    """Why a ticker's data is thin. `providers` maps provider name -> status
+    ("ok" | "gated_402" | "empty" | "error"); `unavailable` lists output fields
+    that came out null (fact); `note` is interpretive prose for recognized
+    patterns (e.g. FMP symbol gating). See coverage.py for assembly."""
+    providers: dict
+    unavailable: list
+    note: Optional[str] = None
+
+
+@dataclass
 class ScoreCard:
     ticker: str
     composite: float
@@ -79,6 +90,7 @@ class ScoreCard:
     insider: Optional[float]
     gates: list[str] = field(default_factory=list)  # tripped hard filters
     metrics: Optional[StockMetrics] = None
+    coverage: Optional["Coverage"] = None
 
     @property
     def passed(self) -> bool:
