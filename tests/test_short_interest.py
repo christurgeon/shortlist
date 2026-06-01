@@ -39,3 +39,22 @@ def test_short_interest_merges_and_round_trips():
     assert back.short_interest is not None
     assert back.short_interest.settlement_date == "2026-05-15"
     assert back.short_interest.days_to_cover == 4.2
+
+
+from shortlist.models import StockMetrics, ScoreCard
+
+
+def test_stockmetrics_short_fields_default_none():
+    m = StockMetrics(ticker="X")
+    assert m.short_pct_outstanding is None
+    assert m.days_to_cover is None
+    assert m.short_interest_rising is None
+    assert m.short_data_age_days is None
+
+
+def test_scorecard_flags_default_empty_and_do_not_affect_passed():
+    c = ScoreCard(ticker="X", composite=50.0, quality=None, moat=None, growth=None,
+                  momentum=None, value=None, opportunity=None, insider=None)
+    assert c.flags == []
+    c.flags = ["crowded_short"]
+    assert c.passed is True            # flags are advisory: passed depends only on gates

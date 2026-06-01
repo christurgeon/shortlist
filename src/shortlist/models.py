@@ -60,6 +60,12 @@ class StockMetrics:
     insider_net_6m: Optional[float] = None     # net USD: buys positive, sells negative
     insider_sentiment: Optional[float] = None  # -1..1, Finnhub MSPR-style net signal
 
+    # Short interest (FINRA consolidated; derived in bridge.py). Soft-flag inputs only.
+    short_pct_outstanding: Optional[float] = None  # short_shares / (market_cap/price); under-states float
+    days_to_cover: Optional[float] = None          # FINRA-supplied; 999.99 sentinel -> None
+    short_interest_rising: Optional[bool] = None   # current > prior cycle; None across a split
+    short_data_age_days: Optional[int] = None      # as_of - settlement_date (staleness guard input)
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 
@@ -98,6 +104,7 @@ class ScoreCard:
     opportunity: Optional[float]  # max(momentum, value): qualifies on either axis
     insider: Optional[float]
     gates: list[str] = field(default_factory=list)  # tripped hard filters
+    flags: list[str] = field(default_factory=list)  # soft advisories (e.g. crowded_short); NOT disqualifying
     metrics: Optional[StockMetrics] = None
     coverage: Optional["Coverage"] = None
 
