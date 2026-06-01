@@ -53,9 +53,16 @@ def register(name: str, ctor: type) -> None:
     _REGISTRY[name] = ctor
 
 
-def build_signals(names: list[str]) -> list[SignalSource]:
-    """Resolve names to instances. Unknown names raise KeyError (config typos are loud)."""
-    return [_REGISTRY[n]() for n in names]
+def build_signals(names: list[str],
+                  kwargs_by_name: dict[str, dict] | None = None) -> list[SignalSource]:
+    """Resolve names to instances. Unknown names raise KeyError (config typos are loud).
+
+    kwargs_by_name: optional per-signal constructor kwargs, keyed by signal name.
+    E.g. ``{"finnhub_news": {"api_key": "k"}, "edgar_form4": {"max_filings": 200}}``.
+    Signals not present in the map are constructed with no arguments (existing behaviour).
+    """
+    overrides = kwargs_by_name or {}
+    return [_REGISTRY[n](**(overrides.get(n, {}))) for n in names]
 
 
 _YAHOO_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import sys
@@ -22,11 +23,24 @@ from .state import ScoutState
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 
+_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4"}
+_BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
+
+
 def _enabled_signal_names(scout_cfg: dict) -> list[str]:
     name_map = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
                 "finnhub_news": "finnhub_news", "wikipedia": "wikipedia", "quiver": "quiver"}
     return [name_map[k] for k, v in scout_cfg.get("signals", {}).items()
             if v.get("enabled") and k in name_map and k != "quiver"]
+
+
+def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
+    """Build per-signal constructor kwargs from config + env for live (non-demo) runs."""
+    return {
+        "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
+        "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
+        "wikipedia":     {"ticker_map": scout_cfg.get("wikipedia_ticker_map", {})},
+    }
 
 
 def run(config: dict, *, demo: bool, today: date) -> int:
@@ -49,8 +63,12 @@ def run(config: dict, *, demo: bool, today: date) -> int:
 
     if demo:
         signals = build_signals(["mock"])
+        boosters = []
     else:
-        signals = build_signals(_enabled_signal_names(scout_cfg))
+        all_names = _enabled_signal_names(scout_cfg)
+        kwargs_by_name = _signal_kwargs(scout_cfg)
+        signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
+        boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
     for s in discovery:
@@ -75,6 +93,24 @@ def run(config: dict, *, demo: bool, today: date) -> int:
                                                 cooldown_days=scout_cfg.get("cooldown_days", 7)),
         is_held=state.is_held)
     after_prefilter = len(kept)
+
+    # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
+    # Boosters only raise interest for tickers already in `kept`; they never originate.
+    if boosters:
+        kept_by_ticker = {c.ticker: c for c in kept}
+        for booster in boosters:
+            cfg_key = booster.name  # e.g. "finnhub_news", "wikipedia"
+            w = sig_cfg.get(cfg_key, {}).get("weight", 0.5)
+            try:
+                booster_ems = booster.scan_for([c.ticker for c in kept], session)
+            except Exception as exc:  # noqa: BLE001
+                booster_ems = []
+                booster._status = (False, redact_secrets(str(exc)))  # type: ignore[attr-defined]
+            for em in booster_ems:
+                if em.ticker in kept_by_ticker:  # only fold into existing candidates
+                    kept_by_ticker[em.ticker].add(em, w)
+            ran, detail = booster.available()
+            statuses.append(SignalStatus(booster.name, ran, detail))
 
     chosen, dropped = select(kept, daily_x=scout_cfg.get("daily_x", 15))
 
@@ -116,10 +152,20 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     return 0
 
 
-def _research_phase(cards, config, scout_cfg) -> tuple[dict, list, str | None]:
+def _research_phase(
+    cards,
+    config,
+    scout_cfg,
+    *,
+    _is_available=None,
+    _enrich=None,
+) -> tuple[dict, list, str | None]:
     """Guardrailed auto-research: kill-switch, auth probe, hard cap, phase budget.
 
     Returns (briefs: dict[ticker, one_line_str], researched: list[ticker], note: str|None).
+
+    Optional _is_available/_enrich kwargs allow injection in tests without monkeypatching
+    the import machinery.  When omitted the real research module is imported lazily.
 
     REAL API: enrich() returns list[ResearchResult] (not dict[ticker, path]).
     ResearchResult.synthesis is the 2-3 sentence LLM text; ResearchResult.brief_path
@@ -130,16 +176,28 @@ def _research_phase(cards, config, scout_cfg) -> tuple[dict, list, str | None]:
     """
     if os.environ.get("SCOUT_NO_RESEARCH") == "1" or Path("scout/STOP_RESEARCH").exists():
         return {}, [], "research skipped: kill-switch"
-    try:
-        from ..research import is_available, enrich
-    except Exception:  # noqa: BLE001
-        return {}, [], "research skipped: layer unavailable"
-    if not is_available():
+    if _is_available is None or _enrich is None:
+        try:
+            from ..research import is_available as _ia, enrich as _en
+            _is_available = _is_available or _ia
+            _enrich = _enrich or _en
+        except Exception:  # noqa: BLE001
+            return {}, [], "research skipped: layer unavailable"
+    if not _is_available():
         return {}, [], "research skipped: claude CLI / edgartools not available"
     n = scout_cfg.get("research_top_n", 3)
+    budget_s = scout_cfg.get("research_phase_budget_s", 600)
     try:
-        # enrich() uses keyword-only top_n (not positional n)
-        results = enrich(cards, config, top_n=n, refresh=False)
+        # Wrap the entire enrich() call in a ThreadPoolExecutor so we can enforce a
+        # wall-clock ceiling (research_phase_budget_s).  N hung claude calls serialise
+        # inside enrich(); without this timeout the phase budget is decorative config.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_enrich, cards, config, top_n=n, refresh=False)
+            try:
+                results = future.result(timeout=budget_s)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                return {}, [], f"research skipped: phase budget {budget_s}s exceeded"
     except Exception as e:  # noqa: BLE001
         return {}, [], f"research failed: {redact_secrets(str(e))}"
 
