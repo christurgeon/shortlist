@@ -57,7 +57,7 @@ uv run shortlist --demo --json
 ⚠ `--demo` ignores any `--tickers` arg and uses the mock provider. Research briefs are not available in demo mode (no real filings).
 
 **Optional flags:**
-- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,momentum,value,opportunity,insider,upside_to_target,gates`; gates are pipe-joined)
+- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,upside_to_target,gates`; gates are pipe-joined)
 - `--research N` — generate Claude-written 10-K briefs for the top-N non-gated names; requires `claude` CLI on PATH and `SEC_IDENTITY` set
 - `--refresh` — force regeneration of cached research briefs (cached by filing accession, not date)
 - Omit `--provider` to use the defaults from `config.yaml`
@@ -75,7 +75,7 @@ Run from the **repo root** so `.env` is found.
 The JSON array contains one object per ticker:
 
 ```
-ticker, composite, quality, moat, momentum, value, opportunity,
+ticker, composite, quality, moat, growth, momentum, value, opportunity,
 insider, upside_to_target, gates[], research_path (if --research used)
 ```
 
@@ -89,6 +89,9 @@ State the top ticker(s) by composite score and identify the leading sub-score(s)
 ### Opportunity axis
 `opportunity = max(momentum, value)` — always state which one won.  
 Example: "GOOGL's opportunity score of 78 was driven by momentum (78) rather than value (65)."
+
+### Growth
+`growth` is a separate sub-score (revenue/FCF/EPS CAGR + revenue-growth persistence) — it measures fundamental compounding, distinct from price momentum and from PEG. Mention it when it materially helps or drags the composite.
 
 ### Null sub-scores
 If a sub-score field is `null`, it had no data inputs and its weight was redistributed to the remaining components. Call this out explicitly.  
@@ -122,12 +125,13 @@ The screener now emits this machine-readably: each affected card carries a `cove
 
 | Sub-score | Default weight | Driven by |
 |---|---|---|
-| Quality | 25% | ROE, net margin, interest coverage, leverage (inverted) |
-| Moat | 25% | Gross margin level + 5-year stability + persistent ROIC |
+| Quality | 20% | ROE, net margin, interest coverage, leverage (inverted) |
+| Moat | 20% | Gross margin level + 5-year stability + persistent ROIC |
+| Growth | 15% | Revenue / FCF / EPS CAGR + revenue-growth persistence |
 | Opportunity | 30% | `max(momentum, value)` — qualifies on either axis |
-| Insider | 20% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
+| Insider | 15% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
 
-All scores are 0–100. Actual weights and gate thresholds come from `config.yaml`.
+`momentum` and `value` are reported in the output but are not weighted directly — only their `max` (`opportunity`) is. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
 
 ---
 

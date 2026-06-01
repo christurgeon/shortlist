@@ -22,7 +22,11 @@ There are **two parallel stacks** that don't share fetching code:
   `TickerSnapshot` output. CLI: `shortlist-harness`.
 
 Each has its **own provider/source registry**. `fmp`, `finnhub`, and `edgar` are
-wired in **both** (`mock` too in the harness). The shared Form 4 aggregation lives
+wired in **both** (`mock` too in the harness; the keyless `yahoo` OHLCV source —
+price/momentum/risk we compute ourselves — is **harness-only**, and leads the
+harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar]`). The
+screener can score off the harness via `--engine harness` (`bridge.py:snapshot_to_metrics`
+adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes). The shared Form 4 aggregation lives
 in `providers/_form4.py` — a dependency-free leaf module used by both the screener
 `EdgarProvider` and the harness `EdgarSource`; edit insider extraction logic there,
 not in two places.

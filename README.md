@@ -148,7 +148,7 @@ Six sub-scores, each 0–100, every metric normalized over a configurable
 - **Moat** — gross-margin level + 5y stability + persistent ROIC (excess returns)
 - **Growth** — revenue / FCF / EPS CAGR + YoY growth persistence (fundamental compounding)
 - **Momentum** — price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend
-- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median
+- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted)
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis
