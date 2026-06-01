@@ -189,3 +189,45 @@ def test_bridge_keeps_fmp_pe_when_present():
     )
     m = snapshot_to_metrics(snap)
     assert (m.pe_ttm, m.pe_median_5y) == (30.0, 25.0)    # FMP untouched
+
+
+from shortlist.data.models import ShortInterest
+
+
+def _snap_with_si(**si_kwargs):
+    from shortlist.data.models import Profile, Price
+    return TickerSnapshot(
+        ticker="AAA", as_of="2026-06-01T00:00:00+00:00",
+        profile=Profile(market_cap=1.0e10), price=Price(price=100.0),
+        short_interest=ShortInterest(settlement_date="2026-05-15", **si_kwargs),
+    )
+
+
+def test_bridge_short_pct_outstanding_and_dtc():
+    # shares_out = 1e10/100 = 1e8; short 1e7 => 10% of outstanding
+    m = snapshot_to_metrics(_snap_with_si(short_shares=1.0e7, prev_short_shares=9.0e6, days_to_cover=4.2))
+    assert abs(m.short_pct_outstanding - 0.10) < 1e-9
+    assert m.days_to_cover == 4.2
+    assert m.short_interest_rising is True
+    assert m.short_data_age_days == 17        # 2026-06-01 minus 2026-05-15
+
+
+def test_bridge_dtc_sentinel_dropped():
+    m = snapshot_to_metrics(_snap_with_si(short_shares=1.0e7, days_to_cover=999.99))
+    assert m.days_to_cover is None
+
+
+def test_bridge_short_pct_sanity_clamp():
+    # short > 60% of outstanding => denominator suspect (ADR/dual-class) => dropped
+    m = snapshot_to_metrics(_snap_with_si(short_shares=9.0e7))   # 90% of 1e8
+    assert m.short_pct_outstanding is None
+
+
+def test_bridge_rising_none_across_split():
+    m = snapshot_to_metrics(_snap_with_si(short_shares=1.0e7, prev_short_shares=9.0e6, split_flag=True))
+    assert m.short_interest_rising is None
+
+
+def test_bridge_no_short_interest_leaves_fields_none():
+    m = snapshot_to_metrics(_full_snapshot())   # defined earlier in tests/test_bridge.py; has no short_interest
+    assert m.short_pct_outstanding is None and m.days_to_cover is None

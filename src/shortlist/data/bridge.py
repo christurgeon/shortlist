@@ -30,6 +30,24 @@ def _close_near(monthly_closes: list, iso_date: str) -> Optional[float]:
     return best[1] if best else None
 
 
+_MAX_PLAUSIBLE_SHORT_PCT = 0.60   # > this of shares-outstanding => broken denominator (ADR/dual-class)
+_DTC_SENTINEL = 999.99            # FINRA's zero-volume days-to-cover cap
+
+
+def _age_days(as_of: Optional[str], settlement: Optional[str]) -> Optional[int]:
+    """Whole days between a snapshot's capture time and the SI settlement date.
+    Pure (no clock read) and None-safe (unparseable -> None)."""
+    from datetime import date, datetime
+    if not as_of or not settlement:
+        return None
+    try:
+        a = datetime.fromisoformat(as_of).date()
+        s = date.fromisoformat(settlement)
+    except (TypeError, ValueError):
+        return None
+    return (a - s).days
+
+
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     """Map a harness TickerSnapshot onto the flat StockMetrics that
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
@@ -113,6 +131,20 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
                 if px and e:
                     annual_pe.append(px / e)
             m.pe_median_5y = median_pe(annual_pe)   # None if < 2 points (min_points=2)
+
+    si = snap.short_interest
+    if si:
+        dtc = si.days_to_cover
+        m.days_to_cover = dtc if (dtc is not None and dtc < _DTC_SENTINEL) else None
+        if si.short_shares is not None and m.market_cap and m.price:
+            shares_out = m.market_cap / m.price
+            pct = si.short_shares / shares_out if shares_out else None
+            if pct is not None and 0.0 <= pct <= _MAX_PLAUSIBLE_SHORT_PCT:
+                m.short_pct_outstanding = pct
+        if (si.short_shares is not None and si.prev_short_shares is not None
+                and not si.split_flag):
+            m.short_interest_rising = si.short_shares > si.prev_short_shares
+        m.short_data_age_days = _age_days(snap.as_of, si.settlement_date)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
     return m
