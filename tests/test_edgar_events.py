@@ -192,3 +192,40 @@ def test_build_sources_without_config_uses_defaults(monkeypatch):
     monkeypatch.setattr("edgar.set_identity", lambda *_a, **_k: None)
     edgar = [s for s in build_sources(["edgar"]) if s.name == "edgar"][0]
     assert edgar._event_lookback_days == 90
+
+
+def _min_config():
+    import yaml, pathlib
+    return yaml.safe_load((pathlib.Path(__file__).parent.parent / "config.yaml").read_text())
+
+
+def test_bridge_copies_events_when_present():
+    snap = TickerSnapshot(ticker="AAPL")
+    snap.events = _sample_events()
+    from shortlist.data.bridge import snapshot_to_metrics
+    m = snapshot_to_metrics(snap)
+    assert m.activist_13d is True
+    assert m.recent_8k is False
+    assert m.filing_events == [
+        {"form": "SC 13D", "filed": "2026-05-26", "accession": "0000-1", "url": "https://sec.gov/x"}]
+
+
+def test_bridge_leaves_events_none_when_absent():
+    from shortlist.data.bridge import snapshot_to_metrics
+    m = snapshot_to_metrics(TickerSnapshot(ticker="AAPL"))
+    assert m.activist_13d is None
+    assert m.filing_events is None
+
+
+def test_events_have_zero_score_impact():
+    from shortlist.data.bridge import snapshot_to_metrics
+    from shortlist.scoring import score
+    snap = TickerSnapshot(ticker="AAPL")
+    config = _min_config()
+    before = score(snapshot_to_metrics(snap), config)
+    snap.events = _sample_events()
+    after = score(snapshot_to_metrics(snap), config)
+    assert (before.composite, before.quality, before.moat, before.growth,
+            before.momentum, before.value, before.insider) == \
+           (after.composite, after.quality, after.moat, after.growth,
+            after.momentum, after.value, after.insider)

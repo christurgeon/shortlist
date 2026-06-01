@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import Optional
 
 from ..models import StockMetrics
@@ -147,4 +148,13 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.short_data_age_days = _age_days(snap.as_of, si.settlement_date)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
+
+    ev = snap.events
+    if ev is not None:
+        m.recent_8k = ev.recent_8k
+        m.activist_13d = ev.activist_13d
+        m.passive_13g = ev.passive_13g
+        m.planned_insider_sale_144 = ev.planned_insider_sale_144
+        m.filing_events = [dataclasses.asdict(e) for e in ev.recent]
+
     return m
