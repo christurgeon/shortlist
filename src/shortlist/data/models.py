@@ -166,6 +166,32 @@ class TickerSnapshot:
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "TickerSnapshot":
+        """Inverse of to_dict: rebuild a snapshot (and its nested sections) from a
+        persisted JSON dict. Unknown keys are ignored so the model can evolve."""
+        def _build(klass, payload):
+            if payload is None:
+                return None
+            names = {f.name for f in fields(klass)}
+            return klass(**{k: v for k, v in payload.items() if k in names})
+
+        snap = cls(ticker=d.get("ticker", "?"))
+        snap.as_of = d.get("as_of", snap.as_of)
+        for name, klass in _DEFAULTS.items():
+            snap.__dict__[name] = _build(klass, d.get(name))
+        ins = d.get("insider")
+        if snap.insider is not None and ins and ins.get("recent"):
+            snap.insider.recent = [
+                InsiderTxn(**{k: v for k, v in t.items()
+                              if k in {f.name for f in fields(InsiderTxn)}})
+                for t in ins["recent"]
+            ]
+        snap.raw = d.get("raw", {}) or {}
+        snap.provenance = d.get("provenance", {}) or {}
+        snap.errors = d.get("errors", []) or []
+        return snap
+
 
 _DEFAULTS = {
     "profile": Profile, "fundamentals": Fundamentals, "statements": Statements,
