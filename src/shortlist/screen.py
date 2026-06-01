@@ -51,14 +51,23 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
 
 def run_harness(tickers: list[str], source_names: list[str], config: dict) -> list[ScoreCard]:
     """Score via the harness stack: collect TickerSnapshots, bridge each to
-    StockMetrics, then run the same scorer the screener uses. Harness cards carry
-    no `coverage` diagnostic (that lives on the screener path); the snapshot's own
-    coverage()/missing() remain available via shortlist-harness."""
+    StockMetrics, then run the same scorer the screener uses. Harness cards now
+    carry the same `coverage` diagnostic as screener cards, via the
+    snapshot_to_coverage_inputs adapter — so per-source fetch status (gated_402,
+    empty, error) and unavailable sub-scores are surfaced identically on both
+    paths."""
+    from .coverage import build_coverage
     from .data.bridge import snapshot_to_metrics
     from .data.collector import collect
+    from .data.coverage_adapt import snapshot_to_coverage_inputs
 
     snapshots = collect(tickers, source_names)
-    cards = [score(snapshot_to_metrics(s), config) for s in snapshots]
+    cards = []
+    for s in snapshots:
+        card = score(snapshot_to_metrics(s), config)
+        outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
+        card.coverage = build_coverage(outcomes, contributed, card)
+        cards.append(card)
     cards.sort(key=lambda c: c.composite, reverse=True)
     return cards
 
