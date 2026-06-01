@@ -178,3 +178,19 @@ quarterly bars. Design record: `docs/superpowers/specs/2026-06-01-backtest-desig
   upside still require FMP.
 - Equity-centric fields are blank for banks (SCHW) — coverage correctly flags it; sector-aware extraction is the fix.
 - Mock data is illustrative, not verified.
+
+## Pending follow-ups (EDGAR value-axis work, PR #9)
+
+The EDGAR value-leg recovery (PR #9) landed with two deliberate follow-ups still to action:
+
+1. **Manual end-to-end spot-check on a gated name** — not yet done. Run
+   `uv run shortlist --engine harness --tickers GEV --json` (needs `SEC_IDENTITY`
+   set, FMP free key) and confirm: `value` is non-null (i.e. `fcf_yield` +
+   `pe_vs_history` recovered from EDGAR+Yahoo), and the `coverage` block reports
+   `fmp: gated_402`. The automated tests + opt-in live SEC test pass, but a real
+   CLI run on a 402-gated symbol hasn't been eyeballed.
+2. **Harness consolidation (Phases B/C)** — flipping `--engine harness` to the
+   default and retiring the screener providers/`merge.py` remain **gated behind the
+   handoff checklist** in `docs/superpowers/plans/2026-06-01-edgar-value-and-harness-consolidation.md`.
+   Requires explicit sign-off; do not action without completing the checklist
+   (parity spot-check + FMP/EDGAR rate-limit acceptance).
