@@ -251,3 +251,45 @@ def test_score_runs_against_shipped_config_and_mock_data():
     assert card.opportunity == max(
         x for x in (card.momentum, card.value) if x is not None
     )
+
+
+# --- check_flags: soft, non-disqualifying advisories ---------------------
+
+from shortlist.scoring import check_flags
+
+FLAGS_CFG = {"crowded_short": {
+    "min_short_pct_outstanding": 0.10, "min_days_to_cover": 5.0,
+    "require_rising": True, "max_staleness_days": 35,
+}}
+
+
+def _crowded_metrics(**kw):
+    base = dict(short_pct_outstanding=0.15, days_to_cover=6.0,
+                short_interest_rising=True, short_data_age_days=10)
+    base.update(kw)
+    return StockMetrics(ticker="X", **base)
+
+
+def test_check_flags_trips_on_full_conjunction():
+    assert check_flags(_crowded_metrics(), FLAGS_CFG) == ["crowded_short"]
+
+
+def test_check_flags_each_clause_suppresses():
+    assert check_flags(_crowded_metrics(short_pct_outstanding=0.05), FLAGS_CFG) == []
+    assert check_flags(_crowded_metrics(days_to_cover=3.0), FLAGS_CFG) == []
+    assert check_flags(_crowded_metrics(short_interest_rising=False), FLAGS_CFG) == []
+    assert check_flags(_crowded_metrics(short_data_age_days=40), FLAGS_CFG) == []   # stale
+
+
+def test_check_flags_none_inputs_are_noop():
+    assert check_flags(StockMetrics(ticker="X"), FLAGS_CFG) == []
+    assert check_flags(_crowded_metrics(), {}) == []          # no flags config -> nothing
+
+
+def test_score_carries_flags_and_passed_unaffected():
+    m = _crowded_metrics(market_cap=5.0e9)
+    cfg = dict(CONFIG)
+    cfg["flags"] = FLAGS_CFG
+    card = score(m, cfg)
+    assert "crowded_short" in card.flags
+    assert card.passed is True                                # advisory only

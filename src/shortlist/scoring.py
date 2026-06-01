@@ -96,6 +96,22 @@ def check_gates(m: StockMetrics, g: dict) -> list[str]:
     return tripped
 
 
+def check_flags(m: StockMetrics, f: dict) -> list[str]:
+    """Soft, NON-disqualifying advisories (parallel to check_gates). Fully None-safe:
+    returns [] when inputs or config are absent, so the screener engine is a no-op."""
+    out: list[str] = []
+    cs = f.get("crowded_short") if f else None
+    if cs and m.short_pct_outstanding is not None and m.days_to_cover is not None:
+        fresh = (m.short_data_age_days is None
+                 or m.short_data_age_days <= cs["max_staleness_days"])
+        rising_ok = (not cs.get("require_rising")) or (m.short_interest_rising is True)
+        if (m.short_pct_outstanding >= cs["min_short_pct_outstanding"]
+                and m.days_to_cover >= cs["min_days_to_cover"]
+                and rising_ok and fresh):
+            out.append("crowded_short")
+    return out
+
+
 def score(m: StockMetrics, config: dict) -> ScoreCard:
     t = config["thresholds"]
     w = config["weights"]
@@ -131,6 +147,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         quality=_round(q), moat=_round(mo), growth=_round(gr), momentum=_round(mom),
         value=_round(val), opportunity=_round(opp), insider=_round(ins),
         gates=check_gates(m, config["gates"]),
+        flags=check_flags(m, config.get("flags") or {}),
         metrics=m,
     )
 
