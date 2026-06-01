@@ -44,3 +44,41 @@ def test_classify_failure_other_http_is_error():
 
 def test_classify_failure_non_http_is_error():
     assert classify_failure(RuntimeError("boom")) == "error"
+
+
+from shortlist.coverage import build_coverage
+
+
+def test_build_coverage_gated_fmp_lists_value_and_note():
+    m = StockMetrics(ticker="SCHW")
+    m.sources = {"price": "finnhub", "insider_net_6m": "edgar"}  # no fmp fields
+    card = _card(ticker="SCHW", composite=43.2, quality=45.4, moat=50.0,
+                 momentum=57.1, value=None, opportunity=57.1, insider=10.8, metrics=m)
+    cov = build_coverage({"fmp": "gated_402", "finnhub": "ok", "edgar": "ok"}, card)
+    assert cov is not None
+    assert cov.providers["fmp"] == "gated_402"
+    assert "value" in cov.unavailable
+    assert "upside_to_target" in cov.unavailable  # price set but no target_median
+    assert "Starter" in cov.note
+
+
+def test_build_coverage_reclassifies_ok_but_empty_provider():
+    m = StockMetrics(ticker="X")
+    m.sources = {"price": "finnhub"}  # fmp contributed nothing despite not raising
+    card = _card(ticker="X", metrics=m)
+    cov = build_coverage({"fmp": "ok", "finnhub": "ok"}, card)
+    assert cov is not None
+    assert cov.providers["fmp"] == "empty"
+
+
+def test_build_coverage_all_ok_returns_none():
+    m = StockMetrics(ticker="X")
+    m.sources = {"roe": "fmp", "price": "finnhub"}  # both contributed
+    card = _card(ticker="X", quality=80.0, metrics=m)
+    assert build_coverage({"fmp": "ok", "finnhub": "ok"}, card) is None
+
+
+def test_build_coverage_handles_none_metrics():
+    card = _card(ticker="X", metrics=None)
+    cov = build_coverage({"fmp": "gated_402"}, card)  # must not raise
+    assert "upside_to_target" in cov.unavailable
