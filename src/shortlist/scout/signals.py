@@ -9,6 +9,9 @@ from __future__ import annotations
 from datetime import date
 from typing import Protocol
 
+import httpx
+
+from ..env import redact_secrets
 from .models import Emission
 
 
@@ -53,10 +56,6 @@ def build_signals(names: list[str]) -> list[SignalSource]:
     """Resolve names to instances. Unknown names raise KeyError (config typos are loud)."""
     return [_REGISTRY[n]() for n in names]
 
-
-import httpx
-
-from ..env import redact_secrets
 
 _YAHOO_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 _YAHOO_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
@@ -232,12 +231,12 @@ class EdgarForm4Signal:
         from .edgar_index import fetch_daily_records, cluster_buys_from_records
         try:
             records = fetch_daily_records(session, self.max_filings, self.identity)
-            ems = cluster_buys_from_records(records)
-            self._status = (bool(records), f"{len(ems)} clusters from {len(records)} txns")
-            return ems
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
+        ems = cluster_buys_from_records(records)
+        self._status = (bool(records), f"{len(ems)} clusters from {len(records)} txns")
+        return ems
 
     def available(self) -> tuple[bool, str]:
         return self._status

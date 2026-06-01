@@ -58,12 +58,19 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
         for f in list(filings)[:max_filings]:
             try:
                 form4 = f.obj()
-                for txn in getattr(form4, "market_trades", []) or []:
+                mt = getattr(form4, "market_trades", None)
+                if mt is None or getattr(mt, "empty", True):
+                    continue
+                ticker = (getattr(getattr(form4, "issuer", None), "ticker", "") or "").upper()
+                insider = getattr(form4, "insider_name", "?") or "?"
+                for row in mt.itertuples(index=False):
+                    shares = getattr(row, "Shares", None) or 0
+                    price = getattr(row, "Price", None) or 0
                     records.append({
-                        "ticker": (getattr(form4, "issuer_ticker", "") or "").upper(),
-                        "insider": getattr(form4, "reporting_owner", "?"),
-                        "code": getattr(txn, "code", ""),
-                        "value": float(getattr(txn, "value", 0) or 0),
+                        "ticker": ticker,
+                        "insider": insider,
+                        "code": getattr(row, "Code", "") or "",
+                        "value": float(shares * price),
                     })
             except Exception:  # noqa: BLE001 — skip an unparseable filing
                 continue
