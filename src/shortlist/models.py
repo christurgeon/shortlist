@@ -38,6 +38,12 @@ class StockMetrics:
     gross_margin_stability: Optional[float] = None  # 0..1, higher = steadier margins
     roic_5y_avg: Optional[float] = None
 
+    # Growth (fundamental compounding — distinct from price momentum)
+    revenue_cagr: Optional[float] = None
+    fcf_cagr: Optional[float] = None
+    eps_cagr: Optional[float] = None              # net-income CAGR proxy (no share-count series yet)
+    revenue_growth_persistence: Optional[float] = None  # 0..1, fraction of YoY periods that grew
+
     # Momentum
     price_vs_200dma: Optional[float] = None  # (price / 200dma) - 1
     rel_strength_6m: Optional[float] = None  # 6m return minus benchmark 6m return
@@ -86,6 +92,7 @@ class ScoreCard:
     composite: float
     quality: Optional[float]
     moat: Optional[float]
+    growth: Optional[float]
     momentum: Optional[float]
     value: Optional[float]
     opportunity: Optional[float]  # max(momentum, value): qualifies on either axis

@@ -5,7 +5,7 @@ from shortlist.models import Coverage, ScoreCard, StockMetrics
 
 def _card(**over):
     base = dict(
-        ticker="T", composite=1.0, quality=None, moat=None, momentum=None,
+        ticker="T", composite=1.0, quality=None, moat=None, growth=None, momentum=None,
         value=None, opportunity=None, insider=None, metrics=StockMetrics(ticker="T"),
     )
     base.update(over)
@@ -59,6 +59,7 @@ def test_build_coverage_gated_fmp_lists_value_and_note():
     assert cov is not None
     assert cov.providers["fmp"] == "gated_402"
     assert "value" in cov.unavailable
+    assert "growth" in cov.unavailable  # income history is FMP-sourced; gated -> null
     assert "upside_to_target" in cov.unavailable  # price set but no target_median
     assert "Starter" in cov.note
 

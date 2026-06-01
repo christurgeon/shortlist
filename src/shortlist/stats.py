@@ -30,6 +30,47 @@ def avg_roic(roics: list[Optional[float]], min_points: int = 2) -> Optional[floa
     return mean(vals)
 
 
+def cagr(series: list[Optional[float]], most_recent_first: bool = True,
+         min_points: int = 3) -> Optional[float]:
+    """Compound annual growth rate over a financial series.
+
+    Drops None values (a missing year), then requires >= `min_points` usable
+    points. Returns None when either endpoint is <= 0, because CAGR is undefined
+    across a sign change (a swing through zero makes the ratio meaningless) — the
+    caller's weight-redistribution handles the gap. `most_recent_first=True`
+    matches `Statements`' newest-first ordering. Single source of truth for the
+    growth-rate legs in BOTH the screener provider and the harness bridge."""
+    vals = [v for v in (series or []) if v is not None]
+    if len(vals) < min_points:
+        return None
+    if most_recent_first:
+        vals = list(reversed(vals))
+    start, end = vals[0], vals[-1]
+    if start <= 0 or end <= 0:
+        return None
+    n = len(vals) - 1
+    return (end / start) ** (1 / n) - 1.0
+
+
+def growth_persistence(series: list[Optional[float]], most_recent_first: bool = True,
+                       min_points: int = 3) -> Optional[float]:
+    """0..1 consistency proxy: the fraction of consecutive year-over-year periods
+    that grew. Sign-safe (works through negative/zero years where `cagr` can't),
+    so it rewards a steady compounder over one that booked the same CAGR via a
+    single spike year. Drops None values; needs >= `min_points` usable points.
+    Note: dropping a None makes the years on either side of the gap adjacent, so a
+    missing year is treated as a single YoY step rather than a break — acceptable
+    given statement gaps are rare."""
+    vals = [v for v in (series or []) if v is not None]
+    if len(vals) < min_points:
+        return None
+    if most_recent_first:
+        vals = list(reversed(vals))
+    pairs = list(zip(vals, vals[1:]))  # (older, newer)
+    ups = sum(1 for older, newer in pairs if newer > older)
+    return ups / len(pairs)
+
+
 def gross_margin_stability(margins: list[float]) -> Optional[float]:
     """0..1 moat proxy: higher = steadier gross margins.
 

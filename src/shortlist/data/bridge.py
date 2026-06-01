@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ..models import StockMetrics
-from ..stats import gross_margin_stability
+from ..stats import cagr, gross_margin_stability, growth_persistence
 from .models import TickerSnapshot
 
 
@@ -10,11 +10,12 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
     scorer's weight-redistribution handles them.
 
-    Two fields are DERIVED here because the harness has the raw material but not
-    the field: gross_margin_stability (from Statements) and fcf_positive (most
-    recent FCF). eps_revision is the one accepted None parity gap (Alpha Vantage,
-    out of scope); pe_median_5y and roic_5y_avg now flow from FMPSource's annual
-    history fetches."""
+    Several fields are DERIVED here because the harness has the raw material but
+    not the field: gross_margin_stability, fcf_positive, and the growth legs
+    (revenue_cagr/fcf_cagr/eps_cagr/revenue_growth_persistence) — all from the 5y
+    Statements via the shared shortlist.stats helpers. eps_revision is the one
+    accepted None parity gap (Alpha Vantage, out of scope); pe_median_5y and
+    roic_5y_avg flow from FMPSource's annual history fetches."""
     m = StockMetrics(ticker=snap.ticker)
 
     p = snap.profile
@@ -60,6 +61,11 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     st = snap.statements
     if st:
         m.gross_margin_stability = gross_margin_stability(st.gross_margins())
+        # Growth legs derived from the 5y series (statements are newest-first).
+        m.revenue_cagr = cagr(st.revenue)
+        m.fcf_cagr = cagr(st.free_cash_flow)
+        m.eps_cagr = cagr(st.net_income)
+        m.revenue_growth_persistence = growth_persistence(st.revenue)
         if st.free_cash_flow:
             fcf0 = st.free_cash_flow[0]
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None

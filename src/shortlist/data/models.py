@@ -58,12 +58,6 @@ class Statements:
     def gross_margins(self) -> list[float]:
         return [g / r for g, r in zip(self.gross_profit, self.revenue) if r]
 
-    def revenue_cagr(self) -> Optional[float]:
-        if len(self.revenue) >= 2 and self.revenue[-1] > 0:
-            n = len(self.revenue) - 1
-            return (self.revenue[0] / self.revenue[-1]) ** (1 / n) - 1.0
-        return None
-
 
 @dataclass
 class Analyst:

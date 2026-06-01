@@ -13,6 +13,12 @@ thresholds:
   gross_margin_stability:  [0.50, 1.00]
   roic:                    [0.05, 0.30]
 
+  # Growth (fundamental compounding)
+  revenue_cagr:                [0.00, 0.20]
+  fcf_cagr:                    [0.00, 0.20]
+  eps_cagr:                    [0.00, 0.20]
+  revenue_growth_persistence:  [0.50, 1.00]
+
   # Momentum
   price_vs_200dma:     [-0.10, 0.30]
   rel_strength_6m:     [-0.15, 0.25]
@@ -29,10 +35,13 @@ thresholds:
   insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
 
 weights:
-  quality:      0.25
-  moat:         0.25
+  quality:      0.20
+  moat:         0.20
+  growth:       0.15   # fundamental compounding (revenue/FCF/EPS CAGR + persistence)
   opportunity:  0.30   # max(momentum, value) — qualifies on either axis
-  insider:      0.20
+  insider:      0.15
+  # NOTE: a defensible prior, not a fitted result. Backtest against forward
+  # returns (see docs/ASSESSMENT_GAPS.md §2.1) before trusting these weights.
 
 gates:
   min_market_cap:          2.0e+9

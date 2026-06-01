@@ -6,7 +6,7 @@ from typing import Any, Optional
 import requests
 
 from ..models import StockMetrics
-from ..stats import gross_margin_stability, median_pe
+from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
 from .base import Provider
 
 BASE = "https://financialmodelingprep.com/stable"
@@ -88,6 +88,13 @@ class FMPProvider(Provider):
             m.fcf_positive = all(
                 (row.get("netIncome") or 0) > 0 for row in income[:2]
             ) or None
+            # Growth legs from the same annual history (no extra call). income is
+            # newest-first. fcf_cagr needs the cash-flow statement we don't fetch
+            # here (quota) -> left None; the scorer redistributes its weight.
+            revenues = [row.get("revenue") for row in income]
+            m.revenue_cagr = cagr(revenues)
+            m.eps_cagr = cagr([row.get("netIncome") for row in income])
+            m.revenue_growth_persistence = growth_persistence(revenues)
 
         consensus = _first(self._get("price-target-consensus", symbol=ticker))
         if consensus:
@@ -123,6 +130,7 @@ class FMPProvider(Provider):
             "roe", "gross_margin", "net_margin", "debt_to_equity",
             "interest_coverage", "peg", "roic", "fcf_yield",
             "gross_margin_stability", "fcf_positive", "target_median",
+            "revenue_cagr", "eps_cagr", "revenue_growth_persistence",
             "rating_buy", "rating_hold", "rating_sell", "rel_strength_6m",
             "insider_net_6m",
         )

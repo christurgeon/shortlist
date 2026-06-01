@@ -1,5 +1,9 @@
 # Data sources for stock assessment — current state and a roadmap
 
+> **Companion doc:** [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) covers the **methodology**
+> gaps — the scoring model (incl. the growth sub-score spec), its validation/backtest, and
+> the Claude qualitative layer. This doc is about the **data feeds** that back them.
+
 **Audience:** whoever extends the screener/harness next.
 **Bar:** what a buy-side analyst would actually want under the hood — authoritative,
 point-in-time, and honest about coverage — not a pile of vanity feeds.
@@ -33,9 +37,10 @@ A `snapshot_to_metrics` **bridge** (`data/bridge.py`) now feeds the harness
 `docs/superpowers/specs/2026-05-31-harness-scoring-bridge-yahoo-design.md`.
 
 Scored signals today: **quality** (ROE, net margin, interest coverage, D/E),
-**moat** (gross margin, margin stability, ROIC), **momentum** (price vs 200dma, 6m rel
-strength, EPS revision), **value** (upside-to-target, FCF yield, PE vs own history, PEG),
-**insider** (sentiment + net-flow/mktcap).
+**moat** (gross margin, margin stability, ROIC), **growth** (revenue/FCF/EPS CAGR +
+YoY persistence), **momentum** (price vs 200dma, 6m rel strength, EPS revision),
+**value** (upside-to-target, FCF yield, PE vs own history, PEG), **insider**
+(sentiment + net-flow/mktcap).
 
 ## 2. Gaps a professional would flag
 

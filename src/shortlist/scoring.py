@@ -41,6 +41,18 @@ def moat_score(m: StockMetrics, t: dict) -> Optional[float]:
     ])
 
 
+def growth_score(m: StockMetrics, t: dict) -> Optional[float]:
+    # Fundamental compounding: pair growth RATE (revenue/FCF/earnings CAGR) with
+    # CONSISTENCY (persistence) so one spike year can't masquerade as a trend.
+    # Distinct from momentum (price-based) and PEG (value conditioned on growth).
+    return _avg([
+        _norm(m.revenue_cagr, *t["revenue_cagr"]),
+        _norm(m.fcf_cagr, *t["fcf_cagr"]),
+        _norm(m.eps_cagr, *t["eps_cagr"]),
+        _norm(m.revenue_growth_persistence, *t["revenue_growth_persistence"]),
+    ])
+
+
 def momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _avg([
         _norm(m.price_vs_200dma, *t["price_vs_200dma"]),
@@ -90,6 +102,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
 
     q = quality_score(m, t)
     mo = moat_score(m, t)
+    gr = growth_score(m, t)
     mom = momentum_score(m, t)
     val = value_score(m, t)
     # Chris's brief: momentum OR deep undervaluation. Take the stronger axis so a
@@ -100,6 +113,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     parts = {
         "quality": (q, w["quality"]),
         "moat": (mo, w["moat"]),
+        "growth": (gr, w["growth"]),
         "opportunity": (opp, w["opportunity"]),
         "insider": (ins, w["insider"]),
     }
@@ -110,7 +124,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     return ScoreCard(
         ticker=m.ticker,
         composite=composite,
-        quality=_round(q), moat=_round(mo), momentum=_round(mom),
+        quality=_round(q), moat=_round(mo), growth=_round(gr), momentum=_round(mom),
         value=_round(val), opportunity=_round(opp), insider=_round(ins),
         gates=check_gates(m, config["gates"]),
         metrics=m,

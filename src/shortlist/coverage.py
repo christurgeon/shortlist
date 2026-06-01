@@ -14,7 +14,7 @@ def classify_failure(exc: Exception) -> str:
     return "gated_402" if status == 402 else "error"
 
 
-_SUBSCORE_FIELDS = ("quality", "moat", "momentum", "value", "insider")
+_SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
 # Single source of truth for the per-provider fetch statuses that signal a coverage
 # problem, mapped to their human label. A status with a label here is "flagged"

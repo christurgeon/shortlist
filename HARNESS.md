@@ -74,11 +74,12 @@ is skipped (not fatal).
 uv run shortlist --tickers GEV,AXON --engine harness
 ```
 
-The bridge **derives** two fields the snapshot doesn't store directly:
-`gross_margin_stability` (from 5y `Statements`, via the shared
-`shortlist.stats.gross_margin_stability` helper the screener also uses) and
-`fcf_positive` (most-recent free cash flow). It surfaces Yahoo's `realized_vol`
-and `max_drawdown` as risk fields that are **populated but not yet scored**.
+The bridge **derives** several fields the snapshot doesn't store directly, all
+from the 5y `Statements` via the shared `shortlist.stats` helpers the screener
+also uses: `gross_margin_stability`, `fcf_positive` (most-recent free cash flow),
+and the **growth** legs `revenue_cagr` / `fcf_cagr` / `eps_cagr` (net-income proxy)
+/ `revenue_growth_persistence`. It surfaces Yahoo's `realized_vol` and
+`max_drawdown` as risk fields that are **populated but not yet scored**.
 
 `FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge now
 maps `pe_median_5y` (harness `value` runs on the full 4 legs, via the shared

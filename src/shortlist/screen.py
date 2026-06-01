@@ -79,6 +79,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         ("Score",   "right", 5),
         ("Qual",    "right", 4),
         ("Moat",    "right", 4),
+        ("Grow",    "right", 4),
         ("Momt",    "right", 4),
         ("Value",   "right", 5),
         ("Insdr",   "right", 5),
@@ -95,7 +96,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         style = "dim red" if c.gates else None
         table.add_row(
             str(i), c.ticker, f"{c.composite:.1f}",
-            _f(c.quality), _f(c.moat), _f(c.momentum), _f(c.value), _f(c.insider),
+            _f(c.quality), _f(c.moat), _f(c.growth), _f(c.momentum), _f(c.value), _f(c.insider),
             f"{up*100:.0f}%" if up is not None else "-",
             ",".join(c.gates) or "-", style=style,
         )
@@ -103,11 +104,11 @@ def _print_table(cards: list[ScoreCard]) -> None:
 
 
 def _print_plain(cards: list[ScoreCard]) -> None:
-    print(f"{'#':>2} {'TICK':<6} {'COMP':>5} {'QUAL':>5} {'MOAT':>5} "
+    print(f"{'#':>2} {'TICK':<6} {'COMP':>5} {'QUAL':>5} {'MOAT':>5} {'GRW':>5} "
           f"{'MOM':>5} {'VAL':>5} {'INSD':>5}  FLAGS")
     for i, c in enumerate(cards, 1):
         print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
-              f"{_f(c.moat):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
+              f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
               f"{_f(c.insider):>5}  {','.join(c.gates) or '-'}")
 
 
@@ -247,7 +248,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     up = c.metrics.upside_to_target() if c.metrics else None
     d = {
         "ticker": c.ticker, "composite": c.composite, "quality": c.quality,
-        "moat": c.moat, "momentum": c.momentum, "value": c.value,
+        "moat": c.moat, "growth": c.growth, "momentum": c.momentum, "value": c.value,
         "opportunity": c.opportunity, "insider": c.insider,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
@@ -267,13 +268,13 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
 
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["rank", "ticker", "composite", "quality", "moat", "momentum",
-                    "value", "opportunity", "insider", "upside_to_target", "gates"])
+        w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
+                    "momentum", "value", "opportunity", "insider", "upside_to_target", "gates"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
-                        d["momentum"], d["value"], d["opportunity"], d["insider"],
-                        d["upside_to_target"], "|".join(d["gates"])])
+                        d["growth"], d["momentum"], d["value"], d["opportunity"],
+                        d["insider"], d["upside_to_target"], "|".join(d["gates"])])
 
 
 if __name__ == "__main__":

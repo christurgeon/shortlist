@@ -8,8 +8,8 @@ Guidance for working in this repo. See `README.md` (screener) and `HARNESS.md`
 ## What this is
 
 A quantitative stock pre-screen: pull fundamentals, score quality / moat /
-opportunity (momentum **or** value) / insider, rank a shortlist for a human deep
-dive. Config-driven via `config.yaml` (thresholds, weights, gates).
+growth / opportunity (momentum **or** value) / insider, rank a shortlist for a
+human deep dive. Config-driven via `config.yaml` (thresholds, weights, gates).
 
 ## Two layers, two separate registries
 
@@ -44,7 +44,7 @@ uv run shortlist --demo     # offline, no keys
 `screen.run()` drives the screener layer:
 1. `Provider.fetch(ticker)` → `StockMetrics` (flat dataclass; unavailable fields stay `None`)
 2. `merge.merge(per_provider_list)` → single `StockMetrics` filled by priority
-3. `scoring.score(metrics, config)` → `ScoreCard` (five 0–100 sub-scores + composite + gates)
+3. `scoring.score(metrics, config)` → `ScoreCard` (six 0–100 sub-scores + composite + gates)
 
 A `coverage` diagnostic (`coverage.py`) annotates each `ScoreCard`: per-provider
 fetch status (`ok`/`gated_402`/`empty`/`error`, the latter derived from the fetch
@@ -54,8 +54,8 @@ provider had trouble) and as a stderr `Coverage notes` summary — so a null `va
 reads as "FMP gated this symbol," not an unexplained gap.
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis rather
-than being averaged down. Composite is a weighted blend (default quality 0.25 /
-moat 0.25 / opportunity 0.30 / insider 0.20). **Gates** are hard filters
+than being averaged down. Composite is a weighted blend (default quality 0.20 /
+moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15). **Gates** are hard filters
 (negative FCF, sub-threshold market cap, over-leverage, heavy insider selling)
 that flag a name regardless of score.
 

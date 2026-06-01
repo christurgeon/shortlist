@@ -22,7 +22,7 @@ flowchart TD
     C --> E["merge() → StockMetrics\npriority-fill across providers"]
     D --> E
 
-    E --> F["score() → ScoreCard\nQuality · Moat · Opportunity · Insider\nGates: FCF · leverage · insider-sell"]
+    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Opportunity · Insider\nGates: FCF · leverage · insider-sell"]
 
     F --> G[Ranked shortlist]
 
@@ -44,7 +44,7 @@ flowchart LR
         SP3["EDGAR Provider"]
         SP4["Mock Provider"]
         MG["merge.py\npriority-fill → StockMetrics"]
-        SC["scoring.py\nQuality · Moat · Opportunity · Insider\nopportunity = max(momentum, value)"]
+        SC["scoring.py\nQuality · Moat · Growth · Opportunity · Insider\nopportunity = max(momentum, value)"]
         CARD["ScoreCard\n+ Gates"]
 
         SP1 --> MG
@@ -141,18 +141,20 @@ they're the highest-leverage next additions, in that order.
 
 ## How scoring works (`scoring.py`)
 
-Five sub-scores, each 0–100, every metric normalized over a configurable
+Six sub-scores, each 0–100, every metric normalized over a configurable
 `[low, high]` band in `config.yaml`:
 
 - **Quality** — ROE, net margin, interest coverage, (inverted) leverage
 - **Moat** — gross-margin level + 5y stability + persistent ROIC (excess returns)
+- **Growth** — revenue / FCF / EPS CAGR + YoY growth persistence (fundamental compounding)
 - **Momentum** — price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend
 - **Value** — upside to analyst target, FCF yield, P/E vs own 5y median
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis
 rather than being averaged down. Composite is a weighted blend (default
-quality 0.25 / moat 0.25 / opportunity 0.30 / insider 0.20). **Gates** are hard
+quality 0.20 / moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15;
+these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`). **Gates** are hard
 filters (negative FCF, sub-threshold market cap, over-leverage, heavy insider
 selling) that flag a name regardless of score.
 

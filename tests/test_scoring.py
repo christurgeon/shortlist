@@ -9,7 +9,7 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, insider_score, moat_score, momentum_score,
+    _avg, _norm, growth_score, insider_score, moat_score, momentum_score,
     quality_score, score, value_score,
 )
 
@@ -25,6 +25,10 @@ CONFIG = {
         "gross_margin": [0.0, 1.0],
         "gross_margin_stability": [0.0, 1.0],
         "roic": [0.0, 1.0],
+        "revenue_cagr": [0.0, 1.0],
+        "fcf_cagr": [0.0, 1.0],
+        "eps_cagr": [0.0, 1.0],
+        "revenue_growth_persistence": [0.0, 1.0],
         "price_vs_200dma": [0.0, 1.0],
         "rel_strength_6m": [0.0, 1.0],
         "eps_revision": [0.0, 1.0],
@@ -35,7 +39,8 @@ CONFIG = {
         "insider_sentiment": [-1.0, 1.0],
         "insider_net_ratio": [-0.001, 0.001],
     },
-    "weights": {"quality": 0.25, "moat": 0.25, "opportunity": 0.30, "insider": 0.20},
+    "weights": {"quality": 0.20, "moat": 0.20, "growth": 0.15,
+                "opportunity": 0.30, "insider": 0.15},
     "gates": {
         "min_market_cap": 2.0e9,
         "max_debt_to_equity": 5.0,
@@ -52,6 +57,8 @@ def metrics_all_50() -> StockMetrics:
         roe=0.5, net_margin=0.5, interest_coverage=5.0, debt_to_equity=1.0,
         # moat
         gross_margin=0.5, gross_margin_stability=0.5, roic=0.5,
+        # growth
+        revenue_cagr=0.5, fcf_cagr=0.5, eps_cagr=0.5, revenue_growth_persistence=0.5,
         # momentum
         price_vs_200dma=0.5, rel_strength_6m=0.5, eps_revision=0.5,
         # value: target/price - 1 = 0.5; pe_median/pe - 1 = 0.5
@@ -98,6 +105,7 @@ def test_all_midpoint_metrics_score_50_everywhere():
     t = CONFIG["thresholds"]
     assert quality_score(m, t) == 50.0
     assert moat_score(m, t) == 50.0
+    assert growth_score(m, t) == 50.0
     assert momentum_score(m, t) == 50.0
     assert value_score(m, t) == 50.0
     assert insider_score(m, t) == 50.0
@@ -124,6 +132,29 @@ def test_insider_net_flow_scaled_by_market_cap():
     # is 0.001, so 0.0005 normalizes to 75; sentiment midpoint stays 50 -> 62.5.
     m = dataclasses.replace(base, insider_net_6m=5e6, market_cap=10e9, insider_sentiment=0.0)
     assert insider_score(m, t) == pytest.approx((50 + 75) / 2)
+
+
+# --- growth ---------------------------------------------------------------
+
+def test_growth_score_averages_present_legs_and_skips_none():
+    t = CONFIG["thresholds"]
+    # Only revenue_cagr (=> 50) and persistence (=> 100) present; fcf/eps None.
+    m = StockMetrics(ticker="T", revenue_cagr=0.5, revenue_growth_persistence=1.0)
+    assert growth_score(m, t) == pytest.approx((50 + 100) / 2)
+
+
+def test_growth_score_none_when_no_legs_present():
+    assert growth_score(StockMetrics(ticker="T"), CONFIG["thresholds"]) is None
+
+
+def test_growth_weight_redistributed_when_axis_absent():
+    # Quality present, growth (and all else) absent -> composite == quality alone,
+    # i.e. growth's weight is dropped from the denominator, not scored as zero.
+    m = StockMetrics(ticker="T", market_cap=10e9,
+                     roe=0.5, net_margin=0.5, interest_coverage=5.0, debt_to_equity=1.0)
+    card = score(m, CONFIG)
+    assert card.growth is None
+    assert card.composite == 50.0
 
 
 # --- opportunity = max(momentum, value) -----------------------------------
@@ -155,6 +186,7 @@ def test_missing_components_are_excluded_and_weights_renormalized():
     card = score(m, CONFIG)
     assert card.quality == 50.0
     assert card.moat is None
+    assert card.growth is None
     assert card.momentum is None
     assert card.value is None
     assert card.opportunity is None

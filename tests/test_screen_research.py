@@ -5,8 +5,8 @@ from shortlist.screen import _card_dict, build_arg_parser
 
 
 def _card():
-    return ScoreCard(ticker="AAPL", composite=70.0, quality=80, moat=80, momentum=10,
-                     value=20, opportunity=20, insider=50, gates=[],
+    return ScoreCard(ticker="AAPL", composite=70.0, quality=80, moat=80, growth=60,
+                     momentum=10, value=20, opportunity=20, insider=50, gates=[],
                      metrics=StockMetrics(ticker="AAPL", price=100.0, target_median=120.0))
 
 
