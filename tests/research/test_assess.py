@@ -83,6 +83,24 @@ def test_assess_trivial_evidence_is_not_verified():
     assert a.unverified_count == 1
 
 
+def test_assess_ellipsis_evidence_is_not_verified():
+    # An ellipsis-shortened quote reads as "verbatim-ish" but is not a contiguous
+    # substring of the filing, so it must fail grounding — this is exactly the
+    # edit the system prompt now forbids. Locks the prompt-rule ↔ verifier contract.
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
+        "risks": [{"claim": "Manufacturing is outsourced",
+                   "evidence": "Substantially all of the Company's manufacturing … by outsourcing partners."}],
+        "red_flags": [],
+        "management_capital_allocation": "x", "synthesis": "x",
+    }
+    runner = _runner_returning(json.dumps(payload))
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None
+    assert a.risks[0].verified is False
+    assert a.unverified_count == 1
+
+
 def test_assess_skips_on_runner_error():
     runner = _runner_returning("", error="claude CLI not found on PATH")
     assert assess(card=None, filing=FILING, config=CONFIG, runner=runner) is None
