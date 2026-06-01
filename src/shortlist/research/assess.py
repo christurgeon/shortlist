@@ -71,9 +71,16 @@ def _verify_grounding(assessment: QualitativeAssessment, filing: FilingText) -> 
     assessment.unverified_count = unverified
 
 
-def _build_user_prompt(filing: FilingText, config: dict, card=None) -> str:
+def _build_user_prompt(filing: FilingText, config: dict, card=None,
+                       filing_events: Optional[list] = None) -> str:
     rcfg = config.get("research", {})
     quant = _short_interest_note(card)
+    events_line = ""
+    if filing_events:
+        items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
+        events_line = (
+            "\n\nRecent SEC filings (context only — do not treat as 10-K text): "
+            f"{items}.")
     return (
         f"Ticker: {filing.ticker}\nAccession: {filing.accession}\n\n"
         f"{quant}"
@@ -82,6 +89,7 @@ def _build_user_prompt(filing: FilingText, config: dict, card=None) -> str:
         f"=== ITEM 1A — RISK FACTORS ===\n{filing.risk_factors}\n\n"
         f"Return at most {rcfg.get('max_risks', 8)} risks and "
         f"{rcfg.get('max_red_flags', 8)} red_flags, most material first."
+        f"{events_line}"
     )
 
 
@@ -104,7 +112,8 @@ def assess(card, filing: FilingText, config: dict,
     rcfg = config.get("research", {})
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
-    user_prompt = _build_user_prompt(filing, config, card)
+    fe = getattr(getattr(card, "metrics", None), "filing_events", None)
+    user_prompt = _build_user_prompt(filing, config, card, filing_events=fe)
 
     prompt = user_prompt
     for _ in range(2):
