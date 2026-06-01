@@ -16,6 +16,11 @@ def render_message(cards: list[ScoreCard], manifest: RunManifest,
         lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}")
         lines.append(f"   Q{_n(c.quality)} M{_n(c.moat)} G{_n(c.growth)} "
                      f"Opp{_n(c.opportunity)} Ins{_n(c.insider)}")
+        # Data-layer coverage honesty: harness cards now carry a per-ticker Coverage
+        # diagnostic; surface its interpretive note (e.g. "FMP gated this symbol") so a
+        # null sub-score reads as an explained gap, not an unexplained one.
+        if c.coverage is not None and c.coverage.note:
+            lines.append(f"   ⊘ {c.coverage.note}")
         if c.ticker in briefs:
             lines.append(f"   📝 {briefs[c.ticker]}")
     lines.append("")

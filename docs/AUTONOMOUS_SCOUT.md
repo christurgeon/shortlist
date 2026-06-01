@@ -135,11 +135,11 @@ audit of whether it ran. Errors route through `env.py:redact_secrets()` before l
    ceiling (§4.1). `log()` the count dropped for budget so truncation is never silent.
 5. **Deep-screen.** Hand each selected ticker to the **existing harness** path
    (`data.collector.collect` → `bridge.snapshot_to_metrics` → `scoring.score`) → `ScoreCard`.
-   No new *scoring* code. **Caveat:** the harness path (`screen.run_harness`) does **not**
-   attach the screener's per-ticker `coverage` block — that diagnostic is screener-only today.
-   The scout's honesty contribution is the **signal-layer** coverage (§7), which is
-   independent; porting `build_coverage` onto the harness path is a tracked follow-up (§9),
-   not an MVP dependency.
+   No new *scoring* code. As of the harness coverage-parity work on `main`,
+   `screen.run_harness` now **also** attaches the per-ticker `coverage` diagnostic (via
+   `data.coverage_adapt.snapshot_to_coverage_inputs` → `build_coverage`), so each card carries
+   `coverage.note` (e.g. "FMP gated this symbol"). The scout surfaces that note per name in the
+   report (step 8) — data-layer coverage honesty on top of the signal-layer coverage (§7).
 6. **Rank + gate.** Order by composite; surface gates (FCF / leverage / insider) inline.
 7. **Auto-research.** Run the **existing** Claude-CLI research layer on the top-`N` non-gated
    names (`N` ≪ `X`; hard-capped; kill-switch; auth-probed — see §5).
@@ -350,10 +350,12 @@ trading-calendar gate, the `RunManifest` artifact, Telegram delivery, the system
   cap stays until the scale-path switch (§4.1) is taken.
 - No new *scoring* — growth/value/momentum/insider stay in `scoring.py`. The scout only
   *feeds* the scorer.
-- **Porting the screener's per-ticker `coverage` block onto the harness path** (so deep-screen
-  data gaps are annotated, not just signal gaps) is a follow-up, not an MVP blocker (§3 step 5).
-- **EDGAR XBRL keyless fundamentals** (`DATA_SOURCES.md` A1) — the prerequisite for dropping
-  FMP from the deep-screen chain and truly unbinding throughput (§4.1).
+- ~~Porting the screener's per-ticker `coverage` block onto the harness path~~ — **done on
+  `main`** (harness coverage parity); the scout now surfaces `coverage.note` per name (§3 step 5).
+- **EDGAR XBRL keyless fundamentals** (`DATA_SOURCES.md` A1) — partially landed on `main` (the
+  EDGAR-financials value-axis work recovers `fcf_yield`/`pe_vs_history` when FMP gates a symbol);
+  full keyless fundamentals remain the prerequisite for dropping FMP from the deep-screen chain
+  and truly unbinding throughput (§4.1).
 - **Up-front Claude auth-validity probe** (a `--max-turns 1` no-op before the research batch)
   to catch an expired OAuth token early — deferred in favor of the shipped per-name graceful
   skip (§5), to avoid an extra `claude` call every run.
