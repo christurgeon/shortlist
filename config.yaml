@@ -56,7 +56,10 @@ harness_sources: [yahoo, fmp, finnhub, edgar]
 
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 research:
-  model: claude-sonnet-4-6     # pinned full ID (not the drifting "sonnet" alias)
+  model: claude-sonnet-4-6     # pinned to the 4.6 family (not the cross-version "sonnet" alias).
+                               # NOTE: tracks the latest 4.6 snapshot, not a frozen date-pinned
+                               # build; brief reproducibility is anchored by accession-keyed caching
+                               # (research/), not the model string.
   timeout_s: 180
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 8
