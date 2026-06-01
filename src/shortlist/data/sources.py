@@ -589,7 +589,7 @@ def build_sources(names: list[str]) -> list[Source]:
         try:
             out.append(_REGISTRY[n]())
         except Exception as e:
-            skipped.append(f"{n} ({e})")
+            skipped.append(f"{n} ({redact_secrets(str(e))})")
     if skipped:
         print(f"  ! skipped sources: {', '.join(skipped)}")
     return out

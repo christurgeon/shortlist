@@ -243,7 +243,9 @@ class EdgarForm4Signal:
             self._status = (False, redact_secrets(str(e)))
             return []
         ems = cluster_buys_from_records(records)
-        self._status = (bool(records), f"{len(ems)} clusters from {len(records)} txns")
+        # FIX 5: surface the per-day fetch cap so truncation is visible in coverage.
+        self._status = (bool(records),
+                        f"{len(ems)} clusters from {len(records)} txns (cap {self.max_filings})")
         return ems
 
     def available(self) -> tuple[bool, str]:

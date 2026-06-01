@@ -67,19 +67,32 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         kwargs_by_name = _signal_kwargs(scout_cfg)
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
+        # FIX 1: emit a SignalStatus for each configured-but-disabled signal so the
+        # coverage line in the report shows them (e.g. "quiver ✗ (disabled)").
+        _name_map = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
+                     "finnhub_news": "finnhub_news", "wikipedia": "wikipedia", "quiver": "quiver"}
+        for cfg_key, sig_val in sig_cfg.items():
+            if not sig_val.get("enabled") and cfg_key in _name_map:
+                statuses.append(SignalStatus(_name_map[cfg_key], False, "disabled"))
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
     for s in discovery:
-        ems = s.scan(session)
-        emissions.extend(ems)
-        ran, detail = s.available()
-        statuses.append(SignalStatus(s.name, ran, detail))
-        # weight by config: map signal prefix back to its config key
-        cfg_key = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
-                   "mock": "yahoo_screener"}.get(s.name, s.name)
-        w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
-        for e in ems:
-            weights_by_signal[e.signal] = w
+        # FIX 2: guard the discovery body so one failing signal can't abort the whole run.
+        try:
+            ems = s.scan(session)
+            emissions.extend(ems)
+            ran, detail = s.available()
+            statuses.append(SignalStatus(s.name, ran, detail))
+            # weight by config: map signal prefix back to its config key
+            cfg_key = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
+                       "mock": "yahoo_screener"}.get(s.name, s.name)
+            w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
+            for e in ems:
+                weights_by_signal[e.signal] = w
+        except Exception as exc:  # noqa: BLE001
+            ems = []
+            statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
+            continue
 
     raw = len(emissions)
     cands = aggregate(emissions, weights_by_signal)
@@ -141,12 +154,24 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     if demo:
         print(message)
     else:
-        _write_manifest(scout_cfg, manifest, message)
         from .notify import send_telegram
-        if not send_telegram(message):
-            print(message)  # fall back to stdout if Telegram is unconfigured
-        state.record_screened([c.ticker for c in cards], session)
+        delivered = send_telegram(message)
+        # FIX 3: distinguish configured-but-failed from unconfigured.
+        tg_configured = bool(os.environ.get("TELEGRAM_BOT_TOKEN") and
+                             os.environ.get("TELEGRAM_CHAT_ID"))
+        tg_failed_configured = tg_configured and not delivered
+        if not delivered:
+            print(message)  # journal / stdout fallback
+        if tg_failed_configured:
+            manifest.notes.append("telegram delivery failed (configured)")
+        # FIX 3 continued + FIX 4: write manifest AFTER we know delivery outcome;
+        # persist completion BEFORE screened list so idempotency anchor lands first.
+        _write_manifest(scout_cfg, manifest, message)
+        # FIX 4: mark_run_completed before record_screened.
         state.mark_run_completed(session)
+        state.record_screened([c.ticker for c in cards], session)
+        if tg_failed_configured:
+            return 2
     return 0
 
 
