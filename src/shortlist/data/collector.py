@@ -35,8 +35,9 @@ def collect(
     tickers: list[str],
     source_names: list[str],
     priority: list[str] | None = None,
+    config: dict | None = None,
 ) -> list[TickerSnapshot]:
-    sources = build_sources(source_names)
+    sources = build_sources(source_names, config=config)
     if not sources:
         return []
     return asyncio.run(collect_async([t.upper() for t in tickers], sources, priority))

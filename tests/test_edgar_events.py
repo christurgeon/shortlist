@@ -171,3 +171,24 @@ def test_fetch_filings_index_normalizes_none_single_collection():
     src._raw = [_FakeFiling("8-K", _date(2026, 5, 30)),      # collection -> full list
                 _FakeFiling("144", _date(2026, 5, 1))]
     assert [r["form"] for r in src._fetch_filings_index("AAPL")] == ["8-K", "144"]
+
+
+from shortlist.data.sources import build_sources
+
+
+def test_build_sources_passes_config_to_edgar(monkeypatch):
+    monkeypatch.setenv("SEC_IDENTITY", "test@example.com")
+    monkeypatch.setattr("edgar.set_identity", lambda *_a, **_k: None)
+    cfg = {"edgar_events": {"lookback_days": 7, "forms": ["8-K"], "index_limit": 5}}
+    sources = build_sources(["edgar"], config=cfg)
+    edgar = [s for s in sources if s.name == "edgar"][0]
+    assert edgar._event_lookback_days == 7
+    assert edgar._event_forms == ["8-K"]
+    assert edgar._index_limit == 5
+
+
+def test_build_sources_without_config_uses_defaults(monkeypatch):
+    monkeypatch.setenv("SEC_IDENTITY", "test@example.com")
+    monkeypatch.setattr("edgar.set_identity", lambda *_a, **_k: None)
+    edgar = [s for s in build_sources(["edgar"]) if s.name == "edgar"][0]
+    assert edgar._event_lookback_days == 90

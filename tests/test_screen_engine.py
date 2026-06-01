@@ -38,7 +38,7 @@ def test_harness_card_carries_coverage(monkeypatch):
     from shortlist.data.models import TickerSnapshot, Profile, Fundamentals
     from shortlist import screen
 
-    def fake_collect(tickers, source_names):
+    def fake_collect(tickers, source_names, config=None):
         return [TickerSnapshot(
             ticker="GEV",
             profile=Profile(market_cap=2e10),

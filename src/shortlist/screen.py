@@ -60,7 +60,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     from .data.collector import collect
     from .data.coverage_adapt import snapshot_to_coverage_inputs
 
-    snapshots = collect(tickers, source_names)
+    snapshots = collect(tickers, source_names, config=config)
     cards = []
     for s in snapshots:
         card = score(snapshot_to_metrics(s), config)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 import json
 import os
 from abc import ABC, abstractmethod
@@ -820,13 +821,18 @@ _REGISTRY = {
 }
 
 
-def build_sources(names: list[str]) -> list[Source]:
+def build_sources(names: list[str], config: Optional[dict] = None) -> list[Source]:
     out, skipped = [], []
     for n in names:
         if n not in _REGISTRY:
             raise ValueError(f"unknown source '{n}'. Known: {list(_REGISTRY)}")
+        cls = _REGISTRY[n]
         try:
-            out.append(_REGISTRY[n]())
+            # Only sources whose __init__ accepts `config` receive it; others stay zero-arg.
+            if "config" in inspect.signature(cls.__init__).parameters:
+                out.append(cls(config=config))
+            else:
+                out.append(cls())
         except Exception as e:
             skipped.append(f"{n} ({redact_secrets(str(e))})")
     if skipped:
