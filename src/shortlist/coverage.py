@@ -24,8 +24,9 @@ _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 _STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty", "error": "fetch error"}
 
 _FMP_NOTE = (
-    "FMP gated this symbol (402); the value axis (PE-vs-history, FCF yield, "
-    "target upside) and FMP-sourced quality inputs (ROE/ROIC) need FMP Starter tier"
+    "FMP gated this symbol (402); analyst-target upside and PEG still need FMP "
+    "Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered "
+    "from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
 )
 
 

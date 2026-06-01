@@ -115,3 +115,38 @@ def test_yahoo_source_error_is_non_fatal(tmp_path, monkeypatch):
     assert res.partial.price is None
     assert res.errors and "yahoo" in res.errors[0]
     asyncio.run(src.aclose())
+
+
+def _chart_payload_with_ts(closes, timestamps):
+    return {"chart": {"result": [{
+        "timestamp": timestamps,
+        "indicators": {"adjclose": [{"adjclose": closes}]},
+    }]}}
+
+
+def test_yahoo_emits_monthly_closes(tmp_path, monkeypatch):
+    from shortlist.data.sources import YahooSource
+    src = YahooSource(cache_dir=str(tmp_path))
+    ts = [i * 86400 for i in range(400)]            # 400 daily points, 1 day apart
+    closes = [100.0 + i for i in range(400)]
+
+    async def fake_get(symbol):
+        return _chart_payload_with_ts(closes, ts)
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+
+    res = asyncio.run(src.fetch("AAPL"))
+    mc = res.partial.price.monthly_closes
+    assert mc, "monthly_closes should be populated"
+    assert 5 <= len(mc) <= 40                       # ~monthly sampling of ~13 months
+    assert mc[0][0] < mc[-1][0]                     # ISO dates ascending
+    assert all(isinstance(p[0], str) and isinstance(p[1], float) for p in mc)
+
+
+def test_monthly_closes_empty_when_no_timestamps(tmp_path, monkeypatch):
+    from shortlist.data.sources import YahooSource
+    src = YahooSource(cache_dir=str(tmp_path))
+    async def fake_get(symbol):
+        return {"chart": {"result": [{"indicators": {"adjclose": [{"adjclose": [1.0, 2.0]}]}}]}}
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.partial.price.monthly_closes == []   # no timestamps -> no dated history, no crash

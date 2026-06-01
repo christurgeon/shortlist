@@ -95,12 +95,13 @@ Tune thresholds, weights, and gates in `config.yaml` — no code changes needed.
   (AAPL/MSFT/LMT) work on the free tier. **Diagnosing it:** the symbol 402s on the
   basic `/stable/quote` endpoint while other symbols on the same key return `200`
   — so it's per-symbol gating, *not* a quota/key problem. The visible fallout is a
-  **`null` `value` sub-score** (and `null` `upside_to_target`): PE-vs-history, FCF
-  yield, and analyst-target upside all live on FMP, so when the symbol is gated the
-  whole value axis has no inputs and `opportunity` collapses to `momentum`. The
-  only fix is **FMP's paid Starter tier (~$14–20/mo)**, which lifts the gating —
-  no code change recovers it. (`market_cap` is the exception: Finnhub backfills it,
-  which is why the insider sub-score survives gating but `value` does not.)
+  **`null` `value` sub-score** (and `null` `upside_to_target`). **On `--engine
+  harness`**, 2 of 4 value legs are now recoverable from free sources: `fcf_yield`
+  from EDGAR 10-K FCF ÷ market cap (Finnhub/Yahoo backfill), and `pe_vs_history`
+  from EDGAR annual EPS + Yahoo monthly closes. PEG and analyst-target upside still
+  require FMP and remain `null` when gated. For full value coverage, **FMP's paid
+  Starter tier (~$14–20/mo)** lifts the gating. (`market_cap` is always backfilled
+  by Finnhub, which is why the insider sub-score survives gating.)
 
 ## Insider merge (harness)
 
@@ -118,6 +119,15 @@ via a shared module-level semaphore (`_EDGAR_MAX_CONCURRENCY`, default 3) — SE
 fair-access is ~10 req/s and the collector's per-ticker semaphore doesn't bound
 SEC request rate. `set_identity` is process-global; set once in `__init__`, never
 per-ticker (thread race).
+
+`EdgarSource` now supplies **two failure-isolated sections**: Form 4 insider trades
+(via the shared `providers/_form4.py` leaf) and **10-K financial statements** —
+revenue, net income, operating cash flow, FCF, and diluted EPS for the latest ~3
+fiscal years (absolute USD). Symbols with no XBRL financials (Form 20-F foreign
+issuers, recent spin-offs) degrade statements to `None` without touching insider
+data. The `get_financials()` call roughly doubles per-ticker EDGAR SEC requests;
+the concurrency semaphore still bounds SEC load, but full-universe runs still need
+the caching layer.
 
 ## Scale / rate limits (the honest catch)
 

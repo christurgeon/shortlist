@@ -54,6 +54,8 @@ class Statements:
     free_cash_flow: list[float] = field(default_factory=list)
     total_debt: list[float] = field(default_factory=list)
     total_equity: list[float] = field(default_factory=list)
+    diluted_eps: list[float] = field(default_factory=list)
+    fiscal_period_end: list[str] = field(default_factory=list)  # ISO dates, newest-first
 
     def gross_margins(self) -> list[float]:
         return [g / r for g, r in zip(self.gross_profit, self.revenue) if r]
@@ -104,6 +106,9 @@ class Price:
     rel_strength_6m: Optional[float] = None     # 6m return minus benchmark 6m return
     realized_vol: Optional[float] = None        # annualized stdev of daily returns
     max_drawdown: Optional[float] = None        # trailing ~1y peak-to-trough, negative
+    # ~monthly-sampled (date, close) pairs over the fetch window, oldest->newest.
+    # Lets the bridge align EDGAR fiscal-year-end dates to a historical price.
+    monthly_closes: list[list] = field(default_factory=list)
 
     def price_vs_200dma(self) -> Optional[float]:
         if self.price and self.ma200:
@@ -143,7 +148,9 @@ class TickerSnapshot:
                 total += len(fields(_DEFAULTS[name]))
                 continue
             for f in fields(obj):
-                if f.name in ("recent",):
+                # `recent` is illustrative; the three below are internal derivation
+                # plumbing, not assessment-ready signals -> excluded from coverage math.
+                if f.name in ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes"):
                     continue
                 total += 1
                 filled += getattr(obj, f.name) not in (None, [], "")
@@ -157,7 +164,9 @@ class TickerSnapshot:
                 out.append(name)
                 continue
             for f in fields(obj):
-                if f.name in ("recent",):
+                # `recent` is illustrative; the three below are internal derivation
+                # plumbing, not assessment-ready signals -> excluded from coverage math.
+                if f.name in ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes"):
                     continue
                 if getattr(obj, f.name) in (None, [], ""):
                     out.append(f"{name}.{f.name}")

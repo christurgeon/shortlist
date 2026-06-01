@@ -129,7 +129,7 @@ best at**, merged by priority (`merge.py`). Stacking sources beats any single AP
 |---|---|---|
 | **FMP** (primary) | ratios, key metrics, price-target consensus, recommendations, insider tx | broadest coverage in the fewest calls — the backbone |
 | **Finnhub** (complement) | insider **sentiment** (MSPR), recommendation-trend **deltas**, free real-time quote | clean revision direction + a normalized insider signal FMP doesn't expose as cleanly |
-| **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion |
+| **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells + **10-K financials (revenue/FCF/EPS)**, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion; on `--engine harness` the 10-K financials recover FCF yield and P/E-vs-history when FMP gates a symbol |
 | **Quiver Quantitative** (optional edge) | congressional trades, **government-contract awards**, lobbying | gov-contract flow is a real, uncorrelated signal for defense/industrial names (LMT, GEV) that no fundamentals feed captures |
 | **FRED** (optional macro) | 10y yield, fed funds, 2s10s curve | overlay to tilt the whole run when rates move against rate-sensitive names — not per-stock |
 | **Yahoo** chart (wired, harness) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
@@ -148,7 +148,7 @@ Six sub-scores, each 0–100, every metric normalized over a configurable
 - **Moat** — gross-margin level + 5y stability + persistent ROIC (excess returns)
 - **Growth** — revenue / FCF / EPS CAGR + YoY growth persistence (fundamental compounding)
 - **Momentum** — price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend
-- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted)
+- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted). On `--engine harness`, FCF yield and P/E-vs-history are recoverable from free EDGAR + Yahoo data, so only analyst-target upside and PEG require FMP.
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis

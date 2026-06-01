@@ -32,3 +32,24 @@ def test_main_engine_harness_demo_runs(capsys):
 def test_main_default_engine_is_screener_demo(capsys):
     rc = main(["--demo", "--json"])
     assert rc == 0
+
+
+def test_harness_card_carries_coverage(monkeypatch):
+    from shortlist.data.models import TickerSnapshot, Profile, Fundamentals
+    from shortlist import screen
+
+    def fake_collect(tickers, source_names):
+        return [TickerSnapshot(
+            ticker="GEV",
+            profile=Profile(market_cap=2e10),
+            fundamentals=Fundamentals(fcf_yield=None),
+            provenance={"profile": ["finnhub"], "price": ["yahoo"]},
+            errors=["fmp: 402 Special Endpoint for GEV"],
+        )]
+
+    # run_harness does `from .data.collector import collect` -> patch THERE, not screen.collect.
+    monkeypatch.setattr("shortlist.data.collector.collect", fake_collect)
+    cards = screen.run_harness(["GEV"], ["yahoo", "fmp", "finnhub", "edgar"], CONFIG)
+    assert len(cards) == 1
+    assert cards[0].coverage is not None
+    assert cards[0].coverage.providers.get("fmp") == "gated_402"

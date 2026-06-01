@@ -61,7 +61,7 @@ def test_build_coverage_gated_fmp_lists_value_and_note():
     assert "value" in cov.unavailable
     assert "growth" in cov.unavailable  # income history is FMP-sourced; gated -> null
     assert "upside_to_target" in cov.unavailable  # price set but no target_median
-    assert "Starter" in cov.note
+    assert "analyst-target upside and PEG still need FMP" in cov.note
 
 
 def test_build_coverage_reclassifies_ok_but_empty_provider():

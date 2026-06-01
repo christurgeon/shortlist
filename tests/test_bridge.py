@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.models import StockMetrics
 from shortlist.data.models import (
     Analyst, Fundamentals, Insider, Price, Profile, Statements, TickerSnapshot,
@@ -99,3 +101,91 @@ def test_bridge_empty_snapshot_does_not_raise():
     assert m.ticker == "ZZZ"
     assert m.price is None and m.roe is None
     assert m.gross_margin_stability is None and m.fcf_positive is None
+
+
+def test_bridge_derives_fcf_yield_from_edgar_when_fmp_absent():
+    # Absolute USD on BOTH sides (verified EDGAR units) -> quotient is a fraction.
+    snap = TickerSnapshot(
+        ticker="GEV",
+        profile=Profile(market_cap=20_000_000_000.0),       # $20B
+        fundamentals=Fundamentals(fcf_yield=None),           # FMP gated -> no fcf_yield
+        statements=Statements(free_cash_flow=[1_000_000_000.0]),  # $1B FCF
+    )
+    m = snapshot_to_metrics(snap)
+    assert m.fcf_yield == pytest.approx(0.05)                # 1e9 / 20e9
+
+
+def test_bridge_keeps_fmp_fcf_yield_when_present():
+    snap = TickerSnapshot(
+        ticker="AAPL",
+        profile=Profile(market_cap=20_000_000_000.0),
+        fundamentals=Fundamentals(fcf_yield=0.03),
+        statements=Statements(free_cash_flow=[1_000_000_000.0]),
+    )
+    assert snapshot_to_metrics(snap).fcf_yield == 0.03       # FMP wins, no override
+
+
+from shortlist.data.bridge import _close_near
+
+
+def test_close_near_exact_match():
+    closes = [["2024-01-15", 100.0], ["2024-01-31", 105.0], ["2024-02-15", 102.0]]
+    assert _close_near(closes, "2024-01-31") == 105.0
+
+
+def test_close_near_picks_nearest_when_no_exact():
+    closes = [["2024-01-15", 100.0], ["2024-02-15", 102.0]]
+    # 2024-01-31 is 16d from Jan-15, 15d from Feb-15 -> Feb-15
+    assert _close_near(closes, "2024-01-31") == 102.0
+
+
+def test_close_near_empty_and_none_safe():
+    assert _close_near([], "2024-01-31") is None
+    assert _close_near([["2024-02-15", 102.0]], "garbage") is None
+    assert _close_near([["2024-01-15", None], ["2024-02-15", 102.0]], "2024-01-31") == 102.0
+
+
+def test_bridge_derives_pe_history_from_edgar_eps_and_yahoo_closes():
+    from shortlist.data.bridge import snapshot_to_metrics
+    snap = TickerSnapshot(
+        ticker="GEV",
+        fundamentals=Fundamentals(pe_ttm=None, pe_median_5y=None),
+        statements=Statements(
+            diluted_eps=[10.0, 8.0, 7.0],
+            fiscal_period_end=["2024-12-31", "2023-12-31", "2022-12-31"],
+        ),
+        price=Price(
+            price=200.0,
+            monthly_closes=[["2022-12-29", 105.0], ["2023-12-29", 120.0], ["2024-12-31", 180.0]],
+        ),
+    )
+    m = snapshot_to_metrics(snap)
+    assert m.pe_ttm == pytest.approx(20.0)               # 200 / 10 (latest annual EPS)
+    # annual PEs: 180/10=18, 120/8=15, 105/7=15 -> median = 15
+    assert m.pe_median_5y == pytest.approx(15.0)
+    assert m.pe_vs_history() == pytest.approx(15.0 / 20.0 - 1)
+
+
+def test_bridge_pe_history_degrades_to_none_without_prices():
+    from shortlist.data.bridge import snapshot_to_metrics
+    snap = TickerSnapshot(
+        ticker="GEV",
+        fundamentals=Fundamentals(pe_ttm=None, pe_median_5y=None),
+        statements=Statements(diluted_eps=[10.0], fiscal_period_end=["2024-12-31"]),
+        price=Price(price=None, monthly_closes=[]),
+    )
+    m = snapshot_to_metrics(snap)
+    assert m.pe_median_5y is None
+    assert m.pe_ttm is None
+
+
+def test_bridge_keeps_fmp_pe_when_present():
+    from shortlist.data.bridge import snapshot_to_metrics
+    snap = TickerSnapshot(
+        ticker="AAPL",
+        fundamentals=Fundamentals(pe_ttm=30.0, pe_median_5y=25.0),
+        statements=Statements(diluted_eps=[10.0], fiscal_period_end=["2024-12-31"]),
+        price=Price(price=200.0, monthly_closes=[["2024-12-31", 180.0]]),
+    )
+    m = snapshot_to_metrics(snap)
+    assert (m.pe_ttm, m.pe_median_5y) == (30.0, 25.0)    # FMP untouched
