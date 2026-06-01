@@ -20,3 +20,7 @@ venv/
 # Scratch: pulled raw data samples (data-source exploration)
 /scratch/
 .cache/
+
+# Scout artifacts (daily manifests, briefs, state)
+/scout/
+state/scout_state.json

@@ -64,3 +64,22 @@ research:
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 8
   max_red_flags: 8
+
+# Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
+scout:
+  daily_x: 15
+  research_top_n: 3
+  research_phase_budget_s: 600
+  cooldown_days: 7
+  # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
+  deep_screen_sources: [yahoo, fmp, finnhub, edgar]
+  edgar_index_daily_cap: 400
+  wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
+  state_path: state/scout_state.json
+  artifact_dir: scout
+  signals:
+    yahoo_screener: {enabled: true,  weight: 1.0}
+    edgar_form4:    {enabled: true,  weight: 1.5}
+    finnhub_news:   {enabled: true,  weight: 0.5}
+    wikipedia:      {enabled: true,  weight: 0.5}
+    quiver:         {enabled: false, weight: 1.0}

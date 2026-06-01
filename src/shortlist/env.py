@@ -11,12 +11,16 @@ _SECRET_RE = re.compile(rf"((?:{'|'.join(_SECRET_PARAMS)})=)[^&\s]+", re.IGNOREC
 # Bare API tokens that may appear in CLI/subprocess output (not as URL params).
 _TOKEN_RE = re.compile(r"sk-ant-[A-Za-z0-9_-]+")
 
+# Telegram bot token embedded in URL path: /bot<token>/
+_TELEGRAM_BOT_RE = re.compile(r"/bot[^/\s]+/")
+
 
 def redact_secrets(text: object) -> str:
     """Strip API keys/tokens from a string (e.g. an HTTP error containing a URL,
     or a leaked Anthropic token in subprocess output)."""
     s = _SECRET_RE.sub(r"\1<redacted>", str(text))
-    return _TOKEN_RE.sub("<redacted>", s)
+    s = _TOKEN_RE.sub("<redacted>", s)
+    return _TELEGRAM_BOT_RE.sub("/bot<redacted>/", s)
 
 
 def load_env(path: Optional[str] = None) -> Optional[str]:

@@ -15,6 +15,17 @@ from typing import Any, Iterable, Optional
 _BUY, _SELL = "P", "S"
 
 
+def classify_code(code: str) -> str:
+    """Map a Form 4 transaction code to 'buy' | 'sell' | 'other'.
+    'P' = open-market purchase, 'S' = open-market sale; others are non-signal."""
+    c = (code or "").strip().upper()
+    if c == "P":
+        return "buy"
+    if c == "S":
+        return "sell"
+    return "other"
+
+
 @dataclass
 class Txn:
     """One open-market insider transaction (neutral intermediate)."""
@@ -44,13 +55,13 @@ def summarize(rows: Iterable[tuple]) -> Form4Summary:
     (shares, price, code, date, name, role); non-P/S codes are ignored."""
     s = Form4Summary()
     for shares, price, code, dt, name, role in rows:
-        code = str(code or "").upper()
-        if code not in (_BUY, _SELL):
+        classification = classify_code(str(code or ""))
+        if classification == "other":
             continue
         shares = shares or 0
         price = price or 0
         value = shares * price
-        is_buy = code == _BUY
+        is_buy = classification == "buy"
         s.found = True
         s.net_value += value if is_buy else -value
         s.buy_count += is_buy

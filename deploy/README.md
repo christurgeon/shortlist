@@ -1,4 +1,123 @@
-# Snapshot accumulation — deploy (DISABLED by default)
+# Deploy units
+
+This directory holds **sample** systemd units for the optional background jobs.
+**None are auto-installed or enabled** — copy them manually after reviewing paths.
+Two independent jobs live here:
+
+- **Autonomous scout** (`shortlist-scout.{service,timer}`) — daily candidate
+  discovery + ranked Telegram report. See [Autonomous Scout](#autonomous-scout).
+- **Snapshot accumulation** (`shortlist-accumulate.{service,timer}`) — builds the
+  daily-snapshot history the backtest replay needs. See [Snapshot accumulation](#snapshot-accumulation-disabled-by-default).
+
+---
+
+# Autonomous Scout
+
+The two `shortlist-scout` units run `shortlist-scout` once daily after the US
+equity close (22:30 UTC / 18:30 ET) and deliver a ranked Telegram report.
+
+> **These units are NOT auto-installed.** Copy them manually after reviewing the
+> paths for your install location.
+
+## Install steps
+
+```bash
+# 1. Adjust WorkingDirectory and ExecStart in shortlist-scout.service to match
+#    your install location (default assumes /opt/oracle/shortlist; see below).
+
+# 2. Copy units to systemd
+sudo cp deploy/shortlist-scout.service /etc/systemd/system/
+sudo cp deploy/shortlist-scout.timer   /etc/systemd/system/
+
+# 3. Reload and enable
+sudo systemctl daemon-reload
+sudo systemctl enable --now shortlist-scout.timer
+
+# 4. Verify the timer is scheduled
+systemctl list-timers shortlist-scout.timer
+```
+
+To test a one-shot run without waiting for the timer:
+
+```bash
+sudo systemctl start shortlist-scout.service
+journalctl -u shortlist-scout.service -f
+```
+
+## Paths
+
+The units ship with VPS defaults:
+
+| Setting | Value |
+|---------|-------|
+| `WorkingDirectory` | `/opt/oracle/shortlist` |
+| `ExecStart` | `/opt/oracle/shortlist/.venv/bin/shortlist-scout` |
+| `User` | `oracle` |
+
+**Adjust these to your actual install location** before copying. The scout runs
+from inside the repo so that `.env` is found by `env.py:load_env()`.
+
+## Required environment variables
+
+Set these in the repo-root `.env` (gitignored) or export them in the shell:
+
+| Variable | Purpose | Required |
+|----------|---------|----------|
+| `FINNHUB_API_KEY` | Fundamentals + news boost | Yes (free tier OK) |
+| `FMP_API_KEY` | Deep-screen fundamentals | Yes (free tier OK; ~19 tickers/day) |
+| `TELEGRAM_BOT_TOKEN` | Deliver the daily report | Yes |
+| `TELEGRAM_CHAT_ID` | Target chat/channel ID | Yes |
+| `SEC_IDENTITY` | SEC EDGAR fair-access header (e.g. `you@email.com`) | Recommended |
+
+A missing key degrades gracefully: the affected signal or data source is skipped
+and the coverage gap is surfaced in the report rather than silently dropped.
+
+## Research phase (`claude` CLI)
+
+The scout optionally enriches the top-N names with a Claude-written 10-K brief.
+This requires:
+
+1. The `claude` CLI on PATH and authenticated (`claude --version` works).
+2. The `[edgar]` extra installed: `uv sync --extra edgar`.
+
+If either is absent the research phase is skipped and the report notes it.
+
+## Kill-switch
+
+Two ways to disable auto-research without redeploying:
+
+```bash
+# Option 1: file-based (persists across restarts)
+touch scout/STOP_RESEARCH
+
+# Option 2: environment variable (one run)
+SCOUT_NO_RESEARCH=1 shortlist-scout
+```
+
+To disable the scout entirely, stop the timer:
+
+```bash
+sudo systemctl stop shortlist-scout.timer
+sudo systemctl disable shortlist-scout.timer
+```
+
+## Failure alerts
+
+A configured-but-failed Telegram delivery makes the unit exit non-zero, so an
+`OnFailure` hook surfaces it. The oracle-daily-report pattern uses an alert service:
+
+```ini
+# In shortlist-scout.service [Service] section:
+OnFailure=oracle-alert-failure@%n.service
+```
+
+Add this if you have `oracle-alert-failure@.service` deployed on your VPS
+(it sends a Telegram message on any failed unit). See
+`/etc/systemd/system/oracle-alert-failure@.service` for the template.
+
+---
+
+# Snapshot accumulation (DISABLED by default)
 
 > **These units are NOT installed and NOT enabled.** They are a sample.
 > Snapshot accumulation only happens when *you* run `shortlist-accumulate run`
