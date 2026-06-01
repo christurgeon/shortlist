@@ -18,6 +18,10 @@ fred = ["fredapi>=0.5"]
 [dependency-groups]
 dev = ["pytest>=8.0"]
 
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = ["live: hits real external APIs; skipped unless -m live"]
+
 [project.scripts]
 shortlist = "shortlist.screen:main"
 shortlist-harness = "shortlist.data.cli:main"

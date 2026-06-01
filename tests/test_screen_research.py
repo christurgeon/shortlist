@@ -81,3 +81,22 @@ def test_run_research_phase_survives_enrich_exception(capsys, monkeypatch):
     err = capsys.readouterr().err
     assert "research phase failed" in err
     assert "sk-ant-SECRET99" not in err          # redacted
+
+
+def test_research_prompt_includes_short_interest_context():
+    from shortlist.research.assess import _build_user_prompt
+    from shortlist.research.models import FilingText
+    from shortlist.models import StockMetrics, ScoreCard
+
+    filing = FilingText(ticker="AAA", accession="x", filing_date="2026-01-01",
+                        business="b", mda="m", risk_factors="r")
+    card = ScoreCard(ticker="AAA", composite=50.0, quality=None, moat=None, growth=None,
+                     momentum=None, value=None, opportunity=None, insider=None,
+                     metrics=StockMetrics(ticker="AAA", short_pct_outstanding=0.12,
+                                          days_to_cover=6.3, short_interest_rising=True))
+    prompt = _build_user_prompt(filing, {}, card)
+    assert "QUANT CONTEXT" in prompt
+    assert "12.0% of shares" in prompt and "6.3 days to cover" in prompt
+
+    # No metrics -> no quant block, no crash.
+    assert "QUANT CONTEXT" not in _build_user_prompt(filing, {}, None)

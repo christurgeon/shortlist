@@ -48,11 +48,31 @@ gates:
   max_debt_to_equity:      5.0
   min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
 
+# Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
+# crowded_short fires only under `--engine harness` with the `finra` source present.
+flags:
+  crowded_short:
+    min_short_pct_outstanding: 0.10   # of shares OUTSTANDING (under-states float; a PRIOR, not fitted)
+    min_days_to_cover: 5.0            # >5 elevated, >10 extreme
+    require_rising: true              # the change (vs prior cycle), not the static level, is the signal
+    max_staleness_days: 35            # ignore a cycle older than ~2 missed publications (stale-cache guard)
+
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]
 
+# FMP provider knobs.
+fmp:
+  # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
+  # the free, authoritative insider source — so leave this off to avoid burning a
+  # guaranteed-to-fail request per ticker against the daily quota. Flip to true only
+  # on a paid FMP tier where the endpoint actually returns data.
+  fetch_insider: false
+  # Retries on a 429 (per-minute throttle) before giving up; backoff honors any
+  # Retry-After header. Daily-quota 429s won't clear, so this is deliberately small.
+  max_retries: 2
+
 # Default source chain for `--engine harness` (yahoo first => wins the price merge).
-harness_sources: [yahoo, fmp, finnhub, edgar]
+harness_sources: [yahoo, fmp, finnhub, edgar, finra]
 
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 research:
@@ -72,7 +92,7 @@ scout:
   research_phase_budget_s: 600
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
-  deep_screen_sources: [yahoo, fmp, finnhub, edgar]
+  deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra]
   edgar_index_daily_cap: 400
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   state_path: state/scout_state.json

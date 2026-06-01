@@ -15,14 +15,27 @@ _REGISTRY = {
 }
 
 
-def build_providers(names: list[str]) -> list[Provider]:
+def build_providers(names: list[str], config: dict | None = None) -> list[Provider]:
     import importlib
 
+    config = config or {}
     out: list[Provider] = []
     for n in names:
         if n not in _REGISTRY:
             raise ValueError(f"unknown provider '{n}'. Known: {list(_REGISTRY)}")
         mod_path, cls_name = _REGISTRY[n]
         cls = getattr(importlib.import_module(mod_path), cls_name)
-        out.append(cls())
+        out.append(_construct(n, cls, config))
     return out
+
+
+def _construct(name: str, cls: type, config: dict) -> Provider:
+    """Instantiate a provider, passing through the config knobs it accepts. Only fmp
+    is config-aware today (insider opt-in, 429 retry budget); the rest take no args."""
+    if name == "fmp":
+        fmp_cfg = config.get("fmp") or {}
+        return cls(
+            fetch_insider=fmp_cfg.get("fetch_insider", False),
+            max_retries=fmp_cfg.get("max_retries", 2),
+        )
+    return cls()

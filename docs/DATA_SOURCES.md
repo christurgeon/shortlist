@@ -185,16 +185,26 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
 
 ### Tier C — differentiated / alternative data
 
-#### C1. FINRA + Nasdaq short interest — squeeze & skeptic signal
-- **What:** FINRA publishes consolidated short-interest (bi-monthly settlement) as free bulk
-  files; Nasdaq/exchanges publish per-symbol short interest & days-to-cover.
-- **Why:** **Short interest as % of float** and **days-to-cover** are a direct read on
-  bear positioning. High + rising short interest into improving fundamentals = squeeze
-  candidate *or* a credible skeptic case worth respecting — either way it's signal the
-  current stack is blind to.
-- **Access:** free (FINRA bulk download); Finnhub also exposes it (premium on free tier).
-- **Wire-in:** `short_pct_float` / `days_to_cover` on `StockMetrics`; either a low-weight
-  input or a soft gate ("crowded short — investigate").
+#### C1. FINRA short interest — squeeze & skeptic signal  — **Shipped (harness)**
+- **Status:** **Shipped (harness):** `FinraSource` → `ShortInterest` snapshot section →
+  bridge (`snapshot_to_metrics`) → `crowded_short` soft flag.
+- **What:** FINRA publishes consolidated short-interest (bi-monthly settlement) as a free,
+  keyless bulk dataset covering NMS-listed securities.
+- **Why:** **Short interest as % of shares outstanding** and **days-to-cover** are a direct
+  read on bear positioning. High + rising short interest into improving fundamentals =
+  squeeze candidate *or* a credible skeptic case worth respecting — either way it's signal
+  the current stack is blind to.
+- **Access:** free, keyless. The live, NMS-covering dataset is **`ConsolidatedShortInterest`**
+  (POST `https://api.finra.org/data/group/otcMarket/name/ConsolidatedShortInterest`); the
+  latest cycle is discovered via the
+  `https://api.finra.org/partitions/group/otcMarket/name/ConsolidatedShortInterest` endpoint
+  (`settlementDate` is a partition key). The older **`EquityShortInterest`** dataset is
+  **frozen (last cycle 2022-09-15) and OTC-only — do not use it.**
+- **Wire-in:** `ShortInterest` snapshot section; the bridge derives `short_pct_outstanding`,
+  `days_to_cover`, `short_interest_rising`, `short_data_age_days` on `StockMetrics`. The `%`
+  is of **shares-outstanding** (derived `market_cap / price`), labeled `short_pct_outstanding`
+  — conservative vs. float. Feeds the `crowded_short` soft flag (advisory; never changes
+  `composite` / `passed`).
 
 #### C2. Quiver Quant — congressional trades, gov contracts, lobbying  (already scaffolded)
 - **What:** `api.quiverquant.com/beta/` — congressional & senate trading, **government
@@ -294,3 +304,49 @@ python3 scratch/pull_keyed_examples.py  # Tier B/C keyed endpoints (uses .env ke
 derived-signal JSONs the wiring code can target. The keyed script exercises the FMP/Finnhub
 endpoints we already have keys for and leaves runnable, env-guarded stubs for Alpha Vantage
 and Tiingo (add a free key and they light up).
+
+## 6. Scale hardening — the caching layer (FUTURE WORK, not yet built)
+
+**Status: not started.** This is the top scale-hardening item and the unblocker for any
+full-universe / sector-relative work (cross-referenced from `ASSESSMENT_GAPS.md` §2.3, §4 and
+`CLAUDE.md`). Until it exists, the free tiers cap us at a small watchlist per day.
+
+### Why it's needed (the symptom we keep hitting)
+FMP's free plan allows ~250 calls/day and ~5/min. The screener spends ~8 calls/ticker (was 9
+before the insider call was gated off), the harness ~13 — so a handful of names exhausts the
+**daily** quota and a 5-ticker burst trips the **per-minute** throttle. Both surface as `429`s.
+We already made the failure *honest and self-healing* (2025/2026 work: `FMPProvider._get` retries
+429s with `Retry-After`-aware backoff; `fetch()` keeps partial legs; coverage reports a distinct
+`rate_limited_429` status with a "budget exhausted, not gated" note) — but retry/backoff cannot
+manufacture quota. The only thing that makes **repeated** runs cheap is not re-fetching what we
+already pulled. That is caching.
+
+### Design sketch
+- **Key:** `(provider/source, endpoint, symbol, params)` → response payload. Stable across runs.
+- **Store:** start with on-disk JSON/SQLite under a gitignored `.cache/` (Yahoo already does a
+  per-day cache under `.cache/yahoo/` — follow that precedent, generalize it). SQLite gives
+  atomic writes + TTL queries without a daemon.
+- **TTL by data half-life, not one global value:** quotes/prices intraday-to-daily; ratios &
+  key-metrics daily; annual statements / 10-K financials ~weekly (they only change on a filing);
+  analyst grades & targets daily. Config-drive the TTLs (`cache.ttl.<bucket>`), default sane.
+- **Layering:** wrap at the HTTP boundary (`FMPProvider._get`, `FinnhubProvider`'s getter, the
+  harness `Source` fetchers) so every endpoint benefits and providers stay unaware. A shared
+  `cache.py` with `get_or_fetch(key, ttl, fetcher)` keeps it one place.
+- **Invalidation / freshness:** `--refresh` already exists for research briefs — extend the same
+  flag to bypass/repopulate the data cache. Never serve a cached **error** (don't cache 4xx/5xx).
+- **Honesty rule:** a cache hit must be indistinguishable from a live fetch to `coverage()` — a
+  stale-but-present value is still "ok"; only a true miss with no fallback is a gap. Don't let
+  caching silently paper over a provider that has actually gone dark.
+
+### Acceptance
+- Re-running the same basket within TTL makes **zero** upstream calls for the cached buckets
+  (assert via a call-counting fake), so the daily-quota ceiling stops biting on iteration.
+- A cold full-S&P-500 run still respects rate limits (cache misses are paced by the existing
+  retry/backoff), and a warm re-run completes without 429s.
+- `--refresh` repopulates; TTL expiry triggers a single re-fetch; errors are never cached.
+
+### Sequencing note
+This sits alongside the **FMP paid Starter tier (~$14–20/mo)** unlock: caching cuts *repeat* cost
+to zero, the paid tier raises the *cold* ceiling and lifts per-symbol `402` gating. Do caching
+first (it's free and benefits every source); add the paid tier when a true daily full-universe
+run is the goal. See `ASSESSMENT_GAPS.md` §2.3 — sector-relative scoring depends on this landing.

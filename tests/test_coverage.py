@@ -38,6 +38,10 @@ def test_classify_failure_402_is_gated():
     assert classify_failure(_http_error(402)) == "gated_402"
 
 
+def test_classify_failure_429_is_rate_limited():
+    assert classify_failure(_http_error(429)) == "rate_limited_429"
+
+
 def test_classify_failure_other_http_is_error():
     assert classify_failure(_http_error(500)) == "error"
 
@@ -62,6 +66,23 @@ def test_build_coverage_gated_fmp_lists_value_and_note():
     assert "growth" in cov.unavailable  # income history is FMP-sourced; gated -> null
     assert "upside_to_target" in cov.unavailable  # price set but no target_median
     assert "analyst-target upside and PEG still need FMP" in cov.note
+
+
+def test_build_coverage_rate_limited_fmp_note_is_not_gating():
+    """A 429 must read as a transient quota/throttle, NOT 'this symbol is gated' —
+    the remediation (retry / wait / Starter ceiling) differs from per-symbol gating."""
+    m = StockMetrics(ticker="NVDA")
+    m.sources = {"price": "finnhub", "insider_net_6m": "edgar"}
+    card = _card(ticker="NVDA", composite=55.5, quality=99.5, moat=100.0,
+                 momentum=3.9, value=None, opportunity=3.9, insider=40.4, metrics=m)
+    cov = build_coverage({"fmp": "rate_limited_429", "finnhub": "ok", "edgar": "ok"},
+                         {"finnhub", "edgar"}, card)
+    assert cov is not None
+    assert cov.providers["fmp"] == "rate_limited_429"
+    assert "429" in cov.note
+    # Must be the throttle note, not the gating note (which claims Starter is required).
+    assert "gated this symbol (402)" not in cov.note
+    assert "Starter tier raises both ceilings" in cov.note
 
 
 def test_build_coverage_reclassifies_ok_but_empty_provider():
@@ -218,7 +239,7 @@ def _config():
 
 def test_run_attaches_coverage_and_does_not_leak(monkeypatch):
     monkeypatch.setattr(screen, "build_providers",
-                        lambda names: [_FakeFMP(), _FakeFinnhub()])
+                        lambda names, config=None: [_FakeFMP(), _FakeFinnhub()])
     cards = screen.run(["GATED", "OK"], ["dummy"], _config())
     by = {c.ticker: c for c in cards}
     # GATED: fmp raised 402 but finnhub succeeded -> card exists with coverage

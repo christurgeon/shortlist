@@ -86,6 +86,11 @@ moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15). **Gates** are hard f
 (negative FCF, sub-threshold market cap, over-leverage, heavy insider selling)
 that flag a name regardless of score.
 
+Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
+`passed`/`composite` (distinct from hard `gates`). Today's only flag is
+`crowded_short = short_pct_outstanding ≥ t ∧ days_to_cover ≥ t ∧ rising ∧ fresh`
+(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`).
+
 When a sub-score has no inputs (all `None`), it is excluded and the composite
 weight is redistributed across the remaining components — never silently zeroed.
 
@@ -152,14 +157,34 @@ data. The `get_financials()` call roughly doubles per-ticker EDGAR SEC requests;
 the concurrency semaphore still bounds SEC load, but full-universe runs still need
 the caching layer.
 
+## Short interest (harness)
+
+`FinraSource` (keyless) pulls the **`ConsolidatedShortInterest`** dataset — NOT
+`EquityShortInterest`, which is **frozen (last cycle 2022-09-15) and OTC-only**.
+The symbol field is **`symbolCode`**. `settlementDate` is a **partition key** —
+discover the latest cycle via the `/partitions/` endpoint; you cannot sort it in
+the data query. The `record-max-limit` is **5000**, so paginate. `days_to_cover`
+is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None` in the
+bridge. The source does one bulk fetch per run, caches by settlement date, and
+indexes in memory — **no per-ticker request load**.
+
 ## Scale / rate limits (the honest catch)
 
 Free tiers are fine for individual names or a small watchlist, but don't scale to
-a full universe. The harness makes **~13 FMP calls per ticker**, so FMP's
-**250/day** free limit is roughly **19 tickers/day**. Screening the whole S&P 500
-daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute and
-bandwidth limits) or the **caching layer** from the hardening list — whichever you
-hit first. **Finnhub's 60/min is comfortable** either way.
+a full universe. The harness makes **~13 FMP calls per ticker** (the screener ~8,
+since the paid insider call is gated off by default); FMP's **250/day** free limit
+is therefore roughly **19 tickers/day** on the harness path. Screening the whole
+S&P 500 daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute
+and bandwidth limits) or the **caching layer** — whichever you hit first.
+**Finnhub's 60/min is comfortable** either way.
+
+When the limit *is* hit, FMP returns **`429`** and the screener now degrades
+honestly rather than failing hard: `FMPProvider._get` retries with `Retry-After`-aware
+backoff (`fmp.max_retries`), `fetch()` keeps whatever legs already succeeded, and
+coverage reports a distinct `rate_limited_429` status (vs. `402` gating). But retry
+can't manufacture quota — the real fix for **repeated** runs is caching, which is
+**specced as a future work stream in `docs/DATA_SOURCES.md` §6** (not yet built).
+Start there for the daily-quota problem.
 
 ## Data scale conventions
 

@@ -53,3 +53,27 @@ def test_harness_card_carries_coverage(monkeypatch):
     assert len(cards) == 1
     assert cards[0].coverage is not None
     assert cards[0].coverage.providers.get("fmp") == "gated_402"
+
+
+from shortlist.models import ScoreCard
+from shortlist.screen import _card_dict, _flags_cell
+
+
+def _card(**kw):
+    base = dict(ticker="X", composite=50.0, quality=None, moat=None, growth=None,
+                momentum=None, value=None, opportunity=None, insider=None)
+    base.update(kw)
+    return ScoreCard(**base)
+
+
+def test_flags_cell_merges_gates_and_flags():
+    assert _flags_cell(_card()) == "-"
+    assert _flags_cell(_card(flags=["crowded_short"])) == "crowded_short"
+    assert _flags_cell(_card(gates=["over_leveraged"], flags=["crowded_short"])) \
+        == "over_leveraged,crowded_short"
+
+
+def test_card_dict_includes_flags():
+    d = _card_dict(_card(flags=["crowded_short"]))
+    assert d["flags"] == ["crowded_short"]
+    assert d["gates"] == []

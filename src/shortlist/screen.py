@@ -19,7 +19,7 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
     providers = []
     for name in provider_names:
         try:
-            providers.extend(build_providers([name]))
+            providers.extend(build_providers([name], config))
         except Exception as e:  # missing key or uninstalled SDK -> skip the source
             print(f"  ! skipping provider '{name}': {redact_secrets(e)}", file=sys.stderr)
     if not providers:
@@ -71,6 +71,11 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     return cards
 
 
+def _flags_cell(c: ScoreCard) -> str:
+    """Combined chips for the 'Flags' column: hard gates first, then soft flags."""
+    return ",".join(list(c.gates) + list(c.flags)) or "-"
+
+
 def _print_table(cards: list[ScoreCard]) -> None:
     try:
         from rich.console import Console
@@ -106,7 +111,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
             str(i), c.ticker, f"{c.composite:.1f}",
             _f(c.quality), _f(c.moat), _f(c.growth), _f(c.momentum), _f(c.value), _f(c.insider),
             f"{up*100:.0f}%" if up is not None else "-",
-            ",".join(c.gates) or "-", style=style,
+            _flags_cell(c), style=style,
         )
     Console().print(table)
 
@@ -117,7 +122,7 @@ def _print_plain(cards: list[ScoreCard]) -> None:
     for i, c in enumerate(cards, 1):
         print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
               f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
-              f"{_f(c.insider):>5}  {','.join(c.gates) or '-'}")
+              f"{_f(c.insider):>5}  {_flags_cell(c)}")
 
 
 def _print_coverage_notes(cards: list[ScoreCard]) -> None:
@@ -260,6 +265,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "opportunity": c.opportunity, "insider": c.insider,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
+        "flags": c.flags,
     }
     if research_paths and c.ticker in research_paths:
         d["research_path"] = research_paths[c.ticker]

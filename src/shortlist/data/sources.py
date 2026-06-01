@@ -13,7 +13,7 @@ from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
 from .models import (
     Analyst, Fundamentals, Insider, InsiderTxn, Price, Profile,
-    SourceResult, Statements, TickerSnapshot,
+    ShortInterest, SourceResult, Statements, TickerSnapshot,
 )
 
 
@@ -443,6 +443,105 @@ class YahooSource(Source):
         return res
 
 
+# --- FINRA: keyless consolidated short interest ----------------------------
+
+class FinraSource(Source):
+    """Keyless FINRA ConsolidatedShortInterest. Bulk-loads the latest bi-monthly
+    cycle ONCE per run (the YahooSource fetch-once-reuse precedent), indexes by
+    normalized symbol, and serves per-ticker lookups as O(1) dict hits. Disk-cached
+    by SETTLEMENT DATE so the cache survives the ~2 weeks until the next cycle."""
+
+    name = "finra"
+    DATA = "https://api.finra.org/data/group/otcMarket/name/ConsolidatedShortInterest"
+    PARTS = "https://api.finra.org/partitions/group/otcMarket/name/ConsolidatedShortInterest"
+    PAGE = 5000   # FINRA record-max-limit
+
+    def __init__(self, timeout: float = 30.0, cache_dir: str = ".cache/finra"):
+        import httpx  # lazy: only needed for live runs
+        self._client = httpx.AsyncClient(timeout=timeout, headers={"Accept": "application/json"})
+        self._cache_dir = Path(cache_dir)
+        self._index: Optional[dict] = None
+        self._settlement: Optional[str] = None
+        self._load_error: Optional[str] = None
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def _fetch_partitions(self) -> Any:
+        r = await self._client.get(self.PARTS)
+        r.raise_for_status()
+        return r.json()
+
+    async def _fetch_page(self, settlement: str, offset: int) -> list:
+        body = {"limit": self.PAGE, "offset": offset,
+                "compareFilters": [{"fieldName": "settlementDate",
+                                    "fieldValue": settlement, "compareType": "EQUAL"}]}
+        r = await self._client.post(self.DATA, json=body)
+        r.raise_for_status()
+        data = r.json()
+        return data if isinstance(data, list) else []
+
+    def _cache_path(self, settlement: str) -> Path:
+        return self._cache_dir / f"{settlement}.json"
+
+    def _read_cache(self, settlement: str):
+        cp = self._cache_path(settlement)
+        try:
+            if cp.exists():
+                return json.loads(cp.read_text())
+        except Exception:
+            pass  # corrupt cache -> refetch
+        return None
+
+    def _write_cache(self, settlement: str, rows: list) -> None:
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._cache_path(settlement).write_text(json.dumps(rows))
+        except Exception:
+            pass  # cache write failure is non-fatal
+
+    async def _load(self) -> None:
+        """Discover the latest cycle and build the symbol index once."""
+        if self._index is not None or self._load_error is not None:
+            return
+        try:
+            settlement = _finra_latest_partition(await self._fetch_partitions())
+            if not settlement:
+                self._index = {}
+                return
+            rows = self._read_cache(settlement)
+            if rows is None:
+                rows, offset = [], 0
+                while True:
+                    page = await self._fetch_page(settlement, offset)
+                    rows.extend(page)
+                    if len(page) < self.PAGE:
+                        break
+                    offset += self.PAGE
+                self._write_cache(settlement, rows)
+            self._index = _finra_index(rows)
+            self._settlement = settlement
+        except Exception as e:
+            self._load_error = redact_secrets(str(e))
+            self._index = {}
+
+    async def fetch(self, ticker: str) -> SourceResult:
+        res = SourceResult(source=self.name)
+        await self._load()
+        snap = TickerSnapshot(ticker=ticker)
+        if self._load_error:
+            res.errors.append(f"finra: {self._load_error}")
+            res.partial = snap
+            return res
+        row = (self._index or {}).get(_finra_norm_symbol(ticker))
+        if row is not None:
+            snap.short_interest = _finra_row_to_si(row)
+        # raw carries the cycle + whether THIS symbol matched (visible, not silent)
+        res.raw = {"settlement_date": self._settlement, "matched": row is not None}
+        res.partial = snap
+        return res
+
+
 # --- helpers --------------------------------------------------------------
 
 async def _fetch_sections(
@@ -481,6 +580,47 @@ def _year(d: Any) -> Optional[int]:
         return int(str(d)[:4])
     except (TypeError, ValueError):
         return None
+
+
+# --- FINRA short interest (pure helpers) ----------------------------------
+
+def _finra_latest_partition(payload: Any) -> Optional[str]:
+    parts = (payload or {}).get("availablePartitions") or []
+    dates = [p["partitions"][0] for p in parts if p.get("partitions")]
+    return max(dates) if dates else None
+
+
+def _finra_norm_symbol(sym: str) -> str:
+    """Collapse separators so BRK.B / BRK-B / BRKB all match one key."""
+    return (sym or "").upper().replace("-", "").replace(".", "")
+
+
+def _finra_num(row: dict, key: str) -> Optional[float]:
+    v = row.get(key)
+    try:
+        return float(v) if v not in (None, "", "N/A") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _finra_flag(row: dict, key: str) -> bool:
+    return str(row.get(key, "")).strip().upper() in ("Y", "YES", "TRUE", "1")
+
+
+def _finra_row_to_si(row: dict) -> ShortInterest:
+    return ShortInterest(
+        settlement_date=row.get("settlementDate"),
+        short_shares=_finra_num(row, "currentShortPositionQuantity"),
+        prev_short_shares=_finra_num(row, "previousShortPositionQuantity"),
+        avg_daily_volume=_finra_num(row, "averageDailyVolumeQuantity"),
+        days_to_cover=_finra_num(row, "daysToCoverQuantity"),
+        split_flag=_finra_flag(row, "stockSplitFlag"),
+        revised=_finra_flag(row, "revisionFlag"),
+    )
+
+
+def _finra_index(rows: list) -> dict:
+    return {_finra_norm_symbol(r["symbolCode"]): r for r in rows if r.get("symbolCode")}
 
 
 def _match(rows: Any, income_row: dict) -> Optional[dict]:
@@ -586,7 +726,8 @@ def snapshot_from_closes(ticker: str, closes: list[float],
 
 _REGISTRY = {
     "yahoo": YahooSource,
-    "fmp": FMPSource, "finnhub": FinnhubSource, "edgar": EdgarSource, "mock": MockSource,
+    "fmp": FMPSource, "finnhub": FinnhubSource, "edgar": EdgarSource,
+    "finra": FinraSource, "mock": MockSource,
 }
 
 
