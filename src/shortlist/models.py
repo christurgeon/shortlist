@@ -73,8 +73,8 @@ class Coverage:
     ("ok" | "gated_402" | "empty" | "error"); `unavailable` lists output fields
     that came out null (fact); `note` is interpretive prose for recognized
     patterns (e.g. FMP symbol gating). See coverage.py for assembly."""
-    providers: dict
-    unavailable: list
+    providers: dict[str, str]
+    unavailable: list[str]
     note: Optional[str] = None
 
 

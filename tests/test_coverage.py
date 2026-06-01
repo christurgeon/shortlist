@@ -97,6 +97,74 @@ def test_coverage_note_line_renders_flagged_providers():
     assert "finnhub" not in line  # ok providers are not listed
 
 
+from shortlist.coverage import _build_note
+
+
+def test_build_coverage_error_only_returns_coverage_with_generic_note():
+    """A provider that returns an HTTP 500 (error) while another succeeds should
+    produce a Coverage with the error status and a generic note (not FMP Starter)."""
+    m = StockMetrics(ticker="FH")
+    m.sources = {"price": "fmp", "roe": "fmp"}  # fmp contributed; finnhub errored
+    card = _card(ticker="FH", quality=50.0, metrics=m)
+    cov = build_coverage({"fmp": "ok", "finnhub": "error"}, card)
+    assert cov is not None
+    assert cov.providers["finnhub"] == "error"
+    assert "Starter" not in (cov.note or "")
+    # generic note must mention finnhub
+    assert cov.note is not None
+    assert "finnhub" in cov.note
+
+
+def test_build_coverage_fmp_error_not_gated_produces_generic_note():
+    """fmp with status 'error' (e.g. HTTP 500) must NOT trigger the FMP Starter note."""
+    m = StockMetrics(ticker="X")
+    m.sources = {"price": "finnhub"}  # finnhub contributed; fmp errored
+    card = _card(ticker="X", metrics=m)
+    cov = build_coverage({"fmp": "error", "finnhub": "ok"}, card)
+    assert cov is not None
+    assert cov.providers["fmp"] == "error"
+    assert "Starter" not in (cov.note or "")
+    assert cov.note is not None
+    assert "fmp" in cov.note
+
+
+def test_coverage_note_line_error_only_no_dangling_arrow():
+    """An error-only Coverage must render a clean line — no dangling '  -> '."""
+    cov = Coverage(
+        providers={"finnhub": "error", "fmp": "ok"},
+        unavailable=["moat", "momentum"],
+        note="some note",
+    )
+    line = coverage_note_line("FH", cov)
+    assert "finnhub" in line
+    assert "fetch error" in line
+    assert "  -> " not in line  # no dangling arrow with empty flagged part
+
+
+def test_coverage_note_line_error_label_present():
+    """The rendered line must include the human label for 'error' status."""
+    cov = Coverage(
+        providers={"finnhub": "error"},
+        unavailable=["moat"],
+        note=None,
+    )
+    line = coverage_note_line("FH", cov)
+    assert "finnhub fetch error" in line
+
+
+def test_build_coverage_multi_provider_generic_note():
+    """When multiple non-fmp providers are flagged the generic note lists both names."""
+    m = StockMetrics(ticker="X")
+    m.sources = {"price": "fmp"}  # only fmp contributed
+    card = _card(ticker="X", metrics=m)
+    cov = build_coverage({"fmp": "ok", "finnhub": "empty", "edgar": "error"}, card)
+    assert cov is not None
+    assert cov.note is not None
+    assert "finnhub" in cov.note
+    assert "edgar" in cov.note
+    assert "Starter" not in cov.note
+
+
 from pathlib import Path
 
 import yaml

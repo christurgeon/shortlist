@@ -48,17 +48,19 @@ def build_coverage(outcomes: dict, card: ScoreCard) -> Optional[Coverage]:
 
 
 def _build_note(providers: dict) -> Optional[str]:
-    flagged = {n: s for n, s in providers.items() if s in ("gated_402", "empty")}
+    flagged = {n: s for n, s in providers.items() if s in ("gated_402", "empty", "error")}
     if not flagged:
         return None
-    # "fmp" is the registry name (fmp.py: name = "fmp") — load-bearing string.
+    # FMP recognized-pattern note takes precedence over the generic multi-provider note.
+    # Only fire for gated_402/empty — an fmp "error" is a transient fetch failure,
+    # not a tier-gating issue, so it must NOT claim "needs Starter tier".
     if providers.get("fmp") in ("gated_402", "empty"):
         return _FMP_NOTE
     return (f"{', '.join(sorted(flagged))}: provider supplied no data for this "
             "symbol (see stderr)")
 
 
-_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty"}
+_STATUS_LABEL = {"gated_402": "gated (402)", "empty": "empty", "error": "fetch error"}
 
 
 def coverage_note_line(ticker: str, cov: Coverage) -> str:
