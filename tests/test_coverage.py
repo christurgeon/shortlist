@@ -95,3 +95,70 @@ def test_coverage_note_line_renders_flagged_providers():
     assert "fmp gated (402)" in line
     assert "value, upside_to_target" in line
     assert "finnhub" not in line  # ok providers are not listed
+
+
+from pathlib import Path
+
+import yaml
+
+from shortlist import screen
+from shortlist.models import StockMetrics as SM
+
+
+class _Resp:
+    def __init__(self, status): self.status_code = status
+
+
+class _Http402(Exception):
+    def __init__(self): self.response = _Resp(402)
+
+
+class _FakeFMP:
+    name = "fmp"
+    def fetch(self, t):
+        if t == "GATED":
+            raise _Http402()
+        m = SM(ticker=t)
+        m.market_cap = 1.0e10
+        m.sources["market_cap"] = "fmp"
+        return m
+
+
+class _FakeFinnhub:
+    name = "finnhub"
+    def fetch(self, t):
+        m = SM(ticker=t)
+        m.market_cap = 2.0e10
+        m.roe = 0.2
+        m.sources["market_cap"] = "finnhub"
+        m.sources["roe"] = "finnhub"
+        return m
+
+
+def _config():
+    path = Path(__file__).resolve().parents[1] / "config.yaml"
+    return yaml.safe_load(path.read_text())
+
+
+def test_run_attaches_coverage_and_does_not_leak(monkeypatch):
+    monkeypatch.setattr(screen, "build_providers",
+                        lambda names: [_FakeFMP(), _FakeFinnhub()])
+    cards = screen.run(["GATED", "OK"], ["dummy"], _config())
+    by = {c.ticker: c for c in cards}
+    # GATED: fmp raised 402 but finnhub succeeded -> card exists with coverage
+    assert by["GATED"].coverage is not None
+    assert by["GATED"].coverage.providers["fmp"] == "gated_402"
+    # OK: both providers contributed -> no coverage; outcomes did NOT leak
+    assert by["OK"].coverage is None
+
+
+def test_card_dict_emits_coverage_when_present():
+    cov = Coverage(providers={"fmp": "gated_402"}, unavailable=["value"], note="x")
+    d = screen._card_dict(_card(coverage=cov))
+    assert d["coverage"]["providers"]["fmp"] == "gated_402"
+    assert d["coverage"]["unavailable"] == ["value"]
+    assert d["coverage"]["note"] == "x"
+
+
+def test_card_dict_omits_coverage_when_absent():
+    assert "coverage" not in screen._card_dict(_card())
