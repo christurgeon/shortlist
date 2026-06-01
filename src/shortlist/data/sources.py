@@ -497,6 +497,14 @@ def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float]) 
     return snap
 
 
+def snapshot_from_closes(ticker: str, closes: list[float],
+                         spy_closes: list[float]) -> TickerSnapshot:
+    """Public seam: build a point-in-time Price snapshot from a close series,
+    delegating to the same math the live Yahoo source uses. Pass closes already
+    truncated to the as-of date for a look-ahead-free reconstruction."""
+    return _normalize_yahoo(ticker, closes, spy_closes)
+
+
 _REGISTRY = {
     "yahoo": YahooSource,
     "fmp": FMPSource, "finnhub": FinnhubSource, "edgar": EdgarSource, "mock": MockSource,
