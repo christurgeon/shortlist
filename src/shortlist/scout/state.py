@@ -6,8 +6,11 @@ on each mutation — small enough that this is simpler and safer than partial wr
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import date, timedelta
 from pathlib import Path
+
+_EMPTY: dict = {"screened": {}, "runs": [], "held": []}
 
 
 class ScoutState:
@@ -17,8 +20,12 @@ class ScoutState:
 
     def _load(self) -> dict:
         if self.path.exists():
-            return json.loads(self.path.read_text())
-        return {"screened": {}, "runs": [], "held": []}
+            try:
+                return json.loads(self.path.read_text())
+            except json.JSONDecodeError as e:
+                # A corrupt ledger must not crash the daily run; start fresh.
+                warnings.warn(f"ScoutState: corrupt {self.path}, starting fresh: {e}")
+        return dict(_EMPTY)
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
