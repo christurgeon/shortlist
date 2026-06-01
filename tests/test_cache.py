@@ -336,3 +336,42 @@ def test_fmp_source_get_uses_cache(tmp_path):
     assert a == b == [{"x": 1}]
     assert calls["n"] == 1
     real.close()
+
+
+# --- Task 9: CLI flags ----------------------------------------------------------
+
+def test_screen_cli_no_cache_flag_disables(monkeypatch, tmp_path):
+    import shortlist.screen as screen
+    captured = {}
+
+    def fake_run(tickers, providers, config):
+        captured["t"] = type(get_default_cache()).__name__
+        return []
+
+    monkeypatch.setattr(screen, "run", fake_run)
+    monkeypatch.setattr(screen, "_print_coverage_notes", lambda c: None)
+    monkeypatch.setattr(screen, "_print_table", lambda c: None)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("providers: [mock]\n")
+    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--no-cache"])
+    assert captured["t"] == "NoOpCache"
+    reset_default_cache()
+
+
+def test_screen_cli_default_enables_cache(monkeypatch, tmp_path):
+    import shortlist.screen as screen
+    captured = {}
+
+    def fake_run(tickers, providers, config):
+        captured["t"] = type(get_default_cache()).__name__
+        return []
+
+    monkeypatch.setattr(screen, "run", fake_run)
+    monkeypatch.setattr(screen, "_print_coverage_notes", lambda c: None)
+    monkeypatch.setattr(screen, "_print_table", lambda c: None)
+    monkeypatch.chdir(tmp_path)  # default .cache/ lands in tmp
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("providers: [mock]\n")  # no cache: block -> defaults on
+    screen.main(["--tickers", "AAPL", "--config", str(cfg)])
+    assert captured["t"] == "HttpCache"
+    reset_default_cache()

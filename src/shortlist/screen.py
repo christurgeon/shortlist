@@ -160,6 +160,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="after ranking, generate a qualitative brief for the top N non-gated names")
     ap.add_argument("--refresh", action="store_true",
                     help="regenerate research briefs even if a cached one exists")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="disable the on-disk HTTP cache for this run")
+    ap.add_argument("--refresh-cache", action="store_true",
+                    help="bypass cached HTTP responses and repopulate them")
     return ap
 
 
@@ -170,6 +174,16 @@ def main(argv: list[str] | None = None) -> int:
     load_env()  # pick up API keys from a .env file if present
 
     config = yaml.safe_load(Path(args.config).read_text())
+
+    from .cache import configure_default_cache
+    cache_cfg = config.get("cache", {})
+    configure_default_cache(
+        # --demo is offline (mock source, no HTTP), so there's nothing to cache.
+        enabled=(not args.no_cache) and (not args.demo) and cache_cfg.get("enabled", True),
+        refresh=args.refresh_cache,
+        path=cache_cfg.get("path"),
+        ttls=cache_cfg.get("ttl"),
+    )
 
     if not args.demo and not args.tickers:
         ap.error("--tickers is required unless --demo")
