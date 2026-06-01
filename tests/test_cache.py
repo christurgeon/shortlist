@@ -300,3 +300,39 @@ def test_fmp_provider_get_uses_cache(tmp_path):
     assert p._get("quote", symbol="AAPL") == [{"price": 1}]
     assert calls["n"] == 1  # second call cached
     real.close()
+
+
+# --- Task 8: wired harness sources (async) --------------------------------------
+
+def test_fmp_source_get_uses_cache(tmp_path):
+    from shortlist.data.sources import FMPSource
+
+    real = HttpCache(str(tmp_path / "c.sqlite"))
+    s = FMPSource.__new__(FMPSource)
+    s.key = "test"
+    s._cache = real
+    s.BASE = "https://example.invalid/stable"
+
+    calls = {"n": 0}
+
+    class FakeResp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{"x": 1}]
+
+    class FakeClient:
+        async def get(self, *a, **k):
+            calls["n"] += 1
+            return FakeResp()
+
+    s._client = FakeClient()
+
+    async def scenario():
+        return await s._get("quote", symbol="AAPL"), await s._get("quote", symbol="AAPL")
+
+    a, b = asyncio.run(scenario())
+    assert a == b == [{"x": 1}]
+    assert calls["n"] == 1
+    real.close()
