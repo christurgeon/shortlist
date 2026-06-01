@@ -460,6 +460,14 @@ def test_normalize_builds_price_with_rel_strength():
     assert snap.price.price == 120.0
 
 
+def test_normalize_computes_ma200():
+    # >=200 points so the 200d SMA is actually computed (the core momentum input).
+    closes = [float(i) for i in range(1, 251)]   # 1..250 ascending
+    snap = _normalize_yahoo("AAA", closes, [])
+    assert snap.price.ma200 == sum(range(51, 251)) / 200   # last 200 = 51..250
+    assert snap.price.rel_strength_6m is None              # no SPY series given
+
+
 def test_normalize_empty_closes_returns_bare_snapshot():
     snap = _normalize_yahoo("AAA", [], [])
     assert snap.ticker == "AAA" and snap.price is None
@@ -811,12 +819,17 @@ CONFIG = yaml.safe_load(
 
 
 def test_run_harness_scores_mock_snapshots():
+    # NOTE: MockSource snapshots have no `statements`, so the bridge's
+    # statements-derived fields (gross_margin_stability, fcf_positive) are None
+    # on this path by design — that derivation is covered in test_bridge.py.
+    # `quality` here comes from `fundamentals` (which mock DOES populate), so it
+    # is the right signal that the harness->bridge->score path works end-to-end.
     cards = run_harness(["GEV", "LMT", "GOOGL"], ["mock"], CONFIG)
     assert cards, "expected scored cards from the mock source"
     # sorted descending by composite
     comps = [c.composite for c in cards]
     assert comps == sorted(comps, reverse=True)
-    # bridge populated the metrics the scorer needs
+    # bridge populated the fundamentals-based metrics the scorer needs
     assert any(c.quality is not None for c in cards)
 
 

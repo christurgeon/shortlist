@@ -23,8 +23,14 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 | **FMP** `/stable/` | free (250 calls/day, ~20 tickers/day) | both | profile, quote, TTM ratios, key-metrics, 5y statements, price-target + grades consensus, insider, price-change |
 | **Finnhub** | free (60/min) | both | profile, metrics, **insider sentiment (MSPR)**, recommendation trend, quote |
 | **SEC EDGAR** (Form 4) | free (≤10 req/s) | both | authoritative insider transaction flow |
+| **Yahoo Finance** chart | free, keyless | harness | price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown (computed by us, day-cached) |
 | **Mock** | offline | harness | demo fixtures |
 | Quiver / FRED | scaffolded, not wired | screener | congress/gov-contracts; macro overlay |
+
+A `snapshot_to_metrics` **bridge** (`data/bridge.py`) now feeds the harness
+`TickerSnapshot` into the same scorer the screener uses, exposed via
+`shortlist --engine harness`. See
+`docs/superpowers/specs/2026-05-31-harness-scoring-bridge-yahoo-design.md`.
 
 Scored signals today: **quality** (ROE, net margin, interest coverage, D/E),
 **moat** (gross margin, margin stability, ROIC), **momentum** (price vs 200dma, 6m rel
@@ -35,10 +41,11 @@ strength, EPS revision), **value** (upside-to-target, FCF yield, PE vs own histo
 
 These are the holes that matter, ranked by how much they distort an assessment:
 
-1. **Momentum is half-populated.** `rel_strength_6m` and `eps_revision` are *defined in
-   the model but nothing fills them* — momentum currently leans on a single vendor's
-   precomputed `price-change`. No volatility, no drawdown, no beta. We can't even compute
-   relative strength vs a benchmark.
+1. **Momentum is partly addressed.** ~~`rel_strength_6m` and volatility/drawdown were
+   unfilled.~~ **Done (harness):** the Yahoo source now computes 6m relative strength vs
+   SPY, realized volatility, max drawdown, and the 200dma ourselves — keyless and immune
+   to FMP gating (see Tier A below). **Still open:** `eps_revision` (needs forward
+   estimates — Alpha Vantage §B1) and beta.
 2. **No forward estimates / revisions breadth.** Everything is trailing (TTM). PEG needs a
    growth rate; `eps_revision` needs an estimate trend. Analyst *target* ≠ analyst
    *estimate revisions*, which is the cleaner momentum signal.
@@ -99,20 +106,16 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
   `scoring.score()`. Concretely: a `regime_multiplier` on the leverage gate, and a small
   penalty to `value`/cyclicals when `hy_oas` exceeds a configurable threshold in `config.yaml`.
 
-#### A3. Yahoo Finance chart — own price history → real momentum & risk
-- **What:** keyless `query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=2y&interval=1d`
-  returns raw OHLCV. (Stooq's free CSV now requires a captcha-gated key — Yahoo is the
-  better keyless option.)
-- **Why:** Lets us compute momentum/risk **ourselves, auditable**, instead of trusting a
-  vendor's opaque precomputed field — and crucially fills the momentum gaps: 6m **relative
-  strength vs SPY**, realized **volatility**, **max drawdown**, distance to 200dma. These are
-  table-stakes momentum/risk inputs the model defines but can't currently populate.
-- **Access:** free, keyless (send a browser `User-Agent`). Be polite; cache by day.
-- **Pull:** validated — AAPL: **6m rel-strength vs SPY +0.6%, annualized vol 22.1%,
-  1y max drawdown −13.8%, +18.6% above 200dma**.
-- **Wire-in:** populate `Price.rel_strength_6m` (currently always `None`) and add
-  `realized_vol` / `max_drawdown` to `Price`; feed `rel_strength_6m` into the existing
-  momentum sub-score. Add an optional `volatility` input to a risk gate.
+#### A3. Yahoo Finance chart — own price history → real momentum & risk  ✅ DONE
+- **Shipped** as the harness `YahooSource` (keyless `query1.finance.yahoo.com/v8/finance/chart`,
+  day-cached under `.cache/yahoo/`). We compute 6m **relative strength vs SPY**, realized
+  **volatility**, **max drawdown**, and the **200dma** ourselves — auditable and immune to
+  FMP's per-symbol gating. It leads the harness merge priority for price fields and
+  populates `Price.rel_strength_6m` / `realized_vol` / `max_drawdown` (the latter two are
+  surfaced but not yet scored; a volatility risk gate is a tracked follow-up).
+- See `docs/superpowers/specs/2026-05-31-harness-scoring-bridge-yahoo-design.md` and the
+  matching plan for the implementation, including the `snapshot_to_metrics` bridge that
+  routes the harness snapshot into the scorer.
 
 #### A4. Wikimedia pageviews — attention / demand proxy
 - **What:** keyless `wikimedia.org/api/rest_v1/metrics/pageviews/per-article/...` — daily
@@ -260,10 +263,16 @@ The repo's two-layer split (see `CLAUDE.md`) tells you where each source goes:
 
 Recommended sequencing (highest leverage first):
 
-1. **A3 Yahoo price history** — fills the momentum gap immediately, keyless, ~1 file.
+0. ✅ **Harness scoring bridge + A3 Yahoo price history** — *done.* `snapshot_to_metrics`
+   makes the harness scoreable; the Yahoo source fills 6m rel-strength / vol / drawdown /
+   200dma, keyless and gating-immune, via `--engine harness`.
+1. **Close the harness parity gaps** — add an annual `ratios` fetch to `FMPSource` for
+   `pe_median_5y` (restores the 4th `value` leg) and a 5y `roic_5y_avg`; then the harness
+   can fully replace the screener fetch path.
 2. **A1 EDGAR XBRL + events** — authoritative financials + event flags; biggest single win.
 3. **A2 FRED macro overlay** — cheap, keyless, makes every score regime-aware.
-4. **D1–D3 composites** — no new I/O, pure analytical upgrade (F/Z/M scores).
+4. **D1–D3 composites** — pure analytical upgrade (F/Z/M scores); Altman/Beneish need A1's
+   extra balance-sheet fields first.
 5. **B1 Alpha Vantage** — forward estimates + revisions (free key) to light up `eps_revision`.
 6. **C1/C3 short interest + 13F**, then **C2 Quiver** for the alt-data edge.
 

@@ -6,6 +6,7 @@ from typing import Any, Optional
 import requests
 
 from ..models import StockMetrics
+from ..stats import gross_margin_stability
 from .base import Provider
 
 BASE = "https://financialmodelingprep.com/stable"
@@ -91,9 +92,7 @@ class FMPProvider(Provider):
                 for row in income
                 if row.get("revenue")
             ]
-            if len(margins) >= 3:
-                avg = mean_(margins)
-                m.gross_margin_stability = max(0.0, 1.0 - (stdev_(margins) / avg)) if avg else None
+            m.gross_margin_stability = gross_margin_stability(margins)
             m.fcf_positive = all(
                 (row.get("netIncome") or 0) > 0 for row in income[:2]
             ) or None
@@ -150,12 +149,3 @@ def _first(data: Any) -> Optional[dict]:
     if isinstance(data, dict):
         return data
     return None
-
-
-def mean_(xs: list[float]) -> float:
-    return sum(xs) / len(xs)
-
-
-def stdev_(xs: list[float]) -> float:
-    mu = mean_(xs)
-    return (sum((x - mu) ** 2 for x in xs) / len(xs)) ** 0.5

@@ -19,3 +19,4 @@ venv/
 
 # Scratch: pulled raw data samples (data-source exploration)
 /scratch/
+.cache/

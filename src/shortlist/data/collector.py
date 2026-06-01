@@ -5,9 +5,10 @@ import asyncio
 from .models import TickerSnapshot, merge_snapshots
 from .sources import Source, build_sources
 
-# Default merge priority: EDGAR (when added) is authoritative for insider, FMP
-# is the fundamentals backbone, Finnhub fills gaps and adds sentiment.
-DEFAULT_PRIORITY = ["edgar", "fmp", "finnhub", "mock"]
+# Default merge priority: Yahoo leads for price/momentum (keyless, auditable,
+# gating-immune); EDGAR is authoritative for insider; FMP is the fundamentals
+# backbone; Finnhub fills gaps and adds sentiment.
+DEFAULT_PRIORITY = ["yahoo", "edgar", "fmp", "finnhub", "mock"]
 
 
 async def collect_async(

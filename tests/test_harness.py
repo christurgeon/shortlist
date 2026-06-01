@@ -52,3 +52,9 @@ def test_snapshot_roundtrips_through_store(tmp_path):
     loaded = load("LMT", tmp_path)
     assert loaded["ticker"] == "LMT"
     assert loaded["fundamentals"]["pe_ttm"] == 20.0
+
+
+def test_yahoo_leads_default_priority():
+    from shortlist.data.collector import DEFAULT_PRIORITY
+    # Yahoo must outrank FMP so its auditable price fields win the price merge.
+    assert DEFAULT_PRIORITY.index("yahoo") < DEFAULT_PRIORITY.index("fmp")
