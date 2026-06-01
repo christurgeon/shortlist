@@ -115,6 +115,27 @@ the scorer redistributes weight. Harness-engine cards carry no `coverage`
 diagnostic; the snapshot's own `coverage()`/`missing()` remain available via
 `shortlist-harness`.
 
+## Short interest and soft flags
+
+`FinraSource` (keyless) leads no merge but fills the `ShortInterest` snapshot
+section — current/previous short shares, days-to-cover, settlement date, split/
+revision flags. It does **one bulk fetch per run** (the latest consolidated cycle),
+caches it by settlement date, and indexes every symbol in memory; per-ticker
+lookups are local. It therefore adds **no per-ticker request load** to a universe
+run. The bridge derives `short_pct_outstanding` (vs. derived shares outstanding,
+conservative vs. float), `days_to_cover`, `short_interest_rising`, and
+`short_data_age_days` onto `StockMetrics`.
+
+**Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
+`ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card
+but **never change `composite` or `passed`**. The `crowded_short` flag fires only
+under `--engine harness` with `finra` present, when
+`short_pct_outstanding ≥ threshold AND days_to_cover ≥ threshold AND rising AND
+fresh` (thresholds in `config.yaml` → `flags.crowded_short`:
+`min_short_pct_outstanding`, `min_days_to_cover`, `require_rising`,
+`max_staleness_days`). It marks a name for a closer look — squeeze candidate or
+credible skeptic case — without altering the rank.
+
 ## Adding a source
 
 Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning

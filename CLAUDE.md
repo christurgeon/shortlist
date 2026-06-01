@@ -86,6 +86,11 @@ moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15). **Gates** are hard f
 (negative FCF, sub-threshold market cap, over-leverage, heavy insider selling)
 that flag a name regardless of score.
 
+Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
+`passed`/`composite` (distinct from hard `gates`). Today's only flag is
+`crowded_short = short_pct_outstanding ≥ t ∧ days_to_cover ≥ t ∧ rising ∧ fresh`
+(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`).
+
 When a sub-score has no inputs (all `None`), it is excluded and the composite
 weight is redistributed across the remaining components — never silently zeroed.
 
@@ -151,6 +156,17 @@ issuers, recent spin-offs) degrade statements to `None` without touching insider
 data. The `get_financials()` call roughly doubles per-ticker EDGAR SEC requests;
 the concurrency semaphore still bounds SEC load, but full-universe runs still need
 the caching layer.
+
+## Short interest (harness)
+
+`FinraSource` (keyless) pulls the **`ConsolidatedShortInterest`** dataset — NOT
+`EquityShortInterest`, which is **frozen (last cycle 2022-09-15) and OTC-only**.
+The symbol field is **`symbolCode`**. `settlementDate` is a **partition key** —
+discover the latest cycle via the `/partitions/` endpoint; you cannot sort it in
+the data query. The `record-max-limit` is **5000**, so paginate. `days_to_cover`
+is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None` in the
+bridge. The source does one bulk fetch per run, caches by settlement date, and
+indexes in memory — **no per-ticker request load**.
 
 ## Scale / rate limits (the honest catch)
 

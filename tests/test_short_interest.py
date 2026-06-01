@@ -177,3 +177,20 @@ def test_finra_load_error_is_non_fatal(tmp_path, monkeypatch):
     assert res.partial.short_interest is None
     assert res.errors and "finra" in res.errors[0]
     asyncio.run(src.aclose())
+
+
+import pytest
+
+
+@pytest.mark.live
+def test_finra_live_smoke():
+    """Real FINRA call. Skipped by default; run with: uv run pytest -m live."""
+    src = FinraSource()
+    try:
+        res = asyncio.run(src.fetch("AAPL"))
+    finally:
+        asyncio.run(src.aclose())
+    si = res.partial.short_interest
+    assert si is not None, "AAPL absent from consolidated cycle — contract changed"
+    assert si.short_shares and si.short_shares > 0
+    assert si.settlement_date and si.settlement_date >= "2026-01-01"

@@ -185,16 +185,26 @@ Format for each: **what · why (investment rationale) · access/tier · pull · 
 
 ### Tier C — differentiated / alternative data
 
-#### C1. FINRA + Nasdaq short interest — squeeze & skeptic signal
-- **What:** FINRA publishes consolidated short-interest (bi-monthly settlement) as free bulk
-  files; Nasdaq/exchanges publish per-symbol short interest & days-to-cover.
-- **Why:** **Short interest as % of float** and **days-to-cover** are a direct read on
-  bear positioning. High + rising short interest into improving fundamentals = squeeze
-  candidate *or* a credible skeptic case worth respecting — either way it's signal the
-  current stack is blind to.
-- **Access:** free (FINRA bulk download); Finnhub also exposes it (premium on free tier).
-- **Wire-in:** `short_pct_float` / `days_to_cover` on `StockMetrics`; either a low-weight
-  input or a soft gate ("crowded short — investigate").
+#### C1. FINRA short interest — squeeze & skeptic signal  — **Shipped (harness)**
+- **Status:** **Shipped (harness):** `FinraSource` → `ShortInterest` snapshot section →
+  bridge (`snapshot_to_metrics`) → `crowded_short` soft flag.
+- **What:** FINRA publishes consolidated short-interest (bi-monthly settlement) as a free,
+  keyless bulk dataset covering NMS-listed securities.
+- **Why:** **Short interest as % of shares outstanding** and **days-to-cover** are a direct
+  read on bear positioning. High + rising short interest into improving fundamentals =
+  squeeze candidate *or* a credible skeptic case worth respecting — either way it's signal
+  the current stack is blind to.
+- **Access:** free, keyless. The live, NMS-covering dataset is **`ConsolidatedShortInterest`**
+  (POST `https://api.finra.org/data/group/otcMarket/name/ConsolidatedShortInterest`); the
+  latest cycle is discovered via the
+  `https://api.finra.org/partitions/group/otcMarket/name/ConsolidatedShortInterest` endpoint
+  (`settlementDate` is a partition key). The older **`EquityShortInterest`** dataset is
+  **frozen (last cycle 2022-09-15) and OTC-only — do not use it.**
+- **Wire-in:** `ShortInterest` snapshot section; the bridge derives `short_pct_outstanding`,
+  `days_to_cover`, `short_interest_rising`, `short_data_age_days` on `StockMetrics`. The `%`
+  is of **shares-outstanding** (derived `market_cap / price`), labeled `short_pct_outstanding`
+  — conservative vs. float. Feeds the `crowded_short` soft flag (advisory; never changes
+  `composite` / `passed`).
 
 #### C2. Quiver Quant — congressional trades, gov contracts, lobbying  (already scaffolded)
 - **What:** `api.quiverquant.com/beta/` — congressional & senate trading, **government
