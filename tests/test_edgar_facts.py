@@ -67,6 +67,14 @@ def test_no_financials_at_all_returns_empty_dataclass():
     assert fin == EdgarFinancials()
 
 
+def test_series_with_pd_na_returns_empty():
+    # nullable-int dtype cells (pd.NA) must degrade to [], not raise TypeError.
+    df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r",
+                        "2025-09-27 (FY)": pd.NA, "2024-09-28 (FY)": 100.0}])
+    fin = extract_financials(df, df, shares_diluted=None)
+    assert fin.revenue == []
+
+
 def test_fy_columns_detected_by_suffix_and_sorted_desc():
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r", "concept": "x", "level": 0, "abstract": False,
                         "2023-09-30 (FY)": 1.0, "2025-09-27 (FY)": 3.0, "2024-09-28 (FY)": 2.0}])

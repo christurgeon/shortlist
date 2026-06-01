@@ -52,7 +52,7 @@ def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:
         return None
     for _, r in df.iterrows():
         lbl = str(r.get("label", "")).lower()
-        if "diluted" in lbl and "per share" in lbl:
+        if "diluted" in lbl and "per share" in lbl and "undiluted" not in lbl:
             return r
     return None
 
@@ -63,7 +63,7 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
     out = []
     for _, col in fy_cols:
         v = row.get(col)
-        if v is None or (isinstance(v, float) and pd.isna(v)):
+        if v is None or pd.isna(v):
             return []  # incomplete series -> treat as absent (don't half-fill)
         out.append(float(v))
     return out
@@ -76,7 +76,14 @@ def extract_financials(
 ) -> EdgarFinancials:
     """Build annual series from the two statement DataFrames. Missing rows yield
     empty lists (never partial). EPS prefers the filed diluted-EPS row; if absent,
-    falls back to net_income/shares_diluted; if neither, stays empty."""
+    falls back to net_income/shares_diluted; if neither, stays empty.
+
+    Cash-flow-derived series (operating_cash_flow/free_cash_flow) and
+    fiscal_period_end key off the cash-flow statement's FY columns, while
+    revenue/net_income/diluted_eps key off the income statement's FY columns.
+    These can differ in length when the two statements cover different period
+    counts; callers must NOT assume fiscal_period_end aligns index-for-index
+    with the income-statement series."""
     fy = _fy_columns(cashflow_df) or _fy_columns(income_df)
     fin = EdgarFinancials(fiscal_period_end=[d for d, _ in fy])
 
