@@ -112,11 +112,16 @@ audit of whether it ran. Errors route through `env.py:redact_secrets()` before l
 
 ## 3. The daily loop (`daily.py`)
 
-0. **Resolve session + idempotency guard.** `calendar.py` resolves the last *completed* US
-   market session. If it's a non-trading day, or `state.py` already has a `run_completed`
-   marker for that session, **exit cleanly** (a retried/duplicate timer fire is a no-op, not
-   a second report). This is what makes "today's gainers" meaningful and the timer safe to
-   retry after a Telegram failure.
+0. **Resolve session + idempotency guard.** `calendar.py:last_session()` resolves "today" to
+   the last *completed* US market session — on a weekend/holiday it anchors to the prior
+   trading day (the scout does **not** abort on a non-trading day; it screens off that prior
+   session, so "today's gainers" always refers to a real session). If `state.py` already has a
+   `run_completed` marker for the resolved session, **exit cleanly** (a retried/duplicate timer
+   fire is a no-op, not a second report). Delivery semantics: a configured-but-failed Telegram
+   send still persists + writes the artifact and marks the run complete (so it is *not*
+   retried — the report is recoverable from the journal and `scout/<session>.txt`), but exits
+   non-zero so the `OnFailure` alert fires. An *unconfigured* Telegram (no token/chat) is the
+   expected stdout-only mode and exits 0.
 1. **Scan.** Each enabled `SignalSource.scan(session)` runs (free APIs only), emitting
    candidates for names that tripped its rule for that session. A source that
    errors/rate-limits returns `[]` and reports `available() == (False, reason)`.
@@ -214,9 +219,11 @@ scout:
   research_top_n: 3            # Claude briefs run on the top-N non-gated names (absolute cap)
   research_phase_budget_s: 600 # wall-clock ceiling for the whole research phase (§5)
   cooldown_days: 7             # don't re-screen a name within this window
-  min_market_cap: 2.0e+9       # reuse the screener's floor for the prefilter
+  # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap),
+  # not a scout-level prefilter — market cap isn't known until the deep screen runs.
   deep_screen_sources: [yahoo, fmp, finnhub, edgar]  # MVP; drop fmp to scale (§4.1)
-  edgar_index_daily_cap: 400   # max Form 4 docs fetched/session (honest truncation)
+  edgar_index_daily_cap: 400   # max Form 4 docs fetched/session (cap shown in coverage)
+  wikipedia_ticker_map: {}     # curated ticker -> article map; empty = booster no-ops honestly
   signals:                     # per-source enable + interest weight
     yahoo_screener:  {enabled: true,  weight: 1.0}
     edgar_form4:     {enabled: true,  weight: 1.5}   # highest-signal free source
@@ -224,6 +231,10 @@ scout:
     wikipedia:       {enabled: true,  weight: 0.5}
     quiver:          {enabled: false, weight: 1.0}   # strictly-free: off until keyed
 ```
+
+A disabled signal (e.g. `quiver` above) still surfaces in the report's coverage line as
+`✗ (disabled)` — coverage honesty (§7) covers the *configured* signal set, not just the
+ones that ran.
 
 The research kill-switch is **not** a config-only flag (a redeploy is too slow to stop a bad
 run): it reads `SCOUT_NO_RESEARCH=1` from the environment / a `scout/STOP_RESEARCH` sentinel
@@ -236,13 +247,16 @@ file at the top of step 7, so it can be flipped on the running box without a dep
 "Fully autonomous incl. research" means step 7 runs **unattended on the VPS**. The existing
 research layer already uses the **`claude` CLI in headless mode** (no API key; uses the
 user's CLI auth) with a strict lockdown (`--tools "" --strict-mcp-config --max-turns 1`).
-Running it unattended adds three requirements:
+Running it unattended adds these requirements:
 
-1. **CLI auth must be *valid*, not just present.** A logged-in `claude` CLI can still hold an
-   **expired OAuth token** — checking only that the binary exists / was once logged in catches
-   nothing and the run fails mid-research. The loop runs a cheap **auth-validity probe** (a
-   real `--max-turns 1` no-op call) before step 7; on failure it **degrades to screen-only and
-   says so in the report**, rather than dying partway through.
+1. **CLI availability gate + per-name graceful skip (shipped behavior).** Before step 7 the
+   loop gates on `research.is_available()` (the `claude` binary on PATH + `edgartools`
+   importable); if unavailable it **degrades to screen-only and says so in the report**. An
+   *expired* OAuth token isn't caught up front — instead each per-name brief fails
+   independently and is recorded as `skipped="…"`, which surfaces in the report rather than
+   crashing the run. This is robust (no mid-run death, reasons visible) but weaker than a true
+   up-front auth probe; a cheap `--max-turns 1` no-op probe before the batch is a tracked
+   enhancement (§9), deferred to avoid an extra `claude` invocation every run.
 2. **A hard cap, not a percentage.** `research_top_n` (default 3) bounds spend per day
    regardless of how many candidates surface. Absolute, not "top X%."
 3. **A wall-clock budget for the whole phase, not just per-call.** Each brief already has a
@@ -265,12 +279,15 @@ Model the scout exactly on the existing oracle daily-report pattern (see the VPS
 
 | Unit | Mirrors | Purpose |
 |---|---|---|
-| `shortlist-scout.service` | `oracle-daily-report.service` | One-shot: run `shortlist-scout`, exit. Runs as a service user, cwd = repo (so `.env` is found per the secrets house rule). |
-| `shortlist-scout.timer` | `oracle-daily-report.timer` | Fires once daily, off-hours (after US close, before the next open). |
-| `shortlist-alert-failure@…` | `oracle-alert-failure@…` | Telegram alert if the run fails — the visible kill-switch trigger. |
+| `deploy/shortlist-scout.service` | `oracle-daily-report.service` | One-shot: run `shortlist-scout`, exit. Runs as a service user, cwd = repo (so `.env` is found per the secrets house rule). |
+| `deploy/shortlist-scout.timer` | `oracle-daily-report.timer` | Fires once daily, off-hours (`22:30 UTC`, after US close; `Persistent=true` reruns a missed timer). |
 
-Unit files live in the repo (a `deploy/` dir) and are documented, not silently hand-installed
-on the box. Secrets stay in the repo-root `.env` (gitignored), loaded by `env.py`.
+The two unit files ship in `deploy/` (with `deploy/README.md` for install). The failure alert
+is **not** a third shipped unit: the `.service` carries a commented `OnFailure=` line the
+operator points at their existing `oracle-alert-failure@%n.service` (or any alert unit). Because
+a configured-but-failed Telegram send now exits non-zero (§3 step 0), that `OnFailure` hook is
+what surfaces a delivery failure. Units are documented, not silently hand-installed; secrets
+stay in the repo-root `.env` (gitignored), loaded by `env.py`.
 
 ---
 
@@ -337,8 +354,11 @@ trading-calendar gate, the `RunManifest` artifact, Telegram delivery, the system
   data gaps are annotated, not just signal gaps) is a follow-up, not an MVP blocker (§3 step 5).
 - **EDGAR XBRL keyless fundamentals** (`DATA_SOURCES.md` A1) — the prerequisite for dropping
   FMP from the deep-screen chain and truly unbinding throughput (§4.1).
-- No backtest of signal→forward-return quality yet (it belongs with the `ASSESSMENT_GAPS.md`
-  §2.1 backtest harness; signal weights ship as a defensible prior, like the scoring weights).
+- **Up-front Claude auth-validity probe** (a `--max-turns 1` no-op before the research batch)
+  to catch an expired OAuth token early — deferred in favor of the shipped per-name graceful
+  skip (§5), to avoid an extra `claude` call every run.
+- No backtest of *signal→forward-return* quality yet. The score backtest harness now exists on
+  `main` (`shortlist-backtest`, `ASSESSMENT_GAPS.md` §2.1), but it validates the *scoring*
+  weights, not the scout's *signal* weights — those still ship as a defensible prior.
 - GDELT, FINRA short-interest, and Quiver activation are post-MVP signal additions, each a
   one-file change against the `SignalSource` interface.
-```
