@@ -116,6 +116,19 @@ class Price:
         return None
 
 
+@dataclass
+class ShortInterest:
+    """FINRA consolidated short interest for one symbol, as-of a settlement cycle.
+    Raw facts only; short_pct_outstanding is DERIVED in the bridge (needs market cap)."""
+    settlement_date: Optional[str] = None        # ISO; the cycle this data is AS-OF (point-in-time)
+    short_shares: Optional[float] = None          # currentShortPositionQuantity
+    prev_short_shares: Optional[float] = None     # previousShortPositionQuantity (prior cycle)
+    avg_daily_volume: Optional[float] = None      # averageDailyVolumeQuantity
+    days_to_cover: Optional[float] = None          # daysToCoverQuantity — FINRA-supplied, NOT recomputed
+    split_flag: bool = False                       # stockSplitFlag — counts not comparable across a split
+    revised: bool = False                          # revisionFlag — figure revised after publication
+
+
 # --- Snapshot -------------------------------------------------------------
 
 # Which top-level objects must be present for a snapshot to be "assessment-ready".
@@ -136,6 +149,7 @@ class TickerSnapshot:
     analyst: Optional[Analyst] = None
     insider: Optional[Insider] = None
     price: Optional[Price] = None
+    short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -185,6 +199,8 @@ class TickerSnapshot:
         snap.as_of = d.get("as_of", snap.as_of)
         for name, klass in _DEFAULTS.items():
             snap.__dict__[name] = _build(klass, d.get(name))
+        for name, klass in _AUX_DEFAULTS.items():
+            snap.__dict__[name] = _build(klass, d.get(name))
         ins = d.get("insider")
         if snap.insider is not None and ins and ins.get("recent"):
             snap.insider.recent = [_build(InsiderTxn, t) for t in ins["recent"]]
@@ -198,6 +214,12 @@ _DEFAULTS = {
     "profile": Profile, "fundamentals": Fundamentals, "statements": Statements,
     "analyst": Analyst, "insider": Insider, "price": Price,
 }
+
+
+# Auxiliary sections live on the snapshot and are merged, but are DELIBERATELY excluded
+# from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
+# assessment-ready fundamentals). from_dict round-trips them via this map.
+_AUX_DEFAULTS = {"short_interest": ShortInterest}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:
@@ -302,6 +324,14 @@ def merge_snapshots(ticker: str, results: list[SourceResult], priority: list[str
         else:
             merger = _pick_first
         merged, contributors = merger(instances)
+        if merged is not None:
+            setattr(snap, name, merged)
+            snap.provenance[name] = contributors
+
+    # Auxiliary (non-coverage) sections: pick-first from the highest-priority source with data.
+    for name in _AUX_DEFAULTS:
+        instances = [(r.source, getattr(r.partial, name, None)) for r in ordered if r.partial]
+        merged, contributors = _pick_first(instances)
         if merged is not None:
             setattr(snap, name, merged)
             snap.provenance[name] = contributors
