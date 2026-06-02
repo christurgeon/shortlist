@@ -72,17 +72,37 @@ def value_score(m: StockMetrics, t: dict) -> Optional[float]:
     ])
 
 
-def insider_score(m: StockMetrics, t: dict) -> Optional[float]:
-    # "Not too much insider trading" = penalize net selling. A clean/buying
-    # insider picture scores high; heavy disposition drags the score down.
+def insider_score(m: StockMetrics, t: dict, config: Optional[dict] = None) -> Optional[float]:
+    # "Not too much insider trading" = penalize net selling. A clean/buying insider
+    # picture scores high; heavy disposition drags it down. With the conviction block
+    # present, fold in cluster + role-weighted buy pressure and forgive detected-10b5-1
+    # planned sells. Absent the block (or the Form-4 inputs) this is byte-identical to
+    # the pre-conviction scorer.
+    cv = ((config or {}).get("insider") or {}).get("conviction")
+    on = bool(cv) and cv.get("enabled", True)
+
     sentiment = _norm(m.insider_sentiment, *t["insider_sentiment"])
-    net = None
+
+    flow = None
     if m.insider_net_6m is not None and m.market_cap:
-        # Scale net flow by market cap so a $5M sale at a $10B co isn't punished
-        # like a $5M sale at a $1B co.
-        ratio = m.insider_net_6m / m.market_cap
-        net = _norm(ratio, *t["insider_net_ratio"])
-    return _avg([sentiment, net])
+        net_dollar = m.insider_net_6m
+        if on and getattr(m, "insider_planned_sell_value", None):
+            # add back a fraction of the detected-planned sell $ (sells made net more negative)
+            net_dollar += cv["planned_sell_discount"] * m.insider_planned_sell_value
+        flow = _norm(net_dollar / m.market_cap, *t["insider_net_ratio"])
+
+    if not on:
+        return _avg([sentiment, flow])
+
+    cluster = role_press = None
+    if getattr(m, "insider_distinct_buyers", None) is not None:
+        cluster = _norm(float(m.insider_distinct_buyers), *t["insider_cluster"])
+    if getattr(m, "insider_role_weighted_buy_value", None) is not None and m.market_cap:
+        role_press = _norm(m.insider_role_weighted_buy_value / m.market_cap,
+                           *t["insider_role_buy_ratio"])
+    conviction = _avg([cluster, role_press])
+
+    return _avg([sentiment, flow, conviction])
 
 
 def risk_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -261,7 +281,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     # name can qualify on either, rather than being averaged down by the weaker one.
     pres = [x for x in (mom, val) if x is not None]
     opp = max(pres) if pres else None
-    ins = insider_score(m, t)  # sector-neutral; never masked
+    ins = insider_score(m, t, config)  # sector-neutral; never masked
 
     # A component is INAPPLICABLE iff its sub-score abstained at subscore scope for
     # the 'inapplicable' reason. opportunity is applicable if EITHER momentum or
