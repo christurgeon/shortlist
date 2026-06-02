@@ -75,3 +75,22 @@ def test_edgar_is_registered_and_skips_gracefully_without_identity(monkeypatch, 
 def test_unknown_source_still_raises():
     with pytest.raises(ValueError):
         build_sources(["nope"])
+
+
+def test_conviction_fields_default_none_and_dont_trip_wholesale():
+    from shortlist.data.models import Insider
+    empty = Insider()
+    assert empty.distinct_buyers is None
+    assert empty.role_weighted_buy_value is None
+    assert empty.planned_sell_value is None
+
+
+def test_conviction_fields_travel_wholesale_with_txn_group():
+    from shortlist.data.models import Insider, _merge_insider
+    edgar = Insider(net_value_6m=1e6, buy_count=3, sell_count=0,
+                    distinct_buyers=3, role_weighted_buy_value=2e6, planned_sell_value=0.0)
+    finnhub = Insider(sentiment_mspr=0.4)
+    merged, contribs = _merge_insider([("edgar", edgar), ("finnhub", finnhub)])
+    assert merged.distinct_buyers == 3
+    assert merged.role_weighted_buy_value == 2e6
+    assert merged.sentiment_mspr == 0.4
