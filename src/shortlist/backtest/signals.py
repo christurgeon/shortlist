@@ -84,7 +84,7 @@ class SnapshotSignalSource:
         snap = TickerSnapshot.from_dict(raw)
         card = scoring.score(snapshot_to_metrics(snap), self.config)
         sig: dict[str, float] = {"composite": card.composite}
-        for axis in ("quality", "moat", "growth", "opportunity", "insider"):
+        for axis in ("quality", "moat", "growth", "value", "momentum", "insider"):
             v = getattr(card, axis, None)
             if v is not None:
                 sig[axis] = v
