@@ -17,6 +17,7 @@ class Profile:
     name: Optional[str] = None
     sector: Optional[str] = None
     industry: Optional[str] = None
+    sic: Optional[str] = None
     exchange: Optional[str] = None
     currency: Optional[str] = None
     country: Optional[str] = None

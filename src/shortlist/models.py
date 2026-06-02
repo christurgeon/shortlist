@@ -15,6 +15,7 @@ class StockMetrics:
     ticker: str
     name: Optional[str] = None
     sector: Optional[str] = None
+    sic: Optional[str] = None   # SEC SIC code (EDGAR-sourced); drives the sector bucket
     price: Optional[float] = None
     market_cap: Optional[float] = None
 
