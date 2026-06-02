@@ -123,6 +123,16 @@ the scorer redistributes weight. Harness-engine cards carry no `coverage`
 diagnostic; the snapshot's own `coverage()`/`missing()` remain available via
 `shortlist-harness`.
 
+**Sector-aware abstention is engine-symmetric.** The SIC that drives sector
+detection comes **only** from EDGAR on both stacks: the harness `EdgarSource` emits
+a partial `Profile(sic=…)` (merged field-by-field, so SIC survives even when FMP/
+Finnhub gate the profile) and the bridge copies it to `m.sic`. Because both engines
+feed one `score()` and read `m.sic` (never the free-text `Profile.sector`), a ticker
+resolves to the **same** bucket — including `unknown` — on either engine. The
+harness pays one extra lightweight SEC request per ticker for the SIC lookup
+(`EdgarSource` has no reusable `Company` handle), bounded by the EDGAR concurrency
+semaphore. See `CLAUDE.md` → "Sector-aware applicability & abstention".
+
 ## Short interest and soft flags
 
 `FinraSource` (keyless) leads no merge but fills the `ShortInterest` snapshot
