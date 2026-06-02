@@ -415,6 +415,11 @@ def test_thin_noop_when_ranking_absent():
     assert score(m, CONFIG).thin is False
 
 
+def test_shipped_config_has_ranking_thin_below():
+    cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+    assert cfg["ranking"]["thin_below"] == 0.5
+
+
 def test_csv_has_confidence_column_after_scored(tmp_path):
     import csv
     from shortlist.screen import _write_csv

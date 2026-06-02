@@ -165,3 +165,8 @@ scout:
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}
     quiver:         {enabled: false, weight: 1.0}
+
+# Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
+# sort beyond the existing confidence tiebreak, nor `passed`/`composite`.
+ranking:
+  thin_below: 0.5   # mark a card "thin" when confidence < this. Omit/null to disable.
