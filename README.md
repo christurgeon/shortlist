@@ -1,11 +1,23 @@
 # shortlist
 
-A quantitative pre-screen that automates Phase 2–3 of the `investment-research`
-skill: pull fundamentals, score business quality + moat, flag momentum **or**
-deep undervaluation, and penalize insider selling — then hand the ranked
-shortlist to the skill's filing-level deep dive.
+> **A quantitative stock pre-screen that does the mechanical work — so your judgment is spent on fewer, better names.**
 
-It does the mechanical part so the judgment part is spent on fewer, better names.
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
+[![Built with uv](https://img.shields.io/badge/built%20with-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
+
+Pull fundamentals from FMP / Finnhub / SEC EDGAR / Yahoo, score seven axes —
+**quality, moat, growth, momentum *or* value, insider activity, and risk** — then
+rank a shortlist for a human deep dive. It automates Phase 2–3 of the
+`investment-research` skill: the mechanical part, so the judgment part is spent on
+fewer, better names.
+
+- **Multi-source by design** — each API contributes only the fields it's genuinely best at, merged by priority. Stacking beats any single feed.
+- **Opportunity = max(momentum, value)** — a name qualifies on *either* axis instead of being averaged down.
+- **Sector-aware** — banks / insurers / REITs abstain the legs that don't apply to them rather than scoring a misleading number.
+- **Honest about gaps** — per-provider coverage diagnostics explain every null instead of hiding it.
+- **Free-tier friendly** — keyless Yahoo momentum/risk, free SEC EDGAR insider + financials, and an on-disk cache so re-runs cost nothing.
 
 ## How it works
 
@@ -22,7 +34,7 @@ flowchart TD
     C --> E["merge() → StockMetrics\npriority-fill across providers"]
     D --> E
 
-    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Opportunity · Insider\nGates: FCF · leverage · insider-sell"]
+    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Opportunity · Insider · Risk\nGates: FCF · leverage · insider-sell"]
 
     F --> G[Ranked shortlist]
 
@@ -44,7 +56,7 @@ flowchart LR
         SP3["EDGAR Provider"]
         SP4["Mock Provider"]
         MG["merge.py\npriority-fill → StockMetrics"]
-        SC["scoring.py\nQuality · Moat · Growth · Opportunity · Insider\nopportunity = max(momentum, value)"]
+        SC["scoring.py\nQuality · Moat · Growth · Opportunity · Insider · Risk\nopportunity = max(momentum, value)"]
         CARD["ScoreCard\n+ Gates"]
 
         SP1 --> MG
@@ -152,7 +164,7 @@ they're the highest-leverage next additions, in that order.
 
 ## How scoring works (`scoring.py`)
 
-Six sub-scores, each 0–100, every metric normalized over a configurable
+Seven sub-scores, each 0–100, every metric normalized over a configurable
 `[low, high]` band in `config.yaml`:
 
 - **Quality** — ROE, net margin, interest coverage, (inverted) leverage
@@ -161,13 +173,16 @@ Six sub-scores, each 0–100, every metric normalized over a configurable
 - **Momentum** — price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend
 - **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted). On `--engine harness`, FCF yield and P/E-vs-history are recoverable from free EDGAR + Yahoo data, so only analyst-target upside and PEG require FMP.
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
+- **Risk** — realized volatility + max drawdown (both inverted: safer scores higher). A composite-only tilt — sector-neutral and never masked, but excluded from `confidence`. An unfitted prior (trailing vol/drawdown can be anti-predictive at turning points) — backtest before trusting (`docs/ASSESSMENT_GAPS.md`).
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis
 rather than being averaged down. Composite is a weighted blend (default
-quality 0.20 / moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15;
-these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`). **Gates** are hard
-filters (negative FCF, sub-threshold market cap, over-leverage, heavy insider
-selling) that flag a name regardless of score.
+quality 0.18 / moat 0.18 / growth 0.135 / opportunity 0.27 / insider 0.135 /
+risk 0.10; these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`).
+**Gates** are hard filters (negative FCF, sub-threshold market cap, over-leverage,
+heavy insider selling) that flag a name regardless of score. Soft **flags** (e.g.
+`crowded_short`, under `--engine harness` with the keyless FINRA short-interest
+source) are advisory — they annotate a name but never change the composite.
 
 Tune everything in `config.yaml` — no code changes needed to re-weight.
 
@@ -241,10 +256,20 @@ For systemd deployment (timer fires at 22:30 UTC daily), see [`deploy/README.md`
 
 ## Limitations
 
-- Moat/quality proxies are equity-centric and misfire on banks/insurers
-  (SCHW shows blanks for gross margin / ROIC). Add sector-aware thresholds before
-  trusting financials cross-sector.
+- Moat/quality proxies are equity-centric. Banks / insurers / REITs (detected by
+  SEC SIC code) now **abstain** the structurally-undefined legs rather than score a
+  misleading number — but sector-specific *recalibration* of the surviving legs is
+  still future work, so treat cross-sector composites as directional.
+- The default weights — and the new **risk** axis especially — are a hand-set prior,
+  not a fitted result. Only the momentum signal is forward-return validated today;
+  see `docs/ASSESSMENT_GAPS.md`.
 - `--demo` data in `providers/mock.py` is **illustrative**, not verified — prices
   and targets are ~accurate for late May 2026; margins/ROIC/insider are
   placeholders. Run a live provider for real figures.
 - This is a pre-screen, not advice. It points the deep dive; it doesn't replace it.
+
+## License
+
+[MIT](LICENSE) © Chris Turgeon. This is a research tool, **not financial advice** —
+it surfaces candidates for a human deep dive and makes no recommendation to buy or
+sell any security.

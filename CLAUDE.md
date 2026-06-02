@@ -8,8 +8,8 @@ Guidance for working in this repo. See `README.md` (screener) and `HARNESS.md`
 ## What this is
 
 A quantitative stock pre-screen: pull fundamentals, score quality / moat /
-growth / opportunity (momentum **or** value) / insider, rank a shortlist for a
-human deep dive. Config-driven via `config.yaml` (thresholds, weights, gates).
+growth / opportunity (momentum **or** value) / insider / risk, rank a shortlist
+for a human deep dive. Config-driven via `config.yaml` (thresholds, weights, gates).
 
 ## Two layers, two separate registries
 
@@ -24,7 +24,7 @@ There are **two parallel stacks** that don't share fetching code:
 Each has its **own provider/source registry**. `fmp`, `finnhub`, and `edgar` are
 wired in **both** (`mock` too in the harness; the keyless `yahoo` OHLCV source —
 price/momentum/risk we compute ourselves — is **harness-only**, and leads the
-harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar]`). The
+harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar, finra]`). The
 screener can score off the harness via `--engine harness` (`bridge.py:snapshot_to_metrics`
 adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes). The shared Form 4 aggregation lives
 in `providers/_form4.py` — a dependency-free leaf module used by both the screener
@@ -71,7 +71,7 @@ uv run shortlist --demo     # offline, no keys
 `screen.run()` drives the screener layer:
 1. `Provider.fetch(ticker)` → `StockMetrics` (flat dataclass; unavailable fields stay `None`)
 2. `merge.merge(per_provider_list)` → single `StockMetrics` filled by priority
-3. `scoring.score(metrics, config)` → `ScoreCard` (six 0–100 sub-scores + composite + gates)
+3. `scoring.score(metrics, config)` → `ScoreCard` (seven 0–100 sub-scores + composite + gates)
 
 A `coverage` diagnostic (`coverage.py`) annotates each `ScoreCard`: per-provider
 fetch status (`ok`/`gated_402`/`empty`/`error`, the latter derived from the fetch
@@ -81,10 +81,19 @@ provider had trouble) and as a stderr `Coverage notes` summary — so a null `va
 reads as "FMP gated this symbol," not an unexplained gap.
 
 `opportunity = max(momentum, value)` so a name qualifies on **either** axis rather
-than being averaged down. Composite is a weighted blend (default quality 0.20 /
-moat 0.20 / growth 0.15 / opportunity 0.30 / insider 0.15). **Gates** are hard filters
-(negative FCF, sub-threshold market cap, over-leverage, heavy insider selling)
-that flag a name regardless of score.
+than being averaged down. Composite is a weighted blend (default quality 0.18 /
+moat 0.18 / growth 0.135 / opportunity 0.27 / insider 0.135 / risk 0.10). **Gates**
+are hard filters (negative FCF, sub-threshold market cap, over-leverage, heavy
+insider selling) that flag a name regardless of score.
+
+The **risk** sub-score (7th axis: realized volatility + max drawdown, both
+inverted so safer scores higher) is a **composite-only tilt** — sector-neutral
+(never masked) but deliberately **excluded from `confidence`/`scored`** (`scoring.py`
+keeps it out of `components`). The other five weights are rescaled ×0.9 in config so
+that with risk *absent* the scalar cancels and the composite equals the pre-risk
+scorer (back-compat guarantee, regression-tested). The risk weight is an **unfitted
+prior** — trailing vol/drawdown peak at the bottom and can be anti-predictive at
+turning points; backtest its standalone rank IC before trusting it (`docs/ASSESSMENT_GAPS.md`).
 
 Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
 `passed`/`composite` (distinct from hard `gates`). Today's only flag is
