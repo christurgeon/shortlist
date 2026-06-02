@@ -8,12 +8,12 @@
 [![Built with uv](https://img.shields.io/badge/built%20with-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
 
 Pull fundamentals from FMP / Finnhub / SEC EDGAR / Yahoo, score seven axes —
-**quality, moat, growth, momentum *or* value, insider activity, and risk** — then
+**quality, moat, growth, value, momentum, insider activity, and risk** — then
 rank a shortlist for a human deep dive. It does the mechanical part of stock
 research, so your judgment is spent on fewer, better names.
 
 - **Multi-source by design** — each API contributes only the fields it's genuinely best at, merged by priority. Stacking beats any single feed.
-- **Opportunity = max(momentum, value)** — a name qualifies on *either* axis instead of being averaged down.
+- **Value-tilted** — value and momentum are weighted *independently* (value pulls ~3× momentum), so undervaluation drives the ranking; `opportunity = max(momentum, value)` is kept for display only.
 - **Sector-aware** — banks / insurers / REITs abstain the legs that don't apply to them rather than scoring a misleading number.
 - **Honest about gaps** — per-provider coverage diagnostics explain every null instead of hiding it.
 - **Free-tier friendly** — keyless Yahoo momentum/risk, free SEC EDGAR insider + financials, and an on-disk cache so re-runs cost nothing.
@@ -33,7 +33,7 @@ flowchart TD
     C --> E["merge() → StockMetrics\npriority-fill across providers"]
     D --> E
 
-    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Opportunity · Insider · Risk\nGates: FCF · leverage · insider-sell"]
+    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nGates: FCF · leverage · insider-sell"]
 
     F --> G[Ranked shortlist]
 
@@ -55,7 +55,7 @@ flowchart LR
         SP3["EDGAR Provider"]
         SP4["Mock Provider"]
         MG["merge.py\npriority-fill → StockMetrics"]
-        SC["scoring.py\nQuality · Moat · Growth · Opportunity · Insider · Risk\nopportunity = max(momentum, value)"]
+        SC["scoring.py\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nvalue + momentum weighted independently"]
         CARD["ScoreCard\n+ Gates"]
 
         SP1 --> MG
@@ -175,14 +175,16 @@ Seven sub-scores, each 0–100, every metric normalized over a configurable
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
 - **Risk** — realized volatility + max drawdown (both inverted: safer scores higher). A composite-only tilt — sector-neutral and never masked, but excluded from `confidence`. An unfitted prior (trailing vol/drawdown can be anti-predictive at turning points) — backtest before trusting (`docs/ASSESSMENT_GAPS.md`).
 
-`opportunity = max(momentum, value)` so a name qualifies on **either** axis
-rather than being averaged down. Composite is a weighted blend (default
-quality 0.18 / moat 0.18 / growth 0.135 / opportunity 0.27 / insider 0.135 /
-risk 0.10; these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`).
+**Value and momentum are weighted independently** (value-tilt: default value 0.22 /
+momentum 0.08 — value pulls ~3× momentum); `opportunity = max(momentum, value)` is
+retained for display only and does not feed the composite. Composite is a weighted
+blend (default quality 0.18 / moat 0.18 / growth 0.135 / value 0.22 / momentum 0.08 /
+insider 0.135 / risk 0.10; these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`).
 **Gates** are hard filters (negative FCF, sub-threshold market cap, over-leverage,
 heavy insider selling) that flag a name regardless of score. Soft **flags** (e.g.
 `crowded_short`, from the default harness engine's keyless FINRA short-interest
-source) are advisory — they annotate a name but never change the composite.
+source; `value_trap`, when a cheap name has weak quality/growth) are advisory — they
+annotate a name but never change the composite.
 
 Tune everything in `config.yaml` — no code changes needed to re-weight.
 
@@ -219,7 +221,7 @@ the `claude` CLI on PATH (uses your existing CLI auth — no API key) and the
 
 ## Reading the output
 
-The composite ranks **business quality + opportunity**. It deliberately does
+The composite ranks **business quality + value** (with momentum a lighter tilt). It deliberately does
 *not* know your existing portfolio — so a name can top the screen on merit yet
 still be a poor *addition* if it doubles an exposure you already hold. Use the
 ranking to surface candidates; use your own allocation judgment to decide what

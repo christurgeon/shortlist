@@ -97,8 +97,9 @@ Read the current weights and gate thresholds from `config.yaml` before narrating
 State the top ticker(s) by composite score and identify the leading sub-score(s).
 
 ### Opportunity axis
-`opportunity = max(momentum, value)` — always state which one won.  
-Example: "GOOGL's opportunity score of 78 was driven by momentum (78) rather than value (65)."
+`value` and `momentum` are weighted independently in the composite (value-tilted,
+~3:1); `opportunity = max(momentum, value)` is reported but is **display-only**.  
+Example: "GOOGL ranks on value (65) more than momentum (78); the composite weights value above momentum."
 
 ### Growth
 `growth` is a separate sub-score (revenue/FCF/EPS CAGR + revenue-growth persistence) — it measures fundamental compounding, distinct from price momentum and from PEG. Mention it when it materially helps or drags the composite.
@@ -128,7 +129,7 @@ If a ticker had `402` responses from FMP, note it — that symbol is gated on th
 **FMP `402`s = symbol gating, not a bug.** When you see `402` warnings on stderr for a symbol (and `coverage.providers.fmp == "gated_402"`), don't hunt for a code fault. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. What stays `null` depends on the engine:
 
 - **On the default harness engine:** `fcf_yield` and `pe_vs_history` are rebuilt from free EDGAR 10-K financials + Yahoo closes, and `growth`/`risk` come from EDGAR/Yahoo too — so a gated symbol usually still scores `value`, `growth`, and `risk`. Only `upside_to_target` and PEG stay `null` (both FMP-only). This is the normal, expected output for a gated small/mid-cap — narrate it as recovered coverage, not a gap. (If `growth` is also `null`, the symbol likely has no XBRL 10-K financials — e.g. a recent IPO or Form 20-F filer — so that leg abstained and its weight redistributed; `confidence` drops below 1.0.)
-- **On the lean `--engine screener` path:** all four value legs live on FMP, so a gated symbol's `value` (and `upside_to_target`) come back `null` and `opportunity` collapses to `momentum`. Two fixes: (a) just use the default harness engine; (b) FMP's paid Starter tier (~$14–20/mo) lifts the gating entirely.
+- **On the lean `--engine screener` path:** all four value legs live on FMP, so a gated symbol's `value` (and `upside_to_target`) come back `null` and the (display-only) `opportunity` column then equals `momentum`. Two fixes: (a) just use the default harness engine; (b) FMP's paid Starter tier (~$14–20/mo) lifts the gating entirely.
 
 Either way, `market_cap` and the `insider` sub-score still populate because Finnhub backfills the market cap — so a non-null `insider` alongside `fmp: gated_402` is the signature of FMP gating, not missing data.
 
@@ -150,10 +151,11 @@ Either way the data is missing because of throttling, **not** per-symbol gating,
 | Quality | 20% | ROE, net margin, interest coverage, leverage (inverted) |
 | Moat | 20% | Gross margin level + 5-year stability + persistent ROIC |
 | Growth | 15% | Revenue / FCF / EPS CAGR + revenue-growth persistence |
-| Opportunity | 30% | `max(momentum, value)` — qualifies on either axis |
+| Value | 22% | upside to analyst target + FCF yield + P/E vs own 5y median + PEG |
+| Momentum | 8% | price vs 200DMA + 6m relative strength + EPS revision |
 | Insider | 15% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
 
-`momentum` and `value` are reported in the output but are not weighted directly — only their `max` (`opportunity`) is. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
+`value` and `momentum` are now weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
 
 ---
 

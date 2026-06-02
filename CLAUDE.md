@@ -83,27 +83,40 @@ interpretive note. It surfaces in `--json` (a `coverage` block, emitted only whe
 provider had trouble) and as a stderr `Coverage notes` summary — so a null `value`
 reads as "FMP gated this symbol," not an unexplained gap.
 
-`opportunity = max(momentum, value)` so a name qualifies on **either** axis rather
-than being averaged down. Composite is a weighted blend (default quality 0.18 /
-moat 0.18 / growth 0.135 / opportunity 0.27 / insider 0.135 / risk 0.10). **Gates**
-are hard filters (negative FCF, sub-threshold market cap, over-leverage, heavy
-insider selling) that flag a name regardless of score.
+**Value and momentum are weighted independently** (value-tilt: default value 0.22 /
+momentum 0.08 — value pulls ~3× momentum). `ScoreCard.opportunity = max(momentum,
+value)` is retained for display only and does **not** feed the composite. Composite
+is a weighted blend (default quality 0.18 / moat 0.18 / growth 0.135 / value 0.22 /
+momentum 0.08 / insider 0.135 / risk 0.10). **Gates** are hard filters (negative
+FCF, sub-threshold market cap, over-leverage, heavy insider selling) that flag a
+name regardless of score.
 
 The **risk** sub-score (7th axis: realized volatility + max drawdown, both
 inverted so safer scores higher) is a **composite-only tilt** — sector-neutral
 (never masked) but deliberately **excluded from `confidence`/`scored`** (`scoring.py`
-keeps it out of `components`). The other five weights are rescaled ×0.9 in config so
-that with risk *absent* the scalar cancels and the composite equals the pre-risk
-scorer (back-compat guarantee, regression-tested). The risk weight is an **unfitted
-prior** — trailing vol/drawdown peak at the bottom and can be anti-predictive at
-turning points; backtest its standalone rank IC before trusting it (`docs/ASSESSMENT_GAPS.md`).
+keeps it out of `components`). (The risk axis once relied on a ×0.9 rescale of the
+other weights to stay composite-invariant when absent; the value/momentum split
+**retired that invariant** — the composite is a normalized weighted average, so the
+absolute weight sum is cosmetic and only ratios matter.) The risk weight is an
+**unfitted prior** — trailing vol/drawdown peak at the bottom and can be
+anti-predictive at turning points; backtest its standalone rank IC before trusting
+it (`docs/ASSESSMENT_GAPS.md`).
+
+The value-tilt also **lowers the `scored` floor** (`validity.min_scored_weight`
+0.34→0.25, `ranking.thin_below` 0.5→0.40): splitting the never-gated `opportunity`
+into a frequently-FMP-gated `value` + a small `momentum` shrinks a gated name's
+always-present confidence, and without the lower floor value-tilted names —
+especially financials, where `moat` is masked — would fall below `scored` and drop
+out of the ranking. See `docs/superpowers/specs/2026-06-02-value-tilt-scoring-design.md`.
 
 Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
 `passed`/`composite` (distinct from hard `gates`). Flags include
 `crowded_short = short_pct_outstanding ≥ t ∧ days_to_cover ≥ t ∧ rising ∧ fresh`
-(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`), and the
+(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`), the
 conviction advisories `insider_cluster_buy` / `planned_sale` (inert unless `insider.conviction`
-is enabled).
+is enabled), and `value_trap` — fires when a name looks cheap (high `value` sub-score)
+while quality OR growth is weak (`config.yaml` → `flags.value_trap`; a level-based
+prior, never affects `passed`/`composite`/`scored`).
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell

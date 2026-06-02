@@ -86,7 +86,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         _print_plain(cards)
         return
 
-    table = Table(title="Moat + opportunity screen", title_style="bold")
+    table = Table(title="Moat + value screen", title_style="bold")
     _cols = [
         # (header, justify, min_width)
         ("Rank",    "right", None),
