@@ -4,7 +4,7 @@ import collections
 from datetime import date
 
 from shortlist.providers._form4 import (
-    _frame_rows, aggregate_form4, summarize,
+    _frame_rows, aggregate_form4, summarize, classify_role, is_10b5_1,
 )
 
 # rows are (shares, price, code, date, name, role)
@@ -114,3 +114,26 @@ def test_aggregate_skips_unparseable_filings():
     bad = _FakeFiling(date(2026, 5, 1), raises=True)
     s = aggregate_form4([good, bad], cutoff)   # bad is skipped, not fatal
     assert s.sell_count == 1 and s.net_value == -1000.0
+
+
+# --- classify_role + is_10b5_1 leaf helpers ---------------------------------
+
+def test_classify_role_buckets():
+    assert classify_role("Chief Executive Officer") == "c_suite"
+    assert classify_role("CEO") == "c_suite"
+    assert classify_role("EVP and CFO") == "c_suite"
+    assert classify_role("Chief Financial Officer") == "c_suite"
+    assert classify_role("President") == "officer"
+    assert classify_role("EVP, Operations") == "officer"
+    assert classify_role("director") == "director"
+    assert classify_role("10% owner") == "ten_pct"
+    assert classify_role(None) == "unknown"
+    assert classify_role("") == "unknown"
+
+
+def test_is_10b5_1_detects_footnote_text():
+    assert is_10b5_1("Sale under a Rule 10b5-1 trading plan adopted 2025-01-01") is True
+    assert is_10b5_1("Pursuant to a 10b5-1 plan") is True
+    assert is_10b5_1("Gift to family trust") is False
+    assert is_10b5_1("") is False
+    assert is_10b5_1(None) is False

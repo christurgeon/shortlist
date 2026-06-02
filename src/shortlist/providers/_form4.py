@@ -26,6 +26,36 @@ def classify_code(code: str) -> str:
     return "other"
 
 
+# Role classification: ordered substring match. c_suite (CEO/CFO) checked before the
+# generic officer bucket; a person who is officer AND director carries their officer
+# title (so resolves to officer). Inputs are the role strings _owner_role builds.
+def classify_role(role: Optional[str]) -> str:
+    r = (role or "").strip().lower()
+    if not r:
+        return "unknown"
+    if ("cfo" in r or "chief financial" in r or "principal financial" in r
+            or "ceo" in r or "chief executive" in r):
+        return "c_suite"
+    if "10%" in r or "ten percent" in r:
+        return "ten_pct"
+    if "director" in r:
+        return "director"
+    return "officer"
+
+
+# 10b5-1 detection: footnote-text heuristic only (edgartools parses no structured
+# checkbox). HIGH PRECISION, LOW RECALL — detected => almost certainly a planned trade;
+# absence proves nothing. Reimplemented here to keep this leaf dependency-free.
+_10B5_1_PATTERNS = ("10b5-1", "10b-5-1", "rule 10b5", "rule 10b-5", "10b5 plan", "10b-5 plan")
+
+
+def is_10b5_1(footnotes_text: Optional[str]) -> bool:
+    if not footnotes_text or not footnotes_text.strip():
+        return False
+    text = footnotes_text.lower()
+    return any(p in text for p in _10B5_1_PATTERNS)
+
+
 @dataclass
 class Txn:
     """One open-market insider transaction (neutral intermediate)."""
