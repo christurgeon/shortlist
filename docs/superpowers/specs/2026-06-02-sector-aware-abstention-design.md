@@ -69,18 +69,28 @@ drops), and the sub-score / composite / gates reflect that honestly.
 
 ## 3. Honest expectation (what SCHW actually becomes)
 
-This is **not** a dramatic "NOT RANKED" for SCHW. After masking the misleading
-legs (FCF-yield, debt/equity, interest-coverage, gross-margin) and dropping the
-`over_leveraged` false-positive gate, SCHW **still retains genuinely-applicable,
-sector-neutral signal**: momentum, insider, growth, and ROE/net-margin quality.
+This is **not** a dramatic "NOT RANKED" for SCHW. After masking the structurally
+undefined/invalid legs and dropping the `over_leveraged` false-positive gate, SCHW
+**still retains genuinely-applicable, sector-neutral signal**: momentum, insider,
+growth, and ROE/net-margin quality.
 
-Expected v1 outcome for SCHW: **scored, reduced-confidence, `over_leveraged`
-removed, moat (and likely value) abstained** — a *better and more honest* number,
-with the false-positive gate gone. Full `not_scored` is the **backstop** for names
-where too little valid signal survives (a financial that is also data-starved).
+Expected v1 outcome for SCHW: **`over_leveraged` removed; `moat` abstained**
+(all three moat legs — gross_margin, gross_margin_stability, roic — are masked for
+financials, so moat has zero applicable legs → it genuinely abstains, matching the
+intent); **`value` abstained** (fcf_yield masked, and PEG/upside need FMP which
+gates SCHW); **`quality` scored on roe+net_margin**; **opportunity = momentum**
+(value gone); insider/growth scored where data present. Net: a *better and more
+honest* composite with the false-positive gate gone, moat correctly silent.
 
-The masking + a `confidence` signal do most of the "never mislead" work; the
-validity floor is the safety net, expected to fire rarely.
+Whether the composite is `scored` or `not_scored` depends on the **validity floor
+applied over APPLICABLE sub-scores** (§4.3). SCHW's applicable sub-scores
+(quality, growth, opportunity, insider — moat excluded as inapplicable) are mostly
+present → expected **`scored`, with `confidence` reflecting data completeness over
+applicable components**. Full `not_scored` is the **backstop** for a financial that
+is *also* data-starved.
+
+The masking + the `confidence`/`abstentions` signals do most of the "never mislead"
+work; the validity floor is the safety net, expected to fire rarely.
 
 ## 4. Architecture
 
@@ -111,21 +121,41 @@ def gate_applicable(bucket: str, gate: str, config: dict) -> bool
 
 ### 4.2 SIC acquisition (keyless, symmetric, ~zero extra cost)
 
-Add `sic: Optional[str] = None` to `StockMetrics` (and carry it on the harness
-`Profile`/snapshot so the bridge can copy it).
+Add `sic: Optional[str] = None` to `StockMetrics`. A **shared, exception-swallowing
+extractor** (in `sectors.py`) is used by both call sites so a SIC lookup can never
+regress an otherwise-successful fetch and both stacks normalize identically:
 
-- **Screener** `EdgarProvider.fetch` already builds `Company(ticker)` — set
-  `m.sic = str(company.sic)` from the metadata edgartools has already loaded. No
-  new HTTP request.
-- **Harness** `EdgarSource` builds `Company` too; surface SIC onto the profile so
-  `bridge.snapshot_to_metrics` copies `m.sic`.
-- EDGAR is in both default chains. If EDGAR is dropped from a run, `m.sic` is
-  `None` on **both** stacks → `unknown` → symmetric. Foreign issuers (20-F) with
-  no SIC → `unknown` symmetrically.
+```python
+def extract_sic(company) -> Optional[str]:
+    """Best-effort SIC off an edgartools Company; returns a 4-digit string or None.
+    Swallows all exceptions; coerces missing/empty/'None'/non-numeric -> None."""
+```
 
-`resolve_bucket` is called inside `score()` from `m.sic` (no network in `score`),
-so screener and harness apply identical logic. (Optionally also stash the resolved
-bucket on the card for output — see §7.)
+- **Screener** `EdgarProvider.fetch` already builds `Company(ticker)` (edgar.py:39)
+  — set `m.sic = extract_sic(company)` from metadata edgartools has already loaded
+  (no new HTTP request) and **add `sic` to the `_tag(...)` call** (edgar.py:46)
+  so merge's `contributed`/coverage audit sees it. The lookup must not raise out of
+  `fetch` — `extract_sic` guarantees this (the screener `EdgarProvider.fetch`, unlike
+  the harness, has no surrounding try/except).
+- **Harness** `EdgarSource` emits **no `Profile` today** (only FMP sources.py:93 and
+  Finnhub sources.py:229 do; `_FLAT` merges profile field-by-field). So EdgarSource
+  must emit a **partial `Profile(sic=…)`** (all other fields `None`). `_merge_flat`
+  picks each field from the highest-priority source that has it non-`None`, so SIC
+  flows from EdgarSource's partial profile **regardless of whether FMP/Finnhub
+  supplied a profile** (critical: FMP-gated financials like SCHW are exactly where
+  FMP's profile is absent). `bridge.snapshot_to_metrics` then copies
+  `m.sic = p.sic`. Add `sic` to `Profile` (data/models.py). **Do NOT** make SIC
+  depend on FMP/Finnhub Profile presence.
+- **Two-stack symmetry & contingency:** `resolve_bucket` is called inside `score()`
+  from `m.sic` (no network in `score`), so both engines apply identical logic. SIC
+  is sourced **only** from EDGAR on both stacks — never from the free-text
+  `Profile.sector` (which already differs between stacks: screener mock "Financials"
+  vs harness mock "Financial Services"). Sector-awareness is therefore **contingent
+  on EDGAR being in the run's chain and `SEC_IDENTITY` being set**; because both
+  stacks share one process/env/config, they are either both EDGAR-enabled (→ same
+  bucket) or both not (→ `m.sic = None` → `unknown` on both). This contingency is
+  documented and covered by an explicit "EDGAR absent → both `unknown`" parity test.
+  Foreign issuers (20-F) with no SIC → `unknown` symmetrically.
 
 ### 4.3 Scoring changes (`src/shortlist/scoring.py`)
 
@@ -149,24 +179,52 @@ def _score_subscore(bucket, legs, t, config) -> tuple[Optional[float], list[Abst
     return mean(_norm(lg.value, *t[lg.tkey]) for lg in present), [<per-leg reasons>]
 ```
 
-This replaces `_avg`'s silent-drop with an explicit partition. `unknown` bucket =
-no legs inapplicable → behavior reduces to **today's** for present legs, *plus*
-the new `min_valid_leg_fraction` floor (so even unknown-sector names stop letting
-"1 survivor of 4" masquerade). The `min_valid_leg_fraction` default is chosen so
-the unknown-sector path is a no-op for fully-populated names (see §6 acceptance).
+This replaces `_avg`'s silent-drop with an explicit partition.
+
+**The sub-score floor is BUCKET-GATED — this is the key fix for the regression
+risk the reviewer flagged.** A naive `min_valid_leg_fraction: 0.5` applied to the
+`unknown` bucket would *newly abstain* partially-covered operating companies that
+score today — because the harness path legitimately runs some sub-scores at 1–2 of
+N legs (e.g. `eps_revision` is an accepted permanent `None` on the harness bridge,
+so momentum is ≤2/3; FMP-gated value runs on the 2 recovered legs). Abstaining
+those would be a silent screener regression across the entire free-tier universe.
+
+Therefore:
+
+- **`unknown` bucket → "any present applicable leg scores"** (fraction floor
+  effectively `> 0`). This is **bit-identical to today** for any present leg — the
+  no-op guarantee. No new abstention for operating companies.
+- **Known bucket (financials/reit/insurer) → apply `min_valid_leg_fraction`** over
+  the *applicable* legs. This new floor only ever touches the masked sectors.
+- **Single-applicable-leg sub-scores:** when a sub-score has exactly one applicable
+  leg, the fraction rule is degenerate (1/1 always scores). For known buckets, an
+  absolute `min_present_legs` is **not** what makes moat abstain — instead v1
+  *masks all three moat legs* for financials/insurers (incl. `roic`), so moat has
+  **zero** applicable legs → abstains structurally (no floor needed). The masked
+  leg set is the lever, chosen so each sub-score's surviving legs are genuinely
+  defined (see §5).
 
 **Composite validity floor.** After computing the five components and the existing
-weight-redistribution, define:
+weight-redistribution:
 
 ```python
-confidence = (sum of weights of present sub-scores) / (sum of weights of
-             sub-scores that are APPLICABLE for this bucket)
+# applicable component = a composite component with >=1 applicable leg for the bucket.
+# opportunity = max(momentum, value); it is APPLICABLE if EITHER momentum or value
+#   has an applicable leg (momentum legs are never masked, so opportunity is always
+#   applicable), and PRESENT if either constituent produced a number.
+confidence = (sum of weights of PRESENT applicable components)
+           / (sum of weights of APPLICABLE components)
 scored = confidence >= config["validity"]["min_scored_weight"]
 ```
 
-Denominator uses *applicable* sub-score weight, not all weight, so a sector that
-legitimately has fewer applicable sub-scores is not unfairly penalised. `composite`
-is still computed from present components (unchanged math).
+Denominator uses *applicable* component weight, not all weight, so a sector that
+legitimately has fewer applicable components (financials: moat excluded) is not
+unfairly penalised — `confidence` measures **data completeness over what is
+measurable**, not breadth. Breadth (how many of the five are inapplicable) is
+visible separately via `abstentions` (§7). `composite` is still computed from
+present components (unchanged math). For `unknown`, every component is applicable
+→ `confidence` = present-weight/total-weight, and `min_scored_weight` is set so
+that today's passing names stay `scored` (see §6 no-op guard).
 
 **Gate masking.** `check_gates` skips any gate where
 `not gate_applicable(bucket, gate, config)`.
@@ -189,32 +247,56 @@ New top-level blocks. Default-inheritance rule: a bucket inherits the global
 `thresholds`/`weights`/`gates`; it only *removes* legs/gates via its lists (v1
 adds no overrides — masking only).
 
+**`buckets` is an ORDERED LIST, not a dict** (the reviewer correctly flagged that
+"first match wins" must not depend on YAML dict-key order, which a formatter could
+reorder). Ranges are inclusive `[lo, hi]`; the resolver returns the first bucket
+whose ranges contain the SIC.
+
+**Conservative scope (the other half of "never mislead"): we mask ONLY where a leg
+is structurally undefined/invalid, and we bucket ONLY clearly deposit-/spread-/
+property-funded institutions.** Exchanges (SIC 6231), investment advisers / asset
+managers (6282), and other capital-light 62xx financials have *meaningful* leverage
+and returns — they are left `unknown`/unmasked in v1 (over-abstaining a name we can
+measure is as dishonest as over-scoring one). This narrows the earlier blanket
+`6000–6799`.
+
 ```yaml
 sectors:
-  # SIC -> bucket. Ranges are inclusive [lo, hi]. First match wins; order matters
-  # (reit 6798 must be tested before the broad 6000-6799 financials range).
-  buckets:
-    reit:
+  buckets:                       # ORDERED: first matching range wins
+    - name: reit
       sic_ranges: [[6798, 6798]]
-      inapplicable_legs:  [gross_margin, gross_margin_stability, fcf_yield, net_margin, interest_coverage, debt_to_equity]
-      inapplicable_gates: [negative_fcf, over_leveraged]
-    insurer:
-      sic_ranges: [[6300, 6411]]
-      inapplicable_legs:  [gross_margin, gross_margin_stability, fcf_yield, interest_coverage, debt_to_equity]
-      inapplicable_gates: [negative_fcf, over_leveraged]
-    financials:
-      sic_ranges: [[6000, 6299], [6500, 6799]]   # banks, brokers, holdings (ex-6798 reit, ex-insurer)
-      inapplicable_legs:  [gross_margin, gross_margin_stability, fcf_yield, interest_coverage, debt_to_equity]
-      inapplicable_gates: [negative_fcf, over_leveraged]
+    - name: insurer
+      sic_ranges: [[6300, 6399], [6410, 6411]]   # carriers (life/health/P&C/title/surety) + agents
+    - name: financials           # depository banks, holdings, broker-dealers, mortgage/credit
+      sic_ranges: [[6020, 6099], [6120, 6179], [6199, 6199], [6211, 6211], [6712, 6712]]
+  # All three buckets share the SAME masked set (the legs that are structurally
+  # undefined or non-representative for spread/deposit/property businesses):
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity]
+  masked_gates: [negative_fcf, over_leveraged]
 
 validity:
-  min_valid_leg_fraction: 0.5   # a sub-score needs >= half its APPLICABLE legs present, else abstain
-  min_scored_weight:      0.5   # composite is 'scored' only if present applicable-sub-score weight >= this
+  # Bucket-gated (see §4.3): the fraction floor applies ONLY to known buckets.
+  min_valid_leg_fraction: 0.5   # known-bucket sub-score needs >= half its APPLICABLE legs present
+  unknown_min_present_legs: 1   # unknown bucket: any present leg scores (today's behavior, no-op)
+  min_scored_weight:      0.34  # composite 'scored' iff present-applicable-component weight / applicable
+                                # weight >= this. 0.34 chosen so a single 0.30 opportunity component
+                                # alone is NOT enough, but any two components are; tuned in §6 census.
 ```
 
-(Exact SIC range partitioning of financials vs reit vs insurer is finalized in the
-plan against SEC SIC tables; `roic` is intentionally *not* masked for financials in
-v1 — see §8 open item.)
+Notes on the masked set / ranges (resolved from review findings #9–#11):
+
+- **`net_margin` is NOT masked** anywhere. It is *defined* for banks/insurers/REITs
+  (it just sits on a different revenue base / is depreciation-distorted) → that is
+  **miscalibration (mode 2), deferred**, not undefinedness. Masking it would be
+  scope creep into calibration. (Resolves the asymmetry the reviewer flagged.)
+- **`roic` and `fcf_cagr` ARE masked** for all three buckets — `roic` so `moat`
+  genuinely abstains (§3), `fcf_cagr` because it inherits the same FCF-invalidity as
+  `fcf_yield`. `growth` therefore survives on revenue/EPS CAGR + persistence.
+- **SIC ranges are explicit and non-overlapping**; 6798 (REIT) is its own first
+  entry and is *not* inside the financials ranges (defense-in-depth vs ordering).
+  6200/6231 (exchanges) and 6282 (advisers) are deliberately **excluded** → `unknown`.
+- These exact ranges are validated against the SEC SIC table in the plan; a unit
+  test pins each boundary (incl. ICE-like 6231 → unknown, adviser 6282 → unknown).
 
 All thresholds config-driven — no hardcoded sector logic in code. The maps are pure
 data; `sectors.py` is the only interpreter.
@@ -252,47 +334,89 @@ back-compat guard for scout/`/run`/backtest.
 
 ## 7. Output contract (`ScoreCard` / `--json`)
 
-Additive only (no removed/renamed fields → scout & `/run` keep working):
+Additive only (no removed/renamed fields → scout & `/run` keep working). **New
+`ScoreCard` fields are appended AFTER `coverage`** (models.py:118), all with
+defaults, so positional construction in `scoring.score` (scoring.py:149) is
+unaffected and the "non-default after default" dataclass rule holds:
 
-- `ScoreCard.sector_bucket: Optional[str]` — resolved bucket (`None`/`"unknown"`).
-- `ScoreCard.confidence: float` — present-applicable-weight fraction (1.0 = fully
-  scored).
-- `ScoreCard.scored: bool` — `confidence >= min_scored_weight`.
-- `ScoreCard.abstentions: list` — diagnostic, parallel to `coverage`: per leg /
-  sub-score, `{name, reason: "inapplicable" | "missing"}`. Emitted in `--json`
-  only when non-empty (same convention as `coverage`), and summarized on stderr.
+- `ScoreCard.sic_bucket: Optional[str] = None` — resolved bucket. **Named
+  `sic_bucket`, NOT `sector_bucket`**, to keep it unmistakably distinct from the
+  pre-existing free-text `StockMetrics.sector` (source-dependent, divergent across
+  stacks). A guard test asserts scoring **never reads `m.sector`** for applicability.
+- `ScoreCard.confidence: float = 1.0` — present-applicable-component weight ÷
+  applicable-component weight (1.0 = every measurable component present).
+- `ScoreCard.scored: bool = True` — `confidence >= min_scored_weight`.
+- `ScoreCard.abstentions: list = field(default_factory=list)` — diagnostic,
+  parallel to `coverage`: per leg / sub-score, `{name, reason: "inapplicable" |
+  "missing"}`. Emitted in `--json` only when non-empty, summarized on stderr.
+
+**Coverage / abstention reconciliation (review #13).** `build_coverage`
+(coverage.py:71) currently lists every `None` sub-score in `unavailable` and, when
+FMP gated, attaches the "needs Starter tier" note — which would *contradict* an
+abstention that says "inapplicable." Fix: a sub-score that is `None` because it was
+**masked-inapplicable** is excluded from `coverage.unavailable` (it is not a
+coverage gap). Only *missing-data* `None`s remain in coverage. The two diagnostics
+must never tell opposite stories about the same field; a test asserts a masked leg
+appears in `abstentions(reason=inapplicable)` and **not** in `coverage.unavailable`.
+
+**Ranking / sort safety (review #8).** `composite` alone is **no longer a safe
+sort key** — a `not_scored` card can carry a high composite from one surviving leg.
+CLI ranking and `scout` sort must demote not-scored cards: sort key becomes
+`(scored, composite)` desc so a not-scored name can never top a list. Documented;
+`scout/report.py` rendering updated to skip / visibly demote `not scored`.
 
 Sub-score fields stay `Optional[float]`; `None` now means "abstained or no inputs,"
 with the *why* in `abstentions` (keeps the existing null-vs-number semantics).
-`composite` stays `float`. The only semantic change is `passed` now also requires
-`scored` — documented and covered by the no-op regression test.
+`composite` stays `float`. The only `passed` change is it now also requires
+`scored` — a monotonic tightening, documented and covered by the no-op regression
+test (every currently-passing name must stay `scored=True`).
 
 ## 8. Open items to finalize in the plan
 
-1. **SIC partition** of financials/reit/insurer against the authoritative SEC SIC
-   list (6022 state banks, 6311 life insurance, 6798 REIT, 6770 blank-check, etc.).
-2. **`roic` for financials:** keep applicable (banks do report returns on capital)
-   or mask? Default v1: keep applicable (conservative — masking only the clearly
-   undefined legs). Revisit if it reads spuriously.
-3. **`min_valid_leg_fraction` exact default** vs the unknown-sector no-op guarantee
-   for partially-covered operating companies (gated-FMP names already drop value
-   legs — ensure the floor doesn't newly abstain names that score today). May need
-   the floor to apply only when a bucket is known, with unknown using `>0` (any
-   present leg). To be resolved with a coverage census in the plan.
-4. **Harness `Profile` SIC plumbing** — add field vs reuse; confirm `edgar` lib
-   exposes `Company.sic` cheaply on both call sites.
+Resolved in this revision (post spec-review): `roic`/`fcf_cagr` masking (now masked,
+§5), the floor regression (now bucket-gated, §4.3), SIC ranges (now explicit
+ordered list, §5), Profile SIC plumbing (EdgarSource partial Profile, §4.2), field
+naming (`sic_bucket`, §7), coverage reconciliation (§7). Remaining for the plan:
+
+1. **Coverage census of the test universe** to pin `min_valid_leg_fraction` /
+   `min_scored_weight` so the unknown-sector no-op is *provably* bit-identical:
+   enumerate, across a representative basket on both engines, how many legs each
+   sub-score actually carries today, and confirm no currently-scored name flips to
+   `not_scored`. This is the empirical backstop for the back-compat guarantee.
+2. **Confirm `edgartools` `Company.sic` shape** (int vs zero-padded str vs missing)
+   on real tickers so `extract_sic` normalization is correct; pin in a test using a
+   recorded fixture (no live key needed in CI).
+3. **Final SIC range audit** against the SEC SIC code list — verify 6020–6099
+   (depositories), 6120–6179 (S&Ls/credit/mortgage), 6211 (broker-dealers), 6712
+   (bank holding cos), 6300–6411 (insurers), 6798 (REIT); confirm exchanges (6231)
+   and advisers (6282) fall through to `unknown` as intended.
 
 ## 9. Files touched (anticipated)
 
-- **new** `src/shortlist/sectors.py` — resolver + applicability predicates.
-- `src/shortlist/models.py` — `StockMetrics.sic`; `ScoreCard` new fields + `passed`.
-- `src/shortlist/scoring.py` — named-leg refactor, abstention, floor, gate masking.
-- `src/shortlist/providers/edgar.py` — set `m.sic`.
-- `src/shortlist/data/models.py` + `src/shortlist/data/bridge.py` — Profile SIC →
-  `m.sic`.
-- `src/shortlist/data/sources.py` (EdgarSource) — surface SIC.
+- **new** `src/shortlist/sectors.py` — `resolve_bucket`, `extract_sic`,
+  `leg_applicable`, `gate_applicable` (the only interpreter of the config maps).
+- `src/shortlist/models.py` — `StockMetrics.sic`; `ScoreCard` new fields appended
+  after `coverage`; `passed = not gates and scored`.
+- `src/shortlist/scoring.py` — named-leg refactor, bucket-gated abstention, floor,
+  gate masking; must **never read `m.sector`**.
+- `src/shortlist/providers/edgar.py` — `m.sic = extract_sic(company)` + add `sic`
+  to `_tag(...)`.
+- `src/shortlist/merge.py` — ensure `sic` survives merge (priority/`_pick`); it is
+  a plain `StockMetrics` field so pick-first applies, but confirm + test.
+- `src/shortlist/data/models.py` — `Profile.sic`.
+- `src/shortlist/data/sources.py` (EdgarSource) — emit partial `Profile(sic=…)`.
+- `src/shortlist/data/bridge.py` — copy `m.sic = p.sic`.
+- `src/shortlist/providers/mock.py` + `src/shortlist/data/mockdata.py` — add `sic`
+  to fixtures (SCHW → broker-dealer 6211; a bank; a REIT; an operating co) so the
+  SCHW golden + parity tests run **without live keys** (review #17).
 - `config.yaml` — `sectors`, `validity` blocks.
-- `coverage.py` / CLI `--json` + stderr — emit `abstentions`.
-- `tests/` — new `test_sectors.py`, extend `test_scoring.py`, parity test.
+- `src/shortlist/coverage.py` — exclude masked-inapplicable sub-scores from
+  `unavailable`; reconcile with abstentions.
+- CLI (`screen.py`) `--json` + stderr — emit `abstentions`, `sic_bucket`,
+  `confidence`, `scored`; ranking sort key `(scored, composite)`.
+- `src/shortlist/scout/report.py` — demote/skip `not scored` in the report.
+- `tests/` — new `test_sectors.py`; extend `test_scoring.py`; **two-stack parity
+  test**; SCHW golden test; unknown-sector no-op (bit-identical) test; EDGAR-absent
+  parity test; coverage-vs-abstention non-contradiction test.
 - Docs: `CLAUDE.md` (sector-aware section), `README.md`/`HARNESS.md` notes.
 ```
