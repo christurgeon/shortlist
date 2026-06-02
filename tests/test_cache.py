@@ -190,7 +190,9 @@ def test_refresh_mode_bypasses_read_but_writes(tmp_path):
 
 # --- Task 4: async --------------------------------------------------------------
 
-def test_aget_or_fetch_caches_and_runs_concurrently(tmp_path):
+def test_aget_or_fetch_warm_concurrent_reads(tmp_path):
+    """First await populates the cache; subsequent concurrent reads are all served
+    from it (one upstream fetch total)."""
     cache = HttpCache(str(tmp_path / "c.sqlite"))
     calls = {"n": 0}
 
@@ -210,6 +212,32 @@ def test_aget_or_fetch_caches_and_runs_concurrently(tmp_path):
     r1, r2, r3 = asyncio.run(scenario())
     assert r1 == r2 == r3 == [{"c": 1}]
     assert calls["n"] == 1
+    cache.close()
+
+
+def test_aget_or_fetch_concurrent_miss_double_fetches(tmp_path):
+    """Two genuinely-concurrent misses on the same cold key both fetch (no in-process
+    single-flight — an accepted design choice; last-writer-wins keeps the store
+    consistent). Pins the behaviour so a future change is deliberate."""
+    cache = HttpCache(str(tmp_path / "c.sqlite"))
+    calls = {"n": 0}
+
+    async def fetch():
+        calls["n"] += 1
+        await asyncio.sleep(0.01)  # both enter before either writes
+        return [{"c": calls["n"]}]
+
+    async def scenario():
+        return await asyncio.gather(
+            cache.aget_or_fetch("fmp", "quote", {"symbol": "A"}, fetch),
+            cache.aget_or_fetch("fmp", "quote", {"symbol": "A"}, fetch),
+        )
+
+    asyncio.run(scenario())
+    assert calls["n"] == 2  # both missed and fetched
+    # store is consistent afterward: a third read is served, no new fetch
+    assert cache.get_or_fetch("fmp", "quote", {"symbol": "A"}, lambda: [{"c": 99}])
+    assert calls["n"] == 2
     cache.close()
 
 
@@ -300,6 +328,43 @@ def test_fmp_provider_get_uses_cache(tmp_path):
     assert p._get("quote", symbol="AAPL") == [{"price": 1}]
     assert calls["n"] == 1  # second call cached
     real.close()
+
+
+def test_provider_dedups_through_configured_global(tmp_path):
+    """A provider built WITHOUT an explicit cache must dedup through the lazily/CLI
+    configured process-global cache (the on-by-default path). Guards against the
+    `self._cache or get_default_cache()` fallback being removed."""
+    from shortlist.providers.fmp import FMPProvider
+
+    configure_default_cache(enabled=True, path=str(tmp_path / "g.sqlite"))
+    try:
+        p = FMPProvider.__new__(FMPProvider)
+        p.key = "test"
+        p.timeout = 15
+        p.max_retries = 2
+        p._cache = None  # NOT injected -> must fall back to the global
+        calls = {"n": 0}
+
+        class FakeResp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return [{"price": 1}]
+
+        class FakeSession:
+            def get(self, *a, **k):
+                calls["n"] += 1
+                return FakeResp()
+
+        p._session = FakeSession()
+        p._get("quote", symbol="AAPL")
+        p._get("quote", symbol="AAPL")
+        assert calls["n"] == 1  # served from the global cache the 2nd time
+    finally:
+        reset_default_cache()
 
 
 # --- Task 8: wired harness sources (async) --------------------------------------

@@ -144,12 +144,18 @@ class HttpCache:
         self.close()
 
     def _read(self, key: str, now: float):
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT payload FROM cache WHERE key = ? AND expires_at > ?",
-                (key, now),
-            ).fetchone()
-        return json.loads(row["payload"]) if row else None
+        # A runtime DB fault (locked/corrupt/dropped table) or a malformed stored row
+        # must degrade to a miss, never crash the screen — caching is an optimization.
+        # Mirrors the try/except in _write and sweep.
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT payload FROM cache WHERE key = ? AND expires_at > ?",
+                    (key, now),
+                ).fetchone()
+            return json.loads(row["payload"]) if row else None
+        except (sqlite3.Error, ValueError):
+            return None
 
     def _write(self, key: str, payload: object, now: float, ttl: float) -> None:
         try:

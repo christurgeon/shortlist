@@ -45,6 +45,19 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
 
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
+
+    # Honour the config cache block (enabled/path/ttl) on the scout path too — it calls
+    # run_harness directly, so without this the operator's kill-switch / TTL tuning in
+    # config.yaml would be silently ignored (the lazy default would use hardcoded TTLs).
+    # Demo is offline (mock source), so the cache is disabled there.
+    from ..cache import configure_default_cache
+    cache_cfg = config.get("cache", {})
+    configure_default_cache(
+        enabled=(not demo) and cache_cfg.get("enabled", True),
+        path=cache_cfg.get("path"),
+        ttls=cache_cfg.get("ttl"),
+    )
+
     # Non-trading days are fine: last_session() anchors to the most recent session.
     session = today if demo else last_session(today)
 
