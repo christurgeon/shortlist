@@ -12,6 +12,25 @@
 
 **Conventions:** run tests with `uv run pytest`. Commit after every green step. Never read `m.sector` (free-text, divergent) for applicability — only `m.sic`.
 
+**There is NO `shortlist.config.load_config()`** — the repo loads config with
+`yaml.safe_load`. Every new test that needs the shipped config uses this exact
+idiom (matching `tests/test_scoring.py:243-244`):
+
+```python
+from pathlib import Path
+import yaml
+def _cfg():
+    return yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+CFG = _cfg()
+```
+
+**Task 5 must NOT delete the existing public scoring helpers.** `quality_score`,
+`moat_score`, `growth_score`, `momentum_score`, `value_score`, `_avg`, `_norm`,
+`insider_score` are imported by `tests/test_scoring.py:11-13` AND called at runtime
+by `src/shortlist/backtest/signals.py:61` (`scoring.momentum_score(...)`). Deleting
+them breaks the backtest stack and ~10 tests. Keep them verbatim; ADD the new leg
+machinery alongside and route only the new `score()` through it.
+
 ---
 
 ## Task 1: `sectors.py` — the SIC resolver + applicability predicates
@@ -182,11 +201,15 @@ git commit -m "feat: sectors.py — SIC->bucket resolver + leg/gate applicabilit
 
 ```python
 # tests/test_sectors_config.py
-from shortlist.config import load_config
+from pathlib import Path
+import yaml
 from shortlist.sectors import resolve_bucket, leg_applicable
 
+def _cfg():
+    return yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+
 def test_shipped_config_buckets_resolve():
-    cfg = load_config()
+    cfg = _cfg()
     assert "sectors" in cfg and "validity" in cfg
     assert resolve_bucket("6211", cfg) == "financials"
     assert resolve_bucket("6798", cfg) == "reit"
@@ -195,13 +218,11 @@ def test_shipped_config_buckets_resolve():
     assert leg_applicable("financials", "fcf_yield", cfg) is False
 
 def test_validity_defaults():
-    v = load_config()["validity"]
+    v = _cfg()["validity"]
     assert 0.0 < v["min_valid_leg_fraction"] <= 1.0
     assert v["unknown_min_present_legs"] >= 1
     assert 0.0 < v["min_scored_weight"] <= 1.0
 ```
-
-(Confirm the config loader import path first: `grep -n "def load_config" src/shortlist/config.py`. If the function/module differs, adjust the import — do not invent one.)
 
 - [ ] **Step 2: Run the test, verify it fails**
 
@@ -393,11 +414,12 @@ This is the core. Split into 5a (sub-score evaluator + unknown no-op) and 5b (co
 
 ```python
 # tests/test_scoring_abstention.py
+from pathlib import Path
+import yaml
 from shortlist.models import StockMetrics
 from shortlist.scoring import score
-from shortlist.config import load_config
 
-CFG = load_config()
+CFG = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
 
 def _fin(**kw):
     # a broker-dealer (SIC 6211) with present-but-misleading legs
@@ -452,29 +474,18 @@ def test_unknown_momentum_only_name_still_scored():
 Run: `uv run pytest tests/test_scoring_abstention.py -q`
 Expected: FAIL (`sic_bucket` is None/AttributeError or moat not None).
 
-- [ ] **Step 3: Implement the evaluator + leg lists**
+- [ ] **Step 3: ADD the evaluator + leg lists (do NOT delete existing helpers)**
 
-Replace the body of `src/shortlist/scoring.py` from the imports through the
-sub-score helpers with the following (keep `_norm`, `insider_score`, `_round`):
+**Keep every existing function in `scoring.py` exactly as-is** (`_norm`, `_avg`,
+`quality_score`, `moat_score`, `growth_score`, `momentum_score`, `value_score`,
+`insider_score`, `check_flags`, `_round`) — they are imported by tests and called
+by the backtest (`backtest/signals.py:61`). Only `check_gates` and `score` are
+modified (in 5b). ADD these new top-of-file imports and the leg machinery:
 
 ```python
-from __future__ import annotations
-
+# add to the existing imports at the top of scoring.py:
 from dataclasses import dataclass
-from statistics import mean
-from typing import Optional
-
-from .models import ScoreCard, StockMetrics
 from .sectors import gate_applicable, leg_applicable, resolve_bucket
-
-
-def _norm(value: Optional[float], lo: float, hi: float) -> Optional[float]:
-    if value is None:
-        return None
-    if hi == lo:
-        return 50.0
-    pct = (value - lo) / (hi - lo)
-    return max(0.0, min(1.0, pct)) * 100.0
 
 
 @dataclass
@@ -556,8 +567,13 @@ one commit. **Do 5b now before running**, then run the 5a tests against the full
 
 - [ ] **Step 1: Replace `check_gates` and `score`**
 
+`bucket`/`config` default so the legacy 1-arg-pair call still works (and
+`gate_applicable` short-circuits on `bucket == "unknown"` before touching `config`,
+so `config=None` is safe in the default path):
+
 ```python
-def check_gates(m: StockMetrics, g: dict, bucket: str, config: dict) -> list[str]:
+def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
+                config: dict | None = None) -> list[str]:
     tripped: list[str] = []
     if m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config):
         tripped.append("negative_fcf")
@@ -721,15 +737,21 @@ from shortlist.providers.edgar import EdgarProvider
 def test_edgar_provider_sets_and_tags_sic(monkeypatch):
     monkeypatch.setenv("SEC_IDENTITY", "test test@example.com")
     fake = MagicMock(); fake.sic = 6211
-    # aggregate_form4 path returns no insider; we only assert sic plumbing
-    with patch("shortlist.providers.edgar.Company", return_value=fake), \
+    # `Company` is imported INSIDE fetch (`from edgar import Company`), so patch it
+    # on the source module `edgar`, NOT on shortlist.providers.edgar.
+    # `aggregate_form4` IS module-scope in edgar.py -> patch it there.
+    with patch("edgar.Company", return_value=fake), \
          patch("shortlist.providers.edgar.aggregate_form4", return_value=None):
         m = EdgarProvider().fetch("SCHW")
     assert m.sic == "6211"
     assert m.sources.get("sic") == "edgar"
 ```
 
-(First confirm the symbol names imported in `edgar.py`: `grep -n "import\|aggregate_form4\|Company\|_tag" src/shortlist/providers/edgar.py`, and adapt the patch targets/return handling to the real `fetch` shape — keep the assertion on `m.sic`/`m.sources["sic"]`.)
+(First read the real `fetch` (`sed -n '35,50p' src/shortlist/providers/edgar.py`) to
+confirm `aggregate_form4` is the function called and adapt its patched return so
+`fetch` completes without a network call — keep the assertions on
+`m.sic`/`m.sources["sic"]`. `EdgarProvider.__init__` needs `SEC_IDENTITY`; the env
+var is set above so it won't raise.)
 
 - [ ] **Step 2: Run, verify fail**
 
@@ -756,8 +778,9 @@ to:
         return self._tag(m, "insider_net_6m", "sic")
 ```
 
-(Verify `_tag` accepts varargs field names — check `base.py`. If `_tag` tags a
-single field, call it once per field or extend it; do not guess — read `base.py`.)
+(`base.py:20` `_tag(self, m, *fields)` takes varargs and only stamps non-`None`
+fields — so `self._tag(m, "insider_net_6m", "sic")` is correct and a `None` SIC is
+simply not tagged. No change to `_tag` needed.)
 
 - [ ] **Step 4: Run, verify pass**
 
@@ -782,16 +805,29 @@ git commit -m "feat: EdgarProvider sets+tags SIC (screener sector detection)"
 
 - [ ] **Step 1: Write the failing tests**
 
+**Real `merge_snapshots` signature** (`data/models.py:335`):
+`merge_snapshots(ticker, results: list[SourceResult], priority) -> (merged, contributing_sources)`
+— it takes `SourceResult` wrappers (not bare snapshots) and **returns a tuple**.
+`profile` IS in `_FLAT` and `_merge_flat` is field-by-field, picking each field
+from the first source with a non-`None`/non-`""`/non-`[]` value — so a partial
+`Profile(sic=…)` from EDGAR survives even when a higher-priority source supplies a
+fuller profile lacking `sic`.
+
 ```python
 # tests/test_harness_sic.py
-from shortlist.data.models import Profile, TickerSnapshot, merge_snapshots
+from shortlist.data.models import Profile, TickerSnapshot, SourceResult, merge_snapshots
 from shortlist.data.bridge import snapshot_to_metrics
 
+def _res(source, **profile_kw):
+    snap = TickerSnapshot(ticker="SCHW")
+    snap.profile = Profile(**profile_kw)
+    return SourceResult(source=source, partial=snap)
+
 def test_merge_keeps_edgar_sic_when_fmp_profile_absent():
-    # FMP gated -> no profile; EDGAR supplies a partial profile carrying only sic.
-    edgar = TickerSnapshot(ticker="SCHW"); edgar.profile = Profile(sic="6211")
-    finnhub = TickerSnapshot(ticker="SCHW"); finnhub.profile = Profile(name="Schwab", market_cap=152e9)
-    merged = merge_snapshots([finnhub, edgar])   # finnhub higher priority for name/mktcap
+    # Finnhub supplies name/mktcap but NO sic; EDGAR supplies a partial profile w/ only sic.
+    finnhub = _res("finnhub", name="Schwab", market_cap=152e9)
+    edgar = _res("edgar", sic="6211")
+    merged, _contrib = merge_snapshots("SCHW", [finnhub, edgar], priority=["finnhub", "edgar"])
     assert merged.profile.sic == "6211"
     assert merged.profile.name == "Schwab"
 
@@ -800,10 +836,6 @@ def test_bridge_copies_sic_to_metrics():
     m = snapshot_to_metrics(snap)
     assert m.sic == "6211"
 ```
-
-(Confirm `merge_snapshots`/`_merge_flat` treats `profile` field-by-field so a
-partial profile's `sic` survives — read `data/models.py:_merge_flat`. The first
-test directly asserts that invariant.)
 
 - [ ] **Step 2: Run, verify fail**
 
@@ -819,23 +851,41 @@ Expected: FAIL (bridge does not copy sic; maybe merge drops it).
         m.sic = p.sic
 ```
 
-(b) In `src/shortlist/data/sources.py`, in `EdgarSource`'s synchronous build (where
-it constructs the `Company` for Form 4 / financials), capture SIC and attach a
-partial profile to the snapshot. Locate the `Company(...)` construction in
-`EdgarSource` and add:
+(b) In `src/shortlist/data/sources.py`, `EdgarSource` builds `Company(ticker)` in
+three separate seams (`_fetch_insider`, `_fetch_financials_object`, `_raw_filings`)
+— **none reusable** — and its top-level `_fetch_sync` (the method that assembles
+`res.partial`) holds no `company` local. So SIC capture needs its **own** guarded
+`Company(ticker)` in `_fetch_sync`. This is **one extra lightweight SEC request per
+ticker on the harness path** (the screener reuses its existing `Company`, so it has
+none); it is bounded by the existing `_EDGAR_MAX_CONCURRENCY` semaphore. (Spec §4.2
+is updated to reflect this — the "no new request" claim holds only for the screener.)
+
+`Profile` is already imported at `sources.py:17`. In `_fetch_sync`, after `res`
+(the `SourceResult`) and `res.partial` (the `TickerSnapshot`) are built, add an
+isolated section mirroring the existing per-section try/except so a SIC failure
+degrades to `None` without touching insider/statements:
 
 ```python
         from ..sectors import extract_sic
-        sic = extract_sic(company)          # company already built for form4/financials
-        if sic:
-            snap.profile = Profile(sic=sic) # partial: only sic; _merge_flat fills the rest
+        try:
+            sic = extract_sic(Company(ticker))   # own handle; no reusable company here
+        except Exception:
+            sic = None
+        if sic and res.partial is not None:
+            # partial profile carrying ONLY sic; _merge_flat fills the rest from FMP/Finnhub.
+            if res.partial.profile is None:
+                res.partial.profile = Profile(sic=sic)
+            else:
+                res.partial.profile.sic = sic
 ```
 
-Place this so it runs even when insider/financials are empty (SIC must survive a
-foreign-issuer/no-Form4 symbol). Wrap consistently with the existing per-section
-try/except so a SIC failure degrades to `None` without touching insider/statements.
-(Read the real method names — likely `_fetch_sync` building a `TickerSnapshot`; add
-`from .models import Profile` if not already imported.)
+Place it so it runs even when insider/financials are empty (SIC must survive a
+foreign-issuer/no-Form4 symbol — confirm `res.partial` is a `TickerSnapshot` even in
+the empty case; if `_fetch_sync` can leave `res.partial = None`, construct
+`res.partial = TickerSnapshot(ticker=ticker)` before attaching the profile). Read
+`_fetch_sync` first (`grep -n "_fetch_sync\|res.partial\|return res" src/shortlist/data/sources.py`)
+and match its exact variable names and `Company` import (it imports `Company`
+inside the sync helpers — reuse that import path).
 
 - [ ] **Step 4: Run, verify pass**
 
@@ -922,7 +972,14 @@ git commit -m "fix: exclude masked-inapplicable sub-scores from coverage.unavail
 
 **Files:**
 - Modify: `src/shortlist/screen.py` (`_card_dict`, two sort sites lines 48 & 70, CSV header/row)
+- Modify: `src/shortlist/research/__init__.py:64` (select on `c.passed`)
 - Test: `tests/test_card_dict_abstention.py`
+
+**Caution:** `tests/research/test_enrich.py:22` builds stub `_Card`s with `gates=`.
+After switching selection to `c.passed`, that stub must expose a `passed` that is
+`not gates` (its `scored` should default truthy). Read the stub; if it lacks
+`passed`/`scored`, the change to `c.passed` will break it — adjust the stub (give it
+`scored=True` and a `passed` property) so the existing research test still passes.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -978,8 +1035,36 @@ to:
     cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
 ```
 
-Extend the CSV header (add `"scored"`, `"sic_bucket"`) and the row writer to emit
-`d["scored"]`, `d["sic_bucket"]`.
+(`scored` is a bool; with `reverse=True`, `True` sorts above `False`, so not-scored
+cards are demoted below all scored ones. `composite` is always a float, so no
+`None` tuple-comparison risk.)
+
+Pin the exact CSV edit in `_write_csv` (screen.py:308-313) — append the two columns
+**after** `"gates"** so existing column positions don't shift:
+
+```python
+        w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
+                    "momentum", "value", "opportunity", "insider", "upside_to_target",
+                    "gates", "scored", "sic_bucket"])
+        for i, c in enumerate(cards, 1):
+            d = _card_dict(c)
+            w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
+                        d["growth"], d["momentum"], d["value"], d["opportunity"],
+                        d["insider"], d["upside_to_target"], "|".join(d["gates"]),
+                        d["scored"], d["sic_bucket"]])
+```
+
+**Align research selection with the new `scored` semantics** (`research/__init__.py:64`
+currently selects `not c.gates`, which would still research a not-scored name —
+inconsistent with "never mislead"). Change:
+
+```python
+    selected = [c for c in ranked if not c.gates][:top_n]
+```
+to:
+```python
+    selected = [c for c in ranked if c.passed][:top_n]   # passed == not gates and scored
+```
 
 - [ ] **Step 4: Run, verify pass + full suite**
 
@@ -1004,70 +1089,85 @@ git commit -m "feat: emit sic_bucket/confidence/scored/abstentions; demote not_s
 
 - [ ] **Step 1: Add SIC to mock fixtures**
 
-In `src/shortlist/providers/mock.py`, SCHW dict — add `sic="6211"` and set legs so
-the gate/masking story is demonstrable:
+In `src/shortlist/providers/mock.py`, SCHW dict — add `sic="6211"` and set the
+masked legs to **non-None present** values, so `moat`/gate suppression is driven by
+**masking, not missing data** (otherwise the abstention test proves nothing — the
+old fixture had `gross_margin=None, roic=None`, so `moat` was already `None`):
 
 ```python
     "SCHW": dict(
         name="Charles Schwab", sector="Financials", sic="6211", price=87, market_cap=152e9,
         pe_ttm=17.0, pe_median_5y=20.0, fcf_yield=0.02, target_median=115,
-        roe=0.17, roic=None, roic_5y_avg=None, gross_margin=None, net_margin=0.36,
+        roe=0.17, roic=0.20, roic_5y_avg=0.20, gross_margin=0.55, net_margin=0.36,
         debt_to_equity=8.0, interest_coverage=1.5, fcf_positive=True,
         revenue_cagr=0.08, eps_cagr=0.06, revenue_growth_persistence=0.50,
-        gross_margin_stability=None, price_vs_200dma=-0.05, rel_strength_6m=-0.08,
+        gross_margin_stability=0.90, price_vs_200dma=-0.05, rel_strength_6m=-0.08,
         eps_revision=0.06, rating_buy=17, rating_hold=2, rating_sell=1,
         insider_net_6m=-1.2e6, insider_sentiment=-0.05,
     ),
 ```
 
-In `src/shortlist/data/mockdata.py`, SCHW `Profile(...)` — add `sic="6211"`.
+In `src/shortlist/data/mockdata.py`, the SCHW `Profile(...)` (line ~68) — add
+`sic="6211"`. (The harness mock snapshot is built by the `_snap(...)` closure stored
+at `SAMPLE["SCHW"]["snapshot"]`, callable as `SAMPLE["SCHW"]["snapshot"]("SCHW")`.)
 
 - [ ] **Step 2: Write the parity + golden tests**
 
+The harness side uses the real `SAMPLE` snapshot closure (no `MockSource`/async,
+no network). `MockProvider().fetch("SCHW")` is real (`providers/mock.py:67`).
+
 ```python
 # tests/test_sector_parity.py
-from shortlist.config import load_config
-from shortlist.providers.mock import MockProvider          # adjust to real class/name
+from pathlib import Path
+import yaml
+from shortlist.providers.mock import MockProvider
 from shortlist.merge import merge
 from shortlist.scoring import score
-from shortlist.data.mockdata import MockSource              # adjust to real name
+from shortlist.data.mockdata import SAMPLE
 from shortlist.data.bridge import snapshot_to_metrics
 
-CFG = load_config()
+CFG = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+
+def _screener_card(ticker):
+    return score(merge([MockProvider().fetch(ticker)]), CFG)
+
+def _harness_card(ticker):
+    snap = SAMPLE[ticker]["snapshot"](ticker)       # real _snap closure -> TickerSnapshot
+    return score(snapshot_to_metrics(snap), CFG)
 
 def test_schw_golden_screener():
-    m = merge([MockProvider().fetch("SCHW")])
-    card = score(m, CFG)
+    card = _screener_card("SCHW")
     assert card.sic_bucket == "financials"
-    assert card.moat is None                       # masked -> abstains
-    assert "over_leveraged" not in card.gates      # gate masked despite D/E 8.0
-    assert card.composite > 0.0                    # number still emitted
+    assert card.moat is None                        # gross_margin+stability+roic PRESENT but masked
+    assert "over_leveraged" not in card.gates       # gate masked despite D/E 8.0
+    assert card.composite > 0.0                     # number still emitted (audit)
 
 def test_two_stack_parity_for_schw():
     # Same ticker, both engines, identical sector decision & gate outcome.
-    m_screener = merge([MockProvider().fetch("SCHW")])
-    card_s = score(m_screener, CFG)
-    snap = MockSource().fetch_sync("SCHW")          # adjust to the real mock-source API
-    card_h = score(snapshot_to_metrics(snap), CFG)
+    card_s = _screener_card("SCHW")
+    card_h = _harness_card("SCHW")
     assert card_s.sic_bucket == card_h.sic_bucket == "financials"
     assert ("over_leveraged" in card_s.gates) == ("over_leveraged" in card_h.gates)
     assert (card_s.moat is None) == (card_h.moat is None)
     assert card_s.scored == card_h.scored
 
 def test_edgar_absent_both_unknown():
-    # Strip SIC on both -> both resolve unknown -> symmetric, no masking.
+    # Strip SIC -> unknown -> symmetric, NO masking, gate fires on D/E 8.0.
     m = merge([MockProvider().fetch("SCHW")]); m.sic = None
     card = score(m, CFG)
     assert card.sic_bucket == "unknown"
-    assert card.moat is not None or card.moat is None  # whatever legs present, NOT masked
-    # the point: over_leveraged NOT masked when unknown
-    assert "over_leveraged" in card.gates              # D/E 8.0 trips when unknown
+    assert card.moat is not None                    # masked legs now contribute
+    assert "over_leveraged" in card.gates           # D/E 8.0 trips when unknown
 ```
 
-(Adjust the mock provider/source class & method names to the real ones —
-`grep -n "class .*Provider\|def fetch" src/shortlist/providers/mock.py` and
-`grep -n "class .*Source\|def fetch" src/shortlist/data/mockdata.py`. The assertions
-are the contract; the wiring adapts to the real fixtures.)
+Prerequisite check the executor must run first: confirm `SAMPLE["SCHW"]["snapshot"]`
+is callable and the SCHW `Profile` carries `sic="6211"` after the Task-3/Task-11
+edits (`grep -n "snapshot\|sic" src/shortlist/data/mockdata.py`). If the harness
+SCHW fixture lacks the present-but-masked legs the screener mock has, the parity
+`moat is None` equality still holds (both `None`), but to assert masking on the
+harness side too, ensure the SCHW snapshot's `Statements`/derived metrics yield a
+non-None `roic`/`gross_margin` before bridging — otherwise note it as a known
+fixture asymmetry (the bucket/gate parity is the binding assertion).
 
 - [ ] **Step 3: Run, verify pass + full suite**
 
@@ -1090,6 +1190,21 @@ git commit -m "test: SCHW golden + two-stack parity + EDGAR-absent symmetry (key
 **Files:**
 - Modify: `CLAUDE.md` (new "Sector-aware applicability & abstention" section)
 - Modify: `README.md` and/or `HARNESS.md` (brief note + `--json` fields)
+- Modify: `src/shortlist/scout/report.py:16` (annotate not-scored names)
+
+- [ ] **Step 0: Annotate not-scored in the scout report**
+
+`scout` already inherits ranking demotion via the `(scored, composite)` sort, but
+the report line doesn't show it. In `src/shortlist/scout/report.py`, where the line
+is built (`f"{i}. {c.ticker}  {c.composite:.1f}{flag}"`), append a marker:
+
+```python
+        mark = "" if getattr(c, "scored", True) else "  (not scored)"
+        lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}{mark}")
+```
+
+(Read the real line first; `c` may be a card or a wrapper — keep `getattr(...,
+"scored", True)` so a non-card object degrades safely.)
 
 - [ ] **Step 1: Update `CLAUDE.md`**
 

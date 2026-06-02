@@ -145,7 +145,11 @@ def extract_sic(company) -> Optional[str]:
   supplied a profile** (critical: FMP-gated financials like SCHW are exactly where
   FMP's profile is absent). `bridge.snapshot_to_metrics` then copies
   `m.sic = p.sic`. Add `sic` to `Profile` (data/models.py). **Do NOT** make SIC
-  depend on FMP/Finnhub Profile presence.
+  depend on FMP/Finnhub Profile presence. **Cost note:** unlike the screener (which
+  reuses the `Company` it already builds, so zero extra requests), `EdgarSource`
+  has no single reusable `Company` handle in its snapshot-assembly path, so SIC
+  capture costs **one extra lightweight SEC submissions request per ticker on the
+  harness**, bounded by the existing `_EDGAR_MAX_CONCURRENCY` semaphore.
 - **Two-stack symmetry & contingency:** `resolve_bucket` is called inside `score()`
   from `m.sic` (no network in `score`), so both engines apply identical logic. SIC
   is sourced **only** from EDGAR on both stacks — never from the free-text
