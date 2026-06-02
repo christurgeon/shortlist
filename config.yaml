@@ -168,5 +168,8 @@ scout:
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.
+# NOTE: `confidence` is the fraction of applicable *factor* weight present — it covers the
+# five fundamental components and intentionally EXCLUDES the risk tilt (whose own coverage
+# is shown separately in the Risk column).
 ranking:
   thin_below: 0.5   # mark a card "thin" when confidence < this. Omit/null to disable.
