@@ -347,13 +347,23 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     thin_below = (config.get("ranking") or {}).get("thin_below")
     thin = thin_below is not None and confidence < thin_below
 
+    flags = check_flags(m, config.get("flags") or {})
+    # value-trap advisory: cheap (high value) but weak fundamentals. Soft/None-safe
+    # like crowded_short — never affects passed/composite/scored. No-op if the
+    # config block is absent.
+    vt = (config.get("flags") or {}).get("value_trap")
+    if (vt and val is not None and val >= vt["min_value_score"]
+            and ((q is not None and q < vt["max_quality_score"])
+                 or (gr is not None and gr < vt["max_growth_score"]))):
+        flags.append("value_trap")
+
     return ScoreCard(
         ticker=m.ticker,
         composite=composite,
         quality=_round(q), moat=_round(mo), growth=_round(gr), momentum=_round(mom),
         value=_round(val), opportunity=_round(opp), insider=_round(ins),
         gates=check_gates(m, config["gates"], bucket, config),
-        flags=check_flags(m, config.get("flags") or {}),
+        flags=flags,
         metrics=m,
         sic_bucket=bucket, confidence=confidence, scored=scored, abstentions=abst,
         risk=_round(ri),

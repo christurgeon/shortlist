@@ -103,6 +103,14 @@ flags:
   # the insider.conviction block is enabled (the fields stay None otherwise).
   insider_cluster_buy: { min_distinct: 3 }
   planned_sale:        { min_value: 1 }
+  # Soft value-trap advisory: a name that looks cheap (high value sub-score) while
+  # its quality OR growth is weak. Level-based proxy (no deterioration trend without
+  # snapshot history). Advisory only — never affects passed/composite/scored.
+  # All three are UNFITTED priors — backtest before trusting.
+  value_trap:
+    min_value_score:   60   # "cheap" floor on the value sub-score (0-100)
+    max_quality_score: 40   # below this, quality is "weak"
+    max_growth_score:  40   # below this, growth is "weak"
 
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]

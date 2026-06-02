@@ -290,6 +290,57 @@ def test_check_flags_none_inputs_are_noop():
     assert check_flags(_crowded_metrics(), {}) == []          # no flags config -> nothing
 
 
+VT_CFG = {"value_trap": {"min_value_score": 60, "max_quality_score": 40,
+                         "max_growth_score": 40}}
+
+
+def _value_trap_metrics(**kw):
+    # value high (~80 on the [0,1] CONFIG bands), quality low (~20). growth stays
+    # 50 (not weak), so the flag must fire via the quality clause.
+    base = metrics_all_50()
+    m = dataclasses.replace(
+        base,
+        # value legs high: upside 0.8, fcf_yield 0.8, pe_vs_history 0.8, peg 0.4(->80)
+        price=100.0, target_median=180.0, fcf_yield=0.8,
+        pe_ttm=10.0, pe_median_5y=18.0, peg=0.4,
+        # quality legs low: roe/net_margin 0.2, interest_coverage 2(->20), d/e 1.6(->20)
+        roe=0.2, net_margin=0.2, interest_coverage=2.0, debt_to_equity=1.6,
+    )
+    return dataclasses.replace(m, **kw)
+
+
+def test_value_trap_fires_when_cheap_and_weak():
+    cfg = dict(CONFIG); cfg["flags"] = VT_CFG
+    card = score(_value_trap_metrics(), cfg)
+    assert card.value >= 60
+    assert card.quality < 40
+    assert "value_trap" in card.flags
+    assert card.passed is True            # advisory only — never disqualifies
+
+
+def test_value_trap_silent_when_fundamentals_strong():
+    cfg = dict(CONFIG); cfg["flags"] = VT_CFG
+    m = _value_trap_metrics(roe=0.9, net_margin=0.9, interest_coverage=9.0,
+                            debt_to_equity=0.2)
+    card = score(m, cfg)
+    assert card.value >= 60
+    assert card.quality >= 40
+    assert "value_trap" not in card.flags
+
+
+def test_value_trap_silent_when_value_missing():
+    cfg = dict(CONFIG); cfg["flags"] = VT_CFG
+    m = StockMetrics(ticker="T", market_cap=10e9, roe=0.2, net_margin=0.2)
+    card = score(m, cfg)
+    assert card.value is None
+    assert "value_trap" not in card.flags
+
+
+def test_value_trap_noop_without_config_block():
+    card = score(_value_trap_metrics(), CONFIG)   # CONFIG has no flags block
+    assert "value_trap" not in card.flags
+
+
 def test_score_carries_flags_and_passed_unaffected():
     m = _crowded_metrics(market_cap=5.0e9)
     cfg = dict(CONFIG)
