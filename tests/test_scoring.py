@@ -508,3 +508,19 @@ def test_planned_sale_flag_fires_on_detected_dollars():
 
 def test_insider_flags_absent_when_unconfigured():
     assert check_flags(StockMetrics(ticker="X", insider_distinct_buyers=5), {}) == []
+
+
+# --- Task 8: gate-untouched regression -----------------------------------
+
+def test_gate_untouched_by_10b5_1_when_conviction_off():
+    # A name whose MSPR trips heavy_insider_selling, WITH a detected planned sale set.
+    # With conviction OFF (no insider.conviction block), the gate must still trip and
+    # the composite/passed must be identical to not setting the planned-sale field.
+    m_flag = StockMetrics(ticker="X", insider_sentiment=-0.9, market_cap=5e9,
+                          insider_planned_sell_value=9e6)
+    m_plain = StockMetrics(ticker="X", insider_sentiment=-0.9, market_cap=5e9)
+    a = score(m_flag, _CFG)
+    b = score(m_plain, _CFG)
+    assert "heavy_insider_selling" in a.gates          # gate still trips
+    assert a.composite == b.composite                   # planned-sale field changes nothing
+    assert a.passed == b.passed and a.gates == b.gates
