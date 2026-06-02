@@ -30,12 +30,15 @@ def build_providers(names: list[str], config: dict | None = None) -> list[Provid
 
 
 def _construct(name: str, cls: type, config: dict) -> Provider:
-    """Instantiate a provider, passing through the config knobs it accepts. Only fmp
-    is config-aware today (insider opt-in, 429 retry budget); the rest take no args."""
+    """Instantiate a provider, passing through the config knobs it accepts. fmp and
+    edgar are config-aware (fmp: insider opt-in + 429 retries; edgar: insider
+    conviction enrichment); the rest take no args."""
     if name == "fmp":
         fmp_cfg = config.get("fmp") or {}
         return cls(
             fetch_insider=fmp_cfg.get("fetch_insider", False),
             max_retries=fmp_cfg.get("max_retries", 2),
         )
+    if name == "edgar":
+        return cls(config=config)
     return cls()

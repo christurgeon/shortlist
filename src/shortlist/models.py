@@ -60,6 +60,10 @@ class StockMetrics:
     # Insider activity (the "minimal insider selling" criterion lives here)
     insider_net_6m: Optional[float] = None     # net USD: buys positive, sells negative
     insider_sentiment: Optional[float] = None  # -1..1, Finnhub MSPR-style net signal
+    # Insider conviction (Form 4 enrichment; None unless the conviction feature is on)
+    insider_distinct_buyers: Optional[int] = None
+    insider_role_weighted_buy_value: Optional[float] = None
+    insider_planned_sell_value: Optional[float] = None
 
     # Filing-stream events (enrichment only; NOT scored — default None so the
     # screener merge.py never stamps phantom provenance for them). Set by the
