@@ -26,7 +26,7 @@ value its own weight, which means breaking the `max()`.
 | Mechanism | **Hard-replace** `opportunity` with two independent components, `value` and `momentum` | Cleanest, directly interpretable weights; user wants the tilt to be the default behavior, not opt-in |
 | Weights | quality 0.18 · moat 0.18 · growth 0.135 · **value 0.22** · **momentum 0.08** · insider 0.135 · risk 0.10 | Value pulls ~3× momentum; keeps momentum (the only backtest-validated, never-gated axis) a meaningful tiebreaker |
 | `ScoreCard.opportunity` | **Retain as display-only** `= max(momentum, value)` | Keeps JSON/CSV schema, scout report, and most test constructors stable; no longer feeds composite |
-| Confidence floors | **Lower** `min_scored_weight` 0.34 → 0.30, `thin_below` 0.5 → 0.40 | Splitting the component drops confidence for FMP-gated names; without this, value-tilted names can fall below the `scored` floor and drop out of the ranking — the opposite of the goal (review C2) |
+| Confidence floors | **Lower** `min_scored_weight` 0.34 → 0.25, `thin_below` 0.5 → 0.40 | Splitting the component drops confidence for FMP-gated names; without this, value-tilted names can fall below the `scored` floor and drop out of the ranking — the opposite of the goal (review C2). 0.25 is calibrated against the real worst case, not 0.30 — see §5 |
 | Value-trap guard | **Include** a soft advisory flag now | Value is now load-bearing; with FMP gated it collapses to a 2-of-4-leg average prone to flagging falling knives (review S1) |
 
 ### 3.1 Weights — note on the bloc
@@ -64,20 +64,33 @@ mistaken for an accident.
 
 ## 5. Confidence floors (`config.yaml`)
 
-- `validity.min_scored_weight`: `0.34` → `0.30`
+- `validity.min_scored_weight`: `0.34` → `0.25`
 - `ranking.thin_below`: `0.5` → `0.40`
 
 Rationale: with six components, `value` (the most FMP-gated sub-score: PEG and
 analyst-target upside both require FMP) counts toward confidence independently.
 Under the old `max()`, `opportunity` was "present" whenever momentum was present
 (momentum is never gated), so a value-gated name kept full confidence. After the
-split, the same name loses ~0.28 confidence purely from the schema change. With
-the floors left untouched this can push value-tilted names — **especially
-financials, where `moat` is already masked** — below `scored = confidence ≥
-0.34`, and `passed = not gates and scored` plus `rank_key = (scored, composite,
-confidence)` means a not-scored name is excluded from passing and sorted below
-every scored name. Lowering the floors restores headroom. The new values are
-priors, not fitted; revisit once snapshot history enables backtesting.
+split, the always-present floor of confidence for a gated name shrinks from the
+old `opportunity` weight (0.27) to just `momentum` (0.08) — a ~0.19 drop in
+guaranteed-present weight that a 0.04 floor cut (0.34→0.30) does **not** offset.
+
+**Worst-case arithmetic (financials, `moat` masked → `appl_w = 0.75`):**
+
+| Present components | `pres_w` | confidence | scored @0.34 | scored @0.30 | scored @0.25 |
+|---|---|---|---|---|---|
+| momentum + insider only | 0.08+0.135 = 0.215 | **0.287** | no | **no** | **yes** |
+| insider only (data-starved) | 0.135 | 0.180 | no | no | **no** |
+
+The momentum+insider name is exactly the value-tilted financials case the floor
+must keep in the ranking; at 0.30 it still drops out, so **0.25** is required.
+0.25 still correctly excludes the genuinely data-starved insider-only name
+(0.18). `passed = not gates and scored` and `rank_key = (scored, composite,
+confidence)` mean a not-scored name is excluded from passing and sorted below
+every scored name — hence the regression test in §9. The known-bucket floor only
+ever affects financials/insurer/REIT (unknown bucket is always `scored`). The
+new values are priors, not fitted; revisit once snapshot history enables
+backtesting.
 
 ## 6. Value-trap advisory flag (`scoring.py`, `config.yaml`)
 
@@ -92,13 +105,16 @@ without snapshot history there is no time-series; this is labeled honestly as a
 prior):
 
 ```
-value_trap = (value ≥ min_value_score)
-             AND ( (quality is not None AND quality < max_quality_score)
-                   OR (growth is not None AND growth < max_growth_score) )
+cfg = (config.get("flags") or {}).get("value_trap")   # None-safe; absent block ⇒ no-op
+value_trap = bool(cfg)
+             AND (value is not None AND value ≥ cfg["min_value_score"])
+             AND ( (quality is not None AND quality < cfg["max_quality_score"])
+                   OR (growth is not None AND growth < cfg["max_growth_score"]) )
 ```
 
-None-safe: if `value` is None the flag never fires. The quality/growth legs are
-each guarded so a missing leg cannot trip it alone.
+None-safe at every leg: if the config block is absent, or `value` is None, the
+flag never fires. The quality/growth legs are each guarded so a missing leg
+cannot trip it alone.
 
 ### 6.2 Config (ships ON — advisory-only, cannot harm the composite)
 
@@ -116,8 +132,19 @@ All three are **unfitted priors** — backtest before trusting.
 
 `check_flags(m, f)` operates on `StockMetrics` and has no access to sub-scores,
 so `value_trap` is computed inside `score()` after `val`, `q`, `gr` are
-available, then appended to the `flags` list. Keep `check_flags`'s signature
-unchanged; do not thread sub-scores into it.
+available. There is no standalone flags variable today — `flags=check_flags(...)`
+is assigned inline in the `ScoreCard(...)` constructor (`scoring.py:354`). Hoist
+it to a local first:
+
+```python
+flags = check_flags(m, config.get("flags") or {})
+if <value_trap condition>:
+    flags.append("value_trap")
+# ... ScoreCard(..., flags=flags, ...)
+```
+
+Keep `check_flags`'s signature unchanged; do not thread sub-scores into it, and
+do not mutate the returned `ScoreCard`.
 
 ## 7. Backtest alignment (`backtest/signals.py`)
 
@@ -142,20 +169,33 @@ only stale reference is the hard-coded test prior (§9).
   the composite no longer uses `max()`; assert value and momentum enter the
   composite with their own weights. Keep an assertion that the *display field*
   `opportunity == max(momentum, value)`.
-- `tests/test_scoring.py:333-346` (`_risk_config`, the `55.0`/`50.0` arithmetic)
-  — update to the six-component schema. The x0.9 risk-absent invariant is
-  intentionally retired by the split; re-pin the new composite arithmetic.
-- `tests/test_backtest_signals.py:69` and `tests/test_backtest_fit.py:5` —
-  replace `"opportunity"` in the weight dicts with `"value"`/`"momentum"`.
+- `tests/test_scoring.py` `test_composite_shifts_when_risk_present` (the
+  `55.0`/`50.0` arithmetic) **and** `test_composite_invariant_when_risk_absent`
+  (lines ~333-346) — update to the six-component schema. The x0.9 risk-absent
+  invariant is intentionally retired by the split; re-pin the new composite
+  arithmetic for both.
+- `tests/test_backtest_signals.py:69` — replace `"opportunity"` in the weight
+  dict with `"value"`/`"momentum"`.
+- `tests/test_backtest_fit.py` — **rewrite, not just edit the prior.** The
+  planted-signal body (`:9-17`) and the assertion `res.weights["opportunity"] >
+  PRIOR["opportunity"]` (`:29`) plant on `opportunity` as the predictive axis.
+  Re-plant on `value` (or `momentum`) and assert that fitted axis rises; a
+  prior-dict-only edit leaves a logically broken test (the planted key never
+  appears in the fitted weights).
 
 **Add:**
 - Composite arithmetic test: a name with distinct momentum/value scores produces
   the expected weighted composite (value weighted > momentum).
-- **C2 regression:** a value-gated financials name (moat masked, value missing)
-  still `scored` / `passed` under the new floors. This is the guardrail the
-  floor change exists for.
-- Value-trap flag: fires when cheap+weak; does not fire when cheap+strong or
-  when value is None; never changes `passed`/`composite`.
+- **C2 regression (worst case):** a financials name (moat masked) with only
+  `momentum` + `insider` present (quality/growth/value all gated) is still
+  `scored` / `passed` under `min_scored_weight = 0.25` (confidence 0.287). Pin
+  the worst case, not just the easy value-missing case — the latter scores ~0.71
+  and would give false confidence that the floor is adequate.
+- **Floor lower-bound test:** an insider-only financials name (confidence 0.18)
+  is still `not scored` at 0.25 — confirms the floor didn't go too low.
+- Value-trap flag: fires when cheap+weak; does not fire when cheap+strong, when
+  value is None, or when the config block is absent; never changes
+  `passed`/`composite`/`scored`.
 
 ## 10. Docs
 
@@ -165,6 +205,10 @@ only stale reference is the hard-coded test prior (§9).
 - `README.md` — any mention of the opportunity axis / weights.
 - `config.yaml` — weight-block comments; new `flags.value_trap` block;
   `validity`/`ranking` comments for the floor changes.
+- `.claude/skills/run/SKILL.md` — **required.** Lines ~100-101 and ~156 state
+  that momentum/value "are not weighted directly — only their `max`
+  (opportunity) is." That becomes factually wrong; update to describe the
+  independent value/momentum weights (opportunity is now display-only).
 
 ## 11. Output-surface relabeling (review N1)
 
@@ -174,5 +218,10 @@ contradicting the ranking:
 - `scout/report.py:22` "Opp" — leave as-is; it now reflects max(mom,val), which
   is still a fair one-glance summary, and value/momentum are available in the
   full card. No change this pass.
+
+**No JSON/CSV schema change.** `screen.py:286-288` and `:322-328` emit
+`momentum`, `value`, and `opportunity` as separate columns. All three stay; the
+`opportunity` column is retained, now decorative (= max(momentum, value)). This
+is intentional, not an oversight.
 
 (These are cosmetic; they must not change any score, gate, or sort.)
