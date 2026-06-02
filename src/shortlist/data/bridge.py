@@ -66,6 +66,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     if p:
         m.name = p.name
         m.sector = p.sector
+        m.sic = p.sic
         m.market_cap = p.market_cap
 
     f = snap.fundamentals
