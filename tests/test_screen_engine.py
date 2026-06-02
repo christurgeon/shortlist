@@ -89,3 +89,11 @@ def test_rank_key_sort_is_no_bury_and_tiebreaks_on_confidence():
                        insider=78.0, confidence=1.0, scored=True)
     ordered = sorted([full78, thin80], key=rank_key, reverse=True)
     assert [c.ticker for c in ordered] == ["THIN", "FULL"]   # composite dominates
+
+
+def test_flags_cell_appends_thin():
+    from shortlist.models import ScoreCard
+    from shortlist.screen import _flags_cell
+    c = ScoreCard(ticker="T", composite=50.0, quality=None, moat=None, growth=None,
+                  momentum=None, value=None, opportunity=None, insider=None, thin=True)
+    assert "thin" in _flags_cell(c).split(",")
