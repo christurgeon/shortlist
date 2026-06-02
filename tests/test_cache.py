@@ -418,7 +418,8 @@ def test_screen_cli_no_cache_flag_disables(monkeypatch, tmp_path):
     monkeypatch.setattr(screen, "_print_table", lambda c: None)
     cfg = tmp_path / "config.yaml"
     cfg.write_text("providers: [mock]\n")
-    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--no-cache"])
+    # cache config is engine-agnostic; pin screener so dispatch hits the patched run()
+    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--engine", "screener", "--no-cache"])
     assert captured["t"] == "NoOpCache"
     reset_default_cache()
 
@@ -437,6 +438,7 @@ def test_screen_cli_default_enables_cache(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)  # default .cache/ lands in tmp
     cfg = tmp_path / "config.yaml"
     cfg.write_text("providers: [mock]\n")  # no cache: block -> defaults on
-    screen.main(["--tickers", "AAPL", "--config", str(cfg)])
+    # cache config is engine-agnostic; pin screener so dispatch hits the patched run()
+    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--engine", "screener"])
     assert captured["t"] == "HttpCache"
     reset_default_cache()

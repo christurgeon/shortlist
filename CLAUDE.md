@@ -25,8 +25,11 @@ Each has its **own provider/source registry**. `fmp`, `finnhub`, and `edgar` are
 wired in **both** (`mock` too in the harness; the keyless `yahoo` OHLCV source —
 price/momentum/risk we compute ourselves — is **harness-only**, and leads the
 harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar, finra]`). The
-screener can score off the harness via `--engine harness` (`bridge.py:snapshot_to_metrics`
-adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes). The shared Form 4 aggregation lives
+**harness is the default engine** (`--engine harness`); `bridge.py:snapshot_to_metrics`
+adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes. `--engine screener`
+selects the lean, synchronous, FMP-centric path (fewer calls/ticker, no free-source
+fallback when FMP gates). **Note:** passing `--provider` overrides `harness_sources`, so
+omit it on the default path or yahoo/finra are dropped. The shared Form 4 aggregation lives
 in `providers/_form4.py` — a dependency-free leaf module used by both the screener
 `EdgarProvider` and the harness `EdgarSource`; edit insider extraction logic there,
 not in two places. The shared EDGAR financials leaf (`providers/_edgar_facts.py`,
@@ -145,9 +148,10 @@ Tune thresholds, weights, and gates in `config.yaml` — no code changes needed.
   back empty and coverage drops to "thin." Not a bug; major large-caps
   (AAPL/MSFT/LMT) work on the free tier. **Diagnosing it:** the symbol 402s on the
   basic `/stable/quote` endpoint while other symbols on the same key return `200`
-  — so it's per-symbol gating, *not* a quota/key problem. The visible fallout is a
-  **`null` `value` sub-score** (and `null` `upside_to_target`). **On `--engine
-  harness`**, 2 of 4 value legs are now recoverable from free sources: `fcf_yield`
+  — so it's per-symbol gating, *not* a quota/key problem. On the **lean `--engine
+  screener`** path the fallout is a **`null` `value` sub-score** (and `null`
+  `upside_to_target`) — all four value legs live on FMP there. **On the default
+  harness engine**, 2 of 4 value legs are recovered from free sources: `fcf_yield`
   from EDGAR 10-K FCF ÷ market cap (Finnhub/Yahoo backfill), and `pe_vs_history`
   from EDGAR annual EPS + Yahoo monthly closes. PEG and analyst-target upside still
   require FMP and remain `null` when gated. For full value coverage, **FMP's paid

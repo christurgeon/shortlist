@@ -155,9 +155,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
     ap.add_argument("--provider", help="comma-separated provider/source chain; overrides config")
-    ap.add_argument("--engine", choices=["screener", "harness"], default="screener",
-                    help="screener = synchronous providers (default); "
-                         "harness = async sources + TickerSnapshot bridge")
+    ap.add_argument("--engine", choices=["screener", "harness"], default="harness",
+                    help="harness = async sources (yahoo/fmp/finnhub/edgar/finra) + "
+                         "TickerSnapshot bridge (default; recovers value/growth/risk "
+                         "from free sources when FMP gates a symbol); "
+                         "screener = lean synchronous FMP-centric providers")
     ap.add_argument("--config", default=str(Path(__file__).parent.parent.parent / "config.yaml"))
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")

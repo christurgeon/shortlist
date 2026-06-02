@@ -82,7 +82,7 @@ vs. Form 4 alone; a full-universe run still needs the caching layer. Requires th
 
 ### Bridge derivations from EDGAR + Yahoo (value legs when FMP is absent)
 
-When `--engine harness` is used and FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` now derives two value-axis legs from free sources:
+On the harness engine (now the default) when FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` derives two value-axis legs from free sources:
 
 - **`fcf_yield`** = latest-annual FCF (EDGAR 10-K) ÷ market cap (backfilled from Finnhub or Yahoo when FMP is absent).
 - **`pe_vs_history`** = current P/E vs. own trailing median, using EDGAR annual diluted EPS + Yahoo historical closes. `YahooSource` now fetches 5 years of monthly-sampled dated closes; the bridge matches each fiscal-year-end to the nearest available close to reconstruct annual P/E.
@@ -103,7 +103,7 @@ When `--engine harness` is used and FMP has gated a symbol (`402`), `bridge.py:s
 `scoring.score()`:
 
 ```bash
-uv run shortlist --tickers GEV,AXON --engine harness
+uv run shortlist --tickers GEV,AXON          # harness is the default engine
 ```
 
 The bridge **derives** several fields the snapshot doesn't store directly, all
@@ -119,9 +119,10 @@ maps `pe_median_5y` (harness `value` runs on the full 4 legs, via the shared
 uses the 5y ROIC average instead of falling back to TTM `roic`, via
 `shortlist.stats.avg_roic`). The one remaining **accepted parity gap** vs. the
 screener is `eps_revision` (Alpha Vantage, out of scope) — it maps to `None` and
-the scorer redistributes weight. Harness-engine cards carry no `coverage`
-diagnostic; the snapshot's own `coverage()`/`missing()` remain available via
-`shortlist-harness`.
+the scorer redistributes weight. Harness-engine cards now carry the same `coverage`
+diagnostic as the screener (built by `data/coverage_adapt.py` from the snapshot's
+provenance/errors); the snapshot's own `coverage()`/`missing()` also remain available
+via `shortlist-harness`.
 
 **Sector-aware abstention is engine-symmetric.** The SIC that drives sector
 detection comes **only** from EDGAR on both stacks: the harness `EdgarSource` emits
@@ -237,7 +238,7 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
 - **FMP's free plan gates many symbols** (e.g. GEV) behind premium with a `402`
   "Special Endpoint" on a per-symbol basis — coverage correctly drops to "thin"
   for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier. On
-  `--engine harness`, `fcf_yield` and `pe_vs_history` are now partially recoverable
+  the default harness engine, `fcf_yield` and `pe_vs_history` are partially recoverable
   from free EDGAR + Yahoo data (see bridge derivations above); PEG and analyst-target
   upside still require FMP.
 - Equity-centric fields are blank for banks (SCHW) — coverage correctly flags it; sector-aware extraction is the fix.
@@ -247,29 +248,25 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
 
 The EDGAR value-leg recovery (PR #9) landed with two deliberate follow-ups still to action:
 
-1. **Manual end-to-end spot-check on a gated name** — not yet done. Run
-   `uv run shortlist --engine harness --tickers GEV --json` (needs `SEC_IDENTITY`
-   set, FMP free key) and confirm: `value` is non-null (i.e. `fcf_yield` +
-   `pe_vs_history` recovered from EDGAR+Yahoo), and the `coverage` block reports
-   `fmp: gated_402`. The automated tests + opt-in live SEC test pass, but a real
-   CLI run on a 402-gated symbol hasn't been eyeballed.
-2. **Harness consolidation (Phases B/C)** — flipping `--engine harness` to the
-   default (Phase B) and retiring the screener providers/`merge.py` (Phase C) are
-   **destructive / behavior-changing and require explicit user sign-off** — do not
-   auto-execute. The gating handoff checklist:
+1. **Manual end-to-end spot-check on a gated name** — ✅ *done (2026-06-02).* A live
+   CLI run on 10 non-mega-caps (all FMP-gated) confirmed `value`/`growth`/`risk`
+   recovered from EDGAR+Yahoo and the `coverage` block reporting `fmp: gated_402`,
+   with no exceptions and keys correctly redacted.
+2. **Harness consolidation** — **Phase B (flip default engine): ✅ done (2026-06-02).**
+   `--engine` now defaults to `harness`; `screener` stays selectable as the lean,
+   FMP-centric opt-in for one deprecation cycle. Caching (on by default) absorbs the
+   higher per-ticker cost (harness is ~13 FMP + ~2× EDGAR calls/ticker). Prerequisites
+   that were met before the flip:
+   - [x] Coverage-parity work (shipped in PR #9) merged and the full suite green
+   - [x] Live EDGAR integration run passed once (10-K filer + 20-F degradation)
+   - [x] Manual spot-check: harness vs screener on 5–10 names — non-gated legs match;
+         composites legitimately diverge only where the harness recovers gated legs
+   - [x] User explicitly approved the engine flip
 
-   *Before Phase B (flip default engine):*
-   - [ ] Coverage-parity work (shipped in PR #9) merged and the full suite green
-   - [ ] Live EDGAR integration run passed once (10-K filer + 20-F degradation)
-   - [ ] Manual spot-check: harness vs screener composite on 5–10 names within tolerance
-   - [ ] User explicitly approves the engine flip
-
-   *Before Phase C (delete screener providers):*
+   **Phase C (retire screener providers/`merge.py`) — still pending, requires sign-off:**
    - [ ] Phase B has run for several real universe screens without incident
    - [ ] No coverage/score regressions observed
    - [ ] User explicitly approves deleting `fmp.py`/`finnhub.py`/`edgar.py`/`merge.py`
 
-   When flipping (Phase B): keep `screener` selectable for one deprecation cycle, surface
-   the cost (harness is ~13 FMP + ~2× EDGAR calls/ticker — confirm acceptable or land
-   caching first), and update the README/`CLAUDE.md` "two layers" framing. When retiring
-   (Phase C): **keep** the shared leaves `providers/_form4.py` and `providers/_edgar_facts.py`.
+   When retiring (Phase C): **keep** the shared leaves `providers/_form4.py` and
+   `providers/_edgar_facts.py`.
