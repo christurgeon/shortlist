@@ -128,7 +128,7 @@ to:
 - [ ] **Step 2: Run the affected tests — verify they fail**
 
 Run: `uv run pytest tests/test_scoring.py::test_value_and_momentum_weighted_independently tests/test_scoring.py::test_composite_shifts_when_risk_present -v`
-Expected: FAIL — `score()` still reads `w["opportunity"]` and builds the single opportunity component, so it raises `KeyError: 'value'` (the fixtures no longer define `opportunity`).
+Expected: FAIL — `score()` still reads `w["opportunity"]` (`scoring.py:317`) and builds the single opportunity component, so it raises `KeyError: 'opportunity'` (the fixtures no longer define it).
 
 - [ ] **Step 3: Update `config.yaml` weights**
 
@@ -364,10 +364,19 @@ to:
                     # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).
 ```
 
+This breaks an exact-value assertion in the same test file. In `tests/test_scoring.py:418`, change:
+```python
+    assert cfg["ranking"]["thin_below"] == 0.5
+```
+to:
+```python
+    assert cfg["ranking"]["thin_below"] == 0.40
+```
+
 - [ ] **Step 4: Run the full suite — verify green**
 
 Run: `uv run pytest`
-Expected: PASS. The floor change can flip some financials/insurer/REIT fixtures from not-scored to scored; if a test asserted `scored is False`/`thin is True` for a known-bucket name whose confidence is now ≥ 0.25/≥ 0.40, update that assertion to match the new floor (check `tests/test_screen_engine.py`, `tests/test_coverage_abstention.py`).
+Expected: PASS. Note (verified during plan review): no existing `scored`/`thin`/`passed` assertion flips under 0.34→0.25 — the data-starved abstention cases stay at 0.18 (not scored) and the partial-coverage cases are ≥0.64 (scored). The only exact-value floor assertion is `test_scoring.py:418`, fixed in Step 3. If `uv run pytest` is still red here, the failure is a fixture that genuinely changed `scored`; update that single assertion to the new floor.
 
 - [ ] **Step 5: Commit**
 
@@ -554,6 +563,8 @@ with:
 ```
 `value` and `momentum` are now weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
 ```
+
+Also at line ~131, the phrase "`opportunity` collapses to `momentum`" now describes the display-only field. Reword to "the (display-only) `opportunity` column then equals `momentum`" so it doesn't imply opportunity drives the composite.
 
 - [ ] **Step 3: Update `CLAUDE.md`**
 
