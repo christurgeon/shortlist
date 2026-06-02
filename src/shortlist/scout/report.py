@@ -14,7 +14,8 @@ def render_message(cards: list[ScoreCard], manifest: RunManifest,
     for i, c in enumerate(cards, 1):
         flag = f"  ⚠️ {', '.join(c.gates)}" if c.gates else ""
         mark = "" if getattr(c, "scored", True) else "  (not scored)"
-        lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}{mark}")
+        thin = "  (thin)" if getattr(c, "thin", False) else ""
+        lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}{mark}{thin}")
         conf = getattr(c, "confidence", None)
         conf_str = f" Conf{conf:.2f}" if conf is not None else ""
         lines.append(f"   Q{_n(c.quality)} M{_n(c.moat)} G{_n(c.growth)} "

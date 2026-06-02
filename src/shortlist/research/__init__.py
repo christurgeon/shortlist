@@ -57,7 +57,8 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
-    """Enrich the top-N non-gated cards (already sorted by composite desc).
+    """Enrich the top-N non-gated cards. Sorts by `rank_key` (scored, composite,
+    confidence) before selecting — the caller need not pre-sort.
     `fetch`/`assess_fn` are injectable for testing. One failure never aborts the
     batch — each name yields a ResearchResult (with `skipped` set on failure)."""
     root = config.get("research", {}).get("output_root", "research")
