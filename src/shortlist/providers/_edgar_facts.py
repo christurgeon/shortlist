@@ -44,7 +44,28 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     if "standard_concept" not in df.columns:
         return None
     hit = df[df["standard_concept"] == concept]
-    return hit.iloc[0] if not hit.empty else None
+    if hit.empty:
+        return None
+    # edgartools' standard_concept is a lossy bucket: the same tag lands on rows
+    # that are NOT the line we want. Two failure modes, seen on real filings:
+    #   1. Non-cash supplemental NOTES. GOOGL tags "Capital expenditures incurred
+    #      but not yet paid" (a positive accrual, +15B) as CapitalExpenses; adding
+    #      it instead of the -91B cash payment makes FCF exceed OCF. These rows sit
+    #      under a *Noncash...Disclosure* parent abstract -> drop them first.
+    #   2. Nested CHILD line items. MSFT tags working-capital children ("Other
+    #      long-term assets", -3B) as NetCashFromOperatingActivities at level 4;
+    #      the real subtotal ("Net cash from operations", +136B) is level 2. Picking
+    #      iloc[0] grabbed a child and collapsed FCF to ~-capex -> prefer min level.
+    if "parent_abstract_concept" in hit.columns:
+        pac = hit["parent_abstract_concept"].astype(str).str.lower()
+        cash_flow = hit[~pac.str.contains("noncash|disclosure|supplemental", regex=True)]
+        if not cash_flow.empty:
+            hit = cash_flow
+    if "level" in hit.columns:
+        lvl = pd.to_numeric(hit["level"], errors="coerce")
+        if lvl.notna().any():
+            return hit.loc[lvl.idxmin()]
+    return hit.iloc[0]
 
 
 def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:

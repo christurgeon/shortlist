@@ -75,6 +75,52 @@ def test_series_with_pd_na_returns_empty():
     assert fin.revenue == []
 
 
+def test_operating_cf_picks_subtotal_not_breakdown_child():
+    # Real edgartools output attributes the section's standard_concept to nested
+    # working-capital CHILD rows too (e.g. MSFT: "Other long-term assets" carries
+    # standard_concept=NetCashFromOperatingActivities at level 4). The true subtotal
+    # ("Net cash from operations") is the LEAST-nested matching row. Picking the
+    # first match (a child) silently corrupts OCF -> FCF collapses to ~-capex.
+    cashflow = pd.DataFrame([
+        {"concept": "us-gaap_IncreaseDecreaseInOtherNoncurrentAssets", "label": "Other long-term assets",
+         "standard_concept": "NetCashFromOperatingActivities", "level": 4, "abstract": False,
+         "2025-06-30 (FY)": -2_950_000_000.0, "2024-06-30 (FY)": -6_817_000_000.0},
+        {"concept": "us-gaap_NetCashProvidedByUsedInOperatingActivities", "label": "Net cash from operations",
+         "standard_concept": "NetCashFromOperatingActivities", "level": 2, "abstract": False,
+         "2025-06-30 (FY)": 136_162_000_000.0, "2024-06-30 (FY)": 118_548_000_000.0},
+        {"concept": "us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "label": "Additions to PP&E",
+         "standard_concept": "CapitalExpenses", "level": 3, "abstract": False,
+         "2025-06-30 (FY)": -64_551_000_000.0, "2024-06-30 (FY)": -44_477_000_000.0},
+    ])
+    fin = extract_financials(_income_df(), cashflow, shares_diluted=None)
+    assert fin.operating_cash_flow == [136_162_000_000.0, 118_548_000_000.0]
+    assert fin.free_cash_flow == [pytest.approx(71_611_000_000.0), pytest.approx(74_071_000_000.0)]
+
+
+def test_capex_ignores_noncash_supplemental_disclosure_row():
+    # GOOGL tags a non-cash supplemental note ("capex incurred but not yet paid",
+    # a POSITIVE accrual) as CapitalExpenses. It sits under a Noncash...Disclosure
+    # parent abstract and is shallower (level 2) than the real cash payment (level
+    # 3) -- so a naive min-level pick would choose it and make FCF exceed OCF.
+    cashflow = pd.DataFrame([
+        {"concept": "us-gaap_NetCashProvidedByUsedInOperatingActivities", "label": "Net cash from operations",
+         "standard_concept": "NetCashFromOperatingActivities", "level": 2, "abstract": False,
+         "parent_abstract_concept": "us-gaap_CashCashEquivalents...PeriodIncreaseDecrease...",
+         "2025-12-31 (FY)": 164_713_000_000.0},
+        {"concept": "us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "label": "Purchases of PP&E",
+         "standard_concept": "CapitalExpenses", "level": 3, "abstract": False,
+         "parent_abstract_concept": "us-gaap_NetCashProvidedByUsedInInvestingActivitiesAbstract",
+         "2025-12-31 (FY)": -91_447_000_000.0},
+        {"concept": "us-gaap_CapitalExpendituresIncurredButNotYetPaid", "label": "Capex accrued",
+         "standard_concept": "CapitalExpenses", "level": 2, "abstract": False,
+         "parent_abstract_concept": "us-gaap_CashFlowNoncashInvestingAndFinancingActivitiesDisclosureAbstract",
+         "2025-12-31 (FY)": 15_090_000_000.0},
+    ])
+    fin = extract_financials(_income_df(), cashflow, shares_diluted=None)
+    assert fin.operating_cash_flow == [164_713_000_000.0]
+    assert fin.free_cash_flow == [pytest.approx(73_266_000_000.0)]  # 164.713B - 91.447B, never > OCF
+
+
 def test_fy_columns_detected_by_suffix_and_sorted_desc():
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r", "concept": "x", "level": 0, "abstract": False,
                         "2023-09-30 (FY)": 1.0, "2025-09-27 (FY)": 3.0, "2024-09-28 (FY)": 2.0}])
