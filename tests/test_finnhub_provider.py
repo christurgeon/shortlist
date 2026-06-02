@@ -8,6 +8,7 @@ def _make_provider() -> FinnhubProvider:
     p = FinnhubProvider.__new__(FinnhubProvider)
     p.key = "test"
     p.timeout = 15
+    p._cache = None  # falls back to the (test-disabled) global cache in _get
     return p
 
 

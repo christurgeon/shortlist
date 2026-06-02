@@ -13,6 +13,7 @@ def _make_provider(*, fetch_insider: bool = False, max_retries: int = 2) -> FMPP
     p.timeout = 15
     p.fetch_insider = fetch_insider
     p.max_retries = max_retries
+    p._cache = None  # falls back to the (test-disabled) global cache in _get
     p._session = None  # tests that touch HTTP set this explicitly
     p._spy_6m = None
     return p

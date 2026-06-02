@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from ..cache import get_default_cache
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
 from .models import (
@@ -40,21 +41,27 @@ class FMPSource(Source):
     # new keys on 2025-08-31. Every endpoint takes `?symbol=`.
     BASE = "https://financialmodelingprep.com/stable"
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0):
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *, cache=None):
         self.key = api_key or os.environ.get("FMP_API_KEY")
         if not self.key:
             raise RuntimeError("FMP_API_KEY not set")
         import httpx  # lazy: only needed for live runs
         self._client = httpx.AsyncClient(timeout=timeout)
+        self._cache = cache
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     async def _get(self, path: str, **params: Any) -> Any:
         params["apikey"] = self.key
-        r = await self._client.get(f"{self.BASE}/{path}", params=params)
-        r.raise_for_status()
-        return r.json()
+
+        async def fetch():
+            r = await self._client.get(f"{self.BASE}/{path}", params=params)
+            r.raise_for_status()
+            return r.json()
+
+        cache = self._cache or get_default_cache()
+        return await cache.aget_or_fetch("fmp", path, params, fetch)
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
@@ -176,21 +183,27 @@ class FinnhubSource(Source):
     name = "finnhub"
     BASE = "https://finnhub.io/api/v1"
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0):
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *, cache=None):
         self.key = api_key or os.environ.get("FINNHUB_API_KEY")
         if not self.key:
             raise RuntimeError("FINNHUB_API_KEY not set")
         import httpx
         self._client = httpx.AsyncClient(timeout=timeout)
+        self._cache = cache
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     async def _get(self, path: str, **params: Any) -> Any:
         params["token"] = self.key
-        r = await self._client.get(f"{self.BASE}/{path}", params=params)
-        r.raise_for_status()
-        return r.json()
+
+        async def fetch():
+            r = await self._client.get(f"{self.BASE}/{path}", params=params)
+            r.raise_for_status()
+            return r.json()
+
+        cache = self._cache or get_default_cache()
+        return await cache.aget_or_fetch("finnhub", path, params, fetch)
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)

@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 import requests
 
+from ..cache import get_default_cache
 from ..models import StockMetrics
 from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
 from .base import Provider
@@ -36,6 +37,7 @@ class FMPProvider(Provider):
         *,
         fetch_insider: bool = False,
         max_retries: int = 2,
+        cache=None,
     ):
         self.key = api_key or os.environ.get("FMP_API_KEY")
         if not self.key:
@@ -47,22 +49,28 @@ class FMPProvider(Provider):
         # paid tier (config: fmp.fetch_insider).
         self.fetch_insider = fetch_insider
         self.max_retries = max_retries
+        self._cache = cache
         self._session = requests.Session()
         self._spy_6m: Optional[float] = None
 
     def _get(self, path: str, **params: Any) -> Any:
         params["apikey"] = self.key
         url = f"{BASE}/{path}"
-        for attempt in range(self.max_retries + 1):
-            r = self._session.get(url, params=params, timeout=self.timeout)
-            # 429 is a transient throttle; back off and retry a bounded number of
-            # times. On the final attempt (or any non-429), let raise_for_status
-            # surface the outcome so an exhausted daily quota isn't spun on forever.
-            if r.status_code != 429 or attempt == self.max_retries:
-                r.raise_for_status()
-                return r.json()
-            time.sleep(_retry_after_seconds(r, attempt))
-        raise AssertionError("unreachable: the final attempt always returns or raises")
+
+        def fetch():
+            for attempt in range(self.max_retries + 1):
+                r = self._session.get(url, params=params, timeout=self.timeout)
+                # 429 is a transient throttle; back off and retry a bounded number of
+                # times. On the final attempt (or any non-429), let raise_for_status
+                # surface the outcome so an exhausted daily quota isn't spun on forever.
+                if r.status_code != 429 or attempt == self.max_retries:
+                    r.raise_for_status()
+                    return r.json()
+                time.sleep(_retry_after_seconds(r, attempt))
+            raise AssertionError("unreachable: the final attempt always returns or raises")
+
+        cache = self._cache or get_default_cache()
+        return cache.get_or_fetch("fmp", path, params, fetch)
 
     def _change_6m(self, ticker: str) -> Optional[float]:
         data = self._get("stock-price-change", symbol=ticker)

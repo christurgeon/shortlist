@@ -325,13 +325,40 @@ derived-signal JSONs the wiring code can target. The keyed script exercises the 
 endpoints we already have keys for and leaves runnable, env-guarded stubs for Alpha Vantage
 and Tiingo (add a free key and they light up).
 
-## 6. Scale hardening — the caching layer (FUTURE WORK, not yet built)
+## 6. Scale hardening — the caching layer (SHIPPED 2026-06)
 
-**Status: not started.** This is the top scale-hardening item and the unblocker for any
-full-universe / sector-relative work (cross-referenced from `ASSESSMENT_GAPS.md` §2.3, §4 and
-`CLAUDE.md`). Until it exists, the free tiers cap us at a small watchlist per day.
+**Status: shipped.** Implemented in `src/shortlist/cache.py`; design in
+`docs/superpowers/specs/2026-06-01-http-cache-design.md`. This was the top scale-hardening
+item and the unblocker for full-universe / sector-relative work (`ASSESSMENT_GAPS.md` §2.3, §4).
 
-### Why it's needed (the symptom we keep hitting)
+### As built
+- **Module:** `src/shortlist/cache.py` — `HttpCache` (SQLite, default **rollback journal**,
+  not WAL: the process is short-lived/ad-hoc and may sit on NFS), plus a `NoOpCache` and a
+  configured **process-global singleton** (`configure_default_cache` / `get_default_cache`).
+- **Store:** `.cache/http.sqlite` (gitignored). Persists between ad-hoc CLI invocations.
+- **Scope:** FMP + Finnhub on **both** stacks (the four HTTP-JSON `_get` chokepoints).
+  Yahoo/FINRA keep their own per-day / per-settlement disk caches; EDGAR (edgartools, free,
+  uncapped) is intentionally uncached.
+- **Key:** `(provider, endpoint, params)` SHA-256, secrets stripped by name (key rotation
+  doesn't fragment the cache; no secret enters the store).
+- **TTL by data half-life**, keyed on `(provider, path)`: quote 6h, fundamentals 1d,
+  analyst 1d, statements 7d, profile 7d. Config-driven under `config.yaml: cache.ttl.<bucket>`.
+- **Never cache soft failures:** a payload-level predicate skips empty `[]`/`{}`/`None` and
+  `{"error": …}` bodies — FMP/Finnhub return 200-OK on gating/no-coverage, so
+  `raise_for_status()` alone is insufficient. Errors that raise are never written.
+- **On by default**; `--no-cache` disables, `--refresh-cache` bypasses reads and repopulates.
+  `--demo` runs offline so the cache is disabled there.
+- **Honesty rule honoured:** a cache hit returns the same parsed object as a live fetch, so
+  `coverage()` cannot tell them apart. A corrupt/unopenable DB degrades to `NoOpCache` (never
+  breaks a screen).
+
+### Acceptance — met (see `tests/test_cache.py`)
+- Re-running the same basket within TTL makes **zero** upstream calls for cached buckets
+  (call-counting fakes assert this for the sync and async paths).
+- `--refresh-cache` repopulates; TTL expiry triggers a single re-fetch; errors and empty
+  soft-failures are never cached.
+
+### Why it was needed (the symptom we kept hitting)
 FMP's free plan allows ~250 calls/day and ~5/min. The screener spends ~8 calls/ticker (was 9
 before the insider call was gated off), the harness ~13 — so a handful of names exhausts the
 **daily** quota and a 5-ticker burst trips the **per-minute** throttle. Both surface as `429`s.
@@ -339,31 +366,7 @@ We already made the failure *honest and self-healing* (2025/2026 work: `FMPProvi
 429s with `Retry-After`-aware backoff; `fetch()` keeps partial legs; coverage reports a distinct
 `rate_limited_429` status with a "budget exhausted, not gated" note) — but retry/backoff cannot
 manufacture quota. The only thing that makes **repeated** runs cheap is not re-fetching what we
-already pulled. That is caching.
-
-### Design sketch
-- **Key:** `(provider/source, endpoint, symbol, params)` → response payload. Stable across runs.
-- **Store:** start with on-disk JSON/SQLite under a gitignored `.cache/` (Yahoo already does a
-  per-day cache under `.cache/yahoo/` — follow that precedent, generalize it). SQLite gives
-  atomic writes + TTL queries without a daemon.
-- **TTL by data half-life, not one global value:** quotes/prices intraday-to-daily; ratios &
-  key-metrics daily; annual statements / 10-K financials ~weekly (they only change on a filing);
-  analyst grades & targets daily. Config-drive the TTLs (`cache.ttl.<bucket>`), default sane.
-- **Layering:** wrap at the HTTP boundary (`FMPProvider._get`, `FinnhubProvider`'s getter, the
-  harness `Source` fetchers) so every endpoint benefits and providers stay unaware. A shared
-  `cache.py` with `get_or_fetch(key, ttl, fetcher)` keeps it one place.
-- **Invalidation / freshness:** `--refresh` already exists for research briefs — extend the same
-  flag to bypass/repopulate the data cache. Never serve a cached **error** (don't cache 4xx/5xx).
-- **Honesty rule:** a cache hit must be indistinguishable from a live fetch to `coverage()` — a
-  stale-but-present value is still "ok"; only a true miss with no fallback is a gap. Don't let
-  caching silently paper over a provider that has actually gone dark.
-
-### Acceptance
-- Re-running the same basket within TTL makes **zero** upstream calls for the cached buckets
-  (assert via a call-counting fake), so the daily-quota ceiling stops biting on iteration.
-- A cold full-S&P-500 run still respects rate limits (cache misses are paced by the existing
-  retry/backoff), and a warm re-run completes without 429s.
-- `--refresh` repopulates; TTL expiry triggers a single re-fetch; errors are never cached.
+already pulled. That is caching — now shipped (see "As built" above).
 
 ### Sequencing note
 This sits alongside the **FMP paid Starter tier (~$14–20/mo)** unlock: caching cuts *repeat* cost

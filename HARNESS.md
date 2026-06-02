@@ -18,6 +18,14 @@ uv run shortlist-harness --tickers GEV,LMT --sources fmp,finnhub --out snapshots
 # equivalently: uv run python -m shortlist.data.cli --tickers GEV,LMT --out snapshots
 ```
 
+**Caching.** FMP and Finnhub responses are cached on disk (`.cache/http.sqlite`,
+gitignored) **by default**, so a warm re-run of the same tickers within TTL makes
+zero upstream calls — the fix for the free-tier daily-quota ceiling. `--no-cache`
+disables it for a run; `--refresh-cache` bypasses cached responses and repopulates.
+Yahoo and FINRA keep their own per-day / per-settlement caches; EDGAR (free, uncapped)
+is uncached. TTLs are per data half-life (`config.yaml: cache.ttl`); full design in
+`docs/superpowers/specs/2026-06-01-http-cache-design.md`.
+
 Output per ticker is a coverage line — the harness's honest answer to "do we
 have what we need?":
 

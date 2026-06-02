@@ -17,9 +17,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="comma-separated source chain (default: fmp,finnhub; use 'mock' offline)")
     ap.add_argument("--out", help="directory to write dated JSON snapshots")
     ap.add_argument("--print", dest="show", action="store_true", help="print full JSON to stdout")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="disable the on-disk HTTP cache for this run")
+    ap.add_argument("--refresh-cache", action="store_true",
+                    help="bypass cached HTTP responses and repopulate them")
     args = ap.parse_args(argv)
 
     load_env()  # pick up API keys from a .env file if present
+
+    # This CLI loads no config.yaml, so the cache uses hardcoded TTL defaults (the
+    # spec's on-by-default behavior holds without a config block).
+    from ..cache import configure_default_cache
+    configure_default_cache(enabled=not args.no_cache, refresh=args.refresh_cache)
 
     tickers = [t.strip().upper() for t in args.tickers.split(",")]
     sources = [s.strip() for s in args.sources.split(",")]

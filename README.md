@@ -126,7 +126,7 @@ Four console scripts ship with the package (see `HARNESS.md` for the data-layer 
 
 | Command | Purpose |
 |---|---|
-| `shortlist` | The screener — rank a shortlist (`--demo`, `--engine harness`, `--research N`). |
+| `shortlist` | The screener — rank a shortlist (`--demo`, `--engine harness`, `--research N`). FMP/Finnhub responses are cached on disk by default so repeated runs are cheap; `--no-cache` / `--refresh-cache` control it. |
 | `shortlist-harness` | Fetch one assessment-ready `TickerSnapshot` per ticker (`--out` to persist). |
 | `shortlist-backtest` | Validate scores against forward returns — rank IC + quantile spreads (`ASSESSMENT_GAPS.md` §2.1). |
 | `shortlist-accumulate` | Capture point-in-time snapshots daily so the snapshot-replay backtest accrues history. **Scheduling is off by default** (`deploy/`). |
