@@ -77,3 +77,15 @@ def test_card_dict_includes_flags():
     d = _card_dict(_card(flags=["crowded_short"]))
     assert d["flags"] == ["crowded_short"]
     assert d["gates"] == []
+
+
+def test_rank_key_sort_is_no_bury_and_tiebreaks_on_confidence():
+    from shortlist.models import ScoreCard, rank_key
+    thin80 = ScoreCard(ticker="THIN", composite=80.0, quality=None, moat=None,
+                       growth=None, momentum=None, value=None, opportunity=80.0,
+                       insider=None, confidence=0.30, scored=True)
+    full78 = ScoreCard(ticker="FULL", composite=78.0, quality=78.0, moat=78.0,
+                       growth=78.0, momentum=78.0, value=78.0, opportunity=78.0,
+                       insider=78.0, confidence=1.0, scored=True)
+    ordered = sorted([full78, thin80], key=rank_key, reverse=True)
+    assert [c.ticker for c in ordered] == ["THIN", "FULL"]   # composite dominates

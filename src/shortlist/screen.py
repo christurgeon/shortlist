@@ -10,7 +10,7 @@ import yaml
 from .coverage import build_coverage, classify_failure, coverage_note_line
 from .env import load_env, redact_secrets
 from .merge import merge
-from .models import ScoreCard
+from .models import ScoreCard, rank_key
 from .providers import build_providers
 from .scoring import score
 
@@ -45,7 +45,7 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
         card = score(merge(per_provider), config)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
+    cards.sort(key=rank_key, reverse=True)
     return cards
 
 
@@ -67,7 +67,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
+    cards.sort(key=rank_key, reverse=True)
     return cards
 
 
