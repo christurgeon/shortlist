@@ -10,7 +10,7 @@ import yaml
 from .coverage import build_coverage, classify_failure, coverage_note_line
 from .env import load_env, redact_secrets
 from .merge import merge
-from .models import ScoreCard
+from .models import ScoreCard, rank_key
 from .providers import build_providers
 from .scoring import score
 
@@ -45,7 +45,7 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
         card = score(merge(per_provider), config)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
+    cards.sort(key=rank_key, reverse=True)
     return cards
 
 
@@ -67,13 +67,15 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
+    cards.sort(key=rank_key, reverse=True)
     return cards
 
 
 def _flags_cell(c: ScoreCard) -> str:
-    """Combined chips for the 'Flags' column: hard gates first, then soft flags."""
-    return ",".join(list(c.gates) + list(c.flags)) or "-"
+    """Combined chips for the 'Flags' column: hard gates first, then soft flags, then
+    the display-only 'thin' coverage advisory."""
+    chips = list(c.gates) + list(c.flags) + (["thin"] if getattr(c, "thin", False) else [])
+    return ",".join(chips) or "-"
 
 
 def _print_table(cards: list[ScoreCard]) -> None:
@@ -96,6 +98,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         ("Momt",    "right", 4),
         ("Value",   "right", 5),
         ("Insdr",   "right", 5),
+        ("Conf",    "right", 5),
         ("Risk",    "right", 5),
         ("Upside",  "right", 6),
         ("Flags",   "left",  5),
@@ -111,6 +114,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         table.add_row(
             str(i), c.ticker, f"{c.composite:.1f}",
             _f(c.quality), _f(c.moat), _f(c.growth), _f(c.momentum), _f(c.value), _f(c.insider),
+            f"{c.confidence:.2f}",
             _f(c.risk),
             f"{up*100:.0f}%" if up is not None else "-",
             _flags_cell(c), style=style,
@@ -120,11 +124,11 @@ def _print_table(cards: list[ScoreCard]) -> None:
 
 def _print_plain(cards: list[ScoreCard]) -> None:
     print(f"{'#':>2} {'TICK':<6} {'COMP':>5} {'QUAL':>5} {'MOAT':>5} {'GRW':>5} "
-          f"{'MOM':>5} {'VAL':>5} {'INSD':>5} {'RISK':>5}  FLAGS")
+          f"{'MOM':>5} {'VAL':>5} {'INSD':>5} {'CONF':>5} {'RISK':>5}  FLAGS")
     for i, c in enumerate(cards, 1):
         print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
               f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
-              f"{_f(c.insider):>5} {_f(c.risk):>5}  {_flags_cell(c)}")
+              f"{_f(c.insider):>5} {c.confidence:>5.2f} {_f(c.risk):>5}  {_flags_cell(c)}")
 
 
 def _print_coverage_notes(cards: list[ScoreCard]) -> None:
@@ -286,6 +290,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "sic_bucket": c.sic_bucket,
         "confidence": c.confidence,
         "scored": c.scored,
+        "thin": c.thin,
     }
     if c.abstentions:
         d["abstentions"] = c.abstentions
@@ -314,13 +319,13 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
         w = csv.writer(f)
         w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
                     "momentum", "value", "opportunity", "insider", "risk",
-                    "upside_to_target", "gates", "scored", "sic_bucket"])
+                    "upside_to_target", "gates", "scored", "confidence", "sic_bucket"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
                         d["growth"], d["momentum"], d["value"], d["opportunity"],
                         d["insider"], d["risk"], d["upside_to_target"],
-                        "|".join(d["gates"]), d["scored"], d["sic_bucket"]])
+                        "|".join(d["gates"]), d["scored"], d["confidence"], d["sic_bucket"]])
 
 
 if __name__ == "__main__":

@@ -388,3 +388,49 @@ def test_csv_has_aligned_risk_column(tmp_path):
     header, row = rows[0], rows[1]
     assert "risk" in header
     assert row[header.index("risk")] == str(card.risk)
+
+
+def test_thin_flag_set_below_threshold():
+    import copy, dataclasses
+    rc = copy.deepcopy(CONFIG)
+    rc["ranking"] = {"thin_below": 0.5}
+    # momentum-only name -> confidence well below 0.5 -> thin
+    m = StockMetrics(ticker="MOM", price_vs_200dma=0.2, rel_strength_6m=0.2,
+                     eps_revision=0.05)
+    card = score(m, rc)
+    assert 0.0 < card.confidence < 0.5
+    assert card.thin is True
+
+
+def test_thin_flag_false_above_threshold():
+    rc = {**CONFIG, "ranking": {"thin_below": 0.5}}
+    card = score(metrics_all_50(), rc)   # fully covered -> confidence 1.0
+    assert card.thin is False
+
+
+def test_thin_noop_when_ranking_absent():
+    # CONFIG has no `ranking` block -> thin always False, no KeyError
+    m = StockMetrics(ticker="MOM", price_vs_200dma=0.2, rel_strength_6m=0.2,
+                     eps_revision=0.05)
+    assert score(m, CONFIG).thin is False
+
+
+def test_shipped_config_has_ranking_thin_below():
+    cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+    assert cfg["ranking"]["thin_below"] == 0.5
+
+
+def test_csv_has_confidence_column_after_scored(tmp_path):
+    import csv
+    from shortlist.screen import _write_csv
+    from shortlist.models import ScoreCard
+    card = ScoreCard(ticker="T", composite=60.0, quality=None, moat=None, growth=None,
+                     momentum=None, value=None, opportunity=None, insider=None,
+                     confidence=0.42, scored=True)
+    path = tmp_path / "out.csv"
+    _write_csv([card], str(path))
+    rows = list(csv.reader(path.open()))
+    header, row = rows[0], rows[1]
+    assert "confidence" in header
+    assert header.index("confidence") == header.index("scored") + 1
+    assert row[header.index("confidence")] == str(card.confidence)

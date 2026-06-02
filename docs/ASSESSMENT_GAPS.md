@@ -246,7 +246,7 @@ financials, but it's general). Hand-tuned absolute bands are also brittle.
 
 ### Tier 2 — measuring the wrong thing / missing checks
 
-#### 2.4 Coverage isn't folded into ranking confidence
+#### 2.4 Coverage isn't folded into ranking confidence — **SURFACED (tilt deferred to §2.1)**
 Weight-redistribution (`scoring.py:106`) is elegant but it lets a name with **only**
 `momentum` present score 80 on that one axis and rank *above* a fully-covered 78. Thin data
 buys false confidence.
@@ -254,6 +254,17 @@ buys false confidence.
   inputs) and either tilt the rank by it or surface it as a first-class column so a sparse
   80 reads differently from a complete 78. The `coverage` diagnostic already knows what's
   missing — this just feeds it into rank, not just the stderr note.
+- **Shipped (the "surface it as a column" branch):** `confidence` is now a first-class
+  column (tables/CSV/JSON) plus a `thin` advisory (`confidence < ranking.thin_below`), and
+  a single `rank_key (scored, composite, confidence)` makes confidence an **exact-tie
+  breaker** at every sort site. See
+  `docs/superpowers/specs/2026-06-02-confidence-ranking-design.md`.
+- **Deliberately NOT done:** the *ranking tilt* (reordering a sparse 80 below a complete
+  78). A continuous tilt double-counts absence (composite already redistributes), is
+  confounded by FMP-402 gating (penalizes large-caps for subscription tier), and risks
+  burying strong-but-thin deep-value names in a human pre-screen. Reordering on coverage is
+  deferred until a coverage-vs-forward-returns backtest justifies it (§2.1). For now we
+  surface and let the human judge; composite still dominates the sort (no-bury guarantee).
 
 #### 2.5 No earnings-quality / dilution checks
 `quality_score` (`scoring.py:24`) is blind to whether earnings are *real* or whether

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from ..env import redact_secrets
+from ..models import rank_key
 from . import claude_cli, report
 from .assess import assess as _assess
 from .filings import fetch_10k as _fetch_10k
@@ -56,10 +57,11 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
-    """Enrich the top-N non-gated cards (already sorted by composite desc).
+    """Enrich the top-N non-gated cards. Sorts by `rank_key` (scored, composite,
+    confidence) before selecting — the caller need not pre-sort.
     `fetch`/`assess_fn` are injectable for testing. One failure never aborts the
     batch — each name yields a ResearchResult (with `skipped` set on failure)."""
     root = config.get("research", {}).get("output_root", "research")
-    ranked = sorted(cards, key=lambda c: c.composite, reverse=True)
+    ranked = sorted(cards, key=rank_key, reverse=True)
     selected = [c for c in ranked if c.passed][:top_n]   # passed == not gates and scored
     return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]

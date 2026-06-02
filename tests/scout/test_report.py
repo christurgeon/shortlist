@@ -10,6 +10,17 @@ def _card(ticker, comp, gates=None, coverage=None):
                      coverage=coverage)
 
 
+def test_message_surfaces_thin_marker():
+    thin_card = ScoreCard(ticker="THN", composite=80.0, quality=None, moat=None,
+                          growth=None, momentum=None, value=None, opportunity=80.0,
+                          insider=None, confidence=0.30, thin=True)
+    manifest = RunManifest(
+        session=date(2026, 5, 29), signals=[], raw=1, after_dedup=1,
+        after_prefilter=1, screened=1, dropped_for_budget=0, researched=[])
+    msg = render_message([thin_card], manifest, briefs={})
+    assert "(thin)" in msg
+
+
 def test_message_lists_ranked_names_and_signal_coverage():
     cards = [_card("AAPL", 78.4), _card("MSFT", 71.0, gates=["negative_fcf"])]
     manifest = RunManifest(

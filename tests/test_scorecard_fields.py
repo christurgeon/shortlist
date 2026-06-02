@@ -26,3 +26,40 @@ def test_passed_requires_scored_and_no_gates():
 def test_risk_field_defaults_none_and_accepts_value():
     assert _card().risk is None
     assert _card(risk=42.0).risk == 42.0
+
+
+def test_rank_key_orders_scored_then_composite_then_confidence():
+    from shortlist.models import rank_key
+    a = _card(composite=80.0, confidence=0.30, scored=True)
+    b = _card(composite=78.0, confidence=1.0, scored=True)
+    # composite dominates: the thin 80 still ranks ABOVE the complete 78 (no-bury).
+    assert sorted([b, a], key=rank_key, reverse=True) == [a, b]
+    # equal composite -> confidence breaks the tie (higher first)
+    c_hi = _card(composite=80.0, confidence=0.90, scored=True)
+    assert sorted([a, c_hi], key=rank_key, reverse=True) == [c_hi, a]
+    # scored dominates composite
+    not_scored = _card(composite=95.0, confidence=1.0, scored=False)
+    scored = _card(composite=50.0, confidence=1.0, scored=True)
+    assert sorted([not_scored, scored], key=rank_key, reverse=True) == [scored, not_scored]
+
+
+def test_rank_key_works_on_duck_typed_card_without_confidence():
+    from shortlist.models import rank_key
+    class _Loose:
+        composite = 70.0
+        scored = True
+    # no `confidence` attr -> getattr default 1.0, no AttributeError
+    assert rank_key(_Loose()) == (True, 70.0, 1.0)
+
+
+def test_thin_field_defaults_false():
+    assert _card().thin is False
+    assert _card(thin=True).thin is True
+
+
+def test_thin_does_not_affect_rank_key_or_passed():
+    from shortlist.models import rank_key
+    a = _card(composite=70.0, confidence=0.30, scored=True, thin=True)
+    b = _card(composite=70.0, confidence=0.30, scored=True, thin=False)
+    assert rank_key(a) == rank_key(b)
+    assert a.passed == b.passed

@@ -29,3 +29,8 @@ def test_card_dict_omits_abstentions_when_empty():
 def test_card_dict_includes_risk():
     d = _card_dict(_c(risk=100.0))
     assert d["risk"] == 100.0
+
+
+def test_card_dict_includes_thin():
+    d = _card_dict(_c(thin=True))
+    assert d["thin"] is True

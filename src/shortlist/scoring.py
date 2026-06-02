@@ -304,6 +304,9 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
                  if applic(*subs) and s is not None)
     confidence = round(pres_w / appl_w, 3) if appl_w else 0.0
     scored = True if bucket == "unknown" else confidence >= _validity(config)["min_scored_weight"]
+    # Display-only coverage advisory; config-gated and None-safe (absent block -> False).
+    thin_below = (config.get("ranking") or {}).get("thin_below")
+    thin = thin_below is not None and confidence < thin_below
 
     return ScoreCard(
         ticker=m.ticker,
@@ -315,6 +318,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         metrics=m,
         sic_bucket=bucket, confidence=confidence, scored=scored, abstentions=abst,
         risk=_round(ri),
+        thin=thin,
     )
 
 

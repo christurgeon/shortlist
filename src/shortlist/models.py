@@ -129,7 +129,19 @@ class ScoreCard:
     # 7th sub-score (risk). Appended last so positional construction through the
     # leading fields is unaffected. Composite-only tilt; excluded from confidence.
     risk: Optional[float] = None
+    # Display-only coverage advisory (confidence < ranking.thin_below). Derived from
+    # confidence; never feeds rank_key/passed/composite. Appended last.
+    thin: bool = False
 
     @property
     def passed(self) -> bool:
         return not self.gates and self.scored
+
+
+def rank_key(card) -> tuple:
+    """Ranking order, descending: scored first, then composite, then confidence as a
+    tiebreaker. composite is rounded to 0.1 (scoring.py), so confidence only decides
+    exact ties — a higher composite always wins (we never bury a strong-but-thin name).
+    getattr-based so it also works on the duck-typed cards enrich() accepts. Single
+    source of truth for every sort site (screen, research, scout)."""
+    return (getattr(card, "scored", True), card.composite, getattr(card, "confidence", 1.0))
