@@ -29,12 +29,15 @@ _SAMPLE: dict[str, dict] = {
         insider_net_6m=-0.4e6, insider_sentiment=0.0,
     ),
     "SCHW": dict(
-        name="Charles Schwab", sector="Financials", price=87, market_cap=152e9,
-        pe_ttm=17.0, pe_median_5y=20.0, fcf_yield=None, target_median=115,
-        roe=0.17, roic=None, roic_5y_avg=None, gross_margin=None, net_margin=0.36,
-        debt_to_equity=None, interest_coverage=None, fcf_positive=True,
+        # Broker-dealer (SIC 6211). Masked legs are PRESENT (not None) so abstention
+        # is driven by sector masking, not missing data — and D/E 8.0 would trip
+        # over_leveraged if the gate weren't masked for financials.
+        name="Charles Schwab", sector="Financials", sic="6211", price=87, market_cap=152e9,
+        pe_ttm=17.0, pe_median_5y=20.0, fcf_yield=0.02, target_median=115,
+        roe=0.17, roic=0.20, roic_5y_avg=0.20, gross_margin=0.55, net_margin=0.36,
+        debt_to_equity=8.0, interest_coverage=1.5, fcf_positive=True,
         revenue_cagr=0.08, eps_cagr=0.06, revenue_growth_persistence=0.50,
-        gross_margin_stability=None, price_vs_200dma=-0.05, rel_strength_6m=-0.08,
+        gross_margin_stability=0.90, price_vs_200dma=-0.05, rel_strength_6m=-0.08,
         eps_revision=0.06, rating_buy=17, rating_hold=2, rating_sell=1,
         insider_net_6m=-1.2e6, insider_sentiment=-0.05,
     ),

@@ -66,7 +66,7 @@ SAMPLE = {
         "snapshot": _snap(
             "SCHW",
             Profile(name="The Charles Schwab Corporation", sector="Financial Services",
-                    industry="Capital Markets", exchange="NYSE", currency="USD",
+                    industry="Capital Markets", sic="6211", exchange="NYSE", currency="USD",
                     country="US", market_cap=152e9, beta=1.0),
             Fundamentals(pe_ttm=17.0, peg=0.9, roe=0.17, roic=None, gross_margin=None,
                          net_margin=0.36, operating_margin=0.45, debt_to_equity=None,
