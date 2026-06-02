@@ -214,17 +214,26 @@ weight-redistribution:
 #   applicable), and PRESENT if either constituent produced a number.
 confidence = (sum of weights of PRESENT applicable components)
            / (sum of weights of APPLICABLE components)
-scored = confidence >= config["validity"]["min_scored_weight"]
+
+# The composite floor is BUCKET-GATED, exactly like the leg floor:
+if bucket == "unknown":
+    scored = True                                   # pure back-compat: never withhold
+else:
+    scored = confidence >= config["validity"]["min_scored_weight"]
 ```
 
-Denominator uses *applicable* component weight, not all weight, so a sector that
-legitimately has fewer applicable components (financials: moat excluded) is not
-unfairly penalised — `confidence` measures **data completeness over what is
-measurable**, not breadth. Breadth (how many of the five are inapplicable) is
-visible separately via `abstentions` (§7). `composite` is still computed from
-present components (unchanged math). For `unknown`, every component is applicable
-→ `confidence` = present-weight/total-weight, and `min_scored_weight` is set so
-that today's passing names stay `scored` (see §6 no-op guard).
+`scored` is **always `True` for the `unknown` bucket** — this is the hard no-op
+guarantee that an operating company which gets *any* composite today (e.g. a
+momentum-only name scoring on opportunity alone) can never flip to `not_scored`.
+`min_scored_weight` therefore only ever affects the masked sectors.
+
+`confidence` is still computed for every bucket (and emitted in `--json`) as a
+transparency signal, but it only *gates* scoring for known buckets. Its denominator
+uses *applicable* component weight, not all weight, so a sector that legitimately
+has fewer applicable components (financials: moat excluded) is not unfairly
+penalised — it measures **data completeness over what is measurable**, not breadth.
+Breadth is visible separately via `abstentions` (§7). `composite` is still computed
+from present components (unchanged math).
 
 **Gate masking.** `check_gates` skips any gate where
 `not gate_applicable(bucket, gate, config)`.
