@@ -212,9 +212,12 @@ def test_composite_invariant_when_risk_absent():
     assert score(m, rc).composite == 50.0
 
 
-def test_confidence_and_scored_invariant_when_risk_absent():
-    """Risk is excluded from components, so confidence/scored/passed are identical
-    with or without the risk weight when risk data is absent."""
+def test_confidence_invariant_unknown_bucket_and_no_risk_abstention():
+    """Basic mechanism check (unknown bucket, all components present -> confidence
+    1.0 both ways): risk leaves confidence/scored/passed untouched and writes no
+    abstention. NOTE: this case is trivially 1.0==1.0; the *meaningful* known-bucket
+    partial-coverage guard (the scored True->False flip) is in
+    tests/test_scoring_abstention.py (Task 4) where a sectors/validity config exists."""
     import dataclasses
     rc = _risk_config()
     m = dataclasses.replace(metrics_all_50(), realized_vol=None, max_drawdown=None)
@@ -237,7 +240,7 @@ def test_no_keyerror_on_config_without_risk():
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest tests/test_scoring.py -k "composite_shifts or composite_invariant or confidence_and_scored_invariant or no_keyerror_on_config" -v`
+Run: `uv run pytest tests/test_scoring.py -k "composite_shifts or composite_invariant or confidence_invariant_unknown or no_keyerror_on_config" -v`
 Expected: FAIL — `test_composite_shifts_when_risk_present` and others fail because `card.risk` is always `None` / composite doesn't shift.
 
 - [ ] **Step 3: Wire risk into `score()`**
@@ -299,7 +302,7 @@ Add `risk=_round(ri),` as the final keyword argument:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest tests/test_scoring.py -k "composite_shifts or composite_invariant or confidence_and_scored_invariant or no_keyerror_on_config" -v`
+Run: `uv run pytest tests/test_scoring.py -k "composite_shifts or composite_invariant or confidence_invariant_unknown or no_keyerror_on_config" -v`
 Expected: PASS (all four)
 
 - [ ] **Step 5: Run the whole scoring + sector suite (regression)**
@@ -328,7 +331,7 @@ Add to `tests/test_scoring.py` (loads the real shipped config and asserts risk i
 
 ```python
 def test_shipped_config_activates_risk():
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
     w = cfg["weights"]
     assert w["risk"] == 0.10
     assert abs(sum(w.values()) - 1.0) < 1e-9
@@ -377,15 +380,63 @@ weights:
 Run: `uv run pytest tests/test_scoring.py::test_shipped_config_activates_risk -v`
 Expected: PASS
 
-- [ ] **Step 5: Run the full scoring suite + any config-dependent integration tests**
+- [ ] **Step 5: Add the known-bucket confidence-regression guard (the real blocker test)**
 
-Run: `uv run pytest tests/test_scoring.py tests/test_harness.py tests/test_bridge.py -q`
+The unknown-bucket invariant in Task 3 is trivially `1.0 == 1.0`. The regression the
+design spec §3/§5.4 actually targets — a partially-covered **financials** name whose
+`confidence` sits between the floor and 1.0, which would flip `scored` True→False if
+risk wrongly entered the confidence denominator — needs a `sectors`/`validity` config.
+The shipped `config.yaml` now has both, and `tests/test_scoring_abstention.py` already
+has the `_fin()` (SIC 6211) fixture loading it as `CFG`. Add this test there:
+
+```python
+import copy
+
+
+def test_risk_axis_does_not_regress_known_bucket_confidence():
+    """A financials name with PARTIAL coverage (0 < confidence < 1) must keep the
+    SAME confidence/scored/passed whether or not the risk weight is in config. Risk
+    is a composite-only tilt and must never enter the confidence denominator. Guards
+    the scored True->False flip the design spec §3/§5.4 calls out: if risk were added
+    to `components`, appl_w would grow and confidence would drop, failing this test."""
+    # financials with only quality + opportunity present among APPLICABLE components
+    # (moat is masked/inapplicable; growth + insider made absent -> confidence < 1).
+    m = _fin(revenue_cagr=None, fcf_cagr=None, eps_cagr=None,
+             revenue_growth_persistence=None,            # growth absent
+             insider_net_6m=None, insider_sentiment=None)  # insider absent
+    cfg_no_risk = copy.deepcopy(CFG)
+    del cfg_no_risk["weights"]["risk"]
+    del cfg_no_risk["thresholds"]["realized_vol"]
+    del cfg_no_risk["thresholds"]["max_drawdown"]
+
+    with_risk = score(m, CFG)
+    without_risk = score(m, cfg_no_risk)
+
+    assert with_risk.sic_bucket == "financials"
+    assert 0.0 < with_risk.confidence < 1.0      # genuinely partial -> non-trivial guard
+    assert with_risk.scored is True              # above the 0.34 floor
+    assert with_risk.confidence == without_risk.confidence
+    assert with_risk.scored == without_risk.scored
+    assert with_risk.passed == without_risk.passed
+```
+
+Run: `uv run pytest tests/test_scoring_abstention.py::test_risk_axis_does_not_regress_known_bucket_confidence -v`
+Expected: PASS (with the composite-only implementation from Task 3). This is a
+regression guard, not a fail-first driver — if it does NOT pass, risk has leaked into
+the `components`/confidence path and Task 3 must be corrected. If `confidence` comes
+back as `1.0` (not `< 1.0`), the chosen absent legs didn't reduce coverage — drop more
+present legs (e.g. also set `roe=None, net_margin=None` to remove quality) until
+`0.34 < confidence < 1.0`, keeping `scored` True.
+
+- [ ] **Step 6: Run the full scoring suite + config-dependent integration tests**
+
+Run: `uv run pytest tests/test_scoring.py tests/test_scoring_abstention.py tests/test_harness.py tests/test_bridge.py -q`
 Expected: PASS. The shipped-config integration test (`test_score_runs_against_shipped_config_and_mock_data`, line 242) only asserts `0.0 <= composite <= 100.0` and the `opportunity == max(momentum, value)` identity — it has **no** frozen composite value, and `MockProvider`'s sample data sets no `realized_vol`/`max_drawdown`, so risk stays `None` there and the composite is unchanged. No edit to that test is needed.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add config.yaml tests/test_scoring.py
+git add config.yaml tests/test_scoring.py tests/test_scoring_abstention.py
 git commit -m "feat(config): activate risk axis (weight 0.10, proportional rescale)"
 ```
 
@@ -550,7 +601,7 @@ git commit -m "test: risk axis full-suite green + demo smoke"
 
 - Spec §4.1 (legs/bands) → Task 2 + Task 4.
 - Spec §4.2 (composite-only, config-gated, no abstention) → Task 3.
-- Spec §3 / §4.3 (composite + confidence/scored invariants) → Task 3 Steps 1 (`test_composite_invariant_when_risk_absent`, `test_confidence_and_scored_invariant_when_risk_absent`).
+- Spec §3 / §4.3 (composite + confidence/scored invariants) → Task 3 Steps 1 (`test_composite_invariant_when_risk_absent`, `test_confidence_invariant_unknown_bucket_and_no_risk_abstention`) + the known-bucket guard `test_risk_axis_does_not_regress_known_bucket_confidence` (Task 4).
 - Spec §4.4 (all output surfaces; risk OUT of `_SUBSCORE_FIELDS`) → Task 5 (incl. Step 8 coverage check).
 - Spec §4.5 (config) → Task 4.
 - Spec §5 test plan items 1-9 → Tasks 2-5 tests (direction/clamp #1, composite shift #2, composite invariant #3, confidence/scored invariant #4, sector-neutral+no-abstention #5/§4.2 test, config-gate #6, coverage #7, output surfaces #8, full regression #9 → Task 6).
