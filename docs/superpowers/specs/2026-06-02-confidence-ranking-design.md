@@ -15,9 +15,13 @@ ranking. A momentum-only name (confidence ≈ 0.30) scoring 80 on its single pre
 axis ranks **above** a fully-covered name scoring 78. The human running the screen
 cannot tell the sparse 80 from the complete 78 at a glance.
 
-A latent bug compounds this: research/scout selection re-sorts by `composite` **alone**
-(`research/__init__.py:63`), discarding even the `scored` ordering the screen
-established.
+Research/scout selection also re-sorts by `composite` **alone**
+(`research/__init__.py:63`) rather than the screen's ranking key. This is a
+**cosmetic inconsistency, not a selection bug**: the very next line filters
+`[c for c in ranked if c.passed]` and `passed` already requires `scored`
+(`models.py:135`), so the `scored` term never changes *which* names are selected — only
+their order among exact ties. Aligning it to the shared ranking key keeps one source of
+truth for order; it does **not** change which names get (paid) Claude research.
 
 ## 2. Goal & non-goals
 
@@ -68,8 +72,12 @@ design treats as binding constraints:
 
 ## 3. The no-bury guarantee (the core invariant)
 
-`rank_key = (scored, composite, confidence)`, compared descending. Because tuples
-compare left-to-right and **`composite` is rounded to 0.1** (`scoring.py:298`):
+`rank_key = (scored, composite, confidence)`, compared descending. Both components are
+**always defined floats/bools** — `composite` is `round(num/den, 1)` or `0.0`
+(`scoring.py:299`), `confidence` is `round(pres_w/appl_w, 3)` or `0.0`
+(`scoring.py:305`), default `1.0` (`models.py`); neither is ever `None`, so the triple
+is always sortable. Because tuples compare left-to-right and **`composite` is rounded to
+0.1** (`scoring.py:299`):
 
 - A higher composite **always** outranks a lower one regardless of confidence — so a
   thin 80 still ranks above a complete 78. We never bury a strong-but-thin candidate.
@@ -78,33 +86,39 @@ compare left-to-right and **`composite` is rounded to 0.1** (`scoring.py:298`):
   it breaks the tie toward the better-covered name.
 
 This is transitive (a real total order on the triple), unlike an epsilon-band
-tiebreaker. It is the back-compat guarantee: ranking is identical to today except that
-previously-arbitrary exact ties become deterministic and coverage-aware. A regression
-test asserts the thin-80-above-complete-78 property explicitly.
+tiebreaker. It is the back-compat guarantee: screener ranking is identical to today
+except that previously-arbitrary exact ties become deterministic and coverage-aware. A
+regression test asserts the thin-80-above-complete-78 property explicitly.
 
 ## 4. Design
 
-### 4.1 `ScoreCard.rank_key` — one source of truth
+### 4.1 `rank_key` — one source of truth (a module function, not a property)
 
-Add a property:
+`enrich()` is **duck-typed**: `tests/research/test_enrich.py` passes plain `_Card`
+doubles that carry only `ticker`/`composite`/`gates`/`scored` — no `confidence`. A
+`ScoreCard.rank_key` *property* would raise `AttributeError` on those doubles. So
+`rank_key` is a **module-level function in `models.py`** that reads fields defensively
+with `getattr`, making it robust to both real `ScoreCard`s and loose doubles:
 
 ```python
-@property
-def rank_key(self) -> tuple:
-    """Ranking order, descending: scored first, then composite, then confidence as
-    a tiebreaker (composite is rounded to 0.1, so confidence only decides exact ties).
+def rank_key(card) -> tuple:
+    """Ranking order, descending: scored first, then composite, then confidence as a
+    tiebreaker (composite is rounded to 0.1, so confidence only decides exact ties).
+    getattr-based so it also works on the duck-typed cards enrich() accepts.
     Single source of truth for every sort site (screen, research, scout)."""
-    return (self.scored, self.composite, self.confidence)
+    return (getattr(card, "scored", True), card.composite, getattr(card, "confidence", 1.0))
 ```
 
-Replace the inline keys at both sort sites and the research re-sort:
+Replace the inline keys at all three sort sites with this one function:
 
-- `screen.py:48` (`run`): `cards.sort(key=lambda c: c.rank_key, reverse=True)`
+- `screen.py:48` (`run`): `cards.sort(key=rank_key, reverse=True)`
 - `screen.py:70` (`run_harness`): same
-- `research/__init__.py:63`: `ranked = sorted(cards, key=lambda c: c.rank_key, reverse=True)`
+- `research/__init__.py:63`: `ranked = sorted(cards, key=rank_key, reverse=True)`
 
-Scout inherits automatically: it renders `run_harness`'s sorted list (`report.py:14`)
-and selects via `enrich` (`daily.py`), both now keyed on `rank_key`.
+A duck-typed `_Card` without `confidence` sorts as if fully covered (`1.0`), which is
+exactly today's behavior for those tests (composite-only among `scored` survivors) — so
+the existing `enrich` tests stay green. Scout inherits automatically: it renders
+`run_harness`'s sorted list (`report.py:14`) and selects via `enrich` (`daily.py`).
 
 ### 4.2 `ScoreCard.thin` — display advisory
 
@@ -129,14 +143,21 @@ configs, backtest dicts), `thin` is always `False` — a pure no-op.
 ### 4.3 Surfacing
 
 - **JSON** (`_card_dict`, `screen.py`): `confidence` is already emitted; add `"thin": c.thin`.
-- **CSV** (`_write_csv`): add a `confidence` column (header + row, in lockstep).
-- **Rich + plain tables** (`_print_table`, `_print_plain`): add a `Conf` column showing
-  `confidence` (formatted to 2 decimals).
+- **CSV** (`_write_csv`): add a `confidence` column **immediately after `scored`** in
+  both the header list and the row list (in lockstep). Position pinned so the alignment
+  test has a defined target; existing CSV tests use `header.index(...)` so they are
+  position-independent and stay green.
+- **Rich + plain tables** (`_print_table`, `_print_plain`): add a `Conf` column **after
+  `Insdr`** (before `Risk`), showing `confidence` to 2 decimals. No test asserts table
+  layout, so this is display-only.
 - **`_flags_cell`** (`screen.py:74-76`): append `"thin"` after gates+flags when
   `c.thin`, so the existing Flags column carries the marker without polluting the
-  `flags` list (which stays metric-advisory-only).
-- **Scout report** (`scout/report.py`): append confidence (and a `thin` marker) to the
-  axis line.
+  `flags` list (which stays metric-advisory-only). Because `thin` defaults to `False`,
+  the exact-match test `test_flags_cell_merges_gates_and_flags`
+  (`tests/test_screen_engine.py`) is unaffected.
+- **Scout report** (`scout/report.py:18-19`): append `Conf{confidence}` to the axis line,
+  read via `getattr(c, "confidence", None)` / `getattr(c, "thin", False)` for render
+  robustness (matching the existing `getattr(c, "scored", True)` at `report.py:16`).
 
 ### 4.4 Config
 
@@ -156,8 +177,9 @@ Tunable; display-only so miscalibration is harmless.
    **above** a card with composite 78, confidence 1.0 (composite dominates). Two cards
    with **equal** composite sort by confidence (higher first). A not-`scored` card ranks
    below a `scored` card regardless of composite.
-2. **`rank_key` is a pure total order:** unit-test the property returns
-   `(scored, composite, confidence)`.
+2. **`rank_key` is a pure total order:** unit-test the function returns
+   `(scored, composite, confidence)` for a real card, and works on a duck-typed object
+   lacking `confidence` (defaults to `1.0` via `getattr`).
 3. **`thin` threshold:** `confidence < thin_below` → `thin True`; `≥` → `False`;
    `ranking` block absent → `thin` always `False` (no-op).
 4. **`thin` is inert:** a thin card with the same composite/confidence has identical
@@ -166,8 +188,10 @@ Tunable; display-only so miscalibration is harmless.
 5. **Surfacing:** `thin` in JSON; `confidence` column present and value-aligned in CSV;
    `thin` token appears in `_flags_cell` when set.
 6. **`enrich` uses `rank_key`:** research selection orders by `(scored, composite,
-   confidence)`, not `composite` alone (regression for the `research/__init__.py:63`
-   bug).
+   confidence)`, not `composite` alone — and the existing duck-typed `_Card` doubles in
+   `tests/research/test_enrich.py` still sort without `AttributeError` (via the `getattr`
+   default). Selection *membership* is unchanged (the `passed` filter already enforces
+   `scored`); only tie *order* can change.
 7. **Back-compat:** full existing suite stays green; the two screener sort sites produce
    the same order as today except for previously-arbitrary exact ties.
 
