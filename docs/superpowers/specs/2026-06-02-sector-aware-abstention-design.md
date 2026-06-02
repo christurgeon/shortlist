@@ -77,10 +77,17 @@ growth, and ROE/net-margin quality.
 Expected v1 outcome for SCHW: **`over_leveraged` removed; `moat` abstained**
 (all three moat legs — gross_margin, gross_margin_stability, roic — are masked for
 financials, so moat has zero applicable legs → it genuinely abstains, matching the
-intent); **`value` abstained** (fcf_yield masked, and PEG/upside need FMP which
-gates SCHW); **`quality` scored on roe+net_margin**; **opportunity = momentum**
-(value gone); insider/growth scored where data present. Net: a *better and more
-honest* composite with the false-positive gate gone, moat correctly silent.
+intent); **`quality` scored on roe+net_margin**; insider/growth scored where data
+present. Net: a *better and more honest* composite with the false-positive gate
+gone, moat correctly silent.
+
+**Note on `value`:** only `fcf_yield` is masked among value's legs —
+`upside_to_target`, `pe_vs_history`, and `peg` remain *applicable*. So `value`
+abstains for a financial **only when those FMP-dependent legs are also missing**
+(the real FMP-gating case for SCHW), **not** because of masking. In an un-gated
+fixture where analyst-target/PE data is present (e.g. the offline mock), `value`
+correctly still scores on the surviving legs. Value-abstention here is data-driven,
+not mask-driven — by design.
 
 Whether the composite is `scored` or `not_scored` depends on the **validity floor
 applied over APPLICABLE sub-scores** (§4.3). SCHW's applicable sub-scores
@@ -279,7 +286,8 @@ sectors:
     - name: reit
       sic_ranges: [[6798, 6798]]
     - name: insurer
-      sic_ranges: [[6300, 6399], [6410, 6411]]   # carriers (life/health/P&C/title/surety) + agents
+      sic_ranges: [[6300, 6399], [6411, 6411]]   # carriers (life/health/P&C/title/surety) + 6411 agents
+      # (6410 is the SIC major-group header, not an assigned company code — excluded.)
     - name: financials           # depository banks, holdings, broker-dealers, mortgage/credit
       sic_ranges: [[6020, 6099], [6120, 6179], [6199, 6199], [6211, 6211], [6712, 6712]]
   # All three buckets share the SAME masked set (the legs that are structurally
@@ -338,9 +346,13 @@ behavioral, not statistical:
 and via a bridged harness `TickerSnapshot` yield identical `scored`/`composite`/
 `gates`/abstentions. This is the divergence-landmine regression test.
 
-**Golden worked example (SCHW):** assert the *direction* — `over_leveraged` gone,
-`value`/`moat` abstained, `confidence < 1.0`, composite still emitted — using mock
-metrics (no live keys), so it runs in CI.
+**Golden worked example (SCHW):** assert the *direction* using offline mock metrics
+(no live keys) — `over_leveraged` gone, `moat` abstained (all three legs masked),
+`quality` scored on roe+net_margin, the masked-leg set recorded as `inapplicable`,
+and composite still emitted. (`value` is **not** asserted abstained: in the un-gated
+mock it scores on upside+PE — see §3. `confidence` is 1.0 here because all four
+*applicable* components are present; a `confidence < 1.0` assertion belongs to a
+data-starved fixture, exercised separately.)
 
 **Full suite** (`uv run pytest`) stays green; the unknown-sector no-op test is the
 back-compat guard for scout/`/run`/backtest.
