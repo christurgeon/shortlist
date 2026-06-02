@@ -130,7 +130,9 @@ fmp:
 #       ten_pct:  0.5
 #       unknown:  1.0                   # missing role == neutral (load-bearing for back-compat)
 
-# Default source chain for `--engine harness` (yahoo first => wins the price merge).
+# Default source chain for the harness engine — which is now the DEFAULT engine
+# (yahoo first => wins the price merge). Used whenever `--provider` is omitted;
+# passing `--provider` overrides this list, so omit it to keep yahoo/finra.
 harness_sources: [yahoo, fmp, finnhub, edgar, finra]
 
 # Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
