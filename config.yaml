@@ -87,7 +87,9 @@ validity:
   # to pre-change behavior (any present leg scores; composite is always 'scored').
   min_valid_leg_fraction: 0.5   # known-bucket sub-score needs >= half its APPLICABLE legs present
   unknown_min_present_legs: 1   # unknown: any present leg scores (no-op back-compat)
-  min_scored_weight:      0.34  # known-bucket composite 'scored' iff present/applicable component weight >= this
+  min_scored_weight:      0.25  # known-bucket composite 'scored' iff present/applicable component weight >= this.
+                                # Lowered 0.34->0.25 for the value/momentum split: a gated financials name with
+                                # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
 
 # Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
 # crowded_short fires only under `--engine harness` with the `finra` source present.
@@ -199,4 +201,5 @@ scout:
 # five fundamental components and intentionally EXCLUDES the risk tilt (whose own coverage
 # is shown separately in the Risk column).
 ranking:
-  thin_below: 0.5   # mark a card "thin" when confidence < this. Omit/null to disable.
+  thin_below: 0.40  # mark a card "thin" when confidence < this. Omit/null to disable.
+                    # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).

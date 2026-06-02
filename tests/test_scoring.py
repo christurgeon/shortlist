@@ -428,7 +428,50 @@ def test_thin_noop_when_ranking_absent():
 
 def test_shipped_config_has_ranking_thin_below():
     cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
-    assert cfg["ranking"]["thin_below"] == 0.5
+    assert cfg["ranking"]["thin_below"] == 0.40
+
+
+# --- C2 regression: value-tilt must not drop gated financials below `scored` ---
+
+def _shipped_config():
+    config_path = Path(__file__).parent.parent / "config.yaml"
+    return yaml.safe_load(config_path.read_text())
+
+
+def test_value_gated_financials_still_scored_worst_case():
+    # Financials (SIC 6020): moat masked, and quality/growth/value all
+    # gated/absent, so only momentum + insider are present.
+    # appl_w = quality .18 + growth .135 + value .22 + momentum .08 + insider .135
+    #        = 0.75 (moat .18 masked); pres_w = .08 + .135 = 0.215
+    # confidence = 0.215 / 0.75 = 0.287 -> must clear min_scored_weight 0.25.
+    cfg = _shipped_config()
+    m = StockMetrics(
+        ticker="BANK", sic="6020", market_cap=10e9,
+        price_vs_200dma=0.1, rel_strength_6m=0.1, eps_revision=0.02,   # momentum present
+        insider_sentiment=0.0, insider_net_6m=0.0,                     # insider present, clean
+        # quality/growth/value legs all None -> absent
+    )
+    card = score(m, cfg)
+    assert card.sic_bucket == "financials"
+    assert card.quality is None and card.growth is None and card.value is None
+    assert card.momentum is not None and card.insider is not None
+    assert card.confidence == pytest.approx(0.287, abs=0.005)
+    assert card.scored is True
+    assert card.passed is True
+
+
+def test_insider_only_financials_not_scored():
+    # Only insider present -> confidence 0.135 / 0.75 = 0.18 < 0.25 -> not scored.
+    cfg = _shipped_config()
+    m = StockMetrics(
+        ticker="BANK2", sic="6020", market_cap=10e9,
+        insider_sentiment=0.0, insider_net_6m=0.0,
+    )
+    card = score(m, cfg)
+    assert card.sic_bucket == "financials"
+    assert card.confidence == pytest.approx(0.18, abs=0.005)
+    assert card.scored is False
+    assert card.passed is False
 
 
 def test_csv_has_confidence_column_after_scored(tmp_path):
