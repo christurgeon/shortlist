@@ -3,10 +3,15 @@ from shortlist.research.models import FilingText, Moat, QualitativeAssessment
 
 
 class _Card:
-    def __init__(self, ticker, composite, gates=None):
+    def __init__(self, ticker, composite, gates=None, scored=True):
         self.ticker = ticker
         self.composite = composite
         self.gates = gates or []
+        self.scored = scored
+
+    @property
+    def passed(self):
+        return not self.gates and self.scored
 
 
 def _assessment(ticker):

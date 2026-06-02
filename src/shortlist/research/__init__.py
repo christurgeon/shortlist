@@ -61,5 +61,5 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     batch — each name yields a ResearchResult (with `skipped` set on failure)."""
     root = config.get("research", {}).get("output_root", "research")
     ranked = sorted(cards, key=lambda c: c.composite, reverse=True)
-    selected = [c for c in ranked if not c.gates][:top_n]
+    selected = [c for c in ranked if c.passed][:top_n]   # passed == not gates and scored
     return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]
