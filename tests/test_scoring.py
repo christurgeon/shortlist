@@ -490,6 +490,28 @@ def test_planned_sell_softens_flow():
     assert insider_score(detected, c["thresholds"], c) > insider_score(undetected, c["thresholds"], c)
 
 
+def test_conviction_is_one_directional_never_penalizes():
+    # Conviction may only RAISE the insider score, never drag it below the base
+    # (sentiment+flow) view. A found name with heavy selling / no buys, and a name
+    # with a single small insider BUY, must both score >= their base — never lower.
+    c = _conv_cfg()
+
+    sells = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-5e7, market_cap=3e12,
+                         insider_distinct_buyers=0, insider_role_weighted_buy_value=0.0,
+                         insider_planned_sell_value=0.0)
+    sells_base = insider_score(  # base = legacy/off view (no conviction block)
+        StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-5e7, market_cap=3e12), _t())
+    assert insider_score(sells, c["thresholds"], c) >= sells_base - 1e-9
+
+    # a lone small insider BUY must NOT drop the score below its base view
+    buy = StockMetrics(ticker="Y", insider_sentiment=0.0, insider_net_6m=2e5, market_cap=4e10,
+                       insider_distinct_buyers=1, insider_role_weighted_buy_value=2e5,
+                       insider_planned_sell_value=0.0)
+    buy_base = insider_score(
+        StockMetrics(ticker="Y", insider_sentiment=0.0, insider_net_6m=2e5, market_cap=4e10), _t())
+    assert insider_score(buy, c["thresholds"], c) >= buy_base - 1e-9
+
+
 def test_insider_cluster_buy_flag_fires_at_threshold():
     f = {"insider_cluster_buy": {"min_distinct": 3}, "planned_sale": {"min_value": 1}}
     assert "insider_cluster_buy" in check_flags(

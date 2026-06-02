@@ -105,7 +105,10 @@ is enabled).
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell
 forgiveness. It ships **commented out** (OFF by default); both stacks are **bit-identical** to
-the pre-feature scorer when absent. The `heavy_insider_selling` gate is deliberately untouched
+the pre-feature scorer when absent. Conviction is a **one-directional buy-side tilt**: it can
+only *raise* `insider` (`max(base, avg(base, conviction))`), never penalize a name that simply
+has no buys — and the `max` guard also avoids double-counting buying already in the net-flow leg.
+The `heavy_insider_selling` gate is deliberately untouched
 (10b5-1 detection forgives the score only, never the gate). All conviction weights are
 **unfitted priors** — backtest before trusting. `EdgarProvider` and `EdgarSource` both accept
 the conviction config and pass it through to `providers/_form4.py`, which extracts role strings

@@ -91,9 +91,16 @@ def insider_score(m: StockMetrics, t: dict, config: Optional[dict] = None) -> Op
             net_dollar += cv["planned_sell_discount"] * m.insider_planned_sell_value
         flow = _norm(net_dollar / m.market_cap, *t["insider_net_ratio"])
 
+    base = _avg([sentiment, flow])
     if not on:
-        return _avg([sentiment, flow])
+        return base
 
+    # Conviction is a ONE-DIRECTIONAL buy-side tilt. Cluster buys and role-weighted
+    # buy pressure are *positive* signals; their absence is the baseline, not a
+    # penalty — so conviction may only RAISE the score, never drag it (averaging a
+    # near-zero "no-buys" leg into the base would perversely punish the common case,
+    # e.g. a lone insider BUY scoring _norm(1; 1,4)=0). The planned-sell forgiveness
+    # folded into `flow` above is likewise one-directional (it only softens drag).
     cluster = role_press = None
     if getattr(m, "insider_distinct_buyers", None) is not None:
         cluster = _norm(float(m.insider_distinct_buyers), *t["insider_cluster"])
@@ -101,8 +108,10 @@ def insider_score(m: StockMetrics, t: dict, config: Optional[dict] = None) -> Op
         role_press = _norm(m.insider_role_weighted_buy_value / m.market_cap,
                            *t["insider_role_buy_ratio"])
     conviction = _avg([cluster, role_press])
-
-    return _avg([sentiment, flow, conviction])
+    if conviction is None or base is None:
+        return base
+    # Pull the score halfway toward the conviction level, but never below the base.
+    return max(base, _avg([base, conviction]))
 
 
 def risk_score(m: StockMetrics, t: dict) -> Optional[float]:
