@@ -257,6 +257,14 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     for attr in ("activist_13d", "recent_8k", "passive_13g", "planned_insider_sale_144"):
         if getattr(m, attr, None):
             out.append(attr)
+    cb = f.get("insider_cluster_buy") if f else None
+    if cb and m.insider_distinct_buyers is not None \
+            and m.insider_distinct_buyers >= cb["min_distinct"]:
+        out.append("insider_cluster_buy")
+    ps = f.get("planned_sale") if f else None
+    if ps and m.insider_planned_sell_value is not None \
+            and m.insider_planned_sell_value >= ps["min_value"]:
+        out.append("planned_sale")
     return out
 
 

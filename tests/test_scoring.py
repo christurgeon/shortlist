@@ -488,3 +488,23 @@ def test_planned_sell_softens_flow():
                               insider_planned_sell_value=0.0)
     c = _conv_cfg()
     assert insider_score(detected, c["thresholds"], c) > insider_score(undetected, c["thresholds"], c)
+
+
+def test_insider_cluster_buy_flag_fires_at_threshold():
+    f = {"insider_cluster_buy": {"min_distinct": 3}, "planned_sale": {"min_value": 1}}
+    assert "insider_cluster_buy" in check_flags(
+        StockMetrics(ticker="X", insider_distinct_buyers=3), f)
+    assert "insider_cluster_buy" not in check_flags(
+        StockMetrics(ticker="X", insider_distinct_buyers=2), f)
+
+
+def test_planned_sale_flag_fires_on_detected_dollars():
+    f = {"insider_cluster_buy": {"min_distinct": 3}, "planned_sale": {"min_value": 1}}
+    assert "planned_sale" in check_flags(
+        StockMetrics(ticker="X", insider_planned_sell_value=100.0), f)
+    assert "planned_sale" not in check_flags(
+        StockMetrics(ticker="X", insider_planned_sell_value=0.0), f)
+
+
+def test_insider_flags_absent_when_unconfigured():
+    assert check_flags(StockMetrics(ticker="X", insider_distinct_buyers=5), {}) == []
