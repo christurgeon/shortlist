@@ -13,7 +13,8 @@ def render_message(cards: list[ScoreCard], manifest: RunManifest,
 
     for i, c in enumerate(cards, 1):
         flag = f"  ⚠️ {', '.join(c.gates)}" if c.gates else ""
-        lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}")
+        mark = "" if getattr(c, "scored", True) else "  (not scored)"
+        lines.append(f"{i}. {c.ticker}  {c.composite:.1f}{flag}{mark}")
         lines.append(f"   Q{_n(c.quality)} M{_n(c.moat)} G{_n(c.growth)} "
                      f"Opp{_n(c.opportunity)} Ins{_n(c.insider)}")
         # Data-layer coverage honesty: harness cards now carry a per-ticker Coverage

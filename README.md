@@ -171,6 +171,20 @@ selling) that flag a name regardless of score.
 
 Tune everything in `config.yaml` — no code changes needed to re-weight.
 
+### Sector-aware abstention
+
+For businesses whose metrics don't apply — banks/brokers, insurers, REITs (detected
+by SEC SIC code) — the structurally-undefined legs (gross margin, FCF yield, ROIC,
+leverage) **abstain** instead of being silently averaged into a misleading number,
+and the false-positive `over_leveraged` / `negative_fcf` gates are suppressed. Each
+card reports `sic_bucket`, a `confidence` (data completeness over *applicable*
+components), `scored` (false when too little valid signal survives), and an
+`abstentions` list — all in `--json` (and `scored`/`sic_bucket` CSV columns).
+`passed` requires `not gates and scored`, and rankings demote not-scored names. An
+unknown sector is a no-op (scored exactly as before). v1 *masks* inapplicable legs;
+sector-specific *recalibration* of the surviving ones is future work. Configure via
+`config.yaml: sectors` + `validity`.
+
 ## Qualitative research (`--research N`)
 
 After ranking, `--research N` reads each of the top N non-gated names' latest

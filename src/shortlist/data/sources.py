@@ -416,6 +416,16 @@ class EdgarSource(Source):
         # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap
 
+    def _fetch_sic(self, ticker: str) -> Optional[str]:
+        """Network seam (mockable): best-effort SIC off an edgartools Company.
+        EdgarSource has no reusable Company handle in its assembly path, so this is
+        one extra lightweight SEC request per ticker, bounded by the module
+        concurrency semaphore. Returns a 4-digit string or None."""
+        from edgar import Company
+
+        from ..sectors import extract_sic
+        return extract_sic(Company(ticker))
+
     def _raw_filings(self, ticker: str):
         """Network seam (mockable): the filtered edgartools filings object."""
         from edgar import Company
@@ -444,6 +454,18 @@ class EdgarSource(Source):
 
     def _fetch_sync(self, ticker: str) -> SourceResult:
         res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
+        # SIC is isolated: a failure must never drop insider/statements/events. We
+        # emit a PARTIAL Profile carrying only sic; _merge_flat fills the rest from
+        # FMP/Finnhub, so SIC survives even when those gate the symbol's profile.
+        try:
+            sic = self._fetch_sic(ticker)
+            if sic:
+                if res.partial.profile is None:
+                    res.partial.profile = Profile(sic=sic)
+                else:
+                    res.partial.profile.sic = sic
+        except Exception as e:
+            res.errors.append(f"edgar-sic: {e}")
         # Financials are isolated: a failure here must never drop the insider result.
         try:
             fin_snap = self._build_financials_snapshot(ticker, self._fetch_financials_object(ticker))

@@ -68,7 +68,13 @@ def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optiona
     if all(status == "ok" for status in providers.values()):
         return None
 
-    unavailable = [f for f in _SUBSCORE_FIELDS if getattr(card, f) is None]
+    # A sub-score that is None because it was MASKED-INAPPLICABLE for the sector is
+    # not a coverage gap (it is by-design) — exclude it so the gating note never
+    # contradicts the abstentions diagnostic.
+    masked = {a["field"] for a in getattr(card, "abstentions", [])
+              if a.get("scope") == "subscore" and a.get("reason") == "inapplicable"}
+    unavailable = [f for f in _SUBSCORE_FIELDS
+                   if getattr(card, f) is None and f not in masked]
     upside = card.metrics.upside_to_target() if card.metrics else None
     if upside is None:
         unavailable.append("upside_to_target")

@@ -216,8 +216,50 @@ disk caches; EDGAR (free, uncapped) is intentionally uncached.
   Finnhub is the free fallback denominator when FMP gates a symbol (`402` Special
   Endpoint) — without it, EDGAR's insider dollars can't be normalized and the
   insider sub-score goes `null`.
-- Equity-centric moat/quality proxies are blank for banks/insurers (e.g. SCHW);
-  coverage correctly flags this. Sector-aware thresholds are the real fix.
+- Equity-centric moat/quality proxies are undefined for banks/insurers/REITs (e.g.
+  SCHW). These legs are now **masked and abstained** per sector — see "Sector-aware
+  applicability & abstention" below. (Sector-specific *recalibration* of the
+  surviving legs is still future work; v1 only masks the undefined ones.)
+
+## Sector-aware applicability & abstention
+
+The scorer used to silently average metrics that are structurally undefined for a
+company's sector (gross margin / FCF-yield / leverage for a bank), producing a
+misleading composite. It now detects the sector and **abstains** the inapplicable
+legs explicitly instead of dropping-then-averaging them.
+
+- **Detection is SIC-based and EDGAR-only**, identical on both stacks. The screener
+  `EdgarProvider` reads `Company(ticker).sic` (no extra request); the harness
+  `EdgarSource` emits a partial `Profile(sic=…)` (one extra lightweight SEC request,
+  semaphore-bounded). `sectors.py:resolve_bucket` maps SIC → bucket via
+  `config.yaml: sectors.buckets` (an **ordered** list; first matching range wins).
+  Scoring **never** reads the free-text `StockMetrics.sector` (source-dependent and
+  divergent across stacks) — only `m.sic`. If EDGAR isn't in the chain / no
+  `SEC_IDENTITY`, both stacks resolve `unknown` together (symmetric).
+- **`unknown` bucket is a bit-identical no-op** — no masking, any present leg
+  scores, composite always `scored`. The abstention floors are **bucket-gated** and
+  only ever touch the masked sectors. This is the back-compat guarantee for
+  operating companies (and is covered by an explicit regression test).
+- **v1 masks** (config `sectors.masked_legs` / `masked_gates`) for
+  financials/insurers/REITs: `gross_margin`, `gross_margin_stability`, `roic`,
+  `fcf_yield`, `fcf_cagr`, `interest_coverage`, `debt_to_equity`, plus the
+  `negative_fcf` / `over_leveraged` gates. `net_margin` is intentionally **not**
+  masked (defined, only miscalibrated → deferred). Exchanges (6231), asset
+  managers/advisers (6282), funds, SPACs and real-estate operators are deliberately
+  left `unknown`/unmasked.
+- **`ScoreCard` gains** `sic_bucket`, `confidence` (present-applicable component
+  weight ÷ applicable weight), `scored` (above the validity floor; always `True`
+  for `unknown`), and `abstentions` (`{field, reason: inapplicable|missing, scope}`).
+  These surface in `--json` (and CSV `scored`/`sic_bucket` columns). **`passed` is
+  now `not gates and scored`** — a not-scored name can't pass, rank to the top
+  (sort key is `(scored, composite)`), or be selected for research.
+- **Coverage vs abstentions don't contradict:** a sub-score that is `None` because
+  it was masked-inapplicable is excluded from `coverage.unavailable` (it isn't a
+  data gap). Per-leg *missing* is left to coverage; `abstentions` records masking +
+  whole-sub-score abstention.
+- Tune everything in `config.yaml: sectors` + `validity` — no hardcoded sector
+  logic. `sectors.py` is the only interpreter of those blocks. Full design:
+  `docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md`.
 
 ## Extension providers (scaffolded, not wired)
 

@@ -45,7 +45,7 @@ def run(tickers: list[str], provider_names: list[str], config: dict) -> list[Sco
         card = score(merge(per_provider), config)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: c.composite, reverse=True)
+    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
     return cards
 
 
@@ -67,7 +67,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
-    cards.sort(key=lambda c: c.composite, reverse=True)
+    cards.sort(key=lambda c: (c.scored, c.composite), reverse=True)
     return cards
 
 
@@ -280,7 +280,12 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
         "flags": c.flags,
+        "sic_bucket": c.sic_bucket,
+        "confidence": c.confidence,
+        "scored": c.scored,
     }
+    if c.abstentions:
+        d["abstentions"] = c.abstentions
     if c.metrics is not None and c.metrics.filing_events:
         d["events"] = {
             "recent_8k": bool(c.metrics.recent_8k),
@@ -305,12 +310,14 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
-                    "momentum", "value", "opportunity", "insider", "upside_to_target", "gates"])
+                    "momentum", "value", "opportunity", "insider", "upside_to_target",
+                    "gates", "scored", "sic_bucket"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
                         d["growth"], d["momentum"], d["value"], d["opportunity"],
-                        d["insider"], d["upside_to_target"], "|".join(d["gates"])])
+                        d["insider"], d["upside_to_target"], "|".join(d["gates"]),
+                        d["scored"], d["sic_bucket"]])
 
 
 if __name__ == "__main__":

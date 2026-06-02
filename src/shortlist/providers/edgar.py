@@ -35,12 +35,15 @@ class EdgarProvider(Provider):
     def fetch(self, ticker: str) -> StockMetrics:
         from edgar import Company
 
+        from ..sectors import extract_sic
+
         m = StockMetrics(ticker=ticker)
         company = Company(ticker)
+        m.sic = extract_sic(company)   # reuses the Company already built; no extra request
         cutoff = date.today() - timedelta(days=self.lookback_days)
 
         summary = aggregate_form4(company.get_filings(form="4").latest(40), cutoff)
         if summary.found:
             m.insider_net_6m = summary.net_value
 
-        return self._tag(m, "insider_net_6m")
+        return self._tag(m, "insider_net_6m", "sic")
