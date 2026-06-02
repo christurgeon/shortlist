@@ -77,7 +77,7 @@ harness_sources: [yahoo, fmp, finnhub, edgar, finra]
 # Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
 # repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
 # --no-cache; force-repopulate with --refresh-cache. TTLs are per data half-life
-# (seconds). See docs/superpowers/specs/2026-06-01-http-cache-design.md.
+# (seconds). See docs/DATA_SOURCES.md §6.
 cache:
   enabled: true
   path: .cache/http.sqlite

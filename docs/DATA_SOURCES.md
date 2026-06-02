@@ -327,9 +327,9 @@ and Tiingo (add a free key and they light up).
 
 ## 6. Scale hardening — the caching layer (SHIPPED 2026-06)
 
-**Status: shipped.** Implemented in `src/shortlist/cache.py`; design in
-`docs/superpowers/specs/2026-06-01-http-cache-design.md`. This was the top scale-hardening
-item and the unblocker for full-universe / sector-relative work (`ASSESSMENT_GAPS.md` §2.3, §4).
+**Status: shipped.** Implemented in `src/shortlist/cache.py` (this section is the
+canonical design reference). This was the top scale-hardening item and the unblocker
+for full-universe / sector-relative work (`ASSESSMENT_GAPS.md` §2.3, §4).
 
 ### As built
 - **Module:** `src/shortlist/cache.py` — `HttpCache` (SQLite, default **rollback journal**,

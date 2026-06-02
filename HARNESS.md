@@ -24,7 +24,7 @@ zero upstream calls — the fix for the free-tier daily-quota ceiling. `--no-cac
 disables it for a run; `--refresh-cache` bypasses cached responses and repopulates.
 Yahoo and FINRA keep their own per-day / per-settlement caches; EDGAR (free, uncapped)
 is uncached. TTLs are per data half-life (`config.yaml: cache.ttl`); full design in
-`docs/superpowers/specs/2026-06-01-http-cache-design.md`.
+`docs/DATA_SOURCES.md` §6.
 
 Output per ticker is a coverage line — the harness's honest answer to "do we
 have what we need?":

@@ -3,7 +3,7 @@
 Repeated ad-hoc runs would otherwise re-fetch identical data and exhaust free-tier
 daily quotas (FMP ~250/day). This caches parsed JSON payloads on disk (SQLite) keyed
 by (provider, endpoint, params) with a per-bucket TTL, so a warm re-run makes zero
-upstream calls. See docs/superpowers/specs/2026-06-01-http-cache-design.md.
+upstream calls. See docs/DATA_SOURCES.md §6.
 
 The module is a dependency-light leaf: only stdlib + env.redact_secrets.
 """

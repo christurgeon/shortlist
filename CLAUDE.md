@@ -202,7 +202,7 @@ return 200-OK with empty `[]`/`{}` or `{"error": …}` on gating/no-coverage, so
 `_is_cacheable` predicate (not `raise_for_status` alone) gates writes; (2) the **`v1:`
 key prefix** in `cache_key` must be bumped to `v2:` whenever a `_get`/normalizer output
 shape changes, or stale-shape payloads are served until TTL. Design + rationale:
-`docs/superpowers/specs/2026-06-01-http-cache-design.md`. Yahoo/FINRA keep their own
+`docs/DATA_SOURCES.md` §6. Yahoo/FINRA keep their own
 disk caches; EDGAR (free, uncapped) is intentionally uncached.
 
 ## Data scale conventions
