@@ -3,7 +3,7 @@
 > **A quantitative stock pre-screen that does the mechanical work — so your judgment is spent on fewer, better names.**
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
 [![Built with uv](https://img.shields.io/badge/built%20with-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
 
@@ -270,6 +270,8 @@ For systemd deployment (timer fires at 22:30 UTC daily), see [`deploy/README.md`
 
 ## License
 
-[MIT](LICENSE) © Chris Turgeon. This is a research tool, **not financial advice** —
-it surfaces candidates for a human deep dive and makes no recommendation to buy or
-sell any security.
+[AGPL-3.0](LICENSE) © Chris Turgeon. Strong copyleft: you're free to use, study,
+and modify it, but any distributed fork — **or a modified version run as a network
+service** — must make its source available under the same license. This is a
+research tool, **not financial advice** — it surfaces candidates for a human deep
+dive and makes no recommendation to buy or sell any security.

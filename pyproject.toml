@@ -3,7 +3,7 @@ name = "shortlist"
 version = "0.1.0"
 description = "Moat + momentum/value + insider stock screener feeding the investment-research skill"
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 authors = [{ name = "Chris Turgeon" }]
 requires-python = ">=3.10"
 dependencies = [
