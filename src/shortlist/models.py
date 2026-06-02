@@ -115,7 +115,7 @@ class ScoreCard:
     growth: Optional[float]
     momentum: Optional[float]
     value: Optional[float]
-    opportunity: Optional[float]  # max(momentum, value): qualifies on either axis
+    opportunity: Optional[float]  # display-only: max(momentum, value); does NOT feed the composite
     insider: Optional[float]
     gates: list[str] = field(default_factory=list)  # tripped hard filters
     flags: list[str] = field(default_factory=list)  # soft advisories (e.g. crowded_short); NOT disqualifying

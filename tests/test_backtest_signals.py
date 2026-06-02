@@ -66,7 +66,7 @@ def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
                                 "insider_sentiment": [-0.30, 0.30],
                                 "insider_net_ratio": [-0.0005, 0.0005]},
         "weights": {"quality": 0.2, "moat": 0.2, "growth": 0.15,
-                    "opportunity": 0.3, "insider": 0.15},
+                    "value": 0.22, "momentum": 0.08, "insider": 0.15},
         "gates": {"min_market_cap": 2e9, "max_debt_to_equity": 5.0,
                   "min_insider_sentiment": -0.60},
     }

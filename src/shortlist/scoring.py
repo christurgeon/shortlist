@@ -294,8 +294,9 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     gr = sub("growth", _growth_legs(m))
     mom = sub("momentum", _momentum_legs(m))
     val = sub("value", _value_legs(m))
-    # Chris's brief: momentum OR deep undervaluation. Take the stronger axis so a
-    # name can qualify on either, rather than being averaged down by the weaker one.
+    # Value-tilt: value and momentum are weighted INDEPENDENTLY in the composite
+    # (see spec 2026-06-02-value-tilt-scoring-design). `opp` is retained only as a
+    # display-only convenience on the ScoreCard, not as a composite component.
     pres = [x for x in (mom, val) if x is not None]
     opp = max(pres) if pres else None
     ins = insider_score(m, t, config)  # sector-neutral; never masked
@@ -314,7 +315,8 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         ("quality", q, w["quality"], ("quality",)),
         ("moat", mo, w["moat"], ("moat",)),
         ("growth", gr, w["growth"], ("growth",)),
-        ("opportunity", opp, w["opportunity"], ("momentum", "value")),
+        ("momentum", mom, w["momentum"], ("momentum",)),
+        ("value", val, w["value"], ("value",)),
         ("insider", ins, w["insider"], ("insider",)),
     ]
 

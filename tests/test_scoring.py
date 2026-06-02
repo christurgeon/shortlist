@@ -40,7 +40,7 @@ CONFIG = {
         "insider_net_ratio": [-0.001, 0.001],
     },
     "weights": {"quality": 0.20, "moat": 0.20, "growth": 0.15,
-                "opportunity": 0.30, "insider": 0.15},
+                "value": 0.22, "momentum": 0.08, "insider": 0.15},
     "gates": {
         "min_market_cap": 2.0e9,
         "max_debt_to_equity": 5.0,
@@ -157,9 +157,9 @@ def test_growth_weight_redistributed_when_axis_absent():
     assert card.composite == 50.0
 
 
-# --- opportunity = max(momentum, value) -----------------------------------
+# --- value/momentum independent weighting ---------------------------------
 
-def test_opportunity_takes_the_stronger_axis():
+def test_value_and_momentum_weighted_independently():
     base = metrics_all_50()
     # momentum maxed (all 1.0 -> 100), value floored (upside/fcf/pe all 0).
     m = dataclasses.replace(
@@ -172,7 +172,13 @@ def test_opportunity_takes_the_stronger_axis():
     card = score(m, CONFIG)
     assert card.momentum == 100.0
     assert card.value == 0.0
-    assert card.opportunity == 100.0   # max, not the average (which would be 50)
+    # Display field still reports the stronger axis (max), even though the
+    # composite no longer uses it.
+    assert card.opportunity == 100.0
+    # Composite weights value (0.22) far above momentum (0.08): the floored value
+    # axis drags the composite well below the old max()-driven 65.
+    # num = 50*0.20 + 50*0.20 + 50*0.15 + 100*0.08 + 0*0.22 + 50*0.15 = 43.0; den = 1.00
+    assert card.composite == 43.0
 
 
 # --- composite renormalization --------------------------------------------
@@ -307,9 +313,10 @@ def _risk_config():
     c = copy.deepcopy(CONFIG)
     c["thresholds"]["realized_vol"] = [0.45, 0.15]
     c["thresholds"]["max_drawdown"] = [-0.50, -0.10]
-    # proportional rescale (x0.9) + risk 0.10
+    # six independent components + risk 0.10 (the old x0.9 risk-absent invariant
+    # is retired by the value/momentum split)
     c["weights"] = {"quality": 0.18, "moat": 0.18, "growth": 0.135,
-                    "opportunity": 0.27, "insider": 0.135, "risk": 0.10}
+                    "value": 0.22, "momentum": 0.08, "insider": 0.135, "risk": 0.10}
     return c
 
 
@@ -335,8 +342,8 @@ def test_composite_shifts_when_risk_present():
     safe = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10)
     card = score(safe, rc)
     assert card.risk == 100.0
-    # composite = (50*0.90 + 100*0.10) / 1.0 = 55.0
-    assert card.composite == 55.0
+    # composite = (50*0.93 + 100*0.10) / 1.03 = 56.5/1.03 = 54.9
+    assert card.composite == 54.9
 
 
 def test_composite_invariant_when_risk_absent():
@@ -366,7 +373,13 @@ def test_shipped_config_activates_risk():
     cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
     w = cfg["weights"]
     assert w["risk"] == 0.10
-    assert abs(sum(w.values()) - 1.0) < 1e-9
+    # The value/momentum split intentionally lifts the price/value bloc to 0.30
+    # (value 0.22 + momentum 0.08) vs the old opportunity 0.27, so the weights no
+    # longer sum to 1.0. That is cosmetic: the composite is a normalized weighted
+    # average, so only ratios matter (spec 2026-06-02 §3.1). Pin the new schema.
+    assert "opportunity" not in w
+    assert (w["value"], w["momentum"]) == (0.22, 0.08)
+    assert abs(sum(w.values()) - 1.03) < 1e-9
     t = cfg["thresholds"]
     assert t["realized_vol"] == [0.45, 0.15]
     assert t["max_drawdown"] == [-0.50, -0.10]

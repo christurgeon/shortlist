@@ -47,7 +47,8 @@ weights:
   quality:      0.18   # was 0.20 (x0.9 on risk-axis introduction)
   moat:         0.18   # was 0.20
   growth:       0.135  # was 0.15 — fundamental compounding (revenue/FCF/EPS CAGR + persistence)
-  opportunity:  0.27   # was 0.30 — max(momentum, value), qualifies on either axis
+  value:        0.22   # value-tilt: independent leg (was inside opportunity's 0.27 max)
+  momentum:     0.08   # independent leg; value pulls ~3x momentum
   insider:      0.135  # was 0.15
   risk:         0.10   # NEW — vol/drawdown tilt; composite-only, excluded from confidence
   # NOTE: a defensible prior, not a fitted result. The risk weight especially:
