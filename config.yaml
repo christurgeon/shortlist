@@ -48,6 +48,34 @@ gates:
   max_debt_to_equity:      5.0
   min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
 
+# Sector applicability (SIC -> bucket). v1 MASKS structurally-undefined legs/gates
+# for spread/deposit/property businesses; it does NOT recalibrate surviving bands
+# (that is deferred mode-2 work). `buckets` is an ORDERED LIST: the first bucket
+# whose inclusive SIC range contains the code wins. Detection is EDGAR-sourced and
+# identical on both the screener and --engine harness; unknown -> no masking (a
+# bit-identical no-op). See docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md.
+sectors:
+  buckets:
+    - name: reit
+      sic_ranges: [[6798, 6798]]
+    - name: insurer
+      sic_ranges: [[6300, 6399], [6411, 6411]]   # carriers (life/health/P&C/title/surety) + agents
+    - name: financials                            # depository banks, nondepository credit, broker-dealers, holdings
+      sic_ranges: [[6020, 6099], [6120, 6179], [6199, 6199], [6211, 6211], [6712, 6712]]
+  # Legs that are undefined / non-representative for the bucketed institutions.
+  # net_margin is intentionally NOT masked (it is defined, only miscalibrated -> deferred).
+  # Exchanges (6231), advisers/asset managers (6282), funds (672x), SPACs (6770) and
+  # real-estate operators (65xx) are deliberately NOT bucketed -> unknown -> unmasked.
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity]
+  masked_gates: [negative_fcf, over_leveraged]
+
+validity:
+  # Bucket-gated: floors apply ONLY to known buckets; 'unknown' stays bit-identical
+  # to pre-change behavior (any present leg scores; composite is always 'scored').
+  min_valid_leg_fraction: 0.5   # known-bucket sub-score needs >= half its APPLICABLE legs present
+  unknown_min_present_legs: 1   # unknown: any present leg scores (no-op back-compat)
+  min_scored_weight:      0.34  # known-bucket composite 'scored' iff present/applicable component weight >= this
+
 # Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
 # crowded_short fires only under `--engine harness` with the `finra` source present.
 flags:
