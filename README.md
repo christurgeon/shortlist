@@ -9,9 +9,8 @@
 
 Pull fundamentals from FMP / Finnhub / SEC EDGAR / Yahoo, score seven axes —
 **quality, moat, growth, momentum *or* value, insider activity, and risk** — then
-rank a shortlist for a human deep dive. It automates Phase 2–3 of the
-`investment-research` skill: the mechanical part, so the judgment part is spent on
-fewer, better names.
+rank a shortlist for a human deep dive. It does the mechanical part of stock
+research, so your judgment is spent on fewer, better names.
 
 - **Multi-source by design** — each API contributes only the fields it's genuinely best at, merged by priority. Stacking beats any single feed.
 - **Opportunity = max(momentum, value)** — a name qualifies on *either* axis instead of being averaged down.
@@ -103,13 +102,9 @@ screener providers. `--engine screener` (default) is unchanged.
 ## Quick start
 
 ```bash
-# Recommended: uv (reproducible via uv.lock; installs core + dev deps)
+# Install with uv (reproducible via uv.lock; installs core + dev deps)
 uv sync
 uv sync --extra edgar            # + SEC EDGAR insider source
-
-# Or plain pip:
-#   pip install -e .             # core (requests, pyyaml, rich, python-dotenv)
-#   pip install -e ".[edgar]"    # + SEC EDGAR insider source
 
 # Offline demo on the May-2026 candidate basket (no keys needed):
 uv run shortlist --demo
@@ -222,8 +217,8 @@ the `claude` CLI on PATH (uses your existing CLI auth — no API key) and the
 The composite ranks **business quality + opportunity**. It deliberately does
 *not* know your existing portfolio — so a name can top the screen on merit yet
 still be a poor *addition* if it doubles an exposure you already hold. Use the
-ranking to surface candidates; use the skill (and your own allocation judgment)
-to decide what actually goes in.
+ranking to surface candidates; use your own allocation judgment to decide what
+actually goes in.
 
 ## Autonomous scout
 
