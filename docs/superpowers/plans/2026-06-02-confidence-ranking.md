@@ -81,8 +81,8 @@ In `src/shortlist/models.py`, append `thin` after the `risk` field:
     thin: bool = False
 ```
 
-Add a module-level function (place it after the `ScoreCard` class definition, near
-`passed`/other helpers — top-level, not inside the class):
+Add a module-level function **after the entire `ScoreCard` class closes** (top-level,
+NOT a method — same indentation as `class ScoreCard`/`def`):
 
 ```python
 def rank_key(card) -> tuple:
@@ -460,7 +460,9 @@ Expected: FAIL — `KeyError: 'ranking'`.
 
 - [ ] **Step 3: Add the block to `config.yaml`**
 
-Append at the end of `config.yaml` (top-level block, sibling to `weights`/`gates`):
+Append at the very end of `config.yaml` at **column 0** (a new top-level key; the file
+currently ends mid-`scout:` block, so dedent fully to column 0 to make `ranking` a
+sibling of `weights`/`gates`/`scout`):
 
 ```yaml
 
