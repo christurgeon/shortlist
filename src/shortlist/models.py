@@ -117,7 +117,16 @@ class ScoreCard:
     flags: list[str] = field(default_factory=list)  # soft advisories (e.g. crowded_short); NOT disqualifying
     metrics: Optional[StockMetrics] = None
     coverage: Optional["Coverage"] = None
+    # Sector-aware applicability (appended after coverage so positional construction
+    # through `insider` is unaffected). sic_bucket: resolved sector bucket (or
+    # "unknown"); confidence: present-applicable component weight / applicable
+    # weight; scored: above the validity floor (always True for unknown bucket);
+    # abstentions: [{field, reason: inapplicable|missing, scope: leg|subscore}].
+    sic_bucket: Optional[str] = None
+    confidence: float = 1.0
+    scored: bool = True
+    abstentions: list = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
-        return not self.gates
+        return not self.gates and self.scored
