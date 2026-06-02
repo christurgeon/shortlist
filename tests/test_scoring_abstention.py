@@ -80,3 +80,29 @@ def test_data_starved_financial_not_scored():
     card = score(m, CFG)
     assert card.scored is False
     assert card.passed is False
+
+
+def test_risk_axis_does_not_regress_known_bucket_confidence():
+    """A financials name with PARTIAL coverage (0 < confidence < 1) must keep the
+    SAME confidence/scored/passed whether or not the risk weight is in config. Risk
+    is a composite-only tilt and must never enter the confidence denominator."""
+    import copy
+    # financials with only quality + opportunity present among APPLICABLE components
+    # (moat masked/inapplicable; growth + insider made absent -> confidence < 1).
+    m = _fin(revenue_cagr=None, fcf_cagr=None, eps_cagr=None,
+             revenue_growth_persistence=None,            # growth absent
+             insider_net_6m=None, insider_sentiment=None)  # insider absent
+    cfg_no_risk = copy.deepcopy(CFG)
+    del cfg_no_risk["weights"]["risk"]
+    del cfg_no_risk["thresholds"]["realized_vol"]
+    del cfg_no_risk["thresholds"]["max_drawdown"]
+
+    with_risk = score(m, CFG)
+    without_risk = score(m, cfg_no_risk)
+
+    assert with_risk.sic_bucket == "financials"
+    assert 0.0 < with_risk.confidence < 1.0      # genuinely partial -> non-trivial guard
+    assert with_risk.scored is True
+    assert with_risk.confidence == without_risk.confidence
+    assert with_risk.scored == without_risk.scored
+    assert with_risk.passed == without_risk.passed

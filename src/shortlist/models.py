@@ -126,6 +126,9 @@ class ScoreCard:
     confidence: float = 1.0
     scored: bool = True
     abstentions: list = field(default_factory=list)
+    # 7th sub-score (risk). Appended last so positional construction through the
+    # leading fields is unaffected. Composite-only tilt; excluded from confidence.
+    risk: Optional[float] = None
 
     @property
     def passed(self) -> bool:

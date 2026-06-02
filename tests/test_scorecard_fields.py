@@ -21,3 +21,8 @@ def test_passed_requires_scored_and_no_gates():
     assert _card(gates=["over_leveraged"]).passed is False
     assert _card(scored=False).passed is False
     assert _card(gates=["x"], scored=False).passed is False
+
+
+def test_risk_field_defaults_none_and_accepts_value():
+    assert _card().risk is None
+    assert _card(risk=42.0).risk == 42.0

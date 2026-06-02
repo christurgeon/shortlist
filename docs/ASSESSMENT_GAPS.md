@@ -294,13 +294,19 @@ value-trap pattern — informative — and `max()` silently takes the high side.
 - **Plug:** keep `max()` for the score, but emit a `momentum_value_divergence` flag when the
   two axes strongly disagree, so the deep dive knows to ask "value trap or mispricing?"
 
-#### 2.9 Risk metrics computed but never scored
-`realized_vol` and `max_drawdown` are bridged into `StockMetrics` (`bridge.py:45`) and
-explicitly marked unscored; `beta` lives in `Profile` and isn't even mapped. There is no
+#### 2.9 Risk metrics computed but never scored — **SHIPPED (vol+drawdown axis)**
+`realized_vol` and `max_drawdown` are bridged into `StockMetrics` (`bridge.py:91-92`) and
+were explicitly marked unscored; `beta` lives in `Profile` and isn't mapped. There was no
 risk overlay and no risk-adjusted ranking.
-- **Plug:** either a `risk` axis or a volatility/drawdown soft gate (already a tracked
-  follow-up in `DATA_SOURCES.md` A3), and map `beta` through the bridge so it's at least
-  available. Pairs with the FRED macro regime overlay (`DATA_SOURCES.md` A2).
+- **Plugged:** a 7th **`risk` axis** now scores `realized_vol` + `max_drawdown` as a
+  **composite-only tilt** (weight 0.10, other five weights ×0.9; sector-neutral; excluded
+  from the confidence/scored/coverage accounting so the screener path stays bit-identical).
+  See `docs/superpowers/specs/2026-06-02-risk-axis-scoring-design.md`.
+- **Still open (deferred):** map `beta` through the bridge and add it as a third risk leg;
+  **backtest the 0.10 weight and the bands** — trailing vol/drawdown peak at the bottom and
+  can be anti-predictive at turning points, so the prior is unfitted and elevated for
+  validation (§2.1). The volatility/drawdown **soft-gate** alternative (`DATA_SOURCES.md`
+  A3) and the FRED macro regime overlay (A2) remain available.
 
 ---
 

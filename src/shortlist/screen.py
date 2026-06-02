@@ -96,6 +96,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         ("Momt",    "right", 4),
         ("Value",   "right", 5),
         ("Insdr",   "right", 5),
+        ("Risk",    "right", 5),
         ("Upside",  "right", 6),
         ("Flags",   "left",  5),
     ]
@@ -110,6 +111,7 @@ def _print_table(cards: list[ScoreCard]) -> None:
         table.add_row(
             str(i), c.ticker, f"{c.composite:.1f}",
             _f(c.quality), _f(c.moat), _f(c.growth), _f(c.momentum), _f(c.value), _f(c.insider),
+            _f(c.risk),
             f"{up*100:.0f}%" if up is not None else "-",
             _flags_cell(c), style=style,
         )
@@ -118,11 +120,11 @@ def _print_table(cards: list[ScoreCard]) -> None:
 
 def _print_plain(cards: list[ScoreCard]) -> None:
     print(f"{'#':>2} {'TICK':<6} {'COMP':>5} {'QUAL':>5} {'MOAT':>5} {'GRW':>5} "
-          f"{'MOM':>5} {'VAL':>5} {'INSD':>5}  FLAGS")
+          f"{'MOM':>5} {'VAL':>5} {'INSD':>5} {'RISK':>5}  FLAGS")
     for i, c in enumerate(cards, 1):
         print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
               f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
-              f"{_f(c.insider):>5}  {_flags_cell(c)}")
+              f"{_f(c.insider):>5} {_f(c.risk):>5}  {_flags_cell(c)}")
 
 
 def _print_coverage_notes(cards: list[ScoreCard]) -> None:
@@ -277,6 +279,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "ticker": c.ticker, "composite": c.composite, "quality": c.quality,
         "moat": c.moat, "growth": c.growth, "momentum": c.momentum, "value": c.value,
         "opportunity": c.opportunity, "insider": c.insider,
+        "risk": c.risk,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
         "flags": c.flags,
@@ -310,14 +313,14 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
-                    "momentum", "value", "opportunity", "insider", "upside_to_target",
-                    "gates", "scored", "sic_bucket"])
+                    "momentum", "value", "opportunity", "insider", "risk",
+                    "upside_to_target", "gates", "scored", "sic_bucket"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
                         d["growth"], d["momentum"], d["value"], d["opportunity"],
-                        d["insider"], d["upside_to_target"], "|".join(d["gates"]),
-                        d["scored"], d["sic_bucket"]])
+                        d["insider"], d["risk"], d["upside_to_target"],
+                        "|".join(d["gates"]), d["scored"], d["sic_bucket"]])
 
 
 if __name__ == "__main__":
