@@ -388,3 +388,28 @@ def test_csv_has_aligned_risk_column(tmp_path):
     header, row = rows[0], rows[1]
     assert "risk" in header
     assert row[header.index("risk")] == str(card.risk)
+
+
+def test_thin_flag_set_below_threshold():
+    import copy, dataclasses
+    rc = copy.deepcopy(CONFIG)
+    rc["ranking"] = {"thin_below": 0.5}
+    # momentum-only name -> confidence well below 0.5 -> thin
+    m = StockMetrics(ticker="MOM", price_vs_200dma=0.2, rel_strength_6m=0.2,
+                     eps_revision=0.05)
+    card = score(m, rc)
+    assert 0.0 < card.confidence < 0.5
+    assert card.thin is True
+
+
+def test_thin_flag_false_above_threshold():
+    rc = {**CONFIG, "ranking": {"thin_below": 0.5}}
+    card = score(metrics_all_50(), rc)   # fully covered -> confidence 1.0
+    assert card.thin is False
+
+
+def test_thin_noop_when_ranking_absent():
+    # CONFIG has no `ranking` block -> thin always False, no KeyError
+    m = StockMetrics(ticker="MOM", price_vs_200dma=0.2, rel_strength_6m=0.2,
+                     eps_revision=0.05)
+    assert score(m, CONFIG).thin is False

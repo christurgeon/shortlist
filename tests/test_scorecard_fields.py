@@ -55,3 +55,11 @@ def test_rank_key_works_on_duck_typed_card_without_confidence():
 def test_thin_field_defaults_false():
     assert _card().thin is False
     assert _card(thin=True).thin is True
+
+
+def test_thin_does_not_affect_rank_key_or_passed():
+    from shortlist.models import rank_key
+    a = _card(composite=70.0, confidence=0.30, scored=True, thin=True)
+    b = _card(composite=70.0, confidence=0.30, scored=True, thin=False)
+    assert rank_key(a) == rank_key(b)
+    assert a.passed == b.passed
