@@ -66,6 +66,7 @@ class Txn:
     shares: Optional[float] = None
     price: Optional[float] = None
     value: Optional[float] = None    # unsigned transaction value (shares * price)
+    planned: bool = False            # True iff a 10b5-1 footnote was detected (sells)
 
 
 @dataclass
@@ -77,14 +78,24 @@ class Form4Summary:
     sell_count: int = 0
     txns: list[Txn] = field(default_factory=list)
     found: bool = False
+    # --- v2 conviction aggregates (no-signal defaults; computed only when a
+    # conviction config is passed to summarize) ---
+    distinct_buyers: int = 0
+    role_weighted_buy_value: float = 0.0
+    planned_sell_value: float = 0.0
 
 
-def summarize(rows: Iterable[tuple]) -> Form4Summary:
-    """Aggregate open-market (P/S) transactions. The scored core — pure, no
-    pandas — so it's unit-testable in isolation. Each row is
-    (shares, price, code, date, name, role); non-P/S codes are ignored."""
+def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4Summary:
+    """Aggregate open-market (P/S) transactions. Each row is
+    (shares, price, code, date, name, role, planned); non-P/S codes are ignored.
+    When `conviction` is None the v2 fields stay at their no-signal defaults and the
+    result is identical to the pre-conviction scorer (back-compat). When a conviction
+    dict (role_weights, min_cluster_buy_value) is supplied, three extra aggregates are
+    computed in the same single pass."""
     s = Form4Summary()
-    for shares, price, code, dt, name, role in rows:
+    buyer_value: dict[str, float] = {}   # normalized name -> total in-window buy $
+    buyer_tier: dict[str, str] = {}      # normalized name -> role tier (first seen)
+    for shares, price, code, dt, name, role, planned in rows:
         classification = classify_code(str(code or ""))
         if classification == "other":
             continue
@@ -101,7 +112,25 @@ def summarize(rows: Iterable[tuple]) -> Form4Summary:
             name=name, role=role,
             kind="buy" if is_buy else "sell",
             shares=shares or None, price=price or None, value=value,
+            planned=bool(planned),
         ))
+        if conviction is not None:
+            if is_buy:
+                tier = classify_role(role)
+                weights = conviction.get("role_weights") or {}
+                s.role_weighted_buy_value += weights.get(tier, 1.0) * value
+                if name:
+                    key = " ".join(str(name).upper().split())
+                    buyer_value[key] = buyer_value.get(key, 0.0) + value
+                    buyer_tier.setdefault(key, tier)
+            elif planned:
+                s.planned_sell_value += value
+    if conviction is not None:
+        floor = conviction.get("min_cluster_buy_value", 0) or 0
+        s.distinct_buyers = sum(
+            1 for k, v in buyer_value.items()
+            if buyer_tier.get(k) in ("c_suite", "officer", "director") and v >= floor
+        )
     return s
 
 
@@ -124,10 +153,12 @@ def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str]) ->
     return rows
 
 
-def aggregate_form4(filings: Iterable[Any], cutoff: date) -> Form4Summary:
+def aggregate_form4(filings: Iterable[Any], cutoff: date,
+                    conviction: Optional[dict] = None) -> Form4Summary:
     """Aggregate Form 4 filings (newest-first) until one predates `cutoff`.
     `filings` are edgartools EntityFiling objects; a filing that fails to parse
-    is skipped rather than aborting the run."""
+    is skipped rather than aborting the run. `conviction` is forwarded to
+    `summarize`; when None the result is identical to before (back-compat)."""
     rows: list[tuple] = []
     for filing in filings:
         if filing.filing_date < cutoff:
@@ -136,9 +167,14 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date) -> Form4Summary:
             form4 = filing.obj()
         except Exception:
             continue
-        rows.extend(_frame_rows(
-            getattr(form4, "market_trades", None),
-            getattr(form4, "insider_name", None),
-            None,
-        ))
-    return summarize(rows)
+        # _frame_rows returns 6-tuples; append planned=False here until Task 3
+        # extends _frame_rows with resolve_footnotes.
+        rows.extend(
+            r + (False,)
+            for r in _frame_rows(
+                getattr(form4, "market_trades", None),
+                getattr(form4, "insider_name", None),
+                None,
+            )
+        )
+    return summarize(rows, conviction)
