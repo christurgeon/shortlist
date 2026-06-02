@@ -134,31 +134,69 @@ def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4
     return s
 
 
-def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str]) -> list[tuple]:
-    """Pull (shares, price, code, date, name, role) tuples from an edgartools
-    `market_trades` pandas DataFrame (cols: Shares, Price, Code, Date, ...).
-    Returns [] for None or an empty frame — guarding the DataFrame truth-value
-    trap (`if df:` raises 'truth value is ambiguous')."""
+def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
+                resolve_footnotes: Any = None) -> list[tuple]:
+    """Pull (shares, price, code, date, name, role, planned) tuples from an edgartools
+    `market_trades` DataFrame (cols: Shares, Price, Code, Date, footnotes, ...).
+    `planned` is the 10b5-1 footnote heuristic, resolved via `resolve_footnotes` (the
+    duck-typed form4._resolve_footnotes; None in tests/absence -> planned False).
+    Guards the DataFrame truth-value trap (`if df:` raises)."""
     if market_trades is None or getattr(market_trades, "empty", True):
         return []
     rows = []
     for r in market_trades.itertuples(index=False):
+        planned = False
+        if resolve_footnotes is not None:
+            ids = getattr(r, "footnotes", None)
+            if ids:
+                try:
+                    planned = is_10b5_1(resolve_footnotes(ids))
+                except Exception:
+                    planned = False
         rows.append((
             getattr(r, "Shares", None),
             getattr(r, "Price", None),
             getattr(r, "Code", None),
             getattr(r, "Date", None),
-            name, role,
+            name, role, planned,
         ))
     return rows
 
 
+def _owner_role(owner: Any) -> Optional[str]:
+    """Build a role string from an edgartools reporting Owner. officer_title wins;
+    else fall back to the structured relationship booleans. Returns None when unknown."""
+    if owner is None:
+        return None
+    title = getattr(owner, "officer_title", None)
+    if title:
+        return title
+    if getattr(owner, "is_director", False):
+        return "director"
+    if getattr(owner, "is_ten_pct_owner", False):
+        return "10% owner"
+    if getattr(owner, "is_officer", False):
+        return "officer"
+    return None
+
+
+def _form_role(form4: Any) -> Optional[str]:
+    """Role of the filing's primary reporting owner (owners[0]); >1 owner is rare and
+    co-owners are dropped. Fully guarded — any absence degrades to None."""
+    owners = getattr(getattr(form4, "reporting_owners", None), "owners", None)
+    if not owners:
+        return None
+    try:
+        return _owner_role(owners[0])
+    except Exception:
+        return None
+
+
 def aggregate_form4(filings: Iterable[Any], cutoff: date,
                     conviction: Optional[dict] = None) -> Form4Summary:
-    """Aggregate Form 4 filings (newest-first) until one predates `cutoff`.
-    `filings` are edgartools EntityFiling objects; a filing that fails to parse
-    is skipped rather than aborting the run. `conviction` is forwarded to
-    `summarize`; when None the result is identical to before (back-compat)."""
+    """Aggregate Form 4 filings (newest-first) until one predates `cutoff`. A filing
+    that fails to parse is skipped. When `conviction` is supplied, role + 10b5-1
+    extraction feed the v2 aggregates; when None, behavior is identical to before."""
     rows: list[tuple] = []
     for filing in filings:
         if filing.filing_date < cutoff:
@@ -167,14 +205,10 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
             form4 = filing.obj()
         except Exception:
             continue
-        # _frame_rows returns 6-tuples; append planned=False here until Task 3
-        # extends _frame_rows with resolve_footnotes.
-        rows.extend(
-            r + (False,)
-            for r in _frame_rows(
-                getattr(form4, "market_trades", None),
-                getattr(form4, "insider_name", None),
-                None,
-            )
-        )
+        rows.extend(_frame_rows(
+            getattr(form4, "market_trades", None),
+            getattr(form4, "insider_name", None),
+            _form_role(form4),
+            getattr(form4, "_resolve_footnotes", None),
+        ))
     return summarize(rows, conviction)

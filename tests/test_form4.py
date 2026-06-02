@@ -57,7 +57,11 @@ def test_summarize_empty_is_not_found():
 
 # --- _frame_rows (DataFrame extraction, with a pandas-free fake) ----------
 
-_Row = collections.namedtuple("Row", ["Shares", "Price", "Code", "Date"])
+_Row = collections.namedtuple("Row", ["Shares", "Price", "Code", "Date", "footnotes"])
+
+
+def _row(shares, price, code, dt, footnotes=None):
+    return _Row(shares, price, code, dt, footnotes)
 
 
 class _FakeFrame:
@@ -76,17 +80,43 @@ def test_frame_rows_none_and_empty_return_empty():
 
 
 def test_frame_rows_extracts_columns_and_injects_name_role():
-    frame = _FakeFrame([_Row(100, 10.0, "P", "2026-05-01")])
+    frame = _FakeFrame([_row(100, 10.0, "P", "2026-05-01")])
     rows = _frame_rows(frame, "Alice", "CEO")
-    assert rows == [(100, 10.0, "P", "2026-05-01", "Alice", "CEO")]
+    # 7-tuple now; planned defaults False when no resolver is supplied
+    assert rows == [(100, 10.0, "P", "2026-05-01", "Alice", "CEO", False)]
+
+
+def test_frame_rows_detects_10b5_1_via_resolver():
+    frame = _FakeFrame([_row(100, 10.0, "S", "2026-05-01", footnotes="F1")])
+    rows = _frame_rows(frame, "Bob", "CFO",
+                       resolve_footnotes=lambda ids: "Sale under Rule 10b5-1 plan")
+    assert rows[0][6] is True   # planned
 
 
 # --- aggregate_form4 (filing loop, cutoff, parse-failure tolerance) -------
 
+class _FakeOwner:
+    def __init__(self, officer_title=None, is_director=False, is_officer=False, is_ten_pct_owner=False):
+        self.officer_title = officer_title
+        self.is_director = is_director
+        self.is_officer = is_officer
+        self.is_ten_pct_owner = is_ten_pct_owner
+
+
+class _FakeOwners:
+    def __init__(self, owners):
+        self.owners = owners
+
+
 class _FakeForm4:
-    def __init__(self, frame, insider_name):
+    def __init__(self, frame, insider_name, owners=None, footnotes=""):
         self.market_trades = frame
         self.insider_name = insider_name
+        self.reporting_owners = _FakeOwners(owners) if owners is not None else None
+        self._footnotes = footnotes
+
+    def _resolve_footnotes(self, ids):
+        return self._footnotes
 
 
 class _FakeFiling:
@@ -101,22 +131,40 @@ class _FakeFiling:
         return self._form4
 
 
+def test_aggregate_extracts_role_from_reporting_owner():
+    cutoff = date(2026, 1, 1)
+    f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
+        _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "Alice",
+        owners=[_FakeOwner(officer_title="Chief Executive Officer")]))
+    s = aggregate_form4([f], cutoff, conviction=_CONV)
+    assert s.txns[0].role == "Chief Executive Officer"
+    assert s.role_weighted_buy_value == 1500.0   # 1.5 * 1000
+
+
+def test_aggregate_handles_missing_reporting_owners():
+    cutoff = date(2026, 1, 1)
+    f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
+        _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "Anon", owners=None))
+    s = aggregate_form4([f], cutoff)   # no crash; role None
+    assert s.buy_count == 1 and s.txns[0].role is None
+
+
 def test_aggregate_stops_at_cutoff():
     cutoff = date(2026, 1, 1)
     recent = _FakeFiling(date(2026, 5, 1),
-                         _FakeForm4(_FakeFrame([_Row(100, 10.0, "P", "2026-05-01")]), "A"))
-    stale = _FakeFiling(date(2025, 6, 1),  # older than cutoff -> loop breaks here
-                        _FakeForm4(_FakeFrame([_Row(999, 99.0, "P", "2025-06-01")]), "B"))
+                         _FakeForm4(_FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "A"))
+    stale = _FakeFiling(date(2025, 6, 1),
+                        _FakeForm4(_FakeFrame([_row(999, 99.0, "P", "2025-06-01")]), "B"))
     s = aggregate_form4([recent, stale], cutoff)
-    assert s.buy_count == 1 and s.net_value == 1000.0   # stale filing excluded
+    assert s.buy_count == 1 and s.net_value == 1000.0
 
 
 def test_aggregate_skips_unparseable_filings():
     cutoff = date(2026, 1, 1)
     good = _FakeFiling(date(2026, 5, 2),
-                       _FakeForm4(_FakeFrame([_Row(50, 20.0, "S", "2026-05-02")]), "A"))
+                       _FakeForm4(_FakeFrame([_row(50, 20.0, "S", "2026-05-02")]), "A"))
     bad = _FakeFiling(date(2026, 5, 1), raises=True)
-    s = aggregate_form4([good, bad], cutoff)   # bad is skipped, not fatal
+    s = aggregate_form4([good, bad], cutoff)
     assert s.sell_count == 1 and s.net_value == -1000.0
 
 
