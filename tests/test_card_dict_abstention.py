@@ -24,3 +24,8 @@ def test_card_dict_omits_abstentions_when_empty():
     d = _card_dict(_c())
     assert "abstentions" not in d
     assert d["scored"] is True
+
+
+def test_card_dict_includes_risk():
+    d = _card_dict(_c(risk=100.0))
+    assert d["risk"] == 100.0

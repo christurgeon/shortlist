@@ -85,6 +85,16 @@ def insider_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _avg([sentiment, net])
 
 
+def risk_score(m: StockMetrics, t: dict) -> Optional[float]:
+    # Sector-neutral (like insider_score): realized volatility and max drawdown are
+    # well-defined for every sector, so risk is never masked. Both legs are inverted
+    # (bands with safer -> higher): low vol and a shallow drawdown score high.
+    return _avg([
+        _norm(m.realized_vol, *t["realized_vol"]),
+        _norm(m.max_drawdown, *t["max_drawdown"]),
+    ])
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it
@@ -271,8 +281,19 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         ("insider", ins, w["insider"], ("insider",)),
     ]
 
-    # Composite: unchanged math over present components, weight redistributed.
+    # Risk: a composite-only tilt (config-gated). Sector-neutral like insider, but
+    # deliberately NOT added to `components` -> it never enters appl_w/pres_w, so
+    # confidence/scored/passed stay bit-identical when risk is absent. The five
+    # weights are rescaled x0.9 in config, so with risk absent the scalar cancels in
+    # num/den and the composite equals the pre-change scorer. See the design spec §3.
+    risk_on = ("risk" in w) and ("realized_vol" in t) and ("max_drawdown" in t)
+    ri = risk_score(m, t) if risk_on else None
+
+    # Composite: unchanged math over present components, weight redistributed,
+    # plus the risk tilt when present.
     parts = [(s, weight) for _, s, weight, _ in components if s is not None]
+    if ri is not None:
+        parts.append((ri, w["risk"]))
     num = sum(s * weight for s, weight in parts)
     den = sum(weight for _, weight in parts)
     composite = round(num / den, 1) if den else 0.0
@@ -293,6 +314,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         flags=check_flags(m, config.get("flags") or {}),
         metrics=m,
         sic_bucket=bucket, confidence=confidence, scored=scored, abstentions=abst,
+        risk=_round(ri),
     )
 
 

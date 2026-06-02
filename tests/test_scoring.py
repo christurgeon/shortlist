@@ -293,3 +293,98 @@ def test_score_carries_flags_and_passed_unaffected():
     card = score(m, cfg)
     assert "crowded_short" in card.flags
     assert card.passed is True                                # advisory only
+
+
+# --- Risk sub-score (7th axis) -------------------------------------------
+
+import copy
+import dataclasses
+
+from shortlist.scoring import risk_score
+
+_RISK_T = {"realized_vol": [0.45, 0.15], "max_drawdown": [-0.50, -0.10]}
+
+
+def _risk_config():
+    c = copy.deepcopy(CONFIG)
+    c["thresholds"]["realized_vol"] = [0.45, 0.15]
+    c["thresholds"]["max_drawdown"] = [-0.50, -0.10]
+    # proportional rescale (x0.9) + risk 0.10
+    c["weights"] = {"quality": 0.18, "moat": 0.18, "growth": 0.135,
+                    "opportunity": 0.27, "insider": 0.135, "risk": 0.10}
+    return c
+
+
+def test_risk_score_direction_and_clamp():
+    base = metrics_all_50()
+    safe = dataclasses.replace(base, realized_vol=0.15, max_drawdown=-0.10)
+    assert risk_score(safe, _RISK_T) == 100.0
+    risky = dataclasses.replace(base, realized_vol=0.45, max_drawdown=-0.50)
+    assert risk_score(risky, _RISK_T) == 0.0
+    mid = dataclasses.replace(base, realized_vol=0.30, max_drawdown=-0.30)
+    assert risk_score(mid, _RISK_T) == 50.0
+    extreme = dataclasses.replace(base, realized_vol=0.05, max_drawdown=-0.80)
+    assert risk_score(extreme, _RISK_T) == 50.0  # vol capped 100, dd floored 0
+
+
+def test_risk_score_none_when_no_legs():
+    no_risk = dataclasses.replace(metrics_all_50(), realized_vol=None, max_drawdown=None)
+    assert risk_score(no_risk, _RISK_T) is None
+
+
+def test_composite_shifts_when_risk_present():
+    rc = _risk_config()
+    safe = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10)
+    card = score(safe, rc)
+    assert card.risk == 100.0
+    # composite = (50*0.90 + 100*0.10) / 1.0 = 55.0
+    assert card.composite == 55.0
+
+
+def test_composite_invariant_when_risk_absent():
+    rc = _risk_config()
+    m = dataclasses.replace(metrics_all_50(), realized_vol=None, max_drawdown=None)
+    assert score(m, rc).composite == score(m, CONFIG).composite
+    assert score(m, rc).composite == 50.0
+
+
+def test_confidence_invariant_unknown_bucket_and_no_risk_abstention():
+    rc = _risk_config()
+    m = dataclasses.replace(metrics_all_50(), realized_vol=None, max_drawdown=None)
+    a, b = score(m, CONFIG), score(m, rc)
+    assert a.confidence == b.confidence
+    assert a.scored == b.scored
+    assert a.passed == b.passed
+    assert all(x.get("field") != "risk" for x in b.abstentions)
+
+
+def test_no_keyerror_on_config_without_risk():
+    m = dataclasses.replace(metrics_all_50(), realized_vol=0.20, max_drawdown=-0.15)
+    card = score(m, CONFIG)  # CONFIG has no risk keys
+    assert card.risk is None
+
+
+def test_shipped_config_activates_risk():
+    cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+    w = cfg["weights"]
+    assert w["risk"] == 0.10
+    assert abs(sum(w.values()) - 1.0) < 1e-9
+    t = cfg["thresholds"]
+    assert t["realized_vol"] == [0.45, 0.15]
+    assert t["max_drawdown"] == [-0.50, -0.10]
+    m = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10)
+    assert score(m, cfg).risk == 100.0
+
+
+def test_csv_has_aligned_risk_column(tmp_path):
+    import csv
+    from shortlist.screen import _write_csv
+    rc = _risk_config()
+    m = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10, sic=None)
+    card = score(m, rc)
+    path = tmp_path / "out.csv"
+    _write_csv([card], str(path))
+    rows = list(csv.reader(path.open()))
+    header, row = rows[0], rows[1]
+    assert "risk" in header
+    assert row[header.index("risk")] == str(card.risk)
