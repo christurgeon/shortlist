@@ -96,9 +96,23 @@ prior** — trailing vol/drawdown peak at the bottom and can be anti-predictive 
 turning points; backtest its standalone rank IC before trusting it (`docs/ASSESSMENT_GAPS.md`).
 
 Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
-`passed`/`composite` (distinct from hard `gates`). Today's only flag is
+`passed`/`composite` (distinct from hard `gates`). Flags include
 `crowded_short = short_pct_outstanding ≥ t ∧ days_to_cover ≥ t ∧ rising ∧ fresh`
-(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`).
+(harness engine + `finra`; thresholds in `config.yaml` → `flags.crowded_short`), and the
+conviction advisories `insider_cluster_buy` / `planned_sale` (inert unless `insider.conviction`
+is enabled).
+
+The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
+Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell
+forgiveness. It ships **commented out** (OFF by default); both stacks are **bit-identical** to
+the pre-feature scorer when absent. Conviction is a **one-directional buy-side tilt**: it can
+only *raise* `insider` (`max(base, avg(base, conviction))`), never penalize a name that simply
+has no buys — and the `max` guard also avoids double-counting buying already in the net-flow leg.
+The `heavy_insider_selling` gate is deliberately untouched
+(10b5-1 detection forgives the score only, never the gate). All conviction weights are
+**unfitted priors** — backtest before trusting. `EdgarProvider` and `EdgarSource` both accept
+the conviction config and pass it through to `providers/_form4.py`, which extracts role strings
+and 10b5-1 footnote heuristics from already-fetched edgartools objects.
 
 When a sub-score has no inputs (all `None`), it is excluded and the composite
 weight is redistributed across the remaining components — never silently zeroed.

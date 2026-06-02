@@ -23,11 +23,13 @@ class EdgarProvider(Provider):
 
     name = "edgar"
 
-    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183):
+    def __init__(self, identity: Optional[str] = None, lookback_days: int = 183,
+                 config: Optional[dict] = None):
         self.identity = identity or os.environ.get("SEC_IDENTITY")
         if not self.identity:
             raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
         self.lookback_days = lookback_days
+        self._conviction = ((config or {}).get("insider") or {}).get("conviction")
         from edgar import set_identity  # imported lazily so the dep is optional
 
         set_identity(self.identity)
@@ -42,8 +44,13 @@ class EdgarProvider(Provider):
         m.sic = extract_sic(company)   # reuses the Company already built; no extra request
         cutoff = date.today() - timedelta(days=self.lookback_days)
 
-        summary = aggregate_form4(company.get_filings(form="4").latest(40), cutoff)
+        summary = aggregate_form4(
+            company.get_filings(form="4").latest(40), cutoff, self._conviction)
         if summary.found:
             m.insider_net_6m = summary.net_value
+            if self._conviction is not None:
+                m.insider_distinct_buyers = summary.distinct_buyers
+                m.insider_role_weighted_buy_value = summary.role_weighted_buy_value
+                m.insider_planned_sell_value = summary.planned_sell_value
 
         return self._tag(m, "insider_net_6m", "sic")

@@ -102,6 +102,9 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     if ins:
         m.insider_net_6m = ins.net_value_6m
         m.insider_sentiment = ins.sentiment_mspr
+        m.insider_distinct_buyers = ins.distinct_buyers
+        m.insider_role_weighted_buy_value = ins.role_weighted_buy_value
+        m.insider_planned_sell_value = ins.planned_sell_value
 
     st = snap.statements
     if st:

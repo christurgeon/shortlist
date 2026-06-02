@@ -288,6 +288,20 @@ parses the granular trades to do far better:
 - **Plug:** enrich the `_form4.py` aggregation (it's the shared leaf module, so both stacks
   benefit) with cluster/role/10b5-1 fields; fold into `insider_score`.
 
+> **SHIPPED (config-gated, OFF by default):** cluster + role-weighting + 10b5-1 forgiveness
+> are now folded into `insider_score` as a third `_avg` leg, gated by the `insider.conviction`
+> config block (`config.yaml`). The block ships **commented out** — `yaml.safe_load` yields no
+> `insider.conviction` key, so both stacks are **bit-identical** to the pre-feature scorer when
+> absent. The `heavy_insider_selling` gate is **deliberately untouched** (10b5-1 detection
+> forgives the score but never the gate — a regression test pins this). Two new advisory flags
+> (`insider_cluster_buy`, `planned_sale`) fire when conviction fields are populated; both are
+> soft and never affect `passed`/`composite`. All threshold bands and weights are **unfitted
+> priors** — backtest the standalone cluster/role rank IC (§2.1) before trusting them.
+> `EdgarProvider` and `EdgarSource` both accept the conviction config and pass it through to
+> `providers/_form4.py`, which extracts role strings and 10b5-1 footnote heuristics from the
+> already-fetched edgartools objects. See spec:
+> `docs/superpowers/specs/2026-06-02-insider-conviction-design.md`.
+
 #### 2.7 The gates can flag *good* businesses
 `check_gates` (`scoring.py:74`) has two dangerous rules:
 - `over_leveraged` = `debt_to_equity > 5` misfires on quality compounders with **negative

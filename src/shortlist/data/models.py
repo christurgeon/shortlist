@@ -91,6 +91,12 @@ class Insider:
     sell_count: Optional[int] = None
     sentiment_mspr: Optional[float] = None      # -1..1 net signal
     recent: list[InsiderTxn] = field(default_factory=list)
+    # Conviction enrichment — default None (NOT 0) so an empty Insider() does not trip
+    # the _merge_insider wholesale branch. Derived from the SAME Form-4 txn set as the
+    # counts above -> travel wholesale with them.
+    distinct_buyers: Optional[int] = None
+    role_weighted_buy_value: Optional[float] = None
+    planned_sell_value: Optional[float] = None
 
 
 @dataclass
@@ -155,7 +161,8 @@ KEY_OBJECTS = ("profile", "fundamentals", "statements", "analyst", "insider", "p
 
 # `recent` is illustrative; the rest are internal derivation plumbing, not
 # assessment-ready signals -> excluded from coverage/missing accounting.
-_NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes")
+_NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes",
+                      "distinct_buyers", "role_weighted_buy_value", "planned_sell_value")
 
 
 @dataclass
@@ -182,8 +189,9 @@ class TickerSnapshot:
         for name in KEY_OBJECTS:
             obj = getattr(self, name)
             if obj is None:
-                # Count the object's declared fields as all-missing.
-                total += len(fields(_DEFAULTS[name]))
+                # Count only signal fields as all-missing (consistent with the present
+                # branch below) so non-signal plumbing fields never move coverage.
+                total += len(_signal_fields(_DEFAULTS[name]))
                 continue
             for f in _signal_fields(obj):
                 total += 1
@@ -297,7 +305,8 @@ def _has_data(obj: Any) -> bool:
 # of Form 4 trades; they must come from ONE source or the dollar figure and the
 # counts could describe different trades. `sentiment_mspr` is an independent
 # signal (Finnhub's MSPR) that no transaction source supplies.
-_INSIDER_TXN_FIELDS = ("net_value_6m", "buy_count", "sell_count", "recent")
+_INSIDER_TXN_FIELDS = ("net_value_6m", "buy_count", "sell_count", "recent",
+                       "distinct_buyers", "role_weighted_buy_value", "planned_sell_value")
 
 
 def _merge_insider(instances: list[tuple[str, Optional["Insider"]]]) -> tuple[Optional["Insider"], list[str]]:

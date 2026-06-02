@@ -34,6 +34,11 @@ thresholds:
   insider_sentiment:   [-0.30, 0.30]
   insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
 
+  # Insider conviction (UNFITTED priors — backtest standalone rank IC before trusting,
+  # like the risk axis). Only used when the insider.conviction block below is present.
+  insider_cluster:        [1, 4]        # # distinct qualifying buyers -> 0..100
+  insider_role_buy_ratio: [0.0, 0.001]  # role-weighted buy $ / market cap -> 0..100
+
   # Risk (inverted: safer -> higher score). Unfitted prior — backtest before trusting.
   realized_vol:   [0.45, 0.15]    # annualized stdev of daily returns
   max_drawdown:   [-0.50, -0.10]  # trailing ~1y peak-to-trough (negative)
@@ -91,6 +96,10 @@ flags:
     min_days_to_cover: 5.0            # >5 elevated, >10 extreme
     require_rising: true              # the change (vs prior cycle), not the static level, is the signal
     max_staleness_days: 35            # ignore a cycle older than ~2 missed publications (stale-cache guard)
+  # Insider conviction advisories (soft; never affect passed/composite). Inert unless
+  # the insider.conviction block is enabled (the fields stay None otherwise).
+  insider_cluster_buy: { min_distinct: 3 }
+  planned_sale:        { min_value: 1 }
 
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]
@@ -105,6 +114,21 @@ fmp:
   # Retries on a 429 (per-minute throttle) before giving up; backoff honors any
   # Retry-After header. Daily-quota 429s won't clear, so this is deliberately small.
   max_retries: 2
+
+# Insider CONVICTION enrichment (ASSESSMENT_GAPS §2.6). DISABLED by default: leave the
+# block commented so insider_score and check_gates are byte-identical to the pre-feature
+# scorer on both stacks. All numbers are UNFITTED priors — backtest before trusting.
+# insider:
+#   conviction:
+#     enabled: true
+#     min_cluster_buy_value: 25000      # per-buyer $ floor to count toward a cluster
+#     planned_sell_discount: 0.5        # forgive 50% of detected-10b5-1 sell drag
+#     role_weights:
+#       c_suite:  1.5
+#       officer:  1.2
+#       director: 1.0
+#       ten_pct:  0.5
+#       unknown:  1.0                   # missing role == neutral (load-bearing for back-compat)
 
 # Default source chain for `--engine harness` (yahoo first => wins the price merge).
 harness_sources: [yahoo, fmp, finnhub, edgar, finra]

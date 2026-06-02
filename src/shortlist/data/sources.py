@@ -346,6 +346,7 @@ class EdgarSource(Source):
             "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"])
         self._event_lookback_days = ev.get("lookback_days", 90)
         self._index_limit = ev.get("index_limit", 40)
+        self._conviction = ((config or {}).get("insider") or {}).get("conviction")
         from edgar import set_identity  # lazy: edgartools is an optional dep
         set_identity(self.identity)  # process-global mutable state — set once, here
 
@@ -363,7 +364,7 @@ class EdgarSource(Source):
         cutoff = date.today() - timedelta(days=self.lookback_days)
         try:
             summary = aggregate_form4(
-                Company(ticker).get_filings(form="4").latest(40), cutoff)
+                Company(ticker).get_filings(form="4").latest(40), cutoff, self._conviction)
         except Exception as e:
             res.errors.append(f"edgar: {e}")
             res.partial = TickerSnapshot(ticker=ticker)
@@ -371,7 +372,7 @@ class EdgarSource(Source):
 
         if summary.found:
             res.raw = {"form4_trades": [dataclasses.asdict(t) for t in summary.txns]}
-            res.partial = TickerSnapshot(ticker=ticker, insider=Insider(
+            ins = Insider(
                 net_value_6m=summary.net_value,
                 buy_count=summary.buy_count,
                 sell_count=summary.sell_count,
@@ -379,7 +380,12 @@ class EdgarSource(Source):
                     date=t.date, name=t.name, role=t.role, kind=t.kind,
                     shares=t.shares, price=t.price, value=t.value,
                 ) for t in summary.txns[:10]],
-            ))
+            )
+            if self._conviction is not None:
+                ins.distinct_buyers = summary.distinct_buyers
+                ins.role_weighted_buy_value = summary.role_weighted_buy_value
+                ins.planned_sell_value = summary.planned_sell_value
+            res.partial = TickerSnapshot(ticker=ticker, insider=ins)
         else:
             res.partial = TickerSnapshot(ticker=ticker)
         return res

@@ -9,8 +9,8 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, growth_score, insider_score, moat_score, momentum_score,
-    quality_score, score, value_score,
+    _avg, _norm, check_flags, growth_score, insider_score, moat_score,
+    momentum_score, quality_score, score, value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -255,8 +255,6 @@ def test_score_runs_against_shipped_config_and_mock_data():
 
 # --- check_flags: soft, non-disqualifying advisories ---------------------
 
-from shortlist.scoring import check_flags
-
 FLAGS_CFG = {"crowded_short": {
     "min_short_pct_outstanding": 0.10, "min_days_to_cover": 5.0,
     "require_rising": True, "max_staleness_days": 35,
@@ -434,3 +432,117 @@ def test_csv_has_confidence_column_after_scored(tmp_path):
     assert "confidence" in header
     assert header.index("confidence") == header.index("scored") + 1
     assert row[header.index("confidence")] == str(card.confidence)
+
+
+# --- insider_score v2: conviction leg (config-gated, no-op default) -------
+
+_CFG = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
+
+
+def _t():
+    return _CFG["thresholds"]
+
+
+def _conv_cfg():
+    # a config WITH the conviction block + bands enabled
+    import copy
+    c = copy.deepcopy(_CFG)
+    c["thresholds"]["insider_cluster"] = [1, 4]
+    c["thresholds"]["insider_role_buy_ratio"] = [0.0, 0.001]
+    c["insider"] = {"conviction": {
+        "enabled": True, "min_cluster_buy_value": 1000, "planned_sell_discount": 0.5,
+        "role_weights": {"c_suite": 1.5, "officer": 1.2, "director": 1.0, "ten_pct": 0.5, "unknown": 1.0},
+    }}
+    return c
+
+
+def test_insider_v2_disabled_identity():
+    m = StockMetrics(ticker="X", insider_sentiment=0.2, insider_net_6m=1e6, market_cap=1e10,
+                     insider_distinct_buyers=4, insider_role_weighted_buy_value=5e6,
+                     insider_planned_sell_value=2e5)
+    # config WITHOUT insider.conviction -> exactly legacy two-arg behavior
+    assert insider_score(m, _t(), _CFG) == insider_score(m, _t())
+
+
+def test_insider_v2_enabled_no_form4_identity():
+    m = StockMetrics(ticker="X", insider_sentiment=0.2, insider_net_6m=1e6, market_cap=1e10)
+    c = _conv_cfg()
+    assert insider_score(m, c["thresholds"], c) == insider_score(m, _t())
+
+
+def test_insider_cluster_and_csuite_raise_score():
+    base = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=0.0, market_cap=1e9)
+    rich = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=0.0, market_cap=1e9,
+                        insider_distinct_buyers=4, insider_role_weighted_buy_value=8e5)
+    c = _conv_cfg()
+    assert insider_score(rich, c["thresholds"], c) > insider_score(base, c["thresholds"], c)
+
+
+def test_planned_sell_softens_flow():
+    # Numbers chosen so the net/mktcap ratio lands INSIDE the unclamped band
+    # [-0.0005, 0.0005]: -3e6/1e10 = -3e-4; softened -1.5e6/1e10 = -1.5e-4. Both
+    # in-band, so the discount is observable (a -5e6/1e9 = -5e-3 would clamp both to 0).
+    detected = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-3e6, market_cap=1e10,
+                            insider_planned_sell_value=3e6)
+    undetected = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-3e6, market_cap=1e10,
+                              insider_planned_sell_value=0.0)
+    c = _conv_cfg()
+    assert insider_score(detected, c["thresholds"], c) > insider_score(undetected, c["thresholds"], c)
+
+
+def test_conviction_is_one_directional_never_penalizes():
+    # Conviction may only RAISE the insider score, never drag it below the base
+    # (sentiment+flow) view. A found name with heavy selling / no buys, and a name
+    # with a single small insider BUY, must both score >= their base — never lower.
+    c = _conv_cfg()
+
+    sells = StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-5e7, market_cap=3e12,
+                         insider_distinct_buyers=0, insider_role_weighted_buy_value=0.0,
+                         insider_planned_sell_value=0.0)
+    sells_base = insider_score(  # base = legacy/off view (no conviction block)
+        StockMetrics(ticker="X", insider_sentiment=0.0, insider_net_6m=-5e7, market_cap=3e12), _t())
+    assert insider_score(sells, c["thresholds"], c) >= sells_base - 1e-9
+
+    # a lone small insider BUY must NOT drop the score below its base view
+    buy = StockMetrics(ticker="Y", insider_sentiment=0.0, insider_net_6m=2e5, market_cap=4e10,
+                       insider_distinct_buyers=1, insider_role_weighted_buy_value=2e5,
+                       insider_planned_sell_value=0.0)
+    buy_base = insider_score(
+        StockMetrics(ticker="Y", insider_sentiment=0.0, insider_net_6m=2e5, market_cap=4e10), _t())
+    assert insider_score(buy, c["thresholds"], c) >= buy_base - 1e-9
+
+
+def test_insider_cluster_buy_flag_fires_at_threshold():
+    f = {"insider_cluster_buy": {"min_distinct": 3}, "planned_sale": {"min_value": 1}}
+    assert "insider_cluster_buy" in check_flags(
+        StockMetrics(ticker="X", insider_distinct_buyers=3), f)
+    assert "insider_cluster_buy" not in check_flags(
+        StockMetrics(ticker="X", insider_distinct_buyers=2), f)
+
+
+def test_planned_sale_flag_fires_on_detected_dollars():
+    f = {"insider_cluster_buy": {"min_distinct": 3}, "planned_sale": {"min_value": 1}}
+    assert "planned_sale" in check_flags(
+        StockMetrics(ticker="X", insider_planned_sell_value=100.0), f)
+    assert "planned_sale" not in check_flags(
+        StockMetrics(ticker="X", insider_planned_sell_value=0.0), f)
+
+
+def test_insider_flags_absent_when_unconfigured():
+    assert check_flags(StockMetrics(ticker="X", insider_distinct_buyers=5), {}) == []
+
+
+# --- Task 8: gate-untouched regression -----------------------------------
+
+def test_gate_untouched_by_10b5_1_when_conviction_off():
+    # A name whose MSPR trips heavy_insider_selling, WITH a detected planned sale set.
+    # With conviction OFF (no insider.conviction block), the gate must still trip and
+    # the composite/passed must be identical to not setting the planned-sale field.
+    m_flag = StockMetrics(ticker="X", insider_sentiment=-0.9, market_cap=5e9,
+                          insider_planned_sell_value=9e6)
+    m_plain = StockMetrics(ticker="X", insider_sentiment=-0.9, market_cap=5e9)
+    a = score(m_flag, _CFG)
+    b = score(m_plain, _CFG)
+    assert "heavy_insider_selling" in a.gates          # gate still trips
+    assert a.composite == b.composite                   # planned-sale field changes nothing
+    assert a.passed == b.passed and a.gates == b.gates
