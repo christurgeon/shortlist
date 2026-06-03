@@ -127,6 +127,11 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
 
+    if args.source == "xbrl" and not os.environ.get("SEC_IDENTITY"):
+        print("SEC_IDENTITY (a contact email) is required for --source xbrl — "
+              "set it in .env, e.g. SEC_IDENTITY='you@example.com'.", file=sys.stderr)
+        return 2
+
     tickers = load_universe(args.tickers or args.universe)
     horizons = [int(h) for h in args.horizons.split(",")]
     if any(h < 1 for h in horizons):
