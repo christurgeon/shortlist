@@ -131,3 +131,29 @@ def test_extract_panel_gross_profit_falls_back_to_revenue_minus_cogs():
                         [_row("2022-01-01", "2022-12-31", 700, "2023-02-01")]))
     p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
     assert p.gross_profit == {"2022-12-31": 500.0}   # 1200 - 700
+
+
+def test_extract_panel_total_debt_sums_lt_and_current():
+    gaap = {}
+    gaap.update(_annual("Revenues", [_row("2022-01-01", "2022-12-31", 1000, "2023-02-01")]))
+    gaap.update(_annual("LongTermDebtNoncurrent", [_inst("2022-12-31", 300, "2023-02-01")]))
+    gaap.update(_annual("LongTermDebtCurrent", [_inst("2022-12-31", 50, "2023-02-01")]))
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.total_debt == {"2022-12-31": 350.0}
+
+def test_extract_panel_diluted_eps_uses_usd_per_share_unit():
+    gaap = _annual("EarningsPerShareDiluted",
+                   [_row("2022-01-01", "2022-12-31", 3.5, "2023-02-01")], unit="USD/shares")
+    # a stray USD-denominated row must NOT be picked up for EPS
+    gaap["EarningsPerShareDiluted"]["units"]["USD"] = [
+        _row("2022-01-01", "2022-12-31", 999.0, "2023-02-01")]
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.diluted_eps == {"2022-12-31": 3.5}
+
+def test_extract_panel_shares_picks_latest_instant():
+    gaap = _annual("Revenues", [_row("2022-01-01", "2022-12-31", 1000, "2023-02-01")])
+    dei = _annual("EntityCommonStockSharesOutstanding", [
+        _inst("2021-12-31", 8, "2022-02-01"),
+        _inst("2022-12-31", 10, "2023-02-01")], unit="shares")
+    p = extract_panel({"facts": {"us-gaap": gaap, "dei": dei}}, as_of=date(2024, 1, 1))
+    assert p.shares == 10.0

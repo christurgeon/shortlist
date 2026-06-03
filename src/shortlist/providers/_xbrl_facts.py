@@ -140,22 +140,26 @@ def latest(series: dict) -> Optional[float]:
 class XbrlPanel:
     """Point-in-time annual fundamentals as {fiscal_end: val} dicts (aligned by
     end, never by list position). `shares` is a single latest instant scalar."""
-    revenue: dict = field(default_factory=dict)
-    net_income: dict = field(default_factory=dict)
-    fcf: dict = field(default_factory=dict)
-    diluted_eps: dict = field(default_factory=dict)
-    gross_profit: dict = field(default_factory=dict)
-    total_equity: dict = field(default_factory=dict)
-    total_debt: dict = field(default_factory=dict)
-    operating_income: dict = field(default_factory=dict)
-    interest_expense: dict = field(default_factory=dict)
-    pretax_income: dict = field(default_factory=dict)
-    income_tax: dict = field(default_factory=dict)
+    revenue: dict[str, float] = field(default_factory=dict)
+    net_income: dict[str, float] = field(default_factory=dict)
+    fcf: dict[str, float] = field(default_factory=dict)
+    diluted_eps: dict[str, float] = field(default_factory=dict)
+    gross_profit: dict[str, float] = field(default_factory=dict)
+    total_equity: dict[str, float] = field(default_factory=dict)
+    total_debt: dict[str, float] = field(default_factory=dict)
+    operating_income: dict[str, float] = field(default_factory=dict)
+    interest_expense: dict[str, float] = field(default_factory=dict)
+    pretax_income: dict[str, float] = field(default_factory=dict)
+    income_tax: dict[str, float] = field(default_factory=dict)
     shares: Optional[float] = None
 
 
 def _gross_profit(facts: dict, as_of: date) -> dict:
-    """GrossProfit if tagged, else revenue - COGS aligned by fiscal end."""
+    """GrossProfit if tagged, else revenue - COGS aligned by fiscal end. Prefers a
+    single consistent definition: when GrossProfit is tagged we use it as-is and do
+    NOT backfill earlier untagged years from revenue-COGS — mixing the two
+    definitions across years would distort the margin-stability series (same
+    rationale as the revenue-alias priority in annual_series)."""
     gp = annual_series(facts, GROSS_PROFIT, as_of)
     if gp:
         return gp
