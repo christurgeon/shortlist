@@ -237,6 +237,37 @@ of ≥24 periods and ≥30 names/date; 12m is flagged **EXPLORATORY** at 16 peri
 All results are early, survivorship-biased directional evidence — treat them as
 signal diagnostics, not fitted predictions.
 
+### Fitting fundamental weights (`--fit`)
+
+`--fit` (with `--source xbrl`) wires the built-in walk-forward fitter
+(`backtest/fit.py`) to the XBRL source: it fits the **fundamental** sub-weights
+(quality/moat/growth/value) by coordinate ascent on in-sample composite IC, shrinks
+50 % toward the `config.yaml` prior, and scores each fold out-of-sample. It emits a
+**proposal**, never a config write.
+
+```bash
+uv run shortlist-backtest --source xbrl --fit --fit-horizon 6 --universe largecap
+uv run shortlist-backtest --source xbrl --fit --fit-horizon 3 --universe largecap --json
+```
+
+- **Scope is the 4 fundamental axes only** (momentum/insider/risk aren't in XBRL). The
+  fit speaks to the **within-block ratios**; the fundamental block's *total share*
+  stays an unfitted prior. The `config-mapped` column rescales the fitted ratios into
+  the block's current share.
+- **Co-emission:** only (date, ticker) rows where **all** fitted axes are present are
+  used, so every composite the fitter scores is an apples-to-apples blend.
+- **Endorsement gate → PROPOSE or NO-CHANGE.** A config change is endorsed only if, on
+  the per-fold **paired** (shrunk-fit vs prior) OOS difference: ≥36 periods, ≥5 OOS
+  folds, mean edge ≥ +0.02, ≥4/5 folds positive, and t-stat ≥ 2. These are deliberately
+  hard to clear on survivorship-biased data — **NO-CHANGE is the expected default**.
+- `--fit-horizon` is required (fitted ratios are horizon-conditional); `--n-folds`
+  (default 6), `--shrink` (default 0.5), and `--fit-axes` tune the run.
+
+The bundled-largecap result (2026-06) is **NO-CHANGE** at both 3m and 6m (6m is below
+the period floor; 3m clears it but the paired OOS edge is only +0.005 vs the +0.02 bar,
+positive in just 2/5 folds). See the captured numbers + recommendation in
+`docs/superpowers/specs/2026-06-03-xbrl-weight-fit-results.md` (local).
+
 ### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
 
 The snapshot-replay/weight-fitting paths above stay guarded until the store holds

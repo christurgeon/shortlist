@@ -185,10 +185,23 @@ touches.
 > raw momentum bands deserve scrutiny — exactly what this gap was for. **Tracked as a
 > concrete action in §2.3** (score momentum sector-/universe-relative, then re-backtest).
 >
-> **Built, tested, guarded (Phase 2, blocked on data):** weight-fitting
-> (`backtest/fit.py`, walk-forward + 50% shrinkage toward the prior) and
-> snapshot-replay (`SnapshotSignalSource`) activate once point-in-time multi-axis
-> history accumulates. The **accumulation mechanism now exists** —
+> **Fundamental weight-fitting (✅ WIRED, XBRL path):** `--source xbrl --fit`
+> (`backtest/fit.py` + `backtest/fit_data.py`) now fits the **fundamental** sub-weights
+> (quality/moat/growth/value) walk-forward (coordinate ascent + 50% shrinkage toward the
+> `config.yaml` prior), scoring each fold out-of-sample and emitting a **proposal** — it
+> never writes config. An endorsement gate evaluates the per-fold **paired** (shrunk-fit
+> vs prior) OOS difference (≥36 periods, ≥5 OOS folds, mean edge ≥ +0.02, ≥4/5 folds
+> positive, t-stat ≥ 2) → PROPOSE or NO-CHANGE. On the survivorship-biased bundled
+> largecap (2026-06) the verdict is **NO-CHANGE** at 3m and 6m: the fit reproduces the
+> directional first-run finding (down-weight quality, up-weight growth) but the shipped
+> weights beat the prior OOS by only +0.005 (vs the +0.02 bar), positive in just 2/5
+> folds. Honest evidence-of-record, not a config change — exactly what this gap was for.
+> Numbers + recommendation: `docs/superpowers/specs/2026-06-03-xbrl-weight-fit-results.md`.
+>
+> **Built, tested, guarded (Phase 2, blocked on data):** the *composite* (all-7-axis)
+> weight-fit and snapshot-replay (`SnapshotSignalSource`) activate once point-in-time
+> multi-axis history accumulates (XBRL reaches only 4 of 7 axes; momentum/insider/risk
+> need the snapshot path). The **accumulation mechanism now exists** —
 > `shortlist-accumulate` (idempotent, point-in-time, free-tier-aware; walkthrough in
 > `HARNESS.md` → "Feeding the snapshot path") — but its
 > daily schedule is **dormant/opt-in** (`deploy/`), so the 24-date clock starts only
