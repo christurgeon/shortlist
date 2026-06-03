@@ -63,3 +63,18 @@ def test_thin_does_not_affect_rank_key_or_passed():
     b = _card(composite=70.0, confidence=0.30, scored=True, thin=False)
     assert rank_key(a) == rank_key(b)
     assert a.passed == b.passed
+
+
+def test_stockmetrics_has_piotroski_fields_defaulting_none():
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="T")
+    assert m.piotroski_f is None
+    assert m.piotroski_f_legs is None
+
+
+def test_scorecard_has_piotroski_field_defaulting_none():
+    from shortlist.models import ScoreCard
+    c = ScoreCard(ticker="T", composite=0.0, quality=None, moat=None, growth=None,
+                  momentum=None, value=None, opportunity=None, insider=None)
+    assert c.piotroski_f is None
+    assert c.piotroski_f_legs is None

@@ -4,7 +4,7 @@ import dataclasses
 from typing import Optional
 
 from ..models import StockMetrics
-from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
+from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe, piotroski_f
 from .models import TickerSnapshot
 
 
@@ -114,6 +114,14 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.fcf_cagr = cagr(st.free_cash_flow)
         m.eps_cagr = cagr(st.net_income)
         m.revenue_growth_persistence = growth_persistence(st.revenue)
+        # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Statements lists
+        # are newest-first and index-parallel by fiscal year; free-source derivable so
+        # it survives FMP-402 gating (serves broad ticker coverage).
+        m.piotroski_f, m.piotroski_f_legs = piotroski_f(
+            net_income=st.net_income, ocf=st.operating_cash_flow,
+            total_debt=st.total_debt, gross_profit=st.gross_profit,
+            revenue=st.revenue,
+        )
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None

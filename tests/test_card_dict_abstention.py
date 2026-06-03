@@ -34,3 +34,14 @@ def test_card_dict_includes_risk():
 def test_card_dict_includes_thin():
     d = _card_dict(_c(thin=True))
     assert d["thin"] is True
+
+
+def test_card_dict_surfaces_piotroski():
+    from shortlist.models import ScoreCard
+    from shortlist.screen import _card_dict
+    c = ScoreCard(ticker="T", composite=50.0, quality=None, moat=None, growth=None,
+                  momentum=None, value=None, opportunity=None, insider=None,
+                  piotroski_f=5, piotroski_f_legs=6)
+    d = _card_dict(c)
+    assert d["piotroski_f"] == 5
+    assert d["piotroski_f_legs"] == 6

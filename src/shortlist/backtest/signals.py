@@ -102,9 +102,10 @@ class XbrlSignalSource:
     weight-redistribution are scoring.score() concerns and not applied here, so
     IC stays comparable across sources. value emits 2 of 4 legs (fcf_yield,
     pe_vs_history); peg + upside_to_target need analyst data absent from XBRL.
+    Also emits a standalone `piotroski` axis (Core-6 fundamental-quality, unfitted prior).
     """
     name = "xbrl"
-    _AXES = ("quality", "moat", "growth", "value")
+    _AXES = ("quality", "moat", "growth", "value", "piotroski")
 
     def __init__(self, facts: dict[str, dict], histories: dict[str, PriceHistory],
                  thresholds: dict):

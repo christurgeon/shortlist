@@ -2,6 +2,7 @@ import pytest
 
 from shortlist.stats import (
     avg_roic, cagr, gross_margin_stability, growth_persistence, median_pe,
+    piotroski_f,
 )
 
 
@@ -117,3 +118,74 @@ def test_zero_mean_returns_none():
 def test_never_negative():
     # huge dispersion would push 1 - stdev/mean below 0; clamp to 0.0
     assert gross_margin_stability([0.01, 0.99, 0.02]) == 0.0
+
+
+# Core-6 Piotroski-inspired (asset-free, equity-free). Series newest-first, index 0 = t.
+# F1 NI>0, F2 OCF>0, F3 OCF>NI (levels); F4 net-margin rising, F5 debt/revenue falling,
+# F6 gross-margin rising (1y deltas; need revenue>0 both years).
+def _improving():
+    # F4 nm: 160/1300=.123 > 120/1100=.109; F5 di: 300/1300=.231 < 350/1100=.318;
+    # F6 gm: 700/1300=.538 > 560/1100=.509
+    return dict(
+        net_income=[160, 120], ocf=[240, 200], total_debt=[300, 350],
+        gross_profit=[700, 560], revenue=[1300, 1100],
+    )
+
+def test_piotroski_all_six_pass():
+    assert piotroski_f(**_improving()) == (6, 6)
+
+def test_piotroski_all_six_fail():
+    deteriorating = dict(
+        net_income=[-10, 120],        # F1 NI<0 fail; F4 nm -.0077 < .109 fail (falling)
+        ocf=[-20, 200],               # F2 OCF<0 fail; F3 OCF(-20) > NI(-10)? no -> fail
+        total_debt=[400, 300],        # F5 di .308 < .273? no -> fail (rising)
+        gross_profit=[300, 560],      # F6 gm .231 > .509? no -> fail (falling)
+        revenue=[1300, 1100],
+    )
+    assert piotroski_f(**deteriorating) == (0, 6)
+
+def test_piotroski_thin_history_evaluates_levels_only():
+    # one year -> F1/F2/F3 (levels) evaluate; F4/F5/F6 (need t-1) do not.
+    one = {k: v[:1] for k, v in _improving().items()}
+    assert piotroski_f(**one) == (3, 3)
+
+def test_piotroski_revenue_zero_abstains_delta_legs():
+    d = _improving()
+    d["revenue"] = [0, 1100]          # rev[t]=0 -> F4/F5/F6 not evaluable; levels remain
+    won, legs = piotroski_f(**d)
+    assert legs == 3                  # F1,F2,F3 only
+    assert won == 3
+
+def test_piotroski_accruals_leg_isolated():
+    d = _improving()
+    d["ocf"] = [100, 200]             # OCF(100) < NI(160) -> F3 fails; F2 (OCF>0) passes
+    won, legs = piotroski_f(**d)
+    assert legs == 6
+    assert won == 5
+
+def test_piotroski_oldest_first_flag():
+    d = {k: list(reversed(v)) for k, v in _improving().items()}
+    assert piotroski_f(most_recent_first=False, **d) == (6, 6)
+
+def test_piotroski_negative_revenue_abstains_delta_legs():
+    d = _improving()
+    d["revenue"] = [-100, 1100]       # negative rev[t] -> F4/F5/F6 abstain (>0 guard)
+    won, legs = piotroski_f(**d)
+    assert legs == 3                  # only F1,F2,F3 (levels) evaluate
+    assert won == 3
+
+def test_piotroski_no_legs_returns_none_sentinel():
+    # all series empty -> nothing evaluable -> (None, None), not (0, 0)
+    assert piotroski_f(net_income=[], ocf=[], total_debt=[],
+                       gross_profit=[], revenue=[]) == (None, None)
+
+def test_piotroski_none_leading_level_legs_abstain():
+    # latest-year net_income and ocf missing (None) -> F1, F2 abstain (not counted as
+    # evaluated-failed); F3 also abstains (needs both); F4 also (ni[0] None). With a
+    # 2-year series, F5 (debt/rev) and F6 (gross margin) still evaluate.
+    d = _improving()
+    d["net_income"] = [None, 120]
+    d["ocf"] = [None, 200]
+    won, legs = piotroski_f(**d)
+    assert legs == 2          # only F5 and F6 evaluate
+    assert won == 2           # both pass in the _improving fixture

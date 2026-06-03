@@ -30,6 +30,11 @@ thresholds:
   pe_vs_history:       [-0.20, 0.30]   # positive = cheaper than own 5y median
   peg:                 [3.0, 0.5]      # inverted: lower PEG scores higher (growth at a discount)
 
+  # Fundamental-quality (Piotroski-inspired fraction won/legs -> 0..100). Used by the
+  # BACKTEST axis and to derive the value_trap suppress/confirm fraction. UNFITTED
+  # prior — backtest standalone IC before trusting (like the risk axis).
+  piotroski_f:         [0.34, 1.00]
+
   # Insider
   insider_sentiment:   [-0.30, 0.30]
   insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
@@ -79,7 +84,7 @@ sectors:
   # net_margin is intentionally NOT masked (it is defined, only miscalibrated -> deferred).
   # Exchanges (6231), advisers/asset managers (6282), funds (672x), SPACs (6770) and
   # real-estate operators (65xx) are deliberately NOT bucketed -> unknown -> unmasked.
-  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity]
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f]
   masked_gates: [negative_fcf, over_leveraged]
 
 validity:
@@ -111,6 +116,16 @@ flags:
     min_value_score:   60   # "cheap" floor on the value sub-score (0-100)
     max_quality_score: 40   # below this, quality is "weak"
     max_growth_score:  40   # below this, growth is "weak"
+    # OPTIONAL fundamental-quality refinement. ABSENT by default -> value_trap is
+    # byte-identical to the pre-feature scorer. Uncomment to let the Piotroski-inspired
+    # score suppress the flag on cheap-but-improving names and confirm it on
+    # cheap-but-deteriorating ones. UNFITTED priors.
+    # piotroski:
+    #   suppress_at: 0.83   # cheap + fraction >= this (>=5/6) -> NOT a trap. High on purpose:
+    #                       # requires the F4-F6 trend legs, not just the correlated F1-F3
+    #                       # going-concern block (audit Sev2). Suppression removes a risk flag.
+    #   confirm_at:  0.40   # cheap + fraction <= this (<=2/6) -> trap even if quality/growth ok
+    #   min_legs:    4      # abstain when fewer than this many of the 6 tests evaluable
 
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]

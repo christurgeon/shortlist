@@ -84,3 +84,79 @@ def gross_margin_stability(margins: list[float]) -> Optional[float]:
     if not avg:
         return None
     return max(0.0, 1.0 - (pstdev(margins) / avg))
+
+
+def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
+                most_recent_first: bool = True) -> tuple[Optional[int], Optional[int]]:
+    """Core-6 Piotroski-inspired fundamental-quality score (asset-free, equity-free).
+
+    Each arg is a financial series; index alignment is positional (newest-first by
+    default), matching the rest of stats.py — a rare missing year makes neighbors
+    adjacent (same tradeoff cagr/growth_persistence make).
+
+    Six tests; F1-F3 are single-year LEVELS (latest year only), F4-F6 are 1-year
+    DELTAS (latest t vs prior t-1, requiring revenue>0 each year — the only division
+    guard):
+      F1 net_income>0, F2 ocf>0, F3 ocf>net_income (accruals quality),
+      F4 net margin rising (net_income/revenue), F5 debt-intensity falling
+      (total_debt/revenue), F6 gross margin rising (gross_profit/revenue).
+
+    Deliberately asset-free AND equity-free: total assets is not extracted on either
+    stack, and equity denominators darken/distort on buyback-heavy firms (see spec
+    §3). Revenue is the natural denominator; a non-positive (zero or negative) revenue year abstains the three delta legs.
+
+    Returns RAW (won, evaluated) — no min-legs floor here, so this leaf needs no
+    config (the floor is applied by consumers in scoring/backtest). A 1-year input
+    yields (<=3, <=3) from the level legs; when NO leg is evaluable (all series empty)
+    it returns (None, None) — the model's 'no data' sentinel. Pure; no I/O."""
+    def _series(s):
+        s = list(s or [])
+        return s if most_recent_first else list(reversed(s))
+
+    ni = _series(net_income)
+    cf = _series(ocf)
+    dbt = _series(total_debt)
+    gp = _series(gross_profit)
+    rev = _series(revenue)
+
+    def _t(s):   # (latest, prior) or (None, None) if no prior year
+        return (s[0], s[1]) if len(s) >= 2 else (None, None)
+
+    won = 0
+    legs = 0
+
+    # F1 profitability: net income positive (level; abstain if latest value missing)
+    if ni and ni[0] is not None:
+        legs += 1
+        if ni[0] > 0:
+            won += 1
+    # F2 cash generation: OCF positive (level; abstain if latest value missing)
+    if cf and cf[0] is not None:
+        legs += 1
+        if cf[0] > 0:
+            won += 1
+    # F3 accruals quality: OCF > net income (level)
+    if ni and cf and ni[0] is not None and cf[0] is not None:
+        legs += 1
+        if cf[0] > ni[0]:
+            won += 1
+    # F4 net-margin trend: net_income/revenue rising (delta; revenue>0 guard)
+    ni_t, ni_p = _t(ni); rev_t, rev_p = _t(rev)
+    if None not in (ni_t, ni_p, rev_t, rev_p) and rev_t > 0 and rev_p > 0:
+        legs += 1
+        if (ni_t / rev_t) > (ni_p / rev_p):
+            won += 1
+    # F5 debt-intensity trend: total_debt/revenue falling (delta; revenue>0 guard)
+    d_t, d_p = _t(dbt)
+    if None not in (d_t, d_p, rev_t, rev_p) and rev_t > 0 and rev_p > 0:
+        legs += 1
+        if (d_t / rev_t) < (d_p / rev_p):
+            won += 1
+    # F6 gross-margin trend: gross_profit/revenue rising (delta; revenue>0 guard)
+    gp_t, gp_p = _t(gp)
+    if None not in (gp_t, gp_p, rev_t, rev_p) and rev_t > 0 and rev_p > 0:
+        legs += 1
+        if (gp_t / rev_t) > (gp_p / rev_p):
+            won += 1
+
+    return (won, legs) if legs else (None, None)

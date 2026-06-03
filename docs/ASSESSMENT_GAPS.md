@@ -243,18 +243,41 @@ The substrate already exists: `data/store.py` persists point-in-time `TickerSnap
   restated) to avoid look-ahead bias — that's the EDGAR XBRL work in `DATA_SOURCES.md` A1.
   Start with a price/momentum IC (data already on hand) and expand as XBRL history lands.
 
-#### 2.2 The `value` axis is entirely relative and sentiment-anchored
-All four value legs (`scoring.py:52`) are relative: upside-to-**analyst-target**, FCF yield,
-**PE-vs-own-5y-median**, PEG. Two structural failure modes:
+#### 2.2 The `value` axis is mostly relative/sentiment-anchored — TRAP-DETECTION HALF ADDRESSED
+Three of four value legs (`scoring.py`) are relative/sentiment: upside-to-**analyst-target**,
+**PE-vs-own-5y-median**, PEG. (`fcf_yield` is the exception — a *fixed*-band absolute
+cash-flow yield, not relative; an earlier draft of this section wrongly called all four
+relative.) Two structural failure modes:
 - **Analyst targets lag and skew bullish** — anchoring "upside" to them imports sell-side
   optimism as if it were signal.
 - **PE-vs-own-history is a value-trap magnet** — a structurally declining business looks
   "cheap vs its own history" *forever* as it de-rates, with no absolute floor to catch
   "cheap for a reason."
-- **Plug:** add ≥1 absolute valuation leg — EV/FCF, or a **reverse-DCF implied growth rate**
-  checked against actual growth (the 5y `Statements` make a crude reverse-DCF feasible with
-  no new feed). Pairs naturally with the growth axis: cheap **and** growing ≠ cheap **and**
-  shrinking. See also the Piotroski F-Score (`DATA_SOURCES.md` D1) as a value-trap filter.
+
+> **SHIPPED — trap-detection half (config-gated, OFF by default):** a **Core-6
+> Piotroski-inspired fundamental-quality score** (`stats.piotroski_f`; asset-free &
+> equity-free: NI>0, OCF>0, accruals OCF>NI, Δnet-margin, Δdebt/revenue, Δgross-margin) now
+> refines the existing `value_trap` flag — **suppressing** it on cheap-but-*improving* names
+> and **confirming** it on cheap-but-*deteriorating* ones. It is surfaced as first-class
+> `piotroski_f`/`piotroski_f_legs` output (JSON/CSV) on both stacks, **sector-masked**
+> (financials/insurers/REITs), and reconstructable point-in-time → backtestable as a
+> standalone `piotroski` axis (`--source xbrl`). The scorer is **byte-identical** when the
+> `flags.value_trap.piotroski` block is absent (it ships commented out). Crucially this does
+> **NOT** touch `value_score` — an absolute *cheapness* multiple (EV/FCF) was rejected because
+> it double-counts the already-absolute `fcf_yield` and, being cheap on a trap too, cannot
+> *detect* traps. **Validation (evidence-of-record):** the standalone axis IC is
+> ~0 / insignificant on the 79-name survivorship-biased large-cap set (does NOT clear the
+> §2.1 bar — but large-cap is the wrong universe for a Piotroski score, and the IC validates
+> the axis, not the suppress/confirm mechanism); the `value` axis IC is unchanged, confirming
+> `value_score` was preserved. Bands/thresholds remain **unfitted priors**. Specs:
+> `docs/superpowers/specs/2026-06-03-piotroski-value-trap-design.md` + `...-xbrl-piotroski-results.md`.
+
+- **Still open — absolute-multiple half (DEFERRED, gated):** add an absolute valuation leg
+  proper — **EV/EBIT** (fresh numerator vs `fcf_yield`; EV/FCF rejected as collinear), or a
+  reverse-DCF. If pursued, ship **OFF behind a config flag** and **first** extend the backtest
+  to emit per-leg `value`-IC attribution so it cannot silently degrade the validated `value`
+  average. The 5y `Statements` make a crude reverse-DCF feasible with no new feed; EV/EBIT
+  needs only a `cash` concept added to the XBRL panel.
 
 #### 2.3 Absolute threshold bands misfire across sectors
 A 90%-margin software name and a 25%-margin industrial can't share one `gross_margin: [0.20,

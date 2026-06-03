@@ -65,6 +65,12 @@ class StockMetrics:
     insider_role_weighted_buy_value: Optional[float] = None
     insider_planned_sell_value: Optional[float] = None
 
+    # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Raw counts; the
+    # min-legs floor + sector masking + fraction are applied in scoring. None on
+    # stacks without full statements (e.g. the lean screener path -> abstains).
+    piotroski_f: Optional[int] = None        # tests won (0..6)
+    piotroski_f_legs: Optional[int] = None   # tests evaluated (fraction denominator)
+
     # Filing-stream events (enrichment only; NOT scored — default None so the
     # screener merge.py never stamps phantom provenance for them). Set by the
     # harness bridge when snap.events is present.
@@ -136,6 +142,10 @@ class ScoreCard:
     # Display-only coverage advisory (confidence < ranking.thin_below). Derived from
     # confidence; never feeds rank_key/passed/composite. Appended last.
     thin: bool = False
+    # Surfaced fundamental-quality score (won/legs). Display + advisory only; never
+    # feeds composite/passed/scored. Appended last.
+    piotroski_f: Optional[int] = None
+    piotroski_f_legs: Optional[int] = None
 
     @property
     def passed(self) -> bool:

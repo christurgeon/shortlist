@@ -257,12 +257,23 @@ plan: [`docs/superpowers/plans/2026-06-01-edgar-events.md`](superpowers/plans/20
 These are not feeds but **named, literature-backed signals** an analyst expects. All are
 computable from the 5y `Statements` we already merge + the XBRL facts from A1.
 
-#### D1. Piotroski F-Score (0–9) — fundamental momentum / quality
+#### D1. Piotroski F-Score (0–9) — fundamental momentum / quality — PARTIALLY SHIPPED (Core-6)
 - **Why:** Nine binary tests of profitability, leverage, and efficiency trend. A high F-Score
   on a cheap stock is the classic "value that's actually improving" filter — separates value
   *traps* from value *opportunities*. Pairs perfectly with our `value` axis.
-- **Wire-in:** `piotroski_f` on `StockMetrics`, computed in `scoring.py` from `Statements`;
-  fold into the quality sub-score or surface alongside value.
+- **Shipped (Core-6, asset-free):** `piotroski_f` / `piotroski_f_legs` on `StockMetrics`
+  (`stats.piotroski_f`), populated on both stacks + the XBRL backtest panel, surfaced in
+  JSON/CSV, and used (config-gated, OFF by default) to refine the `value_trap` flag — see
+  `ASSESSMENT_GAPS.md` §2.2. We implement **6 of the 9** tests, using **revenue-normalized**
+  trends (Δnet-margin, Δdebt/revenue, Δgross-margin) and profitability/cash/accrual **levels**
+  (NI>0, OCF>0, OCF>NI) — deliberately **asset-free and equity-free** because total assets
+  isn't extracted on either stack and equity denominators distort/darken on buyback-heavy
+  firms. Standalone axis IC is currently ~0 on the survivorship-biased large-cap set (unfitted
+  prior; see `...-xbrl-piotroski-results.md`).
+- **Still open (full 9):** the omitted tests (Δcurrent-ratio, no-new-shares, Δasset-turnover,
+  true ROA) need a total-assets concept + a shares-outstanding *series* added to BOTH the XBRL
+  panel and harness `Statements`. Promote to a one-directional quality/value *tilt* only if a
+  conditional, appropriate-universe backtest earns it — never before.
 
 #### D2. Altman Z-Score — bankruptcy distance
 - **Why:** A standard solvency early-warning. Cheaper than gating only on raw D/E because it

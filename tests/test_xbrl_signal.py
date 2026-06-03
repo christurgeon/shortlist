@@ -78,3 +78,30 @@ def test_xbrl_signal_returns_none_for_facts_without_us_gaap_revenue():
     # IFRS 20-F filer (data under ifrs-full) -> empty us-gaap panel -> dropped, not zeroed
     src = XbrlSignalSource({"IFRS": {"facts": {"ifrs-full": {}}}}, {}, THRESH)
     assert src.observe("IFRS", date(2023, 6, 1)) is None
+
+def test_xbrl_source_emits_piotroski_axis():
+    from datetime import date
+    g = {}
+    g.update(_annual("Revenues", [
+        _row("2021-01-01", "2021-12-31", 1100, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 1300, "2023-02-01")]))
+    g.update(_annual("NetIncomeLoss", [
+        _row("2021-01-01", "2021-12-31", 120, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 160, "2023-02-01")]))
+    g.update(_annual("GrossProfit", [
+        _row("2021-01-01", "2021-12-31", 560, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 700, "2023-02-01")]))
+    g.update(_annual("NetCashProvidedByUsedInOperatingActivities", [
+        _row("2021-01-01", "2021-12-31", 200, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 240, "2023-02-01")]))
+    # total_debt = LongTermDebtNoncurrent + LongTermDebtCurrent (sum_aligned intersects ends)
+    g.update(_annual("LongTermDebtNoncurrent", [
+        _inst("2021-12-31", 300, "2022-02-01"), _inst("2022-12-31", 250, "2023-02-01")]))
+    g.update(_annual("LongTermDebtCurrent", [
+        _inst("2021-12-31", 50, "2022-02-01"), _inst("2022-12-31", 50, "2023-02-01")]))
+    facts = {"T": {"facts": {"us-gaap": g}}}
+    src = XbrlSignalSource(facts, {}, THRESH)
+    obs = src.observe("T", date(2023, 6, 1))
+    assert obs is not None
+    assert "piotroski" in obs.signals
+    assert 0.0 <= obs.signals["piotroski"] <= 100.0
