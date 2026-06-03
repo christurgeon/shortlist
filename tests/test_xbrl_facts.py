@@ -244,3 +244,50 @@ def test_panel_to_metrics_pe_median_none_with_single_pe_point():
     m = panel_to_metrics(p, ticker="X", sic="3711", price=80.0, price_at=lambda d: 80.0)
     assert m.pe_ttm == 80.0 / 4.0      # pe_ttm computes from latest EPS
     assert m.pe_median_5y is None      # median_pe needs >= 2 points
+
+def test_panel_stores_ocf_series():
+    from datetime import date
+    from shortlist.providers._xbrl_facts import extract_panel
+    facts = {"facts": {"us-gaap": {
+        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            {"start": "2021-01-01", "end": "2021-12-31", "val": 200, "filed": "2022-02-01", "form": "10-K"},
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 240, "filed": "2023-02-01", "form": "10-K"},
+        ]}},
+        "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 40, "filed": "2023-02-01", "form": "10-K"},
+        ]}},
+    }}}
+    panel = extract_panel(facts, date(2023, 6, 1))
+    assert panel.ocf == {"2021-12-31": 200, "2022-12-31": 240}
+
+def test_panel_to_metrics_populates_piotroski_two_years():
+    from datetime import date
+    from shortlist.providers._xbrl_facts import extract_panel, panel_to_metrics
+    # NOTE: extract_panel builds total_debt = sum_aligned(LongTermDebt*, CurrentDebt*)
+    # and INTERSECTS fiscal ends — so BOTH a long-term AND a current-debt concept must
+    # be present at each end or total_debt comes out empty and F5 (debt/revenue) drops.
+    g = {
+        "Revenues": {"units": {"USD": [
+            {"start": "2021-01-01", "end": "2021-12-31", "val": 1100, "filed": "2022-02-01", "form": "10-K"},
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 1300, "filed": "2023-02-01", "form": "10-K"}]}},
+        "NetIncomeLoss": {"units": {"USD": [
+            {"start": "2021-01-01", "end": "2021-12-31", "val": 120, "filed": "2022-02-01", "form": "10-K"},
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 160, "filed": "2023-02-01", "form": "10-K"}]}},
+        "GrossProfit": {"units": {"USD": [
+            {"start": "2021-01-01", "end": "2021-12-31", "val": 560, "filed": "2022-02-01", "form": "10-K"},
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 700, "filed": "2023-02-01", "form": "10-K"}]}},
+        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            {"start": "2021-01-01", "end": "2021-12-31", "val": 200, "filed": "2022-02-01", "form": "10-K"},
+            {"start": "2022-01-01", "end": "2022-12-31", "val": 240, "filed": "2023-02-01", "form": "10-K"}]}},
+        "LongTermDebtNoncurrent": {"units": {"USD": [
+            {"end": "2021-12-31", "val": 300, "filed": "2022-02-01", "form": "10-K"},
+            {"end": "2022-12-31", "val": 250, "filed": "2023-02-01", "form": "10-K"}]}},
+        "LongTermDebtCurrent": {"units": {"USD": [
+            {"end": "2021-12-31", "val": 50, "filed": "2022-02-01", "form": "10-K"},
+            {"end": "2022-12-31", "val": 50, "filed": "2023-02-01", "form": "10-K"}]}},
+    }
+    # total_debt: 2021 -> 350, 2022 -> 300. F5 di: 300/1300=.231 < 350/1100=.318 -> falling, pass.
+    panel = extract_panel({"facts": {"us-gaap": g}}, date(2023, 6, 1))
+    m = panel_to_metrics(panel, ticker="T", sic=None, price=None, price_at=lambda d: None)
+    # F1 NI>0, F2 OCF>0, F3 OCF>NI, F4 net-margin rising, F5 debt/rev falling, F6 GM rising -> 6/6
+    assert (m.piotroski_f, m.piotroski_f_legs) == (6, 6)
