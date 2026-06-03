@@ -125,15 +125,15 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
     won = 0
     legs = 0
 
-    # F1 profitability: net income positive (level)
-    if ni:
+    # F1 profitability: net income positive (level; abstain if latest value missing)
+    if ni and ni[0] is not None:
         legs += 1
-        if ni[0] is not None and ni[0] > 0:
+        if ni[0] > 0:
             won += 1
-    # F2 cash generation: OCF positive (level)
-    if cf:
+    # F2 cash generation: OCF positive (level; abstain if latest value missing)
+    if cf and cf[0] is not None:
         legs += 1
-        if cf[0] is not None and cf[0] > 0:
+        if cf[0] > 0:
             won += 1
     # F3 accruals quality: OCF > net income (level)
     if ni and cf and ni[0] is not None and cf[0] is not None:

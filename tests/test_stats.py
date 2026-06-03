@@ -178,3 +178,14 @@ def test_piotroski_no_legs_returns_none_sentinel():
     # all series empty -> nothing evaluable -> (None, None), not (0, 0)
     assert piotroski_f(net_income=[], ocf=[], total_debt=[],
                        gross_profit=[], revenue=[]) == (None, None)
+
+def test_piotroski_none_leading_level_legs_abstain():
+    # latest-year net_income and ocf missing (None) -> F1, F2 abstain (not counted as
+    # evaluated-failed); F3 also abstains (needs both); F4 also (ni[0] None). With a
+    # 2-year series, F5 (debt/rev) and F6 (gross margin) still evaluate.
+    d = _improving()
+    d["net_income"] = [None, 120]
+    d["ocf"] = [None, 200]
+    won, legs = piotroski_f(**d)
+    assert legs == 2          # only F5 and F6 evaluate
+    assert won == 2           # both pass in the _improving fixture
