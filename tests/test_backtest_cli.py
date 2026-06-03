@@ -40,3 +40,37 @@ def test_arg_parser_accepts_xbrl_source():
     args = ap.parse_args(["--source", "xbrl"])
     assert args.source == "xbrl"
     assert args.xbrl_cache_dir == ".cache/sec_xbrl"
+
+
+def test_arg_parser_accepts_fit_flags():
+    ap = build_arg_parser()
+    args = ap.parse_args(["--source", "xbrl", "--fit", "--fit-horizon", "6"])
+    assert args.fit is True
+    assert args.fit_horizon == 6
+    assert args.fit_axes == "quality,moat,growth,value"
+    assert args.n_folds == 6
+    assert args.shrink == 0.5
+
+
+def test_fit_requires_xbrl_source():
+    from shortlist.backtest.cli import main
+    rc = main(["--source", "momentum", "--fit", "--fit-horizon", "6"])
+    assert rc == 2
+
+
+def test_fit_requires_fit_horizon(monkeypatch):
+    from shortlist.backtest.cli import main
+    monkeypatch.setenv("SEC_IDENTITY", "test@example.com")
+    rc = main(["--source", "xbrl", "--fit"])
+    assert rc == 2
+
+
+def test_fit_prior_is_only_the_fit_axes():
+    # The prior handed to fit_weights must be exactly the fundamental subset, never the
+    # full 7-axis weights block (else momentum/insider/risk contaminate the composite).
+    from shortlist.backtest.cli import _fit_prior_from_config
+    config = {"weights": {"quality": 0.18, "moat": 0.18, "growth": 0.135, "value": 0.22,
+                          "momentum": 0.08, "insider": 0.135, "risk": 0.10}}
+    prior, s_f = _fit_prior_from_config(config, ["quality", "moat", "growth", "value"])
+    assert set(prior) == {"quality", "moat", "growth", "value"}
+    assert abs(s_f - 0.715) < 1e-9
