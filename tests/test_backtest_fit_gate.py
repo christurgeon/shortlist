@@ -53,3 +53,33 @@ def test_gate_blocks_on_low_tstat():
     r = dataclasses.replace(_passing_result(), fold_diffs=[0.001, 0.20, 0.001, 0.18, 0.002])
     v = evaluate_gate(r)
     assert v.endorsed is False and "t-stat" in v.reason.lower()
+
+
+def test_fit_report_to_dict_shape():
+    from shortlist.backtest.report import fit_report_to_dict, evaluate_gate
+    res = _passing_result()
+    prior = {"quality": 0.18, "moat": 0.18, "growth": 0.135, "value": 0.22}
+    s_f = sum(prior.values())
+    axis_ic = {"quality": -0.08, "moat": -0.01, "growth": 0.06, "value": 0.09}
+    d = fit_report_to_dict(res, prior=prior, s_f=s_f, horizon=6,
+                           axes=list(prior), axis_ic=axis_ic,
+                           verdict=evaluate_gate(res))
+    assert d["verdict"]["endorsed"] is True
+    assert d["horizon"] == 6
+    assert abs(sum(d["config_mapped"].values()) - s_f) < 1e-3   # block share preserved (4dp rounding)
+    assert d["axes"]["quality"]["standalone_oos_ic_sign"] == -1
+    assert d["oos"]["prior_oos_ic"] == 0.05
+    assert d["oos"]["shrunk_oos_ic"] == 0.10
+    assert any("survivorship" in c.lower() for c in d["caveats"])
+    assert any("unfitted prior" in c.lower() for c in d["caveats"])
+
+
+def test_render_fit_report_is_text():
+    from shortlist.backtest.report import render_fit_report, evaluate_gate
+    res = _passing_result()
+    prior = {"quality": 0.18, "moat": 0.18, "growth": 0.135, "value": 0.22}
+    txt = render_fit_report(res, prior=prior, s_f=sum(prior.values()), horizon=6,
+                            axes=list(prior),
+                            axis_ic={k: 0.0 for k in prior}, verdict=evaluate_gate(res))
+    assert "PROPOSE" in txt or "NO-CHANGE" in txt
+    assert "value" in txt
