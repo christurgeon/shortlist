@@ -172,8 +172,9 @@ def assess(card, filing: FilingText, config: dict,
            runner: Callable[..., CliResult] = claude_cli.run) -> Optional[QualitativeAssessment]:
     """Produce a grounded QualitativeAssessment for one filing, or None if the
     model call fails, truncates, or returns unparseable JSON after one retry.
-    `card` is the ScoreCard; its metrics supply the short-interest note and the
-    `filing_events` context line injected into the prompt."""
+    `card` is the ScoreCard; its metrics and sub-scores supply the quant-context
+    block (via `_quant_context`) and the `filing_events` context line injected
+    into the prompt."""
     rcfg = config.get("research", {})
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
