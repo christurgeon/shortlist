@@ -12,3 +12,12 @@ def test_build_cik_index_and_lookup_is_case_insensitive():
 
 def test_cik_for_unknown_ticker_returns_none():
     assert cik_for("NOPE", build_cik_index(_RAW)) is None
+
+def test_build_cik_index_skips_malformed_rows():
+    raw = {
+        "0": {"cik_str": "not-a-number", "ticker": "BAD"},
+        "1": {"cik_str": 789019, "ticker": "MSFT"},
+    }
+    idx = build_cik_index(raw)
+    assert "BAD" not in idx
+    assert idx["MSFT"] == "0000789019"

@@ -17,10 +17,15 @@ def build_cik_index(raw: dict) -> dict[str, str]:
     for row in raw.values():
         tk = str(row.get("ticker", "")).upper()
         cik = row.get("cik_str")
-        if tk and cik is not None:
+        if not tk or cik is None:
+            continue
+        try:
             idx[tk] = f"{int(cik):010d}"
+        except (ValueError, TypeError):
+            continue   # skip malformed rows, don't abort the whole index
     return idx
 
 
 def cik_for(ticker: str, index: dict[str, str]) -> Optional[str]:
+    """The zero-padded CIK for a ticker (case-insensitive), or None if unknown."""
     return index.get(ticker.upper())
