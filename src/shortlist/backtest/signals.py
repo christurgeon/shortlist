@@ -14,6 +14,7 @@ from ..data.store import load
 from ..data.models import TickerSnapshot
 from .. import scoring
 from .prices import PriceHistory
+from ..providers._xbrl_facts import extract_panel, panel_to_metrics
 
 
 @dataclass(frozen=True)
@@ -88,4 +89,46 @@ class SnapshotSignalSource:
             v = getattr(card, axis, None)
             if v is not None:
                 sig[axis] = v
+        return Observation(as_of, ticker.upper(), sig)
+
+
+class XbrlSignalSource:
+    """Reconstructs the production FUNDAMENTAL sub-scores (quality/moat/growth/
+    value) at a historical date from SEC companyfacts truncated point-in-time
+    (filed <= as_of), reusing the real scoring functions — no reimplementation.
+    Validates the fundamental axes the price-only momentum source can't reach.
+
+    Sub-score level by design (like MomentumSignalSource): sector masking and
+    weight-redistribution are scoring.score() concerns and not applied here, so
+    IC stays comparable across sources. value emits 2 of 4 legs (fcf_yield,
+    pe_vs_history); peg + upside_to_target need analyst data absent from XBRL.
+    """
+    name = "xbrl"
+    _AXES = ("quality", "moat", "growth", "value")
+
+    def __init__(self, facts: dict[str, dict], histories: dict[str, PriceHistory],
+                 thresholds: dict):
+        self.facts = {k.upper(): v for k, v in facts.items()}
+        self.histories = {k.upper(): v for k, v in histories.items()}
+        self.thresholds = thresholds
+
+    def observe(self, ticker: str, as_of: date) -> Optional[Observation]:
+        cf = self.facts.get(ticker.upper())
+        if cf is None:
+            return None
+        hist = self.histories.get(ticker.upper())
+        price = hist.close_asof(as_of) if hist else None
+        price_at = (lambda d: hist.price_on(d)) if hist else (lambda d: None)
+        panel = extract_panel(cf, as_of)
+        if not panel.revenue:                 # nothing knowable yet -> drop, never zero
+            return None
+        m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,
+                             price=price, price_at=price_at)
+        sig: dict[str, float] = {}
+        for axis in self._AXES:
+            v = getattr(scoring, f"{axis}_score")(m, self.thresholds)
+            if v is not None:
+                sig[axis] = v
+        if not sig:
+            return None
         return Observation(as_of, ticker.upper(), sig)
