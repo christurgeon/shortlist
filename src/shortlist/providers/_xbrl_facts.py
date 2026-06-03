@@ -259,13 +259,22 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     m.eps_cagr = cagr(desc(p.net_income))    # net-income proxy (production convention)
     m.revenue_growth_persistence = growth_persistence(desc(p.revenue))
 
-    # Fundamental-quality (Piotroski-inspired Core-6, asset-free). desc() yields
-    # newest-first values per series; positional alignment matches the stats.py
-    # convention (10-Ks report these lines every year, so gaps are rare).
+    # Fundamental-quality (Piotroski-inspired Core-6, asset-free). The panel series are
+    # independently-keyed {end: val} dicts that need NOT share fiscal ends (e.g.
+    # total_debt = sum_aligned(LT, current) drops a year a filer didn't tag current debt
+    # for). piotroski_f aligns by list POSITION, so we must hand it series aligned to a
+    # common fiscal-end spine (newest-first over the union of ends, None where a series
+    # lacks that end) — otherwise a delta leg would compare mismatched years. None gaps
+    # make the affected leg abstain (its guards), never mix years. Mirrors how the
+    # quality/moat legs above align cross-series math by fiscal end (ratio_latest).
+    _ends = sorted(set(p.net_income) | set(p.ocf) | set(p.total_debt)
+                   | set(p.gross_profit) | set(p.revenue), reverse=True)
     m.piotroski_f, m.piotroski_f_legs = piotroski_f(
-        net_income=desc(p.net_income), ocf=desc(p.ocf),
-        total_debt=desc(p.total_debt), gross_profit=desc(p.gross_profit),
-        revenue=desc(p.revenue),
+        net_income=[p.net_income.get(e) for e in _ends],
+        ocf=[p.ocf.get(e) for e in _ends],
+        total_debt=[p.total_debt.get(e) for e in _ends],
+        gross_profit=[p.gross_profit.get(e) for e in _ends],
+        revenue=[p.revenue.get(e) for e in _ends],
     )
 
     # Value (2 of 4 legs; peg + upside_to_target need analyst data absent from XBRL)

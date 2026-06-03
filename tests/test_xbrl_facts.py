@@ -260,6 +260,45 @@ def test_panel_stores_ocf_series():
     panel = extract_panel(facts, date(2023, 6, 1))
     assert panel.ocf == {"2021-12-31": 200, "2022-12-31": 240}
 
+def test_piotroski_aligns_delta_legs_by_fiscal_end_not_position():
+    # total_debt is sum_aligned(LT, current) which INTERSECTS ends; if a filer omits
+    # the current-debt tag for one year, total_debt drops that year and its desc() list
+    # becomes shorter than revenue's. Positional alignment would compare debt_2023/rev_2023
+    # vs debt_2021/rev_2022 (mixed years). The panel must align by fiscal end so F5
+    # ABSTAINS on the missing year rather than mixing years.
+    from shortlist.providers._xbrl_facts import extract_panel, panel_to_metrics
+    g = {
+        "Revenues": {"units": {"USD": [
+            _row("2021-01-01", "2021-12-31", 1000, "2022-02-01"),
+            _row("2022-01-01", "2022-12-31", 1100, "2023-02-01"),
+            _row("2023-01-01", "2023-12-31", 1300, "2024-02-01")]}},
+        "NetIncomeLoss": {"units": {"USD": [
+            _row("2021-01-01", "2021-12-31", 100, "2022-02-01"),
+            _row("2022-01-01", "2022-12-31", 120, "2023-02-01"),
+            _row("2023-01-01", "2023-12-31", 160, "2024-02-01")]}},
+        "GrossProfit": {"units": {"USD": [
+            _row("2021-01-01", "2021-12-31", 500, "2022-02-01"),
+            _row("2022-01-01", "2022-12-31", 560, "2023-02-01"),
+            _row("2023-01-01", "2023-12-31", 700, "2024-02-01")]}},
+        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            _row("2021-01-01", "2021-12-31", 150, "2022-02-01"),
+            _row("2022-01-01", "2022-12-31", 200, "2023-02-01"),
+            _row("2023-01-01", "2023-12-31", 240, "2024-02-01")]}},
+        "LongTermDebtNoncurrent": {"units": {"USD": [
+            _inst("2021-12-31", 300, "2022-02-01"),
+            _inst("2022-12-31", 290, "2023-02-01"),
+            _inst("2023-12-31", 250, "2024-02-01")]}},
+        "LongTermDebtCurrent": {"units": {"USD": [   # 2022 current portion missing
+            _inst("2021-12-31", 50, "2022-02-01"),
+            _inst("2023-12-31", 50, "2024-02-01")]}},
+    }
+    panel = extract_panel({"facts": {"us-gaap": g}}, date(2024, 6, 1))
+    m = panel_to_metrics(panel, ticker="T", sic=None, price=None, price_at=lambda d: None)
+    # total_debt has ends {2023, 2021}; F5's latest YoY (2023 vs 2022) needs 2022 debt,
+    # which is missing -> F5 abstains. The other 5 legs all pass.
+    assert (m.piotroski_f, m.piotroski_f_legs) == (5, 5)
+
+
 def test_panel_to_metrics_populates_piotroski_two_years():
     from datetime import date
     from shortlist.providers._xbrl_facts import extract_panel, panel_to_metrics
