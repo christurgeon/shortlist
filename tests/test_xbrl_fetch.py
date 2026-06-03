@@ -21,3 +21,30 @@ def test_build_cik_index_skips_malformed_rows():
     idx = build_cik_index(raw)
     assert "BAD" not in idx
     assert idx["MSFT"] == "0000789019"
+
+
+# tests/test_xbrl_fetch.py  (append)
+import asyncio
+from shortlist.backtest.xbrl import fetch_companyfacts
+
+class _FakeResp:
+    def __init__(self, payload): self._p = payload
+    def raise_for_status(self): pass
+    def json(self): return self._p
+
+class _FakeClient:
+    def __init__(self, payload): self.payload = payload; self.calls = 0
+    async def get(self, url, *a, **k):
+        self.calls += 1
+        return _FakeResp(self.payload)
+
+def test_fetch_companyfacts_caches_to_disk(tmp_path):
+    payload = {"cik": 320193, "facts": {"us-gaap": {}}}
+    client = _FakeClient(payload)
+    out1 = asyncio.run(fetch_companyfacts(
+        "0000320193", client, cache_dir=str(tmp_path), month="2026-06"))
+    out2 = asyncio.run(fetch_companyfacts(
+        "0000320193", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert out1 == payload and out2 == payload
+    assert client.calls == 1   # second call served from disk
+    assert (tmp_path / "CIK0000320193-2026-06.json").exists()
