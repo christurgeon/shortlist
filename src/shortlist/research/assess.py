@@ -60,7 +60,9 @@ def _norm(s: str) -> str:
 
 def _verify_grounding(assessment: QualitativeAssessment, filing: FilingText) -> None:
     """Mark each risk/red_flag finding verified iff its evidence quote is a
-    substring of the filing text (whitespace-normalized). Counts the rest."""
+    substring of the filing text (whitespace-normalized). Conflicts: non-silent
+    verdicts must carry a verifiable quote (else counted unverified); silent
+    verdicts clear their quote and increment silent_count. Counts the rest."""
     haystack = _norm(filing.combined())
     unverified = 0
     for finding in (*assessment.risks, *assessment.red_flags):
@@ -68,7 +70,19 @@ def _verify_grounding(assessment: QualitativeAssessment, filing: FilingText) -> 
         finding.verified = len(ev) >= _MIN_EVIDENCE_CHARS and ev in haystack
         if not finding.verified:
             unverified += 1
+    silent = 0
+    for c in assessment.reconciliation:
+        if c.verdict == "silent":
+            c.filing_says = ""
+            c.verified = False
+            silent += 1
+            continue
+        ev = _norm(c.filing_says)
+        c.verified = len(ev) >= _MIN_EVIDENCE_CHARS and ev in haystack
+        if not c.verified:
+            unverified += 1
     assessment.unverified_count = unverified
+    assessment.silent_count = silent
 
 
 def _build_user_prompt(filing: FilingText, config: dict, card=None,

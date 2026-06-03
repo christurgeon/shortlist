@@ -1,6 +1,6 @@
 import json
 
-from shortlist.research.assess import _salvage_json, assess
+from shortlist.research.assess import _salvage_json, _verify_grounding, assess
 from shortlist.research.claude_cli import CliResult
 from shortlist.research.models import FilingText
 
@@ -109,3 +109,27 @@ def test_assess_skips_on_runner_error():
 def test_assess_skips_on_truncation():
     runner = _runner_returning(json.dumps(GOOD), stop_reason="max_tokens")
     assert assess(card=None, filing=FILING, config=CONFIG, runner=runner) is None
+
+
+def test_verify_grounding_conflicts():
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import (QualitativeAssessment, Thesis, Conflict)
+    filing = FILING  # has "manufacturing is performed by outsourcing partners"
+    a = QualitativeAssessment(
+        ticker="AAPL", as_of="t", filing_accession="x", filing_date="d", model="m",
+        thesis=Thesis(takeaway="t"),
+        reconciliation=[
+            Conflict(signal="value", tension="t",
+                     filing_says="manufacturing is performed by outsourcing partners",
+                     verdict="contradicts"),                       # verified
+            Conflict(signal="growth", tension="t",
+                     filing_says="not in the filing at all", verdict="confirms"),  # unverified
+            Conflict(signal="risk", tension="t", filing_says="",
+                     verdict="silent"),                            # silent → silent_count
+        ])
+    _verify_grounding(a, filing)
+    assert a.reconciliation[0].verified is True
+    assert a.reconciliation[1].verified is False
+    assert a.unverified_count == 1     # the non-silent unverified conflict
+    assert a.silent_count == 1
+    assert a.reconciliation[2].filing_says == ""   # silent quote cleared
