@@ -236,16 +236,24 @@ class EdgarForm4Signal:
         self._status = (False, "not run")
 
     def scan(self, session: date) -> list[Emission]:
-        from .edgar_index import fetch_daily_records, cluster_buys_from_records
+        from .edgar_index import fetch_recent_records, cluster_buys_from_records
         try:
-            records = fetch_daily_records(session, self.max_filings, self.identity)
+            # The SEC daily index for `session` isn't published until ~02:00 UTC, so at
+            # the after-close run time today's index is empty; fall back to the last
+            # published session rather than reporting a phantom "0 insider activity".
+            records, used = fetch_recent_records(session, self.max_filings, self.identity)
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
         ems = cluster_buys_from_records(records)
         # FIX 5: surface the per-day fetch cap so truncation is visible in coverage.
+        # An empty index can mean "not yet published" (the common after-close case) OR a
+        # genuinely quiet published session, so word the fallback honestly rather than
+        # asserting "unpublished".
+        fallback = "" if used == session else f"; {session} index empty, used {used}"
         self._status = (bool(records),
-                        f"{len(ems)} clusters from {len(records)} txns (cap {self.max_filings})")
+                        f"{len(ems)} clusters from {len(records)} txns "
+                        f"(cap {self.max_filings}){fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:
