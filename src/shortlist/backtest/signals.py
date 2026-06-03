@@ -122,7 +122,7 @@ class XbrlSignalSource:
         panel = extract_panel(cf, as_of)
         if not panel.revenue:                 # nothing knowable yet -> drop, never zero
             return None
-        m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,
+        m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,  # SIC not in companyfacts; sector masking is a score()-level concern
                              price=price, price_at=price_at)
         sig: dict[str, float] = {}
         for axis in self._AXES:

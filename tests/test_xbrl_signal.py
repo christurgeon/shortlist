@@ -63,3 +63,18 @@ def test_xbrl_signal_emits_fundamental_subscores():
 
 def test_xbrl_signal_returns_none_for_unknown_ticker():
     assert XbrlSignalSource({}, {}, THRESH).observe("NOPE", date(2023, 6, 1)) is None
+
+def test_xbrl_signal_emits_fundamentals_without_price_history():
+    # Company filed 10-Ks before the price series starts: value legs drop (no price),
+    # but quality/moat/growth still score.
+    src = XbrlSignalSource({"TST": _facts_for()}, {}, THRESH)   # no histories
+    obs = src.observe("TST", date(2023, 6, 1))
+    assert obs is not None
+    for axis in ("quality", "moat", "growth"):
+        assert axis in obs.signals
+    assert "value" not in obs.signals      # no price -> fcf_yield + pe legs are None
+
+def test_xbrl_signal_returns_none_for_facts_without_us_gaap_revenue():
+    # IFRS 20-F filer (data under ifrs-full) -> empty us-gaap panel -> dropped, not zeroed
+    src = XbrlSignalSource({"IFRS": {"facts": {"ifrs-full": {}}}}, {}, THRESH)
+    assert src.observe("IFRS", date(2023, 6, 1)) is None
