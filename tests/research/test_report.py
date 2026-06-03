@@ -1,7 +1,13 @@
 import json
 
 from shortlist.research import report
-from shortlist.research.models import Finding, Moat, QualitativeAssessment
+from shortlist.research.models import (
+    Conflict,
+    Finding,
+    Moat,
+    QualitativeAssessment,
+    Thesis,
+)
 
 
 def _assessment():
@@ -14,7 +20,15 @@ def _assessment():
         risks=[Finding("Outsourced manufacturing", "outsourcing partners", verified=True)],
         red_flags=[Finding("Invented", "not in filing", verified=False)],
         management_capital_allocation="Buybacks.",
-        synthesis="Quality compounder.",
+        thesis=Thesis(bull_case="Durable.", bear_case="Cyclical.",
+                      what_would_change_my_mind=["margins compress"],
+                      takeaway="Quality compounder."),
+        reconciliation=[Conflict(signal="value", tension="cheap vs declining",
+                                 filing_says="cash flow declined", verdict="contradicts",
+                                 verified=True),
+                        Conflict(signal="risk", tension="vol high", filing_says="",
+                                 verdict="silent")],
+        silent_count=1,
         unverified_count=1,
     )
 
@@ -31,11 +45,14 @@ def test_to_markdown_has_all_sections_and_disclaimer():
     md = report.to_markdown(_assessment())
     assert "LLM-generated" in md and "Not investment advice" in md
     assert "0000320193-25-000123" in md
-    for heading in ("## Synthesis", "## Moat", "## Business model",
-                    "## Management & capital allocation", "## Material risks", "## Red flags"):
+    for heading in ("## Thesis", "## Reconciliation", "## Moat", "## Business model",
+                    "## Material risks", "## Red flags"):
         assert heading in md
+    assert "analyst judgment" in md
+    assert "_(filing silent)_" in md
+    assert "Quality compounder." in md          # takeaway rendered
     assert "_(unverified)_" in md             # the fabricated red flag is flagged
-    assert "1 finding" in md                   # unverified count surfaced
+    assert "1 claim" in md                     # unverified count surfaced
 
 
 def test_write_creates_both_files_and_is_cached(tmp_path):
@@ -47,3 +64,14 @@ def test_write_creates_both_files_and_is_cached(tmp_path):
     assert report.is_cached("AAPL", a.filing_accession, tmp_path) is True
     saved = json.loads(report.record_path("AAPL", a.filing_accession, tmp_path).read_text())
     assert saved["ticker"] == "AAPL" and saved["moat"]["trajectory"] == "stable"
+
+
+def test_write_json_record_has_synthesis_key(tmp_path):
+    import json as _json
+    a = _assessment()
+    report.write(a, str(tmp_path))
+    rec = report.record_path(a.ticker, a.filing_accession, str(tmp_path))
+    data = _json.loads(rec.read_text())
+    assert data["synthesis"] == "Quality compounder."   # injected (asdict drops the property)
+    assert data["thesis"]["takeaway"] == "Quality compounder."
+    assert data["reconciliation"][0]["signal"] == "value"

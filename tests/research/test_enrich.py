@@ -1,5 +1,5 @@
 from shortlist.research import ResearchResult, enrich
-from shortlist.research.models import FilingText, Moat, QualitativeAssessment
+from shortlist.research.models import FilingText, Moat, QualitativeAssessment, Thesis
 
 
 class _Card:
@@ -17,7 +17,8 @@ class _Card:
 def _assessment(ticker):
     return QualitativeAssessment(
         ticker=ticker, as_of="t", filing_accession=f"acc-{ticker}", filing_date="2025-10-31",
-        model="claude-sonnet-4-6", cost_usd=0.05, moat=Moat(), synthesis=f"{ticker} read.")
+        model="claude-sonnet-4-6", cost_usd=0.05, moat=Moat(),
+        thesis=Thesis(takeaway=f"{ticker} read."))
 
 
 CONFIG = {"research": {"output_root": "research"}}
