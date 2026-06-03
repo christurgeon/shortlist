@@ -1,0 +1,213 @@
+# Each threshold is [low, high]: the metric is mapped linearly to 0..100 over
+# this range and clamped. Tune to taste. Returns/margins are FRACTIONS (0.20=20%).
+
+thresholds:
+  # Quality
+  roe:                 [0.10, 0.35]
+  net_margin:          [0.00, 0.30]
+  interest_coverage:   [2.0, 15.0]
+  debt_to_equity:      [3.0, 0.0]      # inverted: less leverage scores higher
+
+  # Moat proxies
+  gross_margin:            [0.20, 0.70]
+  gross_margin_stability:  [0.50, 1.00]
+  roic:                    [0.05, 0.30]
+
+  # Growth (fundamental compounding)
+  revenue_cagr:                [0.00, 0.20]
+  fcf_cagr:                    [0.00, 0.20]
+  eps_cagr:                    [0.00, 0.20]
+  revenue_growth_persistence:  [0.50, 1.00]
+
+  # Momentum
+  price_vs_200dma:     [-0.10, 0.30]
+  rel_strength_6m:     [-0.15, 0.25]
+  eps_revision:        [-0.05, 0.10]
+
+  # Value
+  upside_to_target:    [0.00, 0.40]
+  fcf_yield:           [0.02, 0.08]
+  pe_vs_history:       [-0.20, 0.30]   # positive = cheaper than own 5y median
+  peg:                 [3.0, 0.5]      # inverted: lower PEG scores higher (growth at a discount)
+
+  # Insider
+  insider_sentiment:   [-0.30, 0.30]
+  insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
+
+  # Insider conviction (UNFITTED priors — backtest standalone rank IC before trusting,
+  # like the risk axis). Only used when the insider.conviction block below is present.
+  insider_cluster:        [1, 4]        # # distinct qualifying buyers -> 0..100
+  insider_role_buy_ratio: [0.0, 0.001]  # role-weighted buy $ / market cap -> 0..100
+
+  # Risk (inverted: safer -> higher score). Unfitted prior — backtest before trusting.
+  realized_vol:   [0.45, 0.15]    # annualized stdev of daily returns
+  max_drawdown:   [-0.50, -0.10]  # trailing ~1y peak-to-trough (negative)
+
+weights:
+  quality:      0.18   # was 0.20 (x0.9 on risk-axis introduction)
+  moat:         0.18   # was 0.20
+  growth:       0.135  # was 0.15 — fundamental compounding (revenue/FCF/EPS CAGR + persistence)
+  value:        0.22   # value-tilt: independent leg (was inside opportunity's 0.27 max)
+  momentum:     0.08   # independent leg; value pulls ~3x momentum
+  insider:      0.135  # was 0.15
+  risk:         0.10   # NEW — vol/drawdown tilt; composite-only, excluded from confidence
+  # NOTE: a defensible prior, not a fitted result. The risk weight especially:
+  # trailing vol/drawdown peak at the bottom and can be anti-predictive at turning
+  # points — backtest its standalone rank IC (docs/ASSESSMENT_GAPS.md §2.1, §2.9)
+  # before trusting these weights.
+
+gates:
+  min_market_cap:          2.0e+9
+  max_debt_to_equity:      5.0
+  min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
+
+# Sector applicability (SIC -> bucket). v1 MASKS structurally-undefined legs/gates
+# for spread/deposit/property businesses; it does NOT recalibrate surviving bands
+# (that is deferred mode-2 work). `buckets` is an ORDERED LIST: the first bucket
+# whose inclusive SIC range contains the code wins. Detection is EDGAR-sourced and
+# identical on both the screener and --engine harness; unknown -> no masking (a
+# bit-identical no-op). See docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md.
+sectors:
+  buckets:
+    - name: reit
+      sic_ranges: [[6798, 6798]]
+    - name: insurer
+      sic_ranges: [[6300, 6399], [6411, 6411]]   # carriers (life/health/P&C/title/surety) + agents
+    - name: financials                            # depository banks, nondepository credit, broker-dealers, holdings
+      sic_ranges: [[6020, 6099], [6120, 6179], [6199, 6199], [6211, 6211], [6712, 6712]]
+  # Legs that are undefined / non-representative for the bucketed institutions.
+  # net_margin is intentionally NOT masked (it is defined, only miscalibrated -> deferred).
+  # Exchanges (6231), advisers/asset managers (6282), funds (672x), SPACs (6770) and
+  # real-estate operators (65xx) are deliberately NOT bucketed -> unknown -> unmasked.
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity]
+  masked_gates: [negative_fcf, over_leveraged]
+
+validity:
+  # Bucket-gated: floors apply ONLY to known buckets; 'unknown' stays bit-identical
+  # to pre-change behavior (any present leg scores; composite is always 'scored').
+  min_valid_leg_fraction: 0.5   # known-bucket sub-score needs >= half its APPLICABLE legs present
+  unknown_min_present_legs: 1   # unknown: any present leg scores (no-op back-compat)
+  min_scored_weight:      0.25  # known-bucket composite 'scored' iff present/applicable component weight >= this.
+                                # Lowered 0.34->0.25 for the value/momentum split: a gated financials name with
+                                # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
+
+# Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
+# crowded_short fires only under `--engine harness` with the `finra` source present.
+flags:
+  crowded_short:
+    min_short_pct_outstanding: 0.10   # of shares OUTSTANDING (under-states float; a PRIOR, not fitted)
+    min_days_to_cover: 5.0            # >5 elevated, >10 extreme
+    require_rising: true              # the change (vs prior cycle), not the static level, is the signal
+    max_staleness_days: 35            # ignore a cycle older than ~2 missed publications (stale-cache guard)
+  # Insider conviction advisories (soft; never affect passed/composite). Inert unless
+  # the insider.conviction block is enabled (the fields stay None otherwise).
+  insider_cluster_buy: { min_distinct: 3 }
+  planned_sale:        { min_value: 1 }
+  # Soft value-trap advisory: a name that looks cheap (high value sub-score) while
+  # its quality OR growth is weak. Level-based proxy (no deterioration trend without
+  # snapshot history). Advisory only — never affects passed/composite/scored.
+  # All three are UNFITTED priors — backtest before trusting.
+  value_trap:
+    min_value_score:   60   # "cheap" floor on the value sub-score (0-100)
+    max_quality_score: 40   # below this, quality is "weak"
+    max_growth_score:  40   # below this, growth is "weak"
+
+# Default provider chain for live runs (override with --provider).
+providers: [fmp, finnhub, edgar]
+
+# FMP provider knobs.
+fmp:
+  # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
+  # the free, authoritative insider source — so leave this off to avoid burning a
+  # guaranteed-to-fail request per ticker against the daily quota. Flip to true only
+  # on a paid FMP tier where the endpoint actually returns data.
+  fetch_insider: false
+  # Retries on a 429 (per-minute throttle) before giving up; backoff honors any
+  # Retry-After header. Daily-quota 429s won't clear, so this is deliberately small.
+  max_retries: 2
+
+# Insider CONVICTION enrichment (ASSESSMENT_GAPS §2.6). DISABLED by default: leave the
+# block commented so insider_score and check_gates are byte-identical to the pre-feature
+# scorer on both stacks. All numbers are UNFITTED priors — backtest before trusting.
+# insider:
+#   conviction:
+#     enabled: true
+#     min_cluster_buy_value: 25000      # per-buyer $ floor to count toward a cluster
+#     planned_sell_discount: 0.5        # forgive 50% of detected-10b5-1 sell drag
+#     role_weights:
+#       c_suite:  1.5
+#       officer:  1.2
+#       director: 1.0
+#       ten_pct:  0.5
+#       unknown:  1.0                   # missing role == neutral (load-bearing for back-compat)
+
+# Default source chain for the harness engine — which is now the DEFAULT engine
+# (yahoo first => wins the price merge). Used whenever `--provider` is omitted;
+# passing `--provider` overrides this list, so omit it to keep yahoo/finra.
+harness_sources: [yahoo, fmp, finnhub, edgar, finra]
+
+# Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
+# repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
+# --no-cache; force-repopulate with --refresh-cache. TTLs are per data half-life
+# (seconds). See docs/DATA_SOURCES.md §6.
+cache:
+  enabled: true
+  path: .cache/http.sqlite
+  ttl:
+    quote: 21600         # 6h  — quotes, price-change, live metric
+    fundamentals: 86400  # 1d  — ratios, key-metrics
+    analyst: 86400       # 1d  — grades, targets, recommendations, insider-sentiment
+    statements: 604800   # 7d  — income/balance/cashflow (change only on a filing)
+    profile: 604800      # 7d  — company profile
+    default: 86400       # 1d  — any unmapped endpoint
+
+# Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
+research:
+  model: claude-sonnet-4-6     # pinned to the 4.6 family (not the cross-version "sonnet" alias).
+                               # NOTE: tracks the latest 4.6 snapshot, not a frozen date-pinned
+                               # build; brief reproducibility is anchored by accession-keyed caching
+                               # (research/), not the model string.
+  timeout_s: 180
+  output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
+  max_risks: 8
+  max_red_flags: 8
+
+# EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
+# docs/superpowers/specs/2026-06-01-edgar-events-design.md.
+edgar_events:
+  lookback_days: 90
+  index_limit: 40
+  # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
+  # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
+  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"]
+  soft_notes:        # reserved; all OFF in v1 (pure enrichment)
+    stale_after_8k: false
+    activist_13d_note: false
+
+# Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
+scout:
+  daily_x: 15
+  research_top_n: 3
+  research_phase_budget_s: 600
+  cooldown_days: 7
+  # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
+  deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra]
+  edgar_index_daily_cap: 400
+  wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
+  state_path: state/scout_state.json
+  artifact_dir: scout
+  signals:
+    yahoo_screener: {enabled: true,  weight: 1.0}
+    edgar_form4:    {enabled: true,  weight: 1.5}
+    finnhub_news:   {enabled: true,  weight: 0.5}
+    wikipedia:      {enabled: true,  weight: 0.5}
+    quiver:         {enabled: false, weight: 1.0}
+
+# Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
+# sort beyond the existing confidence tiebreak, nor `passed`/`composite`.
+# NOTE: `confidence` is the fraction of applicable *factor* weight present — it covers the
+# five fundamental components and intentionally EXCLUDES the risk tilt (whose own coverage
+# is shown separately in the Risk column).
+ranking:
+  thin_below: 0.40  # mark a card "thin" when confidence < this. Omit/null to disable.
+                    # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).

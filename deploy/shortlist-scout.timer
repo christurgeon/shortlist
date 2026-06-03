@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the shortlist scout once daily after the US close
+
+[Timer]
+# 22:30 UTC ~= 18:30 ET, after the close; Persistent reruns a missed timer.
+OnCalendar=*-*-* 22:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

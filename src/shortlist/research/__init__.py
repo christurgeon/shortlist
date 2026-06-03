@@ -1,0 +1,67 @@
+# shortlist.research — opt-in qualitative layer.
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+from ..env import redact_secrets
+from ..models import rank_key
+from . import claude_cli, report
+from .assess import assess as _assess
+from .filings import fetch_10k as _fetch_10k
+
+__all__ = ["enrich", "ResearchResult", "is_available"]
+
+
+@dataclass
+class ResearchResult:
+    ticker: str
+    brief_path: Optional[str] = None
+    cost_usd: float = 0.0
+    synthesis: str = ""
+    from_cache: bool = False
+    skipped: Optional[str] = None   # human-readable reason if not produced
+
+
+def is_available() -> bool:
+    """True if both the `claude` CLI and edgartools are usable."""
+    if not claude_cli.is_available():
+        return False
+    try:
+        from edgar import Company, set_identity  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _enrich_card(card, config: dict, root: str, refresh: bool,
+                 fetch: Callable, assess_fn: Callable) -> ResearchResult:
+    """Research a single card. Never raises — failures become a skipped result."""
+    try:
+        filing = fetch(card.ticker)
+    except Exception as e:  # network/edgartools/identity errors
+        return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
+    if filing is None:
+        return ResearchResult(card.ticker, skipped="no 10-K")
+    if not refresh and report.is_cached(card.ticker, filing.accession, root):
+        bp = report.brief_path(card.ticker, filing.accession, root)
+        return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
+    assessment = assess_fn(card, filing, config)
+    if assessment is None:
+        return ResearchResult(card.ticker, skipped="assessment failed")
+    bp = report.write(assessment, root)
+    return ResearchResult(
+        card.ticker, brief_path=str(bp), cost_usd=assessment.cost_usd or 0.0,
+        synthesis=assessment.synthesis)
+
+
+def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
+           fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
+    """Enrich the top-N non-gated cards. Sorts by `rank_key` (scored, composite,
+    confidence) before selecting — the caller need not pre-sort.
+    `fetch`/`assess_fn` are injectable for testing. One failure never aborts the
+    batch — each name yields a ResearchResult (with `skipped` set on failure)."""
+    root = config.get("research", {}).get("output_root", "research")
+    ranked = sorted(cards, key=rank_key, reverse=True)
+    selected = [c for c in ranked if c.passed][:top_n]   # passed == not gates and scored
+    return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]

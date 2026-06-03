@@ -1,0 +1,111 @@
+import json
+
+from shortlist.research.assess import _salvage_json, assess
+from shortlist.research.claude_cli import CliResult
+from shortlist.research.models import FilingText
+
+CONFIG = {"research": {"model": "claude-sonnet-4-6", "timeout_s": 30,
+                       "max_risks": 8, "max_red_flags": 8}}
+
+FILING = FilingText(
+    ticker="AAPL", accession="0000320193-25-000123", filing_date="2025-10-31",
+    business="The Company designs and sells smartphones.",
+    mda="Net sales increased due to higher iPhone revenue.",
+    risk_factors="Substantially all of the Company's manufacturing is performed by outsourcing partners.",
+)
+
+GOOD = {
+    "business_model_summary": "Designs and sells consumer devices.",
+    "moat": {"summary": "Brand and ecosystem lock-in.", "sources": ["brand"], "trajectory": "stable"},
+    "risks": [{"claim": "Manufacturing is outsourced",
+               "evidence": "Substantially all of the Company's manufacturing is performed by outsourcing partners."}],
+    "red_flags": [{"claim": "Invented flag", "evidence": "this exact phrase is not in the filing"}],
+    "management_capital_allocation": "Returns cash via buybacks.",
+    "synthesis": "High-quality franchise.",
+}
+
+
+def _runner_returning(text, stop_reason="end_turn", cost=0.02, error=None):
+    def runner(prompt, system, model, timeout_s):
+        return CliResult(text=text, cost_usd=cost, stop_reason=stop_reason, model=model, error=error)
+    return runner
+
+
+def test_salvage_strips_code_fences_and_prose():
+    raw = 'Here is the JSON:\n```json\n{"a": 1}\n```\nThanks!'
+    assert json.loads(_salvage_json(raw)) == {"a": 1}
+
+
+def test_salvage_returns_none_when_no_object():
+    assert _salvage_json("no braces here") is None
+
+
+def test_assess_happy_path_and_grounding():
+    runner = _runner_returning(json.dumps(GOOD))
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None
+    assert a.synthesis == "High-quality franchise."
+    assert a.cost_usd == 0.02 and a.model == "claude-sonnet-4-6"
+    # grounded risk verifies True; fabricated red flag verifies False
+    assert a.risks[0].verified is True
+    assert a.red_flags[0].verified is False
+    assert a.unverified_count == 1
+
+
+def test_assess_salvages_fenced_json():
+    runner = _runner_returning("```json\n" + json.dumps(GOOD) + "\n```")
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None and a.business_model_summary.startswith("Designs")
+
+
+def test_assess_retries_then_gives_up_returns_none():
+    prompts = []
+    def runner(prompt, system, model, timeout_s):
+        prompts.append(prompt)
+        return CliResult(text="totally not json", stop_reason="end_turn", model=model)
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is None
+    assert len(prompts) == 2                          # one retry, then give up
+    assert "could not be parsed" in prompts[1]        # retry prompt has feedback
+
+
+def test_assess_trivial_evidence_is_not_verified():
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
+        "risks": [{"claim": "Vague risk", "evidence": "the"}],   # substring of filing, but trivially short
+        "red_flags": [],
+        "management_capital_allocation": "x", "synthesis": "x",
+    }
+    runner = _runner_returning(json.dumps(payload))
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None
+    assert a.risks[0].verified is False
+    assert a.unverified_count == 1
+
+
+def test_assess_ellipsis_evidence_is_not_verified():
+    # An ellipsis-shortened quote reads as "verbatim-ish" but is not a contiguous
+    # substring of the filing, so it must fail grounding — this is exactly the
+    # edit the system prompt now forbids. Locks the prompt-rule ↔ verifier contract.
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
+        "risks": [{"claim": "Manufacturing is outsourced",
+                   "evidence": "Substantially all of the Company's manufacturing … by outsourcing partners."}],
+        "red_flags": [],
+        "management_capital_allocation": "x", "synthesis": "x",
+    }
+    runner = _runner_returning(json.dumps(payload))
+    a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
+    assert a is not None
+    assert a.risks[0].verified is False
+    assert a.unverified_count == 1
+
+
+def test_assess_skips_on_runner_error():
+    runner = _runner_returning("", error="claude CLI not found on PATH")
+    assert assess(card=None, filing=FILING, config=CONFIG, runner=runner) is None
+
+
+def test_assess_skips_on_truncation():
+    runner = _runner_returning(json.dumps(GOOD), stop_reason="max_tokens")
+    assert assess(card=None, filing=FILING, config=CONFIG, runner=runner) is None

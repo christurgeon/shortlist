@@ -1,0 +1,11 @@
+# DISABLED SAMPLE — not installed, not enabled. See deploy/README.md.
+# Fires the capture once per day after the US close (22:30 UTC ~= 18:30 ET).
+[Unit]
+Description=Daily shortlist snapshot capture
+
+[Timer]
+OnCalendar=*-*-* 22:30:00 UTC
+Persistent=true          # run on next boot if a fire was missed (laptop/VPS asleep)
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+
+@dataclass
+class StockMetrics:
+    """Normalized metrics for one ticker, merged across providers.
+
+    All margins/returns are stored as fractions (0.42 == 42%), not percentages,
+    so scoring thresholds stay consistent regardless of source formatting.
+    """
+
+    ticker: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    sic: Optional[str] = None   # SEC SIC code (EDGAR-sourced); drives the sector bucket
+    price: Optional[float] = None
+    market_cap: Optional[float] = None
+
+    # Valuation
+    pe_ttm: Optional[float] = None
+    pe_median_5y: Optional[float] = None
+    fcf_yield: Optional[float] = None
+    peg: Optional[float] = None
+    target_median: Optional[float] = None
+
+    # Quality
+    roe: Optional[float] = None
+    roic: Optional[float] = None
+    gross_margin: Optional[float] = None
+    net_margin: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    interest_coverage: Optional[float] = None
+    fcf_positive: Optional[bool] = None
+
+    # Moat proxies
+    gross_margin_stability: Optional[float] = None  # 0..1, higher = steadier margins
+    roic_5y_avg: Optional[float] = None
+
+    # Growth (fundamental compounding — distinct from price momentum)
+    revenue_cagr: Optional[float] = None
+    fcf_cagr: Optional[float] = None
+    eps_cagr: Optional[float] = None              # net-income CAGR proxy (no share-count series yet)
+    revenue_growth_persistence: Optional[float] = None  # 0..1, fraction of YoY periods that grew
+
+    # Momentum
+    price_vs_200dma: Optional[float] = None  # (price / 200dma) - 1
+    rel_strength_6m: Optional[float] = None  # 6m return minus benchmark 6m return
+    eps_revision: Optional[float] = None     # trailing estimate revision trend
+    realized_vol: Optional[float] = None     # annualized stdev of daily returns (risk, unscored)
+    max_drawdown: Optional[float] = None     # trailing ~1y peak-to-trough, negative (risk, unscored)
+
+    # Analyst sentiment
+    rating_buy: Optional[int] = None
+    rating_hold: Optional[int] = None
+    rating_sell: Optional[int] = None
+
+    # Insider activity (the "minimal insider selling" criterion lives here)
+    insider_net_6m: Optional[float] = None     # net USD: buys positive, sells negative
+    insider_sentiment: Optional[float] = None  # -1..1, Finnhub MSPR-style net signal
+    # Insider conviction (Form 4 enrichment; None unless the conviction feature is on)
+    insider_distinct_buyers: Optional[int] = None
+    insider_role_weighted_buy_value: Optional[float] = None
+    insider_planned_sell_value: Optional[float] = None
+
+    # Filing-stream events (enrichment only; NOT scored — default None so the
+    # screener merge.py never stamps phantom provenance for them). Set by the
+    # harness bridge when snap.events is present.
+    recent_8k: Optional[bool] = None
+    activist_13d: Optional[bool] = None
+    passive_13g: Optional[bool] = None
+    planned_insider_sale_144: Optional[bool] = None
+    filing_events: Optional[list] = None   # list of {form, filed, accession, url} dicts
+
+    # Short interest (FINRA consolidated; derived in bridge.py). Soft-flag inputs only.
+    short_pct_outstanding: Optional[float] = None  # short_shares / (market_cap/price); under-states float
+    days_to_cover: Optional[float] = None          # FINRA-supplied; 999.99 sentinel -> None
+    short_interest_rising: Optional[bool] = None   # current > prior cycle; None across a split
+    short_data_age_days: Optional[int] = None      # as_of - settlement_date (staleness guard input)
+
+    # Bookkeeping: which provider supplied each populated field
+    sources: dict = field(default_factory=dict)
+
+    def upside_to_target(self) -> Optional[float]:
+        if self.price and self.target_median:
+            return self.target_median / self.price - 1.0
+        return None
+
+    def pe_vs_history(self) -> Optional[float]:
+        """Positive => cheaper than its own 5y median (room to re-rate up)."""
+        if self.pe_ttm and self.pe_median_5y and self.pe_ttm > 0:
+            return self.pe_median_5y / self.pe_ttm - 1.0
+        return None
+
+
+@dataclass
+class Coverage:
+    """Why a ticker's data is thin. `providers` maps provider name -> status
+    ("ok" | "gated_402" | "empty" | "error"); `unavailable` lists output fields
+    that came out null (fact); `note` is interpretive prose for recognized
+    patterns (e.g. FMP symbol gating). See coverage.py for assembly."""
+    providers: dict[str, str]
+    unavailable: list[str]
+    note: Optional[str] = None
+
+
+@dataclass
+class ScoreCard:
+    ticker: str
+    composite: float
+    quality: Optional[float]
+    moat: Optional[float]
+    growth: Optional[float]
+    momentum: Optional[float]
+    value: Optional[float]
+    opportunity: Optional[float]  # display-only: max(momentum, value); does NOT feed the composite
+    insider: Optional[float]
+    gates: list[str] = field(default_factory=list)  # tripped hard filters
+    flags: list[str] = field(default_factory=list)  # soft advisories (e.g. crowded_short); NOT disqualifying
+    metrics: Optional[StockMetrics] = None
+    coverage: Optional["Coverage"] = None
+    # Sector-aware applicability (appended after coverage so positional construction
+    # through `insider` is unaffected). sic_bucket: resolved sector bucket (or
+    # "unknown"); confidence: present-applicable component weight / applicable
+    # weight; scored: above the validity floor (always True for unknown bucket);
+    # abstentions: [{field, reason: inapplicable|missing, scope: leg|subscore}].
+    sic_bucket: Optional[str] = None
+    confidence: float = 1.0
+    scored: bool = True
+    abstentions: list = field(default_factory=list)
+    # 7th sub-score (risk). Appended last so positional construction through the
+    # leading fields is unaffected. Composite-only tilt; excluded from confidence.
+    risk: Optional[float] = None
+    # Display-only coverage advisory (confidence < ranking.thin_below). Derived from
+    # confidence; never feeds rank_key/passed/composite. Appended last.
+    thin: bool = False
+
+    @property
+    def passed(self) -> bool:
+        return not self.gates and self.scored
+
+
+def rank_key(card) -> tuple:
+    """Ranking order, descending: scored first, then composite, then confidence as a
+    tiebreaker. composite is rounded to 0.1 (scoring.py), so confidence only decides
+    exact ties — a higher composite always wins (we never bury a strong-but-thin name).
+    getattr-based so it also works on the duck-typed cards enrich() accepts. Single
+    source of truth for every sort site (screen, research, scout)."""
+    return (getattr(card, "scored", True), card.composite, getattr(card, "confidence", 1.0))

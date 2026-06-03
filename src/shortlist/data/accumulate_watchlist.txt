@@ -1,0 +1,17 @@
+# Default daily-accumulation watchlist: ~12 liquid large-caps that work on FMP's
+# free /stable/ tier. Deliberately AVOIDS the documented per-symbol 402-gated names
+# (GEV, AXON, MELI, ISRG, SCHW, TMO) so free-tier captures stay high-coverage.
+# Kept small so a daily run stays under FMP's 250-calls/day (~13 calls/ticker).
+# One ticker per line; blank lines and #-comments ignored.
+AAPL
+MSFT
+GOOGL
+AMZN
+META
+NVDA
+JPM
+V
+HD
+PG
+KO
+LMT

@@ -1,0 +1,30 @@
+# Secrets — never commit real API keys
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Snapshot output / screen results (anchored to top level so they don't match
+# the src/shortlist/research package dir)
+/snapshots/
+*.csv
+/research/
+
+# Scratch: pulled raw data samples (data-source exploration)
+/scratch/
+.cache/
+
+# Scout artifacts (daily manifests, briefs, state)
+/scout/
+state/scout_state.json
+
+# Superpowers process artifacts (design specs + implementation plans) — kept local, not published
+/docs/superpowers/specs/
+/docs/superpowers/plans/
