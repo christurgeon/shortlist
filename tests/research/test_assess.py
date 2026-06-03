@@ -21,7 +21,10 @@ GOOD = {
                "evidence": "Substantially all of the Company's manufacturing is performed by outsourcing partners."}],
     "red_flags": [{"claim": "Invented flag", "evidence": "this exact phrase is not in the filing"}],
     "management_capital_allocation": "Returns cash via buybacks.",
-    "synthesis": "High-quality franchise.",
+    "reconciliation": [],
+    "thesis": {"bull_case": "Durable.", "bear_case": "Pricey.",
+               "what_would_change_my_mind": ["margins compress"],
+               "takeaway": "High-quality franchise."},
 }
 
 
@@ -74,7 +77,7 @@ def test_assess_trivial_evidence_is_not_verified():
         "business_model_summary": "x", "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
         "risks": [{"claim": "Vague risk", "evidence": "the"}],   # substring of filing, but trivially short
         "red_flags": [],
-        "management_capital_allocation": "x", "synthesis": "x",
+        "management_capital_allocation": "x", "thesis": {"takeaway": "x"},
     }
     runner = _runner_returning(json.dumps(payload))
     a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
@@ -92,7 +95,7 @@ def test_assess_ellipsis_evidence_is_not_verified():
         "risks": [{"claim": "Manufacturing is outsourced",
                    "evidence": "Substantially all of the Company's manufacturing … by outsourcing partners."}],
         "red_flags": [],
-        "management_capital_allocation": "x", "synthesis": "x",
+        "management_capital_allocation": "x", "thesis": {"takeaway": "x"},
     }
     runner = _runner_returning(json.dumps(payload))
     a = assess(card=None, filing=FILING, config=CONFIG, runner=runner)
@@ -133,3 +136,40 @@ def test_verify_grounding_conflicts():
     assert a.unverified_count == 1     # the non-silent unverified conflict
     assert a.silent_count == 1
     assert a.reconciliation[2].filing_says == ""   # silent quote cleared
+
+
+def test_quant_context_lists_present_scores_and_omits_none():
+    from shortlist.research.assess import _quant_context
+    from shortlist.models import ScoreCard, StockMetrics
+    card = ScoreCard(
+        ticker="AAPL", composite=72.0, quality=80.0, moat=None, growth=40.0,
+        momentum=55.0, value=88.0, opportunity=88.0, insider=60.0,
+        metrics=StockMetrics(ticker="AAPL", revenue_cagr=0.03), sic_bucket="unknown",
+        confidence=0.8, gates=["below_min_mktcap"], flags=["crowded_short"])
+    block = _quant_context(card)
+    assert "QUANT CONTEXT" in block
+    assert "value" in block and "88" in block       # present score shown
+    assert "moat" not in block                       # None score omitted entirely
+    assert "revenue_cagr" in block and "0.03" in block
+    assert "below_min_mktcap" in block and "crowded_short" in block
+
+
+def test_assess_passes_valid_signals():
+    import json
+    from shortlist.research import assess as A
+    from shortlist.models import ScoreCard, StockMetrics
+    payload = {
+        "business_model_summary": "x",
+        "moat": {"summary": "x", "sources": [], "trajectory": "stable"},
+        "risks": [], "red_flags": [], "management_capital_allocation": "x",
+        "reconciliation": [{"signal": "flag:activist_13d", "tension": "t",
+                            "filing_says": "", "verdict": "silent"}],
+        "thesis": {"takeaway": "x"},
+    }
+    card = ScoreCard(ticker="AAPL", composite=70.0, quality=None, moat=None,
+                     growth=None, momentum=None, value=None, opportunity=None,
+                     insider=None, metrics=StockMetrics(ticker="AAPL"))
+    runner = _runner_returning(json.dumps(payload))
+    a = A.assess(card, FILING, CONFIG, runner=runner)
+    assert a is not None
+    assert a.reconciliation[0].signal == "flag:activist_13d"
