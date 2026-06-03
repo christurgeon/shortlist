@@ -48,3 +48,22 @@ def test_assessment_from_payload_rejects_bad_moat_type():
     with pytest.raises(ValueError):
         assessment_from_payload(bad, ticker="X", as_of="t", accession="a",
                                 filing_date="d", model="m", cost_usd=None, stop_reason=None)
+
+
+def test_conflict_and_thesis_defaults():
+    from shortlist.research.models import Conflict, Thesis
+    c = Conflict(signal="value", tension="cheap vs declining")
+    assert c.filing_says == "" and c.verdict == "silent" and c.verified is False
+    t = Thesis()
+    assert t.bull_case == "" and t.bear_case == "" and t.takeaway == ""
+    assert t.what_would_change_my_mind == []
+
+
+def test_default_valid_signals_covers_axes_gates_flags():
+    from shortlist.research.models import default_valid_signals
+    s = default_valid_signals()
+    assert "value" in s and "narrative_tone" in s and "short_interest" in s
+    assert "gate:negative_fcf" in s and "gate:heavy_insider_selling" in s
+    assert "flag:crowded_short" in s and "flag:activist_13d" in s
+    assert "flag:planned_insider_sale_144" in s
+    assert "gate:negativeFCF" not in s          # typos do not resolve

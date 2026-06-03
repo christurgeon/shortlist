@@ -5,6 +5,27 @@ from typing import Optional
 
 TRAJECTORIES = ("widening", "stable", "eroding")
 
+VERDICTS = ("confirms", "contradicts", "silent")
+
+# Reconciliation `signal` taxonomy (see spec §3.2). Card sub-score axes + two
+# synthetic/derived tokens, plus namespaced gate:/flag: tokens. The four event
+# flags (activist_13d…) are presence-based and harness-only — NOT config-derived,
+# so they must be hardcoded here, not assembled from config.
+_AXIS_SIGNALS = ("quality", "moat", "growth", "momentum", "value", "insider",
+                 "risk", "short_interest", "narrative_tone")
+_GATE_SIGNALS = ("negative_fcf", "below_min_mktcap", "over_leveraged",
+                 "heavy_insider_selling")
+_FLAG_SIGNALS = ("crowded_short", "insider_cluster_buy", "planned_sale",
+                 "value_trap", "activist_13d", "recent_8k", "passive_13g",
+                 "planned_insider_sale_144")
+
+
+def default_valid_signals() -> set:
+    """The set of reconciliation `signal` tokens accepted by the parser."""
+    return (set(_AXIS_SIGNALS)
+            | {f"gate:{g}" for g in _GATE_SIGNALS}
+            | {f"flag:{f}" for f in _FLAG_SIGNALS})
+
 # The JSON shape the model is instructed to emit (meta fields are added by us).
 SCHEMA_HINT = """{
   "business_model_summary": "string",
@@ -47,6 +68,23 @@ class Moat:
     summary: str = ""
     sources: list[str] = field(default_factory=list)
     trajectory: Optional[str] = None  # one of TRAJECTORIES, or None
+
+
+@dataclass
+class Conflict:
+    signal: str
+    tension: str
+    filing_says: str = ""          # verbatim quote; "" iff verdict == "silent"
+    verdict: str = "silent"        # one of VERDICTS
+    verified: bool = False         # set by _verify_grounding (non-silent only)
+
+
+@dataclass
+class Thesis:
+    bull_case: str = ""
+    bear_case: str = ""
+    what_would_change_my_mind: list = field(default_factory=list)
+    takeaway: str = ""             # the traveling TL;DR (replaces old `synthesis`)
 
 
 @dataclass
