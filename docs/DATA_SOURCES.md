@@ -107,8 +107,10 @@ plan: [`docs/superpowers/plans/2026-06-01-edgar-events.md`](superpowers/plans/20
   (SEC fair-access). ~10 req/s. We already set `SEC_IDENTITY`.
 - **Pull:** validated — `scratch/raw/sec/companyfacts.json` (3.7 MB), `submissions.json`.
   Latest annual revenue extracted: **$416.2B (FY end 2025-09-27)**.
-- **Still open from A1:** `frames` cross-filer peer ranking; Tier D composites (F/Z/M scores)
-  that need the extra balance-sheet fields.
+- **Still open from A1:** `frames` cross-filer peer ranking; Tier D composites
+  (F/Z/M scores). (Point-in-time historical *consumption* for backtesting now
+  exists — `providers/_xbrl_facts.py` + `backtest/xbrl.py` + `XbrlSignalSource`
+  (`--source xbrl`), see ASSESSMENT_GAPS §2.1.)
 
 #### A2. FRED (St. Louis Fed) — macro & credit-regime overlay
 - **What:** keyless CSV at `fred.stlouisfed.org/graph/fredgraph.csv?id={SERIES}`. Key series:

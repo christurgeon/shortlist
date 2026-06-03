@@ -33,3 +33,10 @@ def test_arg_parser_defaults():
     assert args.horizons == "3"
     assert args.return_mode == "excess"
     assert args.source == "momentum"
+
+
+def test_arg_parser_accepts_xbrl_source():
+    ap = build_arg_parser()
+    args = ap.parse_args(["--source", "xbrl"])
+    assert args.source == "xbrl"
+    assert args.xbrl_cache_dir == ".cache/sec_xbrl"

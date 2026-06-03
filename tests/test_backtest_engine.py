@@ -35,3 +35,33 @@ def test_run_backtest_recovers_positive_ic_for_planted_signal():
     assert r.n_obs > 0
     assert r.spread is not None and r.spread.spread >= 0
     assert report.price_asof is not None
+
+
+def test_run_backtest_emits_one_report_per_emitted_signal():
+    """A source emitting multiple signals per observation must yield one report per
+    signal key, not one report for the source name."""
+    from shortlist.backtest.signals import Observation
+
+    hists = {"AAA": _hist("AAA", 0.30), "BBB": _hist("BBB", 0.10),
+             "CCC": _hist("CCC", 0.02)}
+    spy = _hist("SPY", 0.01)
+
+    class _MultiSrc:
+        name = "multi"
+
+        def observe(self, ticker, as_of):
+            return Observation(as_of, ticker, {"alpha": 60.0, "beta": 40.0})
+
+    report = run_backtest(
+        [_MultiSrc()], hists, spy,
+        start=date(2019, 9, 1), end=date(2021, 3, 1), horizons=[3],
+        n_buckets=3, return_mode="excess", xs_min_breadth=3,
+        price_asof=date(2026, 6, 1),
+    )
+    signals = {r.signal for r in report.reports}
+    assert {"alpha", "beta"} <= signals, (
+        f"expected alpha and beta reports; got signals={signals}"
+    )
+    for r in report.reports:
+        if r.signal in {"alpha", "beta"}:
+            assert r.n_obs > 0, f"signal={r.signal} has n_obs=0"

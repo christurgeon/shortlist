@@ -205,6 +205,38 @@ EDGAR-XBRL source in `DATA_SOURCES.md` A1). Yahoo full daily history is fetched 
 `period1=0` epoch params — **never `range=max`**, which silently degrades to
 quarterly bars.
 
+### XBRL source: fundamental-axis IC without waiting (`--source xbrl`)
+
+`XbrlSignalSource` (`backtest/signals.py`) reconstructs the **quality / moat /
+growth / value** sub-scores point-in-time from SEC `companyfacts`, bypassing the
+24-date snapshot accumulation clock entirely. It reads only filings with
+`filed ≤ as_of` (restatement-aware), resolves concept aliases by priority (not
+merge), and feeds the extracted metrics through the real `scoring.*_score`
+functions — the same path as a live screen. The extractor is `providers/_xbrl_facts.py`
+(pure, stateless leaf) + `backtest/xbrl.py` (keyless companyfacts fetch, disk-cached
+under `.cache/sec_xbrl`).
+
+**Requirements:** set `SEC_IDENTITY` to a contact email in `.env` (SEC fair-access
+`User-Agent`); no API key is needed otherwise.
+
+**IFRS 20-F foreign issuers** (facts filed under `ifrs-full` rather than `us-gaap`)
+are **skipped** — their concept names don't map to the extractor's alias tables, so
+they return `None` cleanly rather than producing garbled scores.
+
+**Value coverage:** 2 of 4 value legs are reconstructable from XBRL (`fcf_yield`,
+`pe_vs_history`). `peg` and `upside_to_target` require live FMP data and are
+**not** available in the XBRL path. The `insider` axis is not reconstructable from
+XBRL and is absent from this source.
+
+```bash
+uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
+```
+
+On a largecap universe, 3m/6m horizons (≥32 periods) clear the engine's trust gates
+of ≥24 periods and ≥30 names/date; 12m is flagged **EXPLORATORY** at 16 periods.
+All results are early, survivorship-biased directional evidence — treat them as
+signal diagnostics, not fitted predictions.
+
 ### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
 
 The snapshot-replay/weight-fitting paths above stay guarded until the store holds

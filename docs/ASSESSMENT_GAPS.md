@@ -194,6 +194,26 @@ touches.
 > daily schedule is **dormant/opt-in** (`deploy/`), so the 24-date clock starts only
 > when an operator enables it (or runs it manually). The EDGAR XBRL source below is
 > the other path to that history. The plug sketch below is retained as rationale.
+>
+> **Validated without waiting (XBRL path, ✅ SHIPPED):** `XbrlSignalSource`
+> (`backtest/signals.py`, `--source xbrl`) reconstructs the **fundamental**
+> sub-scores — quality / moat / growth / value (2-of-4 legs: `fcf_yield`,
+> `pe_vs_history`) — point-in-time from SEC `companyfacts` (`filed ≤ as_of`,
+> restatement-aware; aliases resolved by **priority, not merge**), reusing the real
+> `scoring.*_score` functions. This activates fundamental-axis IC **today**,
+> independent of the 24-date snapshot clock. The extractor is `providers/_xbrl_facts.py`
+> (pure leaf) + `backtest/xbrl.py` (keyless companyfacts fetch, `.cache/sec_xbrl`).
+> **First results** (largecap, 79 names, excess-of-SPY; 3m/6m horizons clear the
+> engine's trust gates of ≥24 periods and ≥30 names/date, 12m is flagged EXPLORATORY
+> at 16 periods; all are early, survivorship-biased directional evidence — not
+> significant): **growth** cross-sectional IC is positive and rises with
+> horizon (+0.035 / +0.052 / +0.072 at 1q/2q/4q; 12m quantile spread +0.097);
+> **value** time-series IC is positive (+0.075 / +0.094 / +0.107); **quality** TS IC
+> is negative (~ -0.06 to -0.11); **moat** is weak/negative. Unfitted priors, now
+> measurable — exactly what this gap was for. **Limitations:** sub-score level (no
+> sector masking, matching the momentum source); `value`'s `peg`/`upside_to_target`
+> legs and the `insider` axis aren't reconstructable from XBRL; **IFRS 20-F foreign
+> issuers (data under `ifrs-full`) are skipped**.
 
 Every weight (`0.25/0.25/0.30/0.20`) and every band in `config.yaml` is **asserted, never
 measured**. There is no backtest, no information coefficient (IC), no decile/quintile
