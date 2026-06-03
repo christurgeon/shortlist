@@ -61,7 +61,12 @@ async def _load_companyfacts(tickers, cache_dir, month):
     facts = {}
     async with httpx.AsyncClient(headers={"User-Agent": identity},
                                  timeout=30.0) as client:
-        index = await fetch_cik_index(client, cache_dir=cache_dir, month=month)
+        try:
+            index = await fetch_cik_index(client, cache_dir=cache_dir, month=month)
+        except Exception as e:
+            print(f"warn: SEC ticker map fetch failed: {type(e).__name__}",
+                  file=sys.stderr)
+            return {}
         for tk in tickers:
             cik = cik_for(tk, index)
             if cik is None:
