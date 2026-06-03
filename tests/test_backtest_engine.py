@@ -22,6 +22,16 @@ def _hist(ticker, slope, n=900):
     return PriceHistory(ticker, dates, closes)
 
 
+def test_fwd_return_is_public_and_excess():
+    from shortlist.backtest.engine import fwd_return
+    hist = _hist("AAA", 0.10)        # rising series
+    spy = _hist("SPY", 0.00)         # flat
+    r = fwd_return(hist, spy, date(2019, 6, 1), 3, "excess")
+    assert r is not None and r > 0.0   # rises faster than flat SPY
+    raw = fwd_return(hist, spy, date(2019, 6, 1), 3, "raw")
+    assert raw is not None and raw >= r  # raw >= excess when SPY flat/positive
+
+
 def test_run_backtest_recovers_positive_ic_for_planted_signal():
     hists = {"AAA": _hist("AAA", 0.30), "BBB": _hist("BBB", 0.10),
              "CCC": _hist("CCC", 0.02)}

@@ -38,7 +38,7 @@ def _collect_rows(src: SignalSource, universe: list[str],
             obs = src.observe(tk, t)
             if obs is None or not obs.signals:
                 continue
-            fr = _fwd_return(histories[tk], spy, t, horizon, return_mode)
+            fr = fwd_return(histories[tk], spy, t, horizon, return_mode)
             if fr is None:
                 continue
             for sig_name, sv in obs.signals.items():
@@ -73,8 +73,8 @@ def _pairs_ic(pairs: list[tuple[float, float]]) -> Optional[float]:
     return spearman_ic([p[0] for p in pairs], [p[1] for p in pairs])
 
 
-def _fwd_return(hist: PriceHistory, spy: PriceHistory, t: date, horizon: int,
-                mode: str) -> Optional[float]:
+def fwd_return(hist: PriceHistory, spy: PriceHistory, t: date, horizon: int,
+               mode: str) -> Optional[float]:
     r = hist.forward_return(t, horizon)
     if r is None:
         return None
