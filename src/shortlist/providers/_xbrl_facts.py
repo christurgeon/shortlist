@@ -15,6 +15,7 @@ order; each fiscal end is filled by the highest-priority concept that reports it
 (Revenues / SalesRevenueNet / RevenueFromContract... are different line items)."""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
@@ -129,3 +130,57 @@ def desc(series: dict) -> list[float]:
 def latest(series: dict) -> Optional[float]:
     """Value at the most recent fiscal end, or None if empty."""
     return series[max(series)] if series else None
+
+
+# ---------------------------------------------------------------------------
+# Point-in-time fundamentals panel
+# ---------------------------------------------------------------------------
+
+@dataclass
+class XbrlPanel:
+    """Point-in-time annual fundamentals as {fiscal_end: val} dicts (aligned by
+    end, never by list position). `shares` is a single latest instant scalar."""
+    revenue: dict = field(default_factory=dict)
+    net_income: dict = field(default_factory=dict)
+    fcf: dict = field(default_factory=dict)
+    diluted_eps: dict = field(default_factory=dict)
+    gross_profit: dict = field(default_factory=dict)
+    total_equity: dict = field(default_factory=dict)
+    total_debt: dict = field(default_factory=dict)
+    operating_income: dict = field(default_factory=dict)
+    interest_expense: dict = field(default_factory=dict)
+    pretax_income: dict = field(default_factory=dict)
+    income_tax: dict = field(default_factory=dict)
+    shares: Optional[float] = None
+
+
+def _gross_profit(facts: dict, as_of: date) -> dict:
+    """GrossProfit if tagged, else revenue - COGS aligned by fiscal end."""
+    gp = annual_series(facts, GROSS_PROFIT, as_of)
+    if gp:
+        return gp
+    rev = annual_series(facts, REVENUE, as_of)
+    cogs = annual_series(facts, COGS, as_of)
+    return {e: rev[e] - cogs[e] for e in rev if e in cogs}
+
+
+def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
+    ocf = annual_series(facts, OCF, as_of)
+    capex = annual_series(facts, CAPEX, as_of)
+    lt = annual_series(facts, LT_DEBT, as_of, instant=True)
+    cur = annual_series(facts, CUR_DEBT, as_of, instant=True)
+    shares = annual_series(facts, SHARES_OUT, as_of, instant=True, units=("shares",))
+    return XbrlPanel(
+        revenue=annual_series(facts, REVENUE, as_of),
+        net_income=annual_series(facts, NET_INCOME, as_of),
+        fcf=align_fcf(ocf, capex),
+        diluted_eps=annual_series(facts, DILUTED_EPS, as_of, units=("USD/shares",)),
+        gross_profit=_gross_profit(facts, as_of),
+        total_equity=annual_series(facts, EQUITY, as_of, instant=True),
+        total_debt=sum_aligned(lt, cur),
+        operating_income=annual_series(facts, OP_INCOME, as_of),
+        interest_expense=annual_series(facts, INTEREST, as_of),
+        pretax_income=annual_series(facts, PRETAX, as_of),
+        income_tax=annual_series(facts, INCOME_TAX, as_of),
+        shares=latest(shares),
+    )

@@ -87,3 +87,47 @@ def test_desc_returns_values_newest_first():
 def test_latest_returns_most_recent_or_none():
     assert latest({"2020-12-31": 1.0, "2022-12-31": 3.0, "2021-12-31": 2.0}) == 3.0
     assert latest({}) is None
+
+
+# ---------------------------------------------------------------------------
+# Task 5: XbrlPanel + extract_panel
+# ---------------------------------------------------------------------------
+from shortlist.providers._xbrl_facts import extract_panel
+
+
+def _annual(concept, rows, unit="USD"):
+    return {concept: {"units": {unit: rows}}}
+
+
+def test_extract_panel_builds_end_keyed_dicts():
+    gaap = {}
+    gaap.update(_annual("Revenues", [
+        _row("2021-01-01", "2021-12-31", 1000, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 1200, "2023-02-01")]))
+    gaap.update(_annual("NetIncomeLoss", [
+        _row("2021-01-01", "2021-12-31", 100, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 150, "2023-02-01")]))
+    gaap.update(_annual("NetCashProvidedByUsedInOperatingActivities", [
+        _row("2022-01-01", "2022-12-31", 200, "2023-02-01")]))
+    gaap.update(_annual("PaymentsToAcquirePropertyPlantAndEquipment", [
+        _row("2022-01-01", "2022-12-31", 50, "2023-02-01")]))
+    gaap.update(_annual("StockholdersEquity", [_inst("2022-12-31", 600, "2023-02-01")]))
+    facts = {"facts": {"us-gaap": gaap,
+                       "dei": _annual("EntityCommonStockSharesOutstanding",
+                                      [_inst("2022-12-31", 10, "2023-02-01")],
+                                      unit="shares")}}
+    p = extract_panel(facts, as_of=date(2024, 1, 1))
+    assert p.revenue == {"2022-12-31": 1200.0, "2021-12-31": 1000.0}
+    assert p.net_income == {"2022-12-31": 150.0, "2021-12-31": 100.0}
+    assert p.fcf == {"2022-12-31": 150.0}        # 200 - 50, only FY2022 has both
+    assert p.total_equity == {"2022-12-31": 600.0}
+    assert p.shares == 10.0
+
+
+def test_extract_panel_gross_profit_falls_back_to_revenue_minus_cogs():
+    gaap = {}
+    gaap.update(_annual("Revenues", [_row("2022-01-01", "2022-12-31", 1200, "2023-02-01")]))
+    gaap.update(_annual("CostOfGoodsAndServicesSold",
+                        [_row("2022-01-01", "2022-12-31", 700, "2023-02-01")]))
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.gross_profit == {"2022-12-31": 500.0}   # 1200 - 700
