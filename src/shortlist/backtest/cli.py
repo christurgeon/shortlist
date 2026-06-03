@@ -46,6 +46,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--cache-dir", dest="cache_dir", default=".cache/yahoo")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--csv", help="write per-signal rows to this CSV path")
+    ap.add_argument("--fit", action="store_true",
+                    help="fit fundamental weights walk-forward and print a proposal "
+                         "(requires --source xbrl); never writes config.yaml")
+    ap.add_argument("--fit-horizon", dest="fit_horizon", type=int,
+                    help="forward-return horizon (months) to fit at; required with --fit")
+    ap.add_argument("--fit-axes", dest="fit_axes",
+                    default="quality,moat,growth,value",
+                    help="comma-separated axes to fit (subset of the fundamentals)")
+    ap.add_argument("--n-folds", dest="n_folds", type=int, default=6,
+                    help="walk-forward folds; >=6 needed to reach the 5-OOS-fold gate")
+    ap.add_argument("--shrink", type=float, default=0.5,
+                    help="shrinkage toward the prior (0..1)")
     return ap
 
 
@@ -125,9 +137,69 @@ def _write_csv(report, path):
                         s["n_obs"], s["breadth"]])
 
 
+_FUNDAMENTAL_AXES = ("quality", "moat", "growth", "value")
+
+
+def _fit_prior_from_config(config: dict, fit_axes: list[str]) -> tuple[dict, float]:
+    """Prior = config weights filtered to EXACTLY fit_axes (never the full 7-axis block,
+    which would let momentum/insider/risk contaminate the fundamental fit). Returns
+    (prior, S_f) where S_f is the fundamental block's current ratio weight."""
+    weights = config["weights"]
+    prior = {a: weights[a] for a in fit_axes}
+    return prior, sum(prior.values())
+
+
+def _run_fit(args, src, hists, spy, start, end, config) -> int:
+    from .fit import FitGuardError, fit_weights
+    from .fit_data import build_fit_rows
+    from .metrics import spearman_ic
+    from .report import evaluate_gate, fit_report_to_dict, render_fit_report
+
+    fit_axes = [a.strip() for a in args.fit_axes.split(",") if a.strip()]
+    bad = [a for a in fit_axes if a not in _FUNDAMENTAL_AXES]
+    if bad:
+        print(f"--fit-axes must be a subset of {_FUNDAMENTAL_AXES}; got {bad}",
+              file=sys.stderr)
+        return 2
+    prior, s_f = _fit_prior_from_config(config, fit_axes)
+    rows = build_fit_rows(src, sorted(hists), hists, spy, start=start, end=end,
+                          horizon=args.fit_horizon, axes=fit_axes,
+                          return_mode=args.return_mode)
+    try:
+        result = fit_weights(rows, prior, min_periods=36, shrink=args.shrink,
+                             n_folds=args.n_folds,
+                             min_period_gap_days=args.fit_horizon * 28)
+    except FitGuardError as e:
+        print(str(e), file=sys.stderr)
+        print("evidence insufficient — do not change config", file=sys.stderr)
+        return 0
+    axis_ic = {a: spearman_ic([r[1][a] for r in rows], [r[2] for r in rows])
+               for a in fit_axes}
+    verdict = evaluate_gate(result)
+    if args.json:
+        print(json.dumps(fit_report_to_dict(result, prior=prior, s_f=s_f,
+                                             horizon=args.fit_horizon, axes=fit_axes,
+                                             axis_ic=axis_ic, verdict=verdict), indent=2))
+    else:
+        print(render_fit_report(result, prior=prior, s_f=s_f, horizon=args.fit_horizon,
+                                axes=fit_axes, axis_ic=axis_ic, verdict=verdict),
+              file=sys.stderr)
+    return 0
+
+
 def main(argv=None) -> int:
     load_env()  # pick up SEC_IDENTITY / API keys from a .env file if present
     args = build_arg_parser().parse_args(argv)
+    # Flag-combination validation first — must NOT depend on SEC_IDENTITY, or the SEC
+    # guard below could return 2 first and a --fit-horizon test would pass for the wrong reason.
+    if args.fit and args.source != "xbrl":
+        print("--fit requires --source xbrl (fundamental axes come from XBRL)",
+              file=sys.stderr)
+        return 2
+    if args.fit and args.fit_horizon is None:
+        print("--fit requires --fit-horizon (months); fitted ratios are horizon-conditional",
+              file=sys.stderr)
+        return 2
     if args.source == "snapshot":
         print("snapshot source is GATED: no organic point-in-time snapshot history "
               "exists yet (needs >= 24 daily captures). Use --source momentum.",
@@ -167,6 +239,8 @@ def main(argv=None) -> int:
         src = XbrlSignalSource(facts, hists, thresholds)
     else:
         src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
+    if args.fit:
+        return _run_fit(args, src, hists, spy, start, end, config)
     report = run_backtest([src], hists, spy, start=start, end=end,
                           horizons=horizons, step_months=(args.step_months or None),
                           n_buckets=args.buckets, return_mode=args.return_mode,
