@@ -11,7 +11,12 @@ PAYLOAD = {
     "risks": [{"claim": "Supply concentration", "evidence": "substantially all manufacturing is outsourced"}],
     "red_flags": [],
     "management_capital_allocation": "Heavy buybacks.",
-    "synthesis": "High quality, fully valued.",
+    "reconciliation": [
+        {"signal": "value", "tension": "cheap vs declining FCF",
+         "filing_says": "Free cash flow declined", "verdict": "contradicts"}],
+    "thesis": {"bull_case": "Strong brand.", "bear_case": "Slowing growth.",
+               "what_would_change_my_mind": ["FCF reaccelerates"],
+               "takeaway": "High quality, fully valued."},
 }
 
 
@@ -35,6 +40,10 @@ def test_assessment_from_payload_builds_nested_types():
     assert a.risks[0].verified is False        # grounding not run yet
     assert a.red_flags == []
     assert a.model == "claude-sonnet-4-6" and a.cost_usd == 0.03
+    assert a.synthesis == "High quality, fully valued."   # property → thesis.takeaway
+    assert a.thesis.bull_case == "Strong brand."
+    assert a.reconciliation[0].signal == "value"
+    assert a.reconciliation[0].verdict == "contradicts"
 
 
 def test_assessment_from_payload_rejects_missing_keys():
@@ -48,6 +57,22 @@ def test_assessment_from_payload_rejects_bad_moat_type():
     with pytest.raises(ValueError):
         assessment_from_payload(bad, ticker="X", as_of="t", accession="a",
                                 filing_date="d", model="m", cost_usd=None, stop_reason=None)
+
+
+def test_assessment_from_payload_rejects_missing_thesis():
+    payload = {k: v for k, v in PAYLOAD.items() if k != "thesis"}
+    with pytest.raises(ValueError):
+        assessment_from_payload(payload, ticker="X", as_of="t", accession="a",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None)
+
+
+def test_assessment_from_payload_missing_reconciliation_is_empty():
+    payload = {k: v for k, v in PAYLOAD.items() if k != "reconciliation"}
+    a = assessment_from_payload(payload, ticker="X", as_of="t", accession="a",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None)
+    assert a.reconciliation == []
 
 
 def test_conflict_and_thesis_defaults():

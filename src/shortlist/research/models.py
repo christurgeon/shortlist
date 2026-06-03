@@ -33,11 +33,12 @@ SCHEMA_HINT = """{
   "risks": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "red_flags": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "management_capital_allocation": "string",
-  "synthesis": "string (2-3 sentences)"
+  "reconciliation": [{"signal": "value|growth|moat|quality|momentum|insider|risk|short_interest|narrative_tone|gate:<name>|flag:<name>", "tension": "one sentence: the number vs the narrative", "filing_says": "verbatim quote, or \\"\\" if the filing is silent", "verdict": "confirms|contradicts|silent"}],
+  "thesis": {"bull_case": "string (1-2 sentences)", "bear_case": "string (1-2 sentences)", "what_would_change_my_mind": ["string"], "takeaway": "string (1-2 sentences)"}
 }"""
 
 _REQUIRED = ("business_model_summary", "moat", "risks", "red_flags",
-             "management_capital_allocation", "synthesis")
+             "management_capital_allocation")
 
 
 @dataclass
@@ -168,9 +169,12 @@ def _reconciliation(payload: dict, *, valid_signals: set[str],
 
 def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession: str,
                             filing_date: str, model: str, cost_usd: Optional[float],
-                            stop_reason: Optional[str]) -> QualitativeAssessment:
+                            stop_reason: Optional[str],
+                            valid_signals: Optional[set[str]] = None,
+                            max_conflicts: int = 3,
+                            max_falsifiers: int = 3) -> QualitativeAssessment:
     """Build a QualitativeAssessment from the model's parsed JSON.
-    Raises ValueError if required keys are missing or mistyped."""
+    Raises ValueError if required keys are missing/mistyped or thesis is not a dict."""
     missing = [k for k in _REQUIRED if k not in payload]
     if missing:
         raise ValueError(f"missing keys: {missing}")
@@ -183,6 +187,7 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         sources=[str(s) for s in (moat_raw.get("sources") or [])],
         trajectory=trajectory if trajectory in TRAJECTORIES else None,
     )
+    vs = valid_signals if valid_signals is not None else default_valid_signals()
     return QualitativeAssessment(
         ticker=ticker, as_of=as_of, filing_accession=accession, filing_date=filing_date,
         model=model, cost_usd=cost_usd, stop_reason=stop_reason,
@@ -191,5 +196,6 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         risks=_findings(payload, "risks"),
         red_flags=_findings(payload, "red_flags"),
         management_capital_allocation=str(payload["management_capital_allocation"]),
-        synthesis=str(payload["synthesis"]),
+        reconciliation=_reconciliation(payload, valid_signals=vs, max_conflicts=max_conflicts),
+        thesis=_thesis(payload, max_falsifiers=max_falsifiers),
     )
