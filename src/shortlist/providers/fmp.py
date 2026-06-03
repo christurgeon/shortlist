@@ -144,6 +144,11 @@ class FMPProvider(Provider):
             m.revenue_cagr = cagr(revenues)
             m.eps_cagr = cagr([row.get("netIncome") for row in income])
             m.revenue_growth_persistence = growth_persistence(revenues)
+            # piotroski_f is intentionally NOT populated here: the Core-6 F-score
+            # needs OCF (cash-flow statement) + balance-sheet debt, which the lean
+            # screener path does not fetch (quota). It stays None and the value_trap
+            # refinement abstains — an accepted screener-only gap, like fcf_cagr. The
+            # default --engine harness + XBRL backtest populate it.
 
         consensus = _first(leg(lambda: self._get("price-target-consensus", symbol=ticker)))
         if consensus:
