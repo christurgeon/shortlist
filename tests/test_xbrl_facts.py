@@ -62,3 +62,25 @@ def test_annual_series_skips_rows_with_unparseable_dates():
 def test_annual_series_filed_equal_as_of_is_inclusive():
     cf = _us("Revenues", [_row("2021-01-01", "2021-12-31", 100, "2022-02-01")])
     assert annual_series(cf, ["Revenues"], as_of=date(2022, 2, 1)) == {"2021-12-31": 100.0}
+
+
+# tests/test_xbrl_facts.py  (append)
+from shortlist.providers._xbrl_facts import align_fcf, sum_aligned, ratio_latest, desc
+
+def test_align_fcf_subtracts_capex_only_on_shared_ends():
+    fcf = align_fcf({"2022-12-31": 200.0, "2021-12-31": 180.0, "2020-12-31": 160.0},
+                    {"2022-12-31": 50.0, "2021-12-31": 40.0})   # 2020 capex missing
+    assert fcf == {"2022-12-31": 150.0, "2021-12-31": 140.0}    # 2020 dropped
+
+def test_sum_aligned_adds_only_on_shared_ends():
+    assert sum_aligned({"2022-12-31": 300.0, "2021-12-31": 280.0},
+                       {"2022-12-31": 30.0}) == {"2022-12-31": 330.0}
+
+def test_ratio_latest_uses_latest_common_end_and_guards_zero():
+    assert ratio_latest({"2022-12-31": 150.0, "2021-12-31": 130.0},
+                        {"2022-12-31": 1200.0, "2020-12-31": 1000.0}) == 150.0 / 1200.0
+    assert ratio_latest({"2022-12-31": 1.0}, {"2022-12-31": 0.0}) is None   # div-by-zero
+    assert ratio_latest({"2022-12-31": 1.0}, {"2021-12-31": 2.0}) is None   # no common end
+
+def test_desc_returns_values_newest_first():
+    assert desc({"2020-12-31": 1.0, "2022-12-31": 3.0, "2021-12-31": 2.0}) == [3.0, 2.0, 1.0]

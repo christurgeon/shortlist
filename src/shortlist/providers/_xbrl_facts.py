@@ -69,3 +69,63 @@ def annual_series(facts: dict, concepts: list[str], as_of: date, *,
         for end, (_filed, val) in chosen.items():
             out.setdefault(end, val)   # first concept in priority order owns this end; later aliases skipped
     return out
+
+
+# ---------------------------------------------------------------------------
+# US-GAAP concept families, PRIORITY order (annual_series fills each end from the
+# first that reports it — these are NOT merged). Verified tag choices/aliases.
+# ---------------------------------------------------------------------------
+REVENUE = ["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues",
+           "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet"]
+NET_INCOME = ["NetIncomeLoss"]
+OCF = ["NetCashProvidedByUsedInOperatingActivities",
+       "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"]
+CAPEX = ["PaymentsToAcquirePropertyPlantAndEquipment",
+         "PaymentsToAcquireProductiveAssets"]
+DILUTED_EPS = ["EarningsPerShareDiluted"]
+GROSS_PROFIT = ["GrossProfit"]
+COGS = ["CostOfGoodsAndServicesSold", "CostOfRevenue", "CostOfGoodsSold"]
+EQUITY = ["StockholdersEquity"]
+LT_DEBT = ["LongTermDebtNoncurrent", "LongTermDebt"]
+CUR_DEBT = ["LongTermDebtCurrent", "DebtCurrent"]
+OP_INCOME = ["OperatingIncomeLoss"]
+INTEREST = ["InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt"]
+PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+          "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"]
+INCOME_TAX = ["IncomeTaxExpenseBenefit"]
+SHARES_OUT = ["EntityCommonStockSharesOutstanding"]                   # dei, instant, unit="shares"
+WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"
+
+
+# ---------------------------------------------------------------------------
+# End-aligned dict helpers — all cross-metric math goes through these so it
+# aligns by fiscal end (shared keys only), never by list position.
+# ---------------------------------------------------------------------------
+
+def align_fcf(ocf: dict, capex: dict) -> dict:
+    """FCF = OCF - capex per fiscal end reporting both (capex is a positive outflow)."""
+    return {e: ocf[e] - capex[e] for e in ocf if e in capex}
+
+
+def sum_aligned(a: dict, b: dict) -> dict:
+    """a + b per fiscal end reporting both."""
+    return {e: a[e] + b[e] for e in a if e in b}
+
+
+def ratio_latest(num: dict, den: dict) -> Optional[float]:
+    """num/den at the LATEST fiscal end both report. None if no common end or den==0."""
+    common = set(num) & set(den)
+    if not common:
+        return None
+    e = max(common)
+    return (num[e] / den[e]) if den[e] else None
+
+
+def desc(series: dict) -> list[float]:
+    """Series values newest-first (descending fiscal end) — for cagr/persistence."""
+    return [series[e] for e in sorted(series, reverse=True)]
+
+
+def latest(series: dict) -> Optional[float]:
+    """Value at the most recent fiscal end, or None if empty."""
+    return series[max(series)] if series else None
