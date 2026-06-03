@@ -64,8 +64,7 @@ def test_annual_series_filed_equal_as_of_is_inclusive():
     assert annual_series(cf, ["Revenues"], as_of=date(2022, 2, 1)) == {"2021-12-31": 100.0}
 
 
-# tests/test_xbrl_facts.py  (append)
-from shortlist.providers._xbrl_facts import align_fcf, sum_aligned, ratio_latest, desc
+from shortlist.providers._xbrl_facts import align_fcf, sum_aligned, ratio_latest, desc, latest
 
 def test_align_fcf_subtracts_capex_only_on_shared_ends():
     fcf = align_fcf({"2022-12-31": 200.0, "2021-12-31": 180.0, "2020-12-31": 160.0},
@@ -84,3 +83,7 @@ def test_ratio_latest_uses_latest_common_end_and_guards_zero():
 
 def test_desc_returns_values_newest_first():
     assert desc({"2020-12-31": 1.0, "2022-12-31": 3.0, "2021-12-31": 2.0}) == [3.0, 2.0, 1.0]
+
+def test_latest_returns_most_recent_or_none():
+    assert latest({"2020-12-31": 1.0, "2022-12-31": 3.0, "2021-12-31": 2.0}) == 3.0
+    assert latest({}) is None

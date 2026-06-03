@@ -94,7 +94,7 @@ PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItems
           "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"]
 INCOME_TAX = ["IncomeTaxExpenseBenefit"]
 SHARES_OUT = ["EntityCommonStockSharesOutstanding"]                   # dei, instant, unit="shares"
-WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"
+WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"; scaffolded for later EPS/dilution work
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +117,8 @@ def ratio_latest(num: dict, den: dict) -> Optional[float]:
     common = set(num) & set(den)
     if not common:
         return None
-    e = max(common)
-    return (num[e] / den[e]) if den[e] else None
+    e = max(common)   # ISO-8601 keys sort chronologically -> max() is the latest end
+    return (num[e] / den[e]) if den[e] != 0.0 else None
 
 
 def desc(series: dict) -> list[float]:
