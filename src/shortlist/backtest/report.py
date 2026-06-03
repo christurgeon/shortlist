@@ -1,9 +1,55 @@
-"""Render a BacktestReport to a dict (JSON), CSV rows, or a rich table."""
+"""Render a BacktestReport to a dict (JSON), CSV rows, or a rich table.
+
+Also renders the weight-fit report (FitResult) and evaluates the endorsement gate that
+decides PROPOSE vs NO-CHANGE for a fitted-weights proposal.
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
 from .engine import BacktestReport
+from .metrics import aggregate_ic
+
+
+# Endorsement thresholds (see spec §"Default outcome"). Deliberately hard to clear on
+# survivorship-biased data: the default outcome is NO-CHANGE.
+GATE_MIN_PERIODS = 36       # well above the engine's describe-floor of 24
+GATE_MIN_OOS_FOLDS = 5      # needs n_folds >= 6 (loop is range(1, n_folds))
+GATE_MIN_EDGE = 0.02        # mean paired (shrunk - prior) OOS IC; absorbs survivorship inflation
+GATE_FOLD_AGREEMENT = 0.8   # >= 4 of 5 folds with a positive paired difference
+GATE_MIN_TSTAT = 2.0        # paired-difference t-stat (anti-conservative — see caveats)
+
+
+@dataclass(frozen=True)
+class GateVerdict:
+    endorsed: bool
+    reason: str
+
+
+def evaluate_gate(result) -> GateVerdict:
+    """Pure endorsement gate over a FitResult. Returns PROPOSE (endorsed=True) only when
+    EVERY condition clears, on the per-fold PAIRED (shrunk - prior) difference series —
+    not on the fitted level (which would certify the signal, not the fitting). Each single
+    failure names the blocking condition."""
+    if result.n_periods < GATE_MIN_PERIODS:
+        return GateVerdict(False, f"n_periods {result.n_periods} < {GATE_MIN_PERIODS}")
+    if result.n_oos_folds < GATE_MIN_OOS_FOLDS:
+        return GateVerdict(False, f"n_oos_folds {result.n_oos_folds} < {GATE_MIN_OOS_FOLDS}")
+    diffs = result.fold_diffs
+    agg = aggregate_ic(diffs)
+    mean_d = agg.mean if agg else 0.0
+    if mean_d < GATE_MIN_EDGE:
+        return GateVerdict(False, f"paired OOS edge {mean_d:.4f} < {GATE_MIN_EDGE}")
+    positive = sum(1 for d in diffs if d > 0)
+    if positive < ceil(GATE_FOLD_AGREEMENT * len(diffs)):
+        return GateVerdict(
+            False, f"fold agreement {positive}/{len(diffs)} below {GATE_FOLD_AGREEMENT:.0%}")
+    t = agg.t_stat if agg else None
+    if t is None or t < GATE_MIN_TSTAT:
+        return GateVerdict(False, f"paired t-stat {t} < {GATE_MIN_TSTAT}")
+    return GateVerdict(True, "all endorsement conditions cleared (PROPOSE)")
 
 
 def _ic_dict(ic) -> Any:
