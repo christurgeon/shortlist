@@ -231,3 +231,18 @@ def test_bridge_rising_none_across_split():
 def test_bridge_no_short_interest_leaves_fields_none():
     m = snapshot_to_metrics(_full_snapshot())   # defined earlier in tests/test_bridge.py; has no short_interest
     assert m.short_pct_outstanding is None and m.days_to_cover is None
+
+
+def test_bridge_populates_piotroski_from_statements():
+    from shortlist.data.bridge import snapshot_to_metrics
+    from shortlist.data.models import TickerSnapshot, Statements
+    st = Statements(
+        fiscal_years=[2022, 2021],
+        revenue=[1300, 1100], gross_profit=[700, 560],
+        net_income=[160, 120], operating_cash_flow=[240, 200],
+        total_debt=[300, 350],   # equity not used by the asset-free Core-6
+        fiscal_period_end=["2022-12-31", "2021-12-31"],
+    )
+    snap = TickerSnapshot(ticker="T", statements=st)
+    m = snapshot_to_metrics(snap)
+    assert (m.piotroski_f, m.piotroski_f_legs) == (6, 6)
