@@ -171,6 +171,8 @@ research:
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 8
   max_red_flags: 8
+  max_conflicts: 3             # cap on reconciliation entries (truncation budget)
+  max_falsifiers: 3            # cap on thesis.what_would_change_my_mind
 
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.

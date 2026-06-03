@@ -209,7 +209,8 @@ sector-specific *recalibration* of the surviving ones is future work. Configure 
 After ranking, `--research N` reads each of the top N non-gated names' latest
 10-K (business, MD&A, risk factors) via SEC EDGAR and uses the local `claude`
 CLI to write a qualitative brief — moat read, material risks, red flags,
-management/capital-allocation, business model, and a synthesis. It **stands
+management/capital-allocation, business model, and a falsifiable thesis
+(bull/bear/what-would-change-my-mind) plus a score-vs-filing reconciliation. It **stands
 alongside** the numeric score (never re-ranks). Output: `research/<TICKER>/
 <accession>.md` (+ `.json`), cached by filing so re-runs are free; `--refresh`
 regenerates.

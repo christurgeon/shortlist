@@ -262,7 +262,9 @@ def _one_line_brief_from_file(brief_path) -> str:
         json_path = Path(str(brief_path).replace(".md", ".json"))
         data = json.loads(json_path.read_text())
         # QualitativeAssessment fields in the JSON: 'synthesis' is the 2-3 sentence text
-        return (data.get("synthesis") or data.get("summary") or "")[:200]
+        return (data.get("synthesis")
+                or (data.get("thesis") or {}).get("takeaway")
+                or data.get("summary") or "")[:200]
     except Exception:  # noqa: BLE001
         return "brief generated"
 
