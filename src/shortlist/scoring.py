@@ -124,6 +124,25 @@ def risk_score(m: StockMetrics, t: dict) -> Optional[float]:
     ])
 
 
+def _piotroski_raw_fraction(m: StockMetrics, min_legs: int) -> Optional[float]:
+    """won/legs from the Piotroski-lite scalars, or None below the min-legs floor.
+    No sector masking here (that is the caller's concern via leg_applicable)."""
+    if m.piotroski_f is None or not m.piotroski_f_legs or m.piotroski_f_legs < min_legs:
+        return None
+    return m.piotroski_f / m.piotroski_f_legs
+
+
+def piotroski_score(m: StockMetrics, t: dict, min_legs: int = 4) -> Optional[float]:
+    """Map the Piotroski-lite fraction through the config band -> 0..100. Sector-
+    neutral here (the XbrlSignalSource passes sic=None -> unknown bucket); the
+    value_trap refinement applies masking separately. None below the min-legs floor
+    or when the band is absent."""
+    if "piotroski_f" not in t:
+        return None
+    frac = _piotroski_raw_fraction(m, min_legs)
+    return _norm(frac, *t["piotroski_f"]) if frac is not None else None
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it
@@ -350,12 +369,26 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
     flags = check_flags(m, config.get("flags") or {})
     # value-trap advisory: cheap (high value) but weak fundamentals. Soft/None-safe
     # like crowded_short — never affects passed/composite/scored. No-op if the
-    # config block is absent.
+    # config block is absent. When the optional flags.value_trap.piotroski sub-block
+    # is present, the Piotroski-lite fraction SUPPRESSES the flag on cheap-but-
+    # improving names and CONFIRMS it on cheap-but-deteriorating ones (suppression
+    # wins). Byte-identical to the legacy flag when the sub-block is absent.
     vt = (config.get("flags") or {}).get("value_trap")
-    if (vt and val is not None and val >= vt["min_value_score"]
-            and ((q is not None and q < vt["max_quality_score"])
-                 or (gr is not None and gr < vt["max_growth_score"]))):
-        flags.append("value_trap")
+    if vt and val is not None and val >= vt["min_value_score"]:
+        base = ((q is not None and q < vt["max_quality_score"])
+                or (gr is not None and gr < vt["max_growth_score"]))
+        pio = vt.get("piotroski")
+        frac = None
+        if pio and leg_applicable(bucket, "piotroski_f", config):
+            frac = _piotroski_raw_fraction(m, pio.get("min_legs", 4))
+        if pio and frac is not None:
+            fire = (base or frac <= pio["confirm_at"]) and not (frac >= pio["suppress_at"])
+        else:
+            fire = base
+        if fire:
+            flags.append("value_trap")
+        if pio and not leg_applicable(bucket, "piotroski_f", config):
+            abst.append({"field": "piotroski_f", "reason": "inapplicable", "scope": "leg"})
 
     return ScoreCard(
         ticker=m.ticker,
@@ -368,6 +401,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         sic_bucket=bucket, confidence=confidence, scored=scored, abstentions=abst,
         risk=_round(ri),
         thin=thin,
+        piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
     )
 
 

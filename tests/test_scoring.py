@@ -10,7 +10,7 @@ from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
     _avg, _norm, check_flags, growth_score, insider_score, moat_score,
-    momentum_score, quality_score, score, value_score,
+    momentum_score, piotroski_score, quality_score, score, value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -653,3 +653,61 @@ def test_gate_untouched_by_10b5_1_when_conviction_off():
     assert "heavy_insider_selling" in a.gates          # gate still trips
     assert a.composite == b.composite                   # planned-sale field changes nothing
     assert a.passed == b.passed and a.gates == b.gates
+
+
+# --- piotroski_score + value_trap refinement (Task 6) ---------------------
+
+# value_trap refinement config: existing thresholds + the piotroski sub-block.
+VT_PIO_CFG = {"value_trap": {"min_value_score": 60, "max_quality_score": 40,
+                             "max_growth_score": 40,
+                             "piotroski": {"suppress_at": 0.83, "confirm_at": 0.40,
+                                           "min_legs": 4}}}
+
+def _cfg_with(flags):
+    cfg = dict(CONFIG); cfg["flags"] = flags
+    # ensure the band + mask exist for piotroski_score/_piotroski_raw_fraction
+    cfg["thresholds"] = {**CONFIG["thresholds"], "piotroski_f": [0.34, 1.00]}
+    cfg["sectors"] = {"buckets": [], "masked_legs": ["piotroski_f"]}
+    return cfg
+
+def test_piotroski_score_maps_fraction_through_band():
+    m = StockMetrics(ticker="T", piotroski_f=5, piotroski_f_legs=6)
+    # fraction 0.833 over band [0.34, 1.00] -> ~74.7
+    s = piotroski_score(m, {"piotroski_f": [0.34, 1.00]})
+    assert s == pytest.approx((0.8333333 - 0.34) / (1.00 - 0.34) * 100, abs=0.5)
+
+def test_piotroski_score_none_below_min_legs():
+    m = StockMetrics(ticker="T", piotroski_f=2, piotroski_f_legs=3)
+    assert piotroski_score(m, {"piotroski_f": [0.34, 1.00]}) is None
+
+def test_value_trap_suppressed_when_fundamentals_improving():
+    # cheap + weak quality would normally fire value_trap; high F-fraction suppresses it.
+    m = _value_trap_metrics(piotroski_f=6, piotroski_f_legs=6)   # fraction 1.0 >= 0.83
+    card = score(m, _cfg_with({"value_trap": VT_PIO_CFG["value_trap"]}))
+    assert card.value >= 60 and card.quality < 40
+    assert "value_trap" not in card.flags
+
+def test_value_trap_confirmed_when_fundamentals_deteriorating():
+    # cheap + STRONG quality/growth (base would NOT fire) but low F-fraction confirms.
+    m = _value_trap_metrics(roe=0.9, net_margin=0.9, interest_coverage=9.0,
+                            debt_to_equity=0.2, piotroski_f=1, piotroski_f_legs=6)
+    card = score(m, _cfg_with({"value_trap": VT_PIO_CFG["value_trap"]}))
+    assert card.value >= 60 and card.quality >= 40
+    assert "value_trap" in card.flags
+
+def test_value_trap_masked_bucket_does_not_use_piotroski():
+    # financials bucket -> piotroski_f masked -> fraction None -> legacy base logic only.
+    m = _value_trap_metrics(sic="6020", piotroski_f=6, piotroski_f_legs=6)
+    cfg = _cfg_with({"value_trap": VT_PIO_CFG["value_trap"]})
+    cfg["sectors"] = {"buckets": [{"name": "financials", "sic_ranges": [[6020, 6099]]}],
+                      "masked_legs": ["piotroski_f"]}
+    card = score(m, cfg)
+    # base (cheap + weak quality) still fires; suppression does NOT apply (masked)
+    assert "value_trap" in card.flags
+
+def test_value_trap_backcompat_no_piotroski_block():
+    # VT_CFG has NO piotroski sub-block -> byte-identical legacy behavior even if
+    # piotroski fields are present on the metrics.
+    cfg = dict(CONFIG); cfg["flags"] = VT_CFG
+    fires = score(_value_trap_metrics(piotroski_f=6, piotroski_f_legs=6), cfg)
+    assert "value_trap" in fires.flags          # high-F name STILL flagged (no suppression)
