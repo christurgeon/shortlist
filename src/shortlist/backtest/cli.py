@@ -12,6 +12,7 @@ from pathlib import Path
 import httpx
 import yaml
 
+from ..env import load_env
 from .engine import run_backtest
 from .prices import _UA, _add_months, fetch_history
 from .report import render_table, report_to_dict
@@ -120,6 +121,7 @@ def _write_csv(report, path):
 
 
 def main(argv=None) -> int:
+    load_env()  # pick up SEC_IDENTITY / API keys from a .env file if present
     args = build_arg_parser().parse_args(argv)
     if args.source == "snapshot":
         print("snapshot source is GATED: no organic point-in-time snapshot history "
