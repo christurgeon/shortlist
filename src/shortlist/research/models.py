@@ -20,7 +20,7 @@ _FLAG_SIGNALS = ("crowded_short", "insider_cluster_buy", "planned_sale",
                  "planned_insider_sale_144")
 
 
-def default_valid_signals() -> set:
+def default_valid_signals() -> set[str]:
     """The set of reconciliation `signal` tokens accepted by the parser."""
     return (set(_AXIS_SIGNALS)
             | {f"gate:{g}" for g in _GATE_SIGNALS}
@@ -83,7 +83,7 @@ class Conflict:
 class Thesis:
     bull_case: str = ""
     bear_case: str = ""
-    what_would_change_my_mind: list = field(default_factory=list)
+    what_would_change_my_mind: list[str] = field(default_factory=list)
     takeaway: str = ""             # the traveling TL;DR (replaces old `synthesis`)
 
 
