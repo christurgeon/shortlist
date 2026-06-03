@@ -33,7 +33,7 @@ flowchart TD
     C --> E["merge() → StockMetrics\npriority-fill across providers"]
     D --> E
 
-    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nGates: FCF · leverage · insider-sell"]
+    E --> F["score() → ScoreCard\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nGates: FCF · market-cap · leverage · insider-sell"]
 
     F --> G[Ranked shortlist]
 
@@ -72,7 +72,8 @@ flowchart LR
         HS1["FMP Source"]
         HS2["Finnhub Source"]
         HS3["EDGAR Source\nasyncio.to_thread"]
-        HS4["Mock Source"]
+        HS4["FINRA Source\nkeyless short interest"]
+        HS5["Mock Source"]
         HM["merge_snapshots()\nTickerSnapshot"]
         BR["bridge.py\nsnapshot_to_metrics"]
         STORE["store.py\npersistence"]
@@ -82,6 +83,7 @@ flowchart LR
         HS2 --> HM
         HS3 --> HM
         HS4 --> HM
+        HS5 --> HM
         HM --> STORE
         HM --> BR
     end
