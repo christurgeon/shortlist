@@ -188,3 +188,80 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
         income_tax=annual_series(facts, INCOME_TAX, as_of),
         shares=latest(shares),
     )
+
+
+# ---------------------------------------------------------------------------
+# Panel -> StockMetrics
+# ---------------------------------------------------------------------------
+from ..models import StockMetrics                                            # noqa: E402
+from ..stats import (avg_roic, cagr, gross_margin_stability,                # noqa: E402
+                     growth_persistence, median_pe)
+
+_STATUTORY_TAX = 0.21
+
+
+def _roic_series(p: XbrlPanel) -> list[float]:
+    """NOPAT / (debt + equity), newest-first, over fiscal ends where operating
+    income, equity and debt all exist.  Per-year effective tax rate clamped to
+    [0, 0.5]; falls back to statutory 21% on losses or out-of-range rates."""
+    out = []
+    for e in sorted(p.operating_income, reverse=True):
+        eq = p.total_equity.get(e)
+        dc = p.total_debt.get(e)
+        op = p.operating_income[e]
+        if eq is None or dc is None or (eq + dc) == 0:
+            continue
+        ptx = p.pretax_income.get(e)
+        tx = p.income_tax.get(e)
+        rate = (tx / ptx) if (ptx and ptx > 0 and tx is not None) else _STATUTORY_TAX
+        if not (0.0 <= rate <= 0.5):
+            rate = _STATUTORY_TAX
+        out.append(op * (1.0 - rate) / (eq + dc))
+    return out
+
+
+def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
+                     price: Optional[float], price_at) -> StockMetrics:
+    """Build the scorer's StockMetrics from a point-in-time panel + price.
+    Every ratio aligns by fiscal end; missing inputs leave fields None
+    (scorer redistributes the composite weight)."""
+    m = StockMetrics(ticker=ticker, sic=sic, price=price)
+
+    # Quality (each ratio at the latest fiscal end both legs report)
+    m.net_margin = ratio_latest(p.net_income, p.revenue)
+    m.roe = ratio_latest(p.net_income, p.total_equity)
+    m.debt_to_equity = ratio_latest(p.total_debt, p.total_equity)
+    m.interest_coverage = ratio_latest(p.operating_income, p.interest_expense)
+
+    # Moat
+    m.gross_margin = ratio_latest(p.gross_profit, p.revenue)
+    common = sorted(set(p.gross_profit) & set(p.revenue), reverse=True)
+    margins = [p.gross_profit[e] / p.revenue[e] for e in common if p.revenue[e]]
+    m.gross_margin_stability = gross_margin_stability(margins) if margins else None
+    roics = _roic_series(p)
+    m.roic = roics[0] if roics else None
+    m.roic_5y_avg = avg_roic(roics) if roics else None
+
+    # Growth (reuse production stats over newest-first series)
+    m.revenue_cagr = cagr(desc(p.revenue))
+    m.fcf_cagr = cagr(desc(p.fcf))
+    m.eps_cagr = cagr(desc(p.net_income))    # net-income proxy (production convention)
+    m.revenue_growth_persistence = growth_persistence(desc(p.revenue))
+
+    # Value (2 of 4 legs; peg + upside_to_target need analyst data absent from XBRL)
+    m.market_cap = (price * p.shares) if (price and p.shares) else None
+    fcf_latest = latest(p.fcf)
+    if fcf_latest is not None and m.market_cap:
+        m.fcf_yield = fcf_latest / m.market_cap
+    eps_latest = latest(p.diluted_eps)
+    if price and eps_latest:
+        m.pe_ttm = price / eps_latest        # latest annual EPS as a TTM proxy
+    annual_pe = []
+    for end_iso in sorted(p.diluted_eps, reverse=True):
+        px = price_at(_d(end_iso))
+        e = p.diluted_eps[end_iso]
+        if px and e:
+            annual_pe.append(px / e)
+    m.pe_median_5y = median_pe(annual_pe)    # None if < 2 points
+
+    return m

@@ -157,3 +157,65 @@ def test_extract_panel_shares_picks_latest_instant():
         _inst("2022-12-31", 10, "2023-02-01")], unit="shares")
     p = extract_panel({"facts": {"us-gaap": gaap, "dei": dei}}, as_of=date(2024, 1, 1))
     assert p.shares == 10.0
+
+
+# ---------------------------------------------------------------------------
+# Task 6: panel_to_metrics — StockMetrics derivation from XbrlPanel
+# ---------------------------------------------------------------------------
+from shortlist.providers._xbrl_facts import XbrlPanel, panel_to_metrics
+
+def test_panel_to_metrics_derives_legs_and_price_dependent_value():
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200, "2021-12-31": 1100, "2020-12-31": 1000},
+        net_income={"2022-12-31": 150, "2021-12-31": 130, "2020-12-31": 100},
+        fcf={"2022-12-31": 120, "2021-12-31": 110, "2020-12-31": 90},
+        diluted_eps={"2022-12-31": 3.0, "2021-12-31": 2.6, "2020-12-31": 2.0},
+        gross_profit={"2022-12-31": 600, "2021-12-31": 550, "2020-12-31": 500},
+        total_equity={"2022-12-31": 600, "2021-12-31": 560, "2020-12-31": 520},
+        total_debt={"2022-12-31": 300, "2021-12-31": 280, "2020-12-31": 260},
+        operating_income={"2022-12-31": 200, "2021-12-31": 180, "2020-12-31": 150},
+        interest_expense={"2022-12-31": 20, "2021-12-31": 18, "2020-12-31": 15},
+        pretax_income={"2022-12-31": 180, "2021-12-31": 162, "2020-12-31": 135},
+        income_tax={"2022-12-31": 36, "2021-12-31": 32, "2020-12-31": 27},
+        shares=10.0,
+    )
+    prices = {date(2022, 12, 31): 60.0, date(2021, 12, 31): 52.0, date(2020, 12, 31): 40.0}
+    m = panel_to_metrics(p, ticker="TST", sic="3711", price=60.0,
+                         price_at=lambda d: prices.get(d))
+    assert m.ticker == "TST" and m.sic == "3711"
+    assert round(m.net_margin, 4) == round(150 / 1200, 4)
+    assert round(m.roe, 4) == round(150 / 600, 4)
+    assert round(m.debt_to_equity, 4) == round(300 / 600, 4)
+    assert round(m.gross_margin, 4) == round(600 / 1200, 4)
+    assert round(m.interest_coverage, 4) == round(200 / 20, 4)
+    assert m.roic is not None and m.roic_5y_avg is not None
+    assert m.revenue_cagr is not None and m.fcf_cagr is not None
+    assert m.eps_cagr is not None and m.revenue_growth_persistence == 1.0
+    assert round(m.fcf_yield, 4) == round(120 / 600, 4)    # market_cap = 60 * 10 = 600
+    assert round(m.pe_ttm, 4) == round(60 / 3.0, 4)
+    assert m.pe_median_5y is not None                       # >= 2 annual PE points
+
+def test_panel_to_metrics_aligns_ratios_by_end_not_position():
+    # gross_profit is MISSING the newest year that revenue has -> must pair by the
+    # common fiscal end (2021), never gp_values[0]/rev_values[0].
+    p = XbrlPanel(revenue={"2022-12-31": 1200, "2021-12-31": 1100},
+                  gross_profit={"2021-12-31": 550})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
+    assert round(m.gross_margin, 4) == round(550 / 1100, 4)
+
+def test_panel_to_metrics_value_degrades_when_price_absent():
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200, "2021-12-31": 1100, "2020-12-31": 1000},
+        net_income={"2022-12-31": 150, "2021-12-31": 130, "2020-12-31": 100},
+        gross_profit={"2022-12-31": 600, "2021-12-31": 550, "2020-12-31": 500},
+        total_equity={"2022-12-31": 600}, fcf={"2022-12-31": 120},
+        diluted_eps={"2022-12-31": 3.0}, shares=10.0)
+    m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
+    assert m.market_cap is None and m.fcf_yield is None and m.pe_ttm is None
+    assert m.net_margin is not None and m.revenue_cagr is not None
+
+def test_panel_to_metrics_none_safe_on_empty_panel():
+    m = panel_to_metrics(XbrlPanel(), ticker="X", sic=None, price=None,
+                         price_at=lambda d: None)
+    assert m.net_margin is None and m.fcf_yield is None and m.pe_ttm is None
+    assert m.revenue_cagr is None and m.roic is None
