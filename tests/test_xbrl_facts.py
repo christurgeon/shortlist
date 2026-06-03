@@ -50,3 +50,15 @@ def test_annual_series_instant_concept_has_no_start():
     cf = _us("StockholdersEquity", [_inst("2022-12-31", 500, "2023-02-01")])
     s = annual_series(cf, ["StockholdersEquity"], as_of=date(2024, 1, 1), instant=True)
     assert s == {"2022-12-31": 500.0}
+
+def test_annual_series_skips_rows_with_unparseable_dates():
+    cf = _us("Revenues", [
+        _row("2021-01-01", "2021-12-31", 100, ""),           # empty filed -> skipped
+        _row("not-a-date", "2020-12-31", 80, "2021-02-01"),  # bad start -> skipped
+        _row("2019-01-01", "2019-12-31", 90, "2020-02-01"),  # good
+    ])
+    assert annual_series(cf, ["Revenues"], as_of=date(2024, 1, 1)) == {"2019-12-31": 90.0}
+
+def test_annual_series_filed_equal_as_of_is_inclusive():
+    cf = _us("Revenues", [_row("2021-01-01", "2021-12-31", 100, "2022-02-01")])
+    assert annual_series(cf, ["Revenues"], as_of=date(2022, 2, 1)) == {"2021-12-31": 100.0}

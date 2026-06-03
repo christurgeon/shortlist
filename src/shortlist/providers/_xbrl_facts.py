@@ -36,28 +36,36 @@ def annual_series(facts: dict, concepts: list[str], as_of: date, *,
     dei = facts.get("facts", {}).get("dei", {})
     out: dict[str, float] = {}
     for concept in concepts:                       # priority order
-        node = gaap.get(concept) or dei.get(concept)
+        node = gaap[concept] if concept in gaap else dei.get(concept)
         if not node:
             continue
         chosen: dict[str, tuple[date, float]] = {}  # end -> (filed, val) within THIS concept
         for unit in units:
             for f in node.get("units", {}).get(unit, []):
-                form, filed, end, val = (f.get("form"), f.get("filed"),
-                                         f.get("end"), f.get("val"))
-                if form not in _ANNUAL_FORMS or None in (filed, end, val):
+                form = f.get("form")
+                if form not in _ANNUAL_FORMS:
                     continue
-                if _d(filed) > as_of:
+                filed, end, val = f.get("filed"), f.get("end"), f.get("val")
+                if None in (filed, end, val):
                     continue
-                if not instant:
-                    start = f.get("start")
-                    if start is None:
-                        continue
-                    span = (_d(end) - _d(start)).days
-                    if not (_MIN_PERIOD_DAYS <= span <= _MAX_PERIOD_DAYS):
-                        continue
+                try:
+                    filed_d = _d(filed)
+                    _d(end)                      # validate the key parses (skip if not)
+                    if not instant:
+                        start = f.get("start")
+                        if start is None:
+                            continue
+                        span = (_d(end) - _d(start)).days
+                        if not (_MIN_PERIOD_DAYS <= span <= _MAX_PERIOD_DAYS):
+                            continue
+                except ValueError:
+                    continue   # malformed ISO date in this SEC fact -> skip the row
+                if filed_d > as_of:
+                    continue
                 prev = chosen.get(end)
-                if prev is None or _d(filed) > prev[0]:   # latest filing within concept
-                    chosen[end] = (_d(filed), float(val))
+                # strict `>`: a same-date tie keeps the first row seen (SEC array order)
+                if prev is None or filed_d > prev[0]:
+                    chosen[end] = (filed_d, float(val))
         for end, (_filed, val) in chosen.items():
-            out.setdefault(end, val)   # higher-priority concept (seen first) keeps the end
+            out.setdefault(end, val)   # first concept in priority order owns this end; later aliases skipped
     return out
