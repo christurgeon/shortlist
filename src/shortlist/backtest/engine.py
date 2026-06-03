@@ -28,18 +28,21 @@ def observation_grid(start: date, end: date, step_months: int) -> list[date]:
 def _collect_rows(src: SignalSource, universe: list[str],
                   histories: dict[str, PriceHistory], spy: PriceHistory,
                   grid: list[date], horizon: int,
-                  return_mode: str) -> list[tuple[date, str, float, float]]:
-    """Join signal values to forward returns over the grid: (date, ticker, value, fwd)."""
-    rows: list[tuple[date, str, float, float]] = []
+                  return_mode: str) -> dict[str, list[tuple[date, str, float, float]]]:
+    """Join every emitted signal to forward returns over the grid, keyed by signal
+    name. A source may emit several signals per observation (e.g. the XBRL source
+    emits quality/moat/growth/value); each becomes its own report."""
+    rows: dict[str, list[tuple[date, str, float, float]]] = defaultdict(list)
     for t in grid:
         for tk in universe:
             obs = src.observe(tk, t)
-            if obs is None or src.name not in obs.signals:
+            if obs is None or not obs.signals:
                 continue
             fr = _fwd_return(histories[tk], spy, t, horizon, return_mode)
             if fr is None:
                 continue
-            rows.append((t, tk, obs.signals[src.name], fr))
+            for sig_name, sv in obs.signals.items():
+                rows[sig_name].append((t, tk, sv, fr))
     return rows
 
 
@@ -97,42 +100,45 @@ def run_backtest(sources: list[SignalSource], histories: dict[str, PriceHistory]
     for src in sources:
         for h in horizons:
             grid = observation_grid(start, end, step_months or h)
-            rows = _collect_rows(src, universe, histories, spy, grid, h, return_mode)
+            rows_by_signal = _collect_rows(src, universe, histories, spy, grid, h, return_mode)
 
-            by_date: dict[date, list[tuple[float, float]]] = defaultdict(list)
-            by_name: dict[str, list[tuple[float, float]]] = defaultdict(list)
-            for t, tk, sv, fr in rows:
-                by_date[t].append((sv, fr))
-                by_name[tk].append((sv, fr))
+            for signal in sorted(rows_by_signal):
+                rows = rows_by_signal[signal]
 
-            xs_ics, breadths = [], []
-            for pairs in by_date.values():
-                breadths.append(len(pairs))
-                if len(pairs) >= xs_min_breadth:
+                by_date: dict[date, list[tuple[float, float]]] = defaultdict(list)
+                by_name: dict[str, list[tuple[float, float]]] = defaultdict(list)
+                for t, tk, sv, fr in rows:
+                    by_date[t].append((sv, fr))
+                    by_name[tk].append((sv, fr))
+
+                xs_ics, breadths = [], []
+                for pairs in by_date.values():
+                    breadths.append(len(pairs))
+                    if len(pairs) >= xs_min_breadth:
+                        ic = _pairs_ic(pairs)
+                        if ic is not None:
+                            xs_ics.append(ic)
+                ts_ics = []
+                for pairs in by_name.values():
                     ic = _pairs_ic(pairs)
                     if ic is not None:
-                        xs_ics.append(ic)
-            ts_ics = []
-            for pairs in by_name.values():
-                ic = _pairs_ic(pairs)
-                if ic is not None:
-                    ts_ics.append(ic)
+                        ts_ics.append(ic)
 
-            spread = quantile_spread([(sv, fr) for _, _, sv, fr in rows], n_buckets)
-            avg_breadth = (sum(breadths) / len(breadths)) if breadths else 0.0
-            notes = []
-            if not xs_ics:
-                notes.append(f"cross-sectional IC suppressed: no grid date reached "
-                             f"{xs_min_breadth} names (max breadth "
-                             f"{max(breadths, default=0)})")
-            if len(by_date) < _TRUST_MIN_PERIODS or avg_breadth < _TRUST_MIN_BREADTH:
-                notes.append(f"EXPLORATORY: below trust floor (>= ~{_TRUST_MIN_BREADTH} "
-                             f"names/date and >= ~{_TRUST_MIN_PERIODS} periods); "
-                             f"treat IC as directional, not significant")
-            reports.append(SignalReport(
-                signal=src.name, horizon=h,
-                ts_ic=aggregate_ic(ts_ics), xs_ic=aggregate_ic(xs_ics),
-                spread=spread, n_obs=len(rows), breadth=avg_breadth, notes=notes))
+                spread = quantile_spread([(sv, fr) for _, _, sv, fr in rows], n_buckets)
+                avg_breadth = (sum(breadths) / len(breadths)) if breadths else 0.0
+                notes = []
+                if not xs_ics:
+                    notes.append(f"cross-sectional IC suppressed: no grid date reached "
+                                 f"{xs_min_breadth} names (max breadth "
+                                 f"{max(breadths, default=0)})")
+                if len(by_date) < _TRUST_MIN_PERIODS or avg_breadth < _TRUST_MIN_BREADTH:
+                    notes.append(f"EXPLORATORY: below trust floor (>= ~{_TRUST_MIN_BREADTH} "
+                                 f"names/date and >= ~{_TRUST_MIN_PERIODS} periods); "
+                                 f"treat IC as directional, not significant")
+                reports.append(SignalReport(
+                    signal=signal, horizon=h,
+                    ts_ic=aggregate_ic(ts_ics), xs_ic=aggregate_ic(xs_ics),
+                    spread=spread, n_obs=len(rows), breadth=avg_breadth, notes=notes))
 
     caveats = [
         "Universe is currently-listed names (survivorship bias): realized spreads "

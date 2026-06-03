@@ -55,3 +55,12 @@ def test_fetch_companyfacts_returns_none_for_empty_payload(tmp_path):
     assert result is None
     assert client.calls == 1
     assert not list(tmp_path.iterdir())   # nothing written to disk
+
+
+def test_fetch_companyfacts_returns_none_for_ifrs_only_filer(tmp_path):
+    """IFRS 20-F filers have facts but no us-gaap key; must return None and not cache."""
+    client = _FakeClient({"cik": 1, "facts": {"ifrs-full": {"Revenue": {}}}})
+    result = asyncio.run(fetch_companyfacts(
+        "0000000001", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert result is None
+    assert not list(tmp_path.iterdir())   # not cached

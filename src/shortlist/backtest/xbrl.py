@@ -49,7 +49,7 @@ async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
     resp = await client.get(_FACTS_URL.format(cik=cik))
     resp.raise_for_status()
     raw = resp.json()
-    if not raw or "facts" not in raw:
+    if not raw or "us-gaap" not in raw.get("facts", {}):
         return None
     try:
         Path(cache_dir).mkdir(parents=True, exist_ok=True)
