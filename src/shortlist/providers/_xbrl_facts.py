@@ -209,11 +209,14 @@ def _roic_series(p: XbrlPanel) -> list[float]:
         eq = p.total_equity.get(e)
         dc = p.total_debt.get(e)
         op = p.operating_income[e]
-        if eq is None or dc is None or (eq + dc) == 0:
+        # Skip non-positive invested capital: negative equity (e.g. buyback-heavy
+        # compounders) would otherwise yield a backwards negative ROIC.
+        if eq is None or dc is None or (eq + dc) <= 0:
             continue
         ptx = p.pretax_income.get(e)
         tx = p.income_tax.get(e)
         rate = (tx / ptx) if (ptx and ptx > 0 and tx is not None) else _STATUTORY_TAX
+        # clamp also catches tax-benefit years (negative tx -> negative rate)
         if not (0.0 <= rate <= 0.5):
             rate = _STATUTORY_TAX
         out.append(op * (1.0 - rate) / (eq + dc))

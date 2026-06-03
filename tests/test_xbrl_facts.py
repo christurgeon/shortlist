@@ -219,3 +219,19 @@ def test_panel_to_metrics_none_safe_on_empty_panel():
                          price_at=lambda d: None)
     assert m.net_margin is None and m.fcf_yield is None and m.pe_ttm is None
     assert m.revenue_cagr is None and m.roic is None
+
+def test_panel_to_metrics_roic_none_for_negative_invested_capital():
+    # Buyback-driven negative equity: eq + dc < 0 must yield roic None, not a
+    # backwards (negative) ROIC for a profitable firm.
+    p = XbrlPanel(
+        operating_income={"2022-12-31": 200},
+        total_equity={"2022-12-31": -500}, total_debt={"2022-12-31": 300},
+        pretax_income={"2022-12-31": 180}, income_tax={"2022-12-31": 36})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
+    assert m.roic is None and m.roic_5y_avg is None
+
+def test_panel_to_metrics_pe_median_none_with_single_pe_point():
+    p = XbrlPanel(revenue={"2022-12-31": 1000}, diluted_eps={"2022-12-31": 4.0})
+    m = panel_to_metrics(p, ticker="X", sic="3711", price=80.0, price_at=lambda d: 80.0)
+    assert m.pe_ttm == 80.0 / 4.0      # pe_ttm computes from latest EPS
+    assert m.pe_median_5y is None      # median_pe needs >= 2 points
