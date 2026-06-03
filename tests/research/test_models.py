@@ -67,3 +67,23 @@ def test_default_valid_signals_covers_axes_gates_flags():
     assert "flag:crowded_short" in s and "flag:activist_13d" in s
     assert "flag:planned_insider_sale_144" in s
     assert "gate:negativeFCF" not in s          # typos do not resolve
+
+
+def test_assessment_synthesis_property_returns_takeaway():
+    from shortlist.research.models import QualitativeAssessment, Thesis
+    a = QualitativeAssessment(
+        ticker="X", as_of="t", filing_accession="a", filing_date="d", model="m",
+        thesis=Thesis(takeaway="One-line take."))
+    assert a.synthesis == "One-line take."
+
+
+def test_assessment_asdict_excludes_property_includes_thesis():
+    import dataclasses
+    from shortlist.research.models import QualitativeAssessment, Thesis
+    a = QualitativeAssessment(
+        ticker="X", as_of="t", filing_accession="a", filing_date="d", model="m",
+        thesis=Thesis(takeaway="t"))
+    d = dataclasses.asdict(a)
+    assert "synthesis" not in d            # property is NOT serialized (the blocker)
+    assert d["thesis"]["takeaway"] == "t"  # nested dataclass IS serialized
+    assert d["reconciliation"] == [] and d["silent_count"] == 0

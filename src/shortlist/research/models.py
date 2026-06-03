@@ -101,9 +101,18 @@ class QualitativeAssessment:
     risks: list[Finding] = field(default_factory=list)
     red_flags: list[Finding] = field(default_factory=list)
     management_capital_allocation: str = ""
-    synthesis: str = ""
+    reconciliation: list[Conflict] = field(default_factory=list)
+    thesis: Thesis = field(default_factory=Thesis)
     unverified_count: int = 0
+    silent_count: int = 0
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def synthesis(self) -> str:
+        """Back-compat: the old flat synthesis is now the thesis takeaway.
+        A read-only property — NOT a dataclass field, so dataclasses.asdict()
+        does not serialize it (see report.write for the on-disk injection)."""
+        return self.thesis.takeaway
 
 
 def _findings(payload: dict, key: str) -> list[Finding]:
