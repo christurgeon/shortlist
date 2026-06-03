@@ -44,7 +44,7 @@ async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
     try:
         if cp.exists():
             return json.loads(cp.read_text())
-    except Exception:
+    except (ValueError, OSError):
         pass  # corrupt cache -> refetch
     resp = await client.get(_FACTS_URL.format(cik=cik))
     resp.raise_for_status()
@@ -65,7 +65,7 @@ async def fetch_cik_index(client, *, cache_dir: str, month: str) -> dict[str, st
     try:
         if cp.exists():
             return build_cik_index(json.loads(cp.read_text()))
-    except Exception:
+    except (ValueError, OSError):
         pass
     resp = await client.get(_TICKERS_URL)
     resp.raise_for_status()

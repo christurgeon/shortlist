@@ -23,7 +23,6 @@ def test_build_cik_index_skips_malformed_rows():
     assert idx["MSFT"] == "0000789019"
 
 
-# tests/test_xbrl_fetch.py  (append)
 import asyncio
 from shortlist.backtest.xbrl import fetch_companyfacts
 
@@ -48,3 +47,11 @@ def test_fetch_companyfacts_caches_to_disk(tmp_path):
     assert out1 == payload and out2 == payload
     assert client.calls == 1   # second call served from disk
     assert (tmp_path / "CIK0000320193-2026-06.json").exists()
+
+def test_fetch_companyfacts_returns_none_for_empty_payload(tmp_path):
+    client = _FakeClient({"cik": 12345})  # no "facts" key
+    result = asyncio.run(fetch_companyfacts(
+        "0000012345", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert result is None
+    assert client.calls == 1
+    assert not list(tmp_path.iterdir())   # nothing written to disk
