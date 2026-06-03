@@ -125,6 +125,47 @@ def _findings(payload: dict, key: str) -> list[Finding]:
     return out
 
 
+def _thesis(payload: dict, max_falsifiers: int = 3) -> "Thesis":
+    """Build a Thesis from payload['thesis']. Presence is enforced HERE (must be a
+    dict) — NOT via _REQUIRED — mirroring the moat dict-check. Sub-fields default."""
+    raw = payload.get("thesis")
+    if not isinstance(raw, dict):
+        raise ValueError("thesis must be an object")
+    cmm = [str(x) for x in (raw.get("what_would_change_my_mind") or [])][:max_falsifiers]
+    return Thesis(
+        bull_case=str(raw.get("bull_case", "")),
+        bear_case=str(raw.get("bear_case", "")),
+        what_would_change_my_mind=cmm,
+        takeaway=str(raw.get("takeaway", "")),
+    )
+
+
+def _reconciliation(payload: dict, *, valid_signals: set[str],
+                    max_conflicts: int = 3) -> list[Conflict]:
+    """Build the reconciliation list, best-effort. Fully optional: a missing key →
+    []. A malformed/unresolved-signal conflict is DROPPED (never raises, unlike
+    _findings). Bad verdict is coerced to 'silent'. Truncated to max_conflicts."""
+    out: list[Conflict] = []
+    for item in (payload.get("reconciliation") or []):
+        if not isinstance(item, dict):
+            continue
+        signal = str(item.get("signal", ""))
+        if signal not in valid_signals:
+            continue
+        verdict = item.get("verdict")
+        if verdict not in VERDICTS:
+            verdict = "silent"
+        out.append(Conflict(
+            signal=signal,
+            tension=str(item.get("tension", "")),
+            filing_says=str(item.get("filing_says", "")),
+            verdict=verdict,
+        ))
+        if len(out) >= max_conflicts:
+            break
+    return out
+
+
 def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession: str,
                             filing_date: str, model: str, cost_usd: Optional[float],
                             stop_reason: Optional[str]) -> QualitativeAssessment:

@@ -87,3 +87,47 @@ def test_assessment_asdict_excludes_property_includes_thesis():
     assert "synthesis" not in d            # property is NOT serialized (the blocker)
     assert d["thesis"]["takeaway"] == "t"  # nested dataclass IS serialized
     assert d["reconciliation"] == [] and d["silent_count"] == 0
+
+
+def test_build_thesis_defaults_and_caps():
+    from shortlist.research.models import _thesis, Thesis
+    t = _thesis({"thesis": {"bull_case": "b", "what_would_change_my_mind":
+                            ["a", "b", "c", "d"]}}, max_falsifiers=3)
+    assert isinstance(t, Thesis)
+    assert t.bull_case == "b" and t.bear_case == "" and t.takeaway == ""
+    assert t.what_would_change_my_mind == ["a", "b", "c"]   # capped to 3
+
+
+def test_build_thesis_requires_dict():
+    import pytest
+    from shortlist.research.models import _thesis
+    with pytest.raises(ValueError):
+        _thesis({"thesis": "not-a-dict"})
+    with pytest.raises(ValueError):
+        _thesis({})                          # missing entirely → not a dict → raise
+
+
+def test_build_reconciliation_filters_and_caps():
+    from shortlist.research.models import _reconciliation, default_valid_signals
+    vs = default_valid_signals()
+    payload = {"reconciliation": [
+        {"signal": "value", "tension": "cheap vs declining",
+         "filing_says": "q", "verdict": "contradicts"},
+        {"signal": "bogus", "tension": "x", "verdict": "silent"},      # unresolved → drop
+        {"signal": "growth", "tension": "y", "verdict": "wat"},        # bad verdict → coerce silent
+        "not-a-dict",                                                   # malformed → drop
+        {"signal": "flag:activist_13d", "tension": "z", "verdict": "confirms",
+         "filing_says": "q2"},
+    ]}
+    out = _reconciliation(payload, valid_signals=vs, max_conflicts=10)
+    sigs = [c.signal for c in out]
+    assert sigs == ["value", "growth", "flag:activist_13d"]
+    assert out[1].verdict == "silent"        # coerced
+    # cap
+    capped = _reconciliation(payload, valid_signals=vs, max_conflicts=1)
+    assert len(capped) == 1
+
+
+def test_build_reconciliation_missing_key_is_empty():
+    from shortlist.research.models import _reconciliation, default_valid_signals
+    assert _reconciliation({}, valid_signals=default_valid_signals()) == []
