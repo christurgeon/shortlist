@@ -87,7 +87,7 @@ def gross_margin_stability(margins: list[float]) -> Optional[float]:
 
 
 def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
-                most_recent_first: bool = True) -> tuple[int, int]:
+                most_recent_first: bool = True) -> tuple[Optional[int], Optional[int]]:
     """Core-6 Piotroski-inspired fundamental-quality score (asset-free, equity-free).
 
     Each arg is a financial series; index alignment is positional (newest-first by
@@ -107,7 +107,8 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
 
     Returns RAW (won, evaluated) — no min-legs floor here, so this leaf needs no
     config (the floor is applied by consumers in scoring/backtest). A 1-year input
-    yields (<=3, <=3) from the level legs. Pure; no I/O."""
+    yields (<=3, <=3) from the level legs; when NO leg is evaluable (all series empty)
+    it returns (None, None) — the model's 'no data' sentinel. Pure; no I/O."""
     def _series(s):
         s = list(s or [])
         return s if most_recent_first else list(reversed(s))
@@ -158,4 +159,4 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
         if (gp_t / rev_t) > (gp_p / rev_p):
             won += 1
 
-    return won, legs
+    return (won, legs) if legs else (None, None)

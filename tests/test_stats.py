@@ -173,3 +173,8 @@ def test_piotroski_negative_revenue_abstains_delta_legs():
     won, legs = piotroski_f(**d)
     assert legs == 3                  # only F1,F2,F3 (levels) evaluate
     assert won == 3
+
+def test_piotroski_no_legs_returns_none_sentinel():
+    # all series empty -> nothing evaluable -> (None, None), not (0, 0)
+    assert piotroski_f(net_income=[], ocf=[], total_debt=[],
+                       gross_profit=[], revenue=[]) == (None, None)
