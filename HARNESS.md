@@ -232,8 +232,10 @@ XBRL and is absent from this source.
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
 ```
 
-Results from this source are **EXPLORATORY** (below the trust floor on first runs);
-treat them as directional signal diagnostics, not fitted predictions.
+On a largecap universe, 3m/6m horizons (≥32 periods) clear the engine's trust gates
+of ≥24 periods and ≥30 names/date; 12m is flagged **EXPLORATORY** at 16 periods.
+All results are early, survivorship-biased directional evidence — treat them as
+signal diagnostics, not fitted predictions.
 
 ### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
 

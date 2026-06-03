@@ -6,9 +6,12 @@ Every series is a {fiscal_end_iso: value} dict so cross-metric math aligns by
 fiscal end, never by list position. Values pass through verbatim — XBRL USD facts
 are absolute dollars, like FMP/Finnhub*1e6.
 
-POINT-IN-TIME RULE: a fact is usable at `as_of` only if filed <= as_of; within a
-concept, for each distinct fiscal-period `end` the value from the LATEST such
-filing wins (restatement-aware, never look-ahead).
+POINT-IN-TIME RULE: a fact is usable at `as_of` only if filed <= as_of AND
+end <= as_of; within a concept, for each distinct fiscal-period `end` the value
+from the LATEST such filing wins (restatement-aware, never look-ahead). Real SEC
+data always satisfies end <= filed (you cannot file a report for a period that has
+not ended), so bounding both by as_of is belt-and-suspenders against malformed or
+mis-tagged rows where a future period end slips past a past filed date.
 
 ALIASES ARE PRIORITY, NOT A MERGE: `concepts` is a fallback list in priority
 order; each fiscal end is filled by the highest-priority concept that reports it
@@ -51,17 +54,20 @@ def annual_series(facts: dict, concepts: list[str], as_of: date, *,
                     continue
                 try:
                     filed_d = _d(filed)
-                    _d(end)                      # validate the key parses (skip if not)
+                    end_d = _d(end)
                     if not instant:
                         start = f.get("start")
                         if start is None:
                             continue
-                        span = (_d(end) - _d(start)).days
+                        span = (end_d - _d(start)).days
                         if not (_MIN_PERIOD_DAYS <= span <= _MAX_PERIOD_DAYS):
                             continue
                 except ValueError:
                     continue   # malformed ISO date in this SEC fact -> skip the row
-                if filed_d > as_of:
+                # point-in-time: exclude both future filings AND future periods. The
+                # latter guards against a malformed row whose period `end` post-dates
+                # as_of despite a past `filed` (real SEC data satisfies end <= filed).
+                if filed_d > as_of or end_d > as_of:
                     continue
                 prev = chosen.get(end)
                 # strict `>`: a same-date tie keeps the first row seen (SEC array order)

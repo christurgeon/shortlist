@@ -63,6 +63,15 @@ def test_annual_series_filed_equal_as_of_is_inclusive():
     cf = _us("Revenues", [_row("2021-01-01", "2021-12-31", 100, "2022-02-01")])
     assert annual_series(cf, ["Revenues"], as_of=date(2022, 2, 1)) == {"2021-12-31": 100.0}
 
+def test_annual_series_excludes_future_period_end_even_if_filed_in_past():
+    # Pathological/malformed row: period end is AFTER as_of but filed before it.
+    # Must be excluded — a backtest at as_of can't know a period that hasn't ended.
+    cf = _us("Revenues", [
+        _row("2023-01-01", "2023-12-31", 200, "2023-02-01"),   # future end, past filed
+        _row("2021-01-01", "2021-12-31", 100, "2022-02-01"),   # legit
+    ])
+    assert annual_series(cf, ["Revenues"], as_of=date(2023, 6, 1)) == {"2021-12-31": 100.0}
+
 
 from shortlist.providers._xbrl_facts import align_fcf, sum_aligned, ratio_latest, desc, latest
 

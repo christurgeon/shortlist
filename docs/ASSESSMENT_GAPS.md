@@ -203,8 +203,10 @@ touches.
 > `scoring.*_score` functions. This activates fundamental-axis IC **today**,
 > independent of the 24-date snapshot clock. The extractor is `providers/_xbrl_facts.py`
 > (pure leaf) + `backtest/xbrl.py` (keyless companyfacts fetch, `.cache/sec_xbrl`).
-> **First results** (largecap, 79 names, excess-of-SPY, full history — EXPLORATORY,
-> below the trust floor): **growth** cross-sectional IC is positive and rises with
+> **First results** (largecap, 79 names, excess-of-SPY; 3m/6m horizons clear the
+> engine's trust gates of ≥24 periods and ≥30 names/date, 12m is flagged EXPLORATORY
+> at 16 periods; all are early, survivorship-biased directional evidence — not
+> significant): **growth** cross-sectional IC is positive and rises with
 > horizon (+0.035 / +0.052 / +0.072 at 1q/2q/4q; 12m quantile spread +0.097);
 > **value** time-series IC is positive (+0.075 / +0.094 / +0.107); **quality** TS IC
 > is negative (~ -0.06 to -0.11); **moat** is weak/negative. Unfitted priors, now
