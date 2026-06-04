@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 from shortlist.scout.daily import _one_line_brief_from_file
 

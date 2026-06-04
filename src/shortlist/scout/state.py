@@ -25,7 +25,7 @@ class ScoutState:
                 return json.loads(self.path.read_text())
             except json.JSONDecodeError as e:
                 # A corrupt ledger must not crash the daily run; start fresh.
-                warnings.warn(f"ScoutState: corrupt {self.path}, starting fresh: {e}")
+                warnings.warn(f"ScoutState: corrupt {self.path}, starting fresh: {e}", stacklevel=2)
         # Deep-copy so nested lists/dicts are not shared across ScoutState instances.
         return copy.deepcopy(_EMPTY)
 

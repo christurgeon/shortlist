@@ -61,7 +61,7 @@ def test_build_fit_rows_uses_non_overlapping_grid():
                           start=date(2019, 9, 1), end=date(2020, 9, 1),
                           horizon=3, axes=AXES)
     period_ids = sorted({p for p, _, _ in rows})
-    assert all((b - a).days >= 80 for a, b in zip(period_ids, period_ids[1:]))
+    assert all((b - a).days >= 80 for a, b in zip(period_ids, period_ids[1:], strict=False))
 
 
 def test_build_fit_rows_drops_when_no_forward_return():

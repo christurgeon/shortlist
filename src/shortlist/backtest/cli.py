@@ -18,7 +18,7 @@ from .prices import _UA, _add_months, fetch_history
 from .report import render_table, report_to_dict
 from .signals import MomentumSignalSource, XbrlSignalSource
 from .universe import load_universe
-from .xbrl import fetch_cik_index, fetch_companyfacts, cik_for
+from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

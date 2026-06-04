@@ -111,7 +111,7 @@ def extract_financials(
     fin.operating_cash_flow = _series(_row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), fy)
     capex = _series(_row_by_standard_concept(cashflow_df, "CapitalExpenses"), fy)
     if fin.operating_cash_flow and capex and len(fin.operating_cash_flow) == len(capex):
-        fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex)]
+        fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex, strict=True)]
 
     inc_fy = _fy_columns(income_df)
     fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)

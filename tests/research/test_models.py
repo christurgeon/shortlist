@@ -1,7 +1,7 @@
 import pytest
 
 from shortlist.research.models import (
-    FilingText, Finding, Moat, QualitativeAssessment, assessment_from_payload,
+    FilingText, Finding, Moat, assessment_from_payload,
 )
 
 PAYLOAD = {

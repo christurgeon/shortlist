@@ -1,4 +1,3 @@
-from datetime import date
 from shortlist.scout.models import Emission
 from shortlist.scout.funnel import aggregate, prefilter
 

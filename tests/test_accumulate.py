@@ -5,7 +5,7 @@ import pytest
 
 from shortlist.data import accumulate as acc
 from shortlist.data.accumulate import (
-    accumulate, build_arg_parser, is_captured, load_watchlist, store_status,
+    accumulate, build_arg_parser, load_watchlist, store_status,
 )
 from shortlist.data.models import Profile, TickerSnapshot
 from shortlist.data.store import captured_days, load, save

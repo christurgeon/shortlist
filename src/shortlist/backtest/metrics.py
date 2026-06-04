@@ -31,7 +31,7 @@ def _pearson(a: list[float], b: list[float]) -> Optional[float]:
     if n < 3:
         return None
     ma, mb = mean(a), mean(b)
-    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b, strict=True))
     va = sum((x - ma) ** 2 for x in a)
     vb = sum((y - mb) ** 2 for y in b)
     if va == 0 or vb == 0:
@@ -43,10 +43,10 @@ def spearman_ic(signal: list[Optional[float]],
                 fwd: list[Optional[float]]) -> Optional[float]:
     """Spearman rank correlation between signal and forward return.
     Drops index-aligned pairs where either is None. None if < 3 usable pairs."""
-    pairs = [(s, f) for s, f in zip(signal, fwd) if s is not None and f is not None]
+    pairs = [(s, f) for s, f in zip(signal, fwd, strict=True) if s is not None and f is not None]
     if len(pairs) < 3:
         return None
-    s_vals, f_vals = zip(*pairs)
+    s_vals, f_vals = zip(*pairs, strict=True)
     ic = _pearson(rank(list(s_vals)), rank(list(f_vals)))
     return round(ic, 10) if ic is not None else None
 
