@@ -6,8 +6,9 @@ daily report to land somewhere a human will actually read it.
 report — see §3 step 8 and §6) and the repo `CLAUDE.md` (the secrets / redaction house rules
 this extends).
 
-> **Status:** §1–§2 describe **shipped** behaviour. §3 onward is a **plan** for hardening the
-> delivery layer — not yet built. Approved design record, 2026-06-03.
+> **Status:** §1–§3 describe **shipped** behaviour. §3 was a plan (2026-06-03); it is now
+> **implemented** (2026-06). See spec `docs/superpowers/specs/2026-06-04-scout-reporting-notifications-design.md`
+> and plan `docs/superpowers/plans/2026-06-04-scout-reporting-notifications.md`.
 
 ---
 
@@ -52,11 +53,12 @@ The orchestrator, not the transport, owns the policy:
   *not* retried), **exit 2** so `OnFailure` surfaces it.
 - **Delivered** → still write the artifact (trend debugging), exit 0.
 
-### 2.3 The always-on artifact (`scout/<session>.{txt,json}`)
+### 2.3 The always-on artifact (`scout/<date>/`)
 
-`_write_manifest` writes the rendered message (`.txt`) and the full `RunManifest` (`.json` —
-signal availability, funnel counts, budget drops, research outcome) under `artifact_dir`
-(default `scout/`, gitignored) **on every run, regardless of Telegram outcome**. This is the
+`_write_manifest` writes the rendered message (`report.txt`), the styled HTML deep-dive
+(`report.html`), the PNG dashboard glance (`dashboard.png`), and the full `RunManifest`
+(`manifest.json` — signal availability, funnel counts, budget drops, research outcome) under
+`scout/<date>/` (gitignored) **on every run, regardless of Telegram outcome**. This is the
 recoverable source of truth and the input to any future trend analysis.
 
 ### 2.4 The gaps (why §3 exists)
@@ -74,11 +76,15 @@ recoverable source of truth and the input to any future trend analysis.
 
 ---
 
-## 3. Plan — a hardened Telegram client
+## 3. Hardening — IMPLEMENTED (2026-06)
 
-Keep the `bool`-returning, env-driven, injectable-client shape (it's already right). Add four
-things, each independently testable against recorded fixtures (no live calls in CI), matching
-the existing provider/source test pattern.
+The transport is `scout/notify.py:TelegramNotifier` + `deliver()`. Delivery is a PNG chart
+(sendPhoto) + HTML deep-dive document (sendDocument), with a chunked plain-text fallback when
+Telegram is unconfigured or failing. Spec:
+`docs/superpowers/specs/2026-06-04-scout-reporting-notifications-design.md`; plan:
+`docs/superpowers/plans/2026-06-04-scout-reporting-notifications.md`.
+
+The original plan enumerated four additions; all are shipped. Summary below for reference:
 
 ### 3.1 Chunking
 
@@ -179,7 +185,7 @@ the `Notifier` seam + `StdoutNotifier`, the `notify:` config block, and tests.
 - **Enable Telegram:** add `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` to the repo-root `.env`.
   The scout auto-detects them; no redeploy needed. The file artifact is still written.
 - **Where the report goes today (no Telegram configured):** the systemd journal and
-  `scout/<session>.{txt,json}`. Journal command depends on how the unit was installed —
+  `scout/<date>/{report.txt,report.html,dashboard.png,manifest.json}`. Journal command depends on how the unit was installed —
   `journalctl -u shortlist-scout.service` for the shipped **system** unit
   (`deploy/shortlist-scout.service`, `User=oracle`), or `journalctl --user -u
   shortlist-scout.service` if installed as a **user** unit.

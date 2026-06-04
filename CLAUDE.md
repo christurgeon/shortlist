@@ -55,7 +55,17 @@ validation, and history, not new scoring:
   candidate tickers from free signal feeds, deep-screens them via
   `screen.run_harness`, runs the Claude research layer on the leaders, and ships a
   daily Telegram report. Discovery + delivery only; reuses the existing scorer. Full
-  design in `docs/AUTONOMOUS_SCOUT.md`.
+  design in `docs/AUTONOMOUS_SCOUT.md`; report delivery semantics + the Telegram-client
+  hardening plan in `docs/NOTIFICATIONS.md`.
+  The `src/shortlist/scout/report/` package is a renderer-agnostic view-model → section
+  registry → HTML/text renderers, plus a Pillow PNG "glance" chart. Adding a report section
+  = one `Section` class + one `SECTIONS` registry entry. **Pillow is lazy-imported
+  only in `report/png.py` — never import it from `viewmodel`/`sections`/`html`/`theme`
+  (keeps the core screener + demo path Pillow-free).** `uv sync --extra scout` installs
+  Pillow for chart rendering. Daily artifacts are written to `scout/<date>/`
+  (dashboard.png, report.html, report.txt, manifest.json) and delivered to Telegram via
+  sendPhoto (chart) + sendDocument (HTML deep-dive), with a chunked text fallback when
+  Telegram is unconfigured or failing.
 
 ## Dev workflow (uv)
 
