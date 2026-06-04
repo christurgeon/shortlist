@@ -22,7 +22,7 @@ def test_research_phase_times_out_and_returns_note():
         return []       # pragma: no cover
 
     t0 = time.monotonic()
-    briefs, researched, note = _research_phase(
+    briefs, assessments, researched, note = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=0.05),  # 50 ms budget
@@ -52,7 +52,7 @@ def test_research_phase_completes_within_budget():
     def fast_enrich(cards, config, *, top_n, refresh):
         return [_FakeResult()]
 
-    briefs, researched, note = _research_phase(
+    briefs, assessments, researched, note = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),  # generous budget
@@ -73,7 +73,7 @@ def test_research_phase_kill_switch_env(monkeypatch):
         return []
 
     monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
-    briefs, researched, note = _research_phase(
+    briefs, assessments, researched, note = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),
@@ -92,7 +92,7 @@ def test_research_phase_unavailable():
         called.append(1)
         return []
 
-    briefs, researched, note = _research_phase(
+    briefs, assessments, researched, note = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),

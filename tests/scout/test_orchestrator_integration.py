@@ -20,6 +20,15 @@ from shortlist.scout.models import Emission
 # Stub signal classes
 # ---------------------------------------------------------------------------
 
+class _FakeNotifier:
+    def __init__(self, configured=True, ok=True):
+        self._c, self._ok = configured, ok
+    def configured(self): return self._c
+    def send_photo(self, *a): return self._ok
+    def send_document(self, *a): return self._ok
+    def send_message(self, *a): return self._ok
+
+
 class StubDiscoverySignal:
     """Minimal discovery signal that emits a fixed set of tickers."""
     name = "stub_discovery"
@@ -108,9 +117,10 @@ def test_run_calls_booster_scan_for_with_discovered_tickers(tmp_path, monkeypatc
 
     monkeypatch.setattr(screen_mod, "run_harness", fake_run_harness)
 
-    # Monkeypatch send_telegram so no real Telegram call is made
+    # Monkeypatch TelegramNotifier so no real Telegram call is made
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=False))
 
     # Build minimal config with state_path under tmp_path
     state_file = tmp_path / "scout_state.json"
