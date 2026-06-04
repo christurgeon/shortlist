@@ -100,13 +100,12 @@ into the canvas.
 
 | File | Responsibility |
 |------|----------------|
-| `report/__init__.py` | Facade: `build_report(cards, manifest, briefs, assessments, config) -> ReportArtifacts` (`png: bytes\|None`, `html: str`, `text: str`). Re-exports `render_message` for back-compat. |
+| `report/__init__.py` | Facade: `build_report(cards, manifest, *, assessments) -> ReportArtifacts` (`png: bytes\|None`, `html: str`, `text: str`). Re-exports `render_message`, which routes its `briefs` through a synthesized one-line assessment so the single research section renders them. |
 | `report/viewmodel.py` | Build `ReportVM` from the three tiers + manifest; owns all None/abstention/sort logic. Pure, dep-free. |
 | `report/sections.py` | Ordered `SECTIONS` registry + each `Section` (HTML + text methods). |
 | `report/html.py` | `HtmlBuilder` (tag helpers + the single `esc()` choke-point) + embedded CSS theme + document assembly. Zero deps. |
 | `report/png.py` | `render_glance(vm, theme) -> bytes` via Pillow. Lazy-imports Pillow; the **only** module that does. |
 | `report/theme.py` | Palette constants + sub-score order/labels + `score_to_rgb(v: float\|None) -> (r,g,b)` colormap. One source of truth for HTML *and* PNG. Dep-free. |
-| `report/fonts/` | Bundled `DejaVuSans.ttf` + `DejaVuSans-Bold.ttf` (permissive license), loaded via `importlib.resources`. |
 | `notify.py` | `Notifier` transport seam (expand from current `send_telegram`). |
 
 `report.py` (current module) is replaced by the `report/` package; its public name
@@ -142,9 +141,11 @@ class ReportVM:
 ```
 
 `MetricsVM` carries the tier-2 numbers as typed values (e.g. `pe_ttm: float|None`,
-`pe_median_5y: float|None`, `target_upside: float|None` derived from
-`target_median`/`price`). `AssessmentVM` carries bull/bear/cmm/risks/red_flags as
-already-extracted strings/lists. The view-model resolves the **masked-vs-missing**
+`pe_median_5y: float|None`, `target_upside: float|None` sourced from the existing
+`StockMetrics.upside_to_target()` method — DRY, not re-derived). `AssessmentVM` carries
+`takeaway` (one-line TL;DR) plus bull/bear/cmm/risks/red_flags as already-extracted
+strings/lists. The `takeaway` is what the GLANCE text shows, and is the slot the
+back-compat `briefs` synthesize into. The view-model resolves the **masked-vs-missing**
 distinction here so no renderer re-derives it (matches the scorer's abstention model:
 a masked leg renders gray with a `·`, a missing-but-applicable leg renders distinctly).
 
@@ -164,10 +165,13 @@ a masked leg renders gray with a `·`, a missing-but-applicable leg renders dist
 
 Ports the mockup's `dashboard()` to Pillow reading the view-model. Concrete rules:
 
-- **Fonts:** bundle DejaVuSans/-Bold under `report/fonts/`, load via
-  `importlib.resources.files(...)` + `ImageFont.truetype(path, size)`. Never
-  `ImageFont.load_default()` (tiny/unsized pre-Pillow-10, host-version dependent).
-  Never scan system fonts (non-determinism).
+- **Fonts:** load system DejaVuSans/-Bold via `ImageFont.truetype(path, size)` from the
+  known Ubuntu path, falling back to `ImageFont.load_default(size=)` (Pillow ≥10) then
+  `load_default()`. (The review's "bundle a TTF" recommendation was relaxed: the target
+  host is the Ubuntu VPS where DejaVu is present, and tests assert PNG *validity*, not
+  pixels, so glyph determinism isn't required. No binary font is vendored. If cross-host
+  determinism is later needed, vendor the TTF under `report/fonts/` and load via
+  `importlib.resources` — deferred.)
 - **Crispness:** choose final dimensions in **pixels** (e.g. 760px wide). Supersample
   at 2× then `img.resize(target, Image.LANCZOS)`. (No matplotlib `dpi` concept.)
 - **Text measurement:** `draw.textbbox((0,0), s, font)` (Pillow ≥8). `textsize` is
@@ -261,7 +265,7 @@ secrets convention — never in config.
   `report/png.py` (same pattern as research/edgartools). ~3MB vs matplotlib's ~60MB;
   no numpy.
 - HTML, view-model, sections, theme: **zero new deps**.
-- Bundled fonts add ~1.5MB to the package data.
+- No bundled fonts (system DejaVu + `load_default` fallback; see §7).
 
 ## 13. Graceful degradation
 

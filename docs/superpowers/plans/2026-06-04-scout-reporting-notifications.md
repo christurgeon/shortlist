@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-04-scout-reporting-notifications-design.md`
 
+> **This plan incorporates a 3-reviewer pass.** Back-compat hazards are now explicit
+> steps (not asides): the `_research_phase` tuple widening enumerates **all six** return
+> sites; `test_fixes.py`/`test_research_budget.py`/`test_orchestrator_integration.py` get
+> concrete edits; demo never imports Pillow; the GLANCE brief routes through one section
+> (no `briefs`-on-view-model wart).
+
 ---
 
 ## File structure
@@ -29,14 +35,14 @@ Create the `report/` package (replaces the single `report.py` module; the facade
 | `pyproject.toml` | (modify) add `scout` extra with Pillow. |
 | `config.yaml` | (modify) add `scout.report` block. |
 
-> **Migration note:** `src/shortlist/scout/report.py` becomes `src/shortlist/scout/report/__init__.py`. Move the existing `render_message`/`_n` into the package facade in Task 5; until then leave the old file in place so the suite stays green.
+> **Migration note:** `src/shortlist/scout/report.py` becomes `src/shortlist/scout/report/__init__.py`. It is deleted in Task 5; until then leave the old file in place so the suite stays green. Do NOT import from `report.py` inside the package.
 
 ---
 
 ## Task 1: Theme (palette + colormap)
 
 **Files:**
-- Create: `src/shortlist/scout/report/__init__.py` (empty for now — makes it a package)
+- Create: `src/shortlist/scout/report/__init__.py` (empty marker for now)
 - Create: `src/shortlist/scout/report/theme.py`
 - Test: `tests/scout/test_report_theme.py`
 
@@ -62,6 +68,7 @@ def test_colormap_endpoints_and_midpoint():
     assert score_to_rgb(100)[1] > score_to_rgb(100)[0]  # green: G dominates
     mid = score_to_rgb(50)
     assert mid[0] > 150 and mid[1] > 150                 # yellow: high R and G
+    assert mid[2] < mid[0] and mid[2] < mid[1]           # ...and low B (not gray/white)
 
 
 def test_colormap_none_is_gray_and_clamps():
@@ -142,12 +149,18 @@ git commit -m "feat(scout-report): theme palette + dep-free RdYlGn colormap"
 - Create: `src/shortlist/scout/report/viewmodel.py`
 - Test: `tests/scout/test_report_viewmodel.py`
 
+> **Design:** `build_view_model` takes only `assessments: dict[str, dict]` (the parsed
+> research JSON records). No `briefs` and no `config` parameter (both were dead weight —
+> the GLANCE brief is routed through a synthesized assessment in the facade, Task 5).
+> `target_upside` reuses the audited `StockMetrics.upside_to_target()` method (DRY;
+> note: it is a method, call with `()`, and it already guards `price` falsy/None → None).
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
 # tests/scout/test_report_viewmodel.py
 from datetime import date
-from shortlist.models import ScoreCard, StockMetrics, Coverage
+from shortlist.models import ScoreCard, StockMetrics
 from shortlist.scout.models import RunManifest, SignalStatus
 from shortlist.scout.report.viewmodel import build_view_model
 
@@ -167,43 +180,44 @@ def _manifest():
 
 
 def test_leaders_sorted_by_scored_then_composite():
-    cards = [_card("LOW", 40.0), _card("HIGH", 90.0), _card("NS", 99.0, scored=False)]
-    vm = build_view_model(cards, _manifest(), briefs={}, assessments={}, config={})
-    assert [l.ticker for l in vm.leaders] == ["HIGH", "LOW", "NS"]  # scored desc, then composite
+    cards = [_card("LOW", 40.0), _card("HIGH", 90.0),
+             _card("NS1", 99.0, scored=False), _card("NS2", 50.0, scored=False)]
+    vm = build_view_model(cards, _manifest(), assessments={})
+    # scored desc by composite, then not-scored group desc by composite
+    assert [l.ticker for l in vm.leaders] == ["HIGH", "LOW", "NS1", "NS2"]
 
 
-def test_target_upside_derived_from_metrics():
+def test_target_upside_uses_metrics_property():
     m = StockMetrics(ticker="AAPL", price=100.0, target_median=137.0)
-    vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(),
-                          briefs={}, assessments={}, config={})
+    vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(), assessments={})
     assert abs(vm.leaders[0].metrics.target_upside - 0.37) < 1e-6
 
 
-def test_target_upside_none_when_no_price():
-    m = StockMetrics(ticker="AAPL", price=None, target_median=137.0)
-    vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(),
-                          briefs={}, assessments={}, config={})
-    assert vm.leaders[0].metrics.target_upside is None
+def test_target_upside_none_for_missing_or_zero_price():
+    for p in (None, 0.0):
+        m = StockMetrics(ticker="AAPL", price=p, target_median=137.0)
+        vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(), assessments={})
+        assert vm.leaders[0].metrics.target_upside is None
 
 
 def test_assessment_present_only_for_researched():
-    rec = {"business_model_summary": "Chips.",
+    rec = {"business_model_summary": "Chips.", "synthesis": "Cheap-ish AI leader.",
            "thesis": {"bull_case": "AI demand", "bear_case": "Cyclical",
+                      "takeaway": "Cheap-ish AI leader.",
                       "what_would_change_my_mind": ["margin compression"]},
            "risks": [{"claim": "China export limits"}],
            "red_flags": [], "management_capital_allocation": "Buybacks"}
     cards = [_card("AAPL", 80.0), _card("MSFT", 70.0)]
-    vm = build_view_model(cards, _manifest(), briefs={},
-                          assessments={"AAPL": rec}, config={})
+    vm = build_view_model(cards, _manifest(), assessments={"AAPL": rec})
     a = {l.ticker: l for l in vm.leaders}
     assert a["AAPL"].assessment.bull_case == "AI demand"
     assert a["AAPL"].assessment.risks == ["China export limits"]
+    assert a["AAPL"].assessment.takeaway == "Cheap-ish AI leader."
     assert a["MSFT"].assessment is None
 
 
 def test_funnel_and_subscores_carried():
-    vm = build_view_model([_card("AAPL", 80.0)], _manifest(),
-                          briefs={}, assessments={}, config={})
+    vm = build_view_model([_card("AAPL", 80.0)], _manifest(), assessments={})
     assert vm.funnel.screened == 2
     assert vm.leaders[0].subscores["quality"] == 70
     assert vm.leaders[0].subscores["risk"] is None  # not set on _card -> None
@@ -251,7 +265,7 @@ class MetricsVM:
     rating_buy: int | None = None
     rating_hold: int | None = None
     rating_sell: int | None = None
-    target_upside: float | None = None   # derived: target_median/price - 1
+    target_upside: float | None = None   # from StockMetrics.upside_to_target
     insider_net_6m: float | None = None
     insider_distinct_buyers: int | None = None
 
@@ -259,6 +273,7 @@ class MetricsVM:
 @dataclass
 class AssessmentVM:
     business_model: str = ""
+    takeaway: str = ""                    # one-line TL;DR (synthesis / thesis.takeaway)
     bull_case: str = ""
     bear_case: str = ""
     change_my_mind: list[str] = field(default_factory=list)
@@ -317,6 +332,7 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
     th = rec.get("thesis") or {}
     return AssessmentVM(
         business_model=rec.get("business_model_summary", "") or "",
+        takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
         bull_case=th.get("bull_case", "") or "",
         bear_case=th.get("bear_case", "") or "",
         change_my_mind=[str(x) for x in (th.get("what_would_change_my_mind") or [])],
@@ -329,9 +345,6 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
 def _metrics_vm(m) -> MetricsVM:
     if m is None:
         return MetricsVM()
-    upside = None
-    if m.target_median is not None and m.price not in (None, 0):
-        upside = m.target_median / m.price - 1.0
     return MetricsVM(
         price=m.price, market_cap=m.market_cap, pe_ttm=m.pe_ttm,
         pe_median_5y=m.pe_median_5y, fcf_yield=m.fcf_yield, peg=m.peg, roe=m.roe,
@@ -340,7 +353,7 @@ def _metrics_vm(m) -> MetricsVM:
         price_vs_200dma=m.price_vs_200dma, rel_strength_6m=m.rel_strength_6m,
         realized_vol=m.realized_vol, max_drawdown=m.max_drawdown,
         rating_buy=m.rating_buy, rating_hold=m.rating_hold, rating_sell=m.rating_sell,
-        target_upside=upside, insider_net_6m=m.insider_net_6m,
+        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m,
         insider_distinct_buyers=m.insider_distinct_buyers)
 
 
@@ -362,8 +375,8 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
         assessment=_assessment_vm(rec) if rec else None)
 
 
-def build_view_model(cards, manifest: RunManifest, *, briefs: dict[str, str],
-                     assessments: dict[str, dict], config: dict) -> ReportVM:
+def build_view_model(cards, manifest: RunManifest, *,
+                     assessments: dict[str, dict]) -> ReportVM:
     ordered = sorted(cards, key=lambda c: (getattr(c, "scored", True), c.composite),
                      reverse=True)
     return ReportVM(
@@ -375,9 +388,6 @@ def build_view_model(cards, manifest: RunManifest, *, briefs: dict[str, str],
         notes=list(manifest.notes))
 ```
 
-> `briefs` is accepted for signature symmetry with the facade; the HTML/text use the
-> richer `assessment`, so briefs is currently unused here. Keep the parameter.
-
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/scout/test_report_viewmodel.py -v`
@@ -387,7 +397,7 @@ Expected: PASS (5 tests)
 
 ```bash
 git add src/shortlist/scout/report/viewmodel.py tests/scout/test_report_viewmodel.py
-git commit -m "feat(scout-report): renderer-agnostic view-model (3-tier join, target-upside, sort)"
+git commit -m "feat(scout-report): renderer-agnostic view-model (3-tier join, upside reuse, sort)"
 ```
 
 ---
@@ -412,10 +422,11 @@ def test_esc_escapes_all_dangerous_chars():
     assert "&amp;" in out and "&quot;" in out
 
 
-def test_tag_escapes_text_content():
+def test_tag_escapes_text_content_and_attrs():
     h = HtmlBuilder()
     assert h.tag("td", "A & B") == "<td>A &amp; B</td>"
     assert h.tag("td", "x", style="color:red") == '<td style="color:red">x</td>'
+    assert "&quot;" in h.tag("td", "x", title='a"b')   # attr value escaped
 
 
 def test_document_is_self_contained_html():
@@ -505,6 +516,12 @@ git commit -m "feat(scout-report): zero-dep HTML builder with single esc() choke
 - Create: `src/shortlist/scout/report/sections.py`
 - Test: `tests/scout/test_report_sections.py`
 
+> **Design:** the `_Research` section owns ALL Claude content in both HTML and text. The
+> GLANCE text line shows `takeaway` (falling back to `bull_case`). This is what lets the
+> back-compat `briefs` substring flow through one section (Task 5) without a `vm.briefs`
+> field. Escaping: `_Research.render_html` interpolates only `esc()`'d prose into literal
+> tags; tickers/company names flow through `tag`/`esc`.
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
@@ -512,12 +529,12 @@ git commit -m "feat(scout-report): zero-dep HTML builder with single esc() choke
 from datetime import date
 from shortlist.scout.report.viewmodel import (
     ReportVM, LeaderVM, MetricsVM, AssessmentVM, FunnelVM, SignalStatusVM)
-from shortlist.scout.report.sections import SECTIONS, render_html_body, render_text, Detail
+from shortlist.scout.report.sections import render_html_body, render_text, Detail
 
 
-def _leader(ticker, comp, assessment=None, gates=None):
+def _leader(ticker, comp, assessment=None, gates=None, subs=None):
     return LeaderVM(ticker=ticker, name=None, composite=comp,
-                    subscores={"quality": 70, "risk": None}, masked=set(),
+                    subscores=subs or {"quality": 70, "risk": None}, masked=set(),
                     gates=gates or [], flags=[], confidence=0.8, thin=False, scored=True,
                     coverage_note=None, metrics=MetricsVM(pe_ttm=30.0, target_upside=0.37),
                     assessment=assessment)
@@ -543,10 +560,11 @@ def test_research_section_only_when_assessment_present():
     assert "AI demand" not in no_res
 
 
-def test_html_escapes_injected_text():
+def test_html_escapes_injected_text_in_prose_and_ticker():
     a = AssessmentVM(bull_case="<script>alert(1)</script>")
-    body = render_html_body(_vm([_leader("AAPL", 80, assessment=a)]))
+    body = render_html_body(_vm([_leader("<b>AAPL</b>", 80, assessment=a)]))
     assert "<script>alert(1)</script>" not in body and "&lt;script&gt;" in body
+    assert "<b>AAPL</b>" not in body and "&lt;b&gt;AAPL" in body
 
 
 def test_text_glance_has_substring_contract():
@@ -554,6 +572,19 @@ def test_text_glance_has_substring_contract():
     assert "AAPL" in txt and "80" in txt
     assert "negative_fcf" in txt
     assert "screened" in txt and "edgar_form4" in txt
+
+
+def test_text_glance_shows_research_takeaway():
+    a = AssessmentVM(takeaway="Strong moat, fair price.")
+    txt = render_text(_vm([_leader("AAPL", 80, assessment=a)]), Detail.GLANCE)
+    assert "Strong moat" in txt
+
+
+def test_all_none_subscores_render_without_crash():
+    nones = {s: None for s in ["quality", "moat", "growth", "value", "momentum", "insider", "risk"]}
+    body = render_html_body(_vm([_leader("BNK", 0.0, subs=nones)]))
+    txt = render_text(_vm([_leader("BNK", 0.0, subs=nones)]), Detail.FULL)
+    assert "BNK" in body and "BNK" in txt
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -569,6 +600,7 @@ Expected: FAIL with `ModuleNotFoundError: shortlist.scout.report.sections`
 
 The PNG glance is deliberately NOT a section (raster layout does not compose); it reads
 the view-model directly in png.py. HTML and text are the same sections at different Detail.
+The _Research section owns ALL Claude content in both formats.
 """
 from __future__ import annotations
 
@@ -577,7 +609,7 @@ from typing import Protocol
 
 from .html import HtmlBuilder
 from .theme import SUBS, SUB_LABELS, rgb_hex, text_on, score_to_rgb
-from .viewmodel import ReportVM, LeaderVM
+from .viewmodel import ReportVM
 
 
 class Detail(enum.Enum):
@@ -610,17 +642,17 @@ class _Leaderboard:
     def render_html(self, vm, h):
         rows = []
         for l in vm.leaders:
-            cells = [h.tag("td", l.ticker, _class="k")]
-            cells.append(h.raw("td", h.esc(f"{l.composite:.0f}"),
-                               style=f"background:{rgb_hex(score_to_rgb(l.composite))};"
-                                     f"color:{rgb_hex(text_on(score_to_rgb(l.composite)))}"))
+            cc = score_to_rgb(l.composite)
+            cells = [h.tag("td", l.ticker, _class="k"),
+                     h.raw("td", h.esc(f"{l.composite:.0f}"),
+                           style=f"background:{rgb_hex(cc)};color:{rgb_hex(text_on(cc))}")]
             for s in SUBS:
                 v = l.subscores.get(s)
                 c = score_to_rgb(v)
                 cells.append(h.raw("td", h.esc("·" if v is None else f"{v:.0f}"),
                                    style=f"background:{rgb_hex(c)};color:{rgb_hex(text_on(c))}"))
-            gate = h.tag("td", ",".join(l.gates) if l.gates else "", _class="k")
-            rows.append(h.raw("tr", "".join(cells) + gate))
+            cells.append(h.tag("td", ",".join(l.gates) if l.gates else "", _class="k"))
+            rows.append(h.raw("tr", "".join(cells)))
         head = "".join(h.tag("th", x, _class="k") for x in
                        ["", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates"])
         return h.raw("table", h.raw("tr", head) + "".join(rows))
@@ -632,15 +664,16 @@ class _Leaderboard:
             mark = "" if l.scored else "  (not scored)"
             thin = "  (thin)" if l.thin else ""
             out.append(f"{i}. {l.ticker}  {l.composite:.1f}{gate}{mark}{thin}")
-            subs = " ".join(f"{SUB_LABELS[s]}{'·' if l.subscores.get(s) is None else f'{l.subscores[s]:.0f}'}"
-                            for s in SUBS)
+            subs = " ".join(
+                f"{SUB_LABELS[s]}{'·' if l.subscores.get(s) is None else f'{l.subscores[s]:.0f}'}"
+                for s in SUBS)
             out.append(f"   {subs}")
             if l.coverage_note:
                 out.append(f"   ⊘ {l.coverage_note}")
         return out
 
 
-# ---- per-leader fundamentals (HTML only carries the full table; text stays terse) ----
+# ---- per-leader fundamentals (HTML carries the full table; FULL text mirrors it) ----
 _FUND_ROWS = [("Price", "price", {}), ("Mkt cap", "market_cap", {"money": True}),
               ("PE (ttm)", "pe_ttm", {}), ("PE 5y med", "pe_median_5y", {}),
               ("FCF yield", "fcf_yield", {"pct": True}), ("PEG", "peg", {}),
@@ -664,7 +697,8 @@ class _Fundamentals:
             rows = [h.raw("tr", h.tag("td", label, _class="k") +
                           h.tag("td", _fmt(getattr(l.metrics, attr), **opt)))
                     for label, attr, opt in _FUND_ROWS]
-            analysts = f"{l.metrics.rating_buy or 0}B / {l.metrics.rating_hold or 0}H / {l.metrics.rating_sell or 0}S"
+            analysts = (f"{l.metrics.rating_buy or 0}B / {l.metrics.rating_hold or 0}H / "
+                        f"{l.metrics.rating_sell or 0}S")
             rows.append(h.raw("tr", h.tag("td", "Analysts", _class="k") + h.tag("td", analysts)))
             cards.append(h.raw("div",
                                h.tag("h2", f"{l.ticker} — {l.composite:.0f}") +
@@ -682,7 +716,7 @@ class _Fundamentals:
         return out
 
 
-# ---- Claude research ----
+# ---- Claude research (owns ALL qualitative content) ----
 class _Research:
     id, title = "research", "Research"
 
@@ -718,7 +752,8 @@ class _Research:
             a = l.assessment
             if not a:
                 continue
-            out.append(f"📝 {l.ticker}: {a.bull_case[:160]}" if a.bull_case else f"📝 {l.ticker}")
+            line = a.takeaway or a.bull_case
+            out.append(f"📝 {l.ticker}: {line[:160]}" if line else f"📝 {l.ticker}")
             if detail is Detail.FULL and a.red_flags:
                 out.append(f"   🚩 {'; '.join(a.red_flags)}")
         return out
@@ -730,23 +765,22 @@ class _Footer:
 
     def applies(self, vm): return True
 
-    def render_html(self, vm, h):
-        sig = " · ".join(f"{s.name} {'✓' if s.ran else '✗'} ({s.detail})" for s in vm.signals)
+    def _sig(self, vm):
+        return " · ".join(f"{s.name} {'✓' if s.ran else '✗'} ({s.detail})" for s in vm.signals)
+
+    def _funnel(self, vm):
         f = vm.funnel
-        funnel = (f"{f.raw} raw → {f.after_dedup} deduped → {f.after_prefilter} "
-                  f"after prefilter → {f.screened} screened ({f.dropped_for_budget} dropped: budget)")
+        return (f"{f.raw} raw → {f.after_dedup} deduped → {f.after_prefilter} after prefilter "
+                f"→ {f.screened} screened ({f.dropped_for_budget} dropped: budget)")
+
+    def render_html(self, vm, h):
         notes = "".join(h.tag("div", n, _class="muted") for n in vm.notes)
-        return (h.raw("div", h.tag("div", f"Signals: {sig}", _class="muted") +
-                      h.tag("div", f"Funnel: {funnel}", _class="muted") + notes))
+        return h.raw("div", h.tag("div", f"Signals: {self._sig(vm)}", _class="muted") +
+                     h.tag("div", f"Funnel: {self._funnel(vm)}", _class="muted") + notes)
 
     def render_text(self, vm, detail):
-        f = vm.funnel
-        out = ["", "Signals: " + " · ".join(
-            f"{s.name} {'✓' if s.ran else '✗'} ({s.detail})" for s in vm.signals)]
-        out.append(f"Funnel: {f.raw} raw → {f.after_dedup} deduped → {f.after_prefilter} "
-                   f"after prefilter → {f.screened} screened ({f.dropped_for_budget} dropped: budget)")
-        out += [f"Note: {n}" for n in vm.notes]
-        return out
+        return ["", f"Signals: {self._sig(vm)}", f"Funnel: {self._funnel(vm)}"] + \
+               [f"Note: {n}" for n in vm.notes]
 
 
 SECTIONS: list[Section] = [_Leaderboard(), _Fundamentals(), _Research(), _Footer()]
@@ -768,22 +802,23 @@ def render_text(vm: ReportVM, detail: Detail) -> str:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/scout/test_report_sections.py -v`
-Expected: PASS (4 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add src/shortlist/scout/report/sections.py tests/scout/test_report_sections.py
-git commit -m "feat(scout-report): section registry rendering HTML + text from the view-model"
+git commit -m "feat(scout-report): section registry (HTML + text); research section owns Claude content"
 ```
 
 ---
 
 ## Task 5: Facade + migrate `render_message`
 
-This deletes the old `report.py` module and moves `render_message` into the package facade,
-reimplemented over sections. Existing `tests/scout/test_report.py` uses **substring**
-assertions — they must keep passing.
+Delete the old `report.py` module; move `render_message` into the package facade,
+reimplemented over sections. The GLANCE brief routes through a **synthesized assessment**
+(`{"synthesis": brief}`) so the `_Research` section renders it — no `vm.briefs` field.
+Existing `tests/scout/test_report.py` uses **substring** assertions; they must stay green.
 
 **Files:**
 - Delete: `src/shortlist/scout/report.py`
@@ -797,6 +832,7 @@ assertions — they must keep passing.
 from datetime import date
 from shortlist.models import ScoreCard, StockMetrics
 from shortlist.scout.models import RunManifest, SignalStatus
+import shortlist.scout.report as R
 from shortlist.scout.report import build_report, ReportArtifacts
 
 
@@ -815,11 +851,9 @@ def _manifest():
 
 
 def test_build_report_returns_html_and_text(monkeypatch):
-    # Force the png renderer to be unavailable so the facade degrades to png=None.
-    import shortlist.scout.report as R
-    monkeypatch.setattr(R, "_render_png", lambda vm: None)
+    monkeypatch.setattr(R, "_render_png", lambda vm: None)   # force png-less path
     art = build_report([_card("AAPL", 80.0, metrics=StockMetrics(ticker="AAPL", price=100.0))],
-                       _manifest(), briefs={}, assessments={}, config={})
+                       _manifest(), assessments={})
     assert isinstance(art, ReportArtifacts)
     assert art.png is None
     assert art.html.startswith("<!DOCTYPE html>") and "AAPL" in art.html
@@ -829,7 +863,7 @@ def test_build_report_returns_html_and_text(monkeypatch):
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/scout/test_report_facade.py -v`
-Expected: FAIL with `ImportError: cannot import name 'build_report'`
+Expected: FAIL with `ImportError: cannot import name 'build_report'` (the module `report.py` still shadows the package and has no `build_report`).
 
 - [ ] **Step 3: Delete the old module and write the facade**
 
@@ -861,7 +895,8 @@ class ReportArtifacts:
 
 
 def _render_png(vm):
-    """Lazy bridge to the Pillow renderer; None if Pillow/renderer unavailable."""
+    """Lazy bridge to the Pillow renderer; None if Pillow/renderer unavailable.
+    This is the ONLY place Pillow is reached on the build path; demo never calls it."""
     try:
         from .png import render_glance
     except Exception:        # noqa: BLE001 — Pillow not installed
@@ -872,8 +907,8 @@ def _render_png(vm):
         return None
 
 
-def build_report(cards, manifest, *, briefs, assessments, config) -> ReportArtifacts:
-    vm = build_view_model(cards, manifest, briefs=briefs, assessments=assessments, config=config)
+def build_report(cards, manifest, *, assessments: dict[str, dict]) -> ReportArtifacts:
+    vm = build_view_model(cards, manifest, assessments=assessments)
     png = _render_png(vm)
     b64 = base64.b64encode(png).decode() if png else None
     title = f"Scout daily dashboard — {vm.session.isoformat()}"
@@ -883,47 +918,34 @@ def build_report(cards, manifest, *, briefs, assessments, config) -> ReportArtif
 
 
 def render_message(cards, manifest, briefs: dict[str, str] | None = None) -> str:
-    """Back-compat text renderer (Telegram GLANCE fallback + demo stdout)."""
-    vm = build_view_model(cards, manifest, briefs=briefs or {}, assessments={}, config={})
+    """Back-compat text renderer (Telegram GLANCE fallback + demo stdout). Briefs are
+    rendered via the _Research section by synthesizing a minimal assessment each."""
+    synth = {t: {"synthesis": b} for t, b in (briefs or {}).items()}
+    vm = build_view_model(cards, manifest, assessments=synth)
     return render_text(vm, Detail.GLANCE)
 ```
 
 - [ ] **Step 4: Run the new + existing report tests**
 
 Run: `uv run pytest tests/scout/test_report_facade.py tests/scout/test_report.py -v`
-Expected: PASS. If a substring assertion in `test_report.py` fails, adjust the section
-text wording (Task 4 `_Leaderboard`/`_Footer`) so the substring is present — do NOT weaken
-the test. The contract substrings are: ticker, composite int, gate name, signal name +
-detail, `"N screened"`, the brief text, `"(thin)"`, `"⊘"` + coverage note.
-
-> The brief substring (`"Strong moat"`) in `test_report.py::test_message_lists_ranked_names_and_signal_coverage`
-> comes through `briefs`. Since the GLANCE text now renders from sections (which read
-> `assessment`, not `briefs`), add a minimal briefs fallback: in `_Research.render_text`,
-> when `l.assessment is None`, the facade has no brief. To preserve that one test, have
-> `render_message` inject briefs as single-line research: pass briefs into the view-model
-> and render them. Implement by extending `_Leaderboard.render_text` to append
-> `   📝 {brief}` when `vm` carries a brief for the ticker. Store briefs on the VM:
-
-Add to `ReportVM` (Task 2 `viewmodel.py`) a field `briefs: dict[str, str] = field(default_factory=dict)`
-and set it in `build_view_model` from the `briefs` arg. Then in `_Leaderboard.render_text`,
-after the sub-score line:
-
-```python
-            if vm.briefs.get(l.ticker):
-                out.append(f"   📝 {vm.briefs[l.ticker]}")
-```
+Expected: PASS. The `test_report.py` substring contracts are satisfied by the sections:
+ticker + `{composite:.1f}` (`"78"`), gate names, signal name + detail, `"15 screened"`
+(footer funnel), `"(thin)"`, `"⊘"` + coverage note, and `"Strong moat"` via the synthesized
+research takeaway. If any substring is missing, adjust the section wording (Task 4) — do NOT
+weaken the test.
 
 - [ ] **Step 5: Run the full scout suite to catch demo/manifest fallout**
 
 Run: `uv run pytest tests/scout/ -q`
-Expected: PASS. If `test_daily_demo.py` or `test_orchestrator_integration.py` assert exact
-text, reconcile by adjusting section wording (keep their substrings present).
+Expected: `test_report.py`, `test_digest_fallback.py`, `test_report_*` pass. `test_daily*` /
+`test_fixes` / `test_orchestrator*` / `test_research_budget` may still reference the old
+orchestrator and are fixed in Task 8 — note any failures but do not fix them here.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add -A src/shortlist/scout/report tests/scout/test_report_facade.py
-git commit -m "refactor(scout-report): facade + render_message over sections (substring-compatible)"
+git commit -m "refactor(scout-report): facade + render_message over sections (briefs via synthesized assessment)"
 ```
 
 ---
@@ -934,6 +956,11 @@ git commit -m "refactor(scout-report): facade + render_message over sections (su
 - Create: `src/shortlist/scout/report/png.py`
 - Test: `tests/scout/test_report_png.py`
 - Modify: `pyproject.toml` (add `scout` extra)
+
+> **Fonts:** the spec's "bundle a TTF" recommendation is relaxed to **system DejaVu with a
+> `load_default` fallback** (target host is the Ubuntu VPS where DejaVu is present; tests
+> assert PNG validity, not pixels, so glyph determinism is not required). The spec is
+> amended to match. No binary font is vendored into the repo.
 
 - [ ] **Step 1: Add the Pillow extra and sync**
 
@@ -956,41 +983,49 @@ from datetime import date
 from shortlist.scout.report.viewmodel import (
     ReportVM, LeaderVM, MetricsVM, FunnelVM, SignalStatusVM)
 
-PIL = pytest.importorskip("PIL")
+pytest.importorskip("PIL")
 from PIL import Image
 from shortlist.scout.report.png import render_glance
 
+_ALL = ["quality", "moat", "growth", "value", "momentum", "insider", "risk"]
 
-def _leader(t, c):
+
+def _leader(t, c, subs=None):
     return LeaderVM(ticker=t, name=None, composite=c,
-                    subscores={"quality": 90, "moat": None, "growth": 60, "value": 40,
-                               "momentum": 5, "insider": 50, "risk": 70},
+                    subscores=subs or {"quality": 90, "moat": None, "growth": 60, "value": 40,
+                                       "momentum": 5, "insider": 50, "risk": 70},
                     masked=set(), gates=[], flags=[], confidence=0.8, thin=False,
                     scored=True, coverage_note=None, metrics=MetricsVM(), assessment=None)
 
 
-def _vm(n):
-    return ReportVM(session=date(2026, 6, 4),
-                    leaders=[_leader(f"T{i}", 80 - i) for i in range(n)],
+def _vm(leaders):
+    return ReportVM(session=date(2026, 6, 4), leaders=leaders,
                     signals=[SignalStatusVM("edgar_form4", True, "x")],
-                    funnel=FunnelVM(n, n, n, n, 0), notes=[])
+                    funnel=FunnelVM(len(leaders), len(leaders), len(leaders), len(leaders), 0),
+                    notes=[])
 
 
 def test_render_returns_valid_png_bytes():
-    out = render_glance(_vm(6))
+    out = render_glance(_vm([_leader(f"T{i}", 80 - i) for i in range(6)]))
     assert isinstance(out, bytes) and out[:8] == b"\x89PNG\r\n\x1a\n"
     assert Image.open(io.BytesIO(out)).format == "PNG"
 
 
 def test_height_scales_with_row_count():
-    h3 = Image.open(io.BytesIO(render_glance(_vm(3)))).height
-    h12 = Image.open(io.BytesIO(render_glance(_vm(12)))).height
+    h3 = Image.open(io.BytesIO(render_glance(_vm([_leader(f"T{i}", 70) for i in range(3)])))).height
+    h12 = Image.open(io.BytesIO(render_glance(_vm([_leader(f"T{i}", 70) for i in range(12)])))).height
     assert h12 > h3
 
 
 def test_empty_renders_a_valid_card_not_a_crash():
-    out = render_glance(_vm(0))
+    out = render_glance(_vm([]))
     assert Image.open(io.BytesIO(out)).format == "PNG"
+
+
+def test_all_none_subscores_render(tmp_path):
+    nones = {s: None for s in _ALL}
+    out = render_glance(_vm([_leader("BNK", 0.0, subs=nones)]))
+    assert Image.open(io.BytesIO(out)).format == "PNG"   # masked bank -> all gray, no crash
 ```
 
 - [ ] **Step 3: Run test to verify it fails**
@@ -1010,7 +1045,7 @@ import io
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .theme import SUBS, SUB_LABELS, BG, FG, GRID, score_to_rgb, text_on
+from .theme import SUBS, SUB_LABELS, BG, FG, score_to_rgb, text_on
 from .viewmodel import ReportVM
 
 _W = 760           # target width (px); we supersample 2x then downscale
@@ -1066,7 +1101,6 @@ def render_glance(vm: ReportVM) -> bytes:
 
     left = 70 * s                 # gutter for ticker labels
     plot_w = _W * s - left - pad
-    comps = [l.composite for l in vm.leaders]
 
     # --- composite bars panel ---
     y0 = 44 * s
@@ -1112,14 +1146,9 @@ def _finish(img: Image.Image) -> bytes:
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/scout/test_report_png.py -v`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
-- [ ] **Step 6: Verify the facade now embeds the PNG**
-
-Run: `uv run pytest tests/scout/test_report_facade.py -v`
-Expected: still PASS (the monkeypatched test forces png=None; nothing breaks).
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/shortlist/scout/report/png.py tests/scout/test_report_png.py pyproject.toml
@@ -1142,9 +1171,16 @@ import httpx
 from shortlist.scout.notify import TelegramNotifier, deliver, DeliveryResult
 
 
-def _client(seen):
+def _client(seen, status=200):
     def handler(request):
         seen.append(str(request.url))
+        return httpx.Response(status, json={"ok": True})
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def _body_client(bodies):
+    def handler(request):
+        bodies.append(request.read())
         return httpx.Response(200, json={"ok": True})
     return httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -1154,11 +1190,19 @@ def test_configured_reflects_credentials():
     assert TelegramNotifier(None, None).configured() is False
 
 
-def test_send_message_chunks_over_4096():
+def test_send_message_chunks_and_preserves_content():
+    bodies = []
+    n = TelegramNotifier("T", "42", client=_body_client(bodies))
+    assert n.send_message("x" * 9000) is True
+    assert len(bodies) == 3                      # 4096 + 4096 + 808
+    joined = "".join(b.decode() for b in bodies)
+    assert joined.count("x") == 9000             # no characters lost across chunks
+
+
+def test_send_message_empty_sends_nothing_but_succeeds():
     seen = []
     n = TelegramNotifier("T", "42", client=_client(seen))
-    assert n.send_message("x" * 9000) is True
-    assert len(seen) >= 3 and all("/sendMessage" in u for u in seen)
+    assert n.send_message("") is True and seen == []
 
 
 def test_send_photo_and_document_hit_correct_endpoints():
@@ -1169,42 +1213,45 @@ def test_send_photo_and_document_hit_correct_endpoints():
     assert any("/sendPhoto" in u for u in seen) and any("/sendDocument" in u for u in seen)
 
 
+def test_caption_truncated_to_1024():
+    bodies = []
+    n = TelegramNotifier("T", "42", client=_body_client(bodies))
+    n.send_photo(b"x", "y" * 5000)
+    assert b"y" * 1025 not in bodies[0]           # caption capped
+
+
+class _Fake:
+    def __init__(self, configured=True, photo=True, doc=True, msg=True):
+        self._c, self.photo, self.doc, self.msg = configured, photo, doc, msg
+        self.calls = []
+    def configured(self): return self._c
+    def send_photo(self, png, cap): self.calls.append("photo"); return self.photo
+    def send_document(self, data, fn, cap): self.calls.append("doc"); return self.doc
+    def send_message(self, text): self.calls.append("msg"); return self.msg
+
+
 def test_deliver_sequences_photo_then_document():
-    calls = []
-
-    class Fake:
-        def configured(self): return True
-        def send_photo(self, png, cap): calls.append("photo"); return True
-        def send_document(self, data, fn, cap): calls.append("doc"); return True
-        def send_message(self, text): calls.append("msg"); return True
-
-    res = deliver(Fake(), png=b"x", html="<h>", text="t", caption="c", session="2026-06-04")
-    assert calls == ["photo", "doc"]
-    assert res.configured and res.all_ok
+    f = _Fake()
+    res = deliver(f, png=b"x", html="<h>", text="t", caption="c", session="2026-06-04")
+    assert f.calls == ["photo", "doc"] and res.configured and res.all_ok
 
 
-def test_deliver_falls_back_to_message_on_failure():
-    calls = []
+def test_deliver_doc_failure_falls_back_to_message():
+    f = _Fake(doc=False)
+    res = deliver(f, png=b"x", html="<h>", text="t", caption="c", session="x")
+    assert "msg" in f.calls and not res.all_ok and "document" in " ".join(res.failures)
 
-    class Fake:
-        def configured(self): return True
-        def send_photo(self, png, cap): calls.append("photo"); return True
-        def send_document(self, data, fn, cap): calls.append("doc"); return False
-        def send_message(self, text): calls.append("msg"); return True
 
-    res = deliver(Fake(), png=b"x", html="<h>", text="t", caption="c", session="2026-06-04")
-    assert "msg" in calls and not res.all_ok and "document" in " ".join(res.failures)
+def test_deliver_photo_failure_still_sends_doc_and_message():
+    f = _Fake(photo=False)
+    res = deliver(f, png=b"x", html="<h>", text="t", caption="c", session="x")
+    assert f.calls == ["photo", "doc", "msg"] and "photo" in res.failures
 
 
 def test_deliver_unconfigured_does_nothing():
-    class Fake:
-        def configured(self): return False
-        def send_photo(self, *a): raise AssertionError("should not send")
-        def send_document(self, *a): raise AssertionError("should not send")
-        def send_message(self, *a): raise AssertionError("should not send")
-
-    res = deliver(Fake(), png=None, html="<h>", text="t", caption="c", session="x")
-    assert not res.configured and not res.all_ok
+    f = _Fake(configured=False)
+    res = deliver(f, png=None, html="<h>", text="t", caption="c", session="x")
+    assert f.calls == [] and not res.configured and not res.all_ok
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1216,6 +1263,7 @@ Expected: FAIL with `ImportError: cannot import name 'TelegramNotifier'`
 
 ```python
 # append to src/shortlist/scout/notify.py
+import time
 from dataclasses import dataclass, field
 
 
@@ -1252,7 +1300,9 @@ class TelegramNotifier:
             for attempt in range(self.max_retries + 1):
                 resp = c.post(url, **kwargs)
                 if resp.status_code == 429 and attempt < self.max_retries:
-                    # Retry-After-aware backoff; tests use a 200-handler so this is rare.
+                    # Retry-After-aware backoff, mirroring FMPProvider._get's 429 idiom.
+                    delay = float(resp.headers.get("Retry-After", 2 ** attempt))
+                    time.sleep(min(delay, 30.0))
                     continue
                 return resp.status_code == 200
             return False
@@ -1311,16 +1361,22 @@ Expected: PASS (both files).
 
 ```bash
 git add src/shortlist/scout/notify.py tests/scout/test_notifier.py
-git commit -m "feat(scout-notify): TelegramNotifier (photo/document/chunked message) + deliver() policy"
+git commit -m "feat(scout-notify): TelegramNotifier (photo/document/chunked msg, Retry-After) + deliver()"
 ```
 
 ---
 
-## Task 8: Wire the orchestrator
+## Task 8: Wire the orchestrator (+ fix back-compat tests)
+
+This is the highest-risk task. It rewires `run()`, widens `_research_phase` to a 4-tuple
+(**all six return sites**), changes the artifact layout to `scout/<date>/`, and updates
+**three existing test files** that depend on the old shape. Do the test edits in the same
+task so the suite is green at commit.
 
 **Files:**
 - Modify: `src/shortlist/scout/daily.py`
 - Modify: `config.yaml`
+- Modify: `tests/scout/test_research_budget.py`, `tests/scout/test_fixes.py`, `tests/scout/test_orchestrator_integration.py`
 - Test: `tests/scout/test_orchestrator_reporting.py` (new)
 
 - [ ] **Step 1: Add the config block**
@@ -1341,17 +1397,24 @@ In `config.yaml` under `scout:` (after `artifact_dir: scout`), add:
 import json
 from datetime import date
 from pathlib import Path
+import yaml
 import shortlist.scout.daily as daily
 
+_CONFIG = yaml.safe_load((Path(__file__).resolve().parents[2] / "config.yaml").read_text())
 
-def test_demo_run_still_prints_text(capsys, tmp_path, monkeypatch):
+
+def _cfg(tmp_path):
+    cfg = dict(_CONFIG)                       # real thresholds/scoring/gates from config.yaml
+    cfg["scout"] = dict(cfg.get("scout", {}))
+    cfg["scout"].update(artifact_dir="scout", state_path="state/s.json")
+    return cfg
+
+
+def test_demo_run_prints_text_and_no_pillow(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    cfg = {"scout": {"artifact_dir": "scout", "state_path": "state/s.json",
-                     "deep_screen_sources": ["mock"]}}
-    rc = daily.run(cfg, demo=True, today=date(2026, 6, 4))
+    rc = daily.run(_cfg(tmp_path), demo=True, today=date(2026, 6, 4))
     assert rc == 0
-    out = capsys.readouterr().out
-    assert "Scout shortlist" in out                  # text report still printed in demo
+    assert "Scout shortlist" in capsys.readouterr().out
 
 
 def test_assessment_record_loader_reads_json(tmp_path):
@@ -1366,15 +1429,15 @@ def test_assessment_record_loader_reads_json(tmp_path):
 - [ ] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/scout/test_orchestrator_reporting.py -v`
-Expected: FAIL — `_assessment_record_from_file` does not exist (and demo path may differ).
+Expected: FAIL — `_assessment_record_from_file` does not exist (`AttributeError`).
 
-- [ ] **Step 4: Add the assessment-record loader and extend `_research_phase`**
+- [ ] **Step 4: Add the loader and widen `_research_phase` to a 4-tuple (all six returns)**
 
 In `daily.py`, add next to `_one_line_brief_from_file`:
 
 ```python
 def _assessment_record_from_file(brief_path) -> dict | None:
-    """Read the full QualitativeAssessment record (JSON) that report.write() saved."""
+    """Read the full QualitativeAssessment record (JSON) report.write() saved next to the .md."""
     try:
         json_path = Path(str(brief_path).replace(".md", ".json"))
         return json.loads(json_path.read_text())
@@ -1382,13 +1445,17 @@ def _assessment_record_from_file(brief_path) -> dict | None:
         return None
 ```
 
-Change `_research_phase` to also return `assessments`. Update its signature/return:
+In `_research_phase`, change the signature to return a 4-tuple and update **every** return
+statement. There are **six** return sites — update all of them:
+
+1. Kill-switch return → `return {}, {}, [], "research skipped: kill-switch"`
+2. Layer-import-failure return → `return {}, {}, [], "research skipped: layer unavailable"`
+3. Not-available return → `return {}, {}, [], "research skipped: claude CLI / edgartools not available"`
+4. Timeout return → `return {}, {}, [], f"research skipped: phase budget {budget_s}s exceeded"`
+5. Exception return → `return {}, {}, [], f"research failed: {redact_secrets(str(e))}"`
+6. The final success return — replace the briefs-building tail with:
 
 ```python
-def _research_phase(cards, config, scout_cfg, *, _is_available=None, _enrich=None
-                    ) -> tuple[dict, dict, list, str | None]:
-    # ... unchanged guard/kill-switch/budget body ...
-    # at the end, replace the briefs loop with:
     briefs: dict[str, str] = {}
     assessments: dict[str, dict] = {}
     researched: list[str] = []
@@ -1404,13 +1471,27 @@ def _research_phase(cards, config, scout_cfg, *, _is_available=None, _enrich=Non
     return briefs, assessments, researched, None
 ```
 
-Update the three early-return tuples in `_research_phase` to 4-tuples
-(`return {}, {}, [], "<reason>"`).
+Also update the signature line to:
 
-- [ ] **Step 5: Rewire `run()` to build artifacts + deliver + persist**
+```python
+def _research_phase(cards, config, scout_cfg, *, _is_available=None, _enrich=None
+                    ) -> tuple[dict, dict, list, str | None]:
+```
 
-In `daily.py run()`, replace the research-call + message/deliver/persist block
-(currently lines ~150–187) with:
+- [ ] **Step 5: Update `test_research_budget.py` (4 call sites) to the 4-tuple**
+
+In `tests/scout/test_research_budget.py`, every call `briefs, researched, note = _research_phase(...)`
+becomes `briefs, assessments, researched, note = _research_phase(...)`. There are 4 such
+unpackings (one per test). Leave the existing assertions on `briefs`/`researched`/`note`
+unchanged; no new assertions required.
+
+Run: `uv run pytest tests/scout/test_research_budget.py -v`
+Expected: PASS (4 tests).
+
+- [ ] **Step 6: Rewire `run()` — demo prints text (no Pillow); non-demo builds + delivers**
+
+In `daily.py run()`, replace the research-call + message/deliver/persist block (currently
+~lines 150–187) with:
 
 ```python
     # 3. Auto-research (guardrailed) — skipped in demo
@@ -1428,18 +1509,19 @@ In `daily.py run()`, replace the research-call + message/deliver/persist block
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
         researched=researched, notes=notes)
 
-    from .report import build_report
-    rep_cfg = scout_cfg.get("report", {})
-    artifacts = build_report(cards, manifest, briefs=briefs, assessments=assessments,
-                             config=config)
-    caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
-
-    # 4. Deliver + persist
+    # 4a. Demo: print the GLANCE text and stop — never touches Pillow / network.
     if demo:
-        print(artifacts.text)
+        from .report import render_message
+        print(render_message(cards, manifest, briefs))
         return 0
 
+    # 4b. Live: build artifacts, deliver, persist.
+    from .report import build_report
     from .notify import TelegramNotifier, deliver
+    rep_cfg = scout_cfg.get("report", {})
+    artifacts = build_report(cards, manifest, assessments=assessments)
+    caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
+
     notifier = TelegramNotifier()
     result = deliver(notifier,
                      png=artifacts.png if rep_cfg.get("chart", True) else None,
@@ -1456,6 +1538,9 @@ In `daily.py run()`, replace the research-call + message/deliver/persist block
         return 2
     return 0
 ```
+
+> The `from .notify import TelegramNotifier, deliver` is function-local so tests can
+> monkeypatch `shortlist.scout.notify.TelegramNotifier` and have `run()` pick up the fake.
 
 Add the caption + persist helpers (replace `_write_manifest`):
 
@@ -1478,75 +1563,129 @@ def _persist(scout_cfg, manifest, artifacts) -> None:
         (out_dir / "dashboard.png").write_bytes(artifacts.png)
 ```
 
-Remove the now-unused `from .report import render_message` import line and the old
-`_write_manifest` function. Keep `render_message` available (facade) for any other caller.
+Remove the old `from .report import render_message` top-of-`run` import (if present), the old
+`send_telegram` call, and the `_write_manifest` function. `render_message` is still importable
+from the facade for the demo branch above and any other caller.
 
-- [ ] **Step 6: Run the new test + full scout suite**
+- [ ] **Step 7: Update `test_fixes.py` — Telegram patch + artifact globs**
+
+`run()` no longer calls `send_telegram`; it builds `TelegramNotifier()` and `deliver()`.
+And artifacts now live under `scout/<date>/`. Make these concrete edits:
+
+a) **Replace the `send_telegram` monkeypatches with a fake notifier.** Add this helper near
+the top of `tests/scout/test_fixes.py`:
+
+```python
+class _FakeNotifier:
+    def __init__(self, configured=True, ok=True):
+        self._c, self._ok = configured, ok
+    def configured(self): return self._c
+    def send_photo(self, *a): return self._ok
+    def send_document(self, *a): return self._ok
+    def send_message(self, *a): return self._ok
+```
+
+Then in each test that currently does
+`monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: <bool>)`:
+- For the **unconfigured** test: `monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier(configured=False))`.
+- For the **configured-but-fails** test: `monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier(configured=True, ok=False))` and **remove** the `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env setup (configured-ness now comes from the fake, not env — this also removes the real-network risk).
+
+b) **Fix the artifact-path globs.** Every `list((tmp_path / "scout").glob("*.json"))[0]` →
+`list((tmp_path / "scout").glob("*/manifest.json"))[0]`, and every `glob("*.txt")[0]` →
+`glob("*/report.txt")[0]`. (5 sites: the manifest-content checks and the rendered-report check.)
+
+Run: `uv run pytest tests/scout/test_fixes.py -v`
+Expected: PASS. The `configured-but-fails` test still asserts `rc == 2` and the
+"telegram delivery failed (configured)" manifest note; the unconfigured test still asserts `rc == 0`.
+
+- [ ] **Step 8: Update `test_orchestrator_integration.py` — dead `send_telegram` patch**
+
+In `tests/scout/test_orchestrator_integration.py`, replace
+`monkeypatch.setattr(notify_mod, "send_telegram", ...)` with
+`monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier(configured=False))`
+(define the same `_FakeNotifier` locally or import it). This keeps the run unconfigured so it
+prints + returns 0 without a network call, matching the test's intent.
+
+Run: `uv run pytest tests/scout/test_orchestrator_integration.py -v`
+Expected: PASS.
+
+- [ ] **Step 9: Run the new orchestrator test, the full scout suite, then everything**
 
 Run: `uv run pytest tests/scout/test_orchestrator_reporting.py -v`
 Expected: PASS (2 tests).
 
 Run: `uv run pytest tests/scout/ -q`
-Expected: PASS. If `test_fixes.py` / `test_orchestrator_integration.py` assert the old flat
-`scout/<date>.json` path, update them to `scout/<date>/manifest.json` (the artifact layout
-changed by design — see spec §10).
-
-- [ ] **Step 7: Run the entire suite**
+Expected: PASS (entire scout suite green).
 
 Run: `uv run pytest -q`
-Expected: PASS (no regressions outside scout).
+Expected: PASS (no regressions elsewhere).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add src/shortlist/scout/daily.py config.yaml tests/scout/test_orchestrator_reporting.py
-git commit -m "feat(scout): wire reporting artifacts + TelegramNotifier delivery into the daily run"
+git add src/shortlist/scout/daily.py config.yaml tests/scout/test_orchestrator_reporting.py \
+        tests/scout/test_research_budget.py tests/scout/test_fixes.py \
+        tests/scout/test_orchestrator_integration.py
+git commit -m "feat(scout): wire reporting artifacts + TelegramNotifier delivery; migrate back-compat tests"
 ```
 
 ---
 
-## Task 9: Smoke + docs
+## Task 9: Smoke, Pillow-absent check, docs
 
 **Files:**
-- Modify: `HARNESS.md` or `docs/AUTONOMOUS_SCOUT.md` (scout delivery section)
-- Modify: `docs/NOTIFICATIONS.md` (mark §3 hardening as implemented)
+- Modify: `CLAUDE.md`, `docs/NOTIFICATIONS.md`, `docs/AUTONOMOUS_SCOUT.md`
 
 - [ ] **Step 1: Demo smoke**
 
 Run: `uv run shortlist-scout --demo`
 Expected: prints a text report to stdout, exit 0, no traceback.
 
-- [ ] **Step 2: Live-shape smoke (offline-safe, no Telegram creds)**
+- [ ] **Step 2: Prove the lazy-import contract holds (spec risk #2)**
 
-Run: `uv run python -c "from datetime import date; import shortlist.scout.daily as d; import yaml; \
-cfg=yaml.safe_load(open('config.yaml')); cfg['scout']['deep_screen_sources']=['mock']; \
-print('rc', d.run(cfg, demo=True, today=date(2026,6,4)))"`
-Expected: `rc 0`.
+Run (normal venv, Pillow installed — the point is that importing the report package must
+NOT load PIL; Pillow is only reached lazily inside `_render_png`):
+```bash
+uv run python -c "import sys; import shortlist.scout.report; import shortlist.scout.daily; \
+assert 'PIL' not in sys.modules, 'Pillow imported on the report/daily path!'; \
+print('OK: report+daily import with no PIL loaded')"
+```
+Expected: prints OK. (Confirms `report/__init__.py` → sections/html/viewmodel/theme and the
+demo path in `daily.py` pull in no PIL at import time.)
 
 - [ ] **Step 3: Generate a real HTML+PNG artifact to eyeball**
 
-Run: `uv run python -c "from datetime import date; from shortlist.models import ScoreCard, StockMetrics; \
+Run:
+```bash
+uv run python -c "from datetime import date; from shortlist.models import ScoreCard, StockMetrics; \
 from shortlist.scout.models import RunManifest, SignalStatus; from shortlist.scout.report import build_report; \
 c=ScoreCard(ticker='NVDA', composite=79, quality=100, moat=100, growth=100, value=74, momentum=59, \
 opportunity=74, insider=41, risk=55, metrics=StockMetrics(ticker='NVDA', price=100, target_median=137)); \
 m=RunManifest(session=date(2026,6,4), signals=[SignalStatus('edgar_form4',True,'2')], raw=5, after_dedup=4, \
-after_prefilter=3, screened=1, dropped_for_budget=0); a=build_report([c], m, briefs={}, assessments={}, config={}); \
-open('scratch/smoke.html','w').write(a.html); open('scratch/smoke.png','wb').write(a.png or b''); print('wrote scratch/smoke.{html,png}')"`
-Expected: writes the files; open `scratch/smoke.html` in a browser to verify the embedded chart + tables render.
+after_prefilter=3, screened=1, dropped_for_budget=0); a=build_report([c], m, assessments={}); \
+open('scratch/smoke.html','w').write(a.html); open('scratch/smoke.png','wb').write(a.png or b''); \
+print('wrote scratch/smoke.{html,png}; png bytes:', len(a.png or b''))"
+```
+Expected: writes the files; open `scratch/smoke.html` in a browser to verify the embedded
+chart + tables render.
 
 - [ ] **Step 4: Update docs**
 
-In `docs/NOTIFICATIONS.md`, change the §3 hardening plan heading to note it is implemented
-(chunking, retry, `Notifier` seam, photo/document delivery), and point to this plan +
-the spec. In `docs/AUTONOMOUS_SCOUT.md`, update the scout delivery description from
-"text Telegram report" to "chart (sendPhoto) + HTML deep-dive (sendDocument), artifacts
-under `scout/<date>/`."
+- `CLAUDE.md`: in the Scout bullet, note (a) the new `report/` package (view-model →
+  section-registry → HTML/text/PNG renderers; add a section = one class + one `SECTIONS`
+  entry), (b) the hard rule **"Pillow is lazy-imported only in `report/png.py`; never import
+  it from viewmodel/sections/html/theme"**, (c) the `scout` extra (`uv sync --extra scout`),
+  (d) artifacts now under `scout/<date>/` (dashboard.png, report.html, report.txt, manifest.json).
+- `docs/NOTIFICATIONS.md`: mark §3 hardening (chunking, retry/`Retry-After`, `Notifier`
+  seam, photo/document delivery) as **implemented**; link this plan + the spec.
+- `docs/AUTONOMOUS_SCOUT.md`: change the delivery description from "text Telegram report"
+  to "chart (sendPhoto) + HTML deep-dive (sendDocument), artifacts under `scout/<date>/`."
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/NOTIFICATIONS.md docs/AUTONOMOUS_SCOUT.md
-git commit -m "docs(scout): reporting + notification layer shipped; delivery semantics updated"
+git add CLAUDE.md docs/NOTIFICATIONS.md docs/AUTONOMOUS_SCOUT.md
+git commit -m "docs(scout): reporting + notification layer shipped; lazy-Pillow rule + delivery semantics"
 ```
 
 ---
@@ -1554,16 +1693,22 @@ git commit -m "docs(scout): reporting + notification layer shipped; delivery sem
 ## Self-review notes (for the implementer)
 
 - **Spec coverage:** §3 architecture → Tasks 2/4/6; §4 module layout → all tasks; §5 view-model
-  → Task 2; §6 HTML → Tasks 3/4/5; §7 PNG → Task 6; §8 Notifier+deliver → Task 7; §9
-  orchestration → Task 8; §10 persistence → Task 8 `_persist`; §11 config → Task 8; §12 deps
-  → Task 6; §13 degradation → facade `_render_png` (Task 5) + `deliver` unconfigured (Task 7)
-  + empty-N PNG (Task 6) + demo (Task 8); §14 testing → every task; §15 build order = task
-  order; §16 risks → text substring-compat (Task 5 Step 4/5), Pillow-not-hard-dep (facade
-  try/except + `importorskip` in Task 6), HTML injection (Task 3/4 escaping tests).
-- **Back-compat anchors:** keep `render_message` (facade) and `send_telegram` (notify.py)
-  exported; preserve `state.mark_run_completed` BEFORE `record_screened`; exit 0 unconfigured /
-  exit 2 configured-but-failed (Task 8 Step 5 mirrors the original FIX 3/FIX 4 ordering).
-- **Type consistency:** `build_report(... ) -> ReportArtifacts(png,html,text)`; `deliver(...) ->
-  DeliveryResult(configured,all_ok,failures)`; `_research_phase` now returns a 4-tuple
-  `(briefs, assessments, researched, note)` — every return site updated in Task 8 Step 4.
+  → Task 2; §6 HTML → Tasks 3/4/5; §7 PNG → Task 6 (font rule relaxed to system+fallback,
+  spec amended); §8 Notifier+deliver → Task 7; §9 orchestration → Task 8; §10 persistence →
+  Task 8 `_persist`; §11 config → Task 8; §12 deps → Task 6; §13 degradation → facade
+  `_render_png` (Task 5) + `deliver` unconfigured (Task 7) + empty-N PNG (Task 6) + demo
+  no-Pillow (Task 8/9); §14 testing → every task; §15 build order = task order; §16 risks →
+  text substring-compat (Task 5 Step 4) + briefs-via-synthesized-assessment (one section),
+  Pillow-not-hard-dep (facade try/except + Task 9 Step 2 check), HTML injection (Task 3/4
+  escaping tests incl. ticker).
+- **Back-compat anchors:** `render_message` (facade) + `send_telegram` (notify.py) stay
+  exported; `state.mark_run_completed` BEFORE `record_screened`; exit 0 unconfigured / exit 2
+  configured-but-failed (Task 8 Step 6). Three existing test files migrated in-task (Task 8
+  Steps 5/7/8): `test_research_budget` (4-tuple), `test_fixes` (fake notifier + `*/manifest.json`
+  globs), `test_orchestrator_integration` (fake notifier).
+- **Type consistency:** `build_view_model(cards, manifest, *, assessments)` (no briefs/config);
+  `build_report(cards, manifest, *, assessments) -> ReportArtifacts(png,html,text)`;
+  `deliver(...) -> DeliveryResult(configured, all_ok, failures)`; `_research_phase` returns
+  `(briefs, assessments, researched, note)` with all six return sites updated; `AssessmentVM`
+  has `takeaway`; `MetricsVM.target_upside` sourced from `StockMetrics.upside_to_target`.
 ```
