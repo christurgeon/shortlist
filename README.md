@@ -185,8 +185,9 @@ insider 0.135 / risk 0.10; these are a prior to be backtested — see `docs/ASSE
 **Gates** are hard filters (negative FCF, sub-threshold market cap, over-leverage,
 heavy insider selling) that flag a name regardless of score. Soft **flags** (e.g.
 `crowded_short`, from the default harness engine's keyless FINRA short-interest
-source; `value_trap`, when a cheap name has weak quality/growth) are advisory — they
-annotate a name but never change the composite.
+source; `value_trap`, when a cheap name has weak quality/growth — optionally refined by
+a Piotroski-style fundamental-quality check) are advisory — they annotate a name but
+never change the composite.
 
 Tune everything in `config.yaml` — no code changes needed to re-weight.
 
@@ -234,7 +235,9 @@ actually goes in.
 
 The scout stack discovers candidates from free signal feeds, screens them through
 the existing scorer, and ships a daily Telegram report — no watchlist needed.
-Full design and rationale: [`docs/AUTONOMOUS_SCOUT.md`](docs/AUTONOMOUS_SCOUT.md).
+Full design and rationale: [`docs/AUTONOMOUS_SCOUT.md`](docs/AUTONOMOUS_SCOUT.md). Report
+delivery (Telegram + file artifact) and the client-hardening plan:
+[`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
 
 ```bash
 # Offline demo — no keys, prints a ranked shortlist (GEV / LMT / GOOGL basket):
