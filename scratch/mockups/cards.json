@@ -1,0 +1,920 @@
+[
+  {
+    "ticker": "NVDA",
+    "composite": 79.1,
+    "quality": 99.5,
+    "moat": 100.0,
+    "growth": 100.0,
+    "momentum": 58.7,
+    "value": 74.3,
+    "opportunity": 74.3,
+    "insider": 41.0,
+    "risk": 55.2,
+    "piotroski_f": 1,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.369,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "unknown",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "144",
+          "filed": "2026-06-03",
+          "accession": "0001973727-26-000026",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001973727-26-000026-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-27",
+          "accession": "0001921094-26-000561",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000561-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-20",
+          "accession": "0001045810-26-000051",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001045810-26-000051-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-08",
+          "accession": "0001045810-26-000028",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001045810-26-000028-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-28",
+          "accession": "0002100119-26-000017",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0002100119-26-000017-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-27",
+          "accession": "0001045810-26-000026",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001045810-26-000026-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-26",
+          "accession": "0000102909-26-000426",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0000102909-26-000426-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-20",
+          "accession": "0001628280-26-020268",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001628280-26-020268-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-20",
+          "accession": "0001958244-26-000168",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001958244-26-000168-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-20",
+          "accession": "0001950047-26-002865",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001950047-26-002865-index.html"
+        },
+        {
+          "form": "144/A",
+          "filed": "2026-03-19",
+          "accession": "0001921094-26-000344",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000344-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-19",
+          "accession": "0001921094-26-000343",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000343-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-18",
+          "accession": "0001921094-26-000341",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000341-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-13",
+          "accession": "0001921094-26-000315",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000315-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-10",
+          "accession": "0001921094-26-000296",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001921094-26-000296-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-03-06",
+          "accession": "0001045810-26-000024",
+          "url": "https://www.sec.gov/Archives/edgar/data/1045810/0001045810-26-000024-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "empty",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  },
+  {
+    "ticker": "MSFT",
+    "composite": 67.7,
+    "quality": 97.0,
+    "moat": 84.9,
+    "growth": 75.0,
+    "momentum": 4.8,
+    "value": 65.6,
+    "opportunity": 65.6,
+    "insider": 49.7,
+    "risk": 53.3,
+    "piotroski_f": 1,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.287,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "unknown",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "144",
+          "filed": "2026-06-01",
+          "accession": "0001959173-26-004196",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0001959173-26-004196-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-14",
+          "accession": "0001193125-26-224155",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0001193125-26-224155-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-14",
+          "accession": "0001959173-26-003593",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0001959173-26-003593-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-30",
+          "accession": "0002100119-26-000820",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0002100119-26-000820-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-29",
+          "accession": "0001193125-26-191457",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0001193125-26-191457-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-27",
+          "accession": "0000102909-26-001884",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0000102909-26-001884-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-06",
+          "accession": "0001959173-26-002007",
+          "url": "https://www.sec.gov/Archives/edgar/data/789019/0001959173-26-002007-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "ok",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  },
+  {
+    "ticker": "GOOGL",
+    "composite": 64.0,
+    "quality": 98.4,
+    "moat": 75.7,
+    "growth": 61.9,
+    "momentum": 58.1,
+    "value": 38.8,
+    "opportunity": 58.1,
+    "insider": 49.6,
+    "risk": 63.3,
+    "piotroski_f": 1,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.17,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "unknown",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "144",
+          "filed": "2026-05-29",
+          "accession": "0001921094-26-000570",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001921094-26-000570-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-21",
+          "accession": "0001193125-26-234488",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001193125-26-234488-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-15",
+          "accession": "0001969223-26-000558",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001969223-26-000558-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-12",
+          "accession": "0001950047-26-004400",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001950047-26-004400-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-12",
+          "accession": "0001950047-26-004389",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001950047-26-004389-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-11",
+          "accession": "0001193125-26-216986",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001193125-26-216986-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-04-30",
+          "accession": "0001921094-26-000423",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001921094-26-000423-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-29",
+          "accession": "0002100119-26-000161",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0002100119-26-000161-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-29",
+          "accession": "0002100119-26-000137",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0002100119-26-000137-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-29",
+          "accession": "0001652044-26-000043",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001652044-26-000043-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-04-15",
+          "accession": "0001969223-26-000448",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001969223-26-000448-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-10",
+          "accession": "0001652044-26-000034",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001652044-26-000034-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-02",
+          "accession": "0001652044-26-000031",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001652044-26-000031-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-30",
+          "accession": "0001921094-26-000354",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001921094-26-000354-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-27",
+          "accession": "0001950047-26-003046",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001950047-26-003046-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-26",
+          "accession": "0000102909-26-000584",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0000102909-26-000584-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-26",
+          "accession": "0000102909-26-000583",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0000102909-26-000583-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-18",
+          "accession": "0001950047-26-002800",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001950047-26-002800-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-18",
+          "accession": "0001950047-26-002795",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001950047-26-002795-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-16",
+          "accession": "0001969223-26-000352",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001969223-26-000352-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-12",
+          "accession": "0001968582-26-000280",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001968582-26-000280-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-12",
+          "accession": "0001968582-26-000279",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001968582-26-000279-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-12",
+          "accession": "0001968582-26-000278",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001968582-26-000278-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-03-06",
+          "accession": "0001652044-26-000026",
+          "url": "https://www.sec.gov/Archives/edgar/data/1652044/0001652044-26-000026-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "empty",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  },
+  {
+    "ticker": "AAPL",
+    "composite": 50.7,
+    "quality": 66.0,
+    "moat": 77.9,
+    "growth": 40.3,
+    "momentum": 51.0,
+    "value": 24.1,
+    "opportunity": 51.0,
+    "insider": 23.8,
+    "risk": 83.1,
+    "piotroski_f": 1,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.056,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "unknown",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "144",
+          "filed": "2026-05-27",
+          "accession": "0001921094-26-000555",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001921094-26-000555-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-06",
+          "accession": "0001921094-26-000446",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001921094-26-000446-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-05",
+          "accession": "0001950047-26-004044",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001950047-26-004044-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-30",
+          "accession": "0000320193-26-000011",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0000320193-26-000011-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-29",
+          "accession": "0002100119-26-000139",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0002100119-26-000139-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-04-23",
+          "accession": "0001950047-26-003721",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001950047-26-003721-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-20",
+          "accession": "0001140361-26-015711",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001140361-26-015711-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-04-02",
+          "accession": "0001969223-26-000420",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001969223-26-000420-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-04-02",
+          "accession": "0001959173-26-002757",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0001959173-26-002757-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-26",
+          "accession": "0000102909-26-000630",
+          "url": "https://www.sec.gov/Archives/edgar/data/320193/0000102909-26-000630-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "ok",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  },
+  {
+    "ticker": "LMT",
+    "composite": 46.5,
+    "quality": 41.2,
+    "moat": 27.6,
+    "growth": 51.2,
+    "momentum": 35.7,
+    "value": 58.2,
+    "opportunity": 58.2,
+    "insider": 50.0,
+    "risk": 61.8,
+    "piotroski_f": 1,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.277,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "unknown",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "8-K",
+          "filed": "2026-05-13",
+          "accession": "0000936468-26-000011",
+          "url": "https://www.sec.gov/Archives/edgar/data/936468/0000936468-26-000011-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-04-30",
+          "accession": "0002100119-26-000760",
+          "url": "https://www.sec.gov/Archives/edgar/data/936468/0002100119-26-000760-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-04-23",
+          "accession": "0001628280-26-026683",
+          "url": "https://www.sec.gov/Archives/edgar/data/936468/0001628280-26-026683-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-03-27",
+          "accession": "0000102909-26-001786",
+          "url": "https://www.sec.gov/Archives/edgar/data/936468/0000102909-26-001786-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-03-11",
+          "accession": "0001950047-26-002478",
+          "url": "https://www.sec.gov/Archives/edgar/data/936468/0001950047-26-002478-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "empty",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  },
+  {
+    "ticker": "JPM",
+    "composite": 39.9,
+    "quality": 47.1,
+    "moat": null,
+    "growth": 63.7,
+    "momentum": 13.6,
+    "value": 8.6,
+    "opportunity": 13.6,
+    "insider": 41.6,
+    "risk": 82.5,
+    "piotroski_f": 0,
+    "piotroski_f_legs": 1,
+    "upside_to_target": 0.104,
+    "gates": [],
+    "flags": [
+      "recent_8k",
+      "passive_13g",
+      "planned_insider_sale_144"
+    ],
+    "sic_bucket": "financials",
+    "confidence": 1.0,
+    "scored": true,
+    "thin": false,
+    "abstentions": [
+      {
+        "field": "interest_coverage",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "debt_to_equity",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "gross_margin",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "gross_margin_stability",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "roic",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "moat",
+        "reason": "inapplicable",
+        "scope": "subscore"
+      },
+      {
+        "field": "fcf_cagr",
+        "reason": "inapplicable",
+        "scope": "leg"
+      },
+      {
+        "field": "fcf_yield",
+        "reason": "inapplicable",
+        "scope": "leg"
+      }
+    ],
+    "events": {
+      "recent_8k": true,
+      "activist_13d": false,
+      "passive_13g": true,
+      "planned_insider_sale_144": true,
+      "recent": [
+        {
+          "form": "8-K",
+          "filed": "2026-06-02",
+          "accession": "0001193125-26-253533",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001193125-26-253533-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-27",
+          "accession": "0001193125-26-242018",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001193125-26-242018-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-21",
+          "accession": "0000019617-26-000228",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000228-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-20",
+          "accession": "0001662926-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001662926-26-000008-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-15",
+          "accession": "0001539649-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001539649-26-000008-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-15",
+          "accession": "0001566079-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001566079-26-000008-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-15",
+          "accession": "0001473446-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001473446-26-000008-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-15",
+          "accession": "0001436677-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001436677-26-000008-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-14",
+          "accession": "0000019617-26-000226",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000226-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000223",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000223-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000222",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000222-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000221",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000221-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000220",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000220-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000219",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000219-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000218",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000218-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000217",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000217-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000216",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000216-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000215",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000215-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000214",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000214-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-13",
+          "accession": "0000019617-26-000213",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000213-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000206",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000206-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000204",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000204-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000203",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000203-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000202",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000202-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000201",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000201-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000199",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000199-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000198",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000198-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000197",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000197-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000196",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000196-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-12",
+          "accession": "0000019617-26-000195",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000195-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G",
+          "filed": "2026-05-11",
+          "accession": "0000019617-26-000184",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000184-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-11",
+          "accession": "0000019617-26-000182",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000182-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-11",
+          "accession": "0000019617-26-000166",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000166-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-08",
+          "accession": "0000019617-26-000162",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000162-index.html"
+        },
+        {
+          "form": "8-K",
+          "filed": "2026-05-07",
+          "accession": "0001193125-26-211978",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001193125-26-211978-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-06",
+          "accession": "0000019617-26-000157",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000157-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-06",
+          "accession": "0000019617-26-000156",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000156-index.html"
+        },
+        {
+          "form": "SCHEDULE 13G/A",
+          "filed": "2026-05-06",
+          "accession": "0000019617-26-000153",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0000019617-26-000153-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-05",
+          "accession": "0001863986-26-000008",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001863986-26-000008-index.html"
+        },
+        {
+          "form": "144",
+          "filed": "2026-05-05",
+          "accession": "0001580075-26-000006",
+          "url": "https://www.sec.gov/Archives/edgar/data/19617/0001580075-26-000006-index.html"
+        }
+      ]
+    },
+    "coverage": {
+      "providers": {
+        "yahoo": "ok",
+        "fmp": "gated_402",
+        "finnhub": "empty",
+        "edgar": "ok",
+        "finra": "ok"
+      },
+      "unavailable": [],
+      "note": "FMP gated this symbol (402); analyst-target upside and PEG still need FMP Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    }
+  }
+]
