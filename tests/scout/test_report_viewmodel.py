@@ -59,3 +59,13 @@ def test_funnel_and_subscores_carried():
     assert vm.funnel.screened == 2
     assert vm.leaders[0].subscores["quality"] == 70
     assert vm.leaders[0].subscores["risk"] is None
+
+
+def test_masked_derived_from_abstentions_not_data_gaps():
+    # A sector-inapplicable subscore (moat) -> masked. A plain data-gap None (risk) -> NOT masked.
+    c = _card("BNK", 50.0, moat=None, risk=None,
+              abstentions=[{"field": "moat", "reason": "inapplicable", "scope": "subscore"},
+                           {"field": "roe", "reason": "inapplicable", "scope": "leg"}])
+    vm = build_view_model([c], _manifest(), assessments={})
+    assert vm.leaders[0].masked == {"moat"}       # subscore-scope inapplicable only
+    assert "risk" not in vm.leaders[0].masked     # data-gap None is not masked

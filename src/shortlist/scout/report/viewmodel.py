@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from shortlist.models import ScoreCard
+from shortlist.models import ScoreCard, rank_key
 from ..models import RunManifest
 from .theme import SUBS
 
@@ -125,8 +125,9 @@ def _metrics_vm(m) -> MetricsVM:
 
 def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
     subs = {s: getattr(c, s, None) for s in SUBS}
-    bucket = getattr(c, "sic_bucket", None)
-    masked = {s for s, v in subs.items() if v is None and bucket not in (None, "unknown")}
+    masked = {a["field"] for a in getattr(c, "abstentions", [])
+              if isinstance(a, dict) and a.get("scope") == "subscore"
+              and a.get("reason") == "inapplicable"}
     note = c.coverage.note if (c.coverage is not None and c.coverage.note) else None
     rec = assessments.get(c.ticker)
     return LeaderVM(
@@ -142,8 +143,7 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
 
 def build_view_model(cards, manifest: RunManifest, *,
                      assessments: dict[str, dict]) -> ReportVM:
-    ordered = sorted(cards, key=lambda c: (getattr(c, "scored", True), c.composite),
-                     reverse=True)
+    ordered = sorted(cards, key=rank_key, reverse=True)
     return ReportVM(
         session=manifest.session,
         leaders=[_leader_vm(c, assessments) for c in ordered],
