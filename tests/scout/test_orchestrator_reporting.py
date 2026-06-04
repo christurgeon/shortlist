@@ -31,6 +31,8 @@ def test_assessment_record_loader_reads_json(tmp_path):
 
 
 def test_live_run_configured_delivers_photo_and_document(tmp_path, monkeypatch):
+    import pytest
+    pytest.importorskip("PIL")  # the "photo" assertion needs the Pillow glance renderer
     import shortlist.scout.notify as notify_mod
     import shortlist.scout.signals as signals_mod
     import shortlist.screen as screen_mod
