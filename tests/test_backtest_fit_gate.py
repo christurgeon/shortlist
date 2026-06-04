@@ -80,6 +80,6 @@ def test_render_fit_report_is_text():
     prior = {"quality": 0.18, "moat": 0.18, "growth": 0.135, "value": 0.22}
     txt = render_fit_report(res, prior=prior, s_f=sum(prior.values()), horizon=6,
                             axes=list(prior),
-                            axis_ic={k: 0.0 for k in prior}, verdict=evaluate_gate(res))
+                            axis_ic=dict.fromkeys(prior, 0.0), verdict=evaluate_gate(res))
     assert "PROPOSE" in txt or "NO-CHANGE" in txt
     assert "value" in txt

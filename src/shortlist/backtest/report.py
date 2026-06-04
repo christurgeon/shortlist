@@ -12,7 +12,6 @@ from typing import Any
 from .engine import BacktestReport
 from .metrics import aggregate_ic
 
-
 # Endorsement thresholds (see spec §"Default outcome"). Deliberately hard to clear on
 # survivorship-biased data: the default outcome is NO-CHANGE.
 GATE_MIN_PERIODS = 36       # well above the engine's describe-floor of 24

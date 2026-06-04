@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Protocol
 
-from ..data.sources import snapshot_from_closes
-from ..data.bridge import snapshot_to_metrics
-from ..data.store import load
-from ..data.models import TickerSnapshot
 from .. import scoring
-from .prices import PriceHistory
+from ..data.bridge import snapshot_to_metrics
+from ..data.models import TickerSnapshot
+from ..data.sources import snapshot_from_closes
+from ..data.store import load
 from ..providers._xbrl_facts import extract_panel, panel_to_metrics
+from .prices import PriceHistory
 
 
 @dataclass(frozen=True)

@@ -139,7 +139,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.pe_ttm = pr.price / eps[0]
         if m.pe_median_5y is None and pr and eps and ends and len(eps) == len(ends):
             annual_pe = []
-            for e, end in zip(eps, ends):
+            for e, end in zip(eps, ends, strict=True):
                 px = _close_near(pr.monthly_closes, end)
                 if px and e:
                     annual_pe.append(px / e)

@@ -14,7 +14,7 @@ those three areas.
 
 ---
 
-## 1. The growth sub-score — full spec  ✅ SHIPPED
+## 1. The growth sub-score  ✅ SHIPPED
 
 > **Status:** implemented. `stats.cagr` / `stats.growth_persistence`, the four
 > `StockMetrics` growth fields, `scoring.growth_score`, the `config.yaml` bands +
@@ -23,136 +23,22 @@ those three areas.
 > cash-flow API call) are all live, with tests in `tests/test_stats.py` and
 > `tests/test_scoring.py`. The spec below is retained as the design record.
 
-### Why it's missing and why it matters
-The composite has four axes — **quality** (profitability + balance sheet), **moat**
-(margins + ROIC), **opportunity** (`max(momentum, value)`), **insider** — and **no growth
-axis at all**. A durable compounder and a stagnant cash-cow with identical margins, ROIC,
-and leverage score *identically* today. Growth is the most-studied driver of long-run
-equity return and it's the largest single hole in the factor set.
+### Design rationale (retained; the implementation is the source of truth)
+The composite needed a **durable-compounding** axis: two names with identical margins, ROIC,
+and leverage but different growth trajectories used to score identically. The axis is strictly
+*fundamental* — revenue/FCF/EPS CAGR paired with YoY **persistence** (a single CAGR is gameable
+by one outlier endpoint year). It deliberately does **not** overlap `momentum` (price-based
+growth) or `value`'s PEG leg (which only *conditions* value on a growth rate).
 
-The raw material is already merged: `Statements` (`data/models.py:46`) carries 5y series
-for `revenue`, `gross_profit`, `net_income`, and `free_cash_flow`, and
-`Statements.revenue_cagr()` (`:61`) already exists and is **computed but never consumed by
-the scorer**. So this is mostly wiring, not new fetching.
+Legs are None-safe and averaged like the other sub-scores: `cagr` returns `None` across a sign
+change (where it is undefined) and `growth_persistence` is sign-safe, so the existing
+weight-redistribution handles missing legs with no silent zero. `eps_cagr` uses net income as
+an EPS proxy until a share-count series exists (gap #2.5). The harness populates all four legs
+from `Statements`; the screener fills revenue/EPS/persistence (`fcf_cagr` stays `None` there to
+avoid an extra cash-flow call).
 
-**Overlap to respect (don't double-count):** `momentum` is *price-based* growth (the market
-already paying up) and `value`'s PEG leg *conditions* value on a growth rate. Neither
-rewards **durable fundamental top-line / FCF compounding** directly — which is what this
-axis adds. Keep growth strictly fundamental (revenue/FCF/earnings series); leave price to
-momentum.
-
-### Components (all None-safe, averaged like the other sub-scores)
-
-| Leg | Definition | Source | Default band `[lo, hi]` | Notes |
-|---|---|---|---|---|
-| `revenue_cagr` | 3–5y revenue CAGR | `Statements.revenue_cagr()` | `[0.00, 0.20]` | always-positive series → plain CAGR is safe |
-| `fcf_cagr` | 5y FCF CAGR | new `stats.cagr()` over `free_cash_flow` | `[0.00, 0.20]` | **only when both endpoints > 0**, else `None` |
-| `eps_cagr` | 5y net-income CAGR (EPS proxy) | new `stats.cagr()` over `net_income` | `[0.00, 0.20]` | net income, not EPS — we don't carry a share-count series yet (see gap #2.5); proxy until we do |
-| `revenue_growth_persistence` | fraction of YoY periods with positive revenue growth, 0..1 | new `stats.growth_persistence()` | `[0.50, 1.00]` | robust to sign flips; rewards *consistency*, penalizes lumpiness |
-
-Rationale for the mix: a single CAGR is gameable by one outlier endpoint year, so we pair
-**rate** (revenue/FCF/EPS CAGR) with **consistency** (`persistence`). FCF and net income can
-go negative, where CAGR is mathematically meaningless — those legs return `None` on a
-non-positive start/end and the scorer's existing weight-redistribution (`scoring.py:106`)
-handles the gap, exactly as it does elsewhere.
-
-### New code (single source of truth, matching the `stats.py` pattern)
-
-`stats.py` — two new pure helpers, reused by both stacks (mirrors `median_pe` / `avg_roic`):
-
-```python
-def cagr(series: list[Optional[float]], most_recent_first: bool = True,
-         min_points: int = 3) -> Optional[float]:
-    """CAGR over a series. Returns None unless both endpoints are present and > 0
-    (CAGR is undefined/misleading across a sign change), or with < min_points."""
-
-def growth_persistence(series: list[Optional[float]], most_recent_first: bool = True,
-                       min_points: int = 3) -> Optional[float]:
-    """Fraction of consecutive YoY periods with positive growth, 0..1. Sign-safe."""
-```
-
-`models.py` — four scalar fields on `StockMetrics` (kept flat so the screener path can also
-populate them without carrying series):
-
-```python
-    # Growth
-    revenue_cagr: Optional[float] = None
-    fcf_cagr: Optional[float] = None
-    eps_cagr: Optional[float] = None
-    revenue_growth_persistence: Optional[float] = None
-```
-
-`scoring.py` — new sub-score, identical shape to the others:
-
-```python
-def growth_score(m: StockMetrics, t: dict) -> Optional[float]:
-    return _avg([
-        _norm(m.revenue_cagr, *t["revenue_cagr"]),
-        _norm(m.fcf_cagr, *t["fcf_cagr"]),
-        _norm(m.eps_cagr, *t["eps_cagr"]),
-        _norm(m.revenue_growth_persistence, *t["revenue_growth_persistence"]),
-    ])
-```
-
-…added to `parts` in `score()` with its weight, so it flows through the existing
-numerator/denominator redistribution unchanged.
-
-`bridge.py` (harness — the natural home, since `Statements` is right there):
-
-```python
-    if st:
-        m.revenue_cagr = st.revenue_cagr()
-        m.fcf_cagr = cagr(st.free_cash_flow)
-        m.eps_cagr = cagr(st.net_income)
-        m.revenue_growth_persistence = growth_persistence(st.revenue)
-```
-
-Screener path: `FMPProvider` already pulls statements for `gross_margin_stability`; populate
-the same four scalars there so `--engine screener` reaches parity (or accept it as a known
-harness-only signal initially, the way `eps_revision` is an accepted screener-only gap).
-
-### Config + weights
-
-`config.yaml` thresholds block:
-
-```yaml
-  # Growth
-  revenue_cagr:                [0.00, 0.20]
-  fcf_cagr:                    [0.00, 0.20]
-  eps_cagr:                    [0.00, 0.20]
-  revenue_growth_persistence:  [0.50, 1.00]
-```
-
-Adding a fifth weighted axis means the weights must re-sum to 1.0. **Proposed default
-(must be backtested — see gap #1):**
-
-```yaml
-weights:
-  quality:      0.20   # was 0.25
-  moat:         0.20   # was 0.25
-  growth:       0.15   # new
-  opportunity:  0.30   # unchanged — still the dominant axis
-  insider:      0.15   # was 0.20
-```
-
-This keeps `opportunity` dominant (Chris's momentum-OR-value brief), funds growth by
-trimming the two slowest-moving axes, and leaves insider as a meaningful-but-secondary
-overlay. **These numbers are a starting point, not a result** — they should be fit by the
-backtest harness (gap #1), not hand-asserted. Until that exists, this is a defensible prior.
-
-### Tests to add (`tests/test_scoring.py`, `tests/test_stats.py`)
-- `cagr` endpoints, negative-endpoint → `None`, `<min_points` → `None`, ordering flag.
-- `growth_persistence` all-up → 1.0, all-down → 0.0, mixed, sign-safe.
-- `growth_score` None-redistribution (e.g. only `revenue_cagr` present).
-- A `score()` case proving the composite denominator drops growth's weight when the whole
-  axis is `None` (no silent zero).
-- Update `ScoreCard` / table / `_card_dict` / CSV to surface `growth` (it's a new column).
-
-### Acceptance
-A high-growth name (rising revenue + FCF, consistent YoY) scores materially higher than a
-flat-but-profitable peer with the same margins/ROIC; a name with one spike year scores
-*lower* than a steady compounder with the same CAGR (persistence leg working); and a name
-with negative/lumpy FCF degrades to the legs that are defined rather than erroring.
+**Weights remain an unfitted prior** — the default growth weight funds itself by trimming the
+slowest-moving axes, but should be *fit* by the backtest harness (gap #1), not hand-asserted.
 
 ---
 
@@ -196,7 +82,7 @@ touches.
 > directional first-run finding (down-weight quality, up-weight growth) but the shipped
 > weights beat the prior OOS by only +0.005 (vs the +0.02 bar), positive in just 2/5
 > folds. Honest evidence-of-record, not a config change — exactly what this gap was for.
-> Numbers + recommendation: `docs/superpowers/specs/2026-06-03-xbrl-weight-fit-results.md`.
+> Numbers + recommendation: `2026-06-03-xbrl-weight-fit-results` (local working notes, not committed).
 >
 > **Built, tested, guarded (Phase 2, blocked on data):** the *composite* (all-7-axis)
 > weight-fit and snapshot-replay (`SnapshotSignalSource`) activate once point-in-time
@@ -269,8 +155,8 @@ relative.) Two structural failure modes:
 > ~0 / insignificant on the 79-name survivorship-biased large-cap set (does NOT clear the
 > §2.1 bar — but large-cap is the wrong universe for a Piotroski score, and the IC validates
 > the axis, not the suppress/confirm mechanism); the `value` axis IC is unchanged, confirming
-> `value_score` was preserved. Bands/thresholds remain **unfitted priors**. Specs:
-> `docs/superpowers/specs/2026-06-03-piotroski-value-trap-design.md` + `...-xbrl-piotroski-results.md`.
+> `value_score` was preserved. Bands/thresholds remain **unfitted priors**. Design + numbers
+> are summarized in this section; the `2026-06-03-piotroski-value-trap` working notes are local, not committed.
 
 - **Still open — absolute-multiple half (DEFERRED, gated):** add an absolute valuation leg
   proper — **EV/EBIT** (fresh numerator vs `fcf_yield`; EV/FCF rejected as collinear), or a
@@ -355,8 +241,8 @@ parses the granular trades to do far better:
 > priors** — backtest the standalone cluster/role rank IC (§2.1) before trusting them.
 > `EdgarProvider` and `EdgarSource` both accept the conviction config and pass it through to
 > `providers/_form4.py`, which extracts role strings and 10b5-1 footnote heuristics from the
-> already-fetched edgartools objects. See spec:
-> `docs/superpowers/specs/2026-06-02-insider-conviction-design.md`.
+> already-fetched edgartools objects. The conviction design is summarized in this section;
+> the `2026-06-02-insider-conviction-design` working notes are local, not committed.
 
 #### 2.7 The gates can flag *good* businesses
 `check_gates` (`scoring.py:74`) has two dangerous rules:

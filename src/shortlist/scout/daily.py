@@ -13,7 +13,7 @@ import yaml
 
 from ..env import load_env, redact_secrets
 from .budget import select
-from .calendar import is_trading_day, last_session
+from .calendar import last_session
 from .funnel import aggregate, prefilter
 from .models import RunManifest, SignalStatus
 from .report import render_message
@@ -25,13 +25,14 @@ _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
+# Config keys we know how to build a signal for. An enabled key not in here is
+# ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
+_KNOWN_SIGNAL_KEYS = _DISCOVERY_SIGNAL_NAMES | _BOOSTER_SIGNAL_NAMES | {"quiver"}
 
 
 def _enabled_signal_names(scout_cfg: dict) -> list[str]:
-    name_map = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
-                "finnhub_news": "finnhub_news", "wikipedia": "wikipedia", "quiver": "quiver"}
-    return [name_map[k] for k, v in scout_cfg.get("signals", {}).items()
-            if v.get("enabled") and k in name_map]
+    return [k for k, v in scout_cfg.get("signals", {}).items()
+            if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
 def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
@@ -80,13 +81,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         kwargs_by_name = _signal_kwargs(scout_cfg)
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
-        # FIX 1: emit a SignalStatus for each configured-but-disabled signal so the
+        # Emit a SignalStatus for each configured-but-disabled signal so the
         # coverage line in the report shows them (e.g. "quiver ✗ (disabled)").
-        _name_map = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
-                     "finnhub_news": "finnhub_news", "wikipedia": "wikipedia", "quiver": "quiver"}
         for cfg_key, sig_val in sig_cfg.items():
-            if not sig_val.get("enabled") and cfg_key in _name_map:
-                statuses.append(SignalStatus(_name_map[cfg_key], False, "disabled"))
+            if not sig_val.get("enabled") and cfg_key in _KNOWN_SIGNAL_KEYS:
+                statuses.append(SignalStatus(cfg_key, False, "disabled"))
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
     for s in discovery:
@@ -214,7 +213,8 @@ def _research_phase(
         return {}, [], "research skipped: kill-switch"
     if _is_available is None or _enrich is None:
         try:
-            from ..research import is_available as _ia, enrich as _en
+            from ..research import enrich as _en
+            from ..research import is_available as _ia
             _is_available = _is_available or _ia
             _enrich = _enrich or _en
         except Exception:  # noqa: BLE001

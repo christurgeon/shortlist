@@ -3,9 +3,14 @@ from __future__ import annotations
 # Illustrative sample bundles for offline demo / tests. Prices, targets, and
 # statement figures are approximate for late May 2026; some fields are rounded
 # placeholders. NOT verified fundamentals — run a live source for real numbers.
-
 from .models import (
-    Analyst, Fundamentals, Insider, InsiderTxn, Price, Profile, Statements,
+    Analyst,
+    Fundamentals,
+    Insider,
+    InsiderTxn,
+    Price,
+    Profile,
+    Statements,
     TickerSnapshot,
 )
 

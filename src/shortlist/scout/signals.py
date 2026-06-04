@@ -236,7 +236,7 @@ class EdgarForm4Signal:
         self._status = (False, "not run")
 
     def scan(self, session: date) -> list[Emission]:
-        from .edgar_index import fetch_recent_records, cluster_buys_from_records
+        from .edgar_index import cluster_buys_from_records, fetch_recent_records
         try:
             # The SEC daily index for `session` isn't published until ~02:00 UTC, so at
             # the after-close run time today's index is empty; fall back to the last

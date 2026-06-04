@@ -10,6 +10,7 @@ The module is a dependency-light leaf: only stdlib + env.redact_secrets.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import random
@@ -261,8 +262,6 @@ def get_default_cache():
 def reset_default_cache() -> None:
     global _default_cache
     if _default_cache is not None:
-        try:
+        with contextlib.suppress(Exception):
             _default_cache.close()
-        except Exception:  # noqa: BLE001
-            pass
     _default_cache = None

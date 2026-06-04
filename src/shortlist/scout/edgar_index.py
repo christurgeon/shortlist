@@ -15,7 +15,6 @@ from ..providers._form4 import classify_code
 from .calendar import is_trading_day
 from .models import Emission
 
-
 # Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
 # foreign filers). They are NOT real symbols — left unfiltered they bucket together
 # into a phantom "NONE" issuer that looks like a multi-insider cluster buy.
@@ -77,7 +76,7 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
     count at max_filings and record truncation in the caller's coverage detail.
     """
     try:
-        from edgar import set_identity, get_filings  # edgartools
+        from edgar import get_filings, set_identity  # edgartools
         set_identity(identity)
         filings = get_filings(form="4", filing_date=session.isoformat())
         records: list[dict] = []

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from typing import Any, Optional
 
 import requests
 
+from .._util import first as _first
 from ..cache import get_default_cache
 from ..models import StockMetrics
 from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
@@ -160,10 +162,8 @@ class FMPProvider(Provider):
             m.rating_hold = grades.get("hold")
             m.rating_sell = (grades.get("sell") or 0) + (grades.get("strongSell") or 0)
 
-        try:
+        with contextlib.suppress(Exception):
             m.rel_strength_6m = _rel_strength(self, ticker)
-        except Exception:
-            pass
 
         # Insider transactions are a paid /stable/ endpoint (402 on free plans), so
         # this is opt-in (fmp.fetch_insider) — on the free tier EDGAR supplies insider
@@ -234,11 +234,3 @@ def _rel_strength(p: FMPProvider, ticker: str) -> Optional[float]:
             p._spy_6m = 0.0
     stock = p._change_6m(ticker)
     return stock - p._spy_6m if stock is not None else None
-
-
-def _first(data: Any) -> Optional[dict]:
-    if isinstance(data, list) and data:
-        return data[0]
-    if isinstance(data, dict):
-        return data
-    return None

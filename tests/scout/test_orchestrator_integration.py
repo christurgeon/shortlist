@@ -7,10 +7,8 @@ Drives the real orchestrator path (non-demo) to verify that:
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
-from pathlib import Path
+from datetime import date
 
-import pytest
 
 from shortlist.models import ScoreCard
 from shortlist.scout.models import Emission

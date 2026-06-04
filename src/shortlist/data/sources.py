@@ -10,12 +10,23 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
+from .._util import first as _first
 from ..cache import get_default_cache
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
 from .models import (
-    Analyst, Events, FilingEvent, Fundamentals, Insider, InsiderTxn, Price, Profile,
-    ShortInterest, SourceResult, Statements, TickerSnapshot,
+    Analyst,
+    Events,
+    FilingEvent,
+    Fundamentals,
+    Insider,
+    InsiderTxn,
+    Price,
+    Profile,
+    ShortInterest,
+    SourceResult,
+    Statements,
+    TickerSnapshot,
 )
 
 
@@ -358,6 +369,7 @@ class EdgarSource(Source):
         """Fetch Form 4 insider data. Always returns a SourceResult with a
         non-None res.partial (on all branches, including the except branch)."""
         from edgar import Company
+
         from ..providers._form4 import aggregate_form4
 
         res = SourceResult(source=self.name)
@@ -690,14 +702,6 @@ async def _fetch_sections(
             res.errors.append(f"{res.source}.{name}: {redact_secrets(e)}")
 
 
-def _first(x: Any) -> Optional[dict]:
-    if isinstance(x, list) and x:
-        return x[0]
-    if isinstance(x, dict):
-        return x
-    return None
-
-
 def _pct(x: Any) -> Optional[float]:
     return x / 100.0 if isinstance(x, (int, float)) else None
 
@@ -821,7 +825,7 @@ def _monthly_closes_from_chart(raw: Any) -> list[list]:
     if not ts or not series:
         return []
     by_month: dict[str, list] = {}
-    for t, c in zip(ts, series):
+    for t, c in zip(ts, series, strict=False):
         if not isinstance(c, (int, float)):
             continue
         d = datetime.fromtimestamp(t, tz=timezone.utc).date()
