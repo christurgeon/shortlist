@@ -1,0 +1,153 @@
+"""Renderer-agnostic snapshot of one scout run. Pure data; no I/O, no optional deps."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import date
+
+from shortlist.models import ScoreCard
+from ..models import RunManifest
+from .theme import SUBS
+
+
+@dataclass
+class MetricsVM:
+    price: float | None = None
+    market_cap: float | None = None
+    pe_ttm: float | None = None
+    pe_median_5y: float | None = None
+    fcf_yield: float | None = None
+    peg: float | None = None
+    roe: float | None = None
+    roic: float | None = None
+    gross_margin: float | None = None
+    net_margin: float | None = None
+    debt_to_equity: float | None = None
+    revenue_cagr: float | None = None
+    eps_cagr: float | None = None
+    price_vs_200dma: float | None = None
+    rel_strength_6m: float | None = None
+    realized_vol: float | None = None
+    max_drawdown: float | None = None
+    rating_buy: int | None = None
+    rating_hold: int | None = None
+    rating_sell: int | None = None
+    target_upside: float | None = None   # from StockMetrics.upside_to_target()
+    insider_net_6m: float | None = None
+    insider_distinct_buyers: int | None = None
+
+
+@dataclass
+class AssessmentVM:
+    business_model: str = ""
+    takeaway: str = ""                    # one-line TL;DR (synthesis / thesis.takeaway)
+    bull_case: str = ""
+    bear_case: str = ""
+    change_my_mind: list[str] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
+    red_flags: list[str] = field(default_factory=list)
+    capital_allocation: str = ""
+
+
+@dataclass
+class LeaderVM:
+    ticker: str
+    name: str | None
+    composite: float
+    subscores: dict[str, float | None]
+    masked: set[str]
+    gates: list[str]
+    flags: list[str]
+    confidence: float | None
+    thin: bool
+    scored: bool
+    coverage_note: str | None
+    metrics: MetricsVM
+    assessment: AssessmentVM | None
+
+
+@dataclass
+class SignalStatusVM:
+    name: str
+    ran: bool
+    detail: str
+
+
+@dataclass
+class FunnelVM:
+    raw: int
+    after_dedup: int
+    after_prefilter: int
+    screened: int
+    dropped_for_budget: int
+
+
+@dataclass
+class ReportVM:
+    session: date
+    leaders: list[LeaderVM]
+    signals: list[SignalStatusVM]
+    funnel: FunnelVM
+    notes: list[str]
+
+
+def _claim(x) -> str:
+    return x.get("claim", "") if isinstance(x, dict) else str(x)
+
+
+def _assessment_vm(rec: dict) -> AssessmentVM:
+    th = rec.get("thesis") or {}
+    return AssessmentVM(
+        business_model=rec.get("business_model_summary", "") or "",
+        takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
+        bull_case=th.get("bull_case", "") or "",
+        bear_case=th.get("bear_case", "") or "",
+        change_my_mind=[str(x) for x in (th.get("what_would_change_my_mind") or [])],
+        risks=[_claim(x) for x in (rec.get("risks") or [])],
+        red_flags=[_claim(x) for x in (rec.get("red_flags") or [])],
+        capital_allocation=rec.get("management_capital_allocation", "") or "",
+    )
+
+
+def _metrics_vm(m) -> MetricsVM:
+    if m is None:
+        return MetricsVM()
+    return MetricsVM(
+        price=m.price, market_cap=m.market_cap, pe_ttm=m.pe_ttm,
+        pe_median_5y=m.pe_median_5y, fcf_yield=m.fcf_yield, peg=m.peg, roe=m.roe,
+        roic=m.roic, gross_margin=m.gross_margin, net_margin=m.net_margin,
+        debt_to_equity=m.debt_to_equity, revenue_cagr=m.revenue_cagr, eps_cagr=m.eps_cagr,
+        price_vs_200dma=m.price_vs_200dma, rel_strength_6m=m.rel_strength_6m,
+        realized_vol=m.realized_vol, max_drawdown=m.max_drawdown,
+        rating_buy=m.rating_buy, rating_hold=m.rating_hold, rating_sell=m.rating_sell,
+        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m,
+        insider_distinct_buyers=m.insider_distinct_buyers)
+
+
+def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
+    subs = {s: getattr(c, s, None) for s in SUBS}
+    bucket = getattr(c, "sic_bucket", None)
+    masked = {s for s, v in subs.items() if v is None and bucket not in (None, "unknown")}
+    note = c.coverage.note if (c.coverage is not None and c.coverage.note) else None
+    rec = assessments.get(c.ticker)
+    return LeaderVM(
+        ticker=c.ticker,
+        name=getattr(c.metrics, "name", None) if c.metrics else None,
+        composite=c.composite, subscores=subs, masked=masked,
+        gates=list(c.gates), flags=list(getattr(c, "flags", [])),
+        confidence=getattr(c, "confidence", None), thin=getattr(c, "thin", False),
+        scored=getattr(c, "scored", True), coverage_note=note,
+        metrics=_metrics_vm(c.metrics),
+        assessment=_assessment_vm(rec) if rec else None)
+
+
+def build_view_model(cards, manifest: RunManifest, *,
+                     assessments: dict[str, dict]) -> ReportVM:
+    ordered = sorted(cards, key=lambda c: (getattr(c, "scored", True), c.composite),
+                     reverse=True)
+    return ReportVM(
+        session=manifest.session,
+        leaders=[_leader_vm(c, assessments) for c in ordered],
+        signals=[SignalStatusVM(s.name, s.ran, s.detail) for s in manifest.signals],
+        funnel=FunnelVM(manifest.raw, manifest.after_dedup, manifest.after_prefilter,
+                        manifest.screened, manifest.dropped_for_budget),
+        notes=list(manifest.notes))
