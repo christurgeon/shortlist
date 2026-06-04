@@ -1,0 +1,26 @@
+from shortlist.scout.report.html import HtmlBuilder, document
+
+
+def test_esc_escapes_all_dangerous_chars():
+    h = HtmlBuilder()
+    out = h.esc('<script>"x" & y</script>')
+    assert "<script>" not in out and "&lt;script&gt;" in out
+    assert "&amp;" in out and "&quot;" in out
+
+
+def test_tag_escapes_text_content_and_attrs():
+    h = HtmlBuilder()
+    assert h.tag("td", "A & B") == "<td>A &amp; B</td>"
+    assert h.tag("td", "x", style="color:red") == '<td style="color:red">x</td>'
+    assert "&quot;" in h.tag("td", "x", title='a"b')   # attr value escaped
+
+
+def test_document_is_self_contained_html():
+    out = document("Scout — 2026-06-04", png_b64=None, body="<p>hi</p>")
+    assert out.startswith("<!DOCTYPE html>")
+    assert "<style>" in out and "Scout — 2026-06-04" in out and "<p>hi</p>" in out
+
+
+def test_document_embeds_png_when_present():
+    out = document("T", png_b64="AAAA", body="")
+    assert 'src="data:image/png;base64,AAAA"' in out
