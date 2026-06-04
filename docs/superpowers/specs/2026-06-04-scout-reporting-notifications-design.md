@@ -275,7 +275,11 @@ secrets convention — never in config.
   scores + metrics only.
 - Telegram unconfigured → write files, print text to journal, **exit 0**.
 - Empty shortlist → "No candidates" PNG card + a minimal HTML/text report.
-- **Demo path byte-for-byte unchanged** (prints text to stdout; no network/Pillow).
+- **Demo path: prints text to stdout, no network/Pillow, exit 0.** (As-built note: the
+  demo text is now rendered from the shared sections at GLANCE detail rather than the old
+  `render_message` body, so the sub-score line was intentionally refreshed — full
+  `Qual/Moat/Grow/Value/Mom/Insdr/Risk` labels and the value/momentum split instead of the
+  old `Opp..Conf` form. No test pinned the old text; behavior/semantics are unchanged.)
 
 ## 14. Testing strategy
 
