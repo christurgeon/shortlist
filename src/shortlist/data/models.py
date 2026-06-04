@@ -59,7 +59,7 @@ class Statements:
     fiscal_period_end: list[str] = field(default_factory=list)  # ISO dates, newest-first
 
     def gross_margins(self) -> list[float]:
-        return [g / r for g, r in zip(self.gross_profit, self.revenue) if r]
+        return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False) if r]
 
 
 @dataclass

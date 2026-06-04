@@ -66,7 +66,7 @@ def growth_persistence(series: list[Optional[float]], most_recent_first: bool = 
         return None
     if most_recent_first:
         vals = list(reversed(vals))
-    pairs = list(zip(vals, vals[1:]))  # (older, newer)
+    pairs = list(zip(vals, vals[1:], strict=False))  # (older, newer)
     ups = sum(1 for older, newer in pairs if newer > older)
     return ups / len(pairs)
 
@@ -141,7 +141,8 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
         if cf[0] > ni[0]:
             won += 1
     # F4 net-margin trend: net_income/revenue rising (delta; revenue>0 guard)
-    ni_t, ni_p = _t(ni); rev_t, rev_p = _t(rev)
+    ni_t, ni_p = _t(ni)
+    rev_t, rev_p = _t(rev)
     if None not in (ni_t, ni_p, rev_t, rev_p) and rev_t > 0 and rev_p > 0:
         legs += 1
         if (ni_t / rev_t) > (ni_p / rev_p):

@@ -7,7 +7,7 @@ from typing import Callable, Optional
 
 from . import claude_cli
 from .claude_cli import CliResult
-from .models import FilingText, QualitativeAssessment, SCHEMA_HINT, assessment_from_payload
+from .models import SCHEMA_HINT, FilingText, QualitativeAssessment, assessment_from_payload
 
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12

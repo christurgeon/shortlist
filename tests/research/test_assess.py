@@ -1,6 +1,6 @@
 import json
 
-from shortlist.research.assess import _salvage_json, _verify_grounding, assess
+from shortlist.research.assess import _salvage_json, assess
 from shortlist.research.claude_cli import CliResult
 from shortlist.research.models import FilingText
 

@@ -43,9 +43,12 @@ validation, and history, not new scoring:
 - **Backtest** (`shortlist.backtest.*`, CLI `shortlist-backtest`): validates the
   scorer against forward returns (rank IC + quantile spreads) by replaying the
   **real** scoring chain on price series truncated point-in-time. Signal-agnostic
-  (`Observation(as_of, ticker, {signal: sub-score})`). Momentum is validated today;
-  fundamental/weight-fitting paths are built but **guarded** on snapshot history.
-  See `HARNESS.md` → "Backtesting" and `docs/ASSESSMENT_GAPS.md` §2.1.
+  (`Observation(as_of, ticker, {signal: sub-score})`). Momentum is validated on live
+  prices; **`--source xbrl`** now validates the fundamental axes (quality/moat/growth/
+  value) point-in-time, keylessly, from SEC companyfacts, and can **fit fundamental
+  weights** walk-forward (`--fit` — proposes only, never writes `config.yaml`). The
+  snapshot-replay path stays **guarded** on accumulated history. See `HARNESS.md` →
+  "Backtesting" / "XBRL source" and `docs/ASSESSMENT_GAPS.md` §2.1.
 - **Accumulation** (`shortlist.data.accumulate`, CLI `shortlist-accumulate`):
   idempotent, point-in-time daily capture of `TickerSnapshot`s into `store.py` so the
   guarded backtest paths can activate (≥24 daily snapshots). **Scheduling ships OFF**
@@ -126,7 +129,12 @@ Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
 conviction advisories `insider_cluster_buy` / `planned_sale` (inert unless `insider.conviction`
 is enabled), and `value_trap` — fires when a name looks cheap (high `value` sub-score)
 while quality OR growth is weak (`config.yaml` → `flags.value_trap`; a level-based
-prior, never affects `passed`/`composite`/`scored`).
+prior, never affects `passed`/`composite`/`scored`). An optional `flags.value_trap.piotroski`
+sub-block (ships **OFF**, bit-identical when absent) refines it with a Piotroski-inspired
+fundamental-quality fraction (`scoring.py:piotroski_score`, won/legs → 0–100; ScoreCard
+`piotroski_f`/`piotroski_f_legs`): **suppresses** the flag on cheap-but-improving names,
+**confirms** it on cheap-but-deteriorating ones. Sector-masked, an **unfitted prior** — and
+the same fundamental-quality axis the `--source xbrl` backtest validates.
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell

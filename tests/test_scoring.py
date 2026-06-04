@@ -453,7 +453,7 @@ def test_csv_has_aligned_risk_column(tmp_path):
 
 
 def test_thin_flag_set_below_threshold():
-    import copy, dataclasses
+    import copy
     rc = copy.deepcopy(CONFIG)
     rc["ranking"] = {"thin_below": 0.5}
     # momentum-only name -> confidence well below 0.5 -> thin

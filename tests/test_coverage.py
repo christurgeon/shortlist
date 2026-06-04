@@ -129,7 +129,6 @@ def test_coverage_note_line_renders_flagged_providers():
     assert "finnhub" not in line  # ok providers are not listed
 
 
-from shortlist.coverage import _build_note
 
 
 def test_build_coverage_error_only_returns_coverage_with_generic_note():

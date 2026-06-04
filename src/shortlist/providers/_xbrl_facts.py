@@ -201,9 +201,15 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
 # ---------------------------------------------------------------------------
 # Panel -> StockMetrics
 # ---------------------------------------------------------------------------
-from ..models import StockMetrics                                            # noqa: E402
-from ..stats import (avg_roic, cagr, gross_margin_stability,                # noqa: E402
-                     growth_persistence, median_pe, piotroski_f)
+from ..models import StockMetrics  # noqa: E402
+from ..stats import (  # noqa: E402
+    avg_roic,
+    cagr,
+    gross_margin_stability,
+    growth_persistence,
+    median_pe,
+    piotroski_f,
+)
 
 _STATUTORY_TAX = 0.21
 

@@ -36,7 +36,7 @@ def parse_chart(raw: Any) -> tuple[list[date], list[float]]:
         return [], []
     dates: list[date] = []
     closes: list[float] = []
-    for t, c in zip(ts, adj):
+    for t, c in zip(ts, adj, strict=False):
         if _is_finite_number(c) and _is_finite_number(t):
             dates.append(datetime.fromtimestamp(t, tz=timezone.utc).date())
             closes.append(float(c))

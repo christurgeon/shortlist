@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from .metrics import ICStats, QuantileResult, aggregate_ic, spearman_ic, quantile_spread
+from .metrics import ICStats, QuantileResult, aggregate_ic, quantile_spread, spearman_ic
 from .prices import PriceHistory, _add_months
 from .signals import SignalSource
 

@@ -26,6 +26,31 @@ dev = ["pytest>=8.0"]
 addopts = "-m 'not live'"
 markers = ["live: hits real external APIs; skipped unless -m live"]
 
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+extend-exclude = [".claude"]  # transient git worktrees, not part of this project
+
+[tool.ruff.lint]
+# Curated for signal, not churn: pyflakes/pycodestyle defaults plus bugbear,
+# comprehension, simplify and import-sort. Pyupgrade (Optional -> | None) is
+# deliberately omitted — it would rewrite ~300 annotations for no behaviour gain.
+select = ["E", "F", "W", "I", "B", "C4", "SIM", "PIE"]
+ignore = [
+    "E501",    # long lines are dense-by-design here; we don't reflow
+    "SIM103",  # explicit multi-return guards read clearer than one negated return
+    "SIM108",  # nested ternaries are less readable than the if/else blocks here
+    "B027",    # empty non-abstract lifecycle hooks (e.g. Source.aclose) are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files use deliberate task-section structure: mid-file imports, re-imports,
+# lambda fakes and compact one-line stubs. Don't fight that.
+"tests/**" = ["E402", "E731", "F811", "F841", "E401", "E702", "I", "C408"]
+# mock.py uses dict(k=v, ...) as readable tabular record literals on purpose.
+"src/shortlist/providers/mock.py" = ["C408"]
+
 [project.scripts]
 shortlist = "shortlist.screen:main"
 shortlist-harness = "shortlist.data.cli:main"

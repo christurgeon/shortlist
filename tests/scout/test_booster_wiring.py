@@ -12,7 +12,7 @@ from datetime import date
 
 import pytest
 
-from shortlist.scout.models import Candidate, Emission, SignalStatus
+from shortlist.scout.models import Candidate, Emission
 from shortlist.scout.signals import (
     FinnhubNewsSignal,
     WikipediaAttentionSignal,

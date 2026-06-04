@@ -10,7 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .metrics import spearman_ic, aggregate_ic
+from .metrics import aggregate_ic, spearman_ic
 
 
 class FitGuardError(RuntimeError):
@@ -93,7 +93,7 @@ def fit_weights(rows, prior: dict[str, float], *, min_periods: int = 24,
             f"need >= {min_periods} periods to fit weights, have {len(periods)} "
             f"— fitting is gated until point-in-time multi-axis history accumulates")
     if min_period_gap_days is not None:
-        for a, b in zip(periods, periods[1:]):
+        for a, b in zip(periods, periods[1:], strict=False):
             if (b - a).days < min_period_gap_days:
                 raise FitGuardError(
                     f"period spacing {(b - a).days}d < required {min_period_gap_days}d "
