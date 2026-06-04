@@ -10,25 +10,6 @@ import httpx
 from ..env import redact_secrets
 
 
-def send_telegram(text: str, token: str | None = None, chat_id: str | None = None,
-                  client: httpx.Client | None = None) -> bool:
-    token = token or os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        return False
-    c = client or httpx.Client(timeout=15.0)
-    try:
-        resp = c.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                      json={"chat_id": chat_id, "text": text})
-        return resp.status_code == 200
-    except Exception as e:  # noqa: BLE001
-        print(f"telegram send failed: {redact_secrets(str(e))}")
-        return False
-    finally:
-        if client is None:
-            c.close()
-
-
 _API = "https://api.telegram.org/bot{token}/{method}"
 _MSG_CAP = 4096
 _CAPTION_CAP = 1024
@@ -99,16 +80,23 @@ class DeliveryResult:
     failures: list[str] = field(default_factory=list)
 
 
-def deliver(notifier, *, png: bytes | None, html: str, text: str, caption: str,
+def deliver(notifier, *, png: bytes | None, html: str | None, text: str, caption: str,
             session: str) -> DeliveryResult:
-    """Policy: photo (if any) then document; fall back to a text message on any failure."""
+    """Policy: photo (if any) + document (if any); fall back to a text message on any
+    failure, or when nothing else was attached."""
     if not notifier.configured():
         return DeliveryResult(configured=False, all_ok=False)
     failures: list[str] = []
-    if png is not None and not notifier.send_photo(png, caption):
-        failures.append("photo")
-    if not notifier.send_document(html.encode("utf-8"), f"scout-{session}.html", caption):
-        failures.append("document")
-    if failures and not notifier.send_message(text):
-        failures.append("message")
+    sent_any = False
+    if png is not None:
+        sent_any = True
+        if not notifier.send_photo(png, caption):
+            failures.append("photo")
+    if html is not None:
+        sent_any = True
+        if not notifier.send_document(html.encode("utf-8"), f"scout-{session}.html", caption):
+            failures.append("document")
+    if failures or not sent_any:
+        if not notifier.send_message(text):
+            failures.append("message")
     return DeliveryResult(configured=True, all_ok=not failures, failures=failures)

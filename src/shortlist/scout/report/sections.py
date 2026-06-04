@@ -102,8 +102,9 @@ class _Fundamentals:
             analysts = (f"{l.metrics.rating_buy or 0}B / {l.metrics.rating_hold or 0}H / "
                         f"{l.metrics.rating_sell or 0}S")
             rows.append(h.raw("tr", h.tag("td", "Analysts", _class="k") + h.tag("td", analysts)))
+            head = f"{l.ticker} · {l.name} — {l.composite:.0f}" if l.name else f"{l.ticker} — {l.composite:.0f}"
             cards.append(h.raw("div",
-                               h.tag("h2", f"{l.ticker} — {l.composite:.0f}") +
+                               h.tag("h2", head) +
                                h.raw("table", "".join(rows)), _class="card"))
         return "".join(cards)
 

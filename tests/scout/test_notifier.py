@@ -109,3 +109,15 @@ def test_429_exhausts_retries_and_returns_false(monkeypatch):
     n = TelegramNotifier("T", "42", max_retries=2,
                          client=httpx.Client(transport=httpx.MockTransport(handler)))
     assert n.send_message("hi") is False       # all attempts 429 -> False, no infinite loop
+
+
+def test_deliver_skips_document_when_html_none():
+    f = _Fake()
+    res = deliver(f, png=b"x", html=None, text="t", caption="c", session="x")
+    assert f.calls == ["photo"] and res.all_ok        # no doc, no fallback msg
+
+
+def test_deliver_sends_message_when_nothing_attached():
+    f = _Fake()
+    res = deliver(f, png=None, html=None, text="t", caption="c", session="x")
+    assert f.calls == ["msg"] and res.all_ok

@@ -12,6 +12,7 @@ from pathlib import Path
 import yaml
 
 from ..env import load_env, redact_secrets
+from ..models import rank_key
 from .budget import select
 from .calendar import last_session
 from .funnel import aggregate, prefilter
@@ -176,7 +177,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     notifier = TelegramNotifier()
     result = deliver(notifier,
                      png=artifacts.png if rep_cfg.get("chart", True) else None,
-                     html=artifacts.html, text=artifacts.text, caption=caption,
+                     html=artifacts.html if rep_cfg.get("attach_html", True) else None,
+                     text=artifacts.text, caption=caption,
                      session=session.isoformat())
     if not result.configured:
         print(artifacts.text)  # journal fallback
@@ -287,8 +289,7 @@ def _one_line_brief_from_file(brief_path) -> str:
 
 
 def _caption(manifest, cards, top_n: int) -> str:
-    ordered = sorted(cards, key=lambda c: (getattr(c, "scored", True), c.composite),
-                     reverse=True)
+    ordered = sorted(cards, key=rank_key, reverse=True)
     top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
     return (f"Scout — {manifest.session.isoformat()}\nTop: {top}\n"
             f"{manifest.screened} screened from {manifest.raw} raw")[:1024]
