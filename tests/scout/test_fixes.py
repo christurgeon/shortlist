@@ -21,6 +21,15 @@ from shortlist.scout.models import Emission
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+class _FakeNotifier:
+    def __init__(self, configured=True, ok=True):
+        self._c, self._ok = configured, ok
+    def configured(self): return self._c
+    def send_photo(self, *a): return self._ok
+    def send_document(self, *a): return self._ok
+    def send_message(self, *a): return self._ok
+
+
 def _make_card(ticker: str) -> ScoreCard:
     return ScoreCard(
         ticker=ticker,
@@ -111,7 +120,8 @@ def test_disabled_signal_appears_in_manifest(tmp_path, monkeypatch):
     _patch_harness(monkeypatch)
 
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=False))
 
     config = _base_config(tmp_path)
     today = date(2026, 5, 29)
@@ -120,7 +130,7 @@ def test_disabled_signal_appears_in_manifest(tmp_path, monkeypatch):
     assert rc == 0
 
     # Check the written manifest JSON
-    manifest_file = list((tmp_path / "scout").glob("*.json"))[0]
+    manifest_file = list((tmp_path / "scout").glob("*/manifest.json"))[0]
     manifest = json.loads(manifest_file.read_text())
     signal_names = {s["name"]: s for s in manifest["signals"]}
 
@@ -143,14 +153,15 @@ def test_disabled_signal_appears_in_rendered_report(tmp_path, monkeypatch):
     _patch_harness(monkeypatch)
 
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=False))
 
     config = _base_config(tmp_path)
     today = date(2026, 5, 29)
 
     daily_mod.run(config, demo=False, today=today)
 
-    report_file = list((tmp_path / "scout").glob("*.txt"))[0]
+    report_file = list((tmp_path / "scout").glob("*/report.txt"))[0]
     report_text = report_file.read_text()
     assert "quiver" in report_text
     assert "disabled" in report_text
@@ -174,7 +185,8 @@ def test_discovery_signal_raising_does_not_abort_run(tmp_path, monkeypatch):
     _patch_harness(monkeypatch)
 
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=False))
 
     config = _base_config(tmp_path, extra_signals={
         "bad_discovery": {"enabled": True, "weight": 1.0},
@@ -185,7 +197,7 @@ def test_discovery_signal_raising_does_not_abort_run(tmp_path, monkeypatch):
     assert rc == 0, "run() must complete successfully even when a discovery signal raises"
 
     # The failing signal should appear in the manifest as ran=False
-    manifest_file = list((tmp_path / "scout").glob("*.json"))[0]
+    manifest_file = list((tmp_path / "scout").glob("*/manifest.json"))[0]
     manifest = json.loads(manifest_file.read_text())
     signal_names = {s["name"]: s for s in manifest["signals"]}
 
@@ -202,8 +214,6 @@ def test_discovery_signal_raising_does_not_abort_run(tmp_path, monkeypatch):
 def test_telegram_configured_fails_returns_2_and_marks_complete(tmp_path, monkeypatch):
     """Configured Telegram that fails to deliver → rc 2, state marked complete, manifest note."""
     monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "fake_token_123")
-    monkeypatch.setenv("TELEGRAM_CHAT_ID", "fake_chat_id")
 
     import shortlist.scout.daily as daily_mod
 
@@ -214,7 +224,8 @@ def test_telegram_configured_fails_returns_2_and_marks_complete(tmp_path, monkey
     _patch_harness(monkeypatch)
 
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=True, ok=False))
 
     config = _base_config(tmp_path)
     today = date(2026, 5, 29)
@@ -230,7 +241,7 @@ def test_telegram_configured_fails_returns_2_and_marks_complete(tmp_path, monkey
     assert state.run_completed(session), "state.mark_run_completed() must still be called"
 
     # Manifest must contain the delivery failure note
-    manifest_file = list((tmp_path / "scout").glob("*.json"))[0]
+    manifest_file = list((tmp_path / "scout").glob("*/manifest.json"))[0]
     manifest = json.loads(manifest_file.read_text())
     notes_text = " ".join(manifest.get("notes", []))
     assert "telegram delivery failed" in notes_text, f"note missing; notes={manifest.get('notes')}"
@@ -240,9 +251,6 @@ def test_telegram_configured_fails_returns_2_and_marks_complete(tmp_path, monkey
 def test_telegram_unconfigured_fails_returns_0(tmp_path, monkeypatch):
     """Unconfigured Telegram (no env vars) + delivery False → rc 0 (stdout fallback expected)."""
     monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
-    # Ensure Telegram env vars are absent
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
 
     import shortlist.scout.daily as daily_mod
 
@@ -253,7 +261,8 @@ def test_telegram_unconfigured_fails_returns_0(tmp_path, monkeypatch):
     _patch_harness(monkeypatch)
 
     import shortlist.scout.notify as notify_mod
-    monkeypatch.setattr(notify_mod, "send_telegram", lambda msg: False)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier",
+                        lambda: _FakeNotifier(configured=False))
 
     config = _base_config(tmp_path)
     today = date(2026, 5, 29)
@@ -262,7 +271,7 @@ def test_telegram_unconfigured_fails_returns_0(tmp_path, monkeypatch):
     assert rc == 0, f"unconfigured Telegram should keep rc=0, got {rc}"
 
     # No "telegram delivery failed" note in manifest
-    manifest_file = list((tmp_path / "scout").glob("*.json"))[0]
+    manifest_file = list((tmp_path / "scout").glob("*/manifest.json"))[0]
     manifest = json.loads(manifest_file.read_text())
     notes_text = " ".join(manifest.get("notes", []))
     assert "telegram delivery failed" not in notes_text

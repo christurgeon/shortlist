@@ -12,11 +12,11 @@ from pathlib import Path
 import yaml
 
 from ..env import load_env, redact_secrets
+from ..models import rank_key
 from .budget import select
 from .calendar import last_session
 from .funnel import aggregate, prefilter
 from .models import RunManifest, SignalStatus
-from .report import render_message
 from .signals import build_signals
 from .state import ScoutState
 
@@ -148,10 +148,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
 
     # 3. Auto-research (guardrailed) — skipped in demo
     briefs: dict[str, str] = {}
+    assessments: dict[str, dict] = {}
     researched: list[str] = []
     notes: list[str] = []
     if not demo:
-        briefs, researched, note = _research_phase(cards, config, scout_cfg)
+        briefs, assessments, researched, note = _research_phase(cards, config, scout_cfg)
         if note:
             notes.append(note)
 
@@ -160,30 +161,34 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
         researched=researched, notes=notes)
 
-    message = render_message(cards, manifest, briefs)
-
-    # 4. Deliver + persist
+    # 4a. Demo: print the GLANCE text and stop — never touches Pillow / network.
     if demo:
-        print(message)
-    else:
-        from .notify import send_telegram
-        delivered = send_telegram(message)
-        # FIX 3: distinguish configured-but-failed from unconfigured.
-        tg_configured = bool(os.environ.get("TELEGRAM_BOT_TOKEN") and
-                             os.environ.get("TELEGRAM_CHAT_ID"))
-        tg_failed_configured = tg_configured and not delivered
-        if not delivered:
-            print(message)  # journal / stdout fallback
-        if tg_failed_configured:
-            manifest.notes.append("telegram delivery failed (configured)")
-        # FIX 3 continued + FIX 4: write manifest AFTER we know delivery outcome;
-        # persist completion BEFORE screened list so idempotency anchor lands first.
-        _write_manifest(scout_cfg, manifest, message)
-        # FIX 4: mark_run_completed before record_screened.
-        state.mark_run_completed(session)
-        state.record_screened([c.ticker for c in cards], session)
-        if tg_failed_configured:
-            return 2
+        from .report import render_message
+        print(render_message(cards, manifest, briefs))
+        return 0
+
+    # 4b. Live: build artifacts, deliver, persist.
+    from .report import build_report
+    from .notify import TelegramNotifier, deliver
+    rep_cfg = scout_cfg.get("report", {})
+    artifacts = build_report(cards, manifest, assessments=assessments)
+    caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
+
+    notifier = TelegramNotifier()
+    result = deliver(notifier,
+                     png=artifacts.png if rep_cfg.get("chart", True) else None,
+                     html=artifacts.html if rep_cfg.get("attach_html", True) else None,
+                     text=artifacts.text, caption=caption,
+                     session=session.isoformat())
+    if not result.configured:
+        print(artifacts.text)  # journal fallback
+    if result.configured and not result.all_ok:
+        manifest.notes.append("telegram delivery failed (configured)")
+    _persist(scout_cfg, manifest, artifacts)
+    state.mark_run_completed(session)
+    state.record_screened([c.ticker for c in cards], session)
+    if result.configured and not result.all_ok:
+        return 2
     return 0
 
 
@@ -194,10 +199,12 @@ def _research_phase(
     *,
     _is_available=None,
     _enrich=None,
-) -> tuple[dict, list, str | None]:
+) -> tuple[dict, dict, list, str | None]:
     """Guardrailed auto-research: kill-switch, auth probe, hard cap, phase budget.
 
-    Returns (briefs: dict[ticker, one_line_str], researched: list[ticker], note: str|None).
+    Returns (briefs, assessments, researched, note): briefs is dict[ticker, one_line_str],
+    assessments is dict[ticker, full QualitativeAssessment record], researched is
+    list[ticker], note is str|None.
 
     Optional _is_available/_enrich kwargs allow injection in tests without monkeypatching
     the import machinery.  When omitted the real research module is imported lazily.
@@ -210,7 +217,7 @@ def _research_phase(
     so we fall back to reading the record JSON (which has a 'synthesis' key).
     """
     if os.environ.get("SCOUT_NO_RESEARCH") == "1" or Path("scout/STOP_RESEARCH").exists():
-        return {}, [], "research skipped: kill-switch"
+        return {}, {}, [], "research skipped: kill-switch"
     if _is_available is None or _enrich is None:
         try:
             from ..research import enrich as _en
@@ -218,9 +225,9 @@ def _research_phase(
             _is_available = _is_available or _ia
             _enrich = _enrich or _en
         except Exception:  # noqa: BLE001
-            return {}, [], "research skipped: layer unavailable"
+            return {}, {}, [], "research skipped: layer unavailable"
     if not _is_available():
-        return {}, [], "research skipped: claude CLI / edgartools not available"
+        return {}, {}, [], "research skipped: claude CLI / edgartools not available"
     n = scout_cfg.get("research_top_n", 3)
     budget_s = scout_cfg.get("research_phase_budget_s", 600)
     try:
@@ -239,20 +246,32 @@ def _research_phase(
             pool.shutdown(wait=False)
         except concurrent.futures.TimeoutError:
             pool.shutdown(wait=False, cancel_futures=True)
-            return {}, [], f"research skipped: phase budget {budget_s}s exceeded"
+            return {}, {}, [], f"research skipped: phase budget {budget_s}s exceeded"
     except Exception as e:  # noqa: BLE001
-        return {}, [], f"research failed: {redact_secrets(str(e))}"
+        return {}, {}, [], f"research failed: {redact_secrets(str(e))}"
 
     briefs: dict[str, str] = {}
+    assessments: dict[str, dict] = {}
     researched: list[str] = []
     for r in results:
         if r.skipped:
             continue
         researched.append(r.ticker)
-        # Use in-memory synthesis when fresh; fall back to the JSON record for cached results
         brief_text = r.synthesis if r.synthesis else _one_line_brief_from_file(r.brief_path)
         briefs[r.ticker] = brief_text[:200]
-    return briefs, researched, None
+        rec = _assessment_record_from_file(r.brief_path)
+        if rec:
+            assessments[r.ticker] = rec
+    return briefs, assessments, researched, None
+
+
+def _assessment_record_from_file(brief_path) -> dict | None:
+    """Read the full QualitativeAssessment record (JSON) report.write() saved next to the .md."""
+    try:
+        json_path = Path(str(brief_path).replace(".md", ".json"))
+        return json.loads(json_path.read_text())
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _one_line_brief_from_file(brief_path) -> str:
@@ -269,12 +288,21 @@ def _one_line_brief_from_file(brief_path) -> str:
         return "brief generated"
 
 
-def _write_manifest(scout_cfg, manifest, message) -> None:
-    out_dir = Path(scout_cfg.get("artifact_dir", "scout"))
+def _caption(manifest, cards, top_n: int) -> str:
+    ordered = sorted(cards, key=rank_key, reverse=True)
+    top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
+    return (f"Scout — {manifest.session.isoformat()}\nTop: {top}\n"
+            f"{manifest.screened} screened from {manifest.raw} raw")[:1024]
+
+
+def _persist(scout_cfg, manifest, artifacts) -> None:
+    out_dir = Path(scout_cfg.get("artifact_dir", "scout")) / manifest.session.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = manifest.session.isoformat()
-    (out_dir / f"{stamp}.json").write_text(json.dumps(manifest.to_dict(), indent=2))
-    (out_dir / f"{stamp}.txt").write_text(message)
+    (out_dir / "manifest.json").write_text(json.dumps(manifest.to_dict(), indent=2))
+    (out_dir / "report.txt").write_text(artifacts.text)
+    (out_dir / "report.html").write_text(artifacts.html)
+    if artifacts.png is not None:
+        (out_dir / "dashboard.png").write_bytes(artifacts.png)
 
 
 def main(argv: list[str] | None = None) -> int:

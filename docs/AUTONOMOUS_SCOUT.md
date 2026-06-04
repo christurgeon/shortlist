@@ -6,7 +6,11 @@
 on), [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) (the scorer the candidates flow into),
 and the repo `CLAUDE.md` (the two-stack architecture and house rules this extends).
 
-> **Status:** design / not yet built. This is the design record approved 2026-06-01.
+> **Status:** **Shipped** (`shortlist-scout` CLI, 2026-06). This is the design record approved
+> 2026-06-01; the implementation is complete. Report delivery: PNG dashboard glance
+> (sendPhoto) + styled HTML deep-dive (sendDocument), with a chunked plain-text fallback when
+> Telegram is unconfigured or failing; artifacts saved under `scout/<date>/`. See
+> `docs/NOTIFICATIONS.md` for delivery semantics.
 
 ---
 
@@ -82,8 +86,8 @@ Mirrors the existing registry pattern (a `_REGISTRY` of named sources, like
 | `budget.py` | The honest cap (§4.1). Selects the top-`X` candidates by `interest` that fit today's deep-screen ceiling. Logs what it dropped. | `config.yaml` |
 | `state.py` | **New** idempotent scout ledger (not `data/store.py`, which is a per-ticker snapshot writer): a screened-ticker→session ledger for the cooldown, a per-session `run_completed` marker for safe timer retries, and the held/ignore list. Single-writer (one-shot timer) but documents read-modify-write semantics. | stdlib `json` |
 | `calendar.py` | US trading-calendar gate (§3 step 0): resolve "today" to the last completed market session; skip weekends/holidays so the scout never re-emits Friday's gainers all weekend. | `pandas-market-calendars` or a static holiday table |
-| `report.py` | Render `ScoutReport` → a Telegram message **and** a JSON `RunManifest` artifact under `scout/` (gitignored) for trend debugging. Includes the signal-coverage line. | `models` |
-| `notify.py` | Deliver the message to Telegram (reuses the existing bot token/config). Thin; swappable. | `env.py` |
+| `report/` | Renderer-agnostic view-model → section registry → HTML/text renderers + Pillow PNG "glance". `build_report([ScoreCard], RunManifest, assessments) → ReportArtifacts(html, png, text)`. Adding a section = one `Section` class + one `SECTIONS` entry. Pillow is lazy-imported **only** in `report/png.py`. | `models` |
+| `notify.py` | `TelegramNotifier` + `deliver(artifacts, manifest, notifier)` — sends chart (sendPhoto), HTML doc (sendDocument), chunked text fallback. `Notifier` protocol keeps `daily.py` transport-agnostic. | `env.py` |
 | `daily.py` | The loop orchestrator (§3). CLI entry `shortlist-scout`. | all of the above + existing stacks |
 
 ### The `SignalSource` interface
@@ -143,9 +147,12 @@ audit of whether it ran. Errors route through `env.py:redact_secrets()` before l
 6. **Rank + gate.** Order by composite; surface gates (FCF / leverage / insider) inline.
 7. **Auto-research.** Run the **existing** Claude-CLI research layer on the top-`N` non-gated
    names (`N` ≪ `X`; hard-capped; kill-switch; auth-probed — see §5).
-8. **Report.** `report.py` assembles ranked shortlist + briefs + the signal-coverage line →
-   `notify.py` to Telegram, and writes the full `RunManifest` JSON under `scout/` (signal
-   availability, funnel counts, budget drops, research outcome) for trend debugging.
+8. **Report.** `report/` assembles ranked shortlist + briefs + the signal-coverage line into a
+   PNG dashboard "glance" (sendPhoto) and a styled HTML deep-dive (sendDocument), with a
+   chunked plain-text fallback when Telegram is unconfigured or failing. `notify.py:deliver()`
+   handles the multi-message delivery; artifacts (dashboard.png, report.html, report.txt,
+   manifest.json) are written under `scout/<date>/` (signal availability, funnel counts, budget
+   drops, research outcome) for trend debugging regardless of Telegram outcome.
 9. **Persist.** Record screened tickers + session in the `state.py` ledger (for the cooldown)
    and set the `run_completed` marker, so a retry is a no-op and tomorrow's run skips today's
    names.
