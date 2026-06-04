@@ -13,12 +13,12 @@ class HtmlBuilder:
         return _html.escape("" if s is None else str(s), quote=True)
 
     def tag(self, name: str, text: str = "", **attrs) -> str:
-        a = "".join(f' {k.replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
+        a = "".join(f' {k.lstrip("_").replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
         return f"<{name}{a}>{self.esc(text)}</{name}>"
 
     def raw(self, name: str, inner_html: str, **attrs) -> str:
         """Wrap already-safe inner HTML (built from other esc'd pieces)."""
-        a = "".join(f' {k.replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
+        a = "".join(f' {k.lstrip("_").replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
         return f"<{name}{a}>{inner_html}</{name}>"
 
 
