@@ -9,7 +9,6 @@ import httpx
 
 from ..env import redact_secrets
 
-
 _API = "https://api.telegram.org/bot{token}/{method}"
 _MSG_CAP = 4096
 _CAPTION_CAP = 1024
@@ -96,7 +95,6 @@ def deliver(notifier, *, png: bytes | None, html: str | None, text: str, caption
         sent_any = True
         if not notifier.send_document(html.encode("utf-8"), f"scout-{session}.html", caption):
             failures.append("document")
-    if failures or not sent_any:
-        if not notifier.send_message(text):
-            failures.append("message")
+    if (failures or not sent_any) and not notifier.send_message(text):
+        failures.append("message")
     return DeliveryResult(configured=True, all_ok=not failures, failures=failures)

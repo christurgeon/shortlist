@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from shortlist.models import ScoreCard, rank_key
+
 from ..models import RunManifest
 from .theme import SUBS
 

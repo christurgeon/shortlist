@@ -22,7 +22,7 @@ def test_leaders_sorted_by_scored_then_composite():
     cards = [_card("LOW", 40.0), _card("HIGH", 90.0),
              _card("NS1", 99.0, scored=False), _card("NS2", 50.0, scored=False)]
     vm = build_view_model(cards, _manifest(), assessments={})
-    assert [l.ticker for l in vm.leaders] == ["HIGH", "LOW", "NS1", "NS2"]
+    assert [ld.ticker for ld in vm.leaders] == ["HIGH", "LOW", "NS1", "NS2"]
 
 
 def test_target_upside_uses_metrics_property():
@@ -47,7 +47,7 @@ def test_assessment_present_only_for_researched():
            "red_flags": [], "management_capital_allocation": "Buybacks"}
     cards = [_card("AAPL", 80.0), _card("MSFT", 70.0)]
     vm = build_view_model(cards, _manifest(), assessments={"AAPL": rec})
-    a = {l.ticker: l for l in vm.leaders}
+    a = {ld.ticker: ld for ld in vm.leaders}
     assert a["AAPL"].assessment.bull_case == "AI demand"
     assert a["AAPL"].assessment.risks == ["China export limits"]
     assert a["AAPL"].assessment.takeaway == "Cheap-ish AI leader."

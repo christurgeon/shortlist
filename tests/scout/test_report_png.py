@@ -44,6 +44,6 @@ def test_empty_renders_a_valid_card_not_a_crash():
 
 
 def test_all_none_subscores_render(tmp_path):
-    nones = {s: None for s in _ALL}
+    nones = dict.fromkeys(_ALL)
     out = render_glance(_vm([_leader("BNK", 0.0, subs=nones)]))
     assert Image.open(io.BytesIO(out)).format == "PNG"   # masked bank -> all gray, no crash

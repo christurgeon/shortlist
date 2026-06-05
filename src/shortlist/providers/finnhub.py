@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 import requests
 
+from .._util import from_millions as _millions
+from .._util import pct as _pct
 from ..cache import get_default_cache
 from ..models import StockMetrics
 from .base import Provider
@@ -96,14 +98,3 @@ def _rec_total(row: dict) -> int:
     """Total analyst count across all recommendation buckets in a trend row."""
     return (row.get("strongBuy", 0) + row.get("buy", 0) + row.get("hold", 0)
             + row.get("sell", 0) + row.get("strongSell", 0))
-
-
-def _pct(x: Optional[float]) -> Optional[float]:
-    """Finnhub returns margins/returns as percentages; convert to fractions."""
-    return x / 100.0 if x is not None else None
-
-
-def _millions(x: Optional[float]) -> Optional[float]:
-    """Finnhub reports market cap in millions of USD; store absolute dollars to
-    match FMP's quote.marketCap (the gate and net-insider ratio expect dollars)."""
-    return x * 1.0e6 if x is not None else None

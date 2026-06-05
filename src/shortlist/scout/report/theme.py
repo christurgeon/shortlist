@@ -19,10 +19,10 @@ def score_to_rgb(v: float | None) -> tuple[int, int, int]:
     if v is None:
         return GRAY_BAD
     t = max(0.0, min(1.0, v / 100.0))
-    for (t0, c0), (t1, c1) in zip(_STOPS, _STOPS[1:]):
+    for (t0, c0), (t1, c1) in zip(_STOPS, _STOPS[1:], strict=False):  # adjacent-pair walk: deliberately unequal lengths
         if t <= t1:
             f = 0.0 if t1 == t0 else (t - t0) / (t1 - t0)
-            return tuple(round(a + (b - a) * f) for a, b in zip(c0, c1))  # type: ignore[return-value]
+            return tuple(round(a + (b - a) * f) for a, b in zip(c0, c1, strict=True))  # type: ignore[return-value]
     return _STOPS[-1][1]
 
 

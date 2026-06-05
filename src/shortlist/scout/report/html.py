@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import html as _html
 
-from .theme import rgb_hex, BG, FG, GRID
+from .theme import BG, FG, GRID, rgb_hex
 
 
 class HtmlBuilder:

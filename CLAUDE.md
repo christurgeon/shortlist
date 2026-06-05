@@ -120,7 +120,7 @@ The value-tilt also **lowers the `scored` floor** (`validity.min_scored_weight`
 into a frequently-FMP-gated `value` + a small `momentum` shrinks a gated name's
 always-present confidence, and without the lower floor value-tilted names —
 especially financials, where `moat` is masked — would fall below `scored` and drop
-out of the ranking. See `docs/superpowers/specs/2026-06-02-value-tilt-scoring-design.md`.
+out of the ranking.
 
 Soft **`flags`** (`ScoreCard.flags`) are *advisory* — they never affect
 `passed`/`composite` (distinct from hard `gates`). Flags include
@@ -134,7 +134,11 @@ sub-block (ships **OFF**, bit-identical when absent) refines it with a Piotroski
 fundamental-quality fraction (`scoring.py:piotroski_score`, won/legs → 0–100; ScoreCard
 `piotroski_f`/`piotroski_f_legs`): **suppresses** the flag on cheap-but-improving names,
 **confirms** it on cheap-but-deteriorating ones. Sector-masked, an **unfitted prior** — and
-the same fundamental-quality axis the `--source xbrl` backtest validates.
+the same fundamental-quality axis the `--source xbrl` backtest validates. The harness also
+emits **presence-based filing-stream advisories** (`recent_8k` / `activist_13d` /
+`passive_13g` / `planned_insider_sale_144`) into `flags` — set by the EDGAR bridge, `None`
+(no-op) on the screener path, no config thresholds (`scoring.py:285`; see `docs/DATA_SOURCES.md`
+§A1).
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell
@@ -254,7 +258,9 @@ escape hatch only — no auto-failover (a fingerprint block re-triggers from any
 Free tiers are fine for individual names or a small watchlist, but don't scale to
 a full universe. The harness makes **~13 FMP calls per ticker** (the screener ~8,
 since the paid insider call is gated off by default); FMP's **250/day** free limit
-is therefore roughly **19 tickers/day** on the harness path. Screening the whole
+is therefore roughly **19 tickers/day** on the harness path — a theoretical ceiling.
+(The scout and `shortlist-accumulate` cap deep-screening lower, at **15/day** by
+default, for headroom.) Screening the whole
 S&P 500 daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute
 and bandwidth limits) or the **caching layer** — whichever you hit first.
 **Finnhub's 60/min is comfortable** either way.
@@ -339,8 +345,7 @@ legs explicitly instead of dropping-then-averaging them.
   data gap). Per-leg *missing* is left to coverage; `abstentions` records masking +
   whole-sub-score abstention.
 - Tune everything in `config.yaml: sectors` + `validity` — no hardcoded sector
-  logic. `sectors.py` is the only interpreter of those blocks. Full design:
-  `docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md`.
+  logic. `sectors.py` is the only interpreter of those blocks.
 
 ## Extension providers (scaffolded, not wired)
 

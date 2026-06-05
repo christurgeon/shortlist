@@ -6,7 +6,7 @@ import io
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .theme import SUBS, SUB_LABELS, BG, FG, score_to_rgb, text_on
+from .theme import BG, FG, SUB_LABELS, SUBS, score_to_rgb, text_on
 from .viewmodel import ReportVM
 
 _W = 760           # target width (px); we supersample 2x then downscale
@@ -32,9 +32,9 @@ def _font(size, bold=False):
 
 
 def _center(d, box, text, font, fill):
-    l, t, r, b = d.textbbox((0, 0), text, font=font)
-    x = box[0] + (box[2] - box[0] - (r - l)) / 2 - l
-    y = box[1] + (box[3] - box[1] - (b - t)) / 2 - t
+    bl, bt, br, bb = d.textbbox((0, 0), text, font=font)
+    x = box[0] + (box[2] - box[0] - (br - bl)) / 2 - bl
+    y = box[1] + (box[3] - box[1] - (bb - bt)) / 2 - bt
     d.text((x, y), text, font=font, fill=fill)
 
 
@@ -66,13 +66,13 @@ def render_glance(vm: ReportVM) -> bytes:
     # --- composite bars panel ---
     y0 = 44 * s
     d.text((pad, y0 - 18 * s), "Composite", font=f_lbl, fill=FG)
-    for i, l in enumerate(vm.leaders):
+    for i, ld in enumerate(vm.leaders):
         ry = y0 + i * _ROW * s
-        d.text((pad, ry + 6 * s), l.ticker, font=f_lbl, fill=FG)
-        bw = int(plot_w * max(0.0, min(100.0, l.composite)) / 100.0)
-        col = score_to_rgb(l.composite)
+        d.text((pad, ry + 6 * s), ld.ticker, font=f_lbl, fill=FG)
+        bw = int(plot_w * max(0.0, min(100.0, ld.composite)) / 100.0)
+        col = score_to_rgb(ld.composite)
         d.rectangle([left, ry + 3 * s, left + bw, ry + (_ROW - 6) * s], fill=col)
-        d.text((left + bw + 6 * s, ry + 6 * s), f"{l.composite:.0f}", font=f_cell, fill=FG)
+        d.text((left + bw + 6 * s, ry + 6 * s), f"{ld.composite:.0f}", font=f_cell, fill=FG)
 
     # --- sub-score heatmap panel ---
     hy = y0 + n * _ROW * s + 24 * s
@@ -82,11 +82,11 @@ def render_glance(vm: ReportVM) -> bytes:
     for j, sub in enumerate(SUBS):
         cx = left + j * cw
         _center(d, (cx, hy - 16 * s, cx + cw, hy), SUB_LABELS[sub], f_cell, FG)
-    for i, l in enumerate(vm.leaders):
+    for i, ld in enumerate(vm.leaders):
         ry = hy + i * _ROW * s
-        d.text((pad, ry + 8 * s), l.ticker, font=f_lbl, fill=FG)
+        d.text((pad, ry + 8 * s), ld.ticker, font=f_lbl, fill=FG)
         for j, sub in enumerate(SUBS):
-            v = l.subscores.get(sub)
+            v = ld.subscores.get(sub)
             cx = left + j * cw
             box = (cx + 1, ry + 1, cx + cw - 1, ry + _ROW * s - 1)
             col = score_to_rgb(v)

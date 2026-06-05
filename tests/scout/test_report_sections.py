@@ -53,14 +53,14 @@ def test_text_glance_shows_research_takeaway():
 
 
 def test_all_none_subscores_render_without_crash():
-    nones = {s: None for s in ["quality", "moat", "growth", "value", "momentum", "insider", "risk"]}
+    nones = dict.fromkeys(["quality", "moat", "growth", "value", "momentum", "insider", "risk"])
     body = render_html_body(_vm([_leader("BNK", 0.0, subs=nones)]))
     txt = render_text(_vm([_leader("BNK", 0.0, subs=nones)]), Detail.FULL)
     assert "BNK" in body and "BNK" in txt
 
 
 def test_fundamentals_renders_escaped_company_name():
-    l = _leader("AAPL", 80)
-    l.name = "<b>Apple</b> Inc"
-    body = render_html_body(_vm([l]))
+    ld = _leader("AAPL", 80)
+    ld.name = "<b>Apple</b> Inc"
+    body = render_html_body(_vm([ld]))
     assert "Apple" in body and "<b>Apple</b>" not in body and "&lt;b&gt;Apple" in body

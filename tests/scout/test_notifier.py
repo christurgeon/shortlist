@@ -1,5 +1,5 @@
 import httpx
-from shortlist.scout.notify import TelegramNotifier, deliver, DeliveryResult
+from shortlist.scout.notify import TelegramNotifier, deliver
 
 
 def _client(seen, status=200):
