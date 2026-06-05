@@ -15,6 +15,7 @@ from .._util import from_millions as _mm
 from .._util import pct as _pct
 from ..cache import get_default_cache
 from ..env import redact_secrets
+from ..providers._fmp_insider import is_buy, tx_value
 from ..stats import avg_roic, median_pe
 from .models import (
     Analyst,
@@ -175,15 +176,15 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         net = buys = sells = 0
         recent = []
         for tx in insiders[:60]:
-            val = (tx.get("securitiesTransacted") or 0) * (tx.get("price") or 0)
-            is_buy = (tx.get("transactionType") or "").upper().startswith("P")
-            net += val if is_buy else -val
-            buys += is_buy
-            sells += not is_buy
+            val = tx_value(tx)
+            buy = is_buy(tx)
+            net += val if buy else -val
+            buys += buy
+            sells += not buy
             if len(recent) < 10:
                 recent.append(InsiderTxn(
                     date=tx.get("transactionDate"), name=tx.get("reportingName"),
-                    role=tx.get("typeOfOwner"), kind="buy" if is_buy else "sell",
+                    role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
                     shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
                 ))
         snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)

@@ -11,6 +11,7 @@ from .._util import first as _first
 from ..cache import get_default_cache
 from ..models import StockMetrics
 from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
+from . import _fmp_insider
 from .base import Provider
 
 BASE = "https://financialmodelingprep.com/stable"
@@ -173,12 +174,7 @@ class FMPProvider(Provider):
             try:
                 insiders = self._get("insider-trading/search", symbol=ticker, page=0, limit=100)
                 if isinstance(insiders, list) and insiders:
-                    net = 0.0
-                    for tx in insiders[:60]:  # ~trailing window
-                        val = (tx.get("securitiesTransacted") or 0) * (tx.get("price") or 0)
-                        code = (tx.get("transactionType") or "").upper()
-                        net += val if code.startswith("P") else -val  # P-purchase, S-sale
-                    m.insider_net_6m = net
+                    m.insider_net_6m = _fmp_insider.net_value(insiders)
             except Exception:
                 pass
 
