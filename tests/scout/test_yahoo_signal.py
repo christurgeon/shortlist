@@ -213,6 +213,13 @@ def test_blocked_first_screen_has_no_inter_screen_delay(no_sleep):
 
 
 def test_no_rate_limited_label():
-    sig = YahooScreenerSignal(screens=["day_gainers"], client=_client({}, status=429))
-    sig.scan(WHEN)
-    assert "rate-limited?" not in sig.available()[1]
+    # The misleading "(rate-limited?)" label is gone on BOTH the JSON-throttle and the
+    # HTML-WAF paths.
+    json_sig = YahooScreenerSignal(screens=["day_gainers"], client=_client({}, status=429))
+    json_sig.scan(WHEN)
+    assert "rate-limited?" not in json_sig.available()[1]
+
+    client, _ = _counting_client(lambda r: _html_429())
+    waf_sig = YahooScreenerSignal(screens=["day_gainers"], client=client)
+    waf_sig.scan(WHEN)
+    assert "rate-limited?" not in waf_sig.available()[1]

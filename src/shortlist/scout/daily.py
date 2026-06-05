@@ -99,6 +99,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         try:
             ems = s.scan(session)
             emissions.extend(ems)
+            # Persist a rest-of-day cooldown so later runs make zero Yahoo requests.
+            # Best-effort: if _save() raises it's caught below and the block is simply
+            # re-discovered next run (one extra single-request bail, never a spam loop).
             if getattr(s, "waf_blocked", False) and not demo:
                 state.mark_yahoo_blocked(session)
             ran, detail = s.available()
