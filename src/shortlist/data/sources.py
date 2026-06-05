@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from .._util import first as _first
+from .._util import from_millions as _mm
+from .._util import pct as _pct
 from ..cache import get_default_cache
 from ..env import redact_secrets
 from ..stats import avg_roic, median_pe
@@ -700,14 +702,6 @@ async def _fetch_sections(
             res.raw[name] = await get(path, **params)
         except Exception as e:
             res.errors.append(f"{res.source}.{name}: {redact_secrets(e)}")
-
-
-def _pct(x: Any) -> Optional[float]:
-    return x / 100.0 if isinstance(x, (int, float)) else None
-
-
-def _mm(x: Any) -> Optional[float]:
-    return x * 1e6 if isinstance(x, (int, float)) else None  # Finnhub mktcap is in $M
 
 
 def _year(d: Any) -> Optional[int]:
