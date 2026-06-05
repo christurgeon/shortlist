@@ -199,8 +199,7 @@ buys false confidence.
 - **Shipped (the "surface it as a column" branch):** `confidence` is now a first-class
   column (tables/CSV/JSON) plus a `thin` advisory (`confidence < ranking.thin_below`), and
   a single `rank_key (scored, composite, confidence)` makes confidence an **exact-tie
-  breaker** at every sort site. See
-  `docs/superpowers/specs/2026-06-02-confidence-ranking-design.md`.
+  breaker** at every sort site.
 - **Deliberately NOT done:** the *ranking tilt* (reordering a sparse 80 below a complete
   78). A continuous tilt double-counts absence (composite already redistributes), is
   confounded by FMP-402 gating (penalizes large-caps for subscription tier), and risks
@@ -268,7 +267,6 @@ risk overlay and no risk-adjusted ranking.
 - **Plugged:** a 7th **`risk` axis** now scores `realized_vol` + `max_drawdown` as a
   **composite-only tilt** (weight 0.10, other five weights ×0.9; sector-neutral; excluded
   from the confidence/scored/coverage accounting so the screener path stays bit-identical).
-  See `docs/superpowers/specs/2026-06-02-risk-axis-scoring-design.md`.
 - **Still open (deferred):** map `beta` through the bridge and add it as a third risk leg;
   **backtest the 0.10 weight and the bands** — trailing vol/drawdown peak at the bottom and
   can be anti-predictive at turning points, so the prior is unfitted and elevated for

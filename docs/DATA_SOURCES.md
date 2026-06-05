@@ -90,9 +90,7 @@ FMP's where present.
 `recent` list of the matching filings). These are surfaced as **soft advisory flags** in
 `ScoreCard.flags` — rendered in the screener table and in the structured `--json` `events` block
 — and injected into the research brief for analyst context. They are enrichment signals only,
-not a new sub-score or hard gate. Design:
-[`docs/superpowers/specs/2026-06-01-edgar-events-design.md`](superpowers/specs/2026-06-01-edgar-events-design.md);
-plan: [`docs/superpowers/plans/2026-06-01-edgar-events.md`](superpowers/plans/2026-06-01-edgar-events.md).
+not a new sub-score or hard gate.
 
 - **What:** `data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json` returns *every* standardized
   US-GAAP fact a company has ever reported; `frames` pulls one concept across all filers for
