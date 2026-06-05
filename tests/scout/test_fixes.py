@@ -275,3 +275,92 @@ def test_telegram_unconfigured_fails_returns_0(tmp_path, monkeypatch):
     manifest = json.loads(manifest_file.read_text())
     notes_text = " ".join(manifest.get("notes", []))
     assert "telegram delivery failed" not in notes_text
+
+
+# ---------------------------------------------------------------------------
+# Yahoo WAF cross-run cooldown — the ban-safety wiring in daily.run()
+# ---------------------------------------------------------------------------
+
+class _YahooWafBlockedSignal:
+    """Stands in for YahooScreenerSignal hitting a WAF block: sets waf_blocked
+    and reports a degraded status, exactly as the real signal does on an HTML 429."""
+    name = "yahoo_screener"
+    is_discovery = True
+
+    def __init__(self):
+        self.waf_blocked = False
+
+    def scan(self, session: date) -> list[Emission]:
+        self.waf_blocked = True
+        return []
+
+    def available(self) -> tuple[bool, str]:
+        return (False, "HTTP 429 WAF-blocked (HTML); bailed after 0/3 screens")
+
+
+class _YahooMustNotScanSignal:
+    """Fails loudly if scan() is called — proves the cooldown skips it with zero requests."""
+    name = "yahoo_screener"
+    is_discovery = True
+    waf_blocked = False
+
+    def scan(self, session: date) -> list[Emission]:
+        raise AssertionError("yahoo scan() must not be called while WAF cooldown is active")
+
+    def available(self) -> tuple[bool, str]:  # pragma: no cover - should not be reached
+        return (True, "unreachable")
+
+
+def _yahoo_config(tmp_path):
+    return _base_config(tmp_path, extra_signals={
+        "yahoo_screener": {"enabled": True, "weight": 1.0},
+    })
+
+
+def test_yahoo_waf_block_persists_rest_of_day_cooldown(tmp_path, monkeypatch):
+    """A WAF-blocked yahoo scan must persist a rest-of-day cooldown in ScoutState."""
+    monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
+    import shortlist.scout.daily as daily_mod
+    import shortlist.scout.notify as notify_mod
+    from shortlist.scout.state import ScoutState
+
+    monkeypatch.setattr(daily_mod, "build_signals",
+                        lambda names, kwargs_by_name=None: [_YahooWafBlockedSignal(), _OkDiscoverySignal()])
+    _patch_harness(monkeypatch)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier(configured=False))
+
+    config = _yahoo_config(tmp_path)
+    session = date(2026, 5, 29)
+    rc = daily_mod.run(config, demo=False, today=session)
+    assert rc == 0
+
+    state = ScoutState(tmp_path / "scout_state.json")     # fresh read from disk
+    assert state.yahoo_blocked_on(session) is True
+    assert state.yahoo_blocked_on(date(2026, 5, 30)) is False  # next day resumes
+
+
+def test_yahoo_cooldown_skips_scan_with_zero_requests(tmp_path, monkeypatch):
+    """With an active cooldown, the yahoo signal is skipped (scan never called) and the
+    coverage line records the skip."""
+    monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
+    import shortlist.scout.daily as daily_mod
+    import shortlist.scout.notify as notify_mod
+    from shortlist.scout.state import ScoutState
+
+    state_path = tmp_path / "scout_state.json"
+    session = date(2026, 5, 29)
+    ScoutState(state_path).mark_yahoo_blocked(session)     # pre-seed the cooldown
+
+    monkeypatch.setattr(daily_mod, "build_signals",
+                        lambda names, kwargs_by_name=None: [_YahooMustNotScanSignal(), _OkDiscoverySignal()])
+    _patch_harness(monkeypatch)
+    monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier(configured=False))
+
+    config = _yahoo_config(tmp_path)
+    rc = daily_mod.run(config, demo=False, today=session)  # _YahooMustNotScanSignal raises if scanned
+    assert rc == 0
+
+    manifest = json.loads(list((tmp_path / "scout").glob("*/manifest.json"))[0].read_text())
+    yahoo = {s["name"]: s for s in manifest["signals"]}["yahoo_screener"]
+    assert yahoo["ran"] is False
+    assert "cooldown" in yahoo["detail"]

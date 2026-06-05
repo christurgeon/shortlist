@@ -9,3 +9,6 @@ User=oracle
 WorkingDirectory=/opt/shortlist
 ExecStart=/opt/shortlist/.venv/bin/shortlist-scout
 # To alert on failure, add: OnFailure=oracle-alert-failure@%n.service (see deploy/README.md)
+# Do NOT add Restart= / auto-retry: the run is marked complete only after delivery, so an
+# auto-restart before that re-runs discovery and re-hits the unofficial Yahoo endpoint.
+# Type=oneshot already means no restart — keep it that way (see CLAUDE.md "Yahoo WAF gotcha").

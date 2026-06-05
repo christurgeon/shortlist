@@ -16,7 +16,11 @@ def _body_client(bodies):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_configured_reflects_credentials():
+def test_configured_reflects_credentials(monkeypatch):
+    # Isolate from ambient env: another test's load_env() may have loaded a real .env's
+    # TELEGRAM_* creds into os.environ for the session (load_dotenv persists process-wide).
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
     assert TelegramNotifier("T", "42").configured() is True
     assert TelegramNotifier(None, None).configured() is False
 

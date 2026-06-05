@@ -226,6 +226,29 @@ is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None` in the
 bridge. The source does one bulk fetch per run, caches by settlement date, and
 indexes in memory — **no per-ticker request load**.
 
+## Yahoo screener WAF gotcha (scout discovery)
+
+The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**
+`query1.finance.yahoo.com/v1/finance/screener/predefined/saved` endpoint. A `429` there
+is almost always a **cold-start fingerprint block from Yahoo's edge WAF, not throttling**:
+a bot-shaped (UA-only) request gets an **HTML** `429 "Too Many Requests"`
+(`content-type: text/html`), while a request with a **full browser header set**
+(`_YAHOO_HEADERS` — `Accept`/`Accept-Language`/`Accept-Encoding`/`Sec-Fetch-*`/`Origin`/
+`Referer`) returns `200 JSON` (no crumb needed). This is why it "never worked" on a fresh
+machine — the header shape is identical everywhere, so the rejection was deterministic.
+
+Headers are the **primary** lever but **not proven sufficient on a truly cold IP** (there's
+a secondary per-IP reputation effect: once one well-formed request succeeds the IP is
+trusted for a window). So the **per-run bail-out and the cross-run cooldown are
+load-bearing and must not be removed**: on an HTML 429 the signal bails after a *single*
+request (it does **not** retry an HTML 429, and does **not** fire the remaining screens),
+and `daily.py` persists a **rest-of-day cooldown** in `ScoutState`
+(`mark_yahoo_blocked`/`yahoo_blocked_on`) so the next runs make **zero** Yahoo requests.
+Only a JSON 429 *with* a `Retry-After` is retried (once, capped). **Never retry-spam an
+HTML 429** — that's how you earn a real ban. `Accept-Encoding` must stay a subset of what
+httpx can decode (no `br`/`zstd` without the dep, or `.json()` fails). `query2` is a manual
+escape hatch only — no auto-failover (a fingerprint block re-triggers from any host).
+
 ## Scale / rate limits (the honest catch)
 
 Free tiers are fine for individual names or a small watchlist, but don't scale to

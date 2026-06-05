@@ -56,6 +56,22 @@ class ScoutState:
             self._data["runs"].append(iso)
             self._save()
 
+    # --- yahoo WAF cooldown ---
+    def yahoo_blocked_on(self, on: date) -> bool:
+        """True while a prior Yahoo WAF block is still in effect (rest-of-day cooldown).
+        Absent key (old state files) reads as not-blocked — backward compatible."""
+        iso = self._data.get("yahoo_blocked_until")
+        return bool(iso) and on <= date.fromisoformat(iso)
+
+    def yahoo_blocked_until(self) -> str | None:
+        return self._data.get("yahoo_blocked_until")
+
+    def mark_yahoo_blocked(self, through: date) -> None:
+        """Skip Yahoo through `through` (inclusive). Pass the session date for a
+        rest-of-calendar-day cooldown: same-day re-runs skip, the next day resumes."""
+        self._data["yahoo_blocked_until"] = through.isoformat()
+        self._save()
+
     # --- held list ---
     def set_held(self, tickers: list[str]) -> None:
         self._data["held"] = [t.upper() for t in tickers]
