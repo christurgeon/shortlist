@@ -89,10 +89,18 @@ def run(config: dict, *, demo: bool, today: date) -> int:
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
     for s in discovery:
+        # Polite cooldown: after a Yahoo WAF block we skip the endpoint entirely (zero
+        # requests) for the rest of the day to protect the IP's reputation.
+        if s.name == "yahoo_screener" and not demo and state.yahoo_blocked_on(session):
+            until = state.yahoo_blocked_until()
+            statuses.append(SignalStatus(s.name, False, f"skipped: WAF cooldown through {until}"))
+            continue
         # FIX 2: guard the discovery body so one failing signal can't abort the whole run.
         try:
             ems = s.scan(session)
             emissions.extend(ems)
+            if getattr(s, "waf_blocked", False) and not demo:
+                state.mark_yahoo_blocked(session)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal prefix back to its config key

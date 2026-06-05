@@ -6,6 +6,8 @@ Errors route through env.redact_secrets before logging.
 """
 from __future__ import annotations
 
+import random
+import time
 from datetime import date
 from typing import Protocol
 
@@ -67,34 +69,119 @@ def build_signals(names: list[str],
 
 _YAHOO_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 _YAHOO_URL = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+_YAHOO_URL2 = "https://query2.finance.yahoo.com/v1/finance/screener/predefined/saved"  # manual escape hatch only
+
+# Yahoo's edge WAF rejects bot-shaped (UA-only) requests with an HTML 429 — a cold-start
+# *fingerprint* block, NOT throttling. A full browser header set clears it; once one
+# well-formed request succeeds the IP is trusted for a window. Headers are the primary
+# lever but not proven sufficient on a truly cold IP, so the per-run bail + the cross-run
+# cooldown (see daily.py) are load-bearing and must not be removed. See CLAUDE.md gotcha.
+# Accept-Encoding must stay a subset of what httpx can decode (no br/zstd without the dep,
+# or .json() fails on a compressed body).
+_YAHOO_HEADERS = {
+    "User-Agent": _YAHOO_UA,
+    "Accept": "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Origin": "https://finance.yahoo.com",
+    "Referer": "https://finance.yahoo.com/",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+}
+
+_YAHOO_MAX_RETRIES = 1
+_YAHOO_RETRY_BASE_S = 1.0
+_YAHOO_RETRY_MAX_S = 5.0
+_YAHOO_INTER_SCREEN_S = 1.5
+_YAHOO_JITTER = (0.8, 1.5)
+
+
+def _content_type(resp: httpx.Response) -> str:
+    return (resp.headers.get("content-type") or "").lower()
+
+
+def _is_waf_block(resp: httpx.Response) -> bool:
+    """An HTML/empty 429 is an edge WAF fingerprint block (won't clear on immediate
+    retry); a JSON 429 is the API's own throttle."""
+    return "json" not in _content_type(resp)
+
+
+def _should_retry(resp: httpx.Response) -> bool:
+    """Bias ambiguous 429s toward NO retry (treat as WAF): only retry a 429 that is both
+    JSON-typed and carries a Retry-After (a genuine throttle), or a transient 5xx."""
+    if 500 <= resp.status_code < 600:
+        return True
+    if resp.status_code == 429:
+        return ("json" in _content_type(resp)) and resp.headers.get("Retry-After") is not None
+    return False
+
+
+def _yahoo_retry_after_seconds(resp: httpx.Response, attempt: int, base: float) -> float:
+    header = resp.headers.get("Retry-After")
+    if header:
+        try:
+            return min(float(header), _YAHOO_RETRY_MAX_S)
+        except ValueError:
+            pass
+    return min(base * (2 ** attempt), _YAHOO_RETRY_MAX_S)
 
 
 class YahooScreenerSignal:
-    """Yahoo predefined screeners — keyless, but requires a browser User-Agent.
-
-    Unofficial endpoint: best-effort, day-cached upstream is unnecessary (one call
-    per screen per run). If it 429s the whole discovery funnel leans on EDGAR alone,
-    so available() surfaces the outage to the report.
+    """Yahoo predefined screeners — keyless, but requires a full browser header set
+    (see _YAHOO_HEADERS). Unofficial endpoint, best-effort. On a block it bails after a
+    single request and leans on EDGAR; available() surfaces the outage to the report, and
+    waf_blocked lets the orchestrator persist a rest-of-day cooldown.
     """
     name = "yahoo_screener"
     is_discovery = True
 
-    def __init__(self, screens: list[str] | None = None, client: httpx.Client | None = None) -> None:
+    def __init__(self, screens: list[str] | None = None, client: httpx.Client | None = None, *,
+                 max_retries: int = _YAHOO_MAX_RETRIES,
+                 inter_screen_delay: float = _YAHOO_INTER_SCREEN_S,
+                 retry_base_s: float = _YAHOO_RETRY_BASE_S) -> None:
         self.screens = screens or ["day_gainers", "most_actives", "undervalued_growth_stocks"]
         self._client = client
+        self.max_retries = max_retries
+        self.inter_screen_delay = inter_screen_delay
+        self.retry_base_s = retry_base_s
+        self.waf_blocked = False
         self._status = (False, "not run")
 
+    def _fetch_screen(self, client: httpx.Client, scr: str) -> httpx.Response:
+        """One screen with a gentle, WAF-aware retry. The WAF/HTML 429 short-circuits
+        before any sleep; the final attempt never sleeps (mirrors FMPProvider._get)."""
+        resp = None
+        for attempt in range(self.max_retries + 1):
+            resp = client.get(_YAHOO_URL, params={"scrIds": scr, "count": 50},
+                              headers=_YAHOO_HEADERS)
+            if resp.status_code == 200:
+                return resp
+            if not _should_retry(resp) or attempt == self.max_retries:
+                return resp
+            time.sleep(_yahoo_retry_after_seconds(resp, attempt, self.retry_base_s))
+        return resp
+
     def scan(self, session: date) -> list[Emission]:
-        client = self._client or httpx.Client(timeout=15.0, headers={"User-Agent": _YAHOO_UA})
+        client = self._client or httpx.Client(timeout=15.0, headers=_YAHOO_HEADERS)
         out: list[Emission] = []
         hits = 0
+        completed = 0
         try:
-            for scr in self.screens:
-                resp = client.get(_YAHOO_URL, params={"scrIds": scr, "count": 50},
-                                  headers={"User-Agent": _YAHOO_UA})
+            for idx, scr in enumerate(self.screens):
+                if idx > 0:
+                    time.sleep(self.inter_screen_delay * random.uniform(*_YAHOO_JITTER))
+                resp = self._fetch_screen(client, scr)
                 if resp.status_code != 200:
-                    self._status = (False, f"HTTP {resp.status_code} (rate-limited?)")
-                    return []
+                    self.waf_blocked = _is_waf_block(resp)
+                    kind = "WAF-blocked (HTML)" if self.waf_blocked else "throttled (JSON)"
+                    tail = (f"HTTP {resp.status_code} {kind}; "
+                            f"bailed after {completed}/{len(self.screens)} screens")
+                    self._status = (False, f"{hits} hits then {tail}" if hits else tail)
+                    return out  # EARLY BAIL — do not fire the remaining screens
+                # Parse into a local list; commit to `out` only after a clean parse, so an
+                # exception mid-screen can't leak a half-parsed screen's emissions.
+                screen_ems: list[Emission] = []
                 quotes = (resp.json().get("finance", {}).get("result") or [{}])[0].get("quotes", [])
                 for q in quotes:
                     sym = q.get("symbol")
@@ -105,14 +192,16 @@ class YahooScreenerSignal:
                     avg = q.get("averageDailyVolume3Month") or 0
                     rvol = (vol / avg) if avg else 1.0
                     strength = max(0.0, min(1.0, abs(pct) / 15.0))  # 15% move -> full strength
-                    out.append(Emission(sym.upper(), f"yahoo:{scr}", strength,
-                                        f"{pct:+.1f}% on {rvol:.1f}x volume", is_discovery=True))
-                hits += len(quotes)
-            self._status = (True, f"{hits} hits")
+                    screen_ems.append(Emission(sym.upper(), f"yahoo:{scr}", strength,
+                                               f"{pct:+.1f}% on {rvol:.1f}x volume", is_discovery=True))
+                out.extend(screen_ems)
+                hits += len(screen_ems)
+                completed += 1
+            self._status = (True, f"{hits} hits")  # ran=True only when ALL screens succeeded
             return out
         except Exception as e:  # noqa: BLE001 — degrade, never crash the run
             self._status = (False, redact_secrets(str(e)))
-            return []
+            return out  # keep any cleanly-committed screens
         finally:
             if self._client is None:
                 client.close()
