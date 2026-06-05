@@ -179,8 +179,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         return 0
 
     # 4b. Live: build artifacts, deliver, persist.
-    from .report import build_report
     from .notify import TelegramNotifier, deliver
+    from .report import build_report
     rep_cfg = scout_cfg.get("report", {})
     artifacts = build_report(cards, manifest, assessments=assessments)
     caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))

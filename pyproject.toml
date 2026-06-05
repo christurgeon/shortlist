@@ -20,7 +20,7 @@ fred = ["fredapi>=0.5"]
 scout = ["pillow>=10.0"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.10"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not live'"

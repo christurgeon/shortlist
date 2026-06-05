@@ -10,7 +10,7 @@ import enum
 from typing import Protocol
 
 from .html import HtmlBuilder
-from .theme import SUBS, SUB_LABELS, rgb_hex, text_on, score_to_rgb
+from .theme import SUB_LABELS, SUBS, rgb_hex, score_to_rgb, text_on
 from .viewmodel import ReportVM
 
 
@@ -43,17 +43,17 @@ class _Leaderboard:
 
     def render_html(self, vm, h):
         rows = []
-        for l in vm.leaders:
-            cc = score_to_rgb(l.composite)
-            cells = [h.tag("td", l.ticker, _class="k"),
-                     h.raw("td", h.esc(f"{l.composite:.0f}"),
+        for ld in vm.leaders:
+            cc = score_to_rgb(ld.composite)
+            cells = [h.tag("td", ld.ticker, _class="k"),
+                     h.raw("td", h.esc(f"{ld.composite:.0f}"),
                            style=f"background:{rgb_hex(cc)};color:{rgb_hex(text_on(cc))}")]
             for s in SUBS:
-                v = l.subscores.get(s)
+                v = ld.subscores.get(s)
                 c = score_to_rgb(v)
                 cells.append(h.raw("td", h.esc("·" if v is None else f"{v:.0f}"),
                                    style=f"background:{rgb_hex(c)};color:{rgb_hex(text_on(c))}"))
-            cells.append(h.tag("td", ",".join(l.gates) if l.gates else "", _class="k"))
+            cells.append(h.tag("td", ",".join(ld.gates) if ld.gates else "", _class="k"))
             rows.append(h.raw("tr", "".join(cells)))
         head = "".join(h.tag("th", x, _class="k") for x in
                        ["", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates"])
@@ -61,17 +61,17 @@ class _Leaderboard:
 
     def render_text(self, vm, detail):
         out = []
-        for i, l in enumerate(vm.leaders, 1):
-            gate = f"  ⚠️ {', '.join(l.gates)}" if l.gates else ""
-            mark = "" if l.scored else "  (not scored)"
-            thin = "  (thin)" if l.thin else ""
-            out.append(f"{i}. {l.ticker}  {l.composite:.1f}{gate}{mark}{thin}")
+        for i, ld in enumerate(vm.leaders, 1):
+            gate = f"  ⚠️ {', '.join(ld.gates)}" if ld.gates else ""
+            mark = "" if ld.scored else "  (not scored)"
+            thin = "  (thin)" if ld.thin else ""
+            out.append(f"{i}. {ld.ticker}  {ld.composite:.1f}{gate}{mark}{thin}")
             subs = " ".join(
-                f"{SUB_LABELS[s]}{'·' if l.subscores.get(s) is None else f'{l.subscores[s]:.0f}'}"
+                f"{SUB_LABELS[s]}{'·' if ld.subscores.get(s) is None else f'{ld.subscores[s]:.0f}'}"
                 for s in SUBS)
             out.append(f"   {subs}")
-            if l.coverage_note:
-                out.append(f"   ⊘ {l.coverage_note}")
+            if ld.coverage_note:
+                out.append(f"   ⊘ {ld.coverage_note}")
         return out
 
 
@@ -95,14 +95,14 @@ class _Fundamentals:
 
     def render_html(self, vm, h):
         cards = []
-        for l in vm.leaders:
+        for ld in vm.leaders:
             rows = [h.raw("tr", h.tag("td", label, _class="k") +
-                          h.tag("td", _fmt(getattr(l.metrics, attr), **opt)))
+                          h.tag("td", _fmt(getattr(ld.metrics, attr), **opt)))
                     for label, attr, opt in _FUND_ROWS]
-            analysts = (f"{l.metrics.rating_buy or 0}B / {l.metrics.rating_hold or 0}H / "
-                        f"{l.metrics.rating_sell or 0}S")
+            analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
+                        f"{ld.metrics.rating_sell or 0}S")
             rows.append(h.raw("tr", h.tag("td", "Analysts", _class="k") + h.tag("td", analysts)))
-            head = f"{l.ticker} · {l.name} — {l.composite:.0f}" if l.name else f"{l.ticker} — {l.composite:.0f}"
+            head = f"{ld.ticker} · {ld.name} — {ld.composite:.0f}" if ld.name else f"{ld.ticker} — {ld.composite:.0f}"
             cards.append(h.raw("div",
                                h.tag("h2", head) +
                                h.raw("table", "".join(rows)), _class="card"))
@@ -112,9 +112,9 @@ class _Fundamentals:
         if detail is Detail.GLANCE:
             return []
         out = []
-        for l in vm.leaders:
-            out.append(f"-- {l.ticker} metrics --")
-            out += [f"   {label}: {_fmt(getattr(l.metrics, attr), **opt)}"
+        for ld in vm.leaders:
+            out.append(f"-- {ld.ticker} metrics --")
+            out += [f"   {label}: {_fmt(getattr(ld.metrics, attr), **opt)}"
                     for label, attr, opt in _FUND_ROWS]
         return out
 
@@ -123,15 +123,15 @@ class _Fundamentals:
 class _Research:
     id, title = "research", "Research"
 
-    def applies(self, vm): return any(l.assessment for l in vm.leaders)
+    def applies(self, vm): return any(ld.assessment for ld in vm.leaders)
 
     def render_html(self, vm, h):
         cards = []
-        for l in vm.leaders:
-            a = l.assessment
+        for ld in vm.leaders:
+            a = ld.assessment
             if not a:
                 continue
-            parts = [h.tag("h2", f"{l.ticker} — analysis")]
+            parts = [h.tag("h2", f"{ld.ticker} — analysis")]
             if a.business_model:
                 parts.append(h.tag("p", a.business_model))
             if a.bull_case:
@@ -151,12 +151,12 @@ class _Research:
 
     def render_text(self, vm, detail):
         out = []
-        for l in vm.leaders:
-            a = l.assessment
+        for ld in vm.leaders:
+            a = ld.assessment
             if not a:
                 continue
             line = a.takeaway or a.bull_case
-            out.append(f"📝 {l.ticker}: {line[:160]}" if line else f"📝 {l.ticker}")
+            out.append(f"📝 {ld.ticker}: {line[:160]}" if line else f"📝 {ld.ticker}")
             if detail is Detail.FULL and a.red_flags:
                 out.append(f"   🚩 {'; '.join(a.red_flags)}")
         return out

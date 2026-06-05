@@ -5,8 +5,8 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 
-from .sections import render_html_body, render_text, Detail
 from .html import document
+from .sections import Detail, render_html_body, render_text
 from .viewmodel import build_view_model
 
 __all__ = ["build_report", "ReportArtifacts", "render_message"]
