@@ -247,6 +247,33 @@ uv run shortlist-scout --demo
 uv run shortlist-scout
 ```
 
+### Telegram delivery setup
+
+To have the scout push the daily report (PNG chart + HTML deep-dive, with a text
+fallback) to your phone, set two variables in the repo-root `.env` (copy from
+`.env.example`):
+
+```bash
+TELEGRAM_BOT_TOKEN=123456789:AAE...   # from @BotFather: /newbot → HTTP API token
+TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
+```
+
+1. **Create the bot.** In Telegram, message [@BotFather](https://t.me/BotFather),
+   send `/newbot`, follow the prompts, and copy the **HTTP API token** it returns
+   into `TELEGRAM_BOT_TOKEN`. Telegram's own walkthrough:
+   [core.telegram.org/bots/features#botfather](https://core.telegram.org/bots/features#botfather)
+   and the [bot tutorial](https://core.telegram.org/bots/tutorial).
+2. **Find your chat id.** Send any message to your new bot, then open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and read
+   `result[].message.chat.id` — that number is `TELEGRAM_CHAT_ID`. (Alternatively,
+   DM [@userinfobot](https://t.me/userinfobot), which replies with your id.)
+
+Both keys live in `.env` (never in `config.yaml`) per the secrets house rule. The
+scout auto-detects them on the next run — no redeploy. If either is missing, the
+run still writes `scout/<date>/{report.txt,report.html,dashboard.png,manifest.json}`
+and exits cleanly; a configured-but-failed send exits non-zero so a systemd
+`OnFailure=` hook can alert. Full delivery semantics: [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
+
 **Strictly free.** The scout uses Yahoo Finance (keyless), EDGAR Form 4 daily
 index (free SEC feed), Finnhub news volume (free tier), and Wikipedia pageviews
 (no key). FMP's free plan limits deep-screening to roughly **15 tickers/day** —
