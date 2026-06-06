@@ -223,7 +223,7 @@ edgar_events:
 
 # Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
 scout:
-  daily_x: 15
+  daily_x: 10
   research_top_n: 3
   research_phase_budget_s: 600
   cooldown_days: 7
