@@ -200,3 +200,87 @@ class TelegramBot:
         if dropped:
             self.notifier.send_message(
                 f"(researched first {len(kept)}; {dropped} more not run — re-send them)")
+
+    # --- loop machinery ---
+    def _handle_safely(self, cmd: Command) -> None:
+        try:
+            self._handle(cmd)
+        except Exception as e:  # noqa: BLE001 — one bad command must not kill the worker
+            self.notifier.send_message(f"⚠️ command failed: {redact_secrets(str(e))}")
+
+    def _worker(self) -> None:
+        # Drains to the None sentinel ONLY — never short-circuits on _stop. That keeps
+        # already-queued commands from being silently dropped on shutdown AND makes the
+        # backlog test deterministic (run() enqueues None after the live command, FIFO).
+        while True:
+            try:
+                cmd = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if cmd is None:
+                self._queue.task_done()
+                break
+            try:
+                self._handle_safely(cmd)
+            finally:
+                self._queue.task_done()
+
+    def _dispatch(self, update: dict) -> None:
+        # Poll-thread only: validate + enqueue. NO network here (chat-action lives in the
+        # worker handler) so a slow Telegram never stalls getUpdates.
+        text = allowed_message(update, self.notifier.chat_id)
+        if text is None:
+            return
+        self._queue.put(parse_command(text))
+
+    def run(self) -> int:
+        if not self.notifier.configured():
+            print("telegram bot: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set",
+                  file=sys.stderr)
+            return 1
+        if self._client is None:
+            # Read timeout MUST exceed the long-poll hold or every poll races to a
+            # spurious ReadTimeout. Shutdown latency ≈ one poll cycle (≈ read timeout),
+            # so the unit's TimeoutStopSec must exceed poll_timeout + this slack + join.
+            self._client = httpx.Client(
+                timeout=httpx.Timeout(10.0, read=self.poll_timeout + 10))
+        # drop_pending_updates=True clears the server-side backlog in one call; the probe
+        # below then just initializes the offset cursor (belt-and-suspenders).
+        self.notifier.delete_webhook(drop_pending_updates=True)
+        probe = self.notifier.get_updates(offset=-1, timeout=0, client=self._client)
+        self._offset = max((u.get("update_id", -1) for u in probe.updates), default=-1) + 1
+
+        worker = threading.Thread(target=self._worker, daemon=True)
+        worker.start()
+        backoff = 1.0
+        try:
+            while not self._stop.is_set():
+                res = self.notifier.get_updates(
+                    offset=self._offset, timeout=self.poll_timeout, client=self._client)
+                if res.status == 200:
+                    backoff = 1.0
+                    for u in res.updates:
+                        uid = u.get("update_id")
+                        if uid is None:           # malformed element: skip, never die
+                            continue
+                        self._offset = uid + 1    # ACK before dispatch (poison-safe)
+                        try:
+                            self._dispatch(u)
+                        except Exception as e:    # noqa: BLE001 — loop must never die
+                            print(f"bot dispatch error: {redact_secrets(str(e))}",
+                                  file=sys.stderr)
+                elif res.status == 409:
+                    if not self._conflict_alerted:   # alert ONCE per process (no flap-spam)
+                        self.notifier.send_message(
+                            "⚠️ another poller is active on this bot token — "
+                            "commands may be dropped.")
+                        self._conflict_alerted = True
+                    self._stop.wait(min(backoff, 30.0)); backoff = min(backoff * 2, 30.0)
+                else:  # transport error (status 0) or other non-200
+                    self._stop.wait(min(backoff, 30.0)); backoff = min(backoff * 2, 30.0)
+        finally:
+            self._stop.set()
+            self._queue.put(None)
+            worker.join(timeout=5.0)   # mid-handler work is abandoned (idempotent; re-type)
+            self._client.close()
+        return 0
