@@ -113,6 +113,8 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.revenue_cagr = cagr(st.revenue)
         m.fcf_cagr = cagr(st.free_cash_flow)
         m.eps_cagr = cagr(st.net_income)
+        m.eps_cagr_ps = cagr(st.diluted_eps)             # genuine per-share (dilution-aware)
+        m.share_count_cagr = cagr(st.diluted_shares)     # + = net issuance, - = buybacks
         m.revenue_growth_persistence = growth_persistence(st.revenue)
         # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Statements lists
         # are newest-first and index-parallel by fiscal year; free-source derivable so

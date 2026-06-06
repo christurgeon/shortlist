@@ -288,6 +288,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "risk": c.risk,
         "piotroski_f": c.piotroski_f,
         "piotroski_f_legs": c.piotroski_f_legs,
+        "share_count_cagr": round(c.share_count_cagr, 4) if c.share_count_cagr is not None else None,
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
         "flags": c.flags,
@@ -323,7 +324,8 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
         w = csv.writer(f)
         w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
                     "momentum", "value", "opportunity", "insider", "risk",
-                    "upside_to_target", "gates", "scored", "confidence", "sic_bucket", "piotroski_f"])
+                    "upside_to_target", "gates", "scored", "confidence", "sic_bucket",
+                    "piotroski_f", "share_count_cagr"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
@@ -331,7 +333,8 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
                         d["insider"], d["risk"], d["upside_to_target"],
                         "|".join(d["gates"]), d["scored"], d["confidence"], d["sic_bucket"],
                         (f'{d["piotroski_f"]}/{d["piotroski_f_legs"]}'
-                         if d["piotroski_f"] is not None else "")])
+                         if d["piotroski_f"] is not None else ""),
+                        d["share_count_cagr"]])
 
 
 if __name__ == "__main__":

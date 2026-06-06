@@ -159,6 +159,7 @@ class XbrlPanel:
     pretax_income: dict[str, float] = field(default_factory=dict)
     income_tax: dict[str, float] = field(default_factory=dict)
     shares: Optional[float] = None
+    diluted_shares: dict[str, float] = field(default_factory=dict)  # weighted-avg annual series
 
 
 def _gross_profit(facts: dict, as_of: date) -> dict:
@@ -195,6 +196,7 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
         pretax_income=annual_series(facts, PRETAX, as_of),
         income_tax=annual_series(facts, INCOME_TAX, as_of),
         shares=latest(shares),
+        diluted_shares=annual_series(facts, WTD_DIL_SHARES, as_of, units=("shares",)),
     )
 
 
@@ -263,6 +265,8 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     m.revenue_cagr = cagr(desc(p.revenue))
     m.fcf_cagr = cagr(desc(p.fcf))
     m.eps_cagr = cagr(desc(p.net_income))    # net-income proxy (production convention)
+    m.eps_cagr_ps = cagr(desc(p.diluted_eps))         # genuine per-share (dilution-aware)
+    m.share_count_cagr = cagr(desc(p.diluted_shares)) # + = net issuance, - = buybacks
     m.revenue_growth_persistence = growth_persistence(desc(p.revenue))
 
     # Fundamental-quality (Piotroski-inspired Core-6, asset-free). The panel series are

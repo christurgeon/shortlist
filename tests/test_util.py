@@ -1,4 +1,26 @@
-from shortlist._util import first, from_millions, pct
+from shortlist._util import first, from_millions, pct, pick
+
+
+def test_pick_returns_first_present_key():
+    assert pick({"a": 1, "b": 2}, "a", "b") == 1
+
+
+def test_pick_falls_through_absent_key():
+    assert pick({"b": 2}, "a", "b") == 2
+
+
+def test_pick_falls_through_present_but_null_key():
+    # The bug `row.get(a, row.get(b))` would return None here; pick falls through.
+    assert pick({"a": None, "b": 2}, "a", "b") == 2
+
+
+def test_pick_returns_zero_not_skipped():
+    # 0.0 is a real value (e.g. break-even EPS), not "missing" -> must be returned.
+    assert pick({"a": 0.0, "b": 2}, "a", "b") == 0.0
+
+
+def test_pick_none_when_all_absent_or_null():
+    assert pick({"a": None}, "a", "b") is None
 
 
 def test_first_unwraps_single_element_list():

@@ -28,6 +28,7 @@ class EdgarFinancials:
     operating_cash_flow: list[float] = field(default_factory=list)
     free_cash_flow: list[float] = field(default_factory=list)
     diluted_eps: list[float] = field(default_factory=list)
+    diluted_shares: list[float] = field(default_factory=list)   # weighted-avg, newest-first
 
 
 def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -78,6 +79,30 @@ def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:
     return None
 
 
+def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
+    """Weighted-average diluted SHARE COUNT row (e.g. "Weighted average shares
+    outstanding, diluted" or "Shares used in computing diluted earnings per share")
+    — distinct from the per-share EPS *value* row. We require the plural "shares"
+    (the EPS value rows read "...per share", singular), which already excludes the
+    per-share line, so we do NOT exclude "per share" here (that would wrongly drop
+    legitimate "shares used in computing ... per share" COUNT rows). Two passes: the
+    canonical weighted-average / used-in-computation / outstanding row is preferred
+    over a stray "diluted shares from <X>" reconciliation/component line that lacks
+    level/parent disambiguation here."""
+    if "label" not in df.columns:
+        return None
+    fallback = None
+    for _, r in df.iterrows():
+        lbl = str(r.get("label", "")).lower()
+        if "diluted" not in lbl or "shares" not in lbl or "undiluted" in lbl:
+            continue
+        if "weighted" in lbl or "used in comput" in lbl or "outstanding" in lbl:
+            return r
+        if fallback is None:
+            fallback = r
+    return fallback
+
+
 def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[float]:
     if row is None:
         return []
@@ -121,4 +146,5 @@ def extract_financials(
     if not eps and fin.net_income and shares_diluted:
         eps = [ni / shares_diluted for ni in fin.net_income]
     fin.diluted_eps = eps
+    fin.diluted_shares = _series(_row_diluted_shares(income_df), inc_fy)
     return fin

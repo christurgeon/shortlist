@@ -143,6 +143,17 @@ def piotroski_score(m: StockMetrics, t: dict, min_legs: int = 4) -> Optional[flo
     return _norm(frac, *t["piotroski_f"]) if frac is not None else None
 
 
+def share_count_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone dilution axis: the inverted share-count-CAGR band -> 0..100 (net
+    buybacks score higher than net issuance). Exists so the backtest can measure the
+    share-count rank IC on its own (like piotroski_score); the PRODUCTION signal is
+    the opt-in quality dilution leg + the `dilution` flag, not this. None when the
+    band or the signal is absent."""
+    if "share_count_cagr" not in t or m.share_count_cagr is None:
+        return None
+    return _norm(m.share_count_cagr, *t["share_count_cagr"])
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it
@@ -205,13 +216,28 @@ def _eval_subscore(name: str, bucket: str, legs: list[_Leg], t: dict,
     return mean(_norm(lg.value, *t[lg.tkey]) for lg in present), abst
 
 
-def _quality_legs(m: StockMetrics) -> list[_Leg]:
-    return [
+def _dilution_on(config: dict) -> bool:
+    """True when the opt-in earnings-quality/dilution scoring block is present and
+    enabled. Absent (it ships commented out) -> the dilution leg and the per-share
+    eps_cagr swap are skipped, so the scorer is byte-identical to the pre-feature
+    version. Mirrors the insider.conviction gating."""
+    d = ((config or {}).get("quality") or {}).get("dilution")
+    return bool(d) and d.get("enabled", True)
+
+
+def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
+    legs = [
         _Leg("roe", m.roe, "roe"),
         _Leg("net_margin", m.net_margin, "net_margin"),
         _Leg("interest_coverage", m.interest_coverage, "interest_coverage"),
         _Leg("debt_to_equity", m.debt_to_equity, "debt_to_equity"),
     ]
+    # Capital-allocation / dilution leg (inverted band: net buybacks score higher
+    # than net issuance). Opt-in; the threshold guard keeps it None-safe if a config
+    # enables the block without the band. None signal -> _eval_subscore redistributes.
+    if _dilution_on(config) and "share_count_cagr" in ((config or {}).get("thresholds") or {}):
+        legs.append(_Leg("share_count_cagr", m.share_count_cagr, "share_count_cagr"))
+    return legs
 
 
 def _moat_legs(m: StockMetrics) -> list[_Leg]:
@@ -222,11 +248,17 @@ def _moat_legs(m: StockMetrics) -> list[_Leg]:
     ]
 
 
-def _growth_legs(m: StockMetrics) -> list[_Leg]:
+def _growth_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
+    # With the dilution block on, the earnings-growth leg uses the genuine per-share
+    # diluted-EPS CAGR (dilution-aware) instead of the net-income proxy, falling back
+    # to the proxy when no per-share series exists. Same band/key either way.
+    eps = m.eps_cagr
+    if _dilution_on(config) and m.eps_cagr_ps is not None:
+        eps = m.eps_cagr_ps
     return [
         _Leg("revenue_cagr", m.revenue_cagr, "revenue_cagr"),
         _Leg("fcf_cagr", m.fcf_cagr, "fcf_cagr"),
-        _Leg("eps_cagr", m.eps_cagr, "eps_cagr"),
+        _Leg("eps_cagr", eps, "eps_cagr"),
         _Leg("revenue_growth_persistence", m.revenue_growth_persistence, "revenue_growth_persistence"),
     ]
 
@@ -293,6 +325,11 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     if ps and m.insider_planned_sell_value is not None \
             and m.insider_planned_sell_value >= ps["min_value"]:
         out.append("planned_sale")
+    # Dilution advisory: persistent net share issuance. Soft/None-safe like the
+    # others — no-op when the config block is absent; never affects passed/composite.
+    dil = f.get("dilution") if f else None
+    if dil and m.share_count_cagr is not None and m.share_count_cagr >= dil["min_share_cagr"]:
+        out.append("dilution")
     return out
 
 
@@ -308,9 +345,9 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         abst.extend(a)
         return s
 
-    q = sub("quality", _quality_legs(m))
+    q = sub("quality", _quality_legs(m, config))
     mo = sub("moat", _moat_legs(m))
-    gr = sub("growth", _growth_legs(m))
+    gr = sub("growth", _growth_legs(m, config))
     mom = sub("momentum", _momentum_legs(m))
     val = sub("value", _value_legs(m))
     # Value-tilt: value and momentum are weighted INDEPENDENTLY in the composite
@@ -402,6 +439,7 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         risk=_round(ri),
         thin=thin,
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
+        share_count_cagr=m.share_count_cagr,
     )
 
 

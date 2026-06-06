@@ -56,6 +56,7 @@ class Statements:
     total_debt: list[float] = field(default_factory=list)
     total_equity: list[float] = field(default_factory=list)
     diluted_eps: list[float] = field(default_factory=list)
+    diluted_shares: list[float] = field(default_factory=list)   # weighted-avg, newest-first
     fiscal_period_end: list[str] = field(default_factory=list)  # ISO dates, newest-first
 
     def gross_margins(self) -> list[float]:
@@ -161,7 +162,7 @@ KEY_OBJECTS = ("profile", "fundamentals", "statements", "analyst", "insider", "p
 
 # `recent` is illustrative; the rest are internal derivation plumbing, not
 # assessment-ready signals -> excluded from coverage/missing accounting.
-_NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "fiscal_period_end", "monthly_closes",
+_NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_end", "monthly_closes",
                       "distinct_buyers", "role_weighted_buy_value", "planned_sell_value")
 
 

@@ -8,6 +8,7 @@ from typing import Any, Optional
 import requests
 
 from .._util import first as _first
+from .._util import pick as _pick
 from ..cache import get_default_cache
 from ..models import StockMetrics
 from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe
@@ -146,6 +147,14 @@ class FMPProvider(Provider):
             revenues = [row.get("revenue") for row in income]
             m.revenue_cagr = cagr(revenues)
             m.eps_cagr = cagr([row.get("netIncome") for row in income])
+            # Genuine per-share growth + share-count trend (dilution). Same annual
+            # rows, no extra call. /stable/ field names with a legacy fallback (_pick
+            # falls through an explicit null); an unmatched key just leaves the leg
+            # None (redistributed), never errors.
+            m.eps_cagr_ps = cagr([_pick(row, "epsDiluted", "epsdiluted") for row in income])
+            m.share_count_cagr = cagr(
+                [_pick(row, "weightedAverageShsOutDil", "weightedAverageShsOutstandingDiluted")
+                 for row in income])
             m.revenue_growth_persistence = growth_persistence(revenues)
             # piotroski_f is intentionally NOT populated here: the Core-6 F-score
             # needs OCF (cash-flow statement) + balance-sheet debt, which the lean
@@ -183,7 +192,8 @@ class FMPProvider(Provider):
             "roe", "gross_margin", "net_margin", "debt_to_equity",
             "interest_coverage", "peg", "roic", "fcf_yield",
             "gross_margin_stability", "fcf_positive", "target_median",
-            "revenue_cagr", "eps_cagr", "revenue_growth_persistence",
+            "revenue_cagr", "eps_cagr", "eps_cagr_ps", "share_count_cagr",
+            "revenue_growth_persistence",
             "rating_buy", "rating_hold", "rating_sell", "rel_strength_6m",
             "insider_net_6m",
         )

@@ -105,3 +105,21 @@ def test_xbrl_source_emits_piotroski_axis():
     assert obs is not None
     assert "piotroski" in obs.signals
     assert 0.0 <= obs.signals["piotroski"] <= 100.0
+
+
+def test_xbrl_source_emits_share_count_axis():
+    # A buyback compounder (diluted share count FALLING) must produce a HIGH
+    # share_count sub-score under the inverted band, validating it's backtestable.
+    g = {}
+    g.update(_annual("Revenues", [
+        _row("2020-01-01", "2020-12-31", 1000, "2021-02-01"),
+        _row("2021-01-01", "2021-12-31", 1100, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 1300, "2023-02-01")]))
+    g.update(_annual("WeightedAverageNumberOfDilutedSharesOutstanding", [
+        _row("2020-01-01", "2020-12-31", 1100, "2021-02-01"),
+        _row("2021-01-01", "2021-12-31", 1050, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 1000, "2023-02-01")], unit="shares"))
+    src = XbrlSignalSource({"T": {"facts": {"us-gaap": g}}}, {}, THRESH)
+    obs = src.observe("T", date(2023, 6, 1))
+    assert obs is not None and "share_count" in obs.signals
+    assert obs.signals["share_count"] > 50.0   # buybacks -> above band midpoint
