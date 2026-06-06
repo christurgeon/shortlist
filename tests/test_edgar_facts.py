@@ -29,6 +29,64 @@ def _income_df():
     ])
 
 
+def _income_df_with_diluted_shares():
+    df = _income_df()
+    shares = pd.DataFrame([
+        {"concept": "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",
+         "label": "Weighted-average shares outstanding, diluted", "standard_concept": float("nan"),
+         "level": 2, "abstract": False,
+         "2025-09-27 (FY)": 15_000_000_000.0, "2024-09-28 (FY)": 15_400_000_000.0,
+         "2023-09-30 (FY)": 15_800_000_000.0},
+    ])
+    return pd.concat([df, shares], ignore_index=True)
+
+
+def test_diluted_shares_series_extracted_newest_first():
+    fin = extract_financials(_income_df_with_diluted_shares(), _cashflow_df(), shares_diluted=None)
+    assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
+    # The per-share EPS row must NOT be mistaken for the share-count row.
+    assert fin.diluted_eps == [7.46, 6.08, 6.13]
+
+
+def test_diluted_shares_empty_when_only_per_share_row_present():
+    # _income_df has the diluted EPS (per-share) row but no share-COUNT row.
+    fin = extract_financials(_income_df(), _cashflow_df(), shares_diluted=None)
+    assert fin.diluted_shares == []
+
+
+def test_diluted_shares_matches_used_in_computing_per_share_count_row():
+    # A common filer phrasing: the COUNT row whose label embeds "per share". It must
+    # still match (it is a share count, not a $/share value) — the plural "shares"
+    # distinguishes it from the EPS value row "Diluted (in dollars per share)".
+    df = _income_df()
+    df = pd.concat([df, pd.DataFrame([
+        {"concept": "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",
+         "label": "Shares used in computing diluted earnings per share",
+         "standard_concept": float("nan"), "level": 2, "abstract": False,
+         "2025-09-27 (FY)": 15_000_000_000.0, "2024-09-28 (FY)": 15_400_000_000.0,
+         "2023-09-30 (FY)": 15_800_000_000.0}])], ignore_index=True)
+    fin = extract_financials(df, _cashflow_df(), shares_diluted=None)
+    assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
+    assert fin.diluted_eps == [7.46, 6.08, 6.13]   # EPS value row not misread as count
+
+
+def test_diluted_shares_prefers_weighted_average_over_component_line():
+    # A stray "diluted shares from <X>" component line precedes the real weighted-avg
+    # row; the canonical row must win despite the component appearing first.
+    df = _income_df()
+    fy = {"2025-09-27 (FY)": 1.0, "2024-09-28 (FY)": 1.0, "2023-09-30 (FY)": 1.0}
+    component = {"concept": "x", "label": "Dilutive effect of diluted shares from convertible notes",
+                 "standard_concept": float("nan"), "level": 3, "abstract": False, **fy}
+    canonical = {"concept": "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",
+                 "label": "Weighted average shares outstanding, diluted",
+                 "standard_concept": float("nan"), "level": 2, "abstract": False,
+                 "2025-09-27 (FY)": 15_000_000_000.0, "2024-09-28 (FY)": 15_400_000_000.0,
+                 "2023-09-30 (FY)": 15_800_000_000.0}
+    df = pd.concat([df, pd.DataFrame([component, canonical])], ignore_index=True)
+    fin = extract_financials(df, _cashflow_df(), shares_diluted=None)
+    assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
+
+
 def test_extract_aligns_series_newest_first():
     fin = extract_financials(_income_df(), _cashflow_df(), shares_diluted=15_004_697_000.0)
     assert fin.fiscal_period_end == ["2025-09-27", "2024-09-28", "2023-09-30"]

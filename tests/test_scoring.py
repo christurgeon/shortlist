@@ -157,6 +157,86 @@ def test_growth_weight_redistributed_when_axis_absent():
     assert card.composite == 50.0
 
 
+# --- dilution / earnings-quality (ASSESSMENT_GAPS 2.5) --------------------
+
+def _dilution_config(*, score_leg: bool, flag: bool) -> dict:
+    """CONFIG plus the share_count_cagr band, optionally the opt-in quality
+    dilution scoring block, and optionally the advisory flag block."""
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"],
+                                  # inverted: +4%/yr issuance -> 0, -4%/yr buyback -> 100
+                                  "share_count_cagr": [0.04, -0.04]}}
+    if score_leg:
+        c["quality"] = {"dilution": {"enabled": True}}
+    if flag:
+        c["flags"] = {"dilution": {"min_share_cagr": 0.03}}
+    return c
+
+
+def test_dilution_leg_absent_is_byte_identical():
+    # share_count_cagr present on the metrics, but no quality.dilution block ->
+    # the scorer ignores it: quality is the legacy 4-leg average, no flag.
+    m = dataclasses.replace(metrics_all_50(), share_count_cagr=0.10, eps_cagr_ps=0.0)
+    card = score(m, CONFIG)
+    assert card.quality == 50.0          # unchanged 4-leg quality
+    assert card.growth == 50.0           # still uses net-income-proxy eps_cagr
+    assert "dilution" not in card.flags
+    # ...but the raw signal is still surfaced for the human/backtest.
+    assert card.share_count_cagr == 0.10
+
+
+def test_dilution_leg_penalizes_issuance_and_rewards_buybacks():
+    c = _dilution_config(score_leg=True, flag=False)
+    base = metrics_all_50()
+    # Diluter: +4%/yr -> bottom of the inverted band (0). Quality = avg(50,50,50,50,0).
+    diluter = dataclasses.replace(base, share_count_cagr=0.04)
+    assert score(diluter, c).quality == pytest.approx((50 * 4 + 0) / 5)
+    # Buyback compounder: -4%/yr -> top of the band (100). avg(50,50,50,50,100).
+    buyback = dataclasses.replace(base, share_count_cagr=-0.04)
+    assert score(buyback, c).quality == pytest.approx((50 * 4 + 100) / 5)
+    # The diluter now scores strictly below the buyback compounder on quality.
+    assert score(diluter, c).quality < score(buyback, c).quality
+
+
+def test_per_share_eps_cagr_used_when_block_on():
+    c = _dilution_config(score_leg=True, flag=False)
+    # Net-income proxy says 50% growth; the genuine per-share series says 0% (all
+    # the "growth" was share issuance). With the block on, growth uses per-share.
+    m = dataclasses.replace(metrics_all_50(), eps_cagr=0.5, eps_cagr_ps=0.0,
+                            share_count_cagr=0.0)
+    # growth legs: revenue 50, fcf 50, eps_ps 0, persistence 50 -> 37.5
+    assert score(m, c).growth == pytest.approx((50 + 50 + 0 + 50) / 4)
+    # Same metrics WITHOUT the block -> uses the 0.5 proxy -> growth 50.
+    assert score(m, CONFIG).growth == 50.0
+
+
+def test_per_share_eps_cagr_falls_back_when_ps_missing():
+    c = _dilution_config(score_leg=True, flag=False)
+    # Block on but no per-share series -> fall back to the net-income proxy.
+    m = dataclasses.replace(metrics_all_50(), eps_cagr=0.5, eps_cagr_ps=None)
+    assert score(m, c).growth == 50.0
+
+
+def test_dilution_flag_is_advisory_and_config_gated():
+    flag_cfg = _dilution_config(score_leg=False, flag=True)
+    heavy = dataclasses.replace(metrics_all_50(), share_count_cagr=0.05)
+    card = score(heavy, flag_cfg)
+    assert "dilution" in card.flags
+    assert card.passed                      # advisory only: never disqualifies
+    # Below threshold -> no flag.
+    light = dataclasses.replace(metrics_all_50(), share_count_cagr=0.01)
+    assert "dilution" not in score(light, flag_cfg).flags
+    # No flags.dilution block -> no-op even for a heavy diluter.
+    assert "dilution" not in score(heavy, CONFIG).flags
+
+
+def test_dilution_leg_redistributes_when_signal_missing():
+    # Block on but share_count_cagr is None -> the leg is simply absent, quality
+    # is the legacy 4-leg average (byte-identical to the no-block case).
+    c = _dilution_config(score_leg=True, flag=False)
+    m = dataclasses.replace(metrics_all_50(), share_count_cagr=None)
+    assert score(m, c).quality == 50.0
+
+
 # --- value/momentum independent weighting ---------------------------------
 
 def test_value_and_momentum_weighted_independently():

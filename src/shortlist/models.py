@@ -34,6 +34,10 @@ class StockMetrics:
     debt_to_equity: Optional[float] = None
     interest_coverage: Optional[float] = None
     fcf_positive: Optional[bool] = None
+    # Diluted weighted-avg share-count CAGR (+ = net issuance/dilution, - = net
+    # buyback). Always populated where a share-count series exists; feeds the opt-in
+    # quality dilution leg + the advisory `dilution` flag. UNFITTED prior.
+    share_count_cagr: Optional[float] = None
 
     # Moat proxies
     gross_margin_stability: Optional[float] = None  # 0..1, higher = steadier margins
@@ -42,7 +46,8 @@ class StockMetrics:
     # Growth (fundamental compounding — distinct from price momentum)
     revenue_cagr: Optional[float] = None
     fcf_cagr: Optional[float] = None
-    eps_cagr: Optional[float] = None              # net-income CAGR proxy (no share-count series yet)
+    eps_cagr: Optional[float] = None              # net-income CAGR proxy (dilution-blind)
+    eps_cagr_ps: Optional[float] = None           # genuine per-share diluted-EPS CAGR (dilution-aware)
     revenue_growth_persistence: Optional[float] = None  # 0..1, fraction of YoY periods that grew
 
     # Momentum
@@ -146,6 +151,9 @@ class ScoreCard:
     # feeds composite/passed/scored. Appended last.
     piotroski_f: Optional[int] = None
     piotroski_f_legs: Optional[int] = None
+    # Surfaced diluted-share-count CAGR (+ = dilution). Display + advisory only;
+    # never feeds composite/passed/scored. Appended last.
+    share_count_cagr: Optional[float] = None
 
     @property
     def passed(self) -> bool:

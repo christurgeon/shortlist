@@ -207,16 +207,42 @@ buys false confidence.
   deferred until a coverage-vs-forward-returns backtest justifies it (§2.1). For now we
   surface and let the human judge; composite still dominates the sort (no-bury guarantee).
 
-#### 2.5 No earnings-quality / dilution checks
-`quality_score` (`scoring.py:24`) is blind to whether earnings are *real* or whether
+#### 2.5 No earnings-quality / dilution checks — DILUTION HALF SHIPPED (config-gated)
+`quality_score` (`scoring.py`) is blind to whether earnings are *real* or whether
 shareholders are being diluted:
-- **Share-count trend / SBC dilution** is entirely invisible — a serial diluter with a
-  flattered per-share story scores like a buyback compounder. Add a share-count series to
-  `Statements` and an `eps_cagr` that's genuinely per-share (it's a net-income proxy today,
-  see §1).
-- **Net-income-vs-FCF divergence / accruals** — see Beneish M-Score & accruals ratio in
-  `DATA_SOURCES.md` D3, and Altman Z (D2) for a solvency early-warning that's smarter than
-  the raw D/E gate (§2.7).
+- **Share-count trend / SBC dilution** was entirely invisible — a serial diluter with a
+  flattered per-share story scored like a buyback compounder.
+
+> **SHIPPED — dilution half (config-gated, OFF by default):** a **diluted weighted-avg
+> share-count CAGR** (`StockMetrics.share_count_cagr`; + = net issuance, − = buybacks) is
+> now derived on all three stacks from already-fetched data — screener FMP
+> (`weightedAverageShsOutDil`), harness (`Statements.diluted_shares` via the new
+> `_edgar_facts._row_diluted_shares` row matcher), and the `--source xbrl` backtest (the
+> previously-scaffolded `WeightedAverageNumberOfDilutedSharesOutstanding`). It is
+> **surfaced** first-class (JSON/CSV `share_count_cagr`) and drives a soft `dilution`
+> advisory flag (`flags.dilution`; ON by default, never affects `passed`/`composite`/
+> `scored` — like `value_trap`). The **scoring** impact ships behind the opt-in
+> `quality.dilution` config block (**commented out** → scorer byte-identical to the
+> pre-feature version, like `insider.conviction`): when enabled, `quality_score` gains an
+> inverted `share_count_cagr` leg (diluters score below buyback compounders) and the growth
+> `eps_cagr` leg switches from the net-income proxy to **genuine per-share** diluted-EPS CAGR
+> (`StockMetrics.eps_cagr_ps`), closing the §1 `eps_cagr` proxy gap. None-safe redistribution
+> means the leg is bit-identical wherever the share series is absent. The band, the flag
+> threshold, and the leg are **UNFITTED priors** — `XbrlSignalSource` now emits a standalone
+> **`share_count`** axis (`--source xbrl`, alongside `piotroski`) so the share-count rank IC
+> is measurable (§2.1) before either is trusted. **Caveats:** (a) **not masked** for
+> financials/REITs (share count is universally defined; REIT equity issuance is normal, so
+> the advisory will fire there — sector-aware *calibration* of the leg is deferred, like the
+> other masked-leg recalibration in §2.3); (b) the signal reads **as-reported** share counts
+> — within a single 10-K's comparative columns these are split-restated, but a reverse split
+> or an un-restated cross-filing window (XBRL companyfacts) can still inject a spurious jump
+> (the FINRA short-interest path carries an explicit `split_flag`; this one does not yet); (c)
+> on a sign-crossing diluted-EPS series (loss-year inflection) `eps_cagr_ps` is undefined and
+> the growth leg falls back to the dilution-blind net-income proxy.
+
+- **Still open — accruals / solvency half:** **Net-income-vs-FCF divergence / accruals** —
+  see Beneish M-Score & accruals ratio in `DATA_SOURCES.md` D3, and Altman Z (D2) for a
+  solvency early-warning that's smarter than the raw D/E gate (§2.7).
 
 #### 2.6 Insider scoring throws away signal it already parses
 `insider_score` (`scoring.py:61`) nets 6m dollars + Finnhub MSPR, but `providers/_form4.py`

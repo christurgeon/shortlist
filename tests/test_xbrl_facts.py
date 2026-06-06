@@ -133,6 +133,14 @@ def test_extract_panel_builds_end_keyed_dicts():
     assert p.shares == 10.0
 
 
+def test_extract_panel_collects_diluted_shares_series():
+    gaap = _annual("WeightedAverageNumberOfDilutedSharesOutstanding", [
+        _row("2021-01-01", "2021-12-31", 1000, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 950, "2023-02-01")], unit="shares")
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.diluted_shares == {"2022-12-31": 950.0, "2021-12-31": 1000.0}
+
+
 def test_extract_panel_gross_profit_falls_back_to_revenue_minus_cogs():
     gaap = {}
     gaap.update(_annual("Revenues", [_row("2022-01-01", "2022-12-31", 1200, "2023-02-01")]))

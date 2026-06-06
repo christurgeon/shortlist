@@ -138,7 +138,24 @@ the same fundamental-quality axis the `--source xbrl` backtest validates. The ha
 emits **presence-based filing-stream advisories** (`recent_8k` / `activist_13d` /
 `passive_13g` / `planned_insider_sale_144`) into `flags` — set by the EDGAR bridge, `None`
 (no-op) on the screener path, no config thresholds (`scoring.py:285`; see `docs/DATA_SOURCES.md`
-§A1).
+§A1). The `dilution` flag fires on persistent net share issuance
+(`share_count_cagr ≥ flags.dilution.min_share_cagr`; ON by default, advisory only).
+
+The **`quality.dilution`** block (`config.yaml`) is the **scoring** half of the
+share-count/dilution feature (ASSESSMENT_GAPS §2.5). It ships **commented out** (OFF): when
+enabled, `quality_score` gains an inverted `share_count_cagr` leg (diluters score below
+buyback compounders) and the growth `eps_cagr` leg switches from the net-income proxy to
+genuine per-share diluted-EPS CAGR (`eps_cagr_ps`). Both stacks are **byte-identical** to the
+pre-feature scorer when the block is absent (None-safe leg redistribution). `share_count_cagr`
+(diluted weighted-avg share count; + = issuance, − = buybacks) and `eps_cagr_ps` are derived
+on **all three stacks** from already-fetched data (FMP `weightedAverageShsOutDil`; harness
+`Statements.diluted_shares` via `_edgar_facts._row_diluted_shares`; XBRL
+`WeightedAverageNumberOfDilutedSharesOutstanding`) and `share_count_cagr` is surfaced in
+JSON/CSV. The band/threshold/leg are **unfitted priors** — `backtest/signals.py`
+`XbrlSignalSource` emits a standalone `share_count` axis (`--source xbrl`) so the rank IC is
+measurable (`scoring.py:share_count_score` is backtest-only, not a production sub-score). Not
+masked for financials/REITs (share count is universally defined); reads **as-reported** counts
+with no split-flag guard yet (a reverse split can inject a spurious jump). See ASSESSMENT_GAPS §2.5.
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell

@@ -74,6 +74,24 @@ def test_bridge_fcf_positive_false_when_recent_negative():
     assert snapshot_to_metrics(snap).fcf_positive is False
 
 
+def test_bridge_derives_per_share_eps_cagr_and_share_count_trend():
+    snap = _full_snapshot()
+    # Diluted EPS rising, share count FALLING (a buyback compounder): newest-first.
+    snap.statements.diluted_eps = [5.0, 4.0, 3.0]
+    snap.statements.diluted_shares = [900.0, 950.0, 1000.0]
+    m = snapshot_to_metrics(snap)
+    # per-share EPS CAGR over 3->5 across 2 periods = (5/3)**0.5 - 1
+    assert m.eps_cagr_ps == pytest.approx((5.0 / 3.0) ** 0.5 - 1.0)
+    # buybacks => negative share-count CAGR: (900/1000)**0.5 - 1
+    assert m.share_count_cagr == pytest.approx((900.0 / 1000.0) ** 0.5 - 1.0)
+    assert m.share_count_cagr < 0
+
+
+def test_bridge_share_count_cagr_none_without_series():
+    # The default snapshot has no diluted_shares -> field stays None (redistributed).
+    assert snapshot_to_metrics(_full_snapshot()).share_count_cagr is None
+
+
 def test_bridge_maps_annual_history_fields():
     m = snapshot_to_metrics(_full_snapshot())
     assert m.pe_median_5y == 28.0      # harness now fetches annual ratios

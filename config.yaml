@@ -48,6 +48,11 @@ thresholds:
   realized_vol:   [0.45, 0.15]    # annualized stdev of daily returns
   max_drawdown:   [-0.50, -0.10]  # trailing ~1y peak-to-trough (negative)
 
+  # Dilution / share-count trend (inverted: net buybacks score higher than net
+  # issuance). Feeds the opt-in quality dilution leg AND the dilution advisory flag.
+  # UNFITTED prior — backtest standalone rank IC before trusting (like risk).
+  share_count_cagr: [0.04, -0.04]   # +4%/yr dilution -> 0 ; -4%/yr buyback -> 100
+
 weights:
   quality:      0.18   # was 0.20 (x0.9 on risk-axis introduction)
   moat:         0.18   # was 0.20
@@ -108,6 +113,10 @@ flags:
   # the insider.conviction block is enabled (the fields stay None otherwise).
   insider_cluster_buy: { min_distinct: 3 }
   planned_sale:        { min_value: 1 }
+  # Dilution advisory: persistent net share issuance (ASSESSMENT_GAPS §2.5). Soft —
+  # never affects passed/composite/scored. Fires off share_count_cagr (diluted
+  # weighted-avg share count). UNFITTED prior.
+  dilution:            { min_share_cagr: 0.03 }   # >= +3%/yr diluted-share growth
   # Soft value-trap advisory: a name that looks cheap (high value sub-score) while
   # its quality OR growth is weak. Level-based proxy (no deterioration trend without
   # snapshot history). Advisory only — never affects passed/composite/scored.
@@ -155,6 +164,17 @@ fmp:
 #       director: 1.0
 #       ten_pct:  0.5
 #       unknown:  1.0                   # missing role == neutral (load-bearing for back-compat)
+
+# Earnings-quality / dilution SCORING (ASSESSMENT_GAPS §2.5). DISABLED by default:
+# leave commented so quality_score and growth_score are byte-identical to the
+# pre-feature scorer on both stacks (the share_count_cagr signal + dilution flag are
+# still surfaced/evaluated regardless). When enabled, quality gains an inverted
+# share_count_cagr leg (serial diluters score below buyback compounders) and the
+# growth eps_cagr leg switches from the net-income proxy to genuine per-share
+# diluted-EPS CAGR. UNFITTED priors — backtest before trusting.
+# quality:
+#   dilution:
+#     enabled: true
 
 # Default source chain for the harness engine — which is now the DEFAULT engine
 # (yahoo first => wins the price merge). Used whenever `--provider` is omitted;

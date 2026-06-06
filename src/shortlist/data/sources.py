@@ -433,6 +433,7 @@ class EdgarSource(Source):
                 operating_cash_flow=ef.operating_cash_flow,
                 free_cash_flow=ef.free_cash_flow,
                 diluted_eps=ef.diluted_eps,
+                diluted_shares=ef.diluted_shares,
             )
         # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap

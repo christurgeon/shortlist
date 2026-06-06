@@ -17,6 +17,21 @@ def first(payload: Any) -> Optional[dict]:
     return None
 
 
+def pick(row: dict, *keys: str) -> Any:
+    """First non-``None`` value among ``keys`` in ``row`` (or ``None``).
+
+    For provider field aliases (e.g. FMP ``/stable/`` vs legacy key names). Unlike
+    ``row.get(a, row.get(b))``, this falls through when the primary key is
+    *present but null* — providers routinely emit explicit ``null`` for a missing
+    line item, which the default-arg form would return instead of trying ``b``.
+    """
+    for k in keys:
+        v = row.get(k)
+        if v is not None:
+            return v
+    return None
+
+
 def pct(x: Any) -> Optional[float]:
     """Percentage -> fraction (Finnhub reports margins/returns as percentages).
 
