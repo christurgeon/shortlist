@@ -73,6 +73,7 @@ def test_live_run_configured_delivers_photo_and_document(tmp_path, monkeypatch):
     cfg["scout"] = dict(cfg["scout"])
     cfg["scout"]["signals"] = {"stub_discovery": {"enabled": True, "weight": 1.0}}
     cfg["scout"]["deep_screen_sources"] = ["mock"]
+    cfg["scout"]["daily_push"] = {"enabled": True}   # opt into the live delivery path (Task 1 flag)
 
     rc = daily.run(cfg, demo=False, today=date(2026, 6, 4))
     assert rc == 0
