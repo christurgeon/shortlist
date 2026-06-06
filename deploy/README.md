@@ -19,7 +19,77 @@ equity close (22:30 UTC / 18:30 ET) and deliver a ranked Telegram report.
 > **These units are NOT auto-installed.** Copy them manually after reviewing the
 > paths for your install location.
 
-## Install steps
+## Turnkey installer
+
+`install_opt_shortlist.sh` automates the whole install: it syncs the repo to
+`/opt/shortlist`, builds the venv (`--extra scout --extra edgar`), installs both
+units, and enables the daily timer. It runs the service as a **normal login user**
+(not the `oracle` service account) so the `claude`-CLI research layer keeps its auth
+in that user's `~/.claude`, and sets `HOME`/`PATH` accordingly. Idempotent — safe to
+re-run.
+
+```bash
+# Runs as whoever invoked sudo (SUDO_USER) by default:
+sudo bash deploy/install_opt_shortlist.sh
+
+# ...or pick the run-user / paths explicitly:
+sudo SHORTLIST_USER=deploy SHORTLIST_DEST=/opt/shortlist bash deploy/install_opt_shortlist.sh
+```
+
+> Source path, install dir, and run-user are configurable at the top of the script
+> (env-overridable: `SHORTLIST_SRC` / `SHORTLIST_DEST` / `SHORTLIST_USER`). The rsync
+> excludes for `/scout/`, `/research/`, `/state/` are **anchored** with a leading `/`
+> on purpose — unanchored, they would also match the like-named source packages
+> `src/shortlist/{scout,research}` and ship a broken wheel.
+
+For a manual install on a different host, follow the steps below instead.
+
+## Updating after a code change
+
+The deploy is an **editable install** (`/opt/shortlist/.venv` points back at
+`/opt/shortlist/src` via a `.pth` file), so refreshing the box is just "get the new
+code into `/opt/shortlist`, then re-sync the venv." Re-running the installer does both
+and is idempotent:
+
+```bash
+# 1. Land the new code in the dev tree (wherever you cloned the repo)
+cd /path/to/shortlist
+git checkout main && git pull          # (or merge your feature branch)
+
+# 2. Re-deploy: rsync src -> /opt/shortlist, uv sync deps, reinstall units
+sudo bash deploy/install_opt_shortlist.sh
+
+# 3. It runs on the next timer fire (22:30 UTC). To exercise it now:
+cd /opt/shortlist && ./.venv/bin/shortlist-scout --demo   # offline, no Telegram
+```
+
+What needs what:
+
+| Change | What picks it up |
+|--------|------------------|
+| Python source (`src/shortlist/**`) | rsync only — editable install means it's live immediately; a venv rebuild isn't required, but re-running the installer is harmless |
+| New/updated dependency (`pyproject.toml` / `uv.lock`) | needs `uv sync` → **re-run the installer** |
+| `config.yaml` thresholds/weights | rsync (re-run installer, or `rsync` just that file) |
+| systemd unit edits | re-run installer (it rewrites + `daemon-reload`s the units) |
+| API keys / `claude` CLI availability | **no redeploy** — auto-detected on the next run |
+
+Caveats:
+
+- The installer's `rsync` has **no `--delete`**, so a **renamed or removed** source file
+  leaves a stale copy in `/opt/shortlist/src`. After a rename/delete, clear it first:
+  `rm -rf /opt/shortlist/src && sudo bash deploy/install_opt_shortlist.sh`.
+- The run is **idempotent per session date** — a manual `systemctl start` (or a second
+  run) for a session that already completed prints "already completed; nothing to do"
+  and skips. To force a re-run for testing, drop that date from
+  `/opt/shortlist/state/scout_state.json` (`runs` array) first.
+
+```bash
+# Trigger a real (Telegram-delivering) run on demand and watch it:
+sudo systemctl start shortlist-scout.service
+journalctl -u shortlist-scout.service -f
+```
+
+## Install steps (manual)
 
 ```bash
 # 1. Adjust WorkingDirectory and ExecStart in shortlist-scout.service to match
