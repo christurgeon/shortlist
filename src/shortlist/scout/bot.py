@@ -277,9 +277,11 @@ class TelegramBot:
                             "⚠️ another poller is active on this bot token — "
                             "commands may be dropped.")
                         self._conflict_alerted = True
-                    self._stop.wait(min(backoff, 30.0)); backoff = min(backoff * 2, 30.0)
+                    self._stop.wait(min(backoff, 30.0))
+                    backoff = min(backoff * 2, 30.0)
                 else:  # transport error (status 0) or other non-200
-                    self._stop.wait(min(backoff, 30.0)); backoff = min(backoff * 2, 30.0)
+                    self._stop.wait(min(backoff, 30.0))
+                    backoff = min(backoff * 2, 30.0)
         finally:
             self._stop.set()
             self._queue.put(None)
