@@ -21,6 +21,9 @@ venv/
 /scratch/
 .cache/
 
+# Backtest caches (SEC companyfacts + ticker map, warmed by shortlist-backtest --source xbrl)
+/.xbrl_cache/
+
 # Scout artifacts (daily manifests, briefs, state)
 /scout/
 state/scout_state.json
