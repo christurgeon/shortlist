@@ -100,3 +100,31 @@ def test_research_prompt_includes_short_interest_context():
 
     # No metrics -> no quant block, no crash.
     assert "QUANT CONTEXT" not in _build_user_prompt(filing, {}, None)
+
+
+def test_enrich_require_passed_false_includes_gated(monkeypatch):
+    from shortlist.research import enrich
+    from shortlist.models import ScoreCard
+
+    # A gated card: passed is False (gates non-empty). require_passed=False must
+    # still select it; default require_passed=True must skip it.
+    gated = ScoreCard(ticker="LMT", composite=60.0, quality=50.0, moat=None,
+                      growth=None, momentum=None, value=None, opportunity=None,
+                      insider=None, gates=["over_leveraged"], scored=True)
+    assert gated.passed is False
+
+    seen = []
+    def fake_fetch(ticker):            # real _enrich_card calls fetch(card.ticker) — ONE str arg
+        seen.append(ticker)
+        raise RuntimeError("no network in test")   # _enrich_card catches -> ResearchResult(skipped)
+
+    # default (require_passed=True): gated card not selected -> fetch never called, no results
+    results = enrich([gated], {}, top_n=5, fetch=fake_fetch, assess_fn=lambda *a, **k: None)
+    assert seen == [] and results == []
+
+    # require_passed=False: gated card IS selected -> fetch called, a (skipped) ResearchResult
+    # is returned end-to-end. Proves selection AND that the pipeline runs the gated name.
+    results = enrich([gated], {}, top_n=5, require_passed=False,
+                     fetch=fake_fetch, assess_fn=lambda *a, **k: None)
+    assert seen == ["LMT"]
+    assert len(results) == 1 and results[0].ticker == "LMT"
