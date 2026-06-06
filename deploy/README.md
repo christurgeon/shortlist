@@ -254,6 +254,21 @@ The unit ships with VPS defaults:
 **Adjust these to your actual install location** before copying. The bot runs
 from inside the repo so that `.env` is found by `env.py:load_env()`.
 
+> **`/deep` needs the `claude` CLI on PATH and its auth in `~/.claude`.** Like the
+> scout's research phase, the `/deep` command shells out to the `claude` CLI. systemd's
+> minimal default `PATH` excludes a user's `~/.local/bin`, so under a bare
+> `User=oracle` unit `shutil.which("claude")` returns `None` and `/deep` silently
+> degrades to "research skipped" (while `/screen` keeps working). To enable `/deep`,
+> run the unit as the **same login user the scout installer uses** (not the `oracle`
+> service account) and add its `HOME`/`PATH` to the `[Service]` section:
+> ```ini
+> User=<login-user>
+> Environment=HOME=/home/<login-user>
+> Environment=PATH=/opt/shortlist/.venv/bin:/home/<login-user>/.local/bin:/usr/local/bin:/usr/bin:/bin
+> ```
+> This mirrors what `install_opt_shortlist.sh` already does for `shortlist-scout`.
+> `/screen` works under any user; only the Claude research brief needs this.
+
 ## Required environment variables
 
 Same as the scout — set in the repo-root `.env` (gitignored) or exported in the
