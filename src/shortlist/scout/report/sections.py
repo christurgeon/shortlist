@@ -178,12 +178,18 @@ class _Footer:
 
     def render_html(self, vm, h):
         notes = "".join(h.tag("div", n, _class="muted") for n in vm.notes)
-        return h.raw("div", h.tag("div", f"Signals: {self._sig(vm)}", _class="muted") +
-                     h.tag("div", f"Funnel: {self._funnel(vm)}", _class="muted") + notes)
+        rows = ""
+        if vm.signals:   # autonomous run; interactive sets signals=[] -> coverage hidden
+            rows = (h.tag("div", f"Signals: {self._sig(vm)}", _class="muted") +
+                    h.tag("div", f"Funnel: {self._funnel(vm)}", _class="muted"))
+        return h.raw("div", rows + notes)
 
     def render_text(self, vm, detail):
-        return ["", f"Signals: {self._sig(vm)}", f"Funnel: {self._funnel(vm)}"] + \
-               [f"Note: {n}" for n in vm.notes]
+        out = [""]
+        if vm.signals:
+            out += [f"Signals: {self._sig(vm)}", f"Funnel: {self._funnel(vm)}"]
+        out += [f"Note: {n}" for n in vm.notes]
+        return out
 
 
 SECTIONS: list[Section] = [_Leaderboard(), _Fundamentals(), _Research(), _Footer()]
