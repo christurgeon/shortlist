@@ -120,3 +120,18 @@ def test_worker_survives_handler_exception_and_replies_redacted():
     bot._handle_safely(Command("screen", ("X",), "/screen x"))
     assert any("command failed" in m for m in notifier.messages)
     assert not any("SECRET123" in m for m in notifier.messages)   # token redacted
+
+
+def test_main_returns_1_when_unconfigured(monkeypatch, tmp_path):
+    from shortlist.scout import bot
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    # CRITICAL on the real VPS: oracle-prod's .env has live TELEGRAM_* creds, and
+    # main() calls load_env() which would repopulate them process-wide AFTER the
+    # delenv — making the bot "configured" and the test hang/poll. Stub load_env so
+    # main() cannot reload creds from a real .env.
+    monkeypatch.setattr(bot, "load_env", lambda: None)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("scout: {bot: {}}\n")
+    # Unconfigured notifier -> run() returns 1 without polling.
+    assert bot.main(["--config", str(cfg)]) == 1

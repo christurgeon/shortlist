@@ -6,16 +6,18 @@ a single worker thread runs the existing run_harness -> build_report -> deliver 
 """
 from __future__ import annotations
 
-import os
+import argparse
 import queue
 import re
+import signal
 import sys
 import threading
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
+import yaml
 
 from ..env import load_env, redact_secrets
 from ..models import rank_key
@@ -284,3 +286,40 @@ class TelegramBot:
             worker.join(timeout=5.0)   # mid-handler work is abandoned (idempotent; re-type)
             self._client.close()
         return 0
+
+
+_DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="shortlist-bot",
+        description="Interactive Telegram bot — /screen and /deep on demand.")
+    ap.add_argument("--config", default=str(_DEFAULT_CONFIG))
+    args = ap.parse_args(argv)
+
+    load_env()
+    config = yaml.safe_load(Path(args.config).read_text())
+
+    # Honour the cache block exactly like daily.py so the bot benefits from warm
+    # re-screens and respects the operator's TTL/kill-switch.
+    from ..cache import configure_default_cache
+    cache_cfg = config.get("cache", {})
+    configure_default_cache(enabled=cache_cfg.get("enabled", True),
+                            path=cache_cfg.get("path"), ttls=cache_cfg.get("ttl"))
+
+    from .notify import TelegramNotifier
+    bot = TelegramBot(TelegramNotifier(), config)
+
+    # SIGTERM (systemd stop/restart) -> set the stop Event so the loop + worker
+    # wind down; an in-flight handler is abandoned (idempotent — re-type it).
+    signal.signal(signal.SIGTERM, lambda *_a: bot._stop.set())
+    try:
+        return bot.run()
+    except KeyboardInterrupt:        # SIGINT (Ctrl-C in foreground)
+        bot._stop.set()
+        return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
