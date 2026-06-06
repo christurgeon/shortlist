@@ -47,6 +47,14 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
 
+    # Autonomous daily push is feature-flagged OFF by default (see spec
+    # 2026-06-06). The interactive bot is the primary driver; flip
+    # scout.daily_push.enabled to true to re-arm the daily report. Demo always
+    # runs (it's the offline smoke path).
+    if not demo and not scout_cfg.get("daily_push", {}).get("enabled", False):
+        print("scout: daily_push disabled (scout.daily_push.enabled=false); nothing to do")
+        return 0
+
     # Honour the config cache block (enabled/path/ttl) on the scout path too — it calls
     # run_harness directly, so without this the operator's kill-switch / TTL tuning in
     # config.yaml would be silently ignored (the lazy default would use hardcoded TTLs).

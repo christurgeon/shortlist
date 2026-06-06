@@ -131,6 +131,7 @@ def test_run_calls_booster_scan_for_with_discovered_tickers(tmp_path, monkeypatc
             "deep_screen_sources": ["mock"],
             "research_top_n": 0,
             "research_phase_budget_s": 1,
+            "daily_push": {"enabled": True},
             "signals": {
                 "stub_discovery": {"enabled": True, "weight": 1.0},
                 "stub_booster":   {"enabled": True, "weight": 0.5},
