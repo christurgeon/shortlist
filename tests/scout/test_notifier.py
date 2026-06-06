@@ -125,3 +125,48 @@ def test_deliver_sends_message_when_nothing_attached():
     f = _Fake()
     res = deliver(f, png=None, html=None, text="t", caption="c", session="x")
     assert f.calls == ["msg"] and res.all_ok
+
+
+def _json_client(status, payload):
+    def handler(request):
+        return httpx.Response(status, json=payload)
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_get_updates_returns_results_on_200():
+    from shortlist.scout.notify import TelegramNotifier
+    client = _json_client(200, {"ok": True, "result": [{"update_id": 7}]})
+    n = TelegramNotifier("T", "42")
+    res = n.get_updates(offset=0, timeout=0, client=client)
+    assert res.status == 200 and res.updates == [{"update_id": 7}]
+
+
+def test_get_updates_409_reports_status_no_updates():
+    from shortlist.scout.notify import TelegramNotifier
+    client = _json_client(409, {"ok": False})
+    res = TelegramNotifier("T", "42").get_updates(offset=0, timeout=0, client=client)
+    assert res.status == 409 and res.updates == []
+
+
+def test_get_updates_transport_error_status_zero():
+    from shortlist.scout.notify import TelegramNotifier
+    def handler(request):
+        raise httpx.ConnectError("boom")
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    res = TelegramNotifier("T", "42").get_updates(offset=0, timeout=0, client=client)
+    assert res.status == 0 and res.updates == []
+
+
+def test_delete_webhook_drops_pending_and_chat_action_carries_chat_id():
+    seen, bodies = [], []
+    def handler(request):
+        seen.append(str(request.url)); bodies.append(request.read())
+        return httpx.Response(200, json={"ok": True})
+    n = TelegramNotifier("T", "42", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert n.delete_webhook() is True               # default drop_pending_updates=True
+    assert n.send_chat_action("typing") is True
+    assert any("deleteWebhook" in u for u in seen)
+    assert any("sendChatAction" in u for u in seen)
+    joined = "".join(b.decode() for b in bodies)
+    assert "drop_pending_updates" in joined          # backlog cleared server-side
+    assert "typing" in joined and "42" in joined      # chat_action carries chat_id (required)

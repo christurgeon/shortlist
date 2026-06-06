@@ -14,6 +14,14 @@ _MSG_CAP = 4096
 _CAPTION_CAP = 1024
 
 
+@dataclass
+class PollResult:
+    """getUpdates outcome. status: HTTP code, or 0 on transport error.
+    updates: the parsed `result` array (empty unless status == 200)."""
+    status: int
+    updates: list[dict] = field(default_factory=list)
+
+
 def _chunks(text: str, size: int):
     for i in range(0, len(text), size):
         yield text[i:i + size]
@@ -70,6 +78,36 @@ class TelegramNotifier:
         return self._post("sendDocument",
                           data={"chat_id": self.chat_id, "caption": caption[:_CAPTION_CAP]},
                           files={"document": (filename, data, "text/html")})
+
+    def get_updates(self, offset: int, timeout: int, client: httpx.Client) -> PollResult:
+        """Long-poll getUpdates on a CALLER-OWNED client whose read timeout must
+        exceed `timeout` (the loop owns one long-lived client). Returns a PollResult;
+        never raises. status==0 signals a transport error (caller backs off);
+        status==409 signals another active poller. Errors are redacted (the URL
+        embeds the bot token)."""
+        if not self.token:
+            return PollResult(0, [])
+        url = _API.format(token=self.token, method="getUpdates")
+        try:
+            resp = client.post(url, json={"offset": offset, "timeout": timeout})
+            if resp.status_code == 200:
+                return PollResult(200, resp.json().get("result", []))
+            return PollResult(resp.status_code, [])
+        except Exception as e:  # noqa: BLE001
+            print(f"telegram getUpdates failed: {redact_secrets(str(e))}")
+            return PollResult(0, [])
+
+    def delete_webhook(self, drop_pending_updates: bool = True) -> bool:
+        """Clear any webhook registration (a stale one causes 409 on getUpdates).
+        `drop_pending_updates=True` ALSO clears the server-side backlog in one
+        documented call — the simplest correct restart-replay guard (Telegram Bot
+        API: deleteWebhook). The boot offset probe is then belt-and-suspenders."""
+        return self._post("deleteWebhook",
+                          json={"drop_pending_updates": drop_pending_updates})
+
+    def send_chat_action(self, action: str = "typing") -> bool:
+        return self._post("sendChatAction",
+                          json={"chat_id": self.chat_id, "action": action})
 
 
 @dataclass
