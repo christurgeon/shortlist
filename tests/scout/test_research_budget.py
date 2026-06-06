@@ -17,7 +17,7 @@ def _make_scout_cfg(budget_s: float) -> dict:
 def test_research_phase_times_out_and_returns_note():
     """enrich sleeps longer than the budget -> timeout note returned quickly (no blocking hang)."""
 
-    def slow_enrich(cards, config, *, top_n, refresh):
+    def slow_enrich(cards, config, *, top_n, refresh, require_passed=True):
         time.sleep(10)  # much longer than the tiny budget
         return []       # pragma: no cover
 
@@ -49,7 +49,7 @@ def test_research_phase_completes_within_budget():
         synthesis = "Strong moat, great FCF."
         brief_path = None
 
-    def fast_enrich(cards, config, *, top_n, refresh):
+    def fast_enrich(cards, config, *, top_n, refresh, require_passed=True):
         return [_FakeResult()]
 
     briefs, assessments, researched, note = _research_phase(
@@ -101,3 +101,26 @@ def test_research_phase_unavailable():
     )
     assert note is not None and "not available" in note
     assert called == []
+
+
+def test_research_phase_forwards_require_passed_and_top_n():
+    from shortlist.scout.daily import _research_phase
+    captured = {}
+
+    # The fake mirrors the REAL enrich signature (incl. require_passed) so that when
+    # _research_phase calls _enrich(..., require_passed=..., top_n=...) it doesn't
+    # TypeError. The red here is "_research_phase has no top_n kwarg", not a fake mismatch.
+    def fake_enrich(cards, config, *, top_n, refresh, require_passed=True):
+        captured["top_n"] = top_n
+        captured["require_passed"] = require_passed
+        return []   # no results -> empty briefs
+
+    _research_phase([], {}, {"research_top_n": 3}, top_n=7, require_passed=False,
+                    _is_available=lambda: True, _enrich=fake_enrich)
+    assert captured["top_n"] == 7
+    assert captured["require_passed"] is False
+
+    # Defaults: top_n falls back to scout_cfg, require_passed stays True (autonomous path).
+    _research_phase([], {}, {"research_top_n": 5},
+                    _is_available=lambda: True, _enrich=fake_enrich)
+    assert captured["top_n"] == 5 and captured["require_passed"] is True

@@ -216,6 +216,8 @@ def _research_phase(
     config,
     scout_cfg,
     *,
+    require_passed=True,
+    top_n=None,
     _is_available=None,
     _enrich=None,
 ) -> tuple[dict, dict, list, str | None]:
@@ -247,7 +249,7 @@ def _research_phase(
             return {}, {}, [], "research skipped: layer unavailable"
     if not _is_available():
         return {}, {}, [], "research skipped: claude CLI / edgartools not available"
-    n = scout_cfg.get("research_top_n", 3)
+    n = top_n if top_n is not None else scout_cfg.get("research_top_n", 3)
     budget_s = scout_cfg.get("research_phase_budget_s", 600)
     try:
         # Wrap the entire enrich() call in a ThreadPoolExecutor so we can enforce a
@@ -259,7 +261,8 @@ def _research_phase(
         # finishes even after a TimeoutError.  Instead construct explicitly and call
         # shutdown(wait=False) so we abandon the hung thread immediately.
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = pool.submit(_enrich, cards, config, top_n=n, refresh=False)
+        future = pool.submit(_enrich, cards, config, top_n=n, refresh=False,
+                             require_passed=require_passed)
         try:
             results = future.result(timeout=budget_s)
             pool.shutdown(wait=False)
