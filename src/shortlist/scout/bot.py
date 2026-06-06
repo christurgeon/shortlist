@@ -96,6 +96,9 @@ def _interactive_manifest(n_requested: int, n_cards: int, command: str,
         researched=list(researched), notes=[f"interactive /{command} request"])
 
 
+# NOTE: intentional copy of daily._caption — avoids importing the heavy `daily`
+# module (and its eager imports) onto the always-on bot path. Keep in sync manually
+# if the caption format changes, or extract to a shared helper.
 def _caption(manifest, cards, top_n: int = 3) -> str:
     ordered = sorted(cards, key=rank_key, reverse=True)
     top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
