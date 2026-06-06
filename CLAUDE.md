@@ -69,6 +69,17 @@ validation, and history, not new scoring:
   (dashboard.png, report.html, report.txt, manifest.json) and delivered to Telegram via
   sendPhoto (chart) + sendDocument (HTML deep-dive), with a chunked text fallback when
   Telegram is unconfigured or failing.
+  An interactive **`shortlist-bot`** (`shortlist.scout.bot`, CLI `shortlist-bot`) long-polls
+  Telegram `getUpdates` (no webhook, no inbound ports) so the operator drives screening on
+  demand: `/screen <tickers>` (fast scores/gates → same PNG+HTML report pipeline) and
+  `/deep <ticker>` (adds the Claude research brief). It allowlists `TELEGRAM_CHAT_ID`
+  (ignores all other senders), runs command handlers on a single worker thread (the poll
+  loop never blocks), and reuses `run_harness`/`build_report`/`deliver` unchanged.
+  Coexists with the daily push on one token (polling + sendMessage don't conflict; only
+  two concurrent `getUpdates` pollers 409 — run ONE instance). The autonomous daily push
+  is feature-flagged OFF by default (`scout.daily_push.enabled`); the bot is the primary
+  interactive driver. Soft caps and poll timeout live in `config.yaml: scout.bot`. The
+  always-on systemd unit is `deploy/shortlist-bot.service` (Type=simple).
 
 ## Dev workflow (uv)
 
