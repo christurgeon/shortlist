@@ -73,7 +73,8 @@ def _call_md(a, config=None):
     block = ["", "## Screening call _(triage — not investment advice)_",
              f"- **Call:** {label} · **conviction** {c.conviction.title()}"]
     if c.stance_clamped:
-        block.append(f"- **Why:** Auto-downgraded: {c.clamp_note}.")
+        why = f"Auto-downgraded: {c.clamp_note}." if c.clamp_note else "Auto-downgraded by a tripped gate."
+        block.append(f"- **Why:** {why}")
         if c.rationale:
             block.append(f"- _Model's pre-clamp view: {c.rationale}_")
     elif c.rationale:

@@ -47,6 +47,14 @@ def test_clamped_demotes_rationale():
     assert "compelling bull" in md
 
 
+def test_watch_falls_back_to_bear_case():
+    a = _assess(ScreeningCall(stance="BUY", conviction="MEDIUM", rationale="r"))
+    a.thesis = Thesis(bull_case="b", bear_case="margin pressure",
+                      what_would_change_my_mind=[], takeaway="t")
+    md = report.to_markdown(a)
+    assert "but watch: margin pressure" in md
+
+
 def test_json_record_persists_call(tmp_path):
     call = ScreeningCall(stance="BUY", conviction="HIGH", rationale="r", as_of_price=42.0)
     report.write(_assess(call), tmp_path)
