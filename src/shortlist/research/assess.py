@@ -298,7 +298,7 @@ def apply_guards(assessment, card, config: dict) -> None:
         call.conviction = _cap_conv(call.conviction, "LOW")
     elif conf < cap.get("medium_below", 0.70):
         call.conviction = _cap_conv(call.conviction, "MEDIUM")
-    if call.decided_without and getattr(card, "coverage", None) is not None:
+    if call.decided_without:
         call.conviction = _cap_conv(call.conviction, "MEDIUM")
 
     # 3. HIGH-conviction corroboration

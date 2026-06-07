@@ -11,7 +11,8 @@ CFG = {"research": {"screening_call": {
 
 
 def _card(**kw):
-    base = dict(gates=[], flags=[], confidence=1.0, coverage=None, abstentions=[],
+    base = dict(quality=80, moat=70, growth=60, momentum=50, value=40, insider=30,
+                gates=[], flags=[], confidence=1.0, coverage=None, abstentions=[],
                 sic_bucket="unknown", metrics=SimpleNamespace(price=123.45))
     base.update(kw)
     return SimpleNamespace(**base)
@@ -107,3 +108,12 @@ def test_none_call_is_noop():
     a = _assess(None)
     apply_guards(a, _card(gates=["negative_fcf"]), CFG)  # must not raise
     assert a.screening_call is None
+
+
+def test_harness_null_axis_no_coverage_caps_conviction():
+    # all providers "ok" (coverage is None) but a sub-score is still None -> real gap
+    a = _assess(ScreeningCall(stance="BUY", conviction="HIGH", rationale="r"),
+                recon=[_confirm()])
+    apply_guards(a, _card(insider=None, confidence=0.95, coverage=None), CFG)
+    assert a.screening_call.decided_without            # gap recorded
+    assert a.screening_call.conviction == "MEDIUM"     # and it capped conviction
