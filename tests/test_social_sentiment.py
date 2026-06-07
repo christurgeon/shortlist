@@ -1,6 +1,7 @@
 from shortlist.data.models import (
     SocialSentiment, TickerSnapshot, SourceResult, merge_snapshots,
 )
+from shortlist.models import StockMetrics
 
 
 def test_social_defaults_all_none():
@@ -34,3 +35,12 @@ def test_social_merges_and_round_trips():
     back = TickerSnapshot.from_dict(snap.to_dict())
     assert back.social is not None
     assert back.social.as_of == "2026-06-07" and back.social.rank == 1
+
+
+def test_stockmetrics_social_fields_default_none():
+    m = StockMetrics(ticker="X")
+    assert m.social_mentions is None
+    assert m.social_mentions_rising is None
+    assert m.social_mention_delta_pct is None
+    assert m.social_rank is None
+    assert m.social_data_age_days is None
