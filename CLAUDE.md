@@ -414,3 +414,19 @@ unverified). `added_risks` is parsed leniently (malformed items skipped, never
 sinks a brief). Tune via `config.yaml: research.risk_diff` / `max_added_risks` /
 `max_chars.tenq_mda`. DEF 14A proxy + earnings-call transcripts remain deferred
 (no keyless source); `FilingBundle` leaves room to add the proxy later.
+
+The brief ends with a **screening call** (`research/models.py:ScreeningCall`,
+config `research.screening_call`, ships **ON**) — a buy/hold/avoid stance +
+conviction + one-sentence rationale, authored by Claude but bounded by three
+deterministic guards in `assess.py:apply_guards`: a **gate clamp** (a tripped hard
+gate can only move the stance more bearish, never more bullish), a **conviction
+cap** (low `ScoreCard.confidence` or a real data gap forces ≤ MEDIUM), and a
+**HIGH-conviction corroboration** requirement (high confidence + a verified
+reconciliation + no contra-flag). The "decided without" / "not applicable" lines
+are **Python-owned** (`research/coverage_caveat.py`, never the LLM) from the card's
+coverage/abstention machinery. `enabled: false` is a byte-identical no-op. It's an
+LLM synthesis, **not** a backtested signal — the per-brief JSON record persists the
+call + an `as_of_price` snapshot so a retrospective hit-rate is possible later.
+Framed as **screening triage, not investment advice**; every standalone surface
+(badge, scout pill, bot line) carries that tag. The JSON model key is `call` (the
+Python field is `screening_call`); the user-facing label is "Screening call".
