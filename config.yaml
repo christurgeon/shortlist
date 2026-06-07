@@ -220,6 +220,24 @@ research:
     mda: 60000                 # largest (highest-signal). risk_factors is boilerplate, ordered
     risk_factors: 50000        # worst-first, so a prefix slice keeps the material risks.
     tenq_mda: 40000            # cap the latest 10-Q MD&A prompt section (§3.1)
+  screening_call:           # buy/hold/avoid capstone on the research brief (spec 2026-06-07)
+    enabled: true           # defaults ON; flip false for a byte-identical no-op
+    labels:
+      STRONG_BUY: "Strong Buy"
+      BUY: "Buy"
+      HOLD: "Hold"
+      AVOID: "Avoid"
+      STRONG_AVOID: "Strong Avoid"
+    disclaimer: "screen only — not advice"   # tag on every standalone surface
+    gate_clamp:             # gate name -> most-bullish stance allowed when tripped
+      _default: HOLD
+      negative_fcf: AVOID
+      over_leveraged: AVOID
+    conviction_cap:
+      low_below: 0.45       # confidence below this -> LOW
+      medium_below: 0.70    # confidence below this -> at most MEDIUM
+    high_conviction:
+      contra_flags: [value_trap]   # flags that block HIGH on a bullish call
 
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.
