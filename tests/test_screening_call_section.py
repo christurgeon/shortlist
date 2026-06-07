@@ -32,3 +32,10 @@ def test_text_has_emoji_call_line():
     joined = "\n".join(lines)
     assert stance_emoji("BUY") in joined
     assert "Buy" in joined
+
+
+def test_text_full_with_call_does_not_crash():
+    lines = _Research().render_text(_vm(), Detail.FULL)
+    joined = "\n".join(lines)
+    assert "Buy" in joined          # call line present
+    assert "   t" in joined         # takeaway still appended under FULL (no UnboundLocalError)

@@ -140,7 +140,7 @@ class _Research:
                         f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
                 line = pill + ' <span class="muted">screen only — not advice</span>'
                 if a.call_watch:
-                    line += h.esc(f" · but watch: {a.call_watch}")
+                    line += " · but watch: " + h.esc(a.call_watch)
                 parts.append(h.raw("p", line, _class="call"))
                 if a.call_rationale:
                     parts.append(h.raw("p", "<b>Why:</b> " + h.esc(a.call_rationale)))
@@ -180,11 +180,12 @@ class _Research:
             a = ld.assessment
             if not a:
                 continue
+            line = None
             if a.call_stance:
                 head = (f"{stance_emoji(a.call_stance)} {ld.ticker}: {a.call_label} · "
                         f"{a.call_conviction.title()} — screen only, not advice")
                 if a.call_watch:
-                    head += f" · watch: {a.call_watch}"
+                    head += f" · but watch: {a.call_watch}"
                 out.append(head)
             else:
                 line = a.takeaway or a.bull_case
