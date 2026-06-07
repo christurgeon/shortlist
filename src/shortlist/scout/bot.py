@@ -115,6 +115,20 @@ def _caption(manifest, cards, top_n: int = 3) -> str:
             f"{manifest.screened} screened from {manifest.raw} raw")[:1024]
 
 
+def _call_summary(assessments: dict) -> str | None:
+    """Telegram message summarizing each researched name's screening call, or None
+    if none have one. Reuses the report view-model's one-liner."""
+    from .report.viewmodel import call_one_liner
+    lines = []
+    for ticker, rec in assessments.items():
+        one = call_one_liner(rec) if isinstance(rec, dict) else None
+        if one:
+            lines.append(f"• {ticker} — {one}")
+    if not lines:
+        return None
+    return "📊 Screening calls (screen only — not advice)\n" + "\n".join(lines)
+
+
 class TelegramBot:
     def __init__(self, notifier, config, *, screen_fn=None, report_fn=None,
                  research_fn=None, deliver_fn=None, client=None):
@@ -232,6 +246,9 @@ class TelegramBot:
             if note:
                 manifest.notes.append(note)
             art = self._report_fn()(present, manifest, assessments=assessments)
+            summary = _call_summary(assessments)
+            if summary:
+                self.notifier.send_message(summary)
             self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
                                caption=_caption(manifest, present),
                                session=manifest.session.isoformat())

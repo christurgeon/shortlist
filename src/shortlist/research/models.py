@@ -7,6 +7,30 @@ TRAJECTORIES = ("widening", "stable", "eroding")
 
 VERDICTS = ("confirms", "contradicts", "silent")
 
+STANCES = ("STRONG_BUY", "BUY", "HOLD", "AVOID", "STRONG_AVOID")  # most-bullish-first
+CONVICTIONS = ("HIGH", "MEDIUM", "LOW")
+
+DEFAULT_STANCE_LABELS = {
+    "STRONG_BUY": "Strong Buy", "BUY": "Buy", "HOLD": "Hold",
+    "AVOID": "Avoid", "STRONG_AVOID": "Strong Avoid",
+}
+DEFAULT_DISCLAIMER = "screen only — not advice"
+
+
+def _sc_cfg(config: dict | None) -> dict:
+    return ((config or {}).get("research") or {}).get("screening_call") or {}
+
+
+def stance_label(stance: str, config: dict | None = None) -> str:
+    labels = _sc_cfg(config).get("labels") or {}
+    # a config label of "" is treated as absent (falls back to the default)
+    return labels.get(stance) or DEFAULT_STANCE_LABELS.get(stance, stance)
+
+
+def call_disclaimer(config: dict | None = None) -> str:
+    return _sc_cfg(config).get("disclaimer") or DEFAULT_DISCLAIMER
+
+
 # Reconciliation `signal` taxonomy (see spec §3.2). Card sub-score axes + two
 # synthetic/derived tokens, plus namespaced gate:/flag: tokens. The four event
 # flags (activist_13d…) are presence-based and harness-only — NOT config-derived,
@@ -112,6 +136,37 @@ class Thesis:
 
 
 @dataclass
+class ScreeningCall:
+    stance: str = "HOLD"                  # one of STANCES (post-clamp)
+    conviction: str = "LOW"               # one of CONVICTIONS (post-cap)
+    rationale: str = ""                   # one sentence: the why
+    # Python-owned, authoritative — never from the model:
+    decided_without: list[str] = field(default_factory=list)
+    not_applicable: list[str] = field(default_factory=list)
+    conviction_capped: bool = False
+    stance_clamped: bool = False
+    clamp_note: str = ""                  # e.g. "tripped negative_fcf gate"
+    as_of_price: Optional[float] = None   # snapshot for future hit-rate
+
+
+def _screening_call(payload: dict) -> Optional[ScreeningCall]:
+    """Lenient, OPTIONAL parse of payload['call']. Missing/malformed -> None (never
+    raises, unlike _thesis) so a brief is never dropped over its capstone. Stance/
+    conviction are normalized (upper-cased, spaces->underscores) then validated;
+    unknown values coerce to HOLD/LOW."""
+    raw = payload.get("call")
+    if not isinstance(raw, dict):
+        return None
+    stance = str(raw.get("stance") or "").strip().upper().replace(" ", "_")
+    conviction = str(raw.get("conviction") or "").strip().upper()
+    return ScreeningCall(
+        stance=stance if stance in STANCES else "HOLD",
+        conviction=conviction if conviction in CONVICTIONS else "LOW",
+        rationale=str(raw.get("rationale") or ""),
+    )
+
+
+@dataclass
 class QualitativeAssessment:
     ticker: str
     as_of: str
@@ -132,6 +187,7 @@ class QualitativeAssessment:
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
     cache_key: str = ""        # composite filing key; falls back to filing_accession
+    screening_call: Optional[ScreeningCall] = None
 
     @property
     def synthesis(self) -> str:

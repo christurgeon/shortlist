@@ -51,7 +51,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     assessment = assess_fn(card, bundle, config)
     if assessment is None:
         return ResearchResult(card.ticker, skipped="assessment failed")
-    bp = report.write(assessment, root)
+    bp = report.write(assessment, root, config)
     return ResearchResult(
         card.ticker, brief_path=str(bp), cost_usd=assessment.cost_usd or 0.0,
         synthesis=assessment.synthesis)

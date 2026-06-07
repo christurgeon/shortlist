@@ -7,7 +7,9 @@ from typing import Callable, Optional
 
 from . import claude_cli
 from .claude_cli import CliResult
-from .models import SCHEMA_HINT, FilingBundle, QualitativeAssessment, assessment_from_payload
+from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
+                     assessment_from_payload, STANCES, _screening_call)
+from .coverage_caveat import coverage_caveats
 
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12
@@ -56,6 +58,19 @@ SYSTEM_PROMPT = (
     "like the 10-K sections).\n"
     "Respond with ONLY a JSON object — no prose, no markdown code fences — matching "
     "exactly this schema:\n" + SCHEMA_HINT
+)
+
+CALL_SYSTEM_ADDENDUM = (
+    "\nIn ADDITION to the schema above, add exactly one more top-level key "
+    "\"call\" to the SAME JSON object (do not emit a separate object). Its value is "
+    "your SCREENING TRIAGE (NOT investment advice), built only from the grounded "
+    "findings above: {\"stance\": \"STRONG_BUY|BUY|HOLD|AVOID|STRONG_AVOID\", "
+    "\"conviction\": \"HIGH|MEDIUM|LOW\", \"rationale\": \"one sentence — the why\"}. "
+    "Use these EXACT uppercase tokens for stance and conviction. Reserve HIGH "
+    "conviction for rare, strongly-corroborated cases, and lower it when the QUANT "
+    "CONTEXT shows a DATA GAPS line with `missing:` items (data unavailable; "
+    "`not applicable:` items are structural and need not lower conviction). Do NOT "
+    "enumerate data gaps in the rationale — they are reported separately."
 )
 
 
@@ -110,11 +125,25 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
     assessment.silent_count = silent
 
 
+def _data_gaps_line(card) -> str:
+    dw, na = coverage_caveats(card)
+    parts = []
+    if dw:
+        parts.append("missing: " + "; ".join(dw))
+    if na:
+        parts.append("not applicable: " + "; ".join(na))
+    if not parts:
+        return ""
+    return "DATA GAPS (factor into conviction): " + ". ".join(parts) + ".\n"
+
+
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
-    quant = _quant_context(card)
+    scfg = (config.get("research") or {}).get("screening_call") or {}
+    gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
+    quant = _quant_context(card, gaps_line)
     events_line = ""
     if filing_events:
         items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
@@ -175,7 +204,7 @@ def _render_series(series) -> str:
             + "\n".join(rows))
 
 
-def _quant_context(card) -> str:
+def _quant_context(card, gaps_line="") -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -217,10 +246,94 @@ def _quant_context(card) -> str:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:
         lines.append("Flags: " + ", ".join(card.flags) + ".")
-    if not lines:
+    if not lines and not gaps_line:
         return ""
     return ("=== QUANT CONTEXT (screener facts; NOT from the filing) ===\n"
-            + "\n".join(lines) + "\n\n")
+            + gaps_line + "\n".join(lines) + "\n\n")
+
+
+_CONV_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+_CONV_INV = {0: "HIGH", 1: "MEDIUM", 2: "LOW"}
+
+
+def _stance_idx(stance: str) -> int:
+    return STANCES.index(stance) if stance in STANCES else STANCES.index("HOLD")
+
+
+def _cap_conv(conv: str, ceiling: str) -> str:
+    """Weaken `conv` to be no stronger than `ceiling` (higher index = weaker)."""
+    return _CONV_INV[max(_CONV_ORDER.get(conv, 2), _CONV_ORDER.get(ceiling, 2))]
+
+
+def _high_corroborated(assessment, card, scfg: dict) -> bool:
+    cap = scfg.get("conviction_cap") or {}
+    conf = getattr(card, "confidence", None)
+    if conf is None or conf < cap.get("medium_below", 0.70):
+        return False
+    stance = assessment.screening_call.stance
+    bullish = stance in ("STRONG_BUY", "BUY")
+    bearish = stance in ("AVOID", "STRONG_AVOID")
+    contra = set((scfg.get("high_conviction") or {}).get("contra_flags") or [])
+    if bullish and (set(getattr(card, "flags", None) or []) & contra):
+        return False
+    recon = getattr(assessment, "reconciliation", None) or []
+    confirms = any(c.verified and c.verdict == "confirms" for c in recon)
+    contradicts = any(c.verified and c.verdict == "contradicts" for c in recon)
+    red = any(getattr(f, "verified", False)
+              for f in (getattr(assessment, "red_flags", None) or []))
+    if bullish:
+        return confirms
+    if bearish:
+        return contradicts or red
+    return confirms or contradicts          # HOLD: any non-silent corroboration
+
+
+def apply_guards(assessment, card, config: dict) -> None:
+    """Mutate assessment.screening_call in place: fill the authoritative gap lists,
+    snapshot price, then clamp stance / cap conviction. No-op if no call."""
+    call = getattr(assessment, "screening_call", None)
+    if call is None:
+        return
+    scfg = (config.get("research") or {}).get("screening_call") or {}
+    call.decided_without, call.not_applicable = coverage_caveats(card)
+    m = getattr(card, "metrics", None)
+    call.as_of_price = getattr(m, "price", None) if m is not None else None
+
+    orig_conv = call.conviction
+
+    # 1. gate clamp (only ever moves bearish; also caps conviction <= MEDIUM)
+    gc = scfg.get("gate_clamp") or {}
+    default_ceiling = gc.get("_default", "HOLD")
+    ceil_idx = -1
+    ceil_gates: list[str] = []
+    for g in (getattr(card, "gates", None) or []):
+        gi = _stance_idx(gc.get(g, default_ceiling))
+        if gi > ceil_idx:
+            ceil_idx, ceil_gates = gi, [g]
+        elif gi == ceil_idx:
+            ceil_gates.append(g)
+    if ceil_idx > _stance_idx(call.stance):
+        call.stance = STANCES[ceil_idx]
+        call.stance_clamped = True
+        noun = "gate" if len(ceil_gates) == 1 else "gates"
+        call.clamp_note = "tripped " + ", ".join(ceil_gates) + f" {noun}"
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+
+    # 2. conviction cap (thin data)
+    cap = scfg.get("conviction_cap") or {}
+    conf = getattr(card, "confidence", None)
+    if conf is None or conf < cap.get("low_below", 0.45):
+        call.conviction = _cap_conv(call.conviction, "LOW")
+    elif conf < cap.get("medium_below", 0.70):
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+    if call.decided_without:
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+
+    # 3. HIGH-conviction corroboration
+    if call.conviction == "HIGH" and not _high_corroborated(assessment, card, scfg):
+        call.conviction = "MEDIUM"
+
+    call.conviction_capped = call.conviction != orig_conv
 
 
 def assess(card, bundle: FilingBundle, config: dict,
@@ -231,6 +344,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     block (via `_quant_context`) and the `filing_events` context line injected
     into the prompt."""
     rcfg = config.get("research", {})
+    scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
     from .models import default_valid_signals
@@ -241,10 +355,11 @@ def assess(card, bundle: FilingBundle, config: dict,
     filing = bundle.tenk
     fe = getattr(getattr(card, "metrics", None), "filing_events", None)
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe)
+    system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
 
     prompt = user_prompt
     for _ in range(2):
-        res = runner(prompt=prompt, system=SYSTEM_PROMPT, model=model, timeout_s=timeout)
+        res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
         if res.error:
             return None                       # transport/CLI failure — skip name
         if res.stop_reason == "max_tokens":
@@ -263,6 +378,9 @@ def assess(card, bundle: FilingBundle, config: dict,
                     max_falsifiers=max_falsifiers, max_added_risks=max_added_risks)
                 assessment.cache_key = bundle.cache_key
                 _verify_grounding(assessment, bundle)
+                if scfg.get("enabled", True):
+                    assessment.screening_call = _screening_call(payload)
+                    apply_guards(assessment, card, config)
                 return assessment
             except (ValueError, json.JSONDecodeError) as e:
                 parse_error = str(e)

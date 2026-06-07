@@ -49,6 +49,12 @@ class AssessmentVM:
     risks: list[str] = field(default_factory=list)
     red_flags: list[str] = field(default_factory=list)
     capital_allocation: str = ""
+    call_stance: str = ""
+    call_label: str = ""
+    call_conviction: str = ""
+    call_rationale: str = ""
+    call_watch: str = ""
+    call_decided_without: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -98,7 +104,17 @@ def _claim(x) -> str:
 
 
 def _assessment_vm(rec: dict) -> AssessmentVM:
+    from ...research.models import stance_label
     th = rec.get("thesis") or {}
+    sc = rec.get("screening_call") if isinstance(rec.get("screening_call"), dict) else None
+    cmm = [str(x) for x in (th.get("what_would_change_my_mind") or [])]
+    watch = (cmm[0] if cmm else th.get("bear_case", "")) if sc else ""
+    stance = sc.get("stance", "") if sc else ""
+    if sc and sc.get("stance_clamped"):
+        note = sc.get("clamp_note") or "a tripped gate"
+        call_rationale = f"Auto-downgraded: {note}."
+    else:
+        call_rationale = (sc.get("rationale") or "") if sc else ""
     return AssessmentVM(
         business_model=rec.get("business_model_summary", "") or "",
         takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
@@ -112,7 +128,26 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         risks=[_claim(x) for x in (rec.get("risks") or [])],
         red_flags=[_claim(x) for x in (rec.get("red_flags") or [])],
         capital_allocation=rec.get("management_capital_allocation", "") or "",
+        call_stance=stance,
+        call_label=stance_label(stance) if stance else "",
+        call_conviction=((sc.get("conviction") or "") if sc else ""),
+        call_rationale=call_rationale,
+        call_watch=watch,
+        call_decided_without=[str(x) for x in ((sc.get("decided_without") if sc else None) or [])],
     )
+
+
+def call_one_liner(rec: dict) -> str | None:
+    """Plain-text one-liner for the bot reply, or None if no call. Reuses _assessment_vm."""
+    vm = _assessment_vm(rec)
+    if not vm.call_stance:
+        return None
+    line = vm.call_label
+    if vm.call_conviction:
+        line += f" · conviction {vm.call_conviction.title()}"
+    if vm.call_watch:
+        line += f" — but watch: {vm.call_watch}"
+    return line
 
 
 def _metrics_vm(m) -> MetricsVM:

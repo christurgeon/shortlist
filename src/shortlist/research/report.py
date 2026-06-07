@@ -4,7 +4,7 @@ import dataclasses
 import json
 from pathlib import Path
 
-from .models import QualitativeAssessment
+from .models import QualitativeAssessment, stance_label, call_disclaimer
 
 
 def _safe(accession: str) -> str:
@@ -51,8 +51,51 @@ def _reconciliation_md(conflicts) -> list[str]:
     return lines
 
 
-def to_markdown(a: QualitativeAssessment) -> str:
+def _watch_line(a) -> str:
     t = a.thesis
+    if t.what_would_change_my_mind:
+        return t.what_would_change_my_mind[0]
+    return t.bear_case or ""
+
+
+def _call_md(a, config=None):
+    """Return (badge_line, block_lines) for the screening call, or [] if no call."""
+    c = a.screening_call
+    if c is None:
+        return []
+    label = stance_label(c.stance, config)
+    disc = call_disclaimer(config)
+    watch = _watch_line(a)
+    badge = f"> **SCREENING CALL: {label}** · conviction {c.conviction.title()}"
+    if watch:
+        badge += f" · _but watch: {watch}_"
+    badge += f" · {disc}"
+    block = ["", "## Screening call _(triage — not investment advice)_",
+             f"- **Call:** {label} · **conviction** {c.conviction.title()}"]
+    if c.stance_clamped:
+        why = f"Auto-downgraded: {c.clamp_note}." if c.clamp_note else "Auto-downgraded by a tripped gate."
+        block.append(f"- **Why:** {why}")
+        if c.rationale:
+            block.append(f"- _Model's pre-clamp view: {c.rationale}_")
+    elif c.rationale:
+        block.append(f"- **Why:** {c.rationale}")
+    if watch:
+        block.append(f"- **But watch:** {watch}")
+    if c.decided_without:
+        block.append(f"- **Decided without:** {'; '.join(c.decided_without)}")
+    if c.not_applicable:
+        block.append(f"- **Not applicable:** {'; '.join(c.not_applicable)}")
+    if c.conviction_capped and not c.stance_clamped:
+        block.append("- _Conviction capped by data coverage / corroboration._")
+    return badge, block
+
+
+def to_markdown(a: QualitativeAssessment, config=None) -> str:
+    t = a.thesis
+    call_badge, call_block = "", []
+    rendered = _call_md(a, config)
+    if rendered:
+        call_badge, call_block = rendered
     cmm = [f"- {x}" for x in t.what_would_change_my_mind] or ["- (none stated)"]
     lines = [
         f"# {a.ticker} — qualitative read",
@@ -60,6 +103,7 @@ def to_markdown(a: QualitativeAssessment) -> str:
         f"> **LLM-generated** from {a.filing_accession} ({a.filing_date}) by "
         f"`{a.model}`. Verify against the source filing. Not investment advice.",
         "",
+        *([call_badge, ""] if call_badge else []),
         "## Thesis _(analyst judgment — not filing facts)_",
         f"- **Bull:** {t.bull_case or 'n/a'}",
         f"- **Bear:** {t.bear_case or 'n/a'}",
@@ -85,17 +129,18 @@ def to_markdown(a: QualitativeAssessment) -> str:
     if a.unverified_count:
         lines += ["", f"_{a.unverified_count} claim(s) could not be verified "
                   "against the filing text._"]
+    lines += call_block
     return "\n".join(lines) + "\n"
 
 
-def write(a: QualitativeAssessment, root) -> Path:
+def write(a: QualitativeAssessment, root, config=None) -> Path:
     """Write both the markdown brief and the JSON record; return the brief path.
     Keyed on a.cache_key (composite 10-K+10-Q), falling back to filing_accession for
     back-compat with assessments that predate the bundle."""
     key = a.cache_key or a.filing_accession
     bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)
-    bp.write_text(to_markdown(a))
+    bp.write_text(to_markdown(a, config))
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
     record_path(a.ticker, key, root).write_text(

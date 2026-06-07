@@ -34,3 +34,23 @@ def text_on(c: tuple[int, int, int]) -> tuple[int, int, int]:
     """Pick dark or light text for legibility on fill `c` (luminance test)."""
     lum = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
     return (17, 24, 31) if lum > 140 else (233, 237, 239)
+
+
+# Screening-call stance → fill color (RdYlGn-aligned) + traffic-light emoji.
+STANCE_RGB = {
+    "STRONG_BUY": (26, 152, 80),
+    "BUY": (102, 189, 99),
+    "HOLD": (255, 235, 130),
+    "AVOID": (244, 109, 67),
+    "STRONG_AVOID": (215, 48, 39),
+}
+_STANCE_EMOJI = {"STRONG_BUY": "🟢", "BUY": "🟢", "HOLD": "🟡",
+                 "AVOID": "🔴", "STRONG_AVOID": "🔴"}
+
+
+def stance_to_rgb(stance: str) -> tuple[int, int, int]:
+    return STANCE_RGB.get(stance, GRAY_BAD)
+
+
+def stance_emoji(stance: str) -> str:
+    return _STANCE_EMOJI.get(stance, "")

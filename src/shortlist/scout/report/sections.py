@@ -10,7 +10,7 @@ import enum
 from typing import Protocol
 
 from .html import HtmlBuilder
-from .theme import SUB_LABELS, SUBS, rgb_hex, score_to_rgb, text_on
+from .theme import SUB_LABELS, SUBS, rgb_hex, score_to_rgb, stance_emoji, stance_to_rgb, text_on
 from .viewmodel import ReportVM
 
 
@@ -132,6 +132,22 @@ class _Research:
             if not a:
                 continue
             parts = [h.tag("h2", f"{ld.ticker} — analysis")]
+            if a.call_stance:
+                col = stance_to_rgb(a.call_stance)
+                pill = (f'<span class="pill" style="background:{rgb_hex(col)};'
+                        f'color:{rgb_hex(text_on(col))};padding:2px 8px;'
+                        f'border-radius:10px;font-weight:700">'
+                        f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
+                line = pill + ' <span class="muted">screen only — not advice</span>'
+                if a.call_watch:
+                    line += " · but watch: " + h.esc(a.call_watch)
+                parts.append(h.raw("p", line, _class="call"))
+                if a.call_rationale:
+                    parts.append(h.raw("p", "<b>Why:</b> " + h.esc(a.call_rationale)))
+                if a.call_decided_without:
+                    dw = "; ".join(a.call_decided_without)
+                    parts.append(h.raw("p", "<b>Decided without:</b> " + h.esc(dw),
+                                       _class="muted"))
             if a.takeaway:
                 parts.append(h.tag("p", a.takeaway, _class="takeaway"))
             if a.business_model:
@@ -164,8 +180,16 @@ class _Research:
             a = ld.assessment
             if not a:
                 continue
-            line = a.takeaway or a.bull_case
-            out.append(f"📝 {ld.ticker}: {line[:160]}" if line else f"📝 {ld.ticker}")
+            line = None
+            if a.call_stance:
+                head = (f"{stance_emoji(a.call_stance)} {ld.ticker}: {a.call_label} · "
+                        f"{a.call_conviction.title()} — screen only, not advice")
+                if a.call_watch:
+                    head += f" · but watch: {a.call_watch}"
+                out.append(head)
+            else:
+                line = a.takeaway or a.bull_case
+                out.append(f"📝 {ld.ticker}: {line[:160]}" if line else f"📝 {ld.ticker}")
             if detail is Detail.FULL:
                 if a.takeaway and a.takeaway != line:
                     out.append(f"   {a.takeaway}")

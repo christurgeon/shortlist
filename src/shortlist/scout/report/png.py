@@ -6,7 +6,8 @@ import io
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .theme import BG, FG, SUB_LABELS, SUBS, score_to_rgb, text_on
+from .theme import (BG, FG, SUB_LABELS, SUBS, score_to_rgb, stance_to_rgb,
+                    text_on)
 from .viewmodel import ReportVM
 
 _W = 760           # target width (px); we supersample 2x then downscale
@@ -73,6 +74,18 @@ def render_glance(vm: ReportVM) -> bytes:
         col = score_to_rgb(ld.composite)
         d.rectangle([left, ry + 3 * s, left + bw, ry + (_ROW - 6) * s], fill=col)
         d.text((left + bw + 6 * s, ry + 6 * s), f"{ld.composite:.0f}", font=f_cell, fill=FG)
+        a = ld.assessment
+        if a is not None and getattr(a, "call_stance", ""):
+            pcol = stance_to_rgb(a.call_stance)
+            label = a.call_label or a.call_stance
+            bb = d.textbbox((0, 0), label, font=f_cell)
+            tw = bb[2] - bb[0]
+            px2 = _W * s - pad
+            px1 = px2 - (tw + 14 * s)
+            d.rounded_rectangle([px1, ry + 4 * s, px2, ry + (_ROW - 7) * s],
+                                 radius=5 * s, fill=pcol)
+            _center(d, (px1, ry + 4 * s, px2, ry + (_ROW - 7) * s), label, f_cell,
+                    text_on(pcol))
 
     # --- sub-score heatmap panel ---
     hy = y0 + n * _ROW * s + 24 * s
