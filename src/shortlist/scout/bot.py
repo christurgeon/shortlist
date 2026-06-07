@@ -21,6 +21,7 @@ import yaml
 
 from ..env import load_env, redact_secrets
 from ..models import rank_key
+from ..validation import no_data, partition_format
 from .models import RunManifest
 
 _KNOWN = {"screen", "deep", "help", "start"}
@@ -84,6 +85,12 @@ _HELP = (
 def _soft_cap(tickers: tuple[str, ...], cap: int) -> tuple[list[str], int]:
     kept = list(tickers[:cap])
     return kept, max(0, len(tickers) - cap)
+
+
+def _no_data_note(missing) -> str:
+    names = ", ".join(c.ticker for c in missing)
+    return (f"⚠️ No data for: {names} — unknown symbol, or all sources "
+            f"(FMP/Finnhub/EDGAR) failed. Check the symbol or retry.")
 
 
 def _interactive_manifest(n_requested: int, n_cards: int, command: str,
@@ -166,42 +173,75 @@ class TelegramBot:
         else:
             self.notifier.send_message("Unknown command. " + _HELP)
 
+    def _format_filter(self, tickers: tuple[str, ...], usage: str):
+        """Drop malformed tokens before any API spend. Returns (good_list, note):
+        - good is the well-formed list (order preserved);
+        - note is a trailing 'ignored' string when some tokens were malformed.
+        If NO well-formed tokens remain, replies (invalid-format if any malformed,
+        else the usage text) and returns (None, None) so the caller returns early.
+        """
+        good, bad = partition_format(tickers)
+        if not good:
+            self.notifier.send_message(
+                f"Invalid ticker format: {', '.join(bad)}. "
+                "Use US symbols like NVDA, BRK.B." if bad else usage)
+            return None, None
+        note = f"Invalid ticker format: {', '.join(bad)} (ignored)." if bad else None
+        return good, note
+
     def _do_screen(self, tickers: tuple[str, ...]) -> None:
-        kept, dropped = _soft_cap(tickers, self.max_screen)
-        if not kept:
-            self.notifier.send_message("Usage: /screen NVDA, LMT, MSFT")
+        good, fmt_note = self._format_filter(tickers, "Usage: /screen NVDA, LMT, MSFT")
+        if good is None:
             return
+        kept, dropped = _soft_cap(tuple(good), self.max_screen)
         # "Heard you" feedback. Runs on the WORKER thread (this handler), never the
         # poll thread — a slow/flaky chat-action POST must not stall getUpdates.
         self.notifier.send_chat_action("upload_photo")
         cards = self._screen_fn()(kept, self.sources, self.config)
-        manifest = _interactive_manifest(len(kept), len(cards), "screen", [])
-        art = self._report_fn()(cards, manifest, assessments={})
-        self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                           caption=_caption(manifest, cards), session=manifest.session.isoformat())
+        present = [c for c in cards if not no_data(c)]
+        missing = [c for c in cards if no_data(c)]
+        if present:
+            manifest = _interactive_manifest(len(kept), len(present), "screen", [])
+            art = self._report_fn()(present, manifest, assessments={})
+            self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
+                               caption=_caption(manifest, present),
+                               session=manifest.session.isoformat())
+        if missing:
+            self.notifier.send_message(_no_data_note(missing))
         if dropped:
             self.notifier.send_message(
                 f"(screened first {len(kept)}; {dropped} more not run — re-send them)")
+        if fmt_note:
+            self.notifier.send_message(fmt_note)
 
     def _do_deep(self, tickers: tuple[str, ...]) -> None:
-        kept, dropped = _soft_cap(tickers, self.max_deep)
-        if not kept:
-            self.notifier.send_message("Usage: /deep TSLA")
+        good, fmt_note = self._format_filter(tickers, "Usage: /deep TSLA")
+        if good is None:
             return
+        kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
             f"Researching {', '.join(kept)} — this can take a minute…")
         cards = self._screen_fn()(kept, self.sources, self.config)
-        _briefs, assessments, researched, note = self._research_fn()(
-            cards, self.config, self.scout_cfg, require_passed=False, top_n=len(kept))
-        manifest = _interactive_manifest(len(kept), len(cards), "deep", researched)
-        if note:
-            manifest.notes.append(note)
-        art = self._report_fn()(cards, manifest, assessments=assessments)
-        self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                           caption=_caption(manifest, cards), session=manifest.session.isoformat())
+        present = [c for c in cards if not no_data(c)]
+        missing = [c for c in cards if no_data(c)]
+        if present:
+            _briefs, assessments, researched, note = self._research_fn()(
+                present, self.config, self.scout_cfg,
+                require_passed=False, top_n=len(present))
+            manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
+            if note:
+                manifest.notes.append(note)
+            art = self._report_fn()(present, manifest, assessments=assessments)
+            self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
+                               caption=_caption(manifest, present),
+                               session=manifest.session.isoformat())
+        if missing:
+            self.notifier.send_message(_no_data_note(missing))
         if dropped:
             self.notifier.send_message(
                 f"(researched first {len(kept)}; {dropped} more not run — re-send them)")
+        if fmt_note:
+            self.notifier.send_message(fmt_note)
 
     # --- loop machinery ---
     def _handle_safely(self, cmd: Command) -> None:
