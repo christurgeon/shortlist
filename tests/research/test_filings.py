@@ -57,3 +57,42 @@ def test_cap_sections_under_cap_unchanged():
                    business="short", mda="short", risk_factors="short")
     capped = cap_sections(f, {"business": 1000})
     assert capped.business == "short"
+
+
+def test_cap_bundle_caps_tenk_and_tenq():
+    from shortlist.research.filings import cap_bundle
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText("X", "a", "d", business="b"*100, mda="m"*100, risk_factors="r"*100)
+    b = FilingBundle(tenk=tenk, primary_accession="a", cache_key="a", filing_date="d",
+                     tenq_mda="q"*100, added_risks_text="kept")
+    capped = cap_bundle(b, {"business": 10, "tenq_mda": 20})
+    assert len(capped.tenk.business) == 10
+    assert len(capped.tenq_mda) == 20
+    assert capped.added_risks_text == "kept"      # not capped here (riskdiff caps it)
+    # haystack reflects the trim (prompt == haystack invariant)
+    assert capped.tenk.business in capped.haystack()
+    assert capped.tenq_mda in capped.haystack()
+
+def test_cap_bundle_noop_when_absent():
+    from shortlist.research.filings import cap_bundle
+    from shortlist.research.models import FilingBundle, FilingText
+    b = FilingBundle(tenk=FilingText("X", "a", "d", business="b"), primary_accession="a",
+                     cache_key="a", filing_date="d", tenq_mda="q")
+    assert cap_bundle(b, None) is b
+
+def test_tenq_mda_uses_part_i_item_2():
+    # Real TenQ exposes MD&A via get_item_with_part, NOT a `management_discussion` attr.
+    from shortlist.research.filings import _tenq_mda
+    class _FakeTenQ:
+        def get_item_with_part(self, part, item, markdown=True):
+            assert (part, item) == ("Part I", "Item 2")
+            return "Quarterly MD&A text."
+    assert _tenq_mda(_FakeTenQ()) == "Quarterly MD&A text."
+
+def test_tenq_mda_empty_on_missing():
+    from shortlist.research.filings import _tenq_mda
+    class _Bare:
+        def get_item_with_part(self, *a, **k):
+            return None
+    assert _tenq_mda(_Bare()) == ""
+    assert _tenq_mda(object()) == ""              # no method at all -> ""

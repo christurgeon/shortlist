@@ -4,7 +4,8 @@ import dataclasses
 import os
 from typing import Any, Optional
 
-from .models import FilingText
+from . import riskdiff
+from .models import FilingBundle, FilingText
 
 
 def cap_sections(filing: FilingText, max_chars: dict | None) -> FilingText:
@@ -26,6 +27,21 @@ def cap_sections(filing: FilingText, max_chars: dict | None) -> FilingText:
     )
 
 
+def cap_bundle(bundle: "FilingBundle", max_chars: dict | None) -> "FilingBundle":
+    """Cap the 10-K sections AND the 10-Q MD&A to their configured char limits so
+    the model prompt and grounding haystack stay identical and bounded. The
+    added-risk text is already capped by riskdiff and is left untouched here.
+    Absent caps => bundle returned unchanged."""
+    if not max_chars:
+        return bundle
+    capped_tenk = cap_sections(bundle.tenk, max_chars)
+    tenq_cap = max_chars.get("tenq_mda")
+    tenq = bundle.tenq_mda
+    if tenq_cap and len(tenq) > tenq_cap:
+        tenq = tenq[:tenq_cap]
+    return dataclasses.replace(bundle, tenk=capped_tenk, tenq_mda=tenq)
+
+
 def _section(tenk: Any, name: str) -> str:
     value = getattr(tenk, name, None)
     return str(value) if value else ""
@@ -42,6 +58,47 @@ def _build_filing_text(ticker: str, accession: Any, filing_date: Any, tenk: Any)
         mda=_section(tenk, "management_discussion"),
         risk_factors=_section(tenk, "risk_factors"),
     )
+
+
+def _tenq_mda(tenq: Any) -> str:
+    """10-Q MD&A is Part I, Item 2 — NOT a `management_discussion` attribute (that
+    exists only on TenK). Returns "" on any extraction failure."""
+    try:
+        getter = getattr(tenq, "get_item_with_part", None)
+        if getter is None:
+            return ""
+        value = getter("Part I", "Item 2", markdown=True)  # markdown=True for 10-K parity
+        return str(value) if value else ""
+    except Exception:
+        return ""
+
+
+def _fiscal_year(filing: Any) -> Optional[int]:
+    """Best-effort fiscal year from a filing's period_of_report (YYYY-MM-DD)."""
+    por = str(getattr(filing, "period_of_report", "") or "")
+    return int(por[:4]) if por[:4].isdigit() else None
+
+
+def _prior_year_risk_factors(ticker: str) -> str:
+    """The prior fiscal year's 10-K Item 1A, for the YoY diff baseline. Excludes
+    10-K/A amendments and selects by fiscal year (not 'second most recent'). "" if
+    there is no genuinely-prior annual report. Never raises."""
+    from edgar import Company
+    try:
+        filings = Company(ticker).get_filings(form="10-K")
+        rows = [f for f in filings if str(getattr(f, "form", "")) == "10-K"]
+        if len(rows) < 2:
+            return ""
+        rows.sort(key=lambda f: str(getattr(f, "filing_date", "")), reverse=True)
+        current_fy = _fiscal_year(rows[0])
+        for f in rows[1:]:
+            fy = _fiscal_year(f)
+            if current_fy is None or fy is None or fy < current_fy:
+                tenk = f.obj()
+                return _section(tenk, "risk_factors")
+        return ""
+    except Exception:
+        return ""
 
 
 def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:
@@ -63,3 +120,33 @@ def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingTex
     filing = _build_filing_text(
         ticker, getattr(latest, "accession_no", ""), getattr(latest, "filing_date", ""), tenk)
     return filing if filing.has_content() else None
+
+
+def fetch_bundle(ticker: str, identity: Optional[str] = None,
+                 config: Optional[dict] = None) -> Optional[FilingBundle]:
+    """Fetch the documents for one research brief: the current 10-K (required), the
+    latest 10-Q MD&A, and the YoY added-risk diff. Returns None ONLY when the
+    current 10-K is unusable (matches fetch_10k's contract); the 10-Q and diff
+    degrade to "" on any failure (failure isolation)."""
+    from edgar import Company  # lazy: optional [edgar] extra
+
+    tenk = fetch_10k(ticker, identity)   # sets identity / raises if SEC_IDENTITY unset
+    if tenk is None:
+        return None
+
+    tenq_mda, tenq_acc = "", ""
+    try:
+        latest_q = Company(ticker).get_filings(form="10-Q").latest(1)
+        if latest_q is not None and str(getattr(latest_q, "form", "")) == "10-Q":
+            tenq_mda = _tenq_mda(latest_q.obj())
+            tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
+    except Exception:
+        tenq_mda, tenq_acc = "", ""
+
+    prior_1a = _prior_year_risk_factors(ticker)
+    added = riskdiff.added_risk_blocks(tenk.risk_factors, prior_1a, config or {})
+
+    cache_key = f"{tenk.accession}+{tenq_acc}" if tenq_acc else tenk.accession
+    return FilingBundle(
+        tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
+        filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added)
