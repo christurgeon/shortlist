@@ -138,6 +138,18 @@ class ShortInterest:
 
 
 @dataclass
+class SocialSentiment:
+    """WSB social-media mention data for one symbol, as-of a fetch date (ApeWisdom).
+    Raw facts only; rising/delta/staleness are DERIVED in the bridge."""
+    as_of: Optional[str] = None              # ISO date the mention data was fetched
+    mentions: Optional[int] = None
+    mentions_24h_ago: Optional[int] = None
+    upvotes: Optional[int] = None
+    rank: Optional[int] = None
+    rank_24h_ago: Optional[int] = None
+
+
+@dataclass
 class FilingEvent:
     form: str                          # "8-K", "SC 13D", "SC 13G", "144", ...
     filed: str                         # ISO date (filing date)
@@ -178,6 +190,7 @@ class TickerSnapshot:
     price: Optional[Price] = None
     short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
+    social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -251,7 +264,8 @@ _DEFAULTS = {
 # Auxiliary sections live on the snapshot and are merged, but are DELIBERATELY excluded
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
-_AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events}
+_AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
+                 "social": SocialSentiment}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:
