@@ -210,10 +210,16 @@ research:
   max_red_flags: 12
   max_conflicts: 6             # cap on reconciliation entries (truncation budget)
   max_falsifiers: 6            # cap on thesis.what_would_change_my_mind
+  max_added_risks: 8           # cap on the YoY newly-disclosed-risks list (§3.4)
+  risk_diff:                   # YoY Item-1A risk-factor diff (research/riskdiff.py)
+    similarity_threshold: 0.5  # normalized block-prefix SequenceMatcher ratio; below => "added"
+    max_blocks: 4              # cap added risk blocks fed to the model
+    max_chars: 12000           # total char cap on the added-risk text
   max_chars:                   # cap 10-K narrative sections fed to the model (chars).
     business: 50000            # generous context now that timeout_s has headroom. MD&A kept
     mda: 60000                 # largest (highest-signal). risk_factors is boilerplate, ordered
     risk_factors: 50000        # worst-first, so a prefix slice keeps the material risks.
+    tenq_mda: 40000            # cap the latest 10-Q MD&A prompt section (§3.1)
 
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.

@@ -156,3 +156,61 @@ def test_build_reconciliation_filters_and_caps():
 def test_build_reconciliation_missing_key_is_empty():
     from shortlist.research.models import _reconciliation, default_valid_signals
     assert _reconciliation({}, valid_signals=default_valid_signals()) == []
+
+
+def test_filing_bundle_haystack_and_cache_key():
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText("AAPL", "acc-10k", "2025-10-31", business="b", mda="m",
+                      risk_factors="r")
+    b = FilingBundle(tenk=tenk, tenq_mda="quarterly md&a", added_risks_text="new risk",
+                     primary_accession="acc-10k", cache_key="acc-10k+acc-10q",
+                     filing_date="2025-10-31")
+    hay = b.haystack()
+    assert "b" in hay and "m" in hay and "r" in hay
+    assert "quarterly md&a" in hay and "new risk" in hay
+    assert b.cache_key == "acc-10k+acc-10q"
+
+def test_assessment_parses_added_risks():
+    from shortlist.research.models import assessment_from_payload
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "m"},
+        "risks": [], "red_flags": [], "management_capital_allocation": "y",
+        "thesis": {"bull_case": "", "bear_case": "", "what_would_change_my_mind": [],
+                   "takeaway": "t"},
+        "added_risks": [{"claim": "New cyber risk", "evidence": "A breach could harm us."}],
+    }
+    a = assessment_from_payload(payload, ticker="AAPL", as_of="t", accession="acc",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None)
+    assert len(a.added_risks) == 1
+    assert a.added_risks[0].claim == "New cyber risk"
+    assert a.cache_key == ""        # default; set by assess(), not the payload
+
+def test_assessment_added_risks_capped():
+    from shortlist.research.models import assessment_from_payload
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "m"},
+        "risks": [], "red_flags": [], "management_capital_allocation": "y",
+        "thesis": {"bull_case": "", "bear_case": "", "what_would_change_my_mind": [],
+                   "takeaway": "t"},
+        "added_risks": [{"claim": f"r{i}", "evidence": "e"} for i in range(20)],
+    }
+    a = assessment_from_payload(payload, ticker="A", as_of="t", accession="acc",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None, max_added_risks=3)
+    assert len(a.added_risks) == 3
+
+def test_assessment_added_risks_tolerates_malformed_items():
+    # advisory list: a non-dict item is skipped, NOT raised (must not sink the brief)
+    from shortlist.research.models import assessment_from_payload
+    payload = {
+        "business_model_summary": "x", "moat": {"summary": "m"},
+        "risks": [], "red_flags": [], "management_capital_allocation": "y",
+        "thesis": {"bull_case": "", "bear_case": "", "what_would_change_my_mind": [],
+                   "takeaway": "t"},
+        "added_risks": ["not a dict", {"claim": "real", "evidence": "e"}],
+    }
+    a = assessment_from_payload(payload, ticker="A", as_of="t", accession="acc",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None)
+    assert len(a.added_risks) == 1 and a.added_risks[0].claim == "real"

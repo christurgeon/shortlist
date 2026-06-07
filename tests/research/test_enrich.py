@@ -1,5 +1,6 @@
 from shortlist.research import ResearchResult, enrich
-from shortlist.research.models import FilingText, Moat, QualitativeAssessment, Thesis
+from shortlist.research.models import (FilingBundle, FilingText, Moat,
+                                       QualitativeAssessment, Thesis)
 
 
 class _Card:
@@ -14,11 +15,17 @@ class _Card:
         return not self.gates and self.scored
 
 
-def _assessment(ticker):
+def _bundle(ticker, key=None):
+    tenk = FilingText(ticker, f"acc-{ticker}", "2025-10-31", business="b")
+    return FilingBundle(tenk=tenk, primary_accession=f"acc-{ticker}",
+                        cache_key=key or f"acc-{ticker}", filing_date="2025-10-31")
+
+
+def _assessment(ticker, key=None):
     return QualitativeAssessment(
         ticker=ticker, as_of="t", filing_accession=f"acc-{ticker}", filing_date="2025-10-31",
         model="claude-sonnet-4-6", cost_usd=0.05, moat=Moat(),
-        thesis=Thesis(takeaway=f"{ticker} read."))
+        thesis=Thesis(takeaway=f"{ticker} read."), cache_key=key or f"acc-{ticker}")
 
 
 CONFIG = {"research": {"output_root": "research"}}
@@ -28,8 +35,8 @@ def test_enrich_selects_top_n_non_gated(tmp_path):
     cards = [_Card("A", 90), _Card("B", 80, gates=["over_leveraged"]), _Card("C", 70)]
     seen = []
     def fake_fetch(ticker, **kw):
-        return FilingText(ticker, f"acc-{ticker}", "2025-10-31", business="b")
-    def fake_assess(card, filing, config, **kw):
+        return _bundle(ticker)
+    def fake_assess(card, bundle, config, **kw):
         seen.append(card.ticker)
         return _assessment(card.ticker)
     cfg = {"research": {"output_root": str(tmp_path)}}
@@ -50,16 +57,30 @@ def test_enrich_skips_when_no_10k(tmp_path):
 def test_enrich_uses_cache_unless_refresh(tmp_path):
     from shortlist.research import report
     cfg = {"research": {"output_root": str(tmp_path)}}
-    report.write(_assessment("A"), tmp_path)  # pre-seed cache for accession acc-A
+    report.write(_assessment("A"), tmp_path)  # pre-seed cache for cache_key acc-A
     calls = {"n": 0}
-    def fake_assess(card, filing, config, **kw):
+    def fake_assess(card, bundle, config, **kw):
         calls["n"] += 1
-        return _assessment(card.ticker)
-    fetch = lambda t, **k: FilingText(t, "acc-A", "2025-10-31", business="b")
+        return _assessment(card.ticker, key="acc-A")
+    fetch = lambda t, **k: _bundle(t, key="acc-A")
     r = enrich([_Card("A", 90)], cfg, top_n=1, refresh=False, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 0 and r[0].brief_path and r[0].from_cache is True
     r2 = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 1                     # refresh forces re-assessment
+
+
+def test_enrich_new_10q_invalidates_cache(tmp_path):
+    from shortlist.research import report
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    report.write(_assessment("A", key="acc-A+q1"), tmp_path)   # cached for q1
+    calls = {"n": 0}
+    def fake_assess(card, bundle, config, **kw):
+        calls["n"] += 1
+        return _assessment(card.ticker, key=bundle.cache_key)
+    # a NEW 10-Q -> different composite key -> cache miss -> re-assessed
+    fetch = lambda t, **k: _bundle(t, key="acc-A+q2")
+    enrich([_Card("A", 90)], cfg, top_n=1, fetch=fetch, assess_fn=fake_assess)
+    assert calls["n"] == 1
 
 
 def test_enrich_redacts_filing_fetch_errors(tmp_path):
@@ -75,7 +96,7 @@ def test_enrich_redacts_filing_fetch_errors(tmp_path):
 
 def test_enrich_marks_assessment_failure(tmp_path):
     cfg = {"research": {"output_root": str(tmp_path)}}
-    fetch = lambda t, **k: FilingText(t, f"acc-{t}", "2025-10-31", business="b")
+    fetch = lambda t, **k: _bundle(t)
     results = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True,
                      fetch=fetch, assess_fn=lambda *a, **k: None)
     assert results[0].skipped == "assessment failed"

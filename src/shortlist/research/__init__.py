@@ -8,7 +8,7 @@ from ..env import redact_secrets
 from ..models import rank_key
 from . import claude_cli, report
 from .assess import assess as _assess
-from .filings import fetch_10k as _fetch_10k
+from .filings import fetch_bundle as _fetch_bundle
 
 __all__ = ["enrich", "ResearchResult", "is_available"]
 
@@ -38,17 +38,17 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
                  fetch: Callable, assess_fn: Callable) -> ResearchResult:
     """Research a single card. Never raises — failures become a skipped result."""
     try:
-        filing = fetch(card.ticker)
+        bundle = fetch(card.ticker, config=config)
     except Exception as e:  # network/edgartools/identity errors
         return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
-    if filing is None:
+    if bundle is None:
         return ResearchResult(card.ticker, skipped="no 10-K")
-    if not refresh and report.is_cached(card.ticker, filing.accession, root):
-        bp = report.brief_path(card.ticker, filing.accession, root)
+    if not refresh and report.is_cached(card.ticker, bundle.cache_key, root):
+        bp = report.brief_path(card.ticker, bundle.cache_key, root)
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
-    from .filings import cap_sections
-    filing = cap_sections(filing, config.get("research", {}).get("max_chars"))
-    assessment = assess_fn(card, filing, config)
+    from .filings import cap_bundle
+    bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
+    assessment = assess_fn(card, bundle, config)
     if assessment is None:
         return ResearchResult(card.ticker, skipped="assessment failed")
     bp = report.write(assessment, root)
@@ -59,7 +59,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            require_passed: bool = True,
-           fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
+           fetch: Callable = _fetch_bundle, assess_fn: Callable = _assess) -> list[ResearchResult]:
     """Enrich the top-N cards. Sorts by `rank_key` (scored, composite, confidence)
     before selecting — the caller need not pre-sort. By default only `passed`
     (not-gated AND scored) cards are eligible; `require_passed=False` selects the

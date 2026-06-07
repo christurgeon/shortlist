@@ -4,6 +4,12 @@ from shortlist.models import ScoreCard, StockMetrics
 from shortlist.screen import _card_dict, build_arg_parser
 
 
+def _wrap(ft):
+    from shortlist.research.models import FilingBundle
+    return FilingBundle(tenk=ft, primary_accession=ft.accession,
+                        cache_key=ft.accession, filing_date=ft.filing_date)
+
+
 def _card():
     return ScoreCard(ticker="AAPL", composite=70.0, quality=80, moat=80, growth=60,
                      momentum=10, value=20, opportunity=20, insider=50, gates=[],
@@ -94,12 +100,12 @@ def test_research_prompt_includes_short_interest_context():
                      momentum=None, value=None, opportunity=None, insider=None,
                      metrics=StockMetrics(ticker="AAA", short_pct_outstanding=0.12,
                                           days_to_cover=6.3, short_interest_rising=True))
-    prompt = _build_user_prompt(filing, {}, card)
+    prompt = _build_user_prompt(_wrap(filing), {}, card)
     assert "QUANT CONTEXT" in prompt
     assert "12.0% of shares" in prompt and "6.3 days to cover" in prompt
 
     # No metrics -> no quant block, no crash.
-    assert "QUANT CONTEXT" not in _build_user_prompt(filing, {}, None)
+    assert "QUANT CONTEXT" not in _build_user_prompt(_wrap(filing), {}, None)
 
 
 def test_enrich_require_passed_false_includes_gated(monkeypatch):
@@ -114,7 +120,7 @@ def test_enrich_require_passed_false_includes_gated(monkeypatch):
     assert gated.passed is False
 
     seen = []
-    def fake_fetch(ticker):            # real _enrich_card calls fetch(card.ticker) — ONE str arg
+    def fake_fetch(ticker, **kw):      # real _enrich_card calls fetch(card.ticker) — ONE str arg
         seen.append(ticker)
         raise RuntimeError("no network in test")   # _enrich_card catches -> ResearchResult(skipped)
 

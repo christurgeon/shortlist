@@ -79,7 +79,9 @@ def to_markdown(a: QualitativeAssessment) -> str:
     lines += ["", "## Business model", a.business_model_summary,
               "", "## Management & capital allocation", a.management_capital_allocation,
               "", "## Material risks", *_findings_md(a.risks, "None identified."),
-              "", "## Red flags", *_findings_md(a.red_flags, "None identified.")]
+              "", "## Red flags", *_findings_md(a.red_flags, "None identified."),
+              "", "## Newly disclosed risks (vs prior year)",
+              *_findings_md(a.added_risks, "No newly disclosed risks identified.")]
     if a.unverified_count:
         lines += ["", f"_{a.unverified_count} claim(s) could not be verified "
                   "against the filing text._"]
@@ -87,12 +89,15 @@ def to_markdown(a: QualitativeAssessment) -> str:
 
 
 def write(a: QualitativeAssessment, root) -> Path:
-    """Write both the markdown brief and the JSON record; return the brief path."""
-    bp = brief_path(a.ticker, a.filing_accession, root)
+    """Write both the markdown brief and the JSON record; return the brief path.
+    Keyed on a.cache_key (composite 10-K+10-Q), falling back to filing_accession for
+    back-compat with assessments that predate the bundle."""
+    key = a.cache_key or a.filing_accession
+    bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)
     bp.write_text(to_markdown(a))
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
-    record_path(a.ticker, a.filing_accession, root).write_text(
+    record_path(a.ticker, key, root).write_text(
         json.dumps(record, indent=2, default=str))
     return bp

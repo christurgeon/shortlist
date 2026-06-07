@@ -32,6 +32,7 @@ SCHEMA_HINT = """{
   "moat": {"summary": "string", "sources": ["string"], "trajectory": "widening|stable|eroding"},
   "risks": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "red_flags": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
+  "added_risks": [{"claim": "string (a risk newly disclosed vs the prior year)", "evidence": "verbatim quote from the NEWLY ADDED RISK FACTORS section"}],
   "management_capital_allocation": "string",
   "reconciliation": [{"signal": "value|growth|moat|quality|momentum|insider|risk|short_interest|narrative_tone|gate:<name>|flag:<name>", "tension": "one sentence: the number vs the narrative", "filing_says": "verbatim quote, or \\"\\" if the filing is silent", "verdict": "confirms|contradicts|silent"}],
   "thesis": {"bull_case": "string (1-2 sentences)", "bear_case": "string (1-2 sentences)", "what_would_change_my_mind": ["string"], "takeaway": "string (1-2 sentences)"}
@@ -55,6 +56,28 @@ class FilingText:
 
     def has_content(self) -> bool:
         return bool(self.business or self.mda or self.risk_factors)
+
+
+@dataclass
+class FilingBundle:
+    """The documents fed to one research brief. `tenk` is the current 10-K (the
+    primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
+    context (may be ""). `cache_key` keys the brief on disk so a new 10-Q produces
+    a fresh brief; the prior-year 10-K (the diff baseline) is deliberately NOT part
+    of the key and is never exposed here whole."""
+    tenk: FilingText
+    primary_accession: str
+    cache_key: str
+    filing_date: str
+    tenq_mda: str = ""
+    added_risks_text: str = ""
+
+    def haystack(self) -> str:
+        """All text shown to the model — the grounding corpus. Excludes the
+        prior-year 10-K (never shown), includes the current 10-K + 10-Q MD&A +
+        added-risk blocks."""
+        parts = [self.tenk.combined(), self.tenq_mda, self.added_risks_text]
+        return "\n\n".join(p for p in parts if p)
 
 
 @dataclass
@@ -107,6 +130,8 @@ class QualitativeAssessment:
     unverified_count: int = 0
     silent_count: int = 0
     notes: list[str] = field(default_factory=list)
+    added_risks: list[Finding] = field(default_factory=list)
+    cache_key: str = ""        # composite filing key; falls back to filing_accession
 
     @property
     def synthesis(self) -> str:
@@ -123,6 +148,21 @@ def _findings(payload: dict, key: str) -> list[Finding]:
             raise ValueError(f"{key} items must be objects")
         out.append(Finding(claim=str(item.get("claim", "")),
                             evidence=str(item.get("evidence", ""))))
+    return out
+
+
+def _added_risks(payload: dict, limit: int) -> list[Finding]:
+    """Tolerant parse of the optional `added_risks` list (YoY new risks). Missing
+    key -> []; malformed (non-dict) items are skipped, never raised — this advisory
+    section must not sink an otherwise-valid brief. Truncated to `limit`."""
+    out: list[Finding] = []
+    for item in (payload.get("added_risks") or []):
+        if not isinstance(item, dict):
+            continue
+        out.append(Finding(claim=str(item.get("claim", "")),
+                            evidence=str(item.get("evidence", ""))))
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -172,7 +212,8 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
                             stop_reason: Optional[str],
                             valid_signals: Optional[set[str]] = None,
                             max_conflicts: int = 3,
-                            max_falsifiers: int = 3) -> QualitativeAssessment:
+                            max_falsifiers: int = 3,
+                            max_added_risks: int = 8) -> QualitativeAssessment:
     """Build a QualitativeAssessment from the model's parsed JSON.
     Raises ValueError if required keys are missing/mistyped or thesis is not a dict."""
     missing = [k for k in _REQUIRED if k not in payload]
@@ -198,4 +239,5 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         management_capital_allocation=str(payload["management_capital_allocation"]),
         reconciliation=_reconciliation(payload, valid_signals=vs, max_conflicts=max_conflicts),
         thesis=_thesis(payload, max_falsifiers=max_falsifiers),
+        added_risks=_added_risks(payload, max_added_risks),
     )
