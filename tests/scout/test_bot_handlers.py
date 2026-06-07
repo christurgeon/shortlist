@@ -176,10 +176,10 @@ def test_screen_composed_notes_order():
     bot._handle(Command("screen", ("NVDA", "LMT", "ZZZZ", "AMD", "HELLOWORLD"),
                         "/screen ..."))
     msgs = bot.notifier.messages
-    nodata_i = next(i for i, m in enumerate(msgs) if "No data for" in m)
-    softcap_i = next(i for i, m in enumerate(msgs) if "more not run" in m)
-    fmt_i = next(i for i, m in enumerate(msgs) if "Invalid ticker format" in m)
-    assert nodata_i < softcap_i < fmt_i
+    nodata_i = next((i for i, m in enumerate(msgs) if "No data for" in m), -1)
+    softcap_i = next((i for i, m in enumerate(msgs) if "more not run" in m), -1)
+    fmt_i = next((i for i, m in enumerate(msgs) if "Invalid ticker format" in m), -1)
+    assert 0 <= nodata_i < softcap_i < fmt_i
 
 
 def test_screen_all_no_data_skips_report_entirely():

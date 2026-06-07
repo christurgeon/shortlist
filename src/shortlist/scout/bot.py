@@ -21,8 +21,8 @@ import yaml
 
 from ..env import load_env, redact_secrets
 from ..models import rank_key
-from .models import RunManifest
 from ..validation import no_data, partition_format
+from .models import RunManifest
 
 _KNOWN = {"screen", "deep", "help", "start"}
 _SPLIT = re.compile(r"[,\s]+")
