@@ -9,6 +9,13 @@ this extends).
 > **Status:** §1–§3 describe **shipped** behaviour. §3 was a plan (2026-06-03); it is now
 > **implemented** (2026-06). See spec `docs/superpowers/specs/2026-06-04-scout-reporting-notifications-design.md`
 > and plan `docs/superpowers/plans/2026-06-04-scout-reporting-notifications.md`.
+>
+> **Update (2026-06-07):** delivery now has an **inbound** counterpart — the interactive bot
+> (`scout/bot.py`, CLI `shortlist-bot`) long-polls Telegram `getUpdates` so the operator can
+> request screens on demand. It reuses this doc's `TelegramNotifier` transport for *sending*
+> and adds the inbound methods (`get_updates` / `delete_webhook` / `send_chat_action`). The
+> autonomous daily push described in §1–§3 is now opt-in (`scout.daily_push.enabled`, off by
+> default). See §7.
 
 ---
 
@@ -191,3 +198,37 @@ the `Notifier` seam + `StdoutNotifier`, the `notify:` config block, and tests.
   shortlist-scout.service` if installed as a **user** unit.
 - **Failure alerting:** a configured-but-failed send exits non-zero — point the service's
   `OnFailure=` at an alert unit (see `deploy/README.md`).
+
+---
+
+## 7. Inbound — the interactive bot (`scout/bot.py`)
+
+§1–§6 cover **outbound** delivery of the autonomous daily report. The interactive bot adds the
+**inbound** half: the operator drives screening by chatting, instead of waiting for the (now
+opt-in) daily push. Design spec: `docs/superpowers/specs/2026-06-06-scout-telegram-bot-design.md`.
+
+- **Transport reuse.** Sending goes through the same `TelegramNotifier` (§2.1) — `send_photo` /
+  `send_document` / `send_message`, all `redact_secrets`-guarded. The bot adds three inbound
+  methods on the same class: `get_updates(offset, timeout, client) -> PollResult` (long-poll),
+  `delete_webhook(drop_pending_updates=True)`, and `send_chat_action`.
+- **Long-poll, not webhook.** `shortlist-bot` calls `getUpdates` on a loop (no inbound ports /
+  HTTPS). On boot it `delete_webhook(drop_pending_updates=True)` + an `offset=-1` probe to
+  discard any backlog, so a restart never replays stale commands. A **single worker thread**
+  runs the network-heavy handlers (`run_harness` → `build_report` → `deliver`), so a slow
+  `/deep` never stalls polling. The loop never dies: malformed updates are skipped, handler
+  errors are caught and replied as a `redact_secrets`-filtered message, transport errors back
+  off, and a `409 Conflict` (a second poller) alerts once then backs off.
+- **Commands.** `/screen <tickers>` → the same PNG + HTML report this doc describes;
+  `/deep <ticker>` → adds the Claude brief; `/help`. Soft per-request caps live in
+  `config.yaml: scout.bot` (`max_screen` / `max_deep` / `poll_timeout_s`).
+- **Allowlist.** The bot answers **only** `TELEGRAM_CHAT_ID` (private text messages); every other
+  sender / chat type / edited message is silently ignored — no reply, so it isn't an oracle for
+  token-guessers. There is no quota guard by design: only the operator can reach the bot, and
+  gating/429s degrade honestly via the existing coverage diagnostic.
+- **Coexistence.** Polling and sending share one bot token without conflict — only **two
+  concurrent `getUpdates` pollers** trigger a 409, so run exactly one bot instance. The daily
+  push (`sendMessage`/`sendPhoto`) never polls, so it coexists with the bot on the same token.
+- **Shutdown.** SIGTERM sets a stop flag; the in-flight long-poll returns within one poll cycle
+  (the blocked read isn't interrupted), so graceful shutdown takes ≈40s — the unit's
+  `TimeoutStopSec=50` is sized to exceed it. Always-on unit: `deploy/shortlist-bot.service`
+  (`Type=simple`).

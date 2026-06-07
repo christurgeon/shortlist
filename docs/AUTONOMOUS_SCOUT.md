@@ -11,6 +11,16 @@ and the repo `CLAUDE.md` (the two-stack architecture and house rules this extend
 > (sendPhoto) + styled HTML deep-dive (sendDocument), with a chunked plain-text fallback when
 > Telegram is unconfigured or failing; artifacts saved under `scout/<date>/`. See
 > `docs/NOTIFICATIONS.md` for delivery semantics.
+>
+> **Update (2026-06-07):** the **autonomous daily push is now feature-flagged OFF by default**
+> (`config.yaml: scout.daily_push.enabled: false`). On the production VPS, Yahoo's edge WAF
+> IP-blocks the screener endpoint (repo `CLAUDE.md` → "Yahoo WAF gotcha"), so signal-driven
+> discovery breadth is unreliable there. The primary driver is now an **interactive Telegram
+> bot** (`shortlist-bot`, `scout/bot.py`) that lets the operator drive screening on demand
+> (`/screen`, `/deep`) over the same scorer + report pipeline this doc designs — discovery
+> becomes human-in-the-loop. The autonomous loop below is intact and flippable back on. Inbound
+> design: `docs/superpowers/specs/2026-06-06-scout-telegram-bot-design.md`; operator notes:
+> README → "Interactive bot" and `deploy/README.md`; delivery counterpart: `docs/NOTIFICATIONS.md` §7.
 
 ---
 
