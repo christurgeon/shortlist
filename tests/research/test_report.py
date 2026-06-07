@@ -75,3 +75,36 @@ def test_write_json_record_has_synthesis_key(tmp_path):
     assert data["synthesis"] == "Quality compounder."   # injected (asdict drops the property)
     assert data["thesis"]["takeaway"] == "Quality compounder."
     assert data["reconciliation"][0]["signal"] == "value"
+
+
+def test_write_keys_off_cache_key_when_set(tmp_path):
+    from shortlist.research import report
+    from shortlist.research.models import QualitativeAssessment, Moat, Thesis
+    a = QualitativeAssessment(ticker="AAPL", as_of="t", filing_accession="acc10k",
+                              filing_date="d", model="m", moat=Moat(), thesis=Thesis())
+    a.cache_key = "acc10k+acc10q"
+    bp = report.write(a, tmp_path)
+    assert bp.name == "acc10k+acc10q.md"             # composite key drives the path
+    assert report.is_cached("AAPL", "acc10k+acc10q", tmp_path) is True
+    assert report.is_cached("AAPL", "acc10k", tmp_path) is False   # bare key != composite
+
+
+def test_write_falls_back_to_accession_when_no_cache_key(tmp_path):
+    from shortlist.research import report
+    from shortlist.research.models import QualitativeAssessment, Moat, Thesis
+    a = QualitativeAssessment(ticker="AAPL", as_of="t", filing_accession="acc10k",
+                              filing_date="d", model="m", moat=Moat(), thesis=Thesis())
+    bp = report.write(a, tmp_path)                    # cache_key == "" -> fallback
+    assert bp.name == "acc10k.md"
+
+
+def test_markdown_renders_added_risks(tmp_path):
+    from shortlist.research import report
+    from shortlist.research.models import (QualitativeAssessment, Moat, Thesis, Finding)
+    a = QualitativeAssessment(ticker="A", as_of="t", filing_accession="acc",
+                              filing_date="d", model="m", moat=Moat(), thesis=Thesis())
+    a.added_risks = [Finding(claim="New cyber risk", evidence="A breach could harm us.",
+                             verified=True)]
+    md = report.to_markdown(a)
+    assert "Newly disclosed risks" in md
+    assert "New cyber risk" in md
