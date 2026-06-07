@@ -264,3 +264,64 @@ def test_bridge_populates_piotroski_from_statements():
     snap = TickerSnapshot(ticker="T", statements=st)
     m = snapshot_to_metrics(snap)
     assert (m.piotroski_f, m.piotroski_f_legs) == (6, 6)
+
+
+def test_financial_series_defaults_none():
+    assert StockMetrics(ticker="X").financial_series is None
+
+
+def test_financial_series_helper_newest_first_and_shaped():
+    from shortlist.data.bridge import _financial_series
+    st = Statements(
+        fiscal_years=[2025, 2024],
+        fiscal_period_end=["2025-09-28", "2024-09-30"],
+        revenue=[100.0, 90.0], gross_profit=[45.0, 40.0],
+        net_income=[22.0, 20.0], operating_cash_flow=[30.0, 28.0],
+        free_cash_flow=[10.0, 8.0], diluted_eps=[6.08, 6.11],
+        total_debt=[40.0, 41.0], diluted_shares=[15.0, 15.4],
+    )
+    out = _financial_series(st)
+    assert len(out) == 2
+    assert out[0]["fiscal_year"] == 2025          # newest-first preserved
+    assert out[0]["revenue"] == 100.0 and out[0]["gross_profit"] == 45.0
+    assert out[0]["diluted_eps"] == 6.08 and out[0]["total_debt"] == 40.0
+    assert out[1]["fiscal_year"] == 2024
+
+
+def test_financial_series_helper_ragged_is_none_safe():
+    from shortlist.data.bridge import _financial_series
+    st = Statements(fiscal_years=[2025, 2024], revenue=[100.0])  # shorter revenue
+    out = _financial_series(st)
+    assert len(out) == 2
+    assert out[0]["revenue"] == 100.0
+    assert out[1]["revenue"] is None              # ragged -> None, no IndexError
+    assert out[1]["gross_profit"] is None
+
+
+def test_financial_series_helper_empty_statements_is_empty_list():
+    from shortlist.data.bridge import _financial_series
+    assert _financial_series(Statements()) == []   # all-empty lists -> []
+
+
+def test_bridge_populates_financial_series():
+    snap = _full_snapshot()
+    snap.statements.fiscal_period_end = ["2025-09-28", "2024-09-30", "2023-09-30"]
+    m = snapshot_to_metrics(snap)
+    assert m.financial_series is not None
+    assert m.financial_series[0]["fiscal_year"] == 2025      # newest-first
+    assert m.financial_series[0]["revenue"] == 100.0
+    assert m.financial_series[0]["gross_profit"] == 45.0
+
+
+def test_bridge_financial_series_none_when_statements_empty():
+    # if st: is TRUTHY for an empty Statements() instance, so the assignment guard
+    # (if series:) is what keeps the field None -- exercise it distinctly.
+    snap = _full_snapshot()
+    snap.statements = Statements()
+    assert snapshot_to_metrics(snap).financial_series is None
+
+
+def test_bridge_financial_series_none_when_no_statements():
+    snap = _full_snapshot()
+    snap.statements = None
+    assert snapshot_to_metrics(snap).financial_series is None

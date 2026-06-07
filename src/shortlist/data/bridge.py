@@ -49,6 +49,32 @@ def _age_days(as_of: Optional[str], settlement: Optional[str]) -> Optional[int]:
     return (a - s).days
 
 
+def _financial_series(st) -> list[dict]:
+    """Newest-first list-of-dicts from the parallel Statements series, for the
+    research quant-context. Per-index None-guarded so ragged lengths never raise;
+    a cell is None where its series is shorter. Returns [] for empty Statements."""
+    cols = ("fiscal_years", "fiscal_period_end", "revenue", "gross_profit",
+            "net_income", "operating_cash_flow", "free_cash_flow", "diluted_eps",
+            "total_debt", "diluted_shares")
+    n = max((len(getattr(st, c)) for c in cols), default=0)
+
+    def at(seq, i):
+        return seq[i] if i < len(seq) else None
+
+    return [{
+        "fiscal_year": at(st.fiscal_years, i),
+        "period_end": at(st.fiscal_period_end, i),
+        "revenue": at(st.revenue, i),
+        "gross_profit": at(st.gross_profit, i),
+        "net_income": at(st.net_income, i),
+        "operating_cash_flow": at(st.operating_cash_flow, i),
+        "free_cash_flow": at(st.free_cash_flow, i),
+        "diluted_eps": at(st.diluted_eps, i),
+        "total_debt": at(st.total_debt, i),
+        "diluted_shares": at(st.diluted_shares, i),
+    } for i in range(n)]
+
+
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     """Map a harness TickerSnapshot onto the flat StockMetrics that
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
@@ -124,6 +150,10 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             total_debt=st.total_debt, gross_profit=st.gross_profit,
             revenue=st.revenue,
         )
+        # Raw newest-first series for the research quant-context (scorer-inert).
+        series = _financial_series(st)
+        if series:
+            m.financial_series = series
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
