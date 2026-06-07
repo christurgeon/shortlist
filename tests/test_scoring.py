@@ -804,3 +804,73 @@ def test_financial_series_does_not_affect_scoring():
         return (c.composite, c.quality, c.moat, c.growth, c.momentum,
                 c.value, c.insider, c.risk, c.gates, c.flags)
     assert fields(base) == fields(after)
+
+
+def test_social_hype_flag_fires_and_is_advisory():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
+                     social_mention_delta_pct=2.0, social_data_age_days=0)
+    assert "social_hype" in check_flags(m, cfg)
+
+
+def test_social_hype_suppressed_when_not_rising():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=False,
+                     social_mention_delta_pct=2.0, social_data_age_days=0)
+    assert "social_hype" not in check_flags(m, cfg)
+
+
+def test_social_hype_suppressed_when_stale():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
+                     social_mention_delta_pct=2.0, social_data_age_days=10)
+    assert "social_hype" not in check_flags(m, cfg)
+
+
+def test_social_hype_below_mention_floor():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    m = StockMetrics(ticker="X", social_mentions=10, social_mentions_rising=True,
+                     social_mention_delta_pct=2.0, social_data_age_days=0)
+    assert "social_hype" not in check_flags(m, cfg)
+
+
+def test_social_hype_no_op_when_config_absent():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
+                     social_mention_delta_pct=2.0, social_data_age_days=0)
+    assert check_flags(m, {}) == []          # bit-identical no-op when flag config absent
+
+
+def test_social_hype_suppressed_below_velocity_floor():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    # rising, above mention floor, but only +10% velocity (< 50% floor) -> suppressed
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
+                     social_mention_delta_pct=0.1, social_data_age_days=0)
+    assert "social_hype" not in check_flags(m, cfg)
+
+
+def test_social_hype_fires_when_delta_none_no_baseline():
+    from shortlist.scoring import check_flags
+    from shortlist.models import StockMetrics
+    cfg = {"social_hype": {"min_mentions": 50, "min_mention_delta_pct": 0.5,
+                           "require_rising": True, "max_staleness_days": 2}}
+    # brand-new spike: no 24h baseline -> delta None passes the velocity gate by design
+    m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
+                     social_mention_delta_pct=None, social_data_age_days=0)
+    assert "social_hype" in check_flags(m, cfg)

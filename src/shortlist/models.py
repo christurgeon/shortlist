@@ -99,6 +99,14 @@ class StockMetrics:
     short_interest_rising: Optional[bool] = None   # current > prior cycle; None across a split
     short_data_age_days: Optional[int] = None      # as_of - settlement_date (staleness guard input)
 
+    # Social / retail attention (WSB via ApeWisdom; derived in bridge.py).
+    # Soft-flag inputs only — NOT scored, never feed any sub-score or the composite.
+    social_mentions: Optional[int] = None          # WSB mentions in the latest cycle
+    social_mentions_rising: Optional[bool] = None  # mentions > 24h-ago
+    social_mention_delta_pct: Optional[float] = None  # (mentions - prev)/prev
+    social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
+    social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 
