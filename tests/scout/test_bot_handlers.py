@@ -213,7 +213,7 @@ def test_deep_filters_malformed_and_researches_present_only():
         return ({}, {}, [c.ticker for c in cards], None)
     def report_fn(cards, manifest, *, assessments):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
-    def deliver_fn(notifier, **kw): seen["delivered"] = True
+    def deliver_fn(notifier, **kw): pass
     # max_deep=2 so HELLOWORLD would survive the soft-cap if it weren't filtered —
     # this is what makes the test FAIL against current code (which screens it).
     bot = _deep_bot(2, screen_fn=screen_fn, research_fn=research_fn,
