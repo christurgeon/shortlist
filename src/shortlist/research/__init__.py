@@ -56,12 +56,17 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 
 
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
+           require_passed: bool = True,
            fetch: Callable = _fetch_10k, assess_fn: Callable = _assess) -> list[ResearchResult]:
-    """Enrich the top-N non-gated cards. Sorts by `rank_key` (scored, composite,
-    confidence) before selecting — the caller need not pre-sort.
-    `fetch`/`assess_fn` are injectable for testing. One failure never aborts the
-    batch — each name yields a ResearchResult (with `skipped` set on failure)."""
+    """Enrich the top-N cards. Sorts by `rank_key` (scored, composite, confidence)
+    before selecting — the caller need not pre-sort. By default only `passed`
+    (not-gated AND scored) cards are eligible; `require_passed=False` selects the
+    top-N regardless of gate status (used by the interactive `/deep` command, where
+    the operator deliberately names the ticker). `fetch`/`assess_fn` are injectable
+    for testing. One failure never aborts the batch — each name yields a
+    ResearchResult (with `skipped` set on failure)."""
     root = config.get("research", {}).get("output_root", "research")
     ranked = sorted(cards, key=rank_key, reverse=True)
-    selected = [c for c in ranked if c.passed][:top_n]   # passed == not gates and scored
+    eligible = ranked if not require_passed else [c for c in ranked if c.passed]
+    selected = eligible[:top_n]
     return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]

@@ -224,6 +224,13 @@ edgar_events:
 # Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
 scout:
   daily_x: 10
+  daily_push:
+    enabled: false        # autonomous daily report; flip to true to re-arm (spec 2026-06-06)
+  bot:
+    poll_timeout_s: 25     # getUpdates long-poll hold (client read timeout = this + 10;
+                           # deploy/shortlist-bot.service TimeoutStopSec must exceed this + slack)
+    max_screen: 10         # soft cap for /screen (truncate + warn, not reject)
+    max_deep: 3            # soft cap for /deep (research is slow + quota-heavy)
   research_top_n: 3
   research_phase_budget_s: 600
   cooldown_days: 7

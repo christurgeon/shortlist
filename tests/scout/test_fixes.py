@@ -62,6 +62,7 @@ def _base_config(tmp_path, extra_signals: dict | None = None) -> dict:
             "deep_screen_sources": ["mock"],
             "research_top_n": 0,
             "research_phase_budget_s": 1,
+            "daily_push": {"enabled": True},
             "signals": signals,
         },
         "scoring": {},

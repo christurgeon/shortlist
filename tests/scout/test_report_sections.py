@@ -64,3 +64,22 @@ def test_fundamentals_renders_escaped_company_name():
     ld.name = "<b>Apple</b> Inc"
     body = render_html_body(_vm([ld]))
     assert "Apple" in body and "<b>Apple</b>" not in body and "&lt;b&gt;Apple" in body
+
+
+def test_footer_omits_funnel_when_no_signals():
+    # Interactive reports set manifest.signals=[] as the marker. The funnel line
+    # ("0 deduped … dropped: budget") is meaningless there and must be suppressed;
+    # notes must still render.
+    from shortlist.scout.report.sections import _Footer
+    from types import SimpleNamespace
+
+    vm = SimpleNamespace(
+        signals=[],
+        funnel=SimpleNamespace(raw=3, after_dedup=3, after_prefilter=3,
+                               screened=3, dropped_for_budget=0),
+        notes=["interactive /screen request"],
+    )
+    text = _Footer().render_text(vm, None)
+    assert not any("Funnel:" in line for line in text)
+    assert not any("Signals:" in line for line in text)
+    assert any("interactive /screen request" in line for line in text)

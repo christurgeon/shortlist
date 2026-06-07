@@ -6,6 +6,8 @@ Two independent jobs live here:
 
 - **Autonomous scout** (`shortlist-scout.{service,timer}`) — daily candidate
   discovery + ranked Telegram report. See [Autonomous Scout](#autonomous-scout).
+- **Interactive bot** (`shortlist-bot.service`) — always-on Telegram bot; operator
+  triggers `/screen` and `/deep` on demand. See [Interactive Bot](#interactive-bot).
 - **Snapshot accumulation** (`shortlist-accumulate.{service,timer}`) — builds the
   daily-snapshot history the backtest replay needs. See [Snapshot accumulation](#snapshot-accumulation-disabled-by-default).
 
@@ -184,6 +186,116 @@ OnFailure=oracle-alert-failure@%n.service
 Add this if you have `oracle-alert-failure@.service` deployed on your VPS
 (it sends a Telegram message on any failed unit). See
 `/etc/systemd/system/oracle-alert-failure@.service` for the template.
+
+---
+
+# Interactive Bot
+
+`shortlist-bot` is an **always-on** Telegram bot (`Type=simple`, `Restart=on-failure`)
+that long-polls Telegram's `getUpdates` API. No inbound ports or webhook is needed —
+the process reaches out; nothing needs to reach in.
+
+The operator drives screening by chatting:
+
+| Command | What it does |
+|---------|--------------|
+| `/screen NVDA, LMT, MSFT` | Fast scores + gates report; same PNG dashboard + HTML deep-dive the daily push sends |
+| `/deep TSLA` | Same as `/screen` but also runs the Claude 10-K research brief (slower) |
+| `/help` | Lists available commands |
+
+> **This unit is NOT auto-installed.** Copy it manually after reviewing the paths
+> for your install location.
+
+## Guardrails
+
+- **Chat allowlist.** The bot only answers the `TELEGRAM_CHAT_ID` configured in
+  `.env`. Requests from any other chat or user are silently ignored — there is no
+  error reply.
+- **Soft per-request caps.** `scout.bot.max_screen` and `scout.bot.max_deep` in
+  `config.yaml` limit how many tickers a single command may screen. Commands that
+  exceed the cap are rejected with a friendly message rather than burning quota.
+- **No hard FMP quota guard.** The HTTP cache (`cache.py`) makes warm re-screens
+  of the same basket free within TTL. Cold requests degrade honestly via the
+  coverage layer rather than failing outright.
+
+## Coexistence with the daily push
+
+`shortlist-bot` shares `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` with the
+autonomous scout. Long-polling (`getUpdates`) and the daily push (`sendMessage`)
+can coexist on one token — the only conflict is running **two concurrent
+`getUpdates` pollers**, which triggers a Telegram `409 Conflict`. Run exactly
+**one** bot instance.
+
+The autonomous daily push is **feature-flagged OFF by default**
+(`scout.daily_push.enabled: false` in `config.yaml`). The interactive bot is
+the primary driver. The `shortlist-scout.timer` should be left disabled; set
+`scout.daily_push.enabled: true` and re-enable the timer to re-arm the daily
+report later if desired.
+
+## Install steps (manual)
+
+```bash
+sudo cp deploy/shortlist-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now shortlist-bot.service
+journalctl -u shortlist-bot.service -f
+```
+
+## Paths
+
+The unit ships with VPS defaults:
+
+| Setting | Value |
+|---------|-------|
+| `WorkingDirectory` | `/opt/shortlist` |
+| `ExecStart` | `/opt/shortlist/.venv/bin/shortlist-bot` |
+| `User` | `oracle` |
+
+**Adjust these to your actual install location** before copying. The bot runs
+from inside the repo so that `.env` is found by `env.py:load_env()`.
+
+> **`/deep` needs the `claude` CLI on PATH and its auth in `~/.claude`.** Like the
+> scout's research phase, the `/deep` command shells out to the `claude` CLI. systemd's
+> minimal default `PATH` excludes a user's `~/.local/bin`, so under a bare
+> `User=oracle` unit `shutil.which("claude")` returns `None` and `/deep` silently
+> degrades to "research skipped" (while `/screen` keeps working). To enable `/deep`,
+> run the unit as the **same login user the scout installer uses** (not the `oracle`
+> service account) and add its `HOME`/`PATH` to the `[Service]` section:
+> ```ini
+> User=<login-user>
+> Environment=HOME=/home/<login-user>
+> Environment=PATH=/opt/shortlist/.venv/bin:/home/<login-user>/.local/bin:/usr/local/bin:/usr/bin:/bin
+> ```
+> This mirrors what `install_opt_shortlist.sh` already does for `shortlist-scout`.
+> `/screen` works under any user; only the Claude research brief needs this.
+
+## Required environment variables
+
+Same as the scout — set in the repo-root `.env` (gitignored) or exported in the
+shell before the service starts:
+
+| Variable | Purpose | Required |
+|----------|---------|----------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token (shared with scout) | Yes |
+| `TELEGRAM_CHAT_ID` | Allowlisted chat/channel ID (shared with scout) | Yes |
+| `FMP_API_KEY` | Deep-screen fundamentals | Yes (free tier OK) |
+| `FINNHUB_API_KEY` | Fundamentals fallback | Yes (free tier OK) |
+| `SEC_IDENTITY` | SEC EDGAR fair-access header (e.g. `you@email.com`) | Recommended |
+
+## Single-instance caveat and graceful shutdown
+
+**Run only one instance.** A second `getUpdates` poller on the same token
+immediately triggers a Telegram `409 Conflict` error and both pollers become
+unreliable. The unit comment enforces this by design — do not run the bot as both
+a systemd service and a foreground process simultaneously.
+
+**Graceful shutdown takes up to ~40 s.** `SIGTERM` is delivered immediately, but
+the in-flight long-poll socket read is not interrupted — the signal only takes
+effect when the current `getUpdates` call returns (poll timeout ≈ 25 s), after
+which the worker thread has 5 s to join. `TimeoutStopSec=50` is set deliberately
+above that budget; if it were left at the systemd default (90 s is fine, but some
+distributions default to 30 s), systemd would `SIGKILL` the process mid-poll on
+every restart.
 
 ---
 
