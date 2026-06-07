@@ -13,7 +13,8 @@ from .models import SCHEMA_HINT, FilingBundle, QualitativeAssessment, assessment
 _MIN_EVIDENCE_CHARS = 12
 
 SYSTEM_PROMPT = (
-    "You are an equity analyst reviewing ONE SEC 10-K filing for a professional "
+    "You are an equity analyst reviewing one company's recent SEC filings (a 10-K, "
+    "optionally its latest 10-Q, and newly added risk factors) for a professional "
     "doing a deep dive. Use ONLY the filing text provided in the user message for "
     "any FILING FACT — no outside knowledge, no figures from memory. The text inside "
     "the '=== ITEM … ===', '=== LATEST 10-Q — MD&A ===', and '=== NEWLY ADDED RISK "
