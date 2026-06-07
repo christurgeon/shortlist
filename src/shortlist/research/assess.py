@@ -7,7 +7,9 @@ from typing import Callable, Optional
 
 from . import claude_cli
 from .claude_cli import CliResult
-from .models import SCHEMA_HINT, FilingBundle, QualitativeAssessment, assessment_from_payload
+from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
+                     assessment_from_payload, STANCES)
+from .coverage_caveat import coverage_caveats
 
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12
@@ -221,6 +223,89 @@ def _quant_context(card) -> str:
         return ""
     return ("=== QUANT CONTEXT (screener facts; NOT from the filing) ===\n"
             + "\n".join(lines) + "\n\n")
+
+
+_CONV_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+_CONV_INV = {0: "HIGH", 1: "MEDIUM", 2: "LOW"}
+
+
+def _stance_idx(stance: str) -> int:
+    return STANCES.index(stance) if stance in STANCES else STANCES.index("HOLD")
+
+
+def _cap_conv(conv: str, ceiling: str) -> str:
+    """Weaken `conv` to be no stronger than `ceiling` (higher index = weaker)."""
+    return _CONV_INV[max(_CONV_ORDER.get(conv, 2), _CONV_ORDER.get(ceiling, 2))]
+
+
+def _high_corroborated(assessment, card, scfg: dict) -> bool:
+    cap = scfg.get("conviction_cap") or {}
+    conf = getattr(card, "confidence", None)
+    if conf is None or conf < cap.get("medium_below", 0.70):
+        return False
+    stance = assessment.screening_call.stance
+    bullish = stance in ("STRONG_BUY", "BUY")
+    bearish = stance in ("AVOID", "STRONG_AVOID")
+    contra = set((scfg.get("high_conviction") or {}).get("contra_flags") or [])
+    if bullish and (set(getattr(card, "flags", None) or []) & contra):
+        return False
+    recon = getattr(assessment, "reconciliation", None) or []
+    confirms = any(c.verified and c.verdict == "confirms" for c in recon)
+    contradicts = any(c.verified and c.verdict == "contradicts" for c in recon)
+    red = any(getattr(f, "verified", False)
+              for f in (getattr(assessment, "red_flags", None) or []))
+    if bullish:
+        return confirms
+    if bearish:
+        return contradicts or red
+    return confirms or contradicts          # HOLD: any non-silent corroboration
+
+
+def apply_guards(assessment, card, config: dict) -> None:
+    """Mutate assessment.screening_call in place: fill the authoritative gap lists,
+    snapshot price, then clamp stance / cap conviction. No-op if no call."""
+    call = getattr(assessment, "screening_call", None)
+    if call is None:
+        return
+    scfg = (config.get("research") or {}).get("screening_call") or {}
+    call.decided_without, call.not_applicable = coverage_caveats(card)
+    m = getattr(card, "metrics", None)
+    call.as_of_price = getattr(m, "price", None) if m is not None else None
+
+    orig_conv = call.conviction
+
+    # 1. gate clamp (only ever moves bearish; also caps conviction <= MEDIUM)
+    gc = scfg.get("gate_clamp") or {}
+    default_ceiling = gc.get("_default", "HOLD")
+    ceil_idx = -1
+    ceil_gates: list[str] = []
+    for g in (getattr(card, "gates", None) or []):
+        gi = _stance_idx(gc.get(g, default_ceiling))
+        if gi > ceil_idx:
+            ceil_idx, ceil_gates = gi, [g]
+        elif gi == ceil_idx:
+            ceil_gates.append(g)
+    if ceil_idx > _stance_idx(call.stance):
+        call.stance = STANCES[ceil_idx]
+        call.stance_clamped = True
+        call.clamp_note = "tripped " + ", ".join(ceil_gates) + " gate"
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+
+    # 2. conviction cap (thin data)
+    cap = scfg.get("conviction_cap") or {}
+    conf = getattr(card, "confidence", None)
+    if conf is None or conf < cap.get("low_below", 0.45):
+        call.conviction = _cap_conv(call.conviction, "LOW")
+    elif conf < cap.get("medium_below", 0.70):
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+    if call.decided_without and getattr(card, "coverage", None) is not None:
+        call.conviction = _cap_conv(call.conviction, "MEDIUM")
+
+    # 3. HIGH-conviction corroboration
+    if call.conviction == "HIGH" and not _high_corroborated(assessment, card, scfg):
+        call.conviction = "MEDIUM"
+
+    call.conviction_capped = call.conviction != orig_conv
 
 
 def assess(card, bundle: FilingBundle, config: dict,
