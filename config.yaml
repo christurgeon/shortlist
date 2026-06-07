@@ -135,6 +135,15 @@ flags:
     #                       # going-concern block (audit Sev2). Suppression removes a risk flag.
     #   confirm_at:  0.40   # cheap + fraction <= this (<=2/6) -> trap even if quality/growth ok
     #   min_legs:    4      # abstain when fewer than this many of the 6 tests evaluable
+  # Social-media hype advisory (WSB via ApeWisdom; harness engine + `wsb` source).
+  # Soft — never affects passed/composite/scored. Fires on rising mention velocity
+  # above an absolute floor. All UNFITTED priors (live WSB top-name volume was
+  # ~50-100 mentions on 2026-06-07; tune by regime).
+  social_hype:
+    min_mentions: 50            # absolute floor (ignore low-chatter names)
+    min_mention_delta_pct: 0.5  # +50% mentions vs 24h ago (velocity); skipped when no 24h baseline
+    require_rising: true        # the change, not the static level, is the signal
+    max_staleness_days: 2       # ignore data older than ~2 days (stale-cache guard)
 
 # Default provider chain for live runs (override with --provider).
 providers: [fmp, finnhub, edgar]

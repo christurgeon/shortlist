@@ -330,6 +330,22 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     dil = f.get("dilution") if f else None
     if dil and m.share_count_cagr is not None and m.share_count_cagr >= dil["min_share_cagr"]:
         out.append("dilution")
+    # Social-media hype advisory (WSB via ApeWisdom). Soft/None-safe like the others —
+    # no-op when the config block is absent; never affects passed/composite/scored.
+    # "Context-aware" by coexistence: renders alongside crowded_short (squeeze) or
+    # value_trap (pump caution) — no extra logic needed.
+    sh = f.get("social_hype") if f else None
+    if sh and m.social_mentions is not None:
+        fresh = (m.social_data_age_days is None
+                 or m.social_data_age_days <= sh["max_staleness_days"])
+        rising_ok = (not sh.get("require_rising")) or (m.social_mentions_rising is True)
+        # None delta (e.g. zero/absent prior-day count) passes the velocity gate by
+        # design — a brand-new chatter spike has no 24h baseline to measure against.
+        delta_ok = (m.social_mention_delta_pct is None
+                    or m.social_mention_delta_pct >= sh.get("min_mention_delta_pct", 0.0))
+        if (m.social_mentions >= sh["min_mentions"]
+                and rising_ok and delta_ok and fresh):
+            out.append("social_hype")
     return out
 
 
