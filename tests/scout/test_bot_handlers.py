@@ -194,3 +194,68 @@ def test_screen_all_no_data_skips_report_entirely():
     bot._handle(Command("screen", ("ZZZZ",), "/screen zzzz"))
     assert seen["report"] is False and seen["deliver"] is False
     assert any("No data for" in m for m in bot.notifier.messages)
+
+
+def _deep_bot(max_deep, **fns):
+    # Local fixture so each test can pick a cap; max_screen unused here.
+    cfg = {"scout": {"bot": {"max_screen": 10, "max_deep": max_deep},
+                     "deep_screen_sources": ["mock"]}}
+    return TelegramBot(FakeNotifier(), cfg, **fns)
+
+
+def test_deep_filters_malformed_and_researches_present_only():
+    seen = {}
+    def screen_fn(tickers, sources, config):
+        seen["tickers"] = tickers
+        return [FakeCard(t) for t in tickers]
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+        seen["research_cards"] = [c.ticker for c in cards]; seen["top_n"] = top_n
+        return ({}, {}, [c.ticker for c in cards], None)
+    def report_fn(cards, manifest, *, assessments):
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): seen["delivered"] = True
+    # max_deep=2 so HELLOWORLD would survive the soft-cap if it weren't filtered —
+    # this is what makes the test FAIL against current code (which screens it).
+    bot = _deep_bot(2, screen_fn=screen_fn, research_fn=research_fn,
+                    report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("deep", ("TSLA", "HELLOWORLD"), "/deep tsla helloworld"))
+    assert seen["tickers"] == ["TSLA"]              # malformed dropped before screen
+    assert seen["research_cards"] == ["TSLA"]
+    assert seen["top_n"] == 1                       # len(present), not len(kept)
+    assert any(m.startswith("Researching TSLA") for m in bot.notifier.messages)
+    assert not any("HELLOWORLD" in m for m in bot.notifier.messages
+                   if m.startswith("Researching"))
+
+
+def test_deep_researching_message_names_capped_tickers():
+    # Two well-formed names, cap=1: the "Researching…" pre-ack must name the
+    # post-cap `kept` (AAPL), NOT the pre-cap `good` (AAPL, MSFT).
+    def screen_fn(tickers, sources, config): return [FakeCard(t) for t in tickers]
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+        return ({}, {}, [c.ticker for c in cards], None)
+    def report_fn(cards, manifest, *, assessments):
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): pass
+    bot = _deep_bot(1, screen_fn=screen_fn, research_fn=research_fn,
+                    report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("deep", ("AAPL", "MSFT"), "/deep aapl msft"))
+    researching = [m for m in bot.notifier.messages if m.startswith("Researching")]
+    assert researching and "AAPL" in researching[0] and "MSFT" not in researching[0]
+
+
+def test_deep_all_no_data_skips_research_and_report():
+    seen = {"research": False, "report": False, "deliver": False}
+    def screen_fn(tickers, sources, config):
+        return [FakeCard("ZZZZ", empty=True)]
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+        seen["research"] = True; return ({}, {}, [], None)
+    def report_fn(cards, manifest, *, assessments):
+        seen["report"] = True
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): seen["deliver"] = True
+    bot = _deep_bot(1, screen_fn=screen_fn, research_fn=research_fn,
+                    report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("deep", ("ZZZZ",), "/deep zzzz"))
+    assert seen["research"] is False and seen["report"] is False
+    assert seen["deliver"] is False                 # spec: never deliver on all-no-data
+    assert any("No data for" in m for m in bot.notifier.messages)

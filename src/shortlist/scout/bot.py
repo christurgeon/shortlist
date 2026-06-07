@@ -215,24 +215,33 @@ class TelegramBot:
             self.notifier.send_message(fmt_note)
 
     def _do_deep(self, tickers: tuple[str, ...]) -> None:
-        kept, dropped = _soft_cap(tickers, self.max_deep)
-        if not kept:
-            self.notifier.send_message("Usage: /deep TSLA")
+        good, fmt_note = self._format_filter(tickers, "Usage: /deep TSLA")
+        if good is None:
             return
+        kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
             f"Researching {', '.join(kept)} — this can take a minute…")
         cards = self._screen_fn()(kept, self.sources, self.config)
-        _briefs, assessments, researched, note = self._research_fn()(
-            cards, self.config, self.scout_cfg, require_passed=False, top_n=len(kept))
-        manifest = _interactive_manifest(len(kept), len(cards), "deep", researched)
-        if note:
-            manifest.notes.append(note)
-        art = self._report_fn()(cards, manifest, assessments=assessments)
-        self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                           caption=_caption(manifest, cards), session=manifest.session.isoformat())
+        present = [c for c in cards if not no_data(c)]
+        missing = [c for c in cards if no_data(c)]
+        if present:
+            _briefs, assessments, researched, note = self._research_fn()(
+                present, self.config, self.scout_cfg,
+                require_passed=False, top_n=len(present))
+            manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
+            if note:
+                manifest.notes.append(note)
+            art = self._report_fn()(present, manifest, assessments=assessments)
+            self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
+                               caption=_caption(manifest, present),
+                               session=manifest.session.isoformat())
+        if missing:
+            self.notifier.send_message(_no_data_note(missing))
         if dropped:
             self.notifier.send_message(
                 f"(researched first {len(kept)}; {dropped} more not run — re-send them)")
+        if fmt_note:
+            self.notifier.send_message(fmt_note)
 
     # --- loop machinery ---
     def _handle_safely(self, cmd: Command) -> None:
