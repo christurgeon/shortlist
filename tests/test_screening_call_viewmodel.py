@@ -23,10 +23,19 @@ def test_assessment_vm_call_fields():
     assert vm.call_decided_without == ["value axis — FMP gated this symbol (402)"]
 
 
-def test_no_call_empty():
+def test_no_call_all_fields_empty():
     rec = {k: v for k, v in _REC.items() if k != "screening_call"}
     vm = _assessment_vm(rec)
+    assert vm.call_stance == "" and vm.call_label == ""
+    assert vm.call_conviction == "" and vm.call_rationale == ""
+    assert vm.call_watch == "" and vm.call_decided_without == []
+
+
+def test_non_dict_screening_call_is_ignored():
+    rec = {**_REC, "screening_call": "bad-value"}
+    vm = _assessment_vm(rec)
     assert vm.call_stance == ""
+    assert call_one_liner(rec) is None
 
 
 def test_call_one_liner():

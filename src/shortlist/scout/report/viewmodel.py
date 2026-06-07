@@ -137,7 +137,9 @@ def call_one_liner(rec: dict) -> str | None:
     vm = _assessment_vm(rec)
     if not vm.call_stance:
         return None
-    line = f"{vm.call_label} · conviction {vm.call_conviction.title()}"
+    line = vm.call_label
+    if vm.call_conviction:
+        line += f" · conviction {vm.call_conviction.title()}"
     if vm.call_watch:
         line += f" — but watch: {vm.call_watch}"
     return line
