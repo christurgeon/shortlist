@@ -61,3 +61,17 @@ def test_json_record_persists_call(tmp_path):
     rec = json.loads((tmp_path / "X" / "acc.json").read_text())
     assert rec["screening_call"]["stance"] == "BUY"
     assert rec["screening_call"]["as_of_price"] == 42.0
+
+
+def test_conviction_capped_note_when_not_clamped():
+    call = ScreeningCall(stance="BUY", conviction="LOW", rationale="r",
+                         conviction_capped=True, stance_clamped=False)
+    md = report.to_markdown(_assess(call))
+    assert "Conviction capped" in md
+
+
+def test_custom_config_label_in_badge():
+    call = ScreeningCall(stance="BUY", conviction="MEDIUM", rationale="r")
+    md = report.to_markdown(_assess(call),
+                            {"research": {"screening_call": {"labels": {"BUY": "Accumulate"}}}})
+    assert "SCREENING CALL: Accumulate" in md

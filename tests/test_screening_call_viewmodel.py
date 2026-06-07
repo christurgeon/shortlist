@@ -42,3 +42,23 @@ def test_call_one_liner():
     assert call_one_liner(_REC) == "Buy · conviction Medium — but watch: margins compress"
     rec = {k: v for k, v in _REC.items() if k != "screening_call"}
     assert call_one_liner(rec) is None
+
+
+def test_null_conviction_is_safe():
+    rec = {"screening_call": {"stance": "BUY", "conviction": None, "rationale": "r"},
+           "thesis": {}}
+    vm = _assessment_vm(rec)
+    assert vm.call_conviction == ""          # no crash, empty not None
+    assert vm.call_conviction.title() == ""  # downstream .title() is safe
+
+
+def test_clamped_call_surfaces_clamp_reason_not_bull_rationale():
+    rec = {"screening_call": {"stance": "AVOID", "conviction": "MEDIUM",
+                              "rationale": "compelling bull thesis",
+                              "stance_clamped": True,
+                              "clamp_note": "tripped negative_fcf gate"},
+           "thesis": {}}
+    vm = _assessment_vm(rec)
+    assert "Auto-downgraded" in vm.call_rationale
+    assert "tripped negative_fcf gate" in vm.call_rationale
+    assert "compelling bull" not in vm.call_rationale

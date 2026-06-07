@@ -110,6 +110,11 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
     cmm = [str(x) for x in (th.get("what_would_change_my_mind") or [])]
     watch = (cmm[0] if cmm else th.get("bear_case", "")) if sc else ""
     stance = sc.get("stance", "") if sc else ""
+    if sc and sc.get("stance_clamped"):
+        note = sc.get("clamp_note") or "a tripped gate"
+        call_rationale = f"Auto-downgraded: {note}."
+    else:
+        call_rationale = (sc.get("rationale") or "") if sc else ""
     return AssessmentVM(
         business_model=rec.get("business_model_summary", "") or "",
         takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
@@ -125,8 +130,8 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",
-        call_conviction=(sc.get("conviction", "") if sc else ""),
-        call_rationale=(sc.get("rationale", "") if sc else ""),
+        call_conviction=((sc.get("conviction") or "") if sc else ""),
+        call_rationale=call_rationale,
         call_watch=watch,
         call_decided_without=[str(x) for x in ((sc.get("decided_without") if sc else None) or [])],
     )

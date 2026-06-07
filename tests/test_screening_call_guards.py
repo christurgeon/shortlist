@@ -156,3 +156,24 @@ def test_conviction_not_capped_when_unchanged():
     apply_guards(a, _card(confidence=0.95), CFG)
     assert a.screening_call.conviction == "MEDIUM"
     assert a.screening_call.conviction_capped is False
+
+
+def _red_flag():
+    from shortlist.research.models import Finding
+    rf = Finding(claim="going concern", evidence="long enough quote here")
+    rf.verified = True
+    return rf
+
+
+def test_hold_high_survives_with_corroboration():
+    a = _assess(ScreeningCall(stance="HOLD", conviction="HIGH", rationale="r"),
+                recon=[_confirm()])
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.conviction == "HIGH"
+
+
+def test_bearish_high_survives_with_verified_red_flag():
+    a = _assess(ScreeningCall(stance="AVOID", conviction="HIGH", rationale="r"),
+                red_flags=[_red_flag()])
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.conviction == "HIGH"

@@ -44,3 +44,10 @@ def test_assessment_field_defaults_none():
 def test_null_rationale_becomes_empty():
     c = _screening_call({"call": {"stance": "BUY", "rationale": None}})
     assert c.rationale == ""
+
+
+def test_parse_normalizes_case_and_spaces():
+    c = _screening_call({"call": {"stance": "Buy", "conviction": "high"}})
+    assert c.stance == "BUY" and c.conviction == "HIGH"
+    c2 = _screening_call({"call": {"stance": "Strong Buy", "conviction": "Medium"}})
+    assert c2.stance == "STRONG_BUY" and c2.conviction == "MEDIUM"

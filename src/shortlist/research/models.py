@@ -151,13 +151,14 @@ class ScreeningCall:
 
 def _screening_call(payload: dict) -> Optional[ScreeningCall]:
     """Lenient, OPTIONAL parse of payload['call']. Missing/malformed -> None (never
-    raises, unlike _thesis) so a brief is never dropped over its capstone. Unknown
-    stance/conviction coerce to HOLD/LOW."""
+    raises, unlike _thesis) so a brief is never dropped over its capstone. Stance/
+    conviction are normalized (upper-cased, spaces->underscores) then validated;
+    unknown values coerce to HOLD/LOW."""
     raw = payload.get("call")
     if not isinstance(raw, dict):
         return None
-    stance = raw.get("stance")
-    conviction = raw.get("conviction")
+    stance = str(raw.get("stance") or "").strip().upper().replace(" ", "_")
+    conviction = str(raw.get("conviction") or "").strip().upper()
     return ScreeningCall(
         stance=stance if stance in STANCES else "HOLD",
         conviction=conviction if conviction in CONVICTIONS else "LOW",

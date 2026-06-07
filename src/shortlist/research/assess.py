@@ -61,13 +61,16 @@ SYSTEM_PROMPT = (
 )
 
 CALL_SYSTEM_ADDENDUM = (
-    "\nAdditionally append a top-level \"call\" object — your SCREENING TRIAGE "
-    "(NOT investment advice), built only from the grounded findings above: "
-    "{\"stance\": \"STRONG_BUY|BUY|HOLD|AVOID|STRONG_AVOID\", "
+    "\nIn ADDITION to the schema above, add exactly one more top-level key "
+    "\"call\" to the SAME JSON object (do not emit a separate object). Its value is "
+    "your SCREENING TRIAGE (NOT investment advice), built only from the grounded "
+    "findings above: {\"stance\": \"STRONG_BUY|BUY|HOLD|AVOID|STRONG_AVOID\", "
     "\"conviction\": \"HIGH|MEDIUM|LOW\", \"rationale\": \"one sentence — the why\"}. "
-    "Reserve HIGH conviction for rare, strongly-corroborated cases. Lower your "
-    "conviction when the QUANT CONTEXT shows a DATA GAPS line. Do NOT enumerate data "
-    "gaps in rationale — that is reported separately."
+    "Use these EXACT uppercase tokens for stance and conviction. Reserve HIGH "
+    "conviction for rare, strongly-corroborated cases, and lower it when the QUANT "
+    "CONTEXT shows a DATA GAPS line with `missing:` items (data unavailable; "
+    "`not applicable:` items are structural and need not lower conviction). Do NOT "
+    "enumerate data gaps in the rationale — they are reported separately."
 )
 
 

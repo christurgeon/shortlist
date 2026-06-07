@@ -65,3 +65,21 @@ def test_disabled_is_noop():
     a = assess(_card(), _bundle(), cfg, runner=_runner_returning(_PAYLOAD))
     assert a is not None
     assert a.screening_call is None
+
+
+def test_enabled_injects_data_gaps_and_addendum():
+    from shortlist.research.assess import CALL_SYSTEM_ADDENDUM
+    cfg = {"research": {"screening_call": {"enabled": True,
+        "gate_clamp": {"_default": "HOLD"}, "conviction_cap": {"low_below": 0.45,
+        "medium_below": 0.70}, "high_conviction": {"contra_flags": []}}}}
+    captured = {}
+    def runner(prompt, system, model, timeout_s):
+        captured["prompt"], captured["system"] = prompt, system
+        from shortlist.research.claude_cli import CliResult
+        import json
+        return CliResult(text=json.dumps(_PAYLOAD), model=model, cost_usd=0.0,
+                         stop_reason="end_turn", error=None)
+    card = _card(value=None, coverage=None)   # a null sub-score -> DATA GAPS
+    assess(card, _bundle(), cfg, runner=runner)
+    assert "DATA GAPS" in captured["prompt"]
+    assert captured["system"].endswith(CALL_SYSTEM_ADDENDUM)
