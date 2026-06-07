@@ -22,7 +22,7 @@ def test_research_phase_times_out_and_returns_note():
         return []       # pragma: no cover
 
     t0 = time.monotonic()
-    briefs, assessments, researched, note = _research_phase(
+    briefs, assessments, researched, note, skipped = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=0.05),  # 50 ms budget
@@ -52,7 +52,7 @@ def test_research_phase_completes_within_budget():
     def fast_enrich(cards, config, *, top_n, refresh, require_passed=True):
         return [_FakeResult()]
 
-    briefs, assessments, researched, note = _research_phase(
+    briefs, assessments, researched, note, skipped = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),  # generous budget
@@ -73,7 +73,7 @@ def test_research_phase_kill_switch_env(monkeypatch):
         return []
 
     monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
-    briefs, assessments, researched, note = _research_phase(
+    briefs, assessments, researched, note, skipped = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),
@@ -92,7 +92,7 @@ def test_research_phase_unavailable():
         called.append(1)
         return []
 
-    briefs, assessments, researched, note = _research_phase(
+    briefs, assessments, researched, note, skipped = _research_phase(
         cards=[],
         config={},
         scout_cfg=_make_scout_cfg(budget_s=5.0),
@@ -124,3 +124,16 @@ def test_research_phase_forwards_require_passed_and_top_n():
     _research_phase([], {}, {"research_top_n": 5},
                     _is_available=lambda: True, _enrich=fake_enrich)
     assert captured["top_n"] == 5 and captured["require_passed"] is True
+
+
+def test_research_phase_surfaces_per_ticker_skip_reasons():
+    from shortlist.research import ResearchResult
+    from shortlist.scout.daily import _research_phase
+
+    def fake_enrich(cards, config, *, top_n, refresh, require_passed=True):
+        return [ResearchResult("NVDA", skipped="assessment failed")]
+
+    out = _research_phase([object()], {}, {"research_top_n": 1},
+                          _is_available=lambda: True, _enrich=fake_enrich)
+    skipped = out[4]          # 5th element
+    assert skipped == {"NVDA": "assessment failed"}
