@@ -132,12 +132,21 @@ class _Research:
             if not a:
                 continue
             parts = [h.tag("h2", f"{ld.ticker} — analysis")]
+            if a.takeaway:
+                parts.append(h.tag("p", a.takeaway, _class="takeaway"))
             if a.business_model:
                 parts.append(h.tag("p", a.business_model))
+            if a.moat:
+                parts.append(h.raw("p", "<b>Moat:</b> " + h.esc(a.moat)))
             if a.bull_case:
                 parts.append(h.raw("p", "<b>Bull:</b> " + h.esc(a.bull_case), _class="bull"))
             if a.bear_case:
                 parts.append(h.raw("p", "<b>Bear:</b> " + h.esc(a.bear_case), _class="bear"))
+            if a.reconciliation:
+                lis = "".join(h.tag("li", f"{sig}: {tension}")
+                              for sig, tension in a.reconciliation)
+                parts.append(h.raw("div", h.tag("b", "Reconciliation vs. score") +
+                                   h.raw("ul", lis), _class="muted"))
             for label, items, cls in [("Red flags", a.red_flags, "flag"),
                                       ("Risks", a.risks, "muted"),
                                       ("What would change my mind", a.change_my_mind, "muted")]:
@@ -157,8 +166,13 @@ class _Research:
                 continue
             line = a.takeaway or a.bull_case
             out.append(f"📝 {ld.ticker}: {line[:160]}" if line else f"📝 {ld.ticker}")
-            if detail is Detail.FULL and a.red_flags:
-                out.append(f"   🚩 {'; '.join(a.red_flags)}")
+            if detail is Detail.FULL:
+                if a.takeaway and a.takeaway != line:
+                    out.append(f"   {a.takeaway}")
+                for sig, tension in a.reconciliation:
+                    out.append(f"   ⚖️ {sig}: {tension}")
+                if a.red_flags:
+                    out.append(f"   🚩 {'; '.join(a.red_flags)}")
         return out
 
 

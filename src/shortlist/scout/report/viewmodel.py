@@ -41,6 +41,8 @@ class MetricsVM:
 class AssessmentVM:
     business_model: str = ""
     takeaway: str = ""                    # one-line TL;DR (synthesis / thesis.takeaway)
+    moat: str = ""                        # moat.summary prose
+    reconciliation: list[tuple[str, str]] = field(default_factory=list)  # (signal, tension)
     bull_case: str = ""
     bear_case: str = ""
     change_my_mind: list[str] = field(default_factory=list)
@@ -100,6 +102,10 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
     return AssessmentVM(
         business_model=rec.get("business_model_summary", "") or "",
         takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
+        moat=(rec.get("moat") if isinstance(rec.get("moat"), dict) else {}).get("summary", "") or "",
+        reconciliation=[(str(e.get("signal", "")), str(e.get("tension", "")))
+                        for e in (rec.get("reconciliation") or [])
+                        if isinstance(e, dict)],
         bull_case=th.get("bull_case", "") or "",
         bear_case=th.get("bear_case", "") or "",
         change_my_mind=[str(x) for x in (th.get("what_would_change_my_mind") or [])],
