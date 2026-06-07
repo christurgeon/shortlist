@@ -67,7 +67,7 @@ uv run shortlist --demo --json
 ⚠ `--demo` ignores any `--tickers` arg and uses the mock provider. Research briefs are not available in demo mode (no real filings).
 
 **Optional flags:**
-- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,upside_to_target,gates`; gates are pipe-joined)
+- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,risk,upside_to_target,gates,scored,confidence,sic_bucket,piotroski_f,share_count_cagr`; gates are pipe-joined, `piotroski_f` is `won/legs`)
 - `--research N` — generate Claude-written 10-K briefs for the top-N non-gated names; requires `claude` CLI on PATH and `SEC_IDENTITY` set
 - `--refresh` — force regeneration of cached research briefs (cached by filing accession, not date)
 - Omit `--provider` to use the defaults from `config.yaml`
@@ -86,8 +86,18 @@ The JSON array contains one object per ticker:
 
 ```
 ticker, composite, quality, moat, growth, momentum, value, opportunity,
-insider, upside_to_target, gates[], research_path (if --research used)
+insider, risk, upside_to_target, gates[], flags{}, sic_bucket, confidence,
+scored, thin, piotroski_f, piotroski_f_legs, share_count_cagr,
+abstentions[] (when any), events{} (when filing events present),
+coverage{} (when a provider had trouble), research_path (if --research used)
 ```
+
+`risk` is the 7th sub-score (realized volatility + max drawdown, inverted so
+safer scores higher). It feeds the composite as a tilt but is deliberately
+**excluded from `confidence`/`scored`**. `scored` (above the validity floor),
+`confidence` (present-applicable weight ÷ applicable weight), and `sic_bucket`
+report sector-aware abstention — `passed` is `not gates and scored`, so a
+not-scored name can't rank to the top or be selected for research.
 
 Read the current weights and gate thresholds from `config.yaml` before narrating — do not hardcode values.
 
@@ -106,7 +116,7 @@ Example: "GOOGL ranks on value (65) more than momentum (78); the composite weigh
 
 ### Null sub-scores
 If a sub-score field is `null`, it had no data inputs and its weight was redistributed to the remaining components. Call this out explicitly.  
-Example: "Insider score was unavailable for SCHW — no EDGAR data; its 20% weight was redistributed."
+Example: "Insider score was unavailable for SCHW — no EDGAR data; its weight (13.5% by default) was redistributed."
 
 ### Gates
 Translate each triggered gate to plain English, referencing actual thresholds from `config.yaml`:
@@ -148,14 +158,15 @@ Either way the data is missing because of throttling, **not** per-symbol gating,
 
 | Sub-score | Default weight | Driven by |
 |---|---|---|
-| Quality | 20% | ROE, net margin, interest coverage, leverage (inverted) |
-| Moat | 20% | Gross margin level + 5-year stability + persistent ROIC |
-| Growth | 15% | Revenue / FCF / EPS CAGR + revenue-growth persistence |
+| Quality | 18% | ROE, net margin, interest coverage, leverage (inverted) |
+| Moat | 18% | Gross margin level + 5-year stability + persistent ROIC |
+| Growth | 13.5% | Revenue / FCF / EPS CAGR + revenue-growth persistence |
 | Value | 22% | upside to analyst target + FCF yield + P/E vs own 5y median + PEG |
 | Momentum | 8% | price vs 200DMA + 6m relative strength + EPS revision |
-| Insider | 15% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
+| Insider | 13.5% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
+| Risk | 10% | Realized volatility + max drawdown (both inverted — safer scores higher) |
 
-`value` and `momentum` are now weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
+`value` and `momentum` are weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only and **not** fed into the composite. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. The **`risk`** axis is a composite-only tilt — it feeds the weighted blend but is excluded from `confidence`/`scored`, and its weight is an unfitted prior (trailing vol/drawdown can be anti-predictive at turning points). All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
 
 ---
 
