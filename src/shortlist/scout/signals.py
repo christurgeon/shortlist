@@ -352,6 +352,52 @@ class EdgarForm4Signal:
 register("edgar_form4", EdgarForm4Signal)
 
 
+class WsbHypeSignal:
+    """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
+    rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""
+    name = "wsb_hype"
+    is_discovery = True
+
+    def __init__(self, cache_dir: str = ".cache/apewisdom", min_mentions: int = 30,
+                 min_delta_pct: float = 0.5, top_n: int = 15,
+                 deny_list: list[str] | None = None) -> None:
+        self.cache_dir = cache_dir
+        self.min_mentions = min_mentions
+        self.min_delta_pct = min_delta_pct
+        self.top_n = top_n
+        self._deny_raw = list(deny_list or [])
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from ..data.apewisdom import fetch_wsb_mentions, norm_symbol
+        deny = {norm_symbol(d) for d in self._deny_raw}
+        idx, err = fetch_wsb_mentions(self.cache_dir)
+        if err:
+            self._status = (False, redact_secrets(err))
+            return []
+        hot = [w for w in idx.values()
+               if norm_symbol(w.ticker) not in deny
+               and (w.mentions or 0) >= self.min_mentions
+               and w.rising
+               and w.mention_delta_pct is not None
+               and w.mention_delta_pct >= self.min_delta_pct]
+        hot.sort(key=lambda w: w.mention_delta_pct or 0.0, reverse=True)
+        hot = hot[:self.top_n]
+        ems = []
+        for w in hot:
+            strength = max(0.0, min(1.0, (w.mention_delta_pct or 0.0) / 3.0))   # +300% -> 1.0
+            ev = f"WSB: {w.mentions} mentions, {w.mention_delta_pct:+.0%} 24h, rank {w.rank}"
+            ems.append(Emission(w.ticker, "wsb:hype", strength, ev, is_discovery=True))
+        self._status = (True, f"{len(ems)} hyped (from {len(idx)} tracked)")
+        return ems
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("wsb_hype", WsbHypeSignal)
+
+
 class QuiverSignal:
     """Stub for Quiver Quantitative signals (congressional trades, gov-contract awards).
 

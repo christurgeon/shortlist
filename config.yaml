@@ -274,9 +274,14 @@ scout:
   research_phase_budget_s: 2000   # >= max_deep(3) x research.timeout_s(600) is 1800; +slack for serial EDGAR fetches
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
-  deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra]
+  deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
   edgar_index_daily_cap: 400
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
+  wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
+    min_mentions: 30         # absolute floor for discovery
+    min_delta_pct: 0.5       # +50% mention velocity vs 24h ago
+    top_n: 15                # cap emissions to the highest-velocity names
+    deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA]   # index ETFs / non-actionable
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -289,6 +294,7 @@ scout:
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}
     quiver:         {enabled: false, weight: 1.0}
+    wsb_hype:       {enabled: true,  weight: 0.5}
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.
