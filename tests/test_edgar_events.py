@@ -276,6 +276,12 @@ from shortlist.research.assess import _build_user_prompt
 from shortlist.research.models import FilingText
 
 
+def _wrap(ft):
+    from shortlist.research.models import FilingBundle
+    return FilingBundle(tenk=ft, primary_accession=ft.accession,
+                        cache_key=ft.accession, filing_date=ft.filing_date)
+
+
 def _filing():
     return FilingText(ticker="AAPL", accession="acc", filing_date="2026-05-01",
                       business="b", mda="m", risk_factors="r")
@@ -283,13 +289,13 @@ def _filing():
 
 def test_prompt_includes_recent_filings_when_events_present():
     events = [{"form": "SC 13D", "filed": "2026-05-26", "accession": "x", "url": "u"}]
-    p = _build_user_prompt(_filing(), {}, filing_events=events)
+    p = _build_user_prompt(_wrap(_filing()), {}, filing_events=events)
     assert "Recent SEC filings" in p
     assert "SC 13D" in p and "2026-05-26" in p
 
 
 def test_prompt_unchanged_when_no_events():
-    base = _build_user_prompt(_filing(), {})
+    base = _build_user_prompt(_wrap(_filing()), {})
     assert "Recent SEC filings" not in base
 
 
