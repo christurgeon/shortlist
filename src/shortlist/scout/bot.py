@@ -220,7 +220,7 @@ class TelegramBot:
             return
         kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
-            f"Researching {', '.join(kept)} — this can take a few minutes…")
+            f"Researching {', '.join(kept)} — this can take several minutes…")
         cards = self._screen_fn()(kept, self.sources, self.config)
         present = [c for c in cards if not no_data(c)]
         missing = [c for c in cards if no_data(c)]
