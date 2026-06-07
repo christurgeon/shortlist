@@ -233,25 +233,57 @@ actually goes in.
 
 ## Autonomous scout
 
-The scout stack discovers candidates from free signal feeds, screens them through
-the existing scorer, and ships a daily Telegram report — no watchlist needed.
+The scout reuses the screener's engine for discovery and delivery. There are two ways
+to drive it:
+
+- **Interactive bot (primary).** `shortlist-bot` long-polls Telegram so you drive
+  screening by chatting — `/screen nvda, lmt, msft` returns the ranked dashboard in
+  seconds, `/deep tsla` adds the Claude 10-K brief. No webhook / inbound ports; it only
+  answers your allowlisted chat. See [Interactive bot](#interactive-bot) below.
+- **Autonomous daily push (opt-in).** A `shortlist-scout` run discovers candidates from
+  free signal feeds, deep-screens them, and pushes a daily Telegram report — no watchlist
+  needed. **Off by default** (`scout.daily_push.enabled: false`); flip it on to re-arm.
+
 Full design and rationale: [`docs/AUTONOMOUS_SCOUT.md`](docs/AUTONOMOUS_SCOUT.md). Report
-delivery (Telegram + file artifact) and the client-hardening plan:
+delivery (Telegram + file artifact) and the inbound interactive path:
 [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
 
 ```bash
 # Offline demo — no keys, prints a ranked shortlist (GEV / LMT / GOOGL basket):
 uv run shortlist-scout --demo
 
-# Live run — reads keys from .env, discovers candidates, deep-screens, delivers to Telegram:
+# Live autonomous run — requires scout.daily_push.enabled: true (off by default);
+# discovers candidates, deep-screens, delivers to Telegram:
 uv run shortlist-scout
 ```
 
+### Interactive bot
+
+`shortlist-bot` turns the screener into a chat assistant — you drive it instead of a
+fixed watchlist. It long-polls Telegram (no webhook, no inbound ports) and answers **only**
+your allowlisted `TELEGRAM_CHAT_ID`; every other sender is silently ignored.
+
+```bash
+uv run shortlist-bot           # starts the long-poll loop (Ctrl-C to stop)
+```
+
+| Command | Reply |
+|---------|-------|
+| `/screen nvda, lmt, msft` | Ranked dashboard (PNG chart + HTML deep-dive), seconds. Comma/space-separated, case-insensitive. |
+| `/deep tsla` | Same, plus the Claude 10-K research brief (slower — opt-in). |
+| `/help` | Command list. |
+
+It reuses the exact scorer and report pipeline as the daily push. Soft per-request caps
+(`scout.bot.max_screen` / `max_deep` in `config.yaml`) bound reply latency; the HTTP cache
+makes warm re-screens free. It shares the bot token with the daily push — polling and
+sending coexist, only **two concurrent pollers** conflict (run one instance). Always-on
+systemd unit: [`deploy/shortlist-bot.service`](deploy/shortlist-bot.service) (see
+[`deploy/README.md`](deploy/README.md)).
+
 ### Telegram delivery setup
 
-To have the scout push the daily report (PNG chart + HTML deep-dive, with a text
-fallback) to your phone, set two variables in the repo-root `.env` (copy from
-`.env.example`):
+Both `shortlist-bot` and the daily push authenticate with the same two variables in the
+repo-root `.env` (copy from `.env.example`):
 
 ```bash
 TELEGRAM_BOT_TOKEN=123456789:AAE...   # from @BotFather: /newbot → HTTP API token
@@ -287,7 +319,9 @@ touch scout/STOP_RESEARCH        # file-based; persists
 SCOUT_NO_RESEARCH=1 shortlist-scout  # env var; one run
 ```
 
-For systemd deployment (timer fires at 22:30 UTC daily), see [`deploy/README.md`](deploy/README.md).
+For systemd deployment — the always-on `shortlist-bot.service` and the (off-by-default)
+daily `shortlist-scout.timer` — see [`deploy/README.md`](deploy/README.md). The daily
+timer still fires at 22:30 UTC but **no-ops unless `scout.daily_push.enabled: true`**.
 
 ## Limitations
 
