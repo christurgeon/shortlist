@@ -258,6 +258,19 @@ is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None` in the
 bridge. The source does one bulk fetch per run, caches by settlement date, and
 indexes in memory — **no per-ticker request load**.
 
+## WSB social hype (harness + scout)
+
+`WsbSource` (keyless) and the scout `WsbHypeSignal` both read **ApeWisdom**
+(`https://apewisdom.io/api/v1.0/filter/wallstreetbets`) via the shared
+`data/apewisdom.py` leaf — one bulk GET/run, disk-cached by fetch date under
+`.cache/apewisdom` (shared between both consumers). It populates the `social`
+aux snapshot section (excluded from coverage, like `short_interest`) → bridge
+`social_*` metrics → the soft **`social_hype`** flag (advisory; never affects
+`passed`/`composite`/`scored`). SwaggyStocks itself has no keyless API — ApeWisdom
+is the free, documented substitute (mention volume + 24h delta, not finance-tuned
+bull/bear). Tune via `config.yaml: flags.social_hype` (scoring) and
+`scout.wsb_hype` (discovery thresholds + index-ETF deny-list).
+
 ## Yahoo screener WAF gotcha (scout discovery)
 
 The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**
