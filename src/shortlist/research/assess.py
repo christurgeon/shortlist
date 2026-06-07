@@ -39,7 +39,10 @@ SYSTEM_PROMPT = (
     "names the 'signal' it reconciles. Use verdict 'confirms' or 'contradicts' WITH a "
     "verbatim 'filing_says' quote; use 'silent' (with empty 'filing_says') only after "
     "checking the sections and finding the filing genuinely does not address the "
-    "signal — never as a default.\n"
+    "signal — never as a default. The QUANT CONTEXT may include a multi-year "
+    "financial series; when reconciling, weigh the TRAJECTORY (whether a single "
+    "CAGR masks a recent decline, a one-off spike, or net-income-vs-cash-flow "
+    "divergence), not only the latest value.\n"
     "THESIS is your interpretive judgment (bull_case, bear_case, "
     "what_would_change_my_mind, takeaway) — it carries NO quotes and is NOT a filing "
     "fact. Build it from the grounded risks/red_flags/reconciliation above; do not "
@@ -144,6 +147,34 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     )
 
 
+def _render_series(series) -> str:
+    """Compact newest-first table of the financial series for the quant block. USD
+    columns in $M (value/1e6), diluted_eps raw 2dp, diluted_shares in M. None-safe
+    per cell; a row with no numeric value is skipped. '' when nothing renderable."""
+    usd_m = (("rev", "revenue"), ("GP", "gross_profit"), ("NI", "net_income"),
+             ("OCF", "operating_cash_flow"), ("FCF", "free_cash_flow"),
+             ("debt", "total_debt"))
+    rows: list[str] = []
+    for e in series or []:
+        parts = [f"{lbl} {e[k] / 1e6:,.0f}" for lbl, k in usd_m
+                 if e.get(k) is not None]
+        if e.get("diluted_eps") is not None:
+            parts.append(f"dEPS {e['diluted_eps']:.2f}")
+        if e.get("diluted_shares") is not None:
+            parts.append(f"shrs {e['diluted_shares'] / 1e6:,.0f}")
+        if not parts:
+            continue
+        fy = e.get("fiscal_year")
+        label = f"FY{fy}" if fy is not None else "FY?"
+        if e.get("period_end"):
+            label += f" ({e['period_end']})"
+        rows.append(f"  {label}: " + "  ".join(parts))
+    if not rows:
+        return ""
+    return ("5-year financials (newest-first; $M except dEPS=$/sh, shrs=M):\n"
+            + "\n".join(rows))
+
+
 def _quant_context(card) -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
@@ -179,6 +210,9 @@ def _quant_context(card) -> str:
             trend = "rising" if m.short_interest_rising else "not rising"
             lines.append(f"Short interest: {m.short_pct_outstanding * 100:.1f}% of "
                          f"shares, {m.days_to_cover:.1f} days to cover, {trend}.")
+        series_block = _render_series(getattr(m, "financial_series", None))
+        if series_block:
+            lines.append(series_block)
     if card.gates:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:
