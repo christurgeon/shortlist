@@ -10,3 +10,12 @@ def test_stance_rgb_and_emoji():
     assert theme.stance_emoji("AVOID") == "🔴"
     assert theme.stance_emoji("HOLD") == "🟡"
     assert theme.stance_emoji("nonsense") == ""
+
+
+def test_stance_keys_match_canonical_stances():
+    from shortlist.research.models import STANCES
+    from shortlist.scout.report import theme
+    assert set(theme.STANCE_RGB) == set(STANCES)
+    assert set(theme._STANCE_EMOJI) == set(STANCES)
+    assert theme.stance_to_rgb("BUY") == (102, 189, 99)
+    assert theme.stance_to_rgb("AVOID") == (244, 109, 67)
