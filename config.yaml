@@ -279,7 +279,7 @@ scout:
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery
-    min_delta_pct: 0.5       # +50% mention velocity vs 24h ago
+    min_mention_delta_pct: 0.5  # +50% mention velocity vs 24h ago
     top_n: 15                # cap emissions to the highest-velocity names
     deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA]   # index ETFs / non-actionable
   state_path: state/scout_state.json

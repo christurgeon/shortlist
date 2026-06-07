@@ -19,7 +19,7 @@ def _idx():
 
 def test_wsb_signal_emits_hyped_only(monkeypatch):
     monkeypatch.setattr(apewisdom, "fetch_wsb_mentions", lambda *a, **k: (_idx(), None))
-    sig = WsbHypeSignal(min_mentions=50, min_delta_pct=0.5, top_n=15, deny_list=["SPY"])
+    sig = WsbHypeSignal(min_mentions=50, min_mention_delta_pct=0.5, top_n=15, deny_list=["SPY"])
     ems = sig.scan(date(2026, 6, 7))
     tickers = {e.ticker for e in ems}
     assert "GME" in tickers          # 300 mentions, +200% -> qualifies
@@ -33,7 +33,7 @@ def test_wsb_signal_emits_hyped_only(monkeypatch):
 
 def test_wsb_signal_top_n_caps(monkeypatch):
     monkeypatch.setattr(apewisdom, "fetch_wsb_mentions", lambda *a, **k: (_idx(), None))
-    sig = WsbHypeSignal(min_mentions=1, min_delta_pct=0.0, top_n=1, deny_list=[])
+    sig = WsbHypeSignal(min_mentions=1, min_mention_delta_pct=0.0, top_n=1, deny_list=[])
     ems = sig.scan(date(2026, 6, 7))
     assert len(ems) == 1             # highest-velocity survivor only
 
@@ -57,7 +57,7 @@ def test_wsb_signal_strength_clamps_to_one(monkeypatch):
     idx = {apewisdom.norm_symbol("GME"): mk(ticker="GME", mentions=900, mentions_24h_ago=100,
                                             rank=1, mention_delta_pct=8.0, rising=True, as_of="2026-06-07")}
     monkeypatch.setattr(apewisdom, "fetch_wsb_mentions", lambda *a, **k: (idx, None))
-    sig = WsbHypeSignal(min_mentions=50, min_delta_pct=0.5, top_n=15, deny_list=[])
+    sig = WsbHypeSignal(min_mentions=50, min_mention_delta_pct=0.5, top_n=15, deny_list=[])
     ems = sig.scan(date(2026, 6, 7))
     assert len(ems) == 1
     assert ems[0].strength == 1.0          # +800% delta clamps to 1.0
@@ -70,6 +70,6 @@ def test_wsb_signal_deny_list_normalizes_dotted(monkeypatch):
     idx = {apewisdom.norm_symbol("BRK.B"): mk(ticker="BRK.B", mentions=300, mentions_24h_ago=100,
                                               rank=1, mention_delta_pct=2.0, rising=True, as_of="2026-06-07")}
     monkeypatch.setattr(apewisdom, "fetch_wsb_mentions", lambda *a, **k: (idx, None))
-    sig = WsbHypeSignal(min_mentions=50, min_delta_pct=0.5, top_n=15, deny_list=["BRK-B"])
+    sig = WsbHypeSignal(min_mentions=50, min_mention_delta_pct=0.5, top_n=15, deny_list=["BRK-B"])
     ems = sig.scan(date(2026, 6, 7))
     assert ems == []                       # BRK-B deny entry matches BRK.B row after norm

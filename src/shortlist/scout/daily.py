@@ -43,7 +43,7 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
         "wikipedia":     {"ticker_map": scout_cfg.get("wikipedia_ticker_map", {})},
         "wsb_hype":      {"min_mentions": wsb.get("min_mentions", 30),
-                          "min_delta_pct": wsb.get("min_delta_pct", 0.5),
+                          "min_mention_delta_pct": wsb.get("min_mention_delta_pct", 0.5),
                           "top_n": wsb.get("top_n", 15),
                           "deny_list": wsb.get("deny_list", [])},
     }

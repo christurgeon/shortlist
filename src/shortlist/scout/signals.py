@@ -359,11 +359,11 @@ class WsbHypeSignal:
     is_discovery = True
 
     def __init__(self, cache_dir: str = ".cache/apewisdom", min_mentions: int = 30,
-                 min_delta_pct: float = 0.5, top_n: int = 15,
+                 min_mention_delta_pct: float = 0.5, top_n: int = 15,
                  deny_list: list[str] | None = None) -> None:
         self.cache_dir = cache_dir
         self.min_mentions = min_mentions
-        self.min_delta_pct = min_delta_pct
+        self.min_mention_delta_pct = min_mention_delta_pct
         self.top_n = top_n
         self._deny_raw = list(deny_list or [])
         self._status = (False, "not run")
@@ -375,12 +375,15 @@ class WsbHypeSignal:
         if err:
             self._status = (False, redact_secrets(err))
             return []
+        # Discovery requires a measurable 24h baseline (mention_delta_pct is not None):
+        # unlike the advisory social_hype flag, a brand-new spike with no baseline is
+        # NOT surfaced here — discovery needs evidence of velocity, not just volume.
         hot = [w for w in idx.values()
                if norm_symbol(w.ticker) not in deny
                and (w.mentions or 0) >= self.min_mentions
                and w.rising
                and w.mention_delta_pct is not None
-               and w.mention_delta_pct >= self.min_delta_pct]
+               and w.mention_delta_pct >= self.min_mention_delta_pct]
         hot.sort(key=lambda w: w.mention_delta_pct or 0.0, reverse=True)
         hot = hot[:self.top_n]
         ems = []
