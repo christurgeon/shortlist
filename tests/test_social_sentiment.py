@@ -44,3 +44,45 @@ def test_stockmetrics_social_fields_default_none():
     assert m.social_mention_delta_pct is None
     assert m.social_rank is None
     assert m.social_data_age_days is None
+
+
+from shortlist.data.bridge import snapshot_to_metrics
+
+
+def _snap_with_social(**kw):
+    return TickerSnapshot(ticker="AAA", as_of="2026-06-09T00:00:00+00:00",
+                          social=SocialSentiment(**kw))
+
+
+def test_bridge_derives_rising_and_delta():
+    snap = _snap_with_social(as_of="2026-06-09", mentions=300, mentions_24h_ago=100, rank=1)
+    m = snapshot_to_metrics(snap)
+    assert m.social_mentions == 300
+    assert m.social_mentions_rising is True
+    assert m.social_mention_delta_pct == 2.0
+    assert m.social_rank == 1
+    assert m.social_data_age_days == 0
+
+
+def test_bridge_falling_is_not_rising():
+    snap = _snap_with_social(as_of="2026-06-09", mentions=100, mentions_24h_ago=117)
+    m = snapshot_to_metrics(snap)
+    assert m.social_mentions_rising is False
+
+
+def test_bridge_staleness_from_old_as_of():
+    snap = _snap_with_social(as_of="2026-06-02", mentions=300, mentions_24h_ago=100)
+    m = snapshot_to_metrics(snap)
+    assert m.social_data_age_days == 7        # 2026-06-09 - 2026-06-02
+
+
+def test_bridge_no_social_leaves_none():
+    m = snapshot_to_metrics(TickerSnapshot(ticker="AAA"))
+    assert m.social_mentions is None and m.social_data_age_days is None
+
+
+def test_bridge_zero_prev_yields_none_delta_but_rising():
+    snap = _snap_with_social(as_of="2026-06-09", mentions=50, mentions_24h_ago=0)
+    m = snapshot_to_metrics(snap)
+    assert m.social_mention_delta_pct is None    # truthy-prev guard avoids ZeroDivisionError
+    assert m.social_mentions_rising is True       # 50 > 0

@@ -191,6 +191,19 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.short_interest_rising = si.short_shares > si.prev_short_shares
         m.short_data_age_days = _age_days(snap.as_of, si.settlement_date)
 
+    soc = snap.social
+    if soc:
+        # rising/delta are re-derived here from raw facts (the ShortInterest pattern);
+        # the apewisdom leaf computes the parallel WsbMention fields for the scout
+        # consumer — keep both derivations in lockstep if you edit either.
+        m.social_mentions = soc.mentions
+        m.social_rank = soc.rank
+        if soc.mentions is not None and soc.mentions_24h_ago is not None:
+            m.social_mentions_rising = soc.mentions > soc.mentions_24h_ago
+        if soc.mentions is not None and soc.mentions_24h_ago:
+            m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
+        m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
+
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events
