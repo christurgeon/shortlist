@@ -7,6 +7,7 @@ daily.py / the harness CLI later.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 # 1-6 chars, leads with a letter; allows BRK.B, BF-B. Permissive enough not to
 # reject real US symbols; rejects HELLOWORLD, 123, "", $$.
@@ -14,10 +15,12 @@ _TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,5}$")
 
 
 def valid_format(t: str) -> bool:
+    """True if t is a plausible US ticker. Expects t pre-uppercased (the bot's
+    _tickers() upper-cases before calling); lowercase input returns False."""
     return bool(_TICKER_RE.match(t))
 
 
-def partition_format(tickers) -> tuple[list[str], list[str]]:
+def partition_format(tickers: Iterable[str]) -> tuple[list[str], list[str]]:
     """(well_formed, malformed), preserving input order."""
     good: list[str] = []
     bad: list[str] = []
