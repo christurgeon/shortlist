@@ -400,3 +400,17 @@ package is lazy-imported so the core screener works without `claude`/edgartools.
 Briefs are cached by filing accession (not date); facts are quote-verified
 against the filing, interpretive prose is labeled. The research summary prints to
 stderr (keeps `--json` stdout clean). Output under `research/` (gitignored).
+
+The brief now bundles three EDGAR documents (`filings.py:fetch_bundle` →
+`FilingBundle`): the latest **10-K** (primary, displayed), the latest **10-Q's
+MD&A** (Part I Item 2 — via `get_item_with_part`, **NOT** the TenK
+`management_discussion` attribute), and a **YoY Item-1A risk-factor diff**
+(`riskdiff.py`, stdlib `difflib` on normalized block prefixes) surfaced as a
+distinct `added_risks` brief section. The brief is cached on a **composite key**
+(`<10-K-acc>+<10-Q-acc>`) so a new quarter invalidates; the prior-year 10-K is a
+diff baseline only and **never enters the prompt or the grounding haystack**
+(`FilingBundle.haystack()` excludes it, so a quote present only there reads as
+unverified). `added_risks` is parsed leniently (malformed items skipped, never
+sinks a brief). Tune via `config.yaml: research.risk_diff` / `max_added_risks` /
+`max_chars.tenq_mda`. DEF 14A proxy + earnings-call transcripts remain deferred
+(no keyless source); `FilingBundle` leaves room to add the proxy later.

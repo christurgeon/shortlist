@@ -306,7 +306,7 @@ risk overlay and no risk-adjusted ranking.
 The qualitative layer is well-built — grounded, quote-verified, cached by accession, prompt
 hardened against injection — but **narrow**.
 
-### 3.1 Only the 10-K is read
+### 3.1 Only the 10-K is read — 10-Q HALF SHIPPED
 `assess.py` ingests Item 1 / 1A / 7 of a single 10-K, which can be ~11 months stale and omits
 the richest qualitative sources:
 - **Earnings-call transcripts** — management tone, *fresh* guidance, analyst Q&A. The single
@@ -314,9 +314,17 @@ the richest qualitative sources:
 - **Latest 10-Q** — the current quarter the annual filing can't reflect.
 - **DEF 14A proxy** — comp alignment, governance, related-party transactions (capital
   allocation red flags the 10-K won't volunteer).
-- **Plug:** extend `research/filings.py` to fetch the latest 10-Q and proxy via EDGAR;
-  add transcripts when a source is available. Feed alongside the 10-K with clear section
-  labels (the prompt already treats filing text as DATA, so this is additive).
+
+> **SHIPPED — latest-10-Q half:** `research/filings.py:fetch_bundle` now returns a
+> `FilingBundle` carrying the latest **10-Q's MD&A** (Part I Item 2 — extracted via
+> `TenQ.get_item_with_part`, **not** the TenK-only `management_discussion` attribute;
+> validated by a live-EDGAR integration test) alongside the 10-K, fed to the prompt as a
+> labeled `=== LATEST 10-Q — MD&A ===` section. The brief caches on a **composite key**
+> (`<10-K-acc>+<10-Q-acc>`) so a new quarter invalidates. **Still deferred:** the DEF 14A
+> proxy (the `FilingBundle` leaves room to add it as a third section) and earnings-call
+> transcripts (no keyless source). The prompt already treats filing text as DATA, so each
+> remaining source is additive.
+
 
 ### 3.2 Claude is flying blind to the numbers
 `assess(card, filing, ...)` (`assess.py:75`) takes the `ScoreCard` but the docstring says it
@@ -335,11 +343,23 @@ Risks + red-flags + synthesis is a *summary*, not a decision aid.
   thesis: explicit **bull case**, **bear case**, and **"what would change my mind."** Keep
   the quote-grounding requirement on every factual claim.
 
-### 3.4 No year-over-year risk-factor diff
+### 3.4 No year-over-year risk-factor diff — ✅ SHIPPED
 Newly-*added* 10-K Item 1A risk factors are a documented alpha signal. Briefs are already
 cached by accession, so last year's filing is one fetch away.
-- **Plug:** diff this year's Item 1A against the prior year's; surface *added* risks as a
-  distinct, high-attention section. Low effort, high signal.
+
+> **SHIPPED:** `research/riskdiff.py` (pure, stdlib `difflib` leaf) diffs the current 10-K's
+> Item 1A against the **prior fiscal year's** (selected by `period_of_report`, `10-K/A`
+> amendments excluded), surfacing only the *newly added* risk blocks. The diff is
+> **deterministic** (Python finds the literally-new blocks; v1 splits on blank-line blocks and
+> matches a normalized prefix — digits/currency stripped so cosmetic re-wording isn't flagged),
+> and Claude then *interprets* only those blocks into a distinct `added_risks` brief section
+> (`## Newly disclosed risks (vs prior year)`), each entry verbatim-quoted and grounded. The
+> prior-year filing is a diff **input only** — never shown to the model and excluded from the
+> grounding haystack. Bands (`similarity_threshold` 0.5, `max_blocks` 4, `max_chars`) are
+> **unfitted priors** in `config.yaml: research.risk_diff`. **Deferred refinement:** dedicated
+> bold-heading detection (the prefix key approximates it today).
+- **Original plug (now done):** diff this year's Item 1A against the prior year's; surface
+  *added* risks as a distinct, high-attention section. Low effort, high signal.
 
 ---
 
