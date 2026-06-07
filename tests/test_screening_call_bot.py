@@ -18,3 +18,4 @@ def test_call_summary_builds_message():
 def test_call_summary_none_when_no_calls():
     assert _call_summary({"X": {"thesis": {}}}) is None
     assert _call_summary({}) is None
+    assert _call_summary({"X": "not-a-dict"}) is None   # non-dict record skipped
