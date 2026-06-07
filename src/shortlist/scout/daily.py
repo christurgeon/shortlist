@@ -171,9 +171,12 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     researched: list[str] = []
     notes: list[str] = []
     if not demo:
-        briefs, assessments, researched, note = _research_phase(cards, config, scout_cfg)
+        briefs, assessments, researched, note, skipped = _research_phase(
+            cards, config, scout_cfg)
         if note:
             notes.append(note)
+        for t, why in skipped.items():
+            notes.append(f"{t}: research unavailable ({why})")
 
     manifest = RunManifest(
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
@@ -220,12 +223,15 @@ def _research_phase(
     top_n=None,
     _is_available=None,
     _enrich=None,
-) -> tuple[dict, dict, list, str | None]:
+) -> tuple[dict, dict, list, str | None, dict]:
     """Guardrailed auto-research: kill-switch, auth probe, hard cap, phase budget.
 
-    Returns (briefs, assessments, researched, note): briefs is dict[ticker, one_line_str],
-    assessments is dict[ticker, full QualitativeAssessment record], researched is
-    list[ticker], note is str|None.
+    Returns (briefs, assessments, researched, note, skipped): briefs is
+    dict[ticker, one_line_str], assessments is dict[ticker, full QualitativeAssessment
+    record], researched is list[ticker], note is str|None, and skipped is
+    dict[ticker, reason_str] — the per-ticker reasons enrich() declined a name
+    (e.g. "no 10-K", "assessment failed", "filing error: …"), surfaced so the
+    report/bot can explain gaps instead of silently omitting research.
 
     Optional _is_available/_enrich kwargs allow injection in tests without monkeypatching
     the import machinery.  When omitted the real research module is imported lazily.
@@ -238,7 +244,7 @@ def _research_phase(
     so we fall back to reading the record JSON (which has a 'synthesis' key).
     """
     if os.environ.get("SCOUT_NO_RESEARCH") == "1" or Path("scout/STOP_RESEARCH").exists():
-        return {}, {}, [], "research skipped: kill-switch"
+        return {}, {}, [], "research skipped: kill-switch", {}
     if _is_available is None or _enrich is None:
         try:
             from ..research import enrich as _en
@@ -246,9 +252,9 @@ def _research_phase(
             _is_available = _is_available or _ia
             _enrich = _enrich or _en
         except Exception:  # noqa: BLE001
-            return {}, {}, [], "research skipped: layer unavailable"
+            return {}, {}, [], "research skipped: layer unavailable", {}
     if not _is_available():
-        return {}, {}, [], "research skipped: claude CLI / edgartools not available"
+        return {}, {}, [], "research skipped: claude CLI / edgartools not available", {}
     n = top_n if top_n is not None else scout_cfg.get("research_top_n", 3)
     budget_s = scout_cfg.get("research_phase_budget_s", 600)
     try:
@@ -268,15 +274,17 @@ def _research_phase(
             pool.shutdown(wait=False)
         except concurrent.futures.TimeoutError:
             pool.shutdown(wait=False, cancel_futures=True)
-            return {}, {}, [], f"research skipped: phase budget {budget_s}s exceeded"
+            return {}, {}, [], f"research skipped: phase budget {budget_s}s exceeded", {}
     except Exception as e:  # noqa: BLE001
-        return {}, {}, [], f"research failed: {redact_secrets(str(e))}"
+        return {}, {}, [], f"research failed: {redact_secrets(str(e))}", {}
 
     briefs: dict[str, str] = {}
     assessments: dict[str, dict] = {}
     researched: list[str] = []
+    skipped: dict[str, str] = {}
     for r in results:
         if r.skipped:
+            skipped[r.ticker] = r.skipped
             continue
         researched.append(r.ticker)
         brief_text = r.synthesis if r.synthesis else _one_line_brief_from_file(r.brief_path)
@@ -284,7 +292,7 @@ def _research_phase(
         rec = _assessment_record_from_file(r.brief_path)
         if rec:
             assessments[r.ticker] = rec
-    return briefs, assessments, researched, None
+    return briefs, assessments, researched, None, skipped
 
 
 def _assessment_record_from_file(brief_path) -> dict | None:

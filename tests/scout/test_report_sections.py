@@ -52,6 +52,35 @@ def test_text_glance_shows_research_takeaway():
     assert "Strong moat" in txt
 
 
+def test_research_section_renders_synthesis_moat_reconciliation():
+    from shortlist.scout.report.viewmodel import _assessment_vm
+    # On-disk JSON record shape (verified): synthesis is a top-level key,
+    # moat.summary holds the prose, reconciliation is a list of {signal, tension}.
+    rec = {
+        "synthesis": "NVIDIA is the most critical AI infra provider with a widening moat.",
+        "moat": {"summary": "CUDA ecosystem lock-in across 7.5M+ developers."},
+        "reconciliation": [
+            {"signal": "quality",
+             "tension": "Quality score of 70 looks generous given 390bps margin compression."}],
+        "thesis": {"bull_case": "AI demand", "bear_case": "Cyclical",
+                   "what_would_change_my_mind": []},
+        "business_model_summary": "Fabless AI infra.", "risks": [], "red_flags": [],
+        "management_capital_allocation": "",
+    }
+    a = _assessment_vm(rec)
+    assert a.takeaway == "NVIDIA is the most critical AI infra provider with a widening moat."
+    assert a.moat == "CUDA ecosystem lock-in across 7.5M+ developers."
+    assert a.reconciliation == [
+        ("quality", "Quality score of 70 looks generous given 390bps margin compression.")]
+    body = render_html_body(_vm([_leader("NVDA", 78, assessment=a)]))
+    assert "NVIDIA is the most critical AI infra" in body      # synthesis surfaced
+    assert "CUDA ecosystem lock-in" in body                    # moat summary
+    assert "Quality score of 70 looks generous" in body        # reconciliation tension
+    txt = render_text(_vm([_leader("NVDA", 78, assessment=a)]), Detail.FULL)
+    assert "NVIDIA is the most critical AI infra" in txt
+    assert "Quality score of 70 looks generous" in txt
+
+
 def test_all_none_subscores_render_without_crash():
     nones = dict.fromkeys(["quality", "moat", "growth", "value", "momentum", "insider", "risk"])
     body = render_html_body(_vm([_leader("BNK", 0.0, subs=nones)]))

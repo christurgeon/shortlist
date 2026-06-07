@@ -202,12 +202,16 @@ research:
                                # NOTE: tracks the latest 4.6 snapshot, not a frozen date-pinned
                                # build; brief reproducibility is anchored by accession-keyed caching
                                # (research/), not the model string.
-  timeout_s: 180
+  timeout_s: 300
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 8
   max_red_flags: 8
   max_conflicts: 3             # cap on reconciliation entries (truncation budget)
   max_falsifiers: 3            # cap on thesis.what_would_change_my_mind
+  max_chars:                   # cap 10-K narrative sections fed to the model (chars).
+    business: 30000            # keeps prompt within the timeout; MD&A kept generous
+    mda: 40000                 # (highest-signal section). risk_factors is boilerplate,
+    risk_factors: 35000        # ordered worst-first, so a prefix slice keeps material risks.
 
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.
@@ -232,7 +236,7 @@ scout:
     max_screen: 10         # soft cap for /screen (truncate + warn, not reject)
     max_deep: 3            # soft cap for /deep (research is slow + quota-heavy)
   research_top_n: 3
-  research_phase_budget_s: 600
+  research_phase_budget_s: 1200   # >= max_deep(3) x research.timeout_s(300) + slack for serial EDGAR fetches
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra]

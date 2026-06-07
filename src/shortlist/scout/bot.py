@@ -220,12 +220,12 @@ class TelegramBot:
             return
         kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
-            f"Researching {', '.join(kept)} — this can take a minute…")
+            f"Researching {', '.join(kept)} — this can take a few minutes…")
         cards = self._screen_fn()(kept, self.sources, self.config)
         present = [c for c in cards if not no_data(c)]
         missing = [c for c in cards if no_data(c)]
         if present:
-            _briefs, assessments, researched, note = self._research_fn()(
+            _briefs, assessments, researched, note, skipped = self._research_fn()(
                 present, self.config, self.scout_cfg,
                 require_passed=False, top_n=len(present))
             manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
@@ -235,6 +235,9 @@ class TelegramBot:
             self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
                                caption=_caption(manifest, present),
                                session=manifest.session.isoformat())
+            if skipped:
+                lines = "\n".join(f"• {t}: {why}" for t, why in skipped.items())
+                self.notifier.send_message("⚠️ research unavailable —\n" + lines)
         if missing:
             self.notifier.send_message(_no_data_note(missing))
         if dropped:

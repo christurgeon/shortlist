@@ -79,7 +79,7 @@ def test_deep_researches_with_require_passed_false():
     def screen_fn(tickers, sources, config): return [FakeCard(t) for t in tickers]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         seen["require_passed"] = require_passed; seen["top_n"] = top_n
-        return ({}, {"TSLA": {"synthesis": "ok"}}, ["TSLA"], None)
+        return ({}, {"TSLA": {"synthesis": "ok"}}, ["TSLA"], None, {})
     def report_fn(cards, manifest, *, assessments):
         seen["assessments"] = assessments
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
@@ -210,7 +210,7 @@ def test_deep_filters_malformed_and_researches_present_only():
         return [FakeCard(t) for t in tickers]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         seen["research_cards"] = [c.ticker for c in cards]; seen["top_n"] = top_n
-        return ({}, {}, [c.ticker for c in cards], None)
+        return ({}, {}, [c.ticker for c in cards], None, {})
     def report_fn(cards, manifest, *, assessments):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
@@ -232,7 +232,7 @@ def test_deep_researching_message_names_capped_tickers():
     # post-cap `kept` (AAPL), NOT the pre-cap `good` (AAPL, MSFT).
     def screen_fn(tickers, sources, config): return [FakeCard(t) for t in tickers]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
-        return ({}, {}, [c.ticker for c in cards], None)
+        return ({}, {}, [c.ticker for c in cards], None, {})
     def report_fn(cards, manifest, *, assessments):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
@@ -243,12 +243,29 @@ def test_deep_researching_message_names_capped_tickers():
     assert researching and "AAPL" in researching[0] and "MSFT" not in researching[0]
 
 
+def test_deep_sends_skip_reason_when_assessment_missing():
+    # Present, data-rich card but research yields no assessment + a skip reason.
+    # /deep must surface the reason LOUDLY rather than silently omitting analysis.
+    def screen_fn(tickers, sources, config):
+        return [FakeCard("NVDA")]
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+        return ({}, {}, [], None, {"NVDA": "assessment failed"})
+    def report_fn(cards, manifest, *, assessments):
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): pass
+    bot = _deep_bot(1, screen_fn=screen_fn, research_fn=research_fn,
+                    report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("deep", ("NVDA",), "/deep nvda"))
+    assert any("research unavailable" in m and "NVDA" in m and "assessment failed" in m
+               for m in bot.notifier.messages)
+
+
 def test_deep_all_no_data_skips_research_and_report():
     seen = {"research": False, "report": False, "deliver": False}
     def screen_fn(tickers, sources, config):
         return [FakeCard("ZZZZ", empty=True)]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
-        seen["research"] = True; return ({}, {}, [], None)
+        seen["research"] = True; return ({}, {}, [], None, {})
     def report_fn(cards, manifest, *, assessments):
         seen["report"] = True
         return type("A", (), {"png": b"P", "html": "", "text": ""})()

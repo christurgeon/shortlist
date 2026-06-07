@@ -32,3 +32,28 @@ def test_build_filing_text_tolerates_missing_sections():
 def test_build_filing_text_all_empty_has_no_content():
     ft = _build_filing_text("X", "a", "d", _FakeTenK())
     assert ft.has_content() is False
+
+
+def test_cap_sections_prefix_trims_and_is_noop_when_absent():
+    from shortlist.research.filings import cap_sections
+    from shortlist.research.models import FilingText
+    f = FilingText(ticker="X", accession="a", filing_date="d",
+                   business="b"*100, mda="m"*100, risk_factors="r"*100)
+    # absent caps -> unchanged (same object semantics: identical content)
+    assert cap_sections(f, None) is f
+    assert cap_sections(f, {}) is f
+    capped = cap_sections(f, {"business": 10, "risk_factors": 40})
+    assert len(capped.business) == 10           # trimmed
+    assert len(capped.mda) == 100               # no cap given -> untouched
+    assert len(capped.risk_factors) == 40
+    # prompt == haystack consistency: combined() reflects the trim
+    assert capped.business in capped.combined()
+
+
+def test_cap_sections_under_cap_unchanged():
+    from shortlist.research.filings import cap_sections
+    from shortlist.research.models import FilingText
+    f = FilingText(ticker="X", accession="a", filing_date="d",
+                   business="short", mda="short", risk_factors="short")
+    capped = cap_sections(f, {"business": 1000})
+    assert capped.business == "short"
