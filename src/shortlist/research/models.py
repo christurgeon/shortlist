@@ -17,17 +17,19 @@ DEFAULT_STANCE_LABELS = {
 DEFAULT_DISCLAIMER = "screen only — not advice"
 
 
-def _sc_cfg(config):
+def _sc_cfg(config: dict | None) -> dict:
     return ((config or {}).get("research") or {}).get("screening_call") or {}
 
 
 def stance_label(stance: str, config: dict | None = None) -> str:
     labels = _sc_cfg(config).get("labels") or {}
+    # a config label of "" is treated as absent (falls back to the default)
     return labels.get(stance) or DEFAULT_STANCE_LABELS.get(stance, stance)
 
 
 def call_disclaimer(config: dict | None = None) -> str:
     return _sc_cfg(config).get("disclaimer") or DEFAULT_DISCLAIMER
+
 
 # Reconciliation `signal` taxonomy (see spec §3.2). Card sub-score axes + two
 # synthetic/derived tokens, plus namespaced gate:/flag: tokens. The four event
@@ -159,7 +161,7 @@ def _screening_call(payload: dict) -> Optional[ScreeningCall]:
     return ScreeningCall(
         stance=stance if stance in STANCES else "HOLD",
         conviction=conviction if conviction in CONVICTIONS else "LOW",
-        rationale=str(raw.get("rationale", "")),
+        rationale=str(raw.get("rationale") or ""),
     )
 
 

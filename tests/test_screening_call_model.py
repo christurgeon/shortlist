@@ -1,6 +1,7 @@
 from shortlist.research.models import (
     STANCES, CONVICTIONS, ScreeningCall, _screening_call,
     DEFAULT_STANCE_LABELS, stance_label, call_disclaimer,
+    QualitativeAssessment,
 )
 
 
@@ -32,3 +33,14 @@ def test_label_helpers():
     assert stance_label("BUY", {"research": {"screening_call": {
         "labels": {"BUY": "Accumulate"}}}}) == "Accumulate"
     assert call_disclaimer() == "screen only — not advice"
+
+
+def test_assessment_field_defaults_none():
+    a = QualitativeAssessment(ticker="X", as_of="", filing_accession="",
+                              filing_date="", model="")
+    assert a.screening_call is None
+
+
+def test_null_rationale_becomes_empty():
+    c = _screening_call({"call": {"stance": "BUY", "rationale": None}})
+    assert c.rationale == ""
