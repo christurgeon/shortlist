@@ -22,7 +22,7 @@ def _short_reason(cov) -> str:
                      if s in ("gated_402", "rate_limited_429", "empty", "error"))
     if flagged:
         return f"{', '.join(flagged)} supplied no usable data"
-    return ""
+    return "reason unknown"   # defensive: a Coverage with no flagged provider is unreachable in prod
 
 
 def _phrase(axes: list[str]) -> str:
