@@ -424,7 +424,10 @@ cap** (low `ScoreCard.confidence` or a real data gap forces ≤ MEDIUM), and a
 **HIGH-conviction corroboration** requirement (high confidence + a verified
 reconciliation + no contra-flag). The "decided without" / "not applicable" lines
 are **Python-owned** (`research/coverage_caveat.py`, never the LLM) from the card's
-coverage/abstention machinery. `enabled: false` is a byte-identical no-op. It's an
+coverage/abstention machinery. `enabled: false` is a byte-identical no-op **for
+freshly generated briefs** — briefs are cached by filing accession (config-agnostic),
+so an already-cached brief still renders its stored call; clear `research/` or use
+`--refresh-cache` for a clean disabled run. It's an
 LLM synthesis, **not** a backtested signal — the per-brief JSON record persists the
 call + an `as_of_price` snapshot so a retrospective hit-rate is possible later.
 Framed as **screening triage, not investment advice**; every standalone surface

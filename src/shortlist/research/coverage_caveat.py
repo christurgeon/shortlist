@@ -9,6 +9,7 @@ LLM. Returns (decided_without, not_applicable):
 from __future__ import annotations
 
 # The six composite sub-scores that can be a "gap" (risk is composite-only/excluded).
+# Mirrors coverage.py:_SUBSCORE_FIELDS — kept in sync by hand to stay dependency-free.
 _AXIS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
 
