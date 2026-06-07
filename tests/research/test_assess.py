@@ -239,3 +239,61 @@ def test_assess_sets_cache_key():
     a = A.assess(card=None, bundle=bundle, config={"research": {}},
                  runner=lambda **kw: fake)
     assert a is not None and a.cache_key == "acc+q"
+
+
+def test_render_series_formats_usd_millions_and_eps():
+    from shortlist.research.assess import _render_series
+    series = [
+        {"fiscal_year": 2025, "period_end": "2025-09-28", "revenue": 391_035e6,
+         "gross_profit": 180_683e6, "net_income": 93_736e6,
+         "operating_cash_flow": 118_254e6, "free_cash_flow": 108_807e6,
+         "diluted_eps": 6.08, "total_debt": 106_629e6, "diluted_shares": 15_344e6},
+    ]
+    out = _render_series(series)
+    assert "5-year financials" in out
+    assert "FY2025 (2025-09-28)" in out
+    assert "rev 391,035" in out and "GP 180,683" in out
+    assert "dEPS 6.08" in out and "shrs 15,344" in out and "debt 106,629" in out
+
+
+def test_render_series_omits_none_cells_and_skips_empty_rows():
+    from shortlist.research.assess import _render_series
+    series = [
+        {"fiscal_year": 2025, "period_end": None, "revenue": 100e6,
+         "gross_profit": None, "net_income": None, "operating_cash_flow": None,
+         "free_cash_flow": None, "diluted_eps": None, "total_debt": None,
+         "diluted_shares": None},
+        {"fiscal_year": 2024, "period_end": None, "revenue": None,
+         "gross_profit": None, "net_income": None, "operating_cash_flow": None,
+         "free_cash_flow": None, "diluted_eps": None, "total_debt": None,
+         "diluted_shares": None},
+    ]
+    out = _render_series(series)
+    assert "FY2025" in out and "rev 100" in out
+    assert "GP" not in out                       # None column omitted
+    assert "FY2024" not in out                   # all-None row skipped
+
+
+def test_render_series_empty_returns_blank():
+    from shortlist.research.assess import _render_series
+    assert _render_series(None) == "" and _render_series([]) == ""
+
+
+def test_quant_context_includes_series_when_present():
+    from shortlist.research.assess import _quant_context
+    from shortlist.models import ScoreCard, StockMetrics
+    m = StockMetrics(ticker="AAPL", revenue_cagr=0.03, financial_series=[
+        {"fiscal_year": 2025, "period_end": "2025-09-28", "revenue": 391_035e6,
+         "gross_profit": None, "net_income": 93_736e6, "operating_cash_flow": None,
+         "free_cash_flow": None, "diluted_eps": 6.08, "total_debt": None,
+         "diluted_shares": None}])
+    card = ScoreCard(ticker="AAPL", composite=72.0, quality=80.0, moat=None,
+                     growth=None, momentum=None, value=88.0, opportunity=88.0,
+                     insider=None, metrics=m, sic_bucket="unknown")
+    block = _quant_context(card)
+    assert "5-year financials" in block and "rev 391,035" in block
+
+
+def test_system_prompt_mentions_trajectory():
+    from shortlist.research.assess import SYSTEM_PROMPT
+    assert "trajectory" in SYSTEM_PROMPT.lower()

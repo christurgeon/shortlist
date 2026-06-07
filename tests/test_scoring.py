@@ -791,3 +791,16 @@ def test_value_trap_backcompat_no_piotroski_block():
     cfg = dict(CONFIG); cfg["flags"] = VT_CFG
     fires = score(_value_trap_metrics(piotroski_f=6, piotroski_f_legs=6), cfg)
     assert "value_trap" in fires.flags          # high-F name STILL flagged (no suppression)
+
+
+def test_financial_series_does_not_affect_scoring():
+    m = StockMetrics(ticker="X", revenue_cagr=0.1, net_margin=0.2, roic=0.2,
+                     gross_margin=0.4, fcf_yield=0.05)
+    base = score(m, CONFIG)
+    m2 = dataclasses.replace(m, financial_series=[
+        {"fiscal_year": 2025, "revenue": 1.0e9, "net_income": 2.0e8}])
+    after = score(m2, CONFIG)
+    def fields(c):
+        return (c.composite, c.quality, c.moat, c.growth, c.momentum,
+                c.value, c.insider, c.risk, c.gates, c.flags)
+    assert fields(base) == fields(after)

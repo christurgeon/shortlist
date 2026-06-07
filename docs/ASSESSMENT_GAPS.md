@@ -326,16 +326,32 @@ the richest qualitative sources:
 > remaining source is additive.
 
 
-### 3.2 Claude is flying blind to the numbers
-`assess(card, filing, ...)` (`assess.py:75`) takes the `ScoreCard` but the docstring says it
-is *"unused today; reserved for score-aware prompting."* So Claude can't reconcile narrative
-with quant. It can't say "the screen flags this as cheap-value — here's whether the 10-K
-explains why the market disagrees," or "management's growth story vs the actual 3% revenue
-CAGR." That reconciliation is the most decision-useful thing the layer could produce.
-- **Plug:** pass the sub-scores **and** the 5y `Statements` series into the user prompt, and
-  ask Claude to explicitly reconcile the narrative against the numbers (and flag where they
-  conflict). This is the cheapest high-impact change in the whole layer — the plumbing
-  (`card`) is already threaded through.
+### 3.2 Reconcile the narrative against the numbers — ✅ SHIPPED
+The original gap: `assess()` took the `ScoreCard` but never used it, so Claude couldn't say
+"the screen flags this as cheap-value — here's whether the 10-K explains why the market
+disagrees," or "management's growth story vs the actual 3% revenue CAGR." That reconciliation
+is the most decision-useful thing the layer could produce.
+
+> **SHIPPED — score-aware reconciliation + 5y series:** `assess.py` builds a
+> `=== QUANT CONTEXT (screener facts; NOT from the filing) ===` block from the `ScoreCard`
+> (sub-scores, composite, confidence, sector, gates, flags) and the derived fundamental
+> scalars, and asks Claude for an explicit `reconciliation` (confirms/contradicts/silent,
+> each grounded in a verbatim filing quote) plus a falsifiable bull/bear thesis (`9e833b9`,
+> §3.3). The remaining half — the raw **5-year financial series** (revenue / gross-profit /
+> net-income / OCF / FCF / diluted-EPS / total-debt / diluted-shares, newest-first) — is now
+> threaded too: `data/bridge.py:_financial_series` collects it from the harness `Statements`
+> into `StockMetrics.financial_series` (a **scorer-inert** list-of-dicts; `None` on the lean
+> screener path and pinned byte-identical by a scoring-invariance test), and
+> `assess._render_series` renders it as a compact $M table inside the QUANT CONTEXT block so
+> reconciliation can weigh the **trajectory** (does a single CAGR mask a recent decline, a
+> one-off spike, or NI-vs-cash-flow divergence), not just a point value. The QUANT CONTEXT is
+> excluded from `bundle.haystack()`, so a computed number can never pass as a verified filing
+> quote. `total_equity` is **consciously omitted** (only feeds `debt_to_equity`, and goes
+> negative on buyback compounders — §2.7). The brief cache is keyed by filing accession, so an
+> already-cached name needs `--refresh` to pick up the series.
+
+- **Still deferred:** DEF 14A proxy + earnings-call transcripts as quant/narrative inputs (no
+  keyless source — tracked in §3.1).
 
 ### 3.3 No bull / bear / pre-mortem structure
 Risks + red-flags + synthesis is a *summary*, not a decision aid.

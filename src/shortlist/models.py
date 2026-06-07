@@ -85,6 +85,14 @@ class StockMetrics:
     planned_insider_sale_144: Optional[bool] = None
     filing_events: Optional[list] = None   # list of {form, filed, accession, url} dicts
 
+    # Up-to-5y financial series (newest-first), each entry a dict:
+    # {fiscal_year, period_end, revenue, gross_profit, net_income,
+    #  operating_cash_flow, free_cash_flow, diluted_eps, total_debt, diluted_shares}.
+    # Plain list-of-dicts (not the data.Statements type) to avoid a core->data import;
+    # research quant-context only, never read by the scorer. None on stacks without
+    # full statements (e.g. the lean screener path).
+    financial_series: Optional[list] = None
+
     # Short interest (FINRA consolidated; derived in bridge.py). Soft-flag inputs only.
     short_pct_outstanding: Optional[float] = None  # short_shares / (market_cap/price); under-states float
     days_to_cover: Optional[float] = None          # FINRA-supplied; 999.99 sentinel -> None
