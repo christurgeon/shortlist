@@ -12,13 +12,24 @@ class FakeNotifier:
 
 
 class FakeCard:
-    # Faithful to the fields rank_key (+ _caption's sort) actually read on a ScoreCard.
-    def __init__(self, ticker, composite=50.0):
+    # Faithful to the fields rank_key/_caption read AND the sub-score/metrics
+    # fields no_data() reads. Defaults make a "present" (has-data) card; pass
+    # empty=True for an unknown-symbol card (all sub-scores None, no market_cap).
+    def __init__(self, ticker, composite=50.0, *, empty=False):
         self.ticker = ticker
         self.composite = composite
         self.scored = True
         self.confidence = 1.0
         self.gates = []
+        if empty:
+            self.quality = self.moat = self.growth = self.momentum = None
+            self.value = self.insider = self.risk = None
+            self.metrics = None
+        else:
+            self.quality = 50.0
+            self.moat = self.growth = self.momentum = None
+            self.value = self.insider = self.risk = None
+            self.metrics = type("M", (), {"market_cap": 1e9})()
 
 
 def _bot(**kw):
@@ -87,3 +98,99 @@ def test_help_and_unknown_reply_text():
     bot._handle(Command("help", (), "/help"))
     bot._handle(Command("unknown", (), "/wat"))
     assert len(bot.notifier.messages) == 2
+
+
+def test_screen_rejects_all_malformed_without_screening():
+    called = {"screen": False}
+    def screen_fn(tickers, sources, config):
+        called["screen"] = True; return []
+    bot = _bot(screen_fn=screen_fn)
+    bot._handle(Command("screen", ("HELLOWORLD", "123"), "/screen helloworld 123"))
+    assert called["screen"] is False                 # quota provably saved
+    assert not bot.notifier.actions                  # no "uploading photo" tease
+    assert any("Invalid ticker format" in m and "HELLOWORLD" in m and "123" in m
+               for m in bot.notifier.messages)       # names the offenders
+
+
+def test_screen_empty_input_shows_usage_not_invalid():
+    called = {"screen": False}
+    def screen_fn(tickers, sources, config):
+        called["screen"] = True; return []
+    bot = _bot(screen_fn=screen_fn)
+    bot._handle(Command("screen", (), "/screen"))
+    assert called["screen"] is False
+    # No tokens at all → usage text, NOT the invalid-format reply.
+    assert any("Usage: /screen" in m for m in bot.notifier.messages)
+    assert not any("Invalid ticker format" in m for m in bot.notifier.messages)
+
+
+def test_screen_filters_malformed_and_notes_them():
+    seen = {}
+    def screen_fn(tickers, sources, config):
+        seen["tickers"] = tickers
+        return [FakeCard(t) for t in tickers]
+    def report_fn(cards, manifest, *, assessments):
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): seen["delivered"] = True
+    bot = _bot(screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("screen", ("NVDA", "HELLOWORLD"), "/screen nvda helloworld"))
+    assert seen["tickers"] == ["NVDA"]              # only the well-formed one screened
+    assert seen.get("delivered") is True
+    assert any("Invalid ticker format" in m and "HELLOWORLD" in m
+               for m in bot.notifier.messages)
+
+
+def test_screen_some_no_data_delivers_present_and_notes_missing():
+    seen = {}
+    def screen_fn(tickers, sources, config):
+        return [FakeCard("NVDA"), FakeCard("ZZZZ", empty=True)]
+    def report_fn(cards, manifest, *, assessments):
+        seen["report_cards"] = [c.ticker for c in cards]
+        seen["screened"] = manifest.screened; seen["raw"] = manifest.raw
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, *, png, html, text, caption, session):
+        seen["delivered"] = True; seen["caption"] = caption
+    bot = _bot(screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("screen", ("NVDA", "ZZZZ"), "/screen nvda zzzz"))
+    assert seen["report_cards"] == ["NVDA"]          # junk row excluded from report
+    assert seen["screened"] == 1 and seen["raw"] == 2  # honest manifest counts
+    assert "1 screened from 2 raw" in seen["caption"]  # delivery reflects present-only
+    assert any("No data for" in m and "ZZZZ" in m for m in bot.notifier.messages)
+
+
+def test_screen_composed_notes_order():
+    # All three trailing notes at once: malformed token (HELLOWORLD) + no-data card
+    # (ZZZZ) + soft-cap overflow (AMD dropped at cap=3) + present (NVDA, LMT).
+    # Expected message order: no-data note, then soft-cap note, then format note.
+    def screen_fn(tickers, sources, config):
+        return [FakeCard(t, empty=(t == "ZZZZ")) for t in tickers]
+    def report_fn(cards, manifest, *, assessments):
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): pass
+    cfg = {"scout": {"bot": {"max_screen": 3, "max_deep": 1},
+                     "deep_screen_sources": ["mock"]}}
+    bot = TelegramBot(FakeNotifier(), cfg, screen_fn=screen_fn,
+                      report_fn=report_fn, deliver_fn=deliver_fn)
+    # Format filter drops HELLOWORLD -> good=[NVDA,LMT,ZZZZ,AMD]; cap=3 -> kept drops
+    # AMD; screen returns NVDA(present), LMT(present), ZZZZ(no-data).
+    bot._handle(Command("screen", ("NVDA", "LMT", "ZZZZ", "AMD", "HELLOWORLD"),
+                        "/screen ..."))
+    msgs = bot.notifier.messages
+    nodata_i = next(i for i, m in enumerate(msgs) if "No data for" in m)
+    softcap_i = next(i for i, m in enumerate(msgs) if "more not run" in m)
+    fmt_i = next(i for i, m in enumerate(msgs) if "Invalid ticker format" in m)
+    assert nodata_i < softcap_i < fmt_i
+
+
+def test_screen_all_no_data_skips_report_entirely():
+    seen = {"report": False, "deliver": False}
+    def screen_fn(tickers, sources, config):
+        return [FakeCard("ZZZZ", empty=True)]
+    def report_fn(cards, manifest, *, assessments):
+        seen["report"] = True
+        return type("A", (), {"png": b"P", "html": "", "text": ""})()
+    def deliver_fn(notifier, **kw): seen["deliver"] = True
+    bot = _bot(screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("screen", ("ZZZZ",), "/screen zzzz"))
+    assert seen["report"] is False and seen["deliver"] is False
+    assert any("No data for" in m for m in bot.notifier.messages)
