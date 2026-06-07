@@ -1,9 +1,29 @@
 from __future__ import annotations
 
+import dataclasses
 import os
 from typing import Any, Optional
 
 from .models import FilingText
+
+
+def cap_sections(filing: FilingText, max_chars: dict | None) -> FilingText:
+    """Prefix-trim each 10-K narrative section to its configured char cap, so the
+    model prompt and the grounding haystack (filing.combined()) read identical text.
+    Absent/None caps => filing returned unchanged (byte-identical). 10-K risk factors
+    are ordered worst-first, so a prefix slice keeps the material content."""
+    if not max_chars:
+        return filing
+
+    def _cap(s: str, n) -> str:
+        return s if not n or len(s) <= n else s[:n]
+
+    return dataclasses.replace(
+        filing,
+        business=_cap(filing.business, max_chars.get("business")),
+        mda=_cap(filing.mda, max_chars.get("mda")),
+        risk_factors=_cap(filing.risk_factors, max_chars.get("risk_factors")),
+    )
 
 
 def _section(tenk: Any, name: str) -> str:

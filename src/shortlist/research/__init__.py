@@ -46,6 +46,8 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     if not refresh and report.is_cached(card.ticker, filing.accession, root):
         bp = report.brief_path(card.ticker, filing.accession, root)
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
+    from .filings import cap_sections
+    filing = cap_sections(filing, config.get("research", {}).get("max_chars"))
     assessment = assess_fn(card, filing, config)
     if assessment is None:
         return ResearchResult(card.ticker, skipped="assessment failed")
