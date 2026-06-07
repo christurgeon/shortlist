@@ -236,7 +236,7 @@ scout:
     max_screen: 10         # soft cap for /screen (truncate + warn, not reject)
     max_deep: 3            # soft cap for /deep (research is slow + quota-heavy)
   research_top_n: 3
-  research_phase_budget_s: 1000
+  research_phase_budget_s: 1200   # >= max_deep(3) x research.timeout_s(300) + slack for serial EDGAR fetches
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra]
