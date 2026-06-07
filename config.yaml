@@ -188,7 +188,7 @@ fmp:
 # Default source chain for the harness engine — which is now the DEFAULT engine
 # (yahoo first => wins the price merge). Used whenever `--provider` is omitted;
 # passing `--provider` overrides this list, so omit it to keep yahoo/finra.
-harness_sources: [yahoo, fmp, finnhub, edgar, finra]
+harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
 
 # Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
 # repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with

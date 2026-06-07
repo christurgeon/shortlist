@@ -86,3 +86,44 @@ def test_bridge_zero_prev_yields_none_delta_but_rising():
     m = snapshot_to_metrics(snap)
     assert m.social_mention_delta_pct is None    # truthy-prev guard avoids ZeroDivisionError
     assert m.social_mentions_rising is True       # 50 > 0
+
+
+import asyncio
+from shortlist.data.sources import WsbSource
+from shortlist.data import apewisdom
+
+
+def _stub_index():
+    return {apewisdom.norm_symbol("GME"): apewisdom.WsbMention(
+        ticker="GME", mentions=300, mentions_24h_ago=100, upvotes=900,
+        rank=1, rank_24h_ago=5, as_of="2026-06-07",
+        mention_delta_pct=2.0, rising=True)}
+
+
+def test_wsbsource_matched_ticker(monkeypatch):
+    monkeypatch.setattr(apewisdom, "fetch_wsb_mentions",
+                        lambda *a, **k: (_stub_index(), None))
+    src = WsbSource()
+    res = asyncio.run(src.fetch("GME"))
+    assert res.partial.social is not None
+    assert res.partial.social.mentions == 300
+    assert res.raw["matched"] is True
+    assert not res.errors
+
+
+def test_wsbsource_unmatched_ticker(monkeypatch):
+    monkeypatch.setattr(apewisdom, "fetch_wsb_mentions",
+                        lambda *a, **k: (_stub_index(), None))
+    src = WsbSource()
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.partial.social is None
+    assert res.raw["matched"] is False
+
+
+def test_wsbsource_load_error_is_isolated(monkeypatch):
+    monkeypatch.setattr(apewisdom, "fetch_wsb_mentions",
+                        lambda *a, **k: ({}, "boom"))
+    src = WsbSource()
+    res = asyncio.run(src.fetch("GME"))
+    assert res.partial.social is None
+    assert any("wsb: boom" in e for e in res.errors)
