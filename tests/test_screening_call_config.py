@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def test_screening_call_config_present_and_on():
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
     sc = cfg["research"]["screening_call"]
     assert sc["enabled"] is True
     assert sc["labels"]["STRONG_BUY"] == "Strong Buy"
