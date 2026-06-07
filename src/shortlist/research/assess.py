@@ -288,7 +288,8 @@ def apply_guards(assessment, card, config: dict) -> None:
     if ceil_idx > _stance_idx(call.stance):
         call.stance = STANCES[ceil_idx]
         call.stance_clamped = True
-        call.clamp_note = "tripped " + ", ".join(ceil_gates) + " gate"
+        noun = "gate" if len(ceil_gates) == 1 else "gates"
+        call.clamp_note = "tripped " + ", ".join(ceil_gates) + f" {noun}"
         call.conviction = _cap_conv(call.conviction, "MEDIUM")
 
     # 2. conviction cap (thin data)

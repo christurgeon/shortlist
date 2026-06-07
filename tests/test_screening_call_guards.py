@@ -34,6 +34,13 @@ def _confirm():
     return c
 
 
+def _contradict():
+    c = Conflict(signal="growth", tension="t", filing_says="quote here long enough",
+                 verdict="contradicts")
+    c.verified = True
+    return c
+
+
 def test_gate_clamp_moves_bearish_and_caps_conviction():
     a = _assess(ScreeningCall(stance="STRONG_BUY", conviction="HIGH", rationale="bull"))
     apply_guards(a, _card(gates=["negative_fcf"]), CFG)
@@ -117,3 +124,35 @@ def test_harness_null_axis_no_coverage_caps_conviction():
     apply_guards(a, _card(insider=None, confidence=0.95, coverage=None), CFG)
     assert a.screening_call.decided_without            # gap recorded
     assert a.screening_call.conviction == "MEDIUM"     # and it capped conviction
+
+
+def test_bearish_high_survives_with_verified_contradiction():
+    a = _assess(ScreeningCall(stance="AVOID", conviction="HIGH", rationale="r"),
+                recon=[_contradict()])
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.conviction == "HIGH"
+
+
+def test_bearish_high_demoted_without_contradiction():
+    a = _assess(ScreeningCall(stance="AVOID", conviction="HIGH", rationale="r"),
+                recon=[_confirm()])      # a "confirms" does NOT corroborate a bearish call
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.conviction == "MEDIUM"
+
+
+def test_same_ceiling_multi_gate_clamp_note_plural():
+    a = _assess(ScreeningCall(stance="STRONG_BUY", conviction="LOW"))
+    apply_guards(a, _card(gates=["negative_fcf", "over_leveraged"]), CFG)  # both -> AVOID
+    assert a.screening_call.stance == "AVOID"
+    assert "negative_fcf" in a.screening_call.clamp_note
+    assert "over_leveraged" in a.screening_call.clamp_note
+    assert a.screening_call.clamp_note.endswith("gates")
+
+
+def test_conviction_not_capped_when_unchanged():
+    # MEDIUM with full confidence + corroboration: no guard lowers it
+    a = _assess(ScreeningCall(stance="BUY", conviction="MEDIUM", rationale="r"),
+                recon=[_confirm()])
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.conviction == "MEDIUM"
+    assert a.screening_call.conviction_capped is False
