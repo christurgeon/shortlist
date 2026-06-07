@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from . import claude_cli
 from .claude_cli import CliResult
 from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
-                     assessment_from_payload, STANCES)
+                     assessment_from_payload, STANCES, _screening_call)
 from .coverage_caveat import coverage_caveats
 
 # Evidence quotes shorter than this are too trivial to count as grounding.
@@ -58,6 +58,16 @@ SYSTEM_PROMPT = (
     "like the 10-K sections).\n"
     "Respond with ONLY a JSON object — no prose, no markdown code fences — matching "
     "exactly this schema:\n" + SCHEMA_HINT
+)
+
+CALL_SYSTEM_ADDENDUM = (
+    "\nAdditionally append a top-level \"call\" object — your SCREENING TRIAGE "
+    "(NOT investment advice), built only from the grounded findings above: "
+    "{\"stance\": \"STRONG_BUY|BUY|HOLD|AVOID|STRONG_AVOID\", "
+    "\"conviction\": \"HIGH|MEDIUM|LOW\", \"rationale\": \"one sentence — the why\"}. "
+    "Reserve HIGH conviction for rare, strongly-corroborated cases. Lower your "
+    "conviction when the QUANT CONTEXT shows a DATA GAPS line. Do NOT enumerate data "
+    "gaps in rationale — that is reported separately."
 )
 
 
@@ -112,11 +122,25 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
     assessment.silent_count = silent
 
 
+def _data_gaps_line(card) -> str:
+    dw, na = coverage_caveats(card)
+    parts = []
+    if dw:
+        parts.append("missing: " + "; ".join(dw))
+    if na:
+        parts.append("not applicable: " + "; ".join(na))
+    if not parts:
+        return ""
+    return "DATA GAPS (factor into conviction): " + ". ".join(parts) + ".\n"
+
+
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
-    quant = _quant_context(card)
+    scfg = (config.get("research") or {}).get("screening_call") or {}
+    gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
+    quant = _quant_context(card, gaps_line)
     events_line = ""
     if filing_events:
         items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
@@ -177,7 +201,7 @@ def _render_series(series) -> str:
             + "\n".join(rows))
 
 
-def _quant_context(card) -> str:
+def _quant_context(card, gaps_line="") -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -219,10 +243,10 @@ def _quant_context(card) -> str:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:
         lines.append("Flags: " + ", ".join(card.flags) + ".")
-    if not lines:
+    if not lines and not gaps_line:
         return ""
     return ("=== QUANT CONTEXT (screener facts; NOT from the filing) ===\n"
-            + "\n".join(lines) + "\n\n")
+            + gaps_line + "\n".join(lines) + "\n\n")
 
 
 _CONV_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -317,6 +341,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     block (via `_quant_context`) and the `filing_events` context line injected
     into the prompt."""
     rcfg = config.get("research", {})
+    scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
     from .models import default_valid_signals
@@ -327,10 +352,11 @@ def assess(card, bundle: FilingBundle, config: dict,
     filing = bundle.tenk
     fe = getattr(getattr(card, "metrics", None), "filing_events", None)
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe)
+    system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
 
     prompt = user_prompt
     for _ in range(2):
-        res = runner(prompt=prompt, system=SYSTEM_PROMPT, model=model, timeout_s=timeout)
+        res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
         if res.error:
             return None                       # transport/CLI failure — skip name
         if res.stop_reason == "max_tokens":
@@ -349,6 +375,9 @@ def assess(card, bundle: FilingBundle, config: dict,
                     max_falsifiers=max_falsifiers, max_added_risks=max_added_risks)
                 assessment.cache_key = bundle.cache_key
                 _verify_grounding(assessment, bundle)
+                if scfg.get("enabled", True):
+                    assessment.screening_call = _screening_call(payload)
+                    apply_guards(assessment, card, config)
                 return assessment
             except (ValueError, json.JSONDecodeError) as e:
                 parse_error = str(e)
