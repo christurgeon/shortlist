@@ -58,6 +58,11 @@ class Statements:
     diluted_eps: list[float] = field(default_factory=list)
     diluted_shares: list[float] = field(default_factory=list)   # weighted-avg, newest-first
     fiscal_period_end: list[str] = field(default_factory=list)  # ISO dates, newest-first
+    # Leverage / coverage (ASSESSMENT_GAPS §2.7), absolute USD, newest-first.
+    operating_income: list[float] = field(default_factory=list)
+    dep_amort: list[float] = field(default_factory=list)
+    interest_expense: list[float] = field(default_factory=list)
+    cash_and_equivalents: list[float] = field(default_factory=list)
 
     def gross_margins(self) -> list[float]:
         return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False) if r]
