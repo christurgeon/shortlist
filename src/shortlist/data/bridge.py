@@ -157,6 +157,25 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
+        # Leverage / coverage (ASSESSMENT_GAPS §2.7). FMP keeps priority where it set
+        # these (m.* already non-None); EDGAR fills the gated gap. UNITS: absolute USD.
+        rev0 = st.revenue[0] if st.revenue else None
+        if m.revenue is None and rev0 is not None:
+            m.revenue = rev0
+        oi0 = st.operating_income[0] if st.operating_income else None
+        da0 = st.dep_amort[0] if st.dep_amort else None
+        ie0 = st.interest_expense[0] if st.interest_expense else None
+        cash0 = st.cash_and_equivalents[0] if st.cash_and_equivalents else None
+        debt0 = st.total_debt[0] if st.total_debt else None
+        if m.cash_and_equivalents is None and cash0 is not None:
+            m.cash_and_equivalents = cash0
+        if m.ebitda is None and oi0 is not None and da0 is not None:
+            m.ebitda = oi0 + da0
+        if m.interest_coverage is None and oi0 is not None and ie0:
+            m.interest_coverage = oi0 / ie0
+        if (m.net_debt_to_ebitda is None and m.ebitda and debt0 is not None
+                and m.cash_and_equivalents is not None):
+            m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
         # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
         # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
         # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave
