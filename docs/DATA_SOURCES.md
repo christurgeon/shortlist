@@ -384,3 +384,32 @@ This sits alongside the **FMP paid Starter tier (~$14–20/mo)** unlock: caching
 to zero, the paid tier raises the *cold* ceiling and lifts per-symbol `402` gating. Do caching
 first (it's free and benefits every source); add the paid tier when a true daily full-universe
 run is the goal. See `ASSESSMENT_GAPS.md` §2.3 — sector-relative scoring depends on this landing.
+
+## 7. Research-layer filing coverage — 10-K only; foreign-issuer 20-F deferred
+
+The Claude research brief (`research/filings.py:fetch_bundle`) is built from **domestic-filer
+documents only**: the latest **10-K**, the latest **10-Q** MD&A, and a YoY 10-K Item-1A risk
+diff. Foreign private issuers (ADRs) file **Form 20-F** annually, not a 10-K, so `fetch_bundle`
+returns `None` and `/deep` / `--research` report a skip (NVO/Novo Nordisk, ASML, TSM, SAP, …).
+
+- **Skip message is ADR-aware (SHIPPED 2026-06).** `filings.no_10k_reason()` does a cheap 20-F
+  *filings-index* lookup (no document download) and distinguishes a foreign issuer
+  ("no 10-K — files Form 20-F (foreign issuer); research briefs currently cover 10-K filers only")
+  from a name with no annual report at all ("no 10-K"). Best-effort and never-raise — falls back
+  to the generic reason on any error. Wired into `research/_enrich_card` via an injectable
+  `reason_fn` (hermetic in tests).
+
+- **Full 20-F support is feasible but BLOCKED ON MEMORY, not the API.** edgartools exposes a
+  first-class `TwentyF` object with the matching accessors (`risk_factors`,
+  `management_discussion`, `business`, `operating_review`, `financials`, `key_information`), so a
+  brief is structurally buildable. BUT actually extracting any narrative — `obj.risk_factors`, or
+  even raw `filing.text()` / `.attachments` — **OOM-kills (exit 137)** on oracle-prod (1.9 GB RAM,
+  ~690 MB free with the bot running). Novo's 20-F is a very large filing; the document parse
+  materializes far more than the box can hold. The filings-*index* metadata lookup (what
+  `no_10k_reason` uses) is cheap and safe — only the full-document parse blows up.
+
+- **Wire-in (DEFERRED).** Add a `form="20-F"` fallback in `fetch_10k`/`fetch_bundle` that maps
+  `TwentyF` sections onto `FilingText` — but **only behind memory-bounded / section-targeted
+  extraction**: pull individual sections, cap chars *before* materializing the whole document, and
+  measure peak RSS against the VPS budget before wiring it into the live bot. A naive port of the
+  10-K path will crash `shortlist-bot`. (10-K parsing currently fits; 20-F as-built does not.)

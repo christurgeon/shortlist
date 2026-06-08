@@ -9,6 +9,7 @@ from ..models import rank_key
 from . import claude_cli, report
 from .assess import assess as _assess
 from .filings import fetch_bundle as _fetch_bundle
+from .filings import no_10k_reason as _no_10k_reason
 
 __all__ = ["enrich", "ResearchResult", "is_available"]
 
@@ -35,14 +36,15 @@ def is_available() -> bool:
 
 
 def _enrich_card(card, config: dict, root: str, refresh: bool,
-                 fetch: Callable, assess_fn: Callable) -> ResearchResult:
+                 fetch: Callable, assess_fn: Callable,
+                 reason_fn: Callable = _no_10k_reason) -> ResearchResult:
     """Research a single card. Never raises — failures become a skipped result."""
     try:
         bundle = fetch(card.ticker, config=config)
     except Exception as e:  # network/edgartools/identity errors
         return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
     if bundle is None:
-        return ResearchResult(card.ticker, skipped="no 10-K")
+        return ResearchResult(card.ticker, skipped=reason_fn(card.ticker))
     if not refresh and report.is_cached(card.ticker, bundle.cache_key, root):
         bp = report.brief_path(card.ticker, bundle.cache_key, root)
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
@@ -59,7 +61,8 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            require_passed: bool = True,
-           fetch: Callable = _fetch_bundle, assess_fn: Callable = _assess) -> list[ResearchResult]:
+           fetch: Callable = _fetch_bundle, assess_fn: Callable = _assess,
+           reason_fn: Callable = _no_10k_reason) -> list[ResearchResult]:
     """Enrich the top-N cards. Sorts by `rank_key` (scored, composite, confidence)
     before selecting — the caller need not pre-sort. By default only `passed`
     (not-gated AND scored) cards are eligible; `require_passed=False` selects the
@@ -71,4 +74,5 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     ranked = sorted(cards, key=rank_key, reverse=True)
     eligible = ranked if not require_passed else [c for c in ranked if c.passed]
     selected = eligible[:top_n]
-    return [_enrich_card(card, config, root, refresh, fetch, assess_fn) for card in selected]
+    return [_enrich_card(card, config, root, refresh, fetch, assess_fn, reason_fn)
+            for card in selected]
