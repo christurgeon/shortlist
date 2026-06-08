@@ -67,7 +67,7 @@ uv run shortlist --demo --json
 ⚠ `--demo` ignores any `--tickers` arg and uses the mock provider. Research briefs are not available in demo mode (no real filings).
 
 **Optional flags:**
-- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,risk,upside_to_target,gates,scored,confidence,sic_bucket,piotroski_f,share_count_cagr`; gates are pipe-joined, `piotroski_f` is `won/legs`)
+- `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,risk,upside_to_target,gates,scored,confidence,sic_bucket,piotroski_f,share_count_cagr,net_debt_to_ebitda`; gates are pipe-joined, `piotroski_f` is `won/legs`, `net_debt_to_ebitda` is floored at 0 for net-cash names)
 - `--research N` — generate Claude-written 10-K briefs for the top-N non-gated names; requires `claude` CLI on PATH and `SEC_IDENTITY` set
 - `--refresh` — force regeneration of cached research briefs (cached by filing accession, not date)
 - Omit `--provider` to use the defaults from `config.yaml`
@@ -88,6 +88,7 @@ The JSON array contains one object per ticker:
 ticker, composite, quality, moat, growth, momentum, value, opportunity,
 insider, risk, upside_to_target, gates[], flags{}, sic_bucket, confidence,
 scored, thin, piotroski_f, piotroski_f_legs, share_count_cagr,
+ebitda, net_debt_to_ebitda (floored to 0 for net-cash names in output),
 abstentions[] (when any), events{} (when filing events present),
 coverage{} (when a provider had trouble), research_path (if --research used)
 ```

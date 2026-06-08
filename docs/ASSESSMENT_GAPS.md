@@ -307,6 +307,14 @@ parses the granular trades to do far better:
 > **Still deferred:** Altman-Z solvency early-warning (`DATA_SOURCES.md` D2); FCF-series
 > persistence (sustained vs one-off burn — `fcf_positive` is single-point today); sector
 > *recalibration* of the leverage bands (§2.3); fitting any of the four thresholds.
+>
+> **Follow-up (validation — shipped ON with UNFITTED priors):** the thresholds (net-debt/EBITDA
+> 4.0, EBITDA-margin floor 0.03, D/E ceiling 20, coverage 2.0; FCF excuse 0.15 / 0.70) are
+> reasoned priors, not measured. **Next step:** run `uv run shortlist-backtest --source xbrl` and
+> read the standalone `net_debt_to_ebitda` axis rank IC before tightening/loosening the 4.0 gate
+> (the axis is wired so this is a one-command check; cf. §2.1). The **`negative_fcf` excuse is not
+> yet backtestable** — the XBRL panel (`_xbrl_facts.panel_to_metrics`) does not set `fcf_positive`,
+> so the stage-aware FCF gate stays an unvalidated prior until that field is populated there.
 
 #### 2.8 `opportunity = max(momentum, value)` discards a real signal
 `max()` (`scoring.py:97`) is the right call for "qualify on either axis," but when momentum
