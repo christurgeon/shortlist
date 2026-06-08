@@ -54,18 +54,20 @@ class _Leaderboard:
                 cells.append(h.raw("td", h.esc("·" if v is None else f"{v:.0f}"),
                                    style=f"background:{rgb_hex(c)};color:{rgb_hex(text_on(c))}"))
             cells.append(h.tag("td", ",".join(ld.gates) if ld.gates else "", _class="k"))
+            cells.append(h.tag("td", ",".join(ld.flags) if ld.flags else "", _class="k"))
             rows.append(h.raw("tr", "".join(cells)))
         head = "".join(h.tag("th", x, _class="k") for x in
-                       ["", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates"])
+                       ["", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates", "Flags"])
         return h.raw("table", h.raw("tr", head) + "".join(rows))
 
     def render_text(self, vm, detail):
         out = []
         for i, ld in enumerate(vm.leaders, 1):
             gate = f"  ⚠️ {', '.join(ld.gates)}" if ld.gates else ""
+            flag = f"  🏷️ {', '.join(ld.flags)}" if ld.flags else ""
             mark = "" if ld.scored else "  (not scored)"
             thin = "  (thin)" if ld.thin else ""
-            out.append(f"{i}. {ld.ticker}  {ld.composite:.1f}{gate}{mark}{thin}")
+            out.append(f"{i}. {ld.ticker}  {ld.composite:.1f}{gate}{flag}{mark}{thin}")
             subs = " ".join(
                 f"{SUB_LABELS[s]}{'·' if ld.subscores.get(s) is None else f'{ld.subscores[s]:.0f}'}"
                 for s in SUBS)

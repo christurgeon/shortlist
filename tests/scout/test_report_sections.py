@@ -4,10 +4,10 @@ from shortlist.scout.report.viewmodel import (
 from shortlist.scout.report.sections import render_html_body, render_text, Detail
 
 
-def _leader(ticker, comp, assessment=None, gates=None, subs=None):
+def _leader(ticker, comp, assessment=None, gates=None, subs=None, flags=None):
     return LeaderVM(ticker=ticker, name=None, composite=comp,
                     subscores=subs or {"quality": 70, "risk": None}, masked=set(),
-                    gates=gates or [], flags=[], confidence=0.8, thin=False, scored=True,
+                    gates=gates or [], flags=flags or [], confidence=0.8, thin=False, scored=True,
                     coverage_note=None, metrics=MetricsVM(pe_ttm=30.0, target_upside=0.37),
                     assessment=assessment)
 
@@ -44,6 +44,22 @@ def test_text_glance_has_substring_contract():
     assert "AAPL" in txt and "80" in txt
     assert "negative_fcf" in txt
     assert "screened" in txt and "edgar_form4" in txt
+
+
+def test_leaderboard_renders_soft_flags_html_and_text():
+    # Soft advisory flags (social_hype, crowded_short, ...) must surface in both
+    # renderers — distinct from hard gates. Empty flags render nothing extra.
+    body = render_html_body(_vm([_leader("GME", 60, flags=["social_hype", "crowded_short"])]))
+    assert "social_hype" in body and "crowded_short" in body
+    assert "Flags" in body                       # header column present
+    txt = render_text(_vm([_leader("GME", 60, flags=["social_hype"])]), Detail.GLANCE)
+    assert "social_hype" in txt
+
+
+def test_leaderboard_no_flags_renders_clean():
+    # A leader with no flags must not emit a stray flag marker in text.
+    txt = render_text(_vm([_leader("AAPL", 80)]), Detail.GLANCE)
+    assert "🏷️" not in " ".join(txt)
 
 
 def test_text_glance_shows_research_takeaway():
