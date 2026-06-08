@@ -39,6 +39,14 @@ class StockMetrics:
     # quality dilution leg + the advisory `dilution` flag. UNFITTED prior.
     share_count_cagr: Optional[float] = None
 
+    # Leverage / coverage (ASSESSMENT_GAPS §2.7). Absolute USD. revenue feeds the
+    # EBITDA-margin denominator floor; net_debt_to_ebitda is SIGNED (net cash -> <0)
+    # and read raw by the over_leveraged gate (the display floor is serializer-only).
+    revenue: Optional[float] = None
+    ebitda: Optional[float] = None
+    cash_and_equivalents: Optional[float] = None
+    net_debt_to_ebitda: Optional[float] = None
+
     # Moat proxies
     gross_margin_stability: Optional[float] = None  # 0..1, higher = steadier margins
     roic_5y_avg: Optional[float] = None
@@ -170,6 +178,10 @@ class ScoreCard:
     # Surfaced diluted-share-count CAGR (+ = dilution). Display + advisory only;
     # never feeds composite/passed/scored. Appended last.
     share_count_cagr: Optional[float] = None
+    # Surfaced leverage metrics (display + advisory only; the GATE reads m.* directly).
+    # net_debt_to_ebitda is signed here; screen.py applies the net-cash display floor.
+    ebitda: Optional[float] = None
+    net_debt_to_ebitda: Optional[float] = None
 
     @property
     def passed(self) -> bool:
