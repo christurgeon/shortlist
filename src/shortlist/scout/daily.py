@@ -323,11 +323,21 @@ def _one_line_brief_from_file(brief_path) -> str:
         return "brief generated"
 
 
+# Routine presence-based filing advisories kept OUT of the at-a-glance caption (they still
+# show in the HTML Flags column). Keep in sync with bot._CAPTION_SUPPRESS_FLAGS.
+_CAPTION_SUPPRESS_FLAGS = frozenset({"recent_8k", "passive_13g", "planned_insider_sale_144"})
+
+
 def _caption(manifest, cards, top_n: int) -> str:
     ordered = sorted(cards, key=rank_key, reverse=True)
     top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
-    return (f"Scout — {manifest.session.isoformat()}\nTop: {top}\n"
-            f"{manifest.screened} screened from {manifest.raw} raw")[:1024]
+    lines = [f"Scout — {manifest.session.isoformat()}", f"Top: {top}"]
+    for c in ordered:
+        notable = [f for f in (getattr(c, "flags", ()) or ()) if f not in _CAPTION_SUPPRESS_FLAGS]
+        if notable:
+            lines.append(f"🏷️ {c.ticker}: {', '.join(notable)}")
+    lines.append(f"{manifest.screened} screened from {manifest.raw} raw")
+    return "\n".join(lines)[:1024]
 
 
 def _persist(scout_cfg, manifest, artifacts) -> None:
