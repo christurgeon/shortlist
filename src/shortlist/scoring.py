@@ -383,8 +383,8 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
         out.append("dilution")
     # Cash-burn advisory: ALWAYS visible when FCF is negative (the stage-aware
     # negative_fcf gate may excuse a grower, but the burn is still surfaced).
-    cb = f.get("cash_burn") if f else None
-    if bool(cb) and cb.get("enabled", True) and m.fcf_positive is False:
+    burn = f.get("cash_burn") if f else None
+    if bool(burn) and burn.get("enabled", True) and m.fcf_positive is False:
         out.append("cash_burn")
     # Social-media hype advisory (WSB via ApeWisdom). Soft/None-safe like the others —
     # no-op when the config block is absent; never affects passed/composite/scored.
@@ -450,9 +450,10 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
 
     # Risk: a composite-only tilt (config-gated). Sector-neutral like insider, but
     # deliberately NOT added to `components` -> it never enters appl_w/pres_w, so
-    # confidence/scored/passed stay bit-identical when risk is absent. The five
-    # weights are rescaled x0.9 in config, so with risk absent the scalar cancels in
-    # num/den and the composite equals the pre-change scorer. See the design spec §3.
+    # confidence/scored/passed stay bit-identical when risk is absent. The composite
+    # is a normalized weighted average (num/den over present parts), so risk's
+    # presence/absence only re-normalizes over present components — absolute weight
+    # magnitudes are cosmetic and only ratios matter. See docs/ASSESSMENT_GAPS.md.
     risk_on = ("risk" in w) and ("realized_vol" in t) and ("max_drawdown" in t)
     ri = risk_score(m, t) if risk_on else None
 

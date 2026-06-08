@@ -283,7 +283,8 @@ class WikipediaAttentionSignal:
                 article = self.ticker_map.get(t.upper())
                 if not article:
                     continue
-                # 14d daily window ending at session; URL dates omitted for brevity in tests
+                # Request full pageview history (fixed 2000-2100 range); the trailing
+                # 14 days are sliced client-side below (views[-14:-7] / views[-7:]).
                 resp = client.get(f"{self._BASE}/{article}/daily/2000010100/2100010100")
                 if resp.status_code != 200:
                     continue

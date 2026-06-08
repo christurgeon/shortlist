@@ -121,10 +121,11 @@ def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
     — distinct from the per-share EPS *value* row. We require the plural "shares"
     (the EPS value rows read "...per share", singular), which already excludes the
     per-share line, so we do NOT exclude "per share" here (that would wrongly drop
-    legitimate "shares used in computing ... per share" COUNT rows). Two passes: the
-    canonical weighted-average / used-in-computation / outstanding row is preferred
-    over a stray "diluted shares from <X>" reconciliation/component line that lacks
-    level/parent disambiguation here."""
+    legitimate "shares used in computing ... per share" COUNT rows). Single pass:
+    return the first canonical (weighted-average / used-in-computation / outstanding)
+    row; otherwise fall back to the first diluted-shares row seen — a stray "diluted
+    shares from <X>" reconciliation/component line that lacks level/parent
+    disambiguation here."""
     if "label" not in df.columns:
         return None
     fallback = None
@@ -161,21 +162,22 @@ def extract_financials(
     empty lists (never partial). EPS prefers the filed diluted-EPS row; if absent,
     falls back to net_income/shares_diluted; if neither, stays empty.
 
-    Cash-flow-derived series (operating_cash_flow/free_cash_flow) and
-    fiscal_period_end key off the cash-flow statement's FY columns, while
-    revenue/net_income/diluted_eps key off the income statement's FY columns.
-    These can differ in length when the two statements cover different period
-    counts; callers must NOT assume fiscal_period_end aligns index-for-index
-    with the income-statement series."""
-    fy = _fy_columns(cashflow_df) or _fy_columns(income_df)
-    fin = EdgarFinancials(fiscal_period_end=[d for d, _ in fy])
+    fiscal_period_end is labelled from the INCOME statement's FY columns — the same
+    basis as revenue/net_income/diluted_eps/diluted_shares, and the basis the bridge's
+    PE-history fallback pairs diluted_eps against. Cash-flow-derived series
+    (operating_cash_flow/free_cash_flow) are extracted on the cash-flow statement's own
+    FY columns; when the two statements cover different period counts these can differ
+    in length from fiscal_period_end, so callers must NOT assume the cash-flow series
+    aligns index-for-index with fiscal_period_end."""
+    cf_fy = _fy_columns(cashflow_df) or _fy_columns(income_df)
+    inc_fy = _fy_columns(income_df)
+    fin = EdgarFinancials(fiscal_period_end=[d for d, _ in (inc_fy or cf_fy)])
 
-    fin.operating_cash_flow = _series(_row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), fy)
-    capex = _series(_row_by_standard_concept(cashflow_df, "CapitalExpenses"), fy)
+    fin.operating_cash_flow = _series(_row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), cf_fy)
+    capex = _series(_row_by_standard_concept(cashflow_df, "CapitalExpenses"), cf_fy)
     if fin.operating_cash_flow and capex and len(fin.operating_cash_flow) == len(capex):
         fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex, strict=True)]
 
-    inc_fy = _fy_columns(income_df)
     fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)
     fin.net_income = _series(_row_by_standard_concept(income_df, "NetIncomeLoss"), inc_fy)
 
@@ -194,7 +196,7 @@ def extract_financials(
     #   - Interest expense is often netted into other income (e.g. AAPL) -> may be [],
     #     which leaves interest_coverage None (the gate's net-debt/EBITDA path is primary).
     fin.operating_income = _series(_row_by_standard_concept(income_df, "OperatingIncomeLoss"), inc_fy)
-    fin.dep_amort = _series(_row_by_standard_concept(cashflow_df, "DepreciationExpense"), fy)
+    fin.dep_amort = _series(_row_by_standard_concept(cashflow_df, "DepreciationExpense"), cf_fy)
     fin.interest_expense = _series(_row_by_standard_concept(income_df, "InterestExpense"), inc_fy)
 
     # EBITDA = operating income + D&A, combined ONLY at matching fiscal ends. Operating
@@ -202,7 +204,7 @@ def extract_financials(
     # — these can differ (see this function's docstring), so we align by date here rather
     # than zipping by list position downstream (the bridge consumes fin.ebitda directly).
     _oi_by = dict(zip([d for d, _ in inc_fy], fin.operating_income, strict=False))
-    _da_by = dict(zip([d for d, _ in fy], fin.dep_amort, strict=False))
+    _da_by = dict(zip([d for d, _ in cf_fy], fin.dep_amort, strict=False))
     fin.ebitda = [_oi_by[d] + _da_by[d]
                   for d in sorted(set(_oi_by) & set(_da_by), reverse=True)]
 

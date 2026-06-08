@@ -126,7 +126,7 @@ def _print_plain(cards: list[ScoreCard]) -> None:
     print(f"{'#':>2} {'TICK':<6} {'COMP':>5} {'QUAL':>5} {'MOAT':>5} {'GRW':>5} "
           f"{'MOM':>5} {'VAL':>5} {'INSD':>5} {'CONF':>5} {'RISK':>5}  FLAGS")
     for i, c in enumerate(cards, 1):
-        print(f"{i:>2} {c.ticker:<6} {c.composite:>5} {_f(c.quality):>5} "
+        print(f"{i:>2} {c.ticker:<6} {c.composite:>5.1f} {_f(c.quality):>5} "
               f"{_f(c.moat):>5} {_f(c.growth):>5} {_f(c.momentum):>5} {_f(c.value):>5} "
               f"{_f(c.insider):>5} {c.confidence:>5.2f} {_f(c.risk):>5}  {_flags_cell(c)}")
 
@@ -156,7 +156,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
     ap.add_argument("--provider", help="comma-separated provider/source chain; overrides config")
     ap.add_argument("--engine", choices=["screener", "harness"], default="harness",
-                    help="harness = async sources (yahoo/fmp/finnhub/edgar/finra) + "
+                    help="harness = async sources (yahoo/fmp/finnhub/edgar/finra/wsb) + "
                          "TickerSnapshot bridge (default; recovers value/growth/risk "
                          "from free sources when FMP gates a symbol); "
                          "screener = lean synchronous FMP-centric providers")
@@ -206,7 +206,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.provider:
             sources = args.provider.split(",")
         else:
-            sources = config.get("harness_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+            sources = config.get("harness_sources",
+                                 ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
         cards = run_harness(tickers, sources, config)
     else:
         if args.demo:

@@ -104,6 +104,19 @@ def test_all_none_subscores_render_without_crash():
     assert "BNK" in body and "BNK" in txt
 
 
+def test_metric_money_sign_color_from_raw_and_zero_neutral():
+    # Money metrics format as "$..M" with no leading +/-, so the good/bad color must
+    # come from the raw numeric sign (insider selling = negative = bearish/red).
+    from shortlist.scout.report.sections import _Fundamentals
+    from shortlist.scout.report.html import HtmlBuilder
+    h = HtmlBuilder()
+    assert "v neg" in _Fundamentals._metric(h, "Insider 6m", "$-9M", True, raw=-9e6)
+    assert "v pos" in _Fundamentals._metric(h, "Insider 6m", "$40M", True, raw=40e6)
+    # A pct that rounds to zero ("+0%"/"-0%") must read neutral, not red/green.
+    near_zero = _Fundamentals._metric(h, "FCF yield", "-0%", True, raw=-0.001)
+    assert "v neg" not in near_zero and "v pos" not in near_zero
+
+
 def test_fundamentals_renders_escaped_company_name():
     ld = _leader("AAPL", 80)
     ld.name = "<b>Apple</b> Inc"

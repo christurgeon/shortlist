@@ -97,6 +97,25 @@ def test_extract_aligns_series_newest_first():
     assert fin.diluted_eps == [7.46, 6.08, 6.13]
 
 
+def test_fiscal_period_end_keys_off_income_not_cashflow():
+    """fiscal_period_end labels the INCOME-keyed series (revenue/net_income/diluted_eps),
+    which the bridge's PE-history fallback pairs diluted_eps against. When the cash-flow
+    statement covers a different fiscal-year set, the labels must still follow income —
+    not the cash-flow dates — or each EPS would be paired with the wrong year's price."""
+    income = _income_df()   # FY 2025-09-27 / 2024-09-28 / 2023-09-30
+    cashflow = pd.DataFrame([
+        {"concept": "c", "label": "ocf", "standard_concept": "NetCashFromOperatingActivities",
+         "level": 1, "abstract": False,
+         "2025-09-27 (FY)": 111e9, "2024-09-28 (FY)": 118e9, "2022-09-24 (FY)": 122e9},
+    ])
+    fin = extract_financials(income, cashflow, pd.DataFrame(), shares_diluted=None)
+    # Labels follow the income statement, NOT the cash-flow statement's 2022 date.
+    assert fin.fiscal_period_end == ["2025-09-27", "2024-09-28", "2023-09-30"]
+    assert fin.diluted_eps == [7.46, 6.08, 6.13]
+    # Cash-flow series extracted on its own axis (newest-first per its own columns).
+    assert fin.operating_cash_flow == [111e9, 118e9, 122e9]
+
+
 def test_eps_falls_back_to_net_income_over_shares_when_row_missing():
     inc = _income_df()
     inc = inc[inc["label"] != "Diluted (in dollars per share)"]

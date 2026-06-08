@@ -869,7 +869,7 @@ def _closes_from_chart(raw: Any) -> list[float]:
 def _monthly_closes_from_chart(raw: Any) -> list[list]:
     """Pair the chart's timestamp + adjclose arrays and down-sample to ~one point
     per calendar month (last valid obs each month), oldest->newest as [iso, close].
-    Returns [] if timestamps are absent (e.g. older cached 2y payloads lacking a timestamp array, or any malformed payload)."""
+    Returns [] if timestamps are absent (e.g. older cached 5y payloads lacking a timestamp array, or any malformed payload)."""
     try:
         result = raw["chart"]["result"][0]
         ts = result["timestamp"]

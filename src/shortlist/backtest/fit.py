@@ -1,7 +1,7 @@
 """Walk-forward composite-weight fitting with shrinkage toward a prior.
 
-GUARDED: refuses to fit below period/breadth floors (no fitting six weights from a
-handful of observations). Phase-2 path — activated only when point-in-time
+GUARDED: refuses to fit below period/breadth floors (no fitting the fundamental-axis
+weights from a handful of observations). Phase-2 path — activated only when point-in-time
 multi-axis history accumulates. Deterministic (no RNG).
 """
 from __future__ import annotations

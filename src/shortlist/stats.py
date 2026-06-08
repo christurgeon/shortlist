@@ -35,9 +35,11 @@ def cagr(series: list[Optional[float]], most_recent_first: bool = True,
     """Compound annual growth rate over a financial series.
 
     Drops None values (a missing year), then requires >= `min_points` usable
-    points. Returns None when either endpoint is <= 0, because CAGR is undefined
-    across a sign change (a swing through zero makes the ratio meaningless) — the
-    caller's weight-redistribution handles the gap. `most_recent_first=True`
+    points. Returns None when either endpoint is <= 0: CAGR is undefined across a
+    sign change (a swing through zero makes the ratio meaningless), and a growth
+    rate computed off two negative endpoints (or a zero endpoint) is not
+    interpretable either — the caller's weight-redistribution handles the gap.
+    `most_recent_first=True`
     matches `Statements`' newest-first ordering. Single source of truth for the
     growth-rate legs in BOTH the screener provider and the harness bridge."""
     vals = [v for v in (series or []) if v is not None]

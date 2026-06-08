@@ -276,10 +276,13 @@ def _research_phase(
                              require_passed=require_passed)
         try:
             results = future.result(timeout=budget_s)
-            pool.shutdown(wait=False)
         except concurrent.futures.TimeoutError:
-            pool.shutdown(wait=False, cancel_futures=True)
             return {}, {}, [], f"research skipped: phase budget {budget_s}s exceeded", {}
+        finally:
+            # Always shut down — on success, timeout, OR an exception raised inside
+            # _enrich() (which escapes to the outer handler). wait=False so we never
+            # block on a hung thread (see the IMPORTANT note above re: `with`).
+            pool.shutdown(wait=False)
     except Exception as e:  # noqa: BLE001
         return {}, {}, [], f"research failed: {redact_secrets(str(e))}", {}
 
