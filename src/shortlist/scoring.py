@@ -154,6 +154,16 @@ def share_count_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.share_count_cagr, *t["share_count_cagr"])
 
 
+def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
+    0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
+    like share_count_score; the PRODUCTION signal is the over_leveraged GATE, not
+    this. None when the band or the signal is absent."""
+    if "net_debt_to_ebitda" not in t or m.net_debt_to_ebitda is None:
+        return None
+    return _norm(m.net_debt_to_ebitda, *t["net_debt_to_ebitda"])
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it
