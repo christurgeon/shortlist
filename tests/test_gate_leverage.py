@@ -71,3 +71,31 @@ def test_near_zero_ebitda_margin_routes_to_fallback():
     # EBITDA margin 1% < 3% floor -> not usable -> fallback; D/E clean -> no trip.
     m = _m(revenue=100.0, ebitda=1.0, net_debt_to_ebitda=50.0, debt_to_equity=1.0)
     assert "over_leveraged" not in gates(m)
+
+
+def test_dte_exactly_at_ceiling_still_trips():
+    # D/E == dte_artifact_ceiling (20.0) is NOT an artifact (strict >); weak/absent
+    # coverage in the plausible window -> trips.
+    assert "over_leveraged" in gates(_m(debt_to_equity=20.0))
+
+
+def test_dte_exactly_at_max_does_not_trip():
+    # D/E == max_debt_to_equity (5.0) is not over the bar (<= max).
+    assert "over_leveraged" not in gates(_m(debt_to_equity=5.0, interest_coverage=0.1))
+
+
+def test_net_debt_exactly_at_threshold_does_not_trip():
+    # net_debt_to_ebitda == max (4.0) is not over the bar (strict >).
+    m = _m(revenue=100.0, ebitda=10.0, net_debt_to_ebitda=4.0)
+    assert "over_leveraged" not in gates(m)
+
+
+def test_screener_shape_ebitda_usable_but_no_ratio_falls_back():
+    # Screener populates revenue+ebitda but never net_debt_to_ebitda (no balance sheet):
+    # falls through to the D/E fallback. Clean D/E -> no trip.
+    m = _m(revenue=100.0, ebitda=10.0, net_debt_to_ebitda=None, debt_to_equity=1.0)
+    assert "over_leveraged" not in gates(m)
+    # ...and a levered, weak-coverage screener name still trips via the fallback.
+    m2 = _m(revenue=100.0, ebitda=10.0, net_debt_to_ebitda=None,
+            debt_to_equity=9.0, interest_coverage=1.0)
+    assert "over_leveraged" in gates(m2)
