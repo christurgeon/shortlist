@@ -138,6 +138,11 @@ class FMPProvider(Provider):
                 if row.get("revenue")
             ]
             m.gross_margin_stability = gross_margin_stability(margins)
+            # Leverage inputs (ASSESSMENT_GAPS §2.7), latest year, no extra call. The
+            # screener fetches no balance sheet, so cash/net_debt_to_ebitda stay None
+            # here (the over_leveraged artifact-guarded D/E fallback covers leverage).
+            m.revenue = income[0].get("revenue")
+            m.ebitda = income[0].get("ebitda")
             m.fcf_positive = all(
                 (row.get("netIncome") or 0) > 0 for row in income[:2]
             ) or None
@@ -192,6 +197,7 @@ class FMPProvider(Provider):
             "roe", "gross_margin", "net_margin", "debt_to_equity",
             "interest_coverage", "peg", "roic", "fcf_yield",
             "gross_margin_stability", "fcf_positive", "target_median",
+            "revenue", "ebitda",
             "revenue_cagr", "eps_cagr", "eps_cagr_ps", "share_count_cagr",
             "revenue_growth_persistence",
             "rating_buy", "rating_hold", "rating_sell", "rel_strength_6m",
