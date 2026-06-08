@@ -280,6 +280,13 @@ def _value_legs(m: StockMetrics) -> list[_Leg]:
     ]
 
 
+def _fcf_excused(m: StockMetrics, fc: dict) -> bool:
+    """Negative FCF is excused when growth is strong AND sustained (spec §4)."""
+    return (m.revenue_cagr is not None and m.revenue_cagr >= fc["excuse_min_revenue_cagr"]
+            and m.revenue_growth_persistence is not None
+            and m.revenue_growth_persistence >= fc["excuse_min_persistence"])
+
+
 def _over_leveraged(m: StockMetrics, g: dict, lv: dict) -> bool:
     """net-debt/EBITDA primary; artifact-guarded, coverage-corroborated D/E fallback.
     See spec §3 (2026-06-08-gate-fixes-design). Fail-OPEN on the equity-distortion
@@ -311,8 +318,11 @@ def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
     """Hard filters. `bucket`/`config` default so legacy 1-pair callers still work;
     gate_applicable short-circuits on bucket=='unknown' before touching config."""
     tripped: list[str] = []
+    fc = g.get("fcf")
+    fcf_gate_on = bool(fc) and fc.get("enabled", True)
     if m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config):
-        tripped.append("negative_fcf")
+        if not fcf_gate_on or not _fcf_excused(m, fc):
+            tripped.append("negative_fcf")
     if m.market_cap is not None and m.market_cap < g["min_market_cap"] \
             and gate_applicable(bucket, "below_min_mktcap", config):
         tripped.append("below_min_mktcap")
@@ -361,6 +371,11 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     dil = f.get("dilution") if f else None
     if dil and m.share_count_cagr is not None and m.share_count_cagr >= dil["min_share_cagr"]:
         out.append("dilution")
+    # Cash-burn advisory: ALWAYS visible when FCF is negative (the stage-aware
+    # negative_fcf gate may excuse a grower, but the burn is still surfaced).
+    cb = f.get("cash_burn") if f else None
+    if bool(cb) and cb.get("enabled", True) and m.fcf_positive is False:
+        out.append("cash_burn")
     # Social-media hype advisory (WSB via ApeWisdom). Soft/None-safe like the others —
     # no-op when the config block is absent; never affects passed/composite/scored.
     # "Context-aware" by coexistence: renders alongside crowded_short (squeeze) or
