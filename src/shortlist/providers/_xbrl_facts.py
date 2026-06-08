@@ -97,6 +97,10 @@ LT_DEBT = ["LongTermDebtNoncurrent", "LongTermDebt"]
 CUR_DEBT = ["LongTermDebtCurrent", "DebtCurrent"]
 OP_INCOME = ["OperatingIncomeLoss"]
 INTEREST = ["InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt"]
+DEP_AMORT = ["DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet",
+             "DepreciationAndAmortization"]
+CASH = ["CashAndCashEquivalentsAtCarryingValue",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"]
 PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
           "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"]
 INCOME_TAX = ["IncomeTaxExpenseBenefit"]
@@ -160,6 +164,8 @@ class XbrlPanel:
     income_tax: dict[str, float] = field(default_factory=dict)
     shares: Optional[float] = None
     diluted_shares: dict[str, float] = field(default_factory=dict)  # weighted-avg annual series
+    dep_amort: dict[str, float] = field(default_factory=dict)
+    cash: dict[str, float] = field(default_factory=dict)            # instant (balance sheet)
 
 
 def _gross_profit(facts: dict, as_of: date) -> dict:
@@ -193,6 +199,8 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
         total_debt=sum_aligned(lt, cur),
         operating_income=annual_series(facts, OP_INCOME, as_of),
         interest_expense=annual_series(facts, INTEREST, as_of),
+        dep_amort=annual_series(facts, DEP_AMORT, as_of),
+        cash=annual_series(facts, CASH, as_of, instant=True),
         pretax_income=annual_series(facts, PRETAX, as_of),
         income_tax=annual_series(facts, INCOME_TAX, as_of),
         shares=latest(shares),
@@ -302,5 +310,15 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
         if px and e:
             annual_pe.append(px / e)
     m.pe_median_5y = median_pe(annual_pe)    # None if < 2 points
+
+    # Leverage (ASSESSMENT_GAPS §2.7). EBITDA = operating income + D&A at the latest
+    # common fiscal end; net_debt = total_debt - cash (signed). Backtest axis only.
+    m.revenue = latest(p.revenue)
+    ebitda_series = sum_aligned(p.operating_income, p.dep_amort)
+    m.ebitda = latest(ebitda_series)
+    m.cash_and_equivalents = latest(p.cash)
+    debt_latest = latest(p.total_debt)
+    if m.ebitda and debt_latest is not None and m.cash_and_equivalents is not None:
+        m.net_debt_to_ebitda = (debt_latest - m.cash_and_equivalents) / m.ebitda
 
     return m
