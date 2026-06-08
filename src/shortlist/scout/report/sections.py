@@ -110,14 +110,17 @@ class _Fundamentals:
     def applies(self, vm): return bool(vm.leaders)
 
     @staticmethod
-    def _metric(h, label, value, signed):
+    def _metric(h, label, value, signed, raw=None):
         cls = "v"
         if value == "·":
             cls = "v na"
-        elif signed and value[:1] == "-":
-            cls = "v neg"
-        elif signed and value[:1] == "+":
-            cls = "v pos"
+        elif signed and any(ch in "123456789" for ch in value):
+            # Decide good/bad from the raw numeric sign — money metrics (e.g.
+            # insider_net_6m) format as "$..M" with no leading +/-, so the sign isn't
+            # in the string. The any-nonzero-digit guard skips a value that rounds to
+            # zero ("+0%"/"-0%"/"$-0M") so a tiny negative doesn't read as bearish.
+            s = raw if raw is not None else (-1.0 if value[:1] == "-" else 1.0)
+            cls = "v neg" if s < 0 else "v pos"
         return h.raw("div", h.tag("span", label, _class="k") +
                      h.raw("span", h.esc(value), _class=cls), _class="metric")
 
@@ -129,7 +132,8 @@ class _Fundamentals:
             # as "good" just because they carry a + sign.
             cells = [self._metric(h, label, _fmt(getattr(ld.metrics, attr), **opt),
                                   bool(opt.get("pct") or opt.get("money"))
-                                  and not opt.get("neutral"))
+                                  and not opt.get("neutral"),
+                                  raw=getattr(ld.metrics, attr))
                      for label, attr, opt in _FUND_ROWS]
             analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
                         f"{ld.metrics.rating_sell or 0}S")

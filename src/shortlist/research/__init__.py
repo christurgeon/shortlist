@@ -48,12 +48,18 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     if not refresh and report.is_cached(card.ticker, bundle.cache_key, root):
         bp = report.brief_path(card.ticker, bundle.cache_key, root)
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
-    from .filings import cap_bundle
-    bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
-    assessment = assess_fn(card, bundle, config)
-    if assessment is None:
-        return ResearchResult(card.ticker, skipped="assessment failed")
-    bp = report.write(assessment, root, config)
+    # cap_bundle / assess / report.write (filesystem I/O, prompt building, the LLM
+    # call) can all raise; isolate them too so the docstring promise — one failure
+    # never aborts the batch — holds for the whole pipeline, not just fetch().
+    try:
+        from .filings import cap_bundle
+        bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
+        assessment = assess_fn(card, bundle, config)
+        if assessment is None:
+            return ResearchResult(card.ticker, skipped="assessment failed")
+        bp = report.write(assessment, root, config)
+    except Exception as e:  # assess/render/write errors
+        return ResearchResult(card.ticker, skipped=f"research error: {redact_secrets(e)}")
     return ResearchResult(
         card.ticker, brief_path=str(bp), cost_usd=assessment.cost_usd or 0.0,
         synthesis=assessment.synthesis)

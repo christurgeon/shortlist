@@ -15,7 +15,9 @@ from .models import (
 )
 
 
-def _snap(ticker, profile, fund, stmts, analyst, insider, price):
+def _snap(profile, fund, stmts, analyst, insider, price):
+    # The snapshot's ticker comes from the runtime arg `t` (the SAMPLE lookup key),
+    # not a literal here — see sources.py `data["snapshot"](ticker)`.
     def make(t: str) -> TickerSnapshot:
         s = TickerSnapshot(ticker=t)
         s.profile, s.fundamentals, s.statements = profile, fund, stmts
@@ -28,7 +30,6 @@ SAMPLE = {
     "GEV": {
         "raw_echo": {"note": "illustrative", "ticker": "GEV"},
         "snapshot": _snap(
-            "GEV",
             Profile(name="GE Vernova Inc.", sector="Industrials", industry="Electrical Equipment",
                     exchange="NYSE", currency="USD", country="US", market_cap=260e9, beta=1.3),
             Fundamentals(pe_ttm=28.2, peg=1.4, roe=0.44, roic=0.18, gross_margin=0.20,
@@ -49,7 +50,6 @@ SAMPLE = {
     "LMT": {
         "raw_echo": {"note": "illustrative", "ticker": "LMT"},
         "snapshot": _snap(
-            "LMT",
             Profile(name="Lockheed Martin Corporation", sector="Industrials",
                     industry="Aerospace & Defense", exchange="NYSE", currency="USD",
                     country="US", market_cap=122e9, beta=0.5),
@@ -69,7 +69,6 @@ SAMPLE = {
     "SCHW": {
         "raw_echo": {"note": "illustrative", "ticker": "SCHW"},
         "snapshot": _snap(
-            "SCHW",
             Profile(name="The Charles Schwab Corporation", sector="Financial Services",
                     industry="Capital Markets", sic="6211", exchange="NYSE", currency="USD",
                     country="US", market_cap=152e9, beta=1.0),
@@ -89,7 +88,6 @@ SAMPLE = {
     "TMO": {
         "raw_echo": {"note": "illustrative", "ticker": "TMO"},
         "snapshot": _snap(
-            "TMO",
             Profile(name="Thermo Fisher Scientific Inc.", sector="Healthcare",
                     industry="Diagnostics & Research", exchange="NYSE", currency="USD",
                     country="US", market_cap=195e9, beta=0.9),
@@ -109,7 +107,6 @@ SAMPLE = {
     "GOOGL": {
         "raw_echo": {"note": "illustrative", "ticker": "GOOGL"},
         "snapshot": _snap(
-            "GOOGL",
             Profile(name="Alphabet Inc.", sector="Communication Services",
                     industry="Internet Content & Information", exchange="NASDAQ", currency="USD",
                     country="US", market_cap=2.3e12, beta=1.05),

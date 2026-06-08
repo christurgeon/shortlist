@@ -29,7 +29,8 @@ def is_trading_day(d: date) -> bool:
 
 
 def last_session(today: date) -> date:
-    """The most recent completed trading session on or before `today` minus 0 days.
+    """The most recent completed trading session on or before `today` (today itself
+    if it trades, else the prior trading day).
 
     The scout runs after the close, so 'today's session' if today trades, else
     walk back to the prior trading day.

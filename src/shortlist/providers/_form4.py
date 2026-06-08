@@ -66,7 +66,7 @@ class Txn:
     shares: Optional[float] = None
     price: Optional[float] = None
     value: Optional[float] = None    # unsigned transaction value (shares * price)
-    planned: bool = False            # True iff a 10b5-1 footnote was detected (sells)
+    planned: bool = False            # True iff a 10b5-1 footnote was detected on this trade (only sells feed planned_sell_value)
 
 
 @dataclass

@@ -30,8 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     from ..cache import configure_default_cache
     configure_default_cache(enabled=not args.no_cache, refresh=args.refresh_cache)
 
-    tickers = [t.strip().upper() for t in args.tickers.split(",")]
-    sources = [s.strip() for s in args.sources.split(",")]
+    tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+    sources = [s.strip() for s in args.sources.split(",") if s.strip()]
 
     snapshots = collect(tickers, sources)
     if not snapshots:

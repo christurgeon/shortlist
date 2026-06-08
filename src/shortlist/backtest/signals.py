@@ -102,9 +102,10 @@ class XbrlSignalSource:
     weight-redistribution are scoring.score() concerns and not applied here, so
     IC stays comparable across sources. value emits 2 of 4 legs (fcf_yield,
     pe_vs_history); peg + upside_to_target need analyst data absent from XBRL.
-    Also emits a standalone `piotroski` axis (Core-6 fundamental-quality, unfitted prior)
-    and a standalone `share_count` axis (diluted-share-count dilution, unfitted prior) so
-    their rank IC is measurable before either is trusted in production scoring.
+    Also emits a standalone `piotroski` axis (Core-6 fundamental-quality, unfitted prior),
+    a standalone `share_count` axis (diluted-share-count dilution, unfitted prior), and a
+    standalone `net_debt_to_ebitda` axis (net-debt/EBITDA leverage, unfitted prior) so
+    their rank IC is measurable before any is trusted in production scoring.
     """
     name = "xbrl"
     _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",

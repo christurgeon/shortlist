@@ -87,7 +87,14 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
                 if mt is None or getattr(mt, "empty", True):
                     continue
                 ticker = _is_real_ticker(getattr(getattr(form4, "issuer", None), "ticker", ""))
-                insider = getattr(form4, "insider_name", "?") or "?"
+                insider = getattr(form4, "insider_name", None)
+                if not insider:
+                    # Each Form 4 is exactly one reporting owner. When the name can't
+                    # be parsed, key the buyer off the filing's unique accession so two
+                    # distinct unnamed insiders don't collapse to one "?" and suppress
+                    # a real cluster (cluster_buys_from_records counts distinct names).
+                    acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                    insider = f"acc:{acc}" if acc else "?"
                 for row in mt.itertuples(index=False):
                     shares = getattr(row, "Shares", None) or 0
                     price = getattr(row, "Price", None) or 0

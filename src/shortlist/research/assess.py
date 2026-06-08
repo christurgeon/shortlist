@@ -200,7 +200,7 @@ def _render_series(series) -> str:
         rows.append(f"  {label}: " + "  ".join(parts))
     if not rows:
         return ""
-    return ("5-year financials (newest-first; $M except dEPS=$/sh, shrs=M):\n"
+    return ("Annual financials (newest-first; $M except dEPS=$/sh, shrs=M):\n"
             + "\n".join(rows))
 
 
@@ -224,7 +224,8 @@ def _quant_context(card, gaps_line="") -> str:
     if getattr(card, "sic_bucket", None):
         extra.append(f"sector {card.sic_bucket}")
     if extra:
-        lines.append(", ".join(extra).capitalize() + ".")
+        s = ", ".join(extra)   # upper-case only the first char (capitalize() lowercases the rest)
+        lines.append(s[:1].upper() + s[1:] + ".")
     if m is not None:
         scalars = [("revenue_cagr", m.revenue_cagr), ("fcf_cagr", m.fcf_cagr),
                    ("eps_cagr", m.eps_cagr),

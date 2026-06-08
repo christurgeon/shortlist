@@ -100,4 +100,21 @@ def test_enrich_marks_assessment_failure(tmp_path):
     results = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True,
                      fetch=fetch, assess_fn=lambda *a, **k: None)
     assert results[0].skipped == "assessment failed"
+
+
+def test_enrich_isolates_assess_exception_without_aborting_batch(tmp_path):
+    """An exception RAISED inside assess (not just fetch) must become a skipped
+    result, never propagate and abort the batch — and the secret must be redacted."""
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    fetch = lambda t, **k: _bundle(t)
+    def boom_assess(card, bundle, config, **kw):
+        if card.ticker == "A":
+            raise RuntimeError("assess blew up token=sk-ant-SECRET999")
+        return _assessment(card.ticker)
+    results = enrich([_Card("A", 90), _Card("B", 80)], cfg, top_n=2,
+                     refresh=True, fetch=fetch, assess_fn=boom_assess)
+    assert len(results) == 2                                  # batch not aborted
+    assert results[0].skipped.startswith("research error:")
+    assert "sk-ant-SECRET999" not in results[0].skipped       # redacted
+    assert results[1].brief_path                              # B still produced
     assert results[0].brief_path is None

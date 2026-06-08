@@ -135,7 +135,7 @@ class FMPProvider(Provider):
             margins = [
                 row["grossProfit"] / row["revenue"]
                 for row in income
-                if row.get("revenue")
+                if row.get("revenue") and row.get("grossProfit") is not None
             ]
             m.gross_margin_stability = gross_margin_stability(margins)
             # Leverage inputs (ASSESSMENT_GAPS §2.7), latest year, no extra call. The

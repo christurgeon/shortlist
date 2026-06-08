@@ -24,7 +24,7 @@ There are **two parallel stacks** that don't share fetching code:
 Each has its **own provider/source registry**. `fmp`, `finnhub`, and `edgar` are
 wired in **both** (`mock` too in the harness; the keyless `yahoo` OHLCV source —
 price/momentum/risk we compute ourselves — is **harness-only**, and leads the
-harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar, finra]`). The
+harness price merge: `harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]`). The
 **harness is the default engine** (`--engine harness`); `bridge.py:snapshot_to_metrics`
 adapts a `TickerSnapshot` into the `StockMetrics` the scorer consumes. `--engine screener`
 selects the lean, synchronous, FMP-centric path (fewer calls/ticker, no free-source
@@ -322,8 +322,8 @@ Free tiers are fine for individual names or a small watchlist, but don't scale t
 a full universe. The harness makes **~13 FMP calls per ticker** (the screener ~8,
 since the paid insider call is gated off by default); FMP's **250/day** free limit
 is therefore roughly **19 tickers/day** on the harness path — a theoretical ceiling.
-(The scout and `shortlist-accumulate` cap deep-screening lower, at **15/day** by
-default, for headroom.) Screening the whole
+(The scout caps deep-screening lower still — **10/day** by default (`scout.daily_x`) —
+and `shortlist-accumulate` at **15/day** (`--max-tickers`), for headroom.) Screening the whole
 S&P 500 daily needs either FMP's paid **Starter tier (~$14–20/mo**, lifts per-minute
 and bandwidth limits) or the **caching layer** — whichever you hit first.
 **Finnhub's 60/min is comfortable** either way.

@@ -130,9 +130,15 @@ class HttpCache:
         self._lock = threading.Lock()
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
-        self._conn.execute("PRAGMA busy_timeout=5000")
-        self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(_SCHEMA)
+        try:
+            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.row_factory = sqlite3.Row
+            self._conn.executescript(_SCHEMA)
+        except Exception:
+            # Don't leak the open handle if schema init fails — configure_default_cache
+            # catches and degrades to NoOpCache, but the connection must close first.
+            self._conn.close()
+            raise
 
     def close(self) -> None:
         with self._lock:

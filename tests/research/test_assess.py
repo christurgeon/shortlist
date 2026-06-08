@@ -250,7 +250,7 @@ def test_render_series_formats_usd_millions_and_eps():
          "diluted_eps": 6.08, "total_debt": 106_629e6, "diluted_shares": 15_344e6},
     ]
     out = _render_series(series)
-    assert "5-year financials" in out
+    assert "Annual financials" in out
     assert "FY2025 (2025-09-28)" in out
     assert "rev 391,035" in out and "GP 180,683" in out
     assert "dEPS 6.08" in out and "shrs 15,344" in out and "debt 106,629" in out
@@ -291,7 +291,7 @@ def test_quant_context_includes_series_when_present():
                      growth=None, momentum=None, value=88.0, opportunity=88.0,
                      insider=None, metrics=m, sic_bucket="unknown")
     block = _quant_context(card)
-    assert "5-year financials" in block and "rev 391,035" in block
+    assert "Annual financials" in block and "rev 391,035" in block
 
 
 def test_system_prompt_mentions_trajectory():

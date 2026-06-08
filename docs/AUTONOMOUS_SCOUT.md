@@ -36,7 +36,7 @@ The four decisions that shape this design (all settled):
 | Decision | Choice | Consequence |
 |---|---|---|
 | **Discovery** | **Signal-driven** (no fixed universe) | Candidates come from what names *just did something*, not a list to walk. |
-| **Budget** | **Strictly free forever** | No paid FMP tier assumed. Daily throughput is capped (~15 deep screens/day). |
+| **Budget** | **Strictly free forever** | No paid FMP tier assumed. Daily throughput is capped (~10 deep screens/day). |
 | **Delivery** | **VPS systemd timer → Telegram** | Runs on `oracle-prod` like the oracle bot; report lands in Telegram. |
 | **Autonomy** | **Fully autonomous, incl. research** | The loop also runs the Claude 10-K briefs on the top names — hands-off. |
 
@@ -204,14 +204,14 @@ would widen the originator base.
 
 The funnel is free; the **deep screen is what costs**. Today the harness deep-screen chain
 includes `FMPSource` (~13 FMP calls/ticker), and FMP's free **250/day** ⇒ ≈ **19 screens/day**
-— that single source, not the free signal feeds, is what forces `daily_x: 15`. This is in
+— that single source, not the free signal feeds, is what forces a low `daily_x` (ships 10). This is in
 tension with "strictly free + scalable": we've built a free discovery firehose bolted to an
 FMP-limited funnel.
 
 The design resolves it in two stages, stated honestly rather than hand-waved:
 
-- **MVP — keep FMP, accept the ~15/day cap.** FMP still carries the `value` axis (PE-vs-history,
-  FCF yield, analyst-target upside) and several quality/moat fundamentals, and 15 well-chosen
+- **MVP — keep FMP, accept the ~10/day cap.** FMP still carries the `value` axis (PE-vs-history,
+  FCF yield, analyst-target upside) and several quality/moat fundamentals, and 10 well-chosen
   names/day is a reasonable human reading load. The cap is real and printed (§7).
 - **Scale path — drop FMP from the *scout's* deep-screen chain.** Run the scout on
   `harness_sources: [yahoo, finnhub, edgar]` so throughput is bound by **Finnhub's 60/min**
@@ -232,13 +232,13 @@ per-candidate `interest` is capped so one source can't dominate purely by firing
 
 ```yaml
 scout:
-  daily_x: 15                  # max deep screens/day (FMP-bound; see §4.1)
+  daily_x: 10                  # max deep screens/day (FMP-bound; see §4.1)
   research_top_n: 3            # Claude briefs run on the top-N non-gated names (absolute cap)
-  research_phase_budget_s: 600 # wall-clock ceiling for the whole research phase (§5)
+  research_phase_budget_s: 2000 # wall-clock ceiling for the whole research phase (§5)
   cooldown_days: 7             # don't re-screen a name within this window
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap),
   # not a scout-level prefilter — market cap isn't known until the deep screen runs.
-  deep_screen_sources: [yahoo, fmp, finnhub, edgar]  # MVP; drop fmp to scale (§4.1)
+  deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]  # drop fmp to scale (§4.1)
   edgar_index_daily_cap: 400   # max Form 4 docs fetched/session (cap shown in coverage)
   wikipedia_ticker_map: {}     # curated ticker -> article map; empty = booster no-ops honestly
   signals:                     # per-source enable + interest weight
@@ -246,6 +246,7 @@ scout:
     edgar_form4:     {enabled: true,  weight: 1.5}   # highest-signal free source
     finnhub_news:    {enabled: true,  weight: 0.5}
     wikipedia:       {enabled: true,  weight: 0.5}
+    wsb_hype:        {enabled: true,  weight: 0.5}   # WsbHypeSignal — ApeWisdom WSB mention velocity (keyless)
     quiver:          {enabled: false, weight: 1.0}   # strictly-free: off until keyed
 ```
 
@@ -277,8 +278,9 @@ Running it unattended adds these requirements:
 2. **A hard cap, not a percentage.** `research_top_n` (default 3) bounds spend per day
    regardless of how many candidates surface. Absolute, not "top X%."
 3. **A wall-clock budget for the whole phase, not just per-call.** Each brief already has a
-   180s call timeout, but `N` hung calls still serialize. `research_phase_budget_s` (default
-   600) caps the entire research phase; once exceeded, remaining briefs are skipped and noted
+   600s call timeout (`config.yaml: research.timeout_s`), but `N` hung calls still serialize.
+   `research_phase_budget_s` (config-defined 2000; code fallback 600) caps the entire research
+   phase; once exceeded, remaining briefs are skipped and noted
    in the report — a single hang can't stall the daily run.
 4. **A runtime kill-switch.** `SCOUT_NO_RESEARCH=1` / a `scout/STOP_RESEARCH` sentinel skips
    step 7 entirely, flippable on the running box without a redeploy. The failure-alert timer
@@ -363,7 +365,7 @@ trading-calendar gate, the `RunManifest` artifact, Telegram delivery, the system
 `--demo`, and tests.
 
 **Explicitly out of scope** (tracked, not built now):
-- No paid tiers, no full-universe walk — those contradict "strictly free." The honest ~15/day
+- No paid tiers, no full-universe walk — those contradict "strictly free." The honest ~10/day
   cap stays until the scale-path switch (§4.1) is taken.
 - No new *scoring* — growth/value/momentum/insider stay in `scoring.py`. The scout only
   *feeds* the scorer.

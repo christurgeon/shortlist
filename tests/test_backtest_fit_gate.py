@@ -67,7 +67,7 @@ def test_fit_report_to_dict_shape():
     assert d["verdict"]["endorsed"] is True
     assert d["horizon"] == 6
     assert abs(sum(d["config_mapped"].values()) - s_f) < 1e-3   # block share preserved (4dp rounding)
-    assert d["axes"]["quality"]["standalone_oos_ic_sign"] == -1
+    assert d["axes"]["quality"]["standalone_ic_sign"] == -1
     assert d["oos"]["prior_oos_ic"] == 0.05
     assert d["oos"]["shrunk_oos_ic"] == 0.10
     assert any("survivorship" in c.lower() for c in d["caveats"])

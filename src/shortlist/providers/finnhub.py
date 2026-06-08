@@ -47,7 +47,8 @@ class FinnhubProvider(Provider):
         if isinstance(q, dict) and q.get("c"):
             m.price = q["c"]
 
-        metric = self._get("stock/metric", symbol=ticker, metric="all").get("metric", {})
+        mresp = self._get("stock/metric", symbol=ticker, metric="all")
+        metric = mresp.get("metric", {}) if isinstance(mresp, dict) else {}
         if metric:
             m.market_cap = _millions(metric.get("marketCapitalization"))
             m.roe = _pct(metric.get("roeTTM"))

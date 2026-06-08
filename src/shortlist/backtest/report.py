@@ -138,6 +138,9 @@ def _fit_caveats() -> list[str]:
         "Gross of transaction costs. Point-in-time uses filed <= as_of (re-runs stable), but "
         "a later restatement can shift a past as_of's values — pin the universe + "
         "companyfacts cache month when citing numbers.",
+        "standalone_ic is an IN-SAMPLE, cross-sectionally pooled IC over all rows (use for "
+        "sign/direction only); it is NOT held-out and is not magnitude-comparable to the "
+        "per-period-aggregated OOS ICs above.",
     ]
 
 
@@ -151,8 +154,8 @@ def fit_report_to_dict(result, *, prior, s_f, horizon, axes, axis_ic, verdict) -
             "fitted_preshrink": round(result.fitted_weights.get(a, 0.0), 4),
             "fitted_shrunk": round(result.weights.get(a, 0.0), 4),
             "config_mapped": round(s_f * result.weights.get(a, 0.0), 4),
-            "standalone_oos_ic": (round(axis_ic[a], 4) if axis_ic.get(a) is not None else None),
-            "standalone_oos_ic_sign": _sign(axis_ic.get(a)),
+            "standalone_ic": (round(axis_ic[a], 4) if axis_ic.get(a) is not None else None),
+            "standalone_ic_sign": _sign(axis_ic.get(a)),
         } for a in axes},
         "config_mapped": {a: round(s_f * result.weights.get(a, 0.0), 4) for a in axes},
         "oos": {
@@ -187,7 +190,7 @@ def render_fit_report(result, *, prior, s_f, horizon, axes, axis_ic, verdict) ->
         ax = d["axes"][a]
         t.add_row(a, f"{ax['prior_within_block']:.3f}", f"{ax['fitted_preshrink']:.3f}",
                   f"{ax['fitted_shrunk']:.3f}", f"{ax['config_mapped']:.3f}",
-                  {1: "+", -1: "-", 0: "0"}[ax["standalone_oos_ic_sign"]])
+                  {1: "+", -1: "-", 0: "0"}[ax["standalone_ic_sign"]])
     con.print(t)
     o = d["oos"]
     con.print(f"prior OOS IC={o['prior_oos_ic']}  shrunk OOS IC={o['shrunk_oos_ic']}  "
