@@ -18,6 +18,7 @@ from typing import Optional
 import pandas as pd
 
 _FY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s*\(FY\)$")
+_INSTANT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})$")
 
 
 @dataclass
@@ -44,6 +45,35 @@ def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
         if m:
             cols.append((m.group(1), c))
     return sorted(cols, key=lambda t: t[0], reverse=True)
+
+
+def _instant_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
+    """[(iso_date, column_name)] for balance-sheet INSTANT columns (plain ISO dates,
+    no '(FY)' suffix — edgartools labels balance-sheet periods that way), newest-first."""
+    cols = []
+    for c in df.columns:
+        m = _INSTANT_RE.match(str(c))
+        if m:
+            cols.append((m.group(1), c))
+    return sorted(cols, key=lambda t: t[0], reverse=True)
+
+
+def _sum_concepts(df: pd.DataFrame, concepts: list[str],
+                  cols: list[tuple[str, str]]) -> list[float]:
+    """Sum several standard_concept rows per column (e.g. total_debt = long-term +
+    current portion + short-term). Returns [] unless EVERY column has >=1 component
+    (don't half-fill, matching _series)."""
+    rows = [r for r in (_row_by_standard_concept(df, c) for c in concepts) if r is not None]
+    if not rows or not cols:
+        return []
+    out = []
+    for _, col in cols:
+        present = [float(r.get(col)) for r in rows
+                   if r.get(col) is not None and not pd.isna(r.get(col))]
+        if not present:
+            return []
+        out.append(sum(present))
+    return out
 
 
 def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Series]:
@@ -154,17 +184,21 @@ def extract_financials(
     fin.diluted_eps = eps
     fin.diluted_shares = _series(_row_diluted_shares(income_df), inc_fy)
 
-    # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept buckets
-    # below are lossy (see _row_by_standard_concept) — validated live in
-    # tests/test_edgar_leverage_live.py; adjust the concept / add a _row_* matcher if a
-    # bucket misfires. Income rows key off inc_fy; balance rows off the balance FY cols.
+    # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept names
+    # below are edgartools' OWN normalized buckets (NOT raw us-gaap) — verified against a
+    # live AAPL filing (tests/test_edgar_leverage_live.py). Key facts learned there:
+    #   - D&A lives on the CASH-FLOW statement (`DepreciationExpense`), not the income stmt.
+    #   - Balance-sheet columns are INSTANT dates (no '(FY)' suffix) -> _instant_columns.
+    #   - Total debt = long-term + current portion + short-term (summed components).
+    #   - Interest expense is often netted into other income (e.g. AAPL) -> may be [],
+    #     which leaves interest_coverage None (the gate's net-debt/EBITDA path is primary).
     fin.operating_income = _series(_row_by_standard_concept(income_df, "OperatingIncomeLoss"), inc_fy)
-    fin.dep_amort = _series(
-        _row_by_standard_concept(income_df, "DepreciationDepletionAndAmortization"), inc_fy)
+    fin.dep_amort = _series(_row_by_standard_concept(cashflow_df, "DepreciationExpense"), fy)
     fin.interest_expense = _series(_row_by_standard_concept(income_df, "InterestExpense"), inc_fy)
 
-    bal_fy = _fy_columns(balance_df)
-    fin.total_debt = _series(_row_by_standard_concept(balance_df, "LongTermDebt"), bal_fy)
+    bal_inst = _instant_columns(balance_df)
+    fin.total_debt = _sum_concepts(
+        balance_df, ["LongTermDebt", "CurrentPortionOfLongTermDebt", "ShortTermDebt"], bal_inst)
     fin.cash_and_equivalents = _series(
-        _row_by_standard_concept(balance_df, "CashAndCashEquivalents"), bal_fy)
+        _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
     return fin
