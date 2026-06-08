@@ -107,7 +107,8 @@ class XbrlSignalSource:
     their rank IC is measurable before either is trusted in production scoring.
     """
     name = "xbrl"
-    _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count")
+    _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",
+             "net_debt_to_ebitda")
 
     def __init__(self, facts: dict[str, dict], histories: dict[str, PriceHistory],
                  thresholds: dict):

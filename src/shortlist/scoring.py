@@ -154,6 +154,16 @@ def share_count_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.share_count_cagr, *t["share_count_cagr"])
 
 
+def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
+    0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
+    like share_count_score; the PRODUCTION signal is the over_leveraged GATE, not
+    this. None when the band or the signal is absent."""
+    if "net_debt_to_ebitda" not in t or m.net_debt_to_ebitda is None:
+        return None
+    return _norm(m.net_debt_to_ebitda, *t["net_debt_to_ebitda"])
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it
@@ -280,19 +290,60 @@ def _value_legs(m: StockMetrics) -> list[_Leg]:
     ]
 
 
+def _fcf_excused(m: StockMetrics, fc: dict) -> bool:
+    """Negative FCF is excused when growth is strong AND sustained (spec §4)."""
+    return (m.revenue_cagr is not None and m.revenue_cagr >= fc["excuse_min_revenue_cagr"]
+            and m.revenue_growth_persistence is not None
+            and m.revenue_growth_persistence >= fc["excuse_min_persistence"])
+
+
+def _over_leveraged(m: StockMetrics, g: dict, lv: dict) -> bool:
+    """net-debt/EBITDA primary; artifact-guarded, coverage-corroborated D/E fallback.
+    See spec §3 (2026-06-08-gate-fixes-design). Fail-OPEN on the equity-distortion
+    artifact (D/E <=0 or > ceiling), fail-CLOSED on plausible leverage."""
+    max_dte = g["max_debt_to_equity"]
+    ebitda_usable = (
+        m.ebitda is not None and m.ebitda > 0
+        and m.revenue not in (None, 0)
+        and (m.ebitda / m.revenue) >= lv["min_ebitda_margin"]
+    )
+    if ebitda_usable and m.net_debt_to_ebitda is not None:
+        return m.net_debt_to_ebitda > lv["max_net_debt_to_ebitda"]
+    # Fallback: EBITDA absent / sub-floor / uncomputable.
+    dte = m.debt_to_equity
+    if dte is None or dte <= 0:
+        return False                      # absent or negative-equity artifact
+    if dte > lv["dte_artifact_ceiling"]:
+        return False                      # explosive thin-equity artifact
+    if dte <= max_dte:
+        return False                      # under the bar
+    ic = m.interest_coverage              # D/E in (max, ceiling] -> plausibly real
+    if ic is not None and ic >= lv["min_interest_coverage_for_gate"]:
+        return False                      # strong debt service spares it
+    return True
+
+
 def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
                 config: Optional[dict] = None) -> list[str]:
     """Hard filters. `bucket`/`config` default so legacy 1-pair callers still work;
     gate_applicable short-circuits on bucket=='unknown' before touching config."""
     tripped: list[str] = []
-    if m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config):
+    fc = g.get("fcf")
+    fcf_gate_on = bool(fc) and fc.get("enabled", True)
+    if (m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config)
+            and (not fcf_gate_on or not _fcf_excused(m, fc))):
         tripped.append("negative_fcf")
     if m.market_cap is not None and m.market_cap < g["min_market_cap"] \
             and gate_applicable(bucket, "below_min_mktcap", config):
         tripped.append("below_min_mktcap")
-    if m.debt_to_equity is not None and m.debt_to_equity > g["max_debt_to_equity"] \
-            and gate_applicable(bucket, "over_leveraged", config):
-        tripped.append("over_leveraged")
+    lv = g.get("leverage")
+    leverage_on = bool(lv) and lv.get("enabled", True)
+    if gate_applicable(bucket, "over_leveraged", config):
+        if not leverage_on:
+            if m.debt_to_equity is not None and m.debt_to_equity > g["max_debt_to_equity"]:
+                tripped.append("over_leveraged")
+        elif _over_leveraged(m, g, lv):
+            tripped.append("over_leveraged")
     if m.insider_sentiment is not None and m.insider_sentiment < g["min_insider_sentiment"] \
             and gate_applicable(bucket, "heavy_insider_selling", config):
         tripped.append("heavy_insider_selling")
@@ -330,6 +381,11 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     dil = f.get("dilution") if f else None
     if dil and m.share_count_cagr is not None and m.share_count_cagr >= dil["min_share_cagr"]:
         out.append("dilution")
+    # Cash-burn advisory: ALWAYS visible when FCF is negative (the stage-aware
+    # negative_fcf gate may excuse a grower, but the burn is still surfaced).
+    cb = f.get("cash_burn") if f else None
+    if bool(cb) and cb.get("enabled", True) and m.fcf_positive is False:
+        out.append("cash_burn")
     # Social-media hype advisory (WSB via ApeWisdom). Soft/None-safe like the others —
     # no-op when the config block is absent; never affects passed/composite/scored.
     # "Context-aware" by coexistence: renders alongside crowded_short (squeeze) or
@@ -456,6 +512,8 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         thin=thin,
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
         share_count_cagr=m.share_count_cagr,
+        ebitda=m.ebitda,
+        net_debt_to_ebitda=m.net_debt_to_ebitda,
     )
 
 

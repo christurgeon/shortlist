@@ -149,6 +149,11 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
             free_cash_flow=[(_match(cf, r) or {}).get("freeCashFlow") for r in inc],
             total_debt=[(_match(bal, r) or {}).get("totalDebt") for r in inc],
             total_equity=[(_match(bal, r) or {}).get("totalStockholdersEquity") for r in inc],
+            operating_income=[r.get("operatingIncome") for r in inc],
+            dep_amort=[r.get("depreciationAndAmortization") for r in inc],
+            interest_expense=[r.get("interestExpense") for r in inc],
+            ebitda=[r.get("ebitda") for r in inc],
+            cash_and_equivalents=[(_match(bal, r) or {}).get("cashAndCashEquivalents") for r in inc],
         )
     pt = _first(raw.get("price_target"))
     grades = _first(raw.get("grades"))
@@ -422,6 +427,7 @@ class EdgarSource(Source):
         ef = extract_financials(
             fin.income_statement().to_dataframe(),
             fin.cashflow_statement().to_dataframe(),
+            fin.balance_sheet().to_dataframe(),
             shares_diluted=shares,
         )
         snap = TickerSnapshot(ticker=ticker)
@@ -435,8 +441,14 @@ class EdgarSource(Source):
                 free_cash_flow=ef.free_cash_flow,
                 diluted_eps=ef.diluted_eps,
                 diluted_shares=ef.diluted_shares,
+                total_debt=ef.total_debt,
+                cash_and_equivalents=ef.cash_and_equivalents,
+                operating_income=ef.operating_income,
+                dep_amort=ef.dep_amort,
+                interest_expense=ef.interest_expense,
+                ebitda=ef.ebitda,
             )
-        # gross_profit/total_debt/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
+        # gross_profit/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap
 
     def _fetch_sic(self, ticker: str) -> Optional[str]:

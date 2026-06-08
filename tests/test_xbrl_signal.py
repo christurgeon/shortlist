@@ -123,3 +123,27 @@ def test_xbrl_source_emits_share_count_axis():
     obs = src.observe("T", date(2023, 6, 1))
     assert obs is not None and "share_count" in obs.signals
     assert obs.signals["share_count"] > 50.0   # buybacks -> above band midpoint
+
+
+def test_xbrl_source_emits_net_debt_to_ebitda_axis():
+    # A low-leverage name (cash > debt-ish, healthy EBITDA) must produce a HIGH
+    # net_debt_to_ebitda sub-score under the inverted band, proving the axis is wired
+    # into XbrlSignalSource._AXES (not just the scoring function).
+    g = {}
+    g.update(_annual("Revenues", [
+        _row("2020-01-01", "2020-12-31", 1000, "2021-02-01"),
+        _row("2021-01-01", "2021-12-31", 1100, "2022-02-01"),
+        _row("2022-01-01", "2022-12-31", 1300, "2023-02-01")]))
+    g.update(_annual("OperatingIncomeLoss", [
+        _row("2022-01-01", "2022-12-31", 250, "2023-02-01")]))
+    g.update(_annual("DepreciationDepletionAndAmortization", [
+        _row("2022-01-01", "2022-12-31", 50, "2023-02-01")]))   # EBITDA = 300
+    # XBRL total_debt = sum_aligned(long-term, current) -> needs BOTH tagged at the end.
+    g.update(_annual("LongTermDebt", [_inst("2022-12-31", 150, "2023-02-01")]))
+    g.update(_annual("DebtCurrent", [_inst("2022-12-31", 50, "2023-02-01")]))  # total_debt = 200
+    g.update(_annual("CashAndCashEquivalentsAtCarryingValue",
+                     [_inst("2022-12-31", 120, "2023-02-01")]))  # net_debt = 80; /300 = 0.27
+    src = XbrlSignalSource({"T": {"facts": {"us-gaap": g}}}, {}, THRESH)
+    obs = src.observe("T", date(2023, 6, 1))
+    assert obs is not None and "net_debt_to_ebitda" in obs.signals
+    assert obs.signals["net_debt_to_ebitda"] > 90.0   # ~0.27x leverage -> near top of band

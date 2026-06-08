@@ -269,15 +269,44 @@ parses the granular trades to do far better:
 > already-fetched edgartools objects. The conviction design is summarized in this section;
 > the `2026-06-02-insider-conviction-design` working notes are local, not committed.
 
-#### 2.7 The gates can flag *good* businesses
-`check_gates` (`scoring.py:74`) has two dangerous rules:
-- `over_leveraged` = `debt_to_equity > 5` misfires on quality compounders with **negative
+#### 2.7 The gates can flag *good* businesses — ✅ SHIPPED (config-gated, default ON)
+`check_gates` (`scoring.py`) had two dangerous rules:
+- `over_leveraged` = `debt_to_equity > 5` misfired on quality compounders with **negative
   book equity from buybacks** (AZO, MCD, HD, SBUX) — D/E goes negative or explosive and the
-  gate is meaningless. Prefer **net-debt / EBITDA** with sector-aware exemptions.
-- `negative_fcf` gates legitimate heavy-capex / hyper-growth names outright. A gate that
+  gate is meaningless.
+- `negative_fcf` gated legitimate heavy-capex / hyper-growth names outright. A gate that
   removes good businesses is worse than no gate.
-- **Plug:** replace D/E gate with net-debt/EBITDA + Altman Z (`DATA_SOURCES.md` D2); make
-  `negative_fcf` sector/stage-aware or downgrade it to a soft flag.
+
+> **SHIPPED — both gates, config-gated (`gates.leverage` / `gates.fcf`, default ON; remove a
+> block for the byte-identical pre-feature gate). Spec: `docs/superpowers/specs/2026-06-08-gate-fixes-design.md`.**
+>
+> - **`over_leveraged`** now trips on **net-debt / EBITDA** (`> max_net_debt_to_ebitda`, prior 4.0)
+>   when EBITDA is usable (present, >0, EBITDA-margin ≥ `min_ebitda_margin`). When EBITDA is
+>   unavailable it falls back to an **artifact-guarded, coverage-corroborated D/E** rule: abstain
+>   on the equity-distortion artifact (D/E ≤ 0 or > `dte_artifact_ceiling` 20×), and within the
+>   plausible-leverage window (D/E in (max, ceiling]) trip only when interest coverage is
+>   weak/absent (< `min_interest_coverage_for_gate` 2.0). So buyback compounders with thin/negative
+>   equity are spared; genuinely distressed levered names are still caught.
+> - **`negative_fcf`** is now **stage-aware**: a negative-FCF name is excused when growth is strong
+>   AND sustained (`revenue_cagr ≥ 0.15` AND `revenue_growth_persistence ≥ 0.70`); otherwise it
+>   gates. A soft **`cash_burn`** flag fires on *any* negative FCF regardless (the burn is always
+>   surfaced even when the gate excuses it).
+> - **Data:** new `StockMetrics` fields `revenue` / `ebitda` / `cash_and_equivalents` /
+>   `net_debt_to_ebitda` (signed; display-floored to net-cash in JSON/CSV). Derived on the screener
+>   from the FMP income statement (`revenue`/`ebitda`; no balance sheet → `net_debt_to_ebitda` stays
+>   `None`, fallback covers it), on the harness from a **new EDGAR balance-sheet + cash-flow
+>   extraction** (`_edgar_facts`: total_debt = LT+current+short, cash, D&A from the cash-flow
+>   statement, operating income; interest coverage backfilled when FMP gated), and on the XBRL
+>   backtest panel. Verified against a live AAPL filing (`tests/test_edgar_leverage_live.py`).
+> - **Validation:** all thresholds are **UNFITTED priors** — a standalone `net_debt_to_ebitda` axis
+>   (`--source xbrl`) makes the rank IC measurable (§2.1) before they are trusted.
+> - **Masking + back-compat:** gate names unchanged, so financials/insurers/REITs keep both gates
+>   masked and `research.screening_call.gate_clamp` is unaffected. With the config blocks absent the
+>   scorer is byte-identical to the pre-feature gate (pinned by `tests/test_gate_backcompat.py`).
+>
+> **Still deferred:** Altman-Z solvency early-warning (`DATA_SOURCES.md` D2); FCF-series
+> persistence (sustained vs one-off burn — `fcf_positive` is single-point today); sector
+> *recalibration* of the leverage bands (§2.3); fitting any of the four thresholds.
 
 #### 2.8 `opportunity = max(momentum, value)` discards a real signal
 `max()` (`scoring.py:97`) is the right call for "qualify on either axis," but when momentum

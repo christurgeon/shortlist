@@ -115,6 +115,28 @@ momentum 0.08 / insider 0.135 / risk 0.10). **Gates** are hard filters (negative
 FCF, sub-threshold market cap, over-leverage, heavy insider selling) that flag a
 name regardless of score.
 
+The **`over_leveraged`** and **`negative_fcf`** gates are config-gated (`gates.leverage` /
+`gates.fcf`, shipped **ON**; remove a block for the byte-identical pre-feature gate — pinned by
+`tests/test_gate_backcompat.py`). `over_leveraged` trips on **net-debt/EBITDA** when EBITDA is
+usable (present, >0, margin ≥ `min_ebitda_margin`), else an **artifact-guarded, coverage-
+corroborated D/E** fallback: abstain on the equity-distortion artifact (D/E ≤ 0 or >
+`dte_artifact_ceiling`), trip plausible leverage (D/E in (max, ceiling]) only when interest
+coverage is weak/absent — so buyback compounders (thin/negative equity) are spared while
+distressed levered names are caught. `negative_fcf` is **stage-aware** (excused when `revenue_cagr`
+**and** `revenue_growth_persistence` clear their thresholds); a soft **`cash_burn`** flag fires on
+any negative FCF regardless. New `StockMetrics` fields `revenue`/`ebitda`/`cash_and_equivalents`/
+`net_debt_to_ebitda` (signed; display-floored to net-cash in JSON/CSV) are derived on the screener
+from the FMP income statement (no balance sheet → `net_debt_to_ebitda` stays `None`, fallback
+covers it) and on the harness from a **new EDGAR balance-sheet + cash-flow extraction** in
+`providers/_edgar_facts.py` (debt = LT+current+short, cash = `CashAndMarketableSecurities`, **D&A
+from the cash-flow statement** `DepreciationExpense`, balance columns are **instant dates** not
+`(FY)`; these are edgartools' normalized `standard_concept` buckets, NOT raw us-gaap — validated
+live in `tests/test_edgar_leverage_live.py`). All thresholds are **unfitted priors** — the
+`--source xbrl` backtest emits a standalone `net_debt_to_ebitda` axis. Gate names are unchanged, so
+sector masking and `research.screening_call.gate_clamp` are untouched. **Cross-stack note:**
+`fcf_positive` differs by stack (screener = 2-year net-income proxy; harness = latest-year real FCF;
+XBRL panel leaves it unset).
+
 The **risk** sub-score (7th axis: realized volatility + max drawdown, both
 inverted so safer scores higher) is a **composite-only tilt** — sector-neutral
 (never masked) but deliberately **excluded from `confidence`/`scored`** (`scoring.py`
