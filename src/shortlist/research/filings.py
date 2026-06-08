@@ -122,6 +122,22 @@ def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingTex
     return filing if filing.has_content() else None
 
 
+def no_10k_reason(ticker: str) -> str:
+    """Human-readable explanation for why `fetch_bundle` returned None, for the
+    `skipped` field. Best-effort: a cheap filings-index lookup (no document parse)
+    distinguishes a foreign issuer that files Form 20-F from a name with no annual
+    report at all. Never raises and makes no document download — falls back to the
+    generic reason. Assumes `set_identity` already ran (fetch_10k sets it)."""
+    try:
+        from edgar import Company  # lazy: optional [edgar] extra
+        if Company(ticker).get_filings(form="20-F").latest(1) is not None:
+            return ("no 10-K — files Form 20-F (foreign issuer); "
+                    "research briefs currently cover 10-K filers only")
+    except Exception:
+        pass
+    return "no 10-K"
+
+
 def fetch_bundle(ticker: str, identity: Optional[str] = None,
                  config: Optional[dict] = None) -> Optional[FilingBundle]:
     """Fetch the documents for one research brief: the current 10-K (required), the

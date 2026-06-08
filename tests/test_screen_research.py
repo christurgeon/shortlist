@@ -134,3 +134,19 @@ def test_enrich_require_passed_false_includes_gated(monkeypatch):
                      fetch=fake_fetch, assess_fn=lambda *a, **k: None)
     assert seen == ["LMT"]
     assert len(results) == 1 and results[0].ticker == "LMT"
+
+
+def test_enrich_none_bundle_uses_reason_fn():
+    """A None bundle (no 10-K) routes through the injectable reason_fn, so a foreign
+    issuer gets an ADR-aware skip reason instead of the bare 'no 10-K'."""
+    from shortlist.research import enrich
+    from shortlist.models import ScoreCard
+
+    card = ScoreCard(ticker="NVO", composite=70.0, quality=60.0, moat=60.0,
+                     growth=60.0, momentum=50.0, value=50.0, opportunity=50.0,
+                     insider=50.0, gates=[], scored=True)
+    results = enrich([card], {}, top_n=1, require_passed=False,
+                     fetch=lambda ticker, **kw: None,
+                     reason_fn=lambda t: f"{t}: files Form 20-F (foreign issuer)")
+    assert len(results) == 1
+    assert results[0].skipped == "NVO: files Form 20-F (foreign issuer)"
