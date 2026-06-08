@@ -29,6 +29,11 @@ class EdgarFinancials:
     free_cash_flow: list[float] = field(default_factory=list)
     diluted_eps: list[float] = field(default_factory=list)
     diluted_shares: list[float] = field(default_factory=list)   # weighted-avg, newest-first
+    operating_income: list[float] = field(default_factory=list)
+    dep_amort: list[float] = field(default_factory=list)
+    interest_expense: list[float] = field(default_factory=list)
+    total_debt: list[float] = field(default_factory=list)
+    cash_and_equivalents: list[float] = field(default_factory=list)
 
 
 def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -118,6 +123,7 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
 def extract_financials(
     income_df: pd.DataFrame,
     cashflow_df: pd.DataFrame,
+    balance_df: pd.DataFrame,
     shares_diluted: Optional[float],
 ) -> EdgarFinancials:
     """Build annual series from the two statement DataFrames. Missing rows yield
@@ -147,4 +153,18 @@ def extract_financials(
         eps = [ni / shares_diluted for ni in fin.net_income]
     fin.diluted_eps = eps
     fin.diluted_shares = _series(_row_diluted_shares(income_df), inc_fy)
+
+    # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept buckets
+    # below are lossy (see _row_by_standard_concept) — validated live in
+    # tests/test_edgar_leverage_live.py; adjust the concept / add a _row_* matcher if a
+    # bucket misfires. Income rows key off inc_fy; balance rows off the balance FY cols.
+    fin.operating_income = _series(_row_by_standard_concept(income_df, "OperatingIncomeLoss"), inc_fy)
+    fin.dep_amort = _series(
+        _row_by_standard_concept(income_df, "DepreciationDepletionAndAmortization"), inc_fy)
+    fin.interest_expense = _series(_row_by_standard_concept(income_df, "InterestExpense"), inc_fy)
+
+    bal_fy = _fy_columns(balance_df)
+    fin.total_debt = _series(_row_by_standard_concept(balance_df, "LongTermDebt"), bal_fy)
+    fin.cash_and_equivalents = _series(
+        _row_by_standard_concept(balance_df, "CashAndCashEquivalents"), bal_fy)
     return fin

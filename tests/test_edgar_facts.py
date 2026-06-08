@@ -42,7 +42,7 @@ def _income_df_with_diluted_shares():
 
 
 def test_diluted_shares_series_extracted_newest_first():
-    fin = extract_financials(_income_df_with_diluted_shares(), _cashflow_df(), shares_diluted=None)
+    fin = extract_financials(_income_df_with_diluted_shares(), _cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
     # The per-share EPS row must NOT be mistaken for the share-count row.
     assert fin.diluted_eps == [7.46, 6.08, 6.13]
@@ -50,7 +50,7 @@ def test_diluted_shares_series_extracted_newest_first():
 
 def test_diluted_shares_empty_when_only_per_share_row_present():
     # _income_df has the diluted EPS (per-share) row but no share-COUNT row.
-    fin = extract_financials(_income_df(), _cashflow_df(), shares_diluted=None)
+    fin = extract_financials(_income_df(), _cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert fin.diluted_shares == []
 
 
@@ -65,7 +65,7 @@ def test_diluted_shares_matches_used_in_computing_per_share_count_row():
          "standard_concept": float("nan"), "level": 2, "abstract": False,
          "2025-09-27 (FY)": 15_000_000_000.0, "2024-09-28 (FY)": 15_400_000_000.0,
          "2023-09-30 (FY)": 15_800_000_000.0}])], ignore_index=True)
-    fin = extract_financials(df, _cashflow_df(), shares_diluted=None)
+    fin = extract_financials(df, _cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
     assert fin.diluted_eps == [7.46, 6.08, 6.13]   # EPS value row not misread as count
 
@@ -83,12 +83,12 @@ def test_diluted_shares_prefers_weighted_average_over_component_line():
                  "2025-09-27 (FY)": 15_000_000_000.0, "2024-09-28 (FY)": 15_400_000_000.0,
                  "2023-09-30 (FY)": 15_800_000_000.0}
     df = pd.concat([df, pd.DataFrame([component, canonical])], ignore_index=True)
-    fin = extract_financials(df, _cashflow_df(), shares_diluted=None)
+    fin = extract_financials(df, _cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert fin.diluted_shares == [15_000_000_000.0, 15_400_000_000.0, 15_800_000_000.0]
 
 
 def test_extract_aligns_series_newest_first():
-    fin = extract_financials(_income_df(), _cashflow_df(), shares_diluted=15_004_697_000.0)
+    fin = extract_financials(_income_df(), _cashflow_df(), pd.DataFrame(), shares_diluted=15_004_697_000.0)
     assert fin.fiscal_period_end == ["2025-09-27", "2024-09-28", "2023-09-30"]
     assert fin.operating_cash_flow == [111_482_000_000.0, 118_254_000_000.0, 110_543_000_000.0]
     assert fin.free_cash_flow == [pytest.approx(98_767_000_000.0), pytest.approx(108_807_000_000.0), pytest.approx(99_584_000_000.0)]
@@ -100,20 +100,20 @@ def test_extract_aligns_series_newest_first():
 def test_eps_falls_back_to_net_income_over_shares_when_row_missing():
     inc = _income_df()
     inc = inc[inc["label"] != "Diluted (in dollars per share)"]
-    fin = extract_financials(inc, _cashflow_df(), shares_diluted=15_004_697_000.0)
+    fin = extract_financials(inc, _cashflow_df(), pd.DataFrame(), shares_diluted=15_004_697_000.0)
     assert fin.diluted_eps[0] == pytest.approx(112_010_000_000.0 / 15_004_697_000.0, rel=1e-3)
 
 
 def test_eps_empty_when_no_row_and_no_shares():
     inc = _income_df()
     inc = inc[inc["label"] != "Diluted (in dollars per share)"]
-    fin = extract_financials(inc, _cashflow_df(), shares_diluted=None)
+    fin = extract_financials(inc, _cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert fin.diluted_eps == []
 
 
 def test_missing_concepts_yield_empty_lists_not_crash():
     empty = pd.DataFrame([{"standard_concept": "SomethingElse", "label": "x", "2025-09-27 (FY)": 1.0}])
-    fin = extract_financials(empty, empty, shares_diluted=None)
+    fin = extract_financials(empty, empty, pd.DataFrame(), shares_diluted=None)
     assert fin.revenue == []
     assert fin.free_cash_flow == []
     assert fin.diluted_eps == []
@@ -121,7 +121,7 @@ def test_missing_concepts_yield_empty_lists_not_crash():
 
 def test_no_financials_at_all_returns_empty_dataclass():
     empty = pd.DataFrame()
-    fin = extract_financials(empty, empty, shares_diluted=None)
+    fin = extract_financials(empty, empty, pd.DataFrame(), shares_diluted=None)
     assert fin == EdgarFinancials()
 
 
@@ -129,7 +129,7 @@ def test_series_with_pd_na_returns_empty():
     # nullable-int dtype cells (pd.NA) must degrade to [], not raise TypeError.
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r",
                         "2025-09-27 (FY)": pd.NA, "2024-09-28 (FY)": 100.0}])
-    fin = extract_financials(df, df, shares_diluted=None)
+    fin = extract_financials(df, df, pd.DataFrame(), shares_diluted=None)
     assert fin.revenue == []
 
 
@@ -150,7 +150,7 @@ def test_operating_cf_picks_subtotal_not_breakdown_child():
          "standard_concept": "CapitalExpenses", "level": 3, "abstract": False,
          "2025-06-30 (FY)": -64_551_000_000.0, "2024-06-30 (FY)": -44_477_000_000.0},
     ])
-    fin = extract_financials(_income_df(), cashflow, shares_diluted=None)
+    fin = extract_financials(_income_df(), cashflow, pd.DataFrame(), shares_diluted=None)
     assert fin.operating_cash_flow == [136_162_000_000.0, 118_548_000_000.0]
     assert fin.free_cash_flow == [pytest.approx(71_611_000_000.0), pytest.approx(74_071_000_000.0)]
 
@@ -174,7 +174,7 @@ def test_capex_ignores_noncash_supplemental_disclosure_row():
          "parent_abstract_concept": "us-gaap_CashFlowNoncashInvestingAndFinancingActivitiesDisclosureAbstract",
          "2025-12-31 (FY)": 15_090_000_000.0},
     ])
-    fin = extract_financials(_income_df(), cashflow, shares_diluted=None)
+    fin = extract_financials(_income_df(), cashflow, pd.DataFrame(), shares_diluted=None)
     assert fin.operating_cash_flow == [164_713_000_000.0]
     assert fin.free_cash_flow == [pytest.approx(73_266_000_000.0)]  # 164.713B - 91.447B, never > OCF
 
@@ -182,5 +182,5 @@ def test_capex_ignores_noncash_supplemental_disclosure_row():
 def test_fy_columns_detected_by_suffix_and_sorted_desc():
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r", "concept": "x", "level": 0, "abstract": False,
                         "2023-09-30 (FY)": 1.0, "2025-09-27 (FY)": 3.0, "2024-09-28 (FY)": 2.0}])
-    fin = extract_financials(df, df, shares_diluted=None)
+    fin = extract_financials(df, df, pd.DataFrame(), shares_diluted=None)
     assert fin.revenue == [3.0, 2.0, 1.0]
