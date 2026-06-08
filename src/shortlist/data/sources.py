@@ -152,6 +152,7 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
             operating_income=[r.get("operatingIncome") for r in inc],
             dep_amort=[r.get("depreciationAndAmortization") for r in inc],
             interest_expense=[r.get("interestExpense") for r in inc],
+            ebitda=[r.get("ebitda") for r in inc],
             cash_and_equivalents=[(_match(bal, r) or {}).get("cashAndCashEquivalents") for r in inc],
         )
     pt = _first(raw.get("price_target"))
@@ -445,6 +446,7 @@ class EdgarSource(Source):
                 operating_income=ef.operating_income,
                 dep_amort=ef.dep_amort,
                 interest_expense=ef.interest_expense,
+                ebitda=ef.ebitda,
             )
         # gross_profit/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap

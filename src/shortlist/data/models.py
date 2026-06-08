@@ -62,6 +62,7 @@ class Statements:
     operating_income: list[float] = field(default_factory=list)
     dep_amort: list[float] = field(default_factory=list)
     interest_expense: list[float] = field(default_factory=list)
+    ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     cash_and_equivalents: list[float] = field(default_factory=list)
 
     def gross_margins(self) -> list[float]:
@@ -180,7 +181,11 @@ KEY_OBJECTS = ("profile", "fundamentals", "statements", "analyst", "insider", "p
 # `recent` is illustrative; the rest are internal derivation plumbing, not
 # assessment-ready signals -> excluded from coverage/missing accounting.
 _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_end", "monthly_closes",
-                      "distinct_buyers", "role_weighted_buy_value", "planned_sell_value")
+                      "distinct_buyers", "role_weighted_buy_value", "planned_sell_value",
+                      # Leverage derivation plumbing (feed net_debt_to_ebitda / coverage,
+                      # not assessment-ready signals themselves) — §2.7.
+                      "operating_income", "dep_amort", "interest_expense", "ebitda",
+                      "cash_and_equivalents")
 
 
 @dataclass

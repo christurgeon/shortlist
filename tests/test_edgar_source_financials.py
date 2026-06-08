@@ -12,9 +12,12 @@ class _FakeStatement:
 
 
 class _FakeFinancials:
-    def __init__(self, inc, cf): self._inc, self._cf = inc, cf
+    def __init__(self, inc, cf, bal=None):
+        self._inc, self._cf = inc, cf
+        self._bal = bal if bal is not None else pd.DataFrame()
     def income_statement(self): return _FakeStatement(self._inc)
     def cashflow_statement(self): return _FakeStatement(self._cf)
+    def balance_sheet(self): return _FakeStatement(self._bal)
     def get_shares_outstanding_diluted(self): return 15_004_697_000.0
 
 
@@ -30,18 +33,32 @@ def _cf():
     return pd.DataFrame([
         {"standard_concept": "NetCashFromOperatingActivities", "label": "ocf", "2025-09-27 (FY)": 111_482_000_000.0, "2024-09-28 (FY)": 118_254_000_000.0},
         {"standard_concept": "CapitalExpenses", "label": "capex", "2025-09-27 (FY)": -12_715_000_000.0, "2024-09-28 (FY)": -9_447_000_000.0},
+        {"standard_concept": "DepreciationExpense", "label": "d&a", "2025-09-27 (FY)": 12_000_000_000.0, "2024-09-28 (FY)": 11_000_000_000.0},
+    ])
+
+
+def _bal():
+    # Balance sheet: INSTANT date columns (no "(FY)" suffix), edgartools taxonomy.
+    return pd.DataFrame([
+        {"standard_concept": "CashAndMarketableSecurities", "label": "cash", "2025-09-27": 30_000_000_000.0, "2024-09-28": 29_000_000_000.0},
+        {"standard_concept": "LongTermDebt", "label": "term debt", "2025-09-27": 80_000_000_000.0, "2024-09-28": 85_000_000_000.0},
+        {"standard_concept": "CurrentPortionOfLongTermDebt", "label": "term debt cur", "2025-09-27": 10_000_000_000.0, "2024-09-28": 11_000_000_000.0},
     ])
 
 
 def test_build_financials_snapshot_fills_statements():
     src = EdgarSource.__new__(EdgarSource)        # bypass __init__ (no SEC identity / network)
     src.name = "edgar"
-    snap = src._build_financials_snapshot("AAPL", _FakeFinancials(_inc(), _cf()))
+    snap = src._build_financials_snapshot("AAPL", _FakeFinancials(_inc(), _cf(), _bal()))
     assert snap.statements.revenue == [416_161_000_000.0, 391_035_000_000.0]
     assert snap.statements.free_cash_flow == [pytest.approx(98_767_000_000.0), pytest.approx(108_807_000_000.0)]
     assert snap.statements.diluted_eps == [7.46, 6.08]
     assert snap.statements.fiscal_period_end == ["2025-09-27", "2024-09-28"]
     assert snap.statements.fiscal_years == [2025, 2024]
+    # Leverage fields (§2.7): D&A from cash-flow, debt summed, cash from balance.
+    assert snap.statements.dep_amort == [12_000_000_000.0, 11_000_000_000.0]
+    assert snap.statements.total_debt == [90_000_000_000.0, 96_000_000_000.0]
+    assert snap.statements.cash_and_equivalents == [30_000_000_000.0, 29_000_000_000.0]
 
 
 def test_build_financials_snapshot_empty_on_no_data():

@@ -330,9 +330,9 @@ def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
     tripped: list[str] = []
     fc = g.get("fcf")
     fcf_gate_on = bool(fc) and fc.get("enabled", True)
-    if m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config):
-        if not fcf_gate_on or not _fcf_excused(m, fc):
-            tripped.append("negative_fcf")
+    if (m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config)
+            and (not fcf_gate_on or not _fcf_excused(m, fc))):
+        tripped.append("negative_fcf")
     if m.market_cap is not None and m.market_cap < g["min_market_cap"] \
             and gate_applicable(bucket, "below_min_mktcap", config):
         tripped.append("below_min_mktcap")

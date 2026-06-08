@@ -314,11 +314,12 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     # Leverage (ASSESSMENT_GAPS §2.7). EBITDA = operating income + D&A at the latest
     # common fiscal end; net_debt = total_debt - cash (signed). Backtest axis only.
     m.revenue = latest(p.revenue)
-    ebitda_series = sum_aligned(p.operating_income, p.dep_amort)
+    ebitda_series = sum_aligned(p.operating_income, p.dep_amort)   # aligned by fiscal end
     m.ebitda = latest(ebitda_series)
     m.cash_and_equivalents = latest(p.cash)
-    debt_latest = latest(p.total_debt)
-    if m.ebitda and debt_latest is not None and m.cash_and_equivalents is not None:
-        m.net_debt_to_ebitda = (debt_latest - m.cash_and_equivalents) / m.ebitda
+    # net_debt = total_debt - cash and net_debt/EBITDA, all aligned by fiscal end via the
+    # panel helpers (never mixing ends across the three series).
+    net_debt_series = sum_aligned(p.total_debt, {e: -v for e, v in p.cash.items()})
+    m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series)
 
     return m

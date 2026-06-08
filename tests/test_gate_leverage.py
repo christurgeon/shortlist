@@ -1,5 +1,3 @@
-import dataclasses
-
 from shortlist.models import StockMetrics
 from shortlist.scoring import check_gates
 

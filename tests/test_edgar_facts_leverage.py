@@ -36,6 +36,7 @@ def test_balance_and_income_leverage_rows_extracted():
     ef = extract_financials(income, cashflow, balance, shares_diluted=None)
     assert ef.operating_income[0] == 200.0
     assert ef.dep_amort[0] == 50.0          # from the cash-flow statement
+    assert ef.ebitda[0] == 250.0            # operating_income + D&A, date-aligned
     assert ef.interest_expense[0] == 20.0
     assert ef.total_debt[0] == 500.0        # 400 + 80 + 20 (summed components)
     assert ef.cash_and_equivalents[0] == 120.0

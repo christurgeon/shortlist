@@ -33,6 +33,7 @@ class EdgarFinancials:
     operating_income: list[float] = field(default_factory=list)
     dep_amort: list[float] = field(default_factory=list)
     interest_expense: list[float] = field(default_factory=list)
+    ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     total_debt: list[float] = field(default_factory=list)
     cash_and_equivalents: list[float] = field(default_factory=list)
 
@@ -196,9 +197,23 @@ def extract_financials(
     fin.dep_amort = _series(_row_by_standard_concept(cashflow_df, "DepreciationExpense"), fy)
     fin.interest_expense = _series(_row_by_standard_concept(income_df, "InterestExpense"), inc_fy)
 
+    # EBITDA = operating income + D&A, combined ONLY at matching fiscal ends. Operating
+    # income keys off the income statement's FY dates, D&A off the cash-flow statement's
+    # — these can differ (see this function's docstring), so we align by date here rather
+    # than zipping by list position downstream (the bridge consumes fin.ebitda directly).
+    _oi_by = dict(zip([d for d, _ in inc_fy], fin.operating_income, strict=False))
+    _da_by = dict(zip([d for d, _ in fy], fin.dep_amort, strict=False))
+    fin.ebitda = [_oi_by[d] + _da_by[d]
+                  for d in sorted(set(_oi_by) & set(_da_by), reverse=True)]
+
     bal_inst = _instant_columns(balance_df)
     fin.total_debt = _sum_concepts(
         balance_df, ["LongTermDebt", "CurrentPortionOfLongTermDebt", "ShortTermDebt"], bal_inst)
+    # edgartools' `CashAndMarketableSecurities` bucket maps to the "Cash and cash
+    # equivalents" balance-sheet LINE (cash-only; marketable securities are a separate
+    # `ShortTermInvestments` row), so this is cash & equivalents — comparable to the
+    # screener's FMP `cashAndCashEquivalents` and the XBRL `CashAndCashEquivalents...`
+    # concept. Verified on live AAPL (~$30B, not the ~$160B incl. securities).
     fin.cash_and_equivalents = _series(
         _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
     return fin

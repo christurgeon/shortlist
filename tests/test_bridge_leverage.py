@@ -9,6 +9,7 @@ def test_bridge_derives_net_debt_to_ebitda_from_edgar():
         operating_cash_flow=[230.0], free_cash_flow=[180.0],
         total_debt=[500.0], cash_and_equivalents=[120.0],
         operating_income=[200.0], dep_amort=[50.0], interest_expense=[20.0],
+        ebitda=[250.0],   # date-aligned at extraction (operating_income + D&A)
     )
     snap = TickerSnapshot(ticker="X", statements=st)
     m = snapshot_to_metrics(snap)
