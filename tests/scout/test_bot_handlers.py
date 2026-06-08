@@ -15,12 +15,13 @@ class FakeCard:
     # Faithful to the fields rank_key/_caption read AND the sub-score/metrics
     # fields no_data() reads. Defaults make a "present" (has-data) card; pass
     # empty=True for an unknown-symbol card (all sub-scores None, no market_cap).
-    def __init__(self, ticker, composite=50.0, *, empty=False):
+    def __init__(self, ticker, composite=50.0, *, empty=False, flags=None):
         self.ticker = ticker
         self.composite = composite
         self.scored = True
         self.confidence = 1.0
         self.gates = []
+        self.flags = flags or []
         if empty:
             self.quality = self.moat = self.growth = self.momentum = None
             self.value = self.insider = self.risk = None
@@ -36,6 +37,29 @@ def _bot(**kw):
     cfg = {"scout": {"bot": {"max_screen": 2, "max_deep": 1},
                      "deep_screen_sources": ["mock"]}}
     return TelegramBot(FakeNotifier(), cfg, **kw)
+
+
+def _caption_manifest():
+    from types import SimpleNamespace
+    from datetime import date
+    return SimpleNamespace(session=date(2026, 6, 8), screened=2, raw=2)
+
+
+def test_caption_surfaces_discretionary_flags_not_routine():
+    from shortlist.scout.bot import _caption
+    cards = [FakeCard("MRVL", 60, flags=["recent_8k", "social_hype"]),
+             FakeCard("AAPL", 70, flags=[])]
+    cap = _caption(_caption_manifest(), cards)
+    assert "🏷️ MRVL: social_hype" in cap     # discretionary flag surfaced in caption
+    assert "recent_8k" not in cap              # routine filing flag suppressed from caption
+    assert "AAPL:" not in cap                  # a flag-less leader gets no flag line
+    assert "Top:" in cap and "screened from" in cap   # base caption preserved
+
+
+def test_caption_no_flags_no_badge():
+    from shortlist.scout.bot import _caption
+    cap = _caption(_caption_manifest(), [FakeCard("AAPL", 70)])
+    assert "🏷️" not in cap
 
 
 def test_screen_runs_harness_and_delivers_full_artifacts():
