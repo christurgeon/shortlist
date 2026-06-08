@@ -512,6 +512,8 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
         thin=thin,
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
         share_count_cagr=m.share_count_cagr,
+        ebitda=m.ebitda,
+        net_debt_to_ebitda=m.net_debt_to_ebitda,
     )
 
 

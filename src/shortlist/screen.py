@@ -289,6 +289,10 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "piotroski_f": c.piotroski_f,
         "piotroski_f_legs": c.piotroski_f_legs,
         "share_count_cagr": round(c.share_count_cagr, 4) if c.share_count_cagr is not None else None,
+        "ebitda": c.ebitda,
+        # Display floor: net cash (signed < 0) shows as 0.0 here; the gate read the raw sign.
+        "net_debt_to_ebitda": (round(max(0.0, c.net_debt_to_ebitda), 2)
+                               if c.net_debt_to_ebitda is not None else None),
         "upside_to_target": round(up, 3) if up is not None else None,
         "gates": c.gates,
         "flags": c.flags,
@@ -325,7 +329,7 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
         w.writerow(["rank", "ticker", "composite", "quality", "moat", "growth",
                     "momentum", "value", "opportunity", "insider", "risk",
                     "upside_to_target", "gates", "scored", "confidence", "sic_bucket",
-                    "piotroski_f", "share_count_cagr"])
+                    "piotroski_f", "share_count_cagr", "net_debt_to_ebitda"])
         for i, c in enumerate(cards, 1):
             d = _card_dict(c)
             w.writerow([i, d["ticker"], d["composite"], d["quality"], d["moat"],
@@ -334,7 +338,7 @@ def _write_csv(cards: list[ScoreCard], path: str) -> None:
                         "|".join(d["gates"]), d["scored"], d["confidence"], d["sic_bucket"],
                         (f'{d["piotroski_f"]}/{d["piotroski_f_legs"]}'
                          if d["piotroski_f"] is not None else ""),
-                        d["share_count_cagr"]])
+                        d["share_count_cagr"], d["net_debt_to_ebitda"]])
 
 
 if __name__ == "__main__":
