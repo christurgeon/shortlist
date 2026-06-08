@@ -7,6 +7,7 @@ thresholds:
   net_margin:          [0.00, 0.30]
   interest_coverage:   [2.0, 15.0]
   debt_to_equity:      [3.0, 0.0]      # inverted: less leverage scores higher
+  net_debt_to_ebitda:  [6.0, 0.0]      # backtest axis ONLY (inverted: less leverage -> higher)
 
   # Moat proxies
   gross_margin:            [0.20, 0.70]
@@ -70,6 +71,22 @@ gates:
   min_market_cap:          2.0e+9
   max_debt_to_equity:      5.0
   min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
+  # Leverage gate (ASSESSMENT_GAPS §2.7). Shipped ON. Net-debt/EBITDA primary;
+  # artifact-guarded, coverage-corroborated D/E fallback when EBITDA is unavailable.
+  # Remove this whole block for the byte-identical pre-feature gate (raw D/E > max).
+  # All values are UNFITTED priors — backtest the net_debt_to_ebitda axis before trusting.
+  leverage:
+    enabled: true
+    max_net_debt_to_ebitda:         4.0   # >4x net leverage -> over-levered
+    min_ebitda_margin:              0.03  # below this margin EBITDA is too small to trust -> fall back
+    dte_artifact_ceiling:           20.0  # D/E above this is an equity-distortion artifact -> abstain
+    min_interest_coverage_for_gate: 2.0   # fallback trips only when EBIT covers interest < this
+  # Stage-aware FCF gate (§2.7). Shipped ON. A negative-FCF name is excused when its
+  # growth is strong AND sustained. Remove the block for the pre-feature hard gate.
+  fcf:
+    enabled: true
+    excuse_min_revenue_cagr:  0.15
+    excuse_min_persistence:   0.70
 
 # Sector applicability (SIC -> bucket). v1 MASKS structurally-undefined legs/gates
 # for spread/deposit/property businesses; it does NOT recalibrate surviving bands
@@ -113,6 +130,7 @@ flags:
   # the insider.conviction block is enabled (the fields stay None otherwise).
   insider_cluster_buy: { min_distinct: 3 }
   planned_sale:        { min_value: 1 }
+  cash_burn:           { enabled: true }   # advisory whenever FCF is negative (presence-based)
   # Dilution advisory: persistent net share issuance (ASSESSMENT_GAPS §2.5). Soft —
   # never affects passed/composite/scored. Fires off share_count_cagr (diluted
   # weighted-avg share count). UNFITTED prior.
