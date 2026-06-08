@@ -308,7 +308,8 @@ and exits cleanly; a configured-but-failed send exits non-zero so a systemd
 
 **Strictly free.** The scout uses Yahoo Finance (keyless), EDGAR Form 4 daily
 index (free SEC feed), Finnhub news volume (free tier), and Wikipedia pageviews
-(no key). FMP's free plan limits deep-screening to roughly **15 tickers/day** —
+(no key). FMP's free plan limits deep-screening to roughly **10 tickers/day**
+(configurable via `scout.daily_x` in `config.yaml`) —
 that is intentional: the signal funnel surfaces only the most interesting names
 rather than burning quota on noise.
 
