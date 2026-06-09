@@ -112,7 +112,7 @@ def test_client_read_timeout_exceeds_poll_timeout():
 
 def test_worker_survives_handler_exception_and_replies_redacted():
     notifier = FakeNotifier()
-    def boom_screen(tickers, sources, config):
+    def boom_screen(tickers, sources, config, macro=None):
         raise RuntimeError("https://api.telegram.org/botSECRET123/getUpdates failed")
     bot = TelegramBot(notifier, {"scout": {"bot": {}}}, screen_fn=boom_screen,
                       report_fn=lambda *a, **k: None, deliver_fn=lambda *a, **k: None)

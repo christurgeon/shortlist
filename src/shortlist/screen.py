@@ -13,7 +13,8 @@ from .models import ScoreCard, rank_key
 from .scoring import score
 
 
-def run_harness(tickers: list[str], source_names: list[str], config: dict) -> list[ScoreCard]:
+def run_harness(tickers: list[str], source_names: list[str], config: dict,
+                macro=None) -> list[ScoreCard]:
     """Score via the harness stack: collect TickerSnapshots, bridge each to
     StockMetrics, then run the same scorer the screener uses. Harness cards now
     carry the same `coverage` diagnostic as screener cards, via the
@@ -27,7 +28,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     snapshots = collect(tickers, source_names, config=config)
     cards = []
     for s in snapshots:
-        card = score(snapshot_to_metrics(s), config)
+        card = score(snapshot_to_metrics(s), config, macro)
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
@@ -166,7 +167,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sources = config.get("harness_sources",
                              ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
-    cards = run_harness(tickers, sources, config)
+    # --demo is offline (mock source, no HTTP) — skip the keyless FRED fetch too,
+    # so the demo never makes a network call or hangs on a timeout.
+    from .data.macro import fetch_macro
+    macro = None if args.demo else fetch_macro(config)
+    cards = run_harness(tickers, sources, config, macro=macro)
     _print_coverage_notes(cards)
 
     research_paths: dict = {}

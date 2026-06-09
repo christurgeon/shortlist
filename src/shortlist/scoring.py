@@ -405,7 +405,7 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     return out
 
 
-def score(m: StockMetrics, config: dict) -> ScoreCard:
+def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     t = config["thresholds"]
     w = config["weights"]
     bucket = resolve_bucket(m.sic, config)
@@ -499,6 +499,25 @@ def score(m: StockMetrics, config: dict) -> ScoreCard:
             flags.append("value_trap")
         if pio and not leg_applicable(bucket, "piotroski_f", config):
             abst.append({"field": "piotroski_f", "reason": "inapplicable", "scope": "leg"})
+
+    # risk-off regime advisory: soft/None-safe like value_trap. Fires only in a
+    # risk-off macro regime AND on an exposed name (leveraged OR cyclical bucket).
+    # Never affects passed/composite/scored. No-op when macro is None (overlay
+    # disabled / fetch failed) or the config block is absent — keeps score()
+    # byte-identical to the pre-feature scorer. NOTE: this signal is intentionally
+    # NOT validatable by the XBRL backtest (backtest/signals.py passes no macro/SIC).
+    ro = (config.get("flags") or {}).get("risk_off_regime")
+    if ro and macro is not None and macro.risk_off:
+        dte_ceil = ((config.get("gates") or {}).get("leverage") or {}).get("dte_artifact_ceiling")
+        leveraged = (
+            (m.net_debt_to_ebitda is not None
+             and m.net_debt_to_ebitda > ro["max_net_debt_ebitda"])
+            or (m.debt_to_equity is not None
+                and 0 < m.debt_to_equity > ro["max_debt_to_equity"]
+                and (dte_ceil is None or m.debt_to_equity <= dte_ceil)))
+        cyclical = bucket in ro.get("cyclical_buckets", [])
+        if leveraged or cyclical:
+            flags.append("risk_off_regime")
 
     return ScoreCard(
         ticker=m.ticker,

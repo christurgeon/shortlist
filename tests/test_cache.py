@@ -374,7 +374,7 @@ def test_screen_cli_no_cache_flag_disables(monkeypatch, tmp_path):
     import shortlist.screen as screen
     captured = {}
 
-    def fake_run(tickers, sources, config):
+    def fake_run(tickers, sources, config, macro=None):
         captured["t"] = type(get_default_cache()).__name__
         return []
 
@@ -392,7 +392,7 @@ def test_screen_cli_default_enables_cache(monkeypatch, tmp_path):
     import shortlist.screen as screen
     captured = {}
 
-    def fake_run(tickers, sources, config):
+    def fake_run(tickers, sources, config, macro=None):
         captured["t"] = type(get_default_cache()).__name__
         return []
 

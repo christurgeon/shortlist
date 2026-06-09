@@ -163,9 +163,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
 
     # 2. Deep-screen via the harness scorer (mock source offline in --demo)
     from ..screen import run_harness
+    from ..data.macro import fetch_macro
     sources = ["mock"] if demo else scout_cfg.get(
         "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
-    cards = run_harness([c.ticker for c in chosen], sources, config)
+    macro = None if demo else fetch_macro(config)  # --demo is offline: no FRED call
+    cards = run_harness([c.ticker for c in chosen], sources, config, macro=macro)
 
     # 3. Auto-research (guardrailed) — skipped in demo
     briefs: dict[str, str] = {}
@@ -195,7 +197,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     from .notify import TelegramNotifier, deliver
     from .report import build_report
     rep_cfg = scout_cfg.get("report", {})
-    artifacts = build_report(cards, manifest, assessments=assessments)
+    artifacts = build_report(cards, manifest, assessments=assessments, macro=macro)
     caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
 
     notifier = TelegramNotifier()

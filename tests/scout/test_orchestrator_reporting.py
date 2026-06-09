@@ -21,6 +21,22 @@ def test_demo_run_prints_text_and_no_pillow(tmp_path, monkeypatch, capsys):
     assert "Scout shortlist" in capsys.readouterr().out
 
 
+def test_demo_run_makes_zero_fred_calls(tmp_path, monkeypatch):
+    # --demo is offline: the scout must never hit the keyless FRED endpoint
+    # (otherwise a no-network box, e.g. the VPS, eats the fetch timeout).
+    import shortlist.data.macro as macro_mod
+    calls = {"n": 0}
+
+    def _boom(config):
+        calls["n"] += 1
+        raise AssertionError("fetch_macro must not be called in --demo")
+
+    monkeypatch.setattr(macro_mod, "fetch_macro", _boom)
+    monkeypatch.chdir(tmp_path)
+    rc = daily.run(_cfg(tmp_path), demo=True, today=date(2026, 6, 4))
+    assert rc == 0 and calls["n"] == 0
+
+
 def test_assessment_record_loader_reads_json(tmp_path):
     rec = {"business_model_summary": "Chips.", "thesis": {"bull_case": "AI"}}
     p = tmp_path / "AAPL" / "abc.json"
@@ -58,7 +74,7 @@ def test_live_run_configured_delivers_photo_and_document(tmp_path, monkeypatch):
     def fake_build_signals(names, kwargs_by_name=None):
         return [_OkSignal()]
 
-    def fake_run_harness(tickers, sources, config):
+    def fake_run_harness(tickers, sources, config, macro=None):
         return [ScoreCard(ticker=t, composite=75.0, quality=70.0, moat=65.0,
                           growth=80.0, momentum=60.0, value=55.0, opportunity=60.0,
                           insider=50.0, gates=[]) for t in tickers]

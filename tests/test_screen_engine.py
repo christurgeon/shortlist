@@ -34,7 +34,7 @@ def test_main_routes_to_harness(monkeypatch):
     from shortlist import screen
     calls = []
     monkeypatch.setattr(screen, "run_harness",
-                        lambda t, s, c: calls.append("harness") or [])
+                        lambda t, s, c, macro=None: calls.append("harness") or [])
     rc = main(["--demo", "--json"])
     assert rc == 0
     assert calls == ["harness"]

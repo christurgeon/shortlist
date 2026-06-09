@@ -284,7 +284,31 @@ class _Footer:
         return out
 
 
-SECTIONS: list[Section] = [_Leaderboard(), _Fundamentals(), _Research(), _Footer()]
+# ---- macro / regime header ----
+class _MacroHeader:
+    id, title = "macro", "Regime"
+
+    def applies(self, vm): return vm.macro is not None
+
+    def _line(self, mc):
+        bits = [f"Regime: {mc.regime}"]
+        if mc.hy_oas is not None:   bits.append(f"HY OAS {mc.hy_oas:.1f}%")
+        if mc.t10y2y is not None:   bits.append(f"2s10s {mc.t10y2y:+.2f}")
+        if mc.vix is not None:      bits.append(f"VIX {mc.vix:.0f}")
+        if mc.dgs10 is not None:    bits.append(f"10y {mc.dgs10:.1f}%")
+        if mc.fedfunds is not None: bits.append(f"FFR {mc.fedfunds:.1f}%")
+        return " · ".join(bits)
+
+    def render_html(self, vm, h):
+        # h.tag escapes the text internally (see html.py) — the idiom _Footer uses
+        # for plain-text content.
+        return h.tag("div", self._line(vm.macro), _class="macro")
+
+    def render_text(self, vm, detail):
+        return ["", self._line(vm.macro)]
+
+
+SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:

@@ -100,7 +100,7 @@ class _RaisingDiscoverySignal:
 def _patch_harness(monkeypatch):
     import shortlist.screen as screen_mod
     monkeypatch.setattr(screen_mod, "run_harness",
-                        lambda tickers, sources, config: [_make_card(t) for t in tickers])
+                        lambda tickers, sources, config, macro=None: [_make_card(t) for t in tickers])
 
 
 # ---------------------------------------------------------------------------
