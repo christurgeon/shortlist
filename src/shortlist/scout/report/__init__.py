@@ -32,8 +32,8 @@ def _render_png(vm):
         return None
 
 
-def build_report(cards, manifest, *, assessments: dict[str, dict]) -> ReportArtifacts:
-    vm = build_view_model(cards, manifest, assessments=assessments)
+def build_report(cards, manifest, *, assessments: dict[str, dict], macro=None) -> ReportArtifacts:
+    vm = build_view_model(cards, manifest, assessments=assessments, macro=macro)
     png = _render_png(vm)
     b64 = base64.b64encode(png).decode() if png else None
     title = f"Scout daily dashboard — {vm.session.isoformat()}"
