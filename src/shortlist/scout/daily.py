@@ -166,7 +166,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     from ..data.macro import fetch_macro
     sources = ["mock"] if demo else scout_cfg.get(
         "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
-    macro = fetch_macro(config)
+    macro = None if demo else fetch_macro(config)  # --demo is offline: no FRED call
     cards = run_harness([c.ticker for c in chosen], sources, config, macro=macro)
 
     # 3. Auto-research (guardrailed) — skipped in demo
