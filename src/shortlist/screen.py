@@ -167,8 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sources = config.get("harness_sources",
                              ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
+    # --demo is offline (mock source, no HTTP) — skip the keyless FRED fetch too,
+    # so the demo never makes a network call or hangs on a timeout.
     from .data.macro import fetch_macro
-    macro = fetch_macro(config)
+    macro = None if args.demo else fetch_macro(config)
     cards = run_harness(tickers, sources, config, macro=macro)
     _print_coverage_notes(cards)
 
