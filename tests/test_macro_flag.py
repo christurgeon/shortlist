@@ -48,3 +48,20 @@ def test_backcompat_macro_none_byte_identical():
     # macro defaulted vs explicit None: identical ScoreCard
     m = StockMetrics(ticker="X", net_debt_to_ebitda=4.5, roe=0.2, net_margin=0.1)
     assert score(m, _cfg()) == score(m, _cfg(), macro=None)
+
+def test_flag_quiet_on_dte_equity_artifact():
+    # D/E = 9999 is an equity-distortion artifact (thin book equity), NOT real
+    # leverage — the over_leveraged gate abstains on it; the flag must too.
+    m = StockMetrics(ticker="BUYBACK", debt_to_equity=9999.0)
+    card = score(m, _cfg(), macro=RISK_OFF)
+    assert "risk_off_regime" not in card.flags
+
+def test_flag_fires_on_cyclical_bucket_path():
+    # Exercises the bucket-membership branch. The real config has no cyclical
+    # buckets yet (only reit/insurer/financials), so we inject a resolvable
+    # bucket to test the code path itself.
+    c = _cfg()
+    c["flags"]["risk_off_regime"]["cyclical_buckets"] = ["financials"]
+    m = StockMetrics(ticker="BANKLIKE", sic="6020")  # resolves to "financials"
+    card = score(m, c, macro=RISK_OFF)
+    assert "risk_off_regime" in card.flags
