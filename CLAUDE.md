@@ -175,9 +175,11 @@ no config thresholds (`scoring.py:285`; see `docs/DATA_SOURCES.md`
 same `dte_artifact_ceiling` guard the `over_leveraged` gate uses) or cyclical-bucket names
 when the run-level FRED macro regime is risk-off (`config.yaml` → `flags.risk_off_regime`);
 advisory only — never affects `passed`/`composite`/`scored`; **not** XBRL-backtest-validatable.
-A run-level `MacroContext` is built once per run by `data/macro.py:fetch_macro` (keyless FRED
-CSV, day-cached under `.cache/fred/`, never-raises); display + advisory only, threaded into
-`score(..., macro=)` and the report (`_MacroHeader` + `risk_off_regime` flag); `--demo` skips it.
+A run-level `MacroContext` is built once per run by `data/macro.py:fetch_macro` (official FRED
+API + free `FRED_API_KEY`, day-cached under `.cache/fred/`, never-raises, `None` when unkeyed —
+the keyless `fredgraph.csv` host is IP-blocked on datacenter IPs); display + advisory only,
+threaded into `score(..., macro=)` and the report (`_MacroHeader` + `risk_off_regime` flag);
+`--demo` skips it.
 
 The **`quality.dilution`** block (`config.yaml`) is the **scoring** half of the
 share-count/dilution feature (ASSESSMENT_GAPS §2.5). It ships **commented out** (OFF): when

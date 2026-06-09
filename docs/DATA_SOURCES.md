@@ -29,7 +29,7 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 | **SEC EDGAR** (Form 4 + 10-K + events) | free (≤10 req/s) | both | authoritative insider transaction flow; 10-K XBRL financials (revenue/FCF/EPS); **filing-stream events: 8-K material events, SC 13D/13G activist/passive stakes, Form 144 planned insider sales** (harness only) |
 | **Yahoo Finance** chart | free, keyless | harness | price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown (computed by us, day-cached) |
 | **Mock** | offline | harness | demo fixtures |
-| **FRED** | free, keyless | harness (run-level) | macro regime: HY OAS, 2s10s curve, VIX, 10y, FFR → `MacroContext` → `risk_off_regime` flag |
+| **FRED** | free key (`FRED_API_KEY`) | harness (run-level) | macro regime: HY OAS, 2s10s curve, VIX, 10y, FFR → `MacroContext` → `risk_off_regime` flag |
 | Quiver | scaffolded, not wired | screener | congress/gov-contracts |
 
 A `snapshot_to_metrics` **bridge** (`data/bridge.py`) feeds the harness
@@ -112,19 +112,25 @@ not a new sub-score or hard gate.
   (`--source xbrl`), see ASSESSMENT_GAPS §2.1.)
 
 #### A2. FRED (St. Louis Fed) — macro & credit-regime overlay  ✅ SHIPPED (display + advisory)
-- **What:** keyless CSV at `fred.stlouisfed.org/graph/fredgraph.csv?id={SERIES}`. Key series:
-  `DGS10` (10y), `T10Y2Y` (2s10s curve), `BAMLH0A0HYM2` (**HY credit OAS**), `VIXCLS` (VIX),
-  `FEDFUNDS`.
+- **What:** the official FRED API `api.stlouisfed.org/fred/series/observations` (free key).
+  Key series: `DGS10` (10y), `T10Y2Y` (2s10s curve), `BAMLH0A0HYM2` (**HY credit OAS**),
+  `VIXCLS` (VIX), `FEDFUNDS`. (The keyless `fredgraph.csv` host is IP-blocked on the VPS.)
 - **Why:** The single best free **risk-regime gauge**. High-yield OAS is the market's
   real-time price of corporate distress; the 2s10s curve is the canonical recession lead.
   This is *not* per-stock — it's a run-level overlay that should **tilt or gate the whole
   shortlist**: widen gates / down-weight leveraged & cyclical names when spreads blow out.
   This is exactly what the scaffolded `FredProvider` docstring already anticipates.
-- **Access:** free, keyless via the CSV endpoint (the JSON API needs a free key; CSV doesn't).
+- **Access:** the keyless CSV graph host (`fred.stlouisfed.org/graph/fredgraph.csv`) is
+  **IP-blocked on datacenter ranges** (it times out from the deploy VPS, same as Yahoo), so
+  the overlay uses the **official FRED API** (`api.stlouisfed.org/fred/series/observations`)
+  with a **free `FRED_API_KEY`** (instant signup at `fredaccount.stlouisfed.org/apikeys`).
+  The API host is fast and unblocked; the key rides in the query string and is scrubbed by
+  `redact_secrets` on any error.
 - **Pull:** validated — latest: **HY OAS 2.72%, 2s10s +0.47, VIX 15.7, 10y 4.45%, FFR 3.64%**
   (a benign regime → no macro haircut today).
 - **Shipped (display + advisory):** `data/macro.py:fetch_macro` builds a run-level `MacroContext`
-  (keyless FRED CSV, day-cached under `.cache/fred/`, never-raises). Surfaced as the report
+  (official FRED API + `FRED_API_KEY`, day-cached under `.cache/fred/`, never-raises; returns
+  `None` when unkeyed). Surfaced as the report
   `_MacroHeader` regime line and the soft `risk_off_regime` advisory flag (fires on
   leveraged/cyclical names in a risk-off regime; never affects composite/gates/ranking).
   `score(m, config, macro=None)` is byte-identical when `macro=None`. The scored

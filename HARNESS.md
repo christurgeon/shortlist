@@ -154,8 +154,10 @@ credible skeptic case — without altering the rank.
 
 ## Macro overlay (`data/macro.py`)
 
-`fetch_macro(config)` builds a run-level `MacroContext` once per run (keyless FRED CSV,
-day-cached under `.cache/fred/`, never-raises). It is threaded into both
+`fetch_macro(config)` builds a run-level `MacroContext` once per run (official FRED API +
+free `FRED_API_KEY`, day-cached under `.cache/fred/`, never-raises; returns `None` when
+unkeyed — the keyless `fredgraph.csv` host is IP-blocked on datacenter IPs). It is threaded
+into both
 `run_harness(..., macro=)` and `build_report(..., macro=)`:
 
 - **Report:** a `_MacroHeader` section renders the current regime (risk-on / risk-off /
