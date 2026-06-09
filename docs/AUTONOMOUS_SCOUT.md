@@ -4,7 +4,7 @@
 "give it tickers" screener into a "tell me what to look at today" system.
 **Companion docs:** [`DATA_SOURCES.md`](DATA_SOURCES.md) (the free feeds the signals draw
 on), [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) (the scorer the candidates flow into),
-and the repo `CLAUDE.md` (the two-stack architecture and house rules this extends).
+and the repo `CLAUDE.md` (the harness architecture and house rules this extends).
 
 > **Status:** **Shipped** (`shortlist-scout` CLI, 2026-06). This is the design record approved
 > 2026-06-01; the implementation is complete. Report delivery: PNG dashboard glance
@@ -26,7 +26,7 @@ and the repo `CLAUDE.md` (the two-stack architecture and house rules this extend
 
 ## 1. The goal and the honest framing
 
-Today both stacks (`shortlist` screener, `shortlist-harness`) **require** a ticker list —
+Today the harness (`shortlist-harness`) **requires** a ticker list —
 discovery is a human job. The goal is to close that loop: **autonomously surface candidate
 tickers each day, screen and rank them, and deliver a report of the top names** — with the
 expensive Claude 10-K research run on the leaders so the report arrives decision-ready.
@@ -63,16 +63,15 @@ scout is plumbing; the scoring model stays the single source of truth on quality
 
 ---
 
-## 2. Architecture — a third stack that orchestrates, not replaces
+## 2. Architecture — a thin layer that orchestrates, not replaces
 
-The repo already has **two parallel stacks** (screener `shortlist.*`, harness
-`shortlist.data.*`). The scout is a **third, thin layer** that *orchestrates* them. It pulls
-candidates, hands each to the **existing** harness screen + scorer, runs the **existing**
+The scout is a **thin layer** that *orchestrates* the existing harness (`shortlist.data.*`).
+It pulls candidates, hands each to the **existing** harness screen + scorer, runs the **existing**
 research layer on the leaders, and ships a report. It introduces no new scoring and no new
 fundamentals fetching — only **discovery** and **delivery**.
 
 ```
-   free signal feeds                 EXISTING stacks (unchanged)            delivery
+   free signal feeds                 EXISTING harness (unchanged)           delivery
  ┌───────────────────┐   Candidate  ┌──────────────────────────┐  ScoreCard ┌──────────┐
  │ YahooScreener (D) │─┐  objects   │ harness collector +      │   + brief  │ Telegram │
  │ EdgarForm4    (D) │ │   ┌──────┐ │ scoring (bridge ->       │  ┌───────┐ │  message │
@@ -117,7 +116,7 @@ class SignalSource(Protocol):
     def available(self) -> tuple[bool, str]: ...  # (ran?, why-not) for coverage honesty
 ```
 
-Same shape as `Provider`/`Source`: a name, a registry entry, graceful degradation, and an
+Same shape as the harness `Source`: a name, a registry entry, graceful degradation, and an
 audit of whether it ran. Errors route through `env.py:redact_secrets()` before logging. The
 `session` argument is the resolved last-completed market session (§3 step 0), not wall-clock
 "today" — so signals are deterministic and reproducible.

@@ -66,7 +66,7 @@ Async fan-out (`asyncio.gather`) runs tickers and sources concurrently.
 
 `EdgarSource` supplies two independent sections:
 
-1. **Form 4 insider trades** — the same aggregated buy/sell flow used by the screener's `EdgarProvider`, via the shared `providers/_form4.py` leaf module.
+1. **Form 4 insider trades** — aggregated buy/sell flow via the shared `providers/_form4.py` leaf module (also used by the XBRL backtest).
 2. **10-K financial statements** — revenue, net income, operating cash flow, free cash flow, diluted EPS, and (ASSESSMENT_GAPS §2.7) **balance-sheet debt/cash + leverage inputs** — total debt (long-term + current portion + short-term), cash & equivalents, operating income, D&A (from the cash-flow statement), and interest expense — for the latest ~3 fiscal years (absolute USD), sourced from the company's most recent annual filing via `get_financials()`. The bridge derives `ebitda` (operating income + D&A), `net_debt_to_ebitda`, and an `interest_coverage` fallback (FMP keeps priority where present). These drive the net-debt/EBITDA `over_leveraged` gate, so the EDGAR backfill matters most for the FMP-402-gated large-caps that gate targets. **edgartools caveat:** these read edgartools' normalized `standard_concept` buckets (e.g. cash = `CashAndMarketableSecurities`, D&A = cash-flow `DepreciationExpense`), NOT raw us-gaap tags, and balance-sheet columns are **instant dates** (no `(FY)` suffix) — validated against a live AAPL filing in `tests/test_edgar_leverage_live.py`.
 
 Both sections are failure-isolated: a missing XBRL filing (Form 20-F foreign issuers, recent spin-offs) degrades the statements to `None` gracefully without affecting insider data or crashing the run.
@@ -82,7 +82,7 @@ vs. Form 4 alone; a full-universe run still needs the caching layer. Requires th
 
 ### Bridge derivations from EDGAR + Yahoo (value legs when FMP is absent)
 
-On the harness engine (now the default) when FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` derives two value-axis legs from free sources:
+When FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` derives two value-axis legs from free sources:
 
 - **`fcf_yield`** = latest-annual FCF (EDGAR 10-K) ÷ market cap (backfilled from Finnhub or Yahoo when FMP is absent).
 - **`pe_vs_history`** = current P/E vs. own trailing median, using EDGAR annual diluted EPS + Yahoo historical closes. `YahooSource` now fetches 5 years of monthly-sampled dated closes; the bridge matches each fiscal-year-end to the nearest available close to reconstruct annual P/E.
@@ -94,45 +94,42 @@ On the harness engine (now the default) when FMP has gated a symbol (`402`), `br
 - `pe_ttm` uses the latest annual EPS as a TTM proxy, not true trailing-twelve-months earnings.
 - Symbols with no XBRL financials (Form 20-F foreign issuers, recent spin-offs) degrade both derived legs to `None` gracefully.
 - PEG and analyst-target upside still require FMP — they are not recoverable from free sources.
-- Adding `get_financials()` roughly doubles per-ticker EDGAR SEC requests; full-universe screening still requires the caching layer.
 
 ## Scoring a snapshot — the bridge
 
 `data/bridge.py:snapshot_to_metrics()` converts a `TickerSnapshot` into the flat
-`StockMetrics` the screener's scorer consumes, so the harness can feed the **same**
-`scoring.score()`:
+`StockMetrics` that `scoring.score()` consumes:
 
 ```bash
-uv run shortlist --tickers GEV,AXON          # harness is the default engine
+uv run shortlist --tickers GEV,AXON
 ```
 
 The bridge **derives** several fields the snapshot doesn't store directly, all
-from the 5y `Statements` via the shared `shortlist.stats` helpers the screener
-also uses: `gross_margin_stability`, `fcf_positive` (most-recent free cash flow),
+from the 5y `Statements` via the shared `shortlist.stats` helpers (also used by the
+XBRL backtest): `gross_margin_stability`, `fcf_positive` (most-recent free cash flow),
 and the **growth** legs `revenue_cagr` / `fcf_cagr` / `eps_cagr` (net-income proxy)
 / `revenue_growth_persistence`. It surfaces Yahoo's `realized_vol` and
-`max_drawdown` as risk fields that are **populated but not yet scored**.
+`max_drawdown`, which now feed the scored **7th risk axis** — a composite-only
+tilt (sector-neutral, deliberately excluded from `confidence`/`scored`; see
+`CLAUDE.md` → the risk sub-score).
 
-`FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge now
-maps `pe_median_5y` (harness `value` runs on the full 4 legs, via the shared
-`shortlist.stats.median_pe` helper the screener also uses) and `roic_5y_avg` (moat
-uses the 5y ROIC average instead of falling back to TTM `roic`, via
-`shortlist.stats.avg_roic`). The one remaining **accepted parity gap** vs. the
-screener is `eps_revision` (Alpha Vantage, out of scope) — it maps to `None` and
-the scorer redistributes weight. Harness-engine cards now carry the same `coverage`
-diagnostic as the screener (built by `data/coverage_adapt.py` from the snapshot's
-provenance/errors); the snapshot's own `coverage()`/`missing()` also remain available
-via `shortlist-harness`.
+`FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge
+maps `pe_median_5y` (`value` runs on the full 4 legs, via the shared
+`shortlist.stats.median_pe` helper) and `roic_5y_avg` (moat uses the 5y ROIC
+average instead of falling back to TTM `roic`, via `shortlist.stats.avg_roic`).
+The one **accepted coverage gap** is `eps_revision` (Alpha Vantage, out of scope) —
+it maps to `None` and the scorer redistributes weight. Cards carry a `coverage`
+diagnostic built by `data/coverage_adapt.py` from the snapshot's provenance/errors;
+the snapshot's own `coverage()`/`missing()` also remain available via
+`shortlist-harness`.
 
-**Sector-aware abstention is engine-symmetric.** The SIC that drives sector
-detection comes **only** from EDGAR on both stacks: the harness `EdgarSource` emits
-a partial `Profile(sic=…)` (merged field-by-field, so SIC survives even when FMP/
-Finnhub gate the profile) and the bridge copies it to `m.sic`. Because both engines
-feed one `score()` and read `m.sic` (never the free-text `Profile.sector`), a ticker
-resolves to the **same** bucket — including `unknown` — on either engine. The
-harness pays one extra lightweight SEC request per ticker for the SIC lookup
-(`EdgarSource` has no reusable `Company` handle), bounded by the EDGAR concurrency
-semaphore. See `CLAUDE.md` → "Sector-aware applicability & abstention".
+**Sector-aware abstention.** The SIC that drives sector detection comes **only**
+from EDGAR: `EdgarSource` emits a partial `Profile(sic=…)` (merged field-by-field,
+so SIC survives even when FMP/Finnhub gate the profile) and the bridge copies it to
+`m.sic`. `score()` reads `m.sic` (never the free-text `Profile.sector`). The harness
+pays one extra lightweight SEC request per ticker for the SIC lookup (`EdgarSource`
+has no reusable `Company` handle), bounded by the EDGAR concurrency semaphore. See
+`CLAUDE.md` → "Sector-aware applicability & abstention".
 
 ## Short interest and soft flags
 
@@ -148,7 +145,7 @@ conservative vs. float), `days_to_cover`, `short_interest_rising`, and
 **Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
 `ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card
 but **never change `composite` or `passed`**. The `crowded_short` flag fires only
-under `--engine harness` with `finra` present, when
+with `finra` present, when
 `short_pct_outstanding ≥ threshold AND days_to_cover ≥ threshold AND rising AND
 fresh` (thresholds in `config.yaml` → `flags.crowded_short`:
 `min_short_pct_outstanding`, `min_days_to_cover`, `require_rising`,
@@ -159,12 +156,12 @@ credible skeptic case — without altering the rank.
 
 Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning
 verbatim `raw` plus a normalized `partial` `TickerSnapshot`, and register it in
-`_REGISTRY` in `sources.py`. (Yahoo, FMP, Finnhub, EDGAR, and Mock are all wired.)
+`_REGISTRY` in `sources.py`. (Yahoo, FMP, Finnhub, EDGAR, FINRA, WSB, and Mock are all wired.)
 
 ## Backtesting (`shortlist.backtest`, CLI `shortlist-backtest`)
 
-The screener's weights and bands are validated against forward returns here
-(closes `ASSESSMENT_GAPS.md` §2.1). The harness is **signal-agnostic**: the unit
+The scorer's weights and bands are validated against forward returns here
+(closes `ASSESSMENT_GAPS.md` §2.1). The backtest harness is **signal-agnostic**: the unit
 of currency is an `Observation(as_of, ticker, {signal: 0–100 sub-score})`, and
 every signal value is a sub-score produced by the **real** scoring functions —
 not a reimplementation — so a future point-in-time fundamentals source slots in
@@ -228,6 +225,15 @@ they return `None` cleanly rather than producing garbled scores.
 **not** available in the XBRL path. The `insider` axis is not reconstructable from
 XBRL and is absent from this source.
 
+**Standalone (non-production) axes.** Beyond the four production sub-scores, the
+source also emits three diagnostic axes so their rank IC is measurable before they
+graduate to the live composite: `net_debt_to_ebitda` (the leverage input behind the
+`over_leveraged` gate), `share_count` (dilution), and `piotroski` (fundamental
+quality). Their scorers (`scoring.py:share_count_score`/`piotroski_score`) are
+backtest-only — not production sub-scores. All three are **unfitted priors**; this
+is how we validate them point-in-time. See `CLAUDE.md` → dilution / Piotroski / gate
+notes.
+
 ```bash
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
 ```
@@ -265,8 +271,7 @@ uv run shortlist-backtest --source xbrl --fit --fit-horizon 3 --universe largeca
 
 The bundled-largecap result (2026-06) is **NO-CHANGE** at both 3m and 6m (6m is below
 the period floor; 3m clears it but the paired OOS edge is only +0.005 vs the +0.02 bar,
-positive in just 2/5 folds). See the captured numbers + recommendation in
-`docs/superpowers/specs/2026-06-03-xbrl-weight-fit-results.md` (local).
+positive in just 2/5 folds).
 
 ### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
 
@@ -296,40 +301,30 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
 ## Known limitations (next hardening pass)
 
 - Dataclasses, not pydantic — bad payloads normalize to `None` rather than failing loud.
-- No caching/backoff yet **except Yahoo** (day-cached on disk); a full universe run
-  on the keyed sources will still hit rate limits.
+- **Free-tier daily quota, not per-call backoff, is the scale ceiling.** Caching
+  (`cache.py`, on by default) and FMP's `Retry-After`-aware `429` backoff now exist,
+  so warm re-runs and transient throttling are handled — but FMP's 250/day free
+  limit still caps a cold full-universe run (~19 tickers/day on the harness path).
+  Paid FMP Starter or a warm cache is the fix.
 - **FMP's free plan gates many symbols** (e.g. GEV) behind premium with a `402`
   "Special Endpoint" on a per-symbol basis — coverage correctly drops to "thin"
-  for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier. On
-  the default harness engine, `fcf_yield` and `pe_vs_history` are partially recoverable
-  from free EDGAR + Yahoo data (see bridge derivations above); PEG and analyst-target
-  upside still require FMP.
-- Equity-centric fields are blank for banks (SCHW) — coverage correctly flags it; sector-aware extraction is the fix.
+  for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier.
+  `fcf_yield` and `pe_vs_history` are partially recoverable from free EDGAR + Yahoo
+  data (see bridge derivations above); PEG and analyst-target upside still require FMP.
+- **Sector miscalibration, not blank fields, is the residual gap for banks/REITs.**
+  Equity-centric legs that are structurally undefined for a sector are now SIC-detected
+  and explicitly **abstained** (not silently averaged) — see `CLAUDE.md` →
+  "Sector-aware applicability & abstention". What remains deferred is sector-specific
+  *recalibration* of the surviving legs (`net_margin` is defined but miscalibrated).
 - Mock data is illustrative, not verified.
 
-## Pending follow-ups (EDGAR value-axis work, PR #9)
+## Engine history: the screener was retired (Phase C, done)
 
-The EDGAR value-leg recovery (PR #9) landed with two deliberate follow-ups still to action:
-
-1. **Manual end-to-end spot-check on a gated name** — ✅ *done (2026-06-02).* A live
-   CLI run on 10 non-mega-caps (all FMP-gated) confirmed `value`/`growth`/`risk`
-   recovered from EDGAR+Yahoo and the `coverage` block reporting `fmp: gated_402`,
-   with no exceptions and keys correctly redacted.
-2. **Harness consolidation** — **Phase B (flip default engine): ✅ done (2026-06-02).**
-   `--engine` now defaults to `harness`; `screener` stays selectable as the lean,
-   FMP-centric opt-in for one deprecation cycle. Caching (on by default) absorbs the
-   higher per-ticker cost (harness is ~13 FMP + ~2× EDGAR calls/ticker). Prerequisites
-   that were met before the flip:
-   - [x] Coverage-parity work (shipped in PR #9) merged and the full suite green
-   - [x] Live EDGAR integration run passed once (10-K filer + 20-F degradation)
-   - [x] Manual spot-check: harness vs screener on 5–10 names — non-gated legs match;
-         composites legitimately diverge only where the harness recovers gated legs
-   - [x] User explicitly approved the engine flip
-
-   **Phase C (retire screener providers/`merge.py`) — still pending, requires sign-off:**
-   - [ ] Phase B has run for several real universe screens without incident
-   - [ ] No coverage/score regressions observed
-   - [ ] User explicitly approves deleting `fmp.py`/`finnhub.py`/`edgar.py`/`merge.py`
-
-   When retiring (Phase C): **keep** the shared leaves `providers/_form4.py` and
-   `providers/_edgar_facts.py`.
+The harness is now the **only** engine. The legacy synchronous screener providers
+(`providers/fmp.py`/`finnhub.py`/`edgar.py`), `merge.py`, the screener `run()`, and
+the `--engine` flag were **removed** — the async harness `Source`s in
+`data/sources.py` are the sole production data layer. The shared leaves
+`providers/_form4.py` and `providers/_edgar_facts.py` were **kept** (the harness
+sources and the XBRL backtest depend on them), as were the `Provider` base +
+`MockProvider` (a lightweight offline `StockMetrics` factory the scoring tests use)
+and the `quiver`/`fred` scaffolds (awaiting a harness-side `Source`).

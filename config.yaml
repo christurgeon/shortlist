@@ -91,9 +91,9 @@ gates:
 # Sector applicability (SIC -> bucket). v1 MASKS structurally-undefined legs/gates
 # for spread/deposit/property businesses; it does NOT recalibrate surviving bands
 # (that is deferred mode-2 work). `buckets` is an ORDERED LIST: the first bucket
-# whose inclusive SIC range contains the code wins. Detection is EDGAR-sourced and
-# identical on both the screener and --engine harness; unknown -> no masking (a
-# bit-identical no-op). See docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md.
+# whose inclusive SIC range contains the code wins. Detection is EDGAR-sourced;
+# unknown -> no masking (a bit-identical no-op).
+# See docs/superpowers/specs/2026-06-02-sector-aware-abstention-design.md.
 sectors:
   buckets:
     - name: reit
@@ -119,7 +119,7 @@ validity:
                                 # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
 
 # Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
-# crowded_short fires only under `--engine harness` with the `finra` source present.
+# crowded_short fires only with the `finra` source present.
 flags:
   crowded_short:
     min_short_pct_outstanding: 0.10   # of shares OUTSTANDING (under-states float; a PRIOR, not fitted)
@@ -163,10 +163,7 @@ flags:
     require_rising: true        # the change, not the static level, is the signal
     max_staleness_days: 2       # ignore data older than ~2 days (stale-cache guard)
 
-# Default provider chain for live runs (override with --provider).
-providers: [fmp, finnhub, edgar]
-
-# FMP provider knobs.
+# FMP source knobs.
 fmp:
   # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
   # the free, authoritative insider source — so leave this off to avoid burning a
@@ -179,7 +176,7 @@ fmp:
 
 # Insider CONVICTION enrichment (ASSESSMENT_GAPS §2.6). DISABLED by default: leave the
 # block commented so insider_score and check_gates are byte-identical to the pre-feature
-# scorer on both stacks. All numbers are UNFITTED priors — backtest before trusting.
+# scorer. All numbers are UNFITTED priors — backtest before trusting.
 # insider:
 #   conviction:
 #     enabled: true
@@ -194,7 +191,7 @@ fmp:
 
 # Earnings-quality / dilution SCORING (ASSESSMENT_GAPS §2.5). DISABLED by default:
 # leave commented so quality_score and growth_score are byte-identical to the
-# pre-feature scorer on both stacks (the share_count_cagr signal + dilution flag are
+# pre-feature scorer (the share_count_cagr signal + dilution flag are
 # still surfaced/evaluated regardless). When enabled, quality gains an inverted
 # share_count_cagr leg (serial diluters score below buyback compounders) and the
 # growth eps_cagr leg switches from the net-income proxy to genuine per-share
@@ -203,12 +200,12 @@ fmp:
 #   dilution:
 #     enabled: true
 
-# Default source chain for the harness engine — which is now the DEFAULT engine
-# (yahoo first => wins the price merge). Used whenever `--provider` is omitted;
-# passing `--provider` overrides this list, so omit it to keep yahoo/finra.
+# Default source chain for the harness (yahoo first => wins the price merge). Used
+# whenever `--provider` is omitted; passing `--provider` overrides this list, so omit
+# it to keep yahoo/finra.
 harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
 
-# Persistent HTTP-response cache for FMP/Finnhub (both stacks). On by default so
+# Persistent HTTP-response cache for the FMP/Finnhub sources. On by default so
 # repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
 # --no-cache; force-repopulate with --refresh-cache. TTLs are per data half-life
 # (seconds). See docs/DATA_SOURCES.md §6.

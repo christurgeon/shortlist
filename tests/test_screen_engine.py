@@ -22,37 +22,22 @@ def test_run_harness_scores_mock_snapshots():
     assert any(c.quality is not None for c in cards)
 
 
-def test_main_engine_harness_demo_runs(capsys):
-    rc = main(["--demo", "--engine", "harness", "--json"])
+def test_main_demo_runs(capsys):
+    rc = main(["--demo", "--json"])
     assert rc == 0
     out = capsys.readouterr().out
     assert '"composite"' in out
 
 
-def test_main_default_engine_is_harness(monkeypatch):
-    # --demo forces sources=["mock"] on either path, so assert the DISPATCH
-    # directly: no --engine flag must route to run_harness, not run.
+def test_main_routes_to_harness(monkeypatch):
+    # The harness is the only engine: main must dispatch to run_harness.
     from shortlist import screen
     calls = []
     monkeypatch.setattr(screen, "run_harness",
                         lambda t, s, c: calls.append("harness") or [])
-    monkeypatch.setattr(screen, "run",
-                        lambda t, p, c: calls.append("screener") or [])
     rc = main(["--demo", "--json"])
     assert rc == 0
     assert calls == ["harness"]
-
-
-def test_main_explicit_engine_screener_still_selectable(monkeypatch):
-    from shortlist import screen
-    calls = []
-    monkeypatch.setattr(screen, "run_harness",
-                        lambda t, s, c: calls.append("harness") or [])
-    monkeypatch.setattr(screen, "run",
-                        lambda t, p, c: calls.append("screener") or [])
-    rc = main(["--demo", "--engine", "screener", "--json"])
-    assert rc == 0
-    assert calls == ["screener"]
 
 
 def test_harness_card_carries_coverage(monkeypatch):

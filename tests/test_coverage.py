@@ -23,33 +23,6 @@ def test_scorecard_coverage_defaults_to_none():
     assert _card().coverage is None
 
 
-import requests
-
-from shortlist.coverage import classify_failure
-
-
-def _http_error(status: int) -> requests.HTTPError:
-    resp = requests.Response()
-    resp.status_code = status
-    return requests.HTTPError(response=resp)
-
-
-def test_classify_failure_402_is_gated():
-    assert classify_failure(_http_error(402)) == "gated_402"
-
-
-def test_classify_failure_429_is_rate_limited():
-    assert classify_failure(_http_error(429)) == "rate_limited_429"
-
-
-def test_classify_failure_other_http_is_error():
-    assert classify_failure(_http_error(500)) == "error"
-
-
-def test_classify_failure_non_http_is_error():
-    assert classify_failure(RuntimeError("boom")) == "error"
-
-
 from shortlist.coverage import build_coverage
 
 
@@ -193,59 +166,7 @@ def test_build_coverage_multi_provider_generic_note():
     assert "see stderr" not in cov.note
 
 
-from pathlib import Path
-
-import yaml
-
 from shortlist import screen
-from shortlist.models import StockMetrics as SM
-
-
-class _Resp:
-    def __init__(self, status): self.status_code = status
-
-
-class _Http402(Exception):
-    def __init__(self): self.response = _Resp(402)
-
-
-class _FakeFMP:
-    name = "fmp"
-    def fetch(self, t):
-        if t == "GATED":
-            raise _Http402()
-        m = SM(ticker=t)
-        m.market_cap = 1.0e10
-        m.sources["market_cap"] = "fmp"
-        return m
-
-
-class _FakeFinnhub:
-    name = "finnhub"
-    def fetch(self, t):
-        m = SM(ticker=t)
-        m.market_cap = 2.0e10
-        m.roe = 0.2
-        m.sources["market_cap"] = "finnhub"
-        m.sources["roe"] = "finnhub"
-        return m
-
-
-def _config():
-    path = Path(__file__).resolve().parents[1] / "config.yaml"
-    return yaml.safe_load(path.read_text())
-
-
-def test_run_attaches_coverage_and_does_not_leak(monkeypatch):
-    monkeypatch.setattr(screen, "build_providers",
-                        lambda names, config=None: [_FakeFMP(), _FakeFinnhub()])
-    cards = screen.run(["GATED", "OK"], ["dummy"], _config())
-    by = {c.ticker: c for c in cards}
-    # GATED: fmp raised 402 but finnhub succeeded -> card exists with coverage
-    assert by["GATED"].coverage is not None
-    assert by["GATED"].coverage.providers["fmp"] == "gated_402"
-    # OK: both providers contributed -> no coverage; outcomes did NOT leak
-    assert by["OK"].coverage is None
 
 
 def test_card_dict_emits_coverage_when_present():

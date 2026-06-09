@@ -1,11 +1,10 @@
 """Shared FMP insider-transaction primitives: the P-prefix buy/sell sign
 convention and the shares*price value formula.
 
-Dependency-free leaf used by both the screener ``FMPProvider`` and the harness
-``FmpSource`` — same pattern as ``_form4.py``. Edit the interpretation of FMP's
-Form-4-ish ``insider-trading`` rows here, not in two places. The harness keeps
-its own loop (it also builds per-transaction ``InsiderTxn`` records) but shares
-these primitives so the sign convention can't silently drift between stacks.
+Dependency-free leaf used by the harness ``FMPSource`` — same pattern as
+``_form4.py``. Edit the interpretation of FMP's Form-4-ish ``insider-trading``
+rows here. ``FMPSource`` builds per-transaction ``InsiderTxn`` records but shares
+these primitives so the sign convention has a single source of truth.
 """
 
 from typing import Iterable

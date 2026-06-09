@@ -4,25 +4,6 @@ from typing import Optional
 
 from .models import Coverage, ScoreCard
 
-
-def classify_failure(exc: Exception) -> str:
-    """Map a provider fetch exception to a status. HTTP 402 (FMP paid/gated
-    symbol) -> "gated_402"; HTTP 429 (rate limit / quota) -> "rate_limited_429";
-    anything else -> "error". Detection is by status code (not string parsing)
-    and needs no `requests` import: requests.HTTPError exposes
-    `.response.status_code`, and other exceptions simply lack it.
-
-    429 is kept distinct from both gating and generic errors because its fix is
-    different: it's a transient throttle (per-minute burst) or exhausted daily
-    quota — retry / wait / raise the tier ceiling — not a per-symbol gate."""
-    status = getattr(getattr(exc, "response", None), "status_code", None)
-    if status == 402:
-        return "gated_402"
-    if status == 429:
-        return "rate_limited_429"
-    return "error"
-
-
 _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
 # Single source of truth for the per-provider fetch statuses that signal a coverage
@@ -39,8 +20,8 @@ _STATUS_LABEL = {
 
 _FMP_NOTE = (
     "FMP gated this symbol (402); analyst-target upside and PEG still need FMP "
-    "Starter tier. On --engine harness, FCF yield and PE-vs-history are recovered "
-    "from EDGAR financials + Yahoo prices; FMP-sourced ROE/ROIC remain absent."
+    "Starter tier. FCF yield and PE-vs-history are recovered from EDGAR financials "
+    "+ Yahoo prices; FMP-sourced ROE/ROIC remain absent."
 )
 
 _FMP_RATE_LIMIT_NOTE = (
@@ -54,8 +35,9 @@ _FMP_RATE_LIMIT_NOTE = (
 def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optional[Coverage]:
     """Assemble a Coverage record, or None when every provider is "ok".
 
-    `outcomes` maps provider name -> raise-time status ("ok" on success, else the
-    classify_failure result). `contributed` is the set of provider names whose own
+    `outcomes` maps provider/source name -> fetch status ("ok" on success, else
+    "gated_402"/"rate_limited_429"/"empty"/"error"; the harness path derives these
+    in `data/coverage_adapt.py`). `contributed` is the set of provider names whose own
     fetch returned at least one field — judged BEFORE merge, so a provider that
     fetched real data but lost every field to a higher-priority source still counts
     as contributing. An "ok" provider absent from `contributed` returned nothing

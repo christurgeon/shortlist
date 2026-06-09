@@ -32,39 +32,34 @@ Check which API keys are set:
 echo "FMP=$FMP_API_KEY" && echo "FINNHUB=$FINNHUB_API_KEY" && echo "EDGAR=$SEC_IDENTITY"
 ```
 
-| Variable | Provider | Impact if missing |
+| Variable | Source | Impact if missing |
 |---|---|---|
-| `FMP_API_KEY` | fmp | Primary fundamentals lost; screener may return thin or empty results |
+| `FMP_API_KEY` | fmp | Primary fundamentals lost; the run may return thin or empty results |
 | `FINNHUB_API_KEY` | finnhub | Insider sentiment (MSPR) + analyst revisions unavailable |
-| `SEC_IDENTITY` | edgar | EDGAR provider skipped at runtime; insider sub-score goes `null` silently |
+| `SEC_IDENTITY` | edgar | EDGAR source skipped at runtime; insider sub-score goes `null` silently |
 
 If **all keys are absent**, offer demo mode rather than running live.  
-Providers with missing keys are skipped gracefully — no crash — but their sub-scores will be `null`.
+Sources with missing keys are skipped gracefully — no crash — but their sub-scores will be `null`.
 
 ---
 
 ## Step 3 — Build and run the command
 
-**Live run (default — harness engine):**
+**Live run:**
 ```bash
 uv run shortlist --tickers <TICKERS> --json
 ```
-The default engine is now the **harness** (sources `yahoo, fmp, finnhub, edgar, finra`
-from `config.yaml: harness_sources`). It recovers `value`, `growth`, and the `risk`
-axis from free EDGAR + Yahoo data when FMP gates a symbol. **Do not pass `--provider`
-on this path** — it overrides `harness_sources` and would drop the keyless `yahoo`
-(momentum/risk) and `finra` (short interest) sources.
-
-**Lean screener engine** (synchronous, FMP-centric; no free-source fallback when FMP gates):
-```bash
-uv run shortlist --tickers <TICKERS> --engine screener --provider fmp,finnhub,edgar --json
-```
+Runs the async harness (sources `yahoo, fmp, finnhub, edgar, finra, wsb` from
+`config.yaml: harness_sources`). It recovers `value`, `growth`, and the `risk`
+axis from free EDGAR + Yahoo data when FMP gates a symbol. **Do not pass `--provider`**
+— it overrides `harness_sources` and would drop the keyless `yahoo` (momentum/risk)
+and `finra` (short interest) sources.
 
 **Demo mode** (no keys needed — hardcoded basket `GEV,LMT,SCHW,TMO,GOOGL`, mock data):
 ```bash
 uv run shortlist --demo --json
 ```
-⚠ `--demo` ignores any `--tickers` arg and uses the mock provider. Research briefs are not available in demo mode (no real filings).
+⚠ `--demo` ignores any `--tickers` arg and uses the mock source. Research briefs are not available in demo mode (no real filings).
 
 **Optional flags:**
 - `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,risk,upside_to_target,gates,scored,confidence,sic_bucket,piotroski_f,share_count_cagr,net_debt_to_ebitda`; gates are pipe-joined, `piotroski_f` is `won/legs`, `net_debt_to_ebitda` is floored at 0 for net-cash names)
@@ -137,12 +132,9 @@ Gates flag a ticker for scrutiny — they don't exclude it from ranking.
 ### Coverage gaps
 If a ticker had `402` responses from FMP, note it — that symbol is gated on the free plan and data will be thin.
 
-**FMP `402`s = symbol gating, not a bug.** When you see `402` warnings on stderr for a symbol (and `coverage.providers.fmp == "gated_402"`), don't hunt for a code fault. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. What stays `null` depends on the engine:
+**FMP `402`s = symbol gating, not a bug.** When you see `402` warnings on stderr for a symbol (and `coverage.providers.fmp == "gated_402"`), don't hunt for a code fault. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. When a symbol gates: `fcf_yield` and `pe_vs_history` are rebuilt from free EDGAR 10-K financials + Yahoo closes, and `growth`/`risk` come from EDGAR/Yahoo too — so a gated symbol usually still scores `value`, `growth`, and `risk`. Only `upside_to_target` and PEG stay `null` (both FMP-only). This is the normal, expected output for a gated small/mid-cap — narrate it as recovered coverage, not a gap. (If `growth` is also `null`, the symbol likely has no XBRL 10-K financials — e.g. a recent IPO or Form 20-F filer — so that leg abstained and its weight redistributed; `confidence` drops below 1.0.) FMP's paid Starter tier (~$14–20/mo) lifts the gating entirely.
 
-- **On the default harness engine:** `fcf_yield` and `pe_vs_history` are rebuilt from free EDGAR 10-K financials + Yahoo closes, and `growth`/`risk` come from EDGAR/Yahoo too — so a gated symbol usually still scores `value`, `growth`, and `risk`. Only `upside_to_target` and PEG stay `null` (both FMP-only). This is the normal, expected output for a gated small/mid-cap — narrate it as recovered coverage, not a gap. (If `growth` is also `null`, the symbol likely has no XBRL 10-K financials — e.g. a recent IPO or Form 20-F filer — so that leg abstained and its weight redistributed; `confidence` drops below 1.0.)
-- **On the lean `--engine screener` path:** all four value legs live on FMP, so a gated symbol's `value` (and `upside_to_target`) come back `null` and the (display-only) `opportunity` column then equals `momentum`. Two fixes: (a) just use the default harness engine; (b) FMP's paid Starter tier (~$14–20/mo) lifts the gating entirely.
-
-Either way, `market_cap` and the `insider` sub-score still populate because Finnhub backfills the market cap — so a non-null `insider` alongside `fmp: gated_402` is the signature of FMP gating, not missing data.
+`market_cap` and the `insider` sub-score still populate because Finnhub backfills the market cap — so a non-null `insider` alongside `fmp: gated_402` is the signature of FMP gating, not missing data.
 
 The screener now emits this machine-readably: each affected card carries a `coverage` block (`providers` map with per-provider status — `ok`/`gated_402`/`empty`/`error` —, the `unavailable` output fields, and an interpretive `note`), and a `Coverage notes` summary prints to stderr. Read `coverage` directly instead of inferring the cause from a null `value`; a `gated_402`/`empty` status on `fmp` with a non-null `insider` is the FMP-gating signature.
 

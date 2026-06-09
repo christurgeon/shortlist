@@ -27,10 +27,10 @@ flowchart TD
     A(["uv run shortlist"])
     A --> B{Demo or Live?}
 
-    B -->|"--demo"| C["Mock provider\nno keys needed"]
-    B -->|"--tickers + --provider"| D["FMP · Finnhub · EDGAR · Yahoo\nQuiver · FRED (scaffolded)"]
+    B -->|"--demo"| C["Mock source\nno keys needed"]
+    B -->|"--tickers"| D["Yahoo · FMP · Finnhub · EDGAR · FINRA · WSB\n(async harness sources)"]
 
-    C --> E["merge() → StockMetrics\npriority-fill across providers"]
+    C --> E["merge_snapshots() → TickerSnapshot\nbridge → StockMetrics"]
     D --> E
 
     E --> F["score() → ScoreCard\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nGates: FCF · market-cap · leverage · insider-sell"]
@@ -44,38 +44,23 @@ flowchart TD
     G -->|"--research N"| H["Claude CLI (headless)\nreads 10-K via EDGAR\nbrief → stderr + research/ dir"]
 ```
 
-**Architecture** — two parallel stacks that don't share fetching code, with a shared Form 4 module:
+**Architecture** — one async fetching layer (the data harness) feeding the scorer:
 
 ```mermaid
 flowchart LR
-    subgraph screener ["Screener  ·  shortlist CLI  ·  sync requests"]
-        direction TB
-        SP1["FMP Provider"]
-        SP2["Finnhub Provider"]
-        SP3["EDGAR Provider"]
-        SP4["Mock Provider"]
-        MG["merge.py\npriority-fill → StockMetrics"]
-        SC["scoring.py\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nvalue + momentum weighted independently"]
-        CARD["ScoreCard\n+ Gates"]
-
-        SP1 --> MG
-        SP2 --> MG
-        SP3 --> MG
-        SP4 --> MG
-        MG --> SC
-        SC --> CARD
-    end
-
-    subgraph harness ["Data harness  ·  shortlist-harness CLI  ·  async httpx"]
+    subgraph harness ["Data harness  ·  shortlist / shortlist-harness CLIs  ·  async httpx"]
         direction TB
         HS0["Yahoo Source\nkeyless price/momentum"]
         HS1["FMP Source"]
         HS2["Finnhub Source"]
         HS3["EDGAR Source\nasyncio.to_thread"]
         HS4["FINRA Source\nkeyless short interest"]
-        HS5["Mock Source"]
+        HS5["WSB Source\nkeyless social hype"]
+        HS6["Mock Source"]
         HM["merge_snapshots()\nTickerSnapshot"]
         BR["bridge.py\nsnapshot_to_metrics"]
+        SC["scoring.py\nQuality · Moat · Growth · Value · Momentum · Insider · Risk\nvalue + momentum weighted independently"]
+        CARD["ScoreCard\n+ Gates"]
         STORE["store.py\npersistence"]
 
         HS0 --> HM
@@ -84,25 +69,29 @@ flowchart LR
         HS3 --> HM
         HS4 --> HM
         HS5 --> HM
+        HS6 --> HM
         HM --> STORE
         HM --> BR
+        BR --> SC
+        SC --> CARD
     end
 
     F4["_form4.py\nshared Form 4 aggregation"]
-    F4 --> SP3
+    EF["_edgar_facts.py\nshared 10-K financials"]
     F4 --> HS3
-
-    BR -.->|"snapshot_to_metrics (default engine)"| SC
+    EF --> HS3
 ```
 
-The two stacks now feed the **same** scorer: `bridge.py:snapshot_to_metrics`
-converts a harness `TickerSnapshot` into the `StockMetrics` `scoring.py` consumes,
-so the harness ranks names off the richer, audited data (including the keyless,
-gating-immune **Yahoo** momentum source and **FINRA** short interest). **The harness
-is now the default engine** — it recovers `value`, `growth`, and the `risk` axis from
+`bridge.py:snapshot_to_metrics` converts a harness `TickerSnapshot` into the
+`StockMetrics` `scoring.py` consumes, so names are ranked off the richer, audited
+data (including the keyless, gating-immune **Yahoo** momentum source and **FINRA**
+short interest). The harness recovers `value`, `growth`, and the `risk` axis from
 free EDGAR + Yahoo data when FMP gates a symbol (which it does for most non-mega-caps
-on the free tier). `--engine screener` selects the lean, synchronous, FMP-centric
-path instead (fewer calls per ticker, but no fallback when FMP gates).
+on the free tier). The only other `StockMetrics`-producing paths are the
+point-in-time **XBRL backtest source** and the offline `MockProvider` test fixture
+(`--demo` itself uses the harness `mock` Source); `providers/_form4.py` and
+`providers/_edgar_facts.py` are dependency-free leaves shared by the harness
+`EdgarSource` and the XBRL backtest.
 
 ## Quick start
 
@@ -116,12 +105,9 @@ uv run shortlist --demo
 
 # Live run — keys come from the environment or a .env file:
 cp .env.example .env             # then fill in your keys (.env is gitignored)
-# Default engine is the harness (Yahoo-led, auditable, gating-immune). Omit
-# --provider so the full harness_sources chain (incl. yahoo + finra) is used:
+# The Yahoo-led, auditable, gating-immune harness. Omit --provider so the full
+# harness_sources chain (incl. yahoo + finra) is used:
 uv run shortlist --tickers GEV,LMT,SCHW,TMO,GOOGL --csv out.csv
-
-# Lean, FMP-centric path (fewer calls/ticker, no free-source fallback when FMP gates):
-uv run shortlist --tickers GEV,AXON --engine screener --provider fmp,finnhub,edgar
 ```
 
 Keys can be set either way; an explicit `export` always wins over `.env`:
@@ -140,7 +126,7 @@ Four console scripts ship with the package (see `HARNESS.md` for the data-layer 
 
 | Command | Purpose |
 |---|---|
-| `shortlist` | The screener — rank a shortlist (`--demo`, `--engine screener` for the lean FMP-centric path, `--research N`). Defaults to the harness engine. FMP/Finnhub responses are cached on disk by default so repeated runs are cheap; `--no-cache` / `--refresh-cache` control it. |
+| `shortlist` | Rank a shortlist (`--demo`, `--research N`). Runs the async harness and bridges its `TickerSnapshot` into the scorer. FMP/Finnhub responses are cached on disk by default so repeated runs are cheap; `--no-cache` / `--refresh-cache` control it. |
 | `shortlist-harness` | Fetch one assessment-ready `TickerSnapshot` per ticker (`--out` to persist). |
 | `shortlist-backtest` | Validate scores against forward returns — rank IC + quantile spreads (`ASSESSMENT_GAPS.md` §2.1). |
 | `shortlist-accumulate` | Capture point-in-time snapshots daily so the snapshot-replay backtest accrues history. **Scheduling is off by default** (`deploy/`). |
@@ -148,21 +134,23 @@ Four console scripts ship with the package (see `HARNESS.md` for the data-layer 
 ## Why these data sources (the part that adds the value)
 
 The design principle is **each source contributes only the fields it's genuinely
-best at**, merged by priority (`merge.py`). Stacking sources beats any single API.
+best at**, merged by priority (`data/models.py:merge_snapshots`). Stacking sources
+beats any single API.
 
 | Source | What it's best at here | Why it's in the chain |
 |---|---|---|
 | **FMP** (primary) | ratios, key metrics, price-target consensus, recommendations, insider tx | broadest coverage in the fewest calls — the backbone |
 | **Finnhub** (complement) | insider **sentiment** (MSPR), recommendation-trend **deltas**, free real-time quote | clean revision direction + a normalized insider signal FMP doesn't expose as cleanly |
-| **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells + **10-K financials (revenue/FCF/EPS)**, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion; on the default harness engine the 10-K financials recover FCF yield and P/E-vs-history when FMP gates a symbol |
+| **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells + **10-K financials (revenue/FCF/EPS)**, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion; the 10-K financials recover FCF yield and P/E-vs-history when FMP gates a symbol |
 | **Quiver Quantitative** (optional edge) | congressional trades, **government-contract awards**, lobbying | gov-contract flow is a real, uncorrelated signal for defense/industrial names (LMT, GEV) that no fundamentals feed captures |
 | **FRED** (optional macro) | 10y yield, fed funds, 2s10s curve | overlay to tilt the whole run when rates move against rate-sensitive names — not per-stock |
-| **Yahoo** chart (wired, harness) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
+| **Yahoo** chart (wired) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
 
-FMP / Finnhub / EDGAR are fully wired in both stacks; **Yahoo** and **FINRA** are
-harness-only (and the harness is the default engine). Quiver and FRED are scaffolded in
+FMP, Finnhub, EDGAR, **Yahoo**, **FINRA**, and **WSB** are all wired as harness
+sources (`data/sources.py`). Quiver and FRED are scaffolded in
 `providers/extensions.py` with the interface and the specific signals to add —
-they're the highest-leverage next additions, in that order.
+they're the highest-leverage next additions, in that order (awaiting a harness-side
+`Source`).
 
 ## How scoring works (`scoring.py`)
 
@@ -173,7 +161,7 @@ Seven sub-scores, each 0–100, every metric normalized over a configurable
 - **Moat** — gross-margin level + 5y stability + persistent ROIC (excess returns)
 - **Growth** — revenue / FCF / EPS CAGR + YoY growth persistence (fundamental compounding)
 - **Momentum** — price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend
-- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted). On the default harness engine, FCF yield and P/E-vs-history are recoverable from free EDGAR + Yahoo data, so only analyst-target upside and PEG require FMP.
+- **Value** — upside to analyst target, FCF yield, P/E vs own 5y median, PEG (growth-adjusted). FCF yield and P/E-vs-history are recoverable from free EDGAR + Yahoo data when FMP gates a symbol, so only analyst-target upside and PEG require FMP.
 - **Insider** — net Form-4 flow (scaled by market cap) + insider sentiment
 - **Risk** — realized volatility + max drawdown (both inverted: safer scores higher). A composite-only tilt — sector-neutral and never masked, but excluded from `confidence`. An unfitted prior (trailing vol/drawdown can be anti-predictive at turning points) — backtest before trusting (`docs/ASSESSMENT_GAPS.md`).
 
@@ -184,7 +172,7 @@ blend (default quality 0.18 / moat 0.18 / growth 0.135 / value 0.22 / momentum 0
 insider 0.135 / risk 0.10; these are a prior to be backtested — see `docs/ASSESSMENT_GAPS.md`).
 **Gates** are hard filters (negative FCF, sub-threshold market cap, over-leverage,
 heavy insider selling) that flag a name regardless of score. Soft **flags** (e.g.
-`crowded_short`, from the default harness engine's keyless FINRA short-interest
+`crowded_short`, from the keyless FINRA short-interest
 source; `value_trap`, when a cheap name has weak quality/growth — optionally refined by
 a Piotroski-style fundamental-quality check) are advisory — they annotate a name but
 never change the composite.
@@ -233,7 +221,7 @@ actually goes in.
 
 ## Autonomous scout
 
-The scout reuses the screener's engine for discovery and delivery. There are two ways
+The scout reuses the same scoring engine for discovery and delivery. There are two ways
 to drive it:
 
 - **Interactive bot (primary).** `shortlist-bot` long-polls Telegram so you drive
@@ -259,7 +247,7 @@ uv run shortlist-scout
 
 ### Interactive bot
 
-`shortlist-bot` turns the screener into a chat assistant — you drive it instead of a
+`shortlist-bot` turns the screen into a chat assistant — you drive it instead of a
 fixed watchlist. It long-polls Telegram (no webhook, no inbound ports) and answers **only**
 your allowlisted `TELEGRAM_CHAT_ID`; every other sender is silently ignored.
 

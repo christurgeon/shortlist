@@ -7,46 +7,10 @@ from pathlib import Path
 
 import yaml
 
-from .coverage import build_coverage, classify_failure, coverage_note_line
+from .coverage import build_coverage, coverage_note_line
 from .env import load_env, redact_secrets
-from .merge import merge
 from .models import ScoreCard, rank_key
-from .providers import build_providers
 from .scoring import score
-
-
-def run(tickers: list[str], provider_names: list[str], config: dict) -> list[ScoreCard]:
-    providers = []
-    for name in provider_names:
-        try:
-            providers.extend(build_providers([name], config))
-        except Exception as e:  # missing key or uninstalled SDK -> skip the source
-            print(f"  ! skipping provider '{name}': {redact_secrets(e)}", file=sys.stderr)
-    if not providers:
-        print("No usable providers. Set API keys or use --demo.", file=sys.stderr)
-        return []
-    cards: list[ScoreCard] = []
-    for t in tickers:
-        per_provider = []
-        outcomes: dict[str, str] = {}        # reset per ticker — must not leak
-        for p in providers:
-            try:
-                per_provider.append(p.fetch(t))
-                outcomes[p.name] = "ok"
-            except Exception as e:  # one bad source shouldn't kill the run
-                outcomes[p.name] = classify_failure(e)
-                print(f"  ! {p.name} failed for {t}: {redact_secrets(e)}", file=sys.stderr)
-        if not per_provider:
-            continue
-        # A provider "contributed" if its OWN fetch stamped at least one field
-        # (its sources dict). Judged pre-merge so a provider that returned data
-        # but lost every field to a higher-priority source isn't mislabeled empty.
-        contributed = {src for m in per_provider for src in m.sources.values()}
-        card = score(merge(per_provider), config)
-        card.coverage = build_coverage(outcomes, contributed, card)
-        cards.append(card)
-    cards.sort(key=rank_key, reverse=True)
-    return cards
 
 
 def run_harness(tickers: list[str], source_names: list[str], config: dict) -> list[ScoreCard]:
@@ -154,12 +118,7 @@ def _positive_int(value: str) -> int:
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="shortlist")
     ap.add_argument("--tickers", help="comma-separated, e.g. GEV,LMT,SCHW,TMO,GOOGL")
-    ap.add_argument("--provider", help="comma-separated provider/source chain; overrides config")
-    ap.add_argument("--engine", choices=["screener", "harness"], default="harness",
-                    help="harness = async sources (yahoo/fmp/finnhub/edgar/finra/wsb) + "
-                         "TickerSnapshot bridge (default; recovers value/growth/risk "
-                         "from free sources when FMP gates a symbol); "
-                         "screener = lean synchronous FMP-centric providers")
+    ap.add_argument("--provider", help="comma-separated source chain; overrides config harness_sources")
     ap.add_argument("--config", default=str(Path(__file__).parent.parent.parent / "config.yaml"))
     ap.add_argument("--demo", action="store_true", help="offline run on the sample basket")
     ap.add_argument("--csv", help="write ranked results to this CSV path")
@@ -200,23 +159,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         tickers = [t.strip().upper() for t in args.tickers.split(",")]
 
-    if args.engine == "harness":
-        if args.demo:
-            sources = ["mock"]
-        elif args.provider:
-            sources = args.provider.split(",")
-        else:
-            sources = config.get("harness_sources",
-                                 ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
-        cards = run_harness(tickers, sources, config)
+    if args.demo:
+        sources = ["mock"]
+    elif args.provider:
+        sources = args.provider.split(",")
     else:
-        if args.demo:
-            providers = ["mock"]
-        elif args.provider:
-            providers = args.provider.split(",")
-        else:
-            providers = config.get("providers", ["fmp"])
-        cards = run(tickers, providers, config)
+        sources = config.get("harness_sources",
+                             ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
+    cards = run_harness(tickers, sources, config)
     _print_coverage_notes(cards)
 
     research_paths: dict = {}

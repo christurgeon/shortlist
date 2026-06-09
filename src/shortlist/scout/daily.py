@@ -161,14 +161,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
 
     chosen, dropped = select(kept, daily_x=scout_cfg.get("daily_x", 15))
 
-    # 2. Deep-screen via the existing harness scorer
-    sources = scout_cfg.get("deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
-    if demo:
-        from ..screen import run as run_screener
-        cards = run_screener([c.ticker for c in chosen], ["mock"], config)
-    else:
-        from ..screen import run_harness
-        cards = run_harness([c.ticker for c in chosen], sources, config)
+    # 2. Deep-screen via the harness scorer (mock source offline in --demo)
+    from ..screen import run_harness
+    sources = ["mock"] if demo else scout_cfg.get(
+        "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+    cards = run_harness([c.ticker for c in chosen], sources, config)
 
     # 3. Auto-research (guardrailed) — skipped in demo
     briefs: dict[str, str] = {}

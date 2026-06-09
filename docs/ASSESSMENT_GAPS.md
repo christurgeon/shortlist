@@ -18,10 +18,9 @@ those three areas.
 
 > **Status:** implemented. `stats.cagr` / `stats.growth_persistence`, the four
 > `StockMetrics` growth fields, `scoring.growth_score`, the `config.yaml` bands +
-> weight rebalance, the harness `bridge.py` wiring, and the screener `FMPProvider`
-> legs (revenue/EPS/persistence — `fcf_cagr` stays `None` there to avoid an extra
-> cash-flow API call) are all live, with tests in `tests/test_stats.py` and
-> `tests/test_scoring.py`. The spec below is retained as the design record.
+> weight rebalance, and the harness `bridge.py` wiring are all live, with tests in
+> `tests/test_stats.py` and `tests/test_scoring.py`. The spec below is retained as
+> the design record.
 
 ### Design rationale (retained; the implementation is the source of truth)
 The composite needed a **durable-compounding** axis: two names with identical margins, ROIC,
@@ -34,8 +33,7 @@ Legs are None-safe and averaged like the other sub-scores: `cagr` returns `None`
 change (where it is undefined) and `growth_persistence` is sign-safe, so the existing
 weight-redistribution handles missing legs with no silent zero. `eps_cagr` uses net income as
 an EPS proxy until a share-count series exists (gap #2.5). The harness populates all four legs
-from `Statements`; the screener fills revenue/EPS/persistence (`fcf_cagr` stays `None` there to
-avoid an extra cash-flow call).
+from `Statements`.
 
 **Weights remain an unfitted prior** — the default growth weight funds itself by trimming the
 slowest-moving axes, but should be *fit* by the backtest harness (gap #1), not hand-asserted.
@@ -145,7 +143,7 @@ relative.) Two structural failure modes:
 > equity-free: NI>0, OCF>0, accruals OCF>NI, Δnet-margin, Δdebt/revenue, Δgross-margin) now
 > refines the existing `value_trap` flag — **suppressing** it on cheap-but-*improving* names
 > and **confirming** it on cheap-but-*deteriorating* ones. It is surfaced as first-class
-> `piotroski_f`/`piotroski_f_legs` output (JSON/CSV) on both stacks, **sector-masked**
+> `piotroski_f`/`piotroski_f_legs` output (JSON/CSV) on the harness, **sector-masked**
 > (financials/insurers/REITs), and reconstructable point-in-time → backtestable as a
 > standalone `piotroski` axis (`--source xbrl`). The scorer is **byte-identical** when the
 > `flags.value_trap.piotroski` block is absent (it ships commented out). Crucially this does
@@ -215,9 +213,8 @@ shareholders are being diluted:
 
 > **SHIPPED — dilution half (config-gated, OFF by default):** a **diluted weighted-avg
 > share-count CAGR** (`StockMetrics.share_count_cagr`; + = net issuance, − = buybacks) is
-> now derived on all three stacks from already-fetched data — screener FMP
-> (`weightedAverageShsOutDil`), harness (`Statements.diluted_shares` via the new
-> `_edgar_facts._row_diluted_shares` row matcher), and the `--source xbrl` backtest (the
+> now derived from already-fetched data on the harness (`Statements.diluted_shares` via the
+> new `_edgar_facts._row_diluted_shares` row matcher) and the `--source xbrl` backtest (the
 > previously-scaffolded `WeightedAverageNumberOfDilutedSharesOutstanding`). It is
 > **surfaced** first-class (JSON/CSV `share_count_cagr`) and drives a soft `dilution`
 > advisory flag (`flags.dilution`; ON by default, never affects `passed`/`composite`/
@@ -252,19 +249,20 @@ parses the granular trades to do far better:
 - **10b5-1 planned-sale filtering** — routine scheduled sells shouldn't read as bearish and
   drag the score (or trip the `heavy_insider_selling` gate) the way an opportunistic dump
   should.
-- **Plug:** enrich the `_form4.py` aggregation (it's the shared leaf module, so both stacks
-  benefit) with cluster/role/10b5-1 fields; fold into `insider_score`.
+- **Plug:** enrich the `_form4.py` aggregation (the shared leaf module behind the harness
+  `EdgarSource` and the XBRL backtest) with cluster/role/10b5-1 fields; fold into
+  `insider_score`.
 
 > **SHIPPED (config-gated, OFF by default):** cluster + role-weighting + 10b5-1 forgiveness
 > are now folded into `insider_score` as a third `_avg` leg, gated by the `insider.conviction`
 > config block (`config.yaml`). The block ships **commented out** — `yaml.safe_load` yields no
-> `insider.conviction` key, so both stacks are **bit-identical** to the pre-feature scorer when
+> `insider.conviction` key, so the scorer is **bit-identical** to the pre-feature scorer when
 > absent. The `heavy_insider_selling` gate is **deliberately untouched** (10b5-1 detection
 > forgives the score but never the gate — a regression test pins this). Two new advisory flags
 > (`insider_cluster_buy`, `planned_sale`) fire when conviction fields are populated; both are
 > soft and never affect `passed`/`composite`. All threshold bands and weights are **unfitted
 > priors** — backtest the standalone cluster/role rank IC (§2.1) before trusting them.
-> `EdgarProvider` and `EdgarSource` both accept the conviction config and pass it through to
+> `EdgarSource` accepts the conviction config and passes it through to
 > `providers/_form4.py`, which extracts role strings and 10b5-1 footnote heuristics from the
 > already-fetched edgartools objects. The conviction design is summarized in this section;
 > the `2026-06-02-insider-conviction-design` working notes are local, not committed.
@@ -292,12 +290,11 @@ parses the granular trades to do far better:
 >   gates. A soft **`cash_burn`** flag fires on *any* negative FCF regardless (the burn is always
 >   surfaced even when the gate excuses it).
 > - **Data:** new `StockMetrics` fields `revenue` / `ebitda` / `cash_and_equivalents` /
->   `net_debt_to_ebitda` (signed; display-floored to net-cash in JSON/CSV). Derived on the screener
->   from the FMP income statement (`revenue`/`ebitda`; no balance sheet → `net_debt_to_ebitda` stays
->   `None`, fallback covers it), on the harness from a **new EDGAR balance-sheet + cash-flow
->   extraction** (`_edgar_facts`: total_debt = LT+current+short, cash, D&A from the cash-flow
->   statement, operating income; interest coverage backfilled when FMP gated), and on the XBRL
->   backtest panel. Verified against a live AAPL filing (`tests/test_edgar_leverage_live.py`).
+>   `net_debt_to_ebitda` (signed; display-floored to net-cash in JSON/CSV). Derived on the harness
+>   from a **new EDGAR balance-sheet + cash-flow extraction** (`_edgar_facts`: total_debt =
+>   LT+current+short, cash, D&A from the cash-flow statement, operating income; interest coverage
+>   backfilled when FMP gated), and on the XBRL backtest panel. Verified against a live AAPL filing
+>   (`tests/test_edgar_leverage_live.py`).
 > - **Validation:** all thresholds are **UNFITTED priors** — a standalone `net_debt_to_ebitda` axis
 >   (`--source xbrl`) makes the rank IC measurable (§2.1) before they are trusted.
 > - **Masking + back-compat:** gate names unchanged, so financials/insurers/REITs keep both gates
@@ -329,7 +326,7 @@ were explicitly marked unscored; `beta` lives in `Profile` and isn't mapped. The
 risk overlay and no risk-adjusted ranking.
 - **Plugged:** a 7th **`risk` axis** now scores `realized_vol` + `max_drawdown` as a
   **composite-only tilt** (weight 0.10, other five weights ×0.9; sector-neutral; excluded
-  from the confidence/scored/coverage accounting so the screener path stays bit-identical).
+  from the confidence/scored/coverage accounting so those stay bit-identical when it is absent).
 - **Still open (deferred):** map `beta` through the bridge and add it as a third risk leg;
   **backtest the 0.10 weight and the bands** — trailing vol/drawdown peak at the bottom and
   can be anti-predictive at turning points, so the prior is unfitted and elevated for
@@ -377,8 +374,8 @@ is the most decision-useful thing the layer could produce.
 > §3.3). The remaining half — the raw **5-year financial series** (revenue / gross-profit /
 > net-income / OCF / FCF / diluted-EPS / total-debt / diluted-shares, newest-first) — is now
 > threaded too: `data/bridge.py:_financial_series` collects it from the harness `Statements`
-> into `StockMetrics.financial_series` (a **scorer-inert** list-of-dicts; `None` on the lean
-> screener path and pinned byte-identical by a scoring-invariance test), and
+> into `StockMetrics.financial_series` (a **scorer-inert** list-of-dicts, pinned
+> byte-identical by a scoring-invariance test), and
 > `assess._render_series` renders it as a compact $M table inside the QUANT CONTEXT block so
 > reconciliation can weigh the **trajectory** (does a single CAGR mask a recent decline, a
 > one-off spike, or NI-vs-cash-flow divergence), not just a point value. The QUANT CONTEXT is

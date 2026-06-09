@@ -31,9 +31,9 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 | **Mock** | offline | harness | demo fixtures |
 | Quiver / FRED | scaffolded, not wired | screener | congress/gov-contracts; macro overlay |
 
-A `snapshot_to_metrics` **bridge** (`data/bridge.py`) now feeds the harness
-`TickerSnapshot` into the same scorer the screener uses, exposed via
-`shortlist --engine harness` (walkthrough in `HARNESS.md`).
+A `snapshot_to_metrics` **bridge** (`data/bridge.py`) feeds the harness
+`TickerSnapshot` into the scorer, exposed via `shortlist` (walkthrough in
+`HARNESS.md`).
 
 Scored signals today: **quality** (ROE, net margin, interest coverage, D/E),
 **moat** (gross margin, margin stability, ROIC), **growth** (revenue/FCF/EPS CAGR +
@@ -260,7 +260,7 @@ computable from the 5y `Statements` we already merge + the XBRL facts from A1.
   on a cheap stock is the classic "value that's actually improving" filter — separates value
   *traps* from value *opportunities*. Pairs perfectly with our `value` axis.
 - **Shipped (Core-6, asset-free):** `piotroski_f` / `piotroski_f_legs` on `StockMetrics`
-  (`stats.piotroski_f`), populated on both stacks + the XBRL backtest panel, surfaced in
+  (`stats.piotroski_f`), populated on the harness + the XBRL backtest panel, surfaced in
   JSON/CSV, and used (config-gated, OFF by default) to refine the `value_trap` flag — see
   `ASSESSMENT_GAPS.md` §2.2. We implement **6 of the 9** tests, using **revenue-normalized**
   trends (Δnet-margin, Δdebt/revenue, Δgross-margin) and profitability/cash/accrual **levels**
@@ -305,7 +305,7 @@ Recommended sequencing (highest leverage first):
 
 0. ✅ **Harness scoring bridge + A3 Yahoo price history** — *done.* `snapshot_to_metrics`
    makes the harness scoreable; the Yahoo source fills 6m rel-strength / vol / drawdown /
-   200dma, keyless and gating-immune, via `--engine harness`.
+   200dma, keyless and gating-immune.
 1. **Close the harness parity gaps** — add an annual `ratios` fetch to `FMPSource` for
    `pe_median_5y` (restores the 4th `value` leg) and a 5y `roic_5y_avg`; then the harness
    can fully replace the screener fetch path.

@@ -33,7 +33,7 @@ class MockSignal:
         self._last = 0
 
     def scan(self, session: date) -> list[Emission]:
-        # Tickers must match MockProvider's _SAMPLE so the demo deep-screen has data.
+        # Tickers must match the harness mock SAMPLE (data/mockdata.py) so the demo deep-screen has data.
         names = [("GEV",   0.9, "+6.1% on 2.4x volume"),
                  ("LMT",   0.7, "+3.0% on 1.8x volume"),
                  ("GOOGL", 0.6, "most-active list")]
@@ -150,7 +150,7 @@ class YahooScreenerSignal:
 
     def _fetch_screen(self, client: httpx.Client, scr: str) -> httpx.Response:
         """One screen with a gentle, WAF-aware retry. The WAF/HTML 429 short-circuits
-        before any sleep; the final attempt never sleeps (mirrors FMPProvider._get)."""
+        before any sleep; the final attempt never sleeps (mirrors FMPSource._get)."""
         resp = None
         for attempt in range(self.max_retries + 1):
             resp = client.get(_YAHOO_URL, params={"scrIds": scr, "count": 50},

@@ -294,80 +294,7 @@ def test_sweep_removes_expired(tmp_path):
     cache.close()
 
 
-# --- Task 7: wired screener providers -------------------------------------------
-
-def test_fmp_provider_get_uses_cache(tmp_path):
-    from shortlist.providers.fmp import FMPProvider
-
-    real = HttpCache(str(tmp_path / "c.sqlite"))
-    p = FMPProvider.__new__(FMPProvider)  # bypass __init__/key requirement
-    p.key = "test"
-    p.timeout = 15
-    p.max_retries = 2
-    p._cache = real
-
-    calls = {"n": 0}
-
-    class FakeResp:
-        status_code = 200
-
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return [{"price": 1}]
-
-    class FakeSession:
-        def get(self, *a, **k):
-            calls["n"] += 1
-            return FakeResp()
-
-    p._session = FakeSession()
-
-    assert p._get("quote", symbol="AAPL") == [{"price": 1}]
-    assert p._get("quote", symbol="AAPL") == [{"price": 1}]
-    assert calls["n"] == 1  # second call cached
-    real.close()
-
-
-def test_provider_dedups_through_configured_global(tmp_path):
-    """A provider built WITHOUT an explicit cache must dedup through the lazily/CLI
-    configured process-global cache (the on-by-default path). Guards against the
-    `self._cache or get_default_cache()` fallback being removed."""
-    from shortlist.providers.fmp import FMPProvider
-
-    configure_default_cache(enabled=True, path=str(tmp_path / "g.sqlite"))
-    try:
-        p = FMPProvider.__new__(FMPProvider)
-        p.key = "test"
-        p.timeout = 15
-        p.max_retries = 2
-        p._cache = None  # NOT injected -> must fall back to the global
-        calls = {"n": 0}
-
-        class FakeResp:
-            status_code = 200
-
-            def raise_for_status(self):
-                pass
-
-            def json(self):
-                return [{"price": 1}]
-
-        class FakeSession:
-            def get(self, *a, **k):
-                calls["n"] += 1
-                return FakeResp()
-
-        p._session = FakeSession()
-        p._get("quote", symbol="AAPL")
-        p._get("quote", symbol="AAPL")
-        assert calls["n"] == 1  # served from the global cache the 2nd time
-    finally:
-        reset_default_cache()
-
-
-# --- Task 8: wired harness sources (async) --------------------------------------
+# --- wired harness sources (async) ----------------------------------------------
 
 def test_fmp_source_get_uses_cache(tmp_path):
     from shortlist.data.sources import FMPSource
@@ -403,23 +330,60 @@ def test_fmp_source_get_uses_cache(tmp_path):
     real.close()
 
 
-# --- Task 9: CLI flags ----------------------------------------------------------
+def test_source_dedups_through_configured_global(tmp_path):
+    """A source built WITHOUT an explicit cache must dedup through the lazily/CLI
+    configured process-global cache (the on-by-default path). Guards against the
+    `self._cache or get_default_cache()` fallback being removed."""
+    from shortlist.data.sources import FMPSource
+
+    configure_default_cache(enabled=True, path=str(tmp_path / "g.sqlite"))
+    try:
+        s = FMPSource.__new__(FMPSource)
+        s.key = "test"
+        s._cache = None  # NOT injected -> must fall back to the global
+        s.BASE = "https://example.invalid/stable"
+        calls = {"n": 0}
+
+        class FakeResp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return [{"x": 1}]
+
+        class FakeClient:
+            async def get(self, *a, **k):
+                calls["n"] += 1
+                return FakeResp()
+
+        s._client = FakeClient()
+
+        async def scenario():
+            await s._get("quote", symbol="AAPL")
+            await s._get("quote", symbol="AAPL")
+
+        asyncio.run(scenario())
+        assert calls["n"] == 1  # served from the global cache the 2nd time
+    finally:
+        reset_default_cache()
+
+
+# --- CLI flags ------------------------------------------------------------------
 
 def test_screen_cli_no_cache_flag_disables(monkeypatch, tmp_path):
     import shortlist.screen as screen
     captured = {}
 
-    def fake_run(tickers, providers, config):
+    def fake_run(tickers, sources, config):
         captured["t"] = type(get_default_cache()).__name__
         return []
 
-    monkeypatch.setattr(screen, "run", fake_run)
+    monkeypatch.setattr(screen, "run_harness", fake_run)
     monkeypatch.setattr(screen, "_print_coverage_notes", lambda c: None)
     monkeypatch.setattr(screen, "_print_table", lambda c: None)
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("providers: [mock]\n")
-    # cache config is engine-agnostic; pin screener so dispatch hits the patched run()
-    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--engine", "screener", "--no-cache"])
+    cfg.write_text("harness_sources: [mock]\n")
+    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--no-cache"])
     assert captured["t"] == "NoOpCache"
     reset_default_cache()
 
@@ -428,17 +392,16 @@ def test_screen_cli_default_enables_cache(monkeypatch, tmp_path):
     import shortlist.screen as screen
     captured = {}
 
-    def fake_run(tickers, providers, config):
+    def fake_run(tickers, sources, config):
         captured["t"] = type(get_default_cache()).__name__
         return []
 
-    monkeypatch.setattr(screen, "run", fake_run)
+    monkeypatch.setattr(screen, "run_harness", fake_run)
     monkeypatch.setattr(screen, "_print_coverage_notes", lambda c: None)
     monkeypatch.setattr(screen, "_print_table", lambda c: None)
     monkeypatch.chdir(tmp_path)  # default .cache/ lands in tmp
     cfg = tmp_path / "config.yaml"
-    cfg.write_text("providers: [mock]\n")  # no cache: block -> defaults on
-    # cache config is engine-agnostic; pin screener so dispatch hits the patched run()
-    screen.main(["--tickers", "AAPL", "--config", str(cfg), "--engine", "screener"])
+    cfg.write_text("harness_sources: [mock]\n")  # no cache: block -> defaults on
+    screen.main(["--tickers", "AAPL", "--config", str(cfg)])
     assert captured["t"] == "HttpCache"
     reset_default_cache()

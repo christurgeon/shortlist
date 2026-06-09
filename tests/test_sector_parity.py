@@ -5,7 +5,6 @@ import yaml
 
 from shortlist.data.bridge import snapshot_to_metrics
 from shortlist.data.mockdata import SAMPLE
-from shortlist.merge import merge
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import score
 
@@ -13,7 +12,7 @@ CFG = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
 
 
 def _screener_card(ticker):
-    return score(merge([MockProvider().fetch(ticker)]), CFG)
+    return score(MockProvider().fetch(ticker), CFG)
 
 
 def _harness_card(ticker):
@@ -69,7 +68,7 @@ def test_financial_card_contract_is_pinned():
 
 def test_edgar_absent_both_unknown():
     # Strip SIC -> unknown -> symmetric, NO masking, gate fires on D/E 8.0.
-    m = merge([MockProvider().fetch("SCHW")])
+    m = MockProvider().fetch("SCHW")
     m.sic = None
     card = score(m, CFG)
     assert card.sic_bucket == "unknown"
