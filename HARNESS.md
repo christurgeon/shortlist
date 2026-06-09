@@ -152,6 +152,24 @@ fresh` (thresholds in `config.yaml` → `flags.crowded_short`:
 `max_staleness_days`). It marks a name for a closer look — squeeze candidate or
 credible skeptic case — without altering the rank.
 
+## Macro overlay (`data/macro.py`)
+
+`fetch_macro(config)` builds a run-level `MacroContext` once per run (keyless FRED CSV,
+day-cached under `.cache/fred/`, never-raises). It is threaded into both
+`run_harness(..., macro=)` and `build_report(..., macro=)`:
+
+- **Report:** a `_MacroHeader` section renders the current regime (risk-on / risk-off /
+  neutral) at the top of every HTML/text report.
+- **Advisory flag:** `risk_off_regime` fires on names that are leveraged
+  (net-debt/EBITDA or D/E above thresholds, with the same `dte_artifact_ceiling` guard the
+  `over_leveraged` gate uses) or in a cyclical SIC bucket, but only when the macro regime
+  is risk-off. Advisory only — never touches `passed`/`composite`/`scored`. Config under
+  `flags.risk_off_regime` (thresholds) and `macro:` (series IDs, risk-on/risk-off
+  thresholds). `score(m, config, macro=None)` is byte-identical when `macro=None`.
+- **`--demo`** skips the fetch entirely (offline). The flag is **not** XBRL-backtest-
+  validatable (the backtest path passes no macro/SIC). Scored `regime_multiplier` gate
+  tilt is future work.
+
 ## Adding a source
 
 Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning

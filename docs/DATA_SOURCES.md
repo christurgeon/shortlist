@@ -29,7 +29,8 @@ so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/
 | **SEC EDGAR** (Form 4 + 10-K + events) | free (≤10 req/s) | both | authoritative insider transaction flow; 10-K XBRL financials (revenue/FCF/EPS); **filing-stream events: 8-K material events, SC 13D/13G activist/passive stakes, Form 144 planned insider sales** (harness only) |
 | **Yahoo Finance** chart | free, keyless | harness | price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown (computed by us, day-cached) |
 | **Mock** | offline | harness | demo fixtures |
-| Quiver / FRED | scaffolded, not wired | screener | congress/gov-contracts; macro overlay |
+| **FRED** | free, keyless | harness (run-level) | macro regime: HY OAS, 2s10s curve, VIX, 10y, FFR → `MacroContext` → `risk_off_regime` flag |
+| Quiver | scaffolded, not wired | screener | congress/gov-contracts |
 
 A `snapshot_to_metrics` **bridge** (`data/bridge.py`) feeds the harness
 `TickerSnapshot` into the scorer, exposed via `shortlist` (walkthrough in
@@ -110,7 +111,7 @@ not a new sub-score or hard gate.
   exists — `providers/_xbrl_facts.py` + `backtest/xbrl.py` + `XbrlSignalSource`
   (`--source xbrl`), see ASSESSMENT_GAPS §2.1.)
 
-#### A2. FRED (St. Louis Fed) — macro & credit-regime overlay
+#### A2. FRED (St. Louis Fed) — macro & credit-regime overlay  ✅ SHIPPED (display + advisory)
 - **What:** keyless CSV at `fred.stlouisfed.org/graph/fredgraph.csv?id={SERIES}`. Key series:
   `DGS10` (10y), `T10Y2Y` (2s10s curve), `BAMLH0A0HYM2` (**HY credit OAS**), `VIXCLS` (VIX),
   `FEDFUNDS`.
@@ -122,9 +123,13 @@ not a new sub-score or hard gate.
 - **Access:** free, keyless via the CSV endpoint (the JSON API needs a free key; CSV doesn't).
 - **Pull:** validated — latest: **HY OAS 2.72%, 2s10s +0.47, VIX 15.7, 10y 4.45%, FFR 3.64%**
   (a benign regime → no macro haircut today).
-- **Wire-in:** a `MacroContext` object built once per run (not per ticker), passed into
-  `scoring.score()`. Concretely: a `regime_multiplier` on the leverage gate, and a small
-  penalty to `value`/cyclicals when `hy_oas` exceeds a configurable threshold in `config.yaml`.
+- **Shipped (display + advisory):** `data/macro.py:fetch_macro` builds a run-level `MacroContext`
+  (keyless FRED CSV, day-cached under `.cache/fred/`, never-raises). Surfaced as the report
+  `_MacroHeader` regime line and the soft `risk_off_regime` advisory flag (fires on
+  leveraged/cyclical names in a risk-off regime; never affects composite/gates/ranking).
+  `score(m, config, macro=None)` is byte-identical when `macro=None`. The scored
+  `regime_multiplier` gate tilt remains future work — and note this flag is **not**
+  XBRL-backtest-validatable (the backtest path passes no macro/SIC context).
 
 #### A3. Yahoo Finance chart — own price history → real momentum & risk  ✅ DONE
 - **Shipped** as the harness `YahooSource` (keyless `query1.finance.yahoo.com/v8/finance/chart`,
@@ -294,9 +299,10 @@ The repo's two-layer split (see `CLAUDE.md`) tells you where each source goes:
   (harness) and/or a `Provider` in `providers/` (screener), normalized into
   `TickerSnapshot` / `StockMetrics`, merged by priority. Add new fields to the dataclasses;
   unavailable fields stay `None` and the redistribution logic in `scoring.py` handles it.
-- **Run-level macro** (A2 FRED) → a `MacroContext` built once and passed into
-  `scoring.score()` as a tilt/gate multiplier — *not* a per-ticker provider. The scaffolded
-  `FredProvider` docstring already says exactly this.
+- **Run-level macro** (A2 FRED — shipped) → `data/macro.py:fetch_macro` builds a `MacroContext`
+  once per run (keyless, day-cached) and passes it into `scoring.score()` and `build_report()` as a
+  display + advisory overlay — *not* a per-ticker provider. The scored `regime_multiplier` gate
+  tilt is still future work.
 - **Derived composites** (Tier D) → pure functions in `scoring.py` over `Statements`; no I/O.
 - **Events/news** (A1 8-K/13D, A5 GDELT) → a new `events`/`news` section on `TickerSnapshot`,
   surfaced to the research layer and as soft flags.
@@ -314,7 +320,7 @@ Recommended sequencing (highest leverage first):
    See A1 above.  ✅ **C1 short interest** — also shipped (`FinraSource` → `crowded_short` flag).
    Next alt-data additions per the events design decision record (§10): Tier D composites
    (F/Z/M scores), then B1 Alpha Vantage forward estimates.
-3. **A2 FRED macro overlay** — cheap, keyless, makes every score regime-aware.
+3. ✅ **A2 FRED macro overlay** — **done.** Keyless `fetch_macro` builds a run-level `MacroContext`; threaded into `run_harness` + `build_report`; surfaces `_MacroHeader` + `risk_off_regime` advisory flag. Display + advisory only; scored `regime_multiplier` tilt is future work.
 4. **D1–D3 composites** — pure analytical upgrade (F/Z/M scores); Altman/Beneish need A1's
    extra balance-sheet fields first.
 5. **B1 Alpha Vantage** — forward estimates + revisions (free key) to light up `eps_revision`.

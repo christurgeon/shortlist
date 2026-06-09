@@ -171,6 +171,13 @@ emits **presence-based filing-stream advisories** (`recent_8k` / `activist_13d` 
 no config thresholds (`scoring.py:285`; see `docs/DATA_SOURCES.md`
 §A1). The `dilution` flag fires on persistent net share issuance
 (`share_count_cagr ≥ flags.dilution.min_share_cagr`; ON by default, advisory only).
+`risk_off_regime` fires on leveraged (net-debt/EBITDA or D/E above thresholds, with the
+same `dte_artifact_ceiling` guard the `over_leveraged` gate uses) or cyclical-bucket names
+when the run-level FRED macro regime is risk-off (`config.yaml` → `flags.risk_off_regime`);
+advisory only — never affects `passed`/`composite`/`scored`; **not** XBRL-backtest-validatable.
+A run-level `MacroContext` is built once per run by `data/macro.py:fetch_macro` (keyless FRED
+CSV, day-cached under `.cache/fred/`, never-raises); display + advisory only, threaded into
+`score(..., macro=)` and the report (`_MacroHeader` + `risk_off_regime` flag); `--demo` skips it.
 
 The **`quality.dilution`** block (`config.yaml`) is the **scoring** half of the
 share-count/dilution feature (ASSESSMENT_GAPS §2.5). It ships **commented out** (OFF): when
