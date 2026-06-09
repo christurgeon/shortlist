@@ -58,7 +58,7 @@ def test_live_run_configured_delivers_photo_and_document(tmp_path, monkeypatch):
     def fake_build_signals(names, kwargs_by_name=None):
         return [_OkSignal()]
 
-    def fake_run_harness(tickers, sources, config):
+    def fake_run_harness(tickers, sources, config, macro=None):
         return [ScoreCard(ticker=t, composite=75.0, quality=70.0, moat=65.0,
                           growth=80.0, momentum=60.0, value=55.0, opportunity=60.0,
                           insider=50.0, gates=[]) for t in tickers]

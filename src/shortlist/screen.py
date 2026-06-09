@@ -167,7 +167,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sources = config.get("harness_sources",
                              ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
-    cards = run_harness(tickers, sources, config)
+    from .data.macro import fetch_macro
+    macro = fetch_macro(config)
+    cards = run_harness(tickers, sources, config, macro=macro)
     _print_coverage_notes(cards)
 
     research_paths: dict = {}

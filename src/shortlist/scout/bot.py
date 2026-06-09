@@ -222,12 +222,14 @@ class TelegramBot:
         # "Heard you" feedback. Runs on the WORKER thread (this handler), never the
         # poll thread — a slow/flaky chat-action POST must not stall getUpdates.
         self.notifier.send_chat_action("upload_photo")
-        cards = self._screen_fn()(kept, self.sources, self.config)
+        from ..data.macro import fetch_macro
+        macro = fetch_macro(self.config)
+        cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
         present = [c for c in cards if not no_data(c)]
         missing = [c for c in cards if no_data(c)]
         if present:
             manifest = _interactive_manifest(len(kept), len(present), "screen", [])
-            art = self._report_fn()(present, manifest, assessments={})
+            art = self._report_fn()(present, manifest, assessments={}, macro=macro)
             self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
                                caption=_caption(manifest, present),
                                session=manifest.session.isoformat())
@@ -246,7 +248,9 @@ class TelegramBot:
         kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
             f"Researching {', '.join(kept)} — this can take several minutes…")
-        cards = self._screen_fn()(kept, self.sources, self.config)
+        from ..data.macro import fetch_macro
+        macro = fetch_macro(self.config)
+        cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
         present = [c for c in cards if not no_data(c)]
         missing = [c for c in cards if no_data(c)]
         if present:
@@ -256,7 +260,7 @@ class TelegramBot:
             manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
             if note:
                 manifest.notes.append(note)
-            art = self._report_fn()(present, manifest, assessments=assessments)
+            art = self._report_fn()(present, manifest, assessments=assessments, macro=macro)
             summary = _call_summary(assessments)
             if summary:
                 self.notifier.send_message(summary)

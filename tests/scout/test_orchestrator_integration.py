@@ -110,7 +110,7 @@ def test_run_calls_booster_scan_for_with_discovered_tickers(tmp_path, monkeypatc
     # The import is lazy (inside run()), so patch the source module directly.
     import shortlist.screen as screen_mod
 
-    def fake_run_harness(tickers, sources, config):
+    def fake_run_harness(tickers, sources, config, macro=None):
         return [_make_card(t) for t in tickers]
 
     monkeypatch.setattr(screen_mod, "run_harness", fake_run_harness)
