@@ -13,7 +13,8 @@ from .models import ScoreCard, rank_key
 from .scoring import score
 
 
-def run_harness(tickers: list[str], source_names: list[str], config: dict) -> list[ScoreCard]:
+def run_harness(tickers: list[str], source_names: list[str], config: dict,
+                macro=None) -> list[ScoreCard]:
     """Score via the harness stack: collect TickerSnapshots, bridge each to
     StockMetrics, then run the same scorer the screener uses. Harness cards now
     carry the same `coverage` diagnostic as screener cards, via the
@@ -27,7 +28,7 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict) -> li
     snapshots = collect(tickers, source_names, config=config)
     cards = []
     for s in snapshots:
-        card = score(snapshot_to_metrics(s), config)
+        card = score(snapshot_to_metrics(s), config, macro)
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
         card.coverage = build_coverage(outcomes, contributed, card)
         cards.append(card)
