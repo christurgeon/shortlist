@@ -52,7 +52,7 @@ _CSV = "observation_date,{id}\n2026-05-30,.\n2026-06-01,{val}\n"
 
 def _fake_series(monkeypatch, values: dict[str, float]):
     calls = {"n": 0}
-    def fake_get(series_id: str) -> tuple[str | None, float | None]:
+    def fake_get(series_id: str, api_key: str) -> tuple[str | None, float | None]:
         calls["n"] += 1
         v = values.get(series_id)
         return ("2026-06-01", v)
@@ -67,18 +67,28 @@ def test_fetch_macro_builds_context(monkeypatch, tmp_path):
     _fake_series(monkeypatch, {"DGS10": 4.45, "T10Y2Y": -0.2, "BAMLH0A0HYM2": 5.4,
                                "VIXCLS": 16.0, "FEDFUNDS": 3.64})
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
     c = fetch_macro(CFG)
     assert c is not None and c.regime == "risk-off" and c.hy_oas == 5.4
 
 def test_fetch_macro_day_cache_avoids_second_pull(monkeypatch, tmp_path):
     calls = _fake_series(monkeypatch, {"DGS10": 4.45})
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
     fetch_macro(CFG); first = calls["n"]
     fetch_macro(CFG)
     assert calls["n"] == first  # second run served from disk cache
 
 def test_fetch_macro_never_raises(monkeypatch, tmp_path):
-    def boom(series_id): raise RuntimeError("network down ?apikey=SECRET")
+    def boom(series_id, api_key): raise RuntimeError("network down ?apikey=SECRET")
     monkeypatch.setattr(macro_mod, "_fetch_series", boom)
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
     assert fetch_macro(CFG) is None  # degrades, no exception
+
+
+def test_fetch_macro_no_key_returns_none(monkeypatch, tmp_path):
+    _fake_series(monkeypatch, {"DGS10": 4.45})
+    monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    assert fetch_macro(CFG) is None  # enabled but no key -> overlay disabled

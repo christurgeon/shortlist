@@ -1,5 +1,6 @@
 # src/shortlist/data/macro.py
-"""Run-level FRED macro/credit-regime overlay. Keyless, day-cached, never-raises.
+"""Run-level FRED macro/credit-regime overlay. Official FRED API (needs a free
+FRED_API_KEY), day-cached, never-raises.
 
 NOT a per-ticker Source: built once per run and threaded into score() (one soft
 advisory flag) and the report header. Display + advisory only — never touches
@@ -8,6 +9,7 @@ composite/gates/ranking.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -17,8 +19,8 @@ import httpx
 from ..env import redact_secrets
 
 _CACHE_DIR = Path(".cache/fred")
-_FRED_CSV = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={id}"
-_TIMEOUT = 15.0
+_FRED_API = "https://api.stlouisfed.org/fred/series/observations"
+_TIMEOUT = 8.0
 
 
 @dataclass(frozen=True)
@@ -50,27 +52,31 @@ def classify_regime(vals: dict[str, float | None],
     return ("risk-on", False) if calm else ("neutral", False)
 
 
-def _fetch_series(series_id: str) -> tuple[str | None, float | None]:
-    """Last non-missing (date, value) for a FRED series, or (None, None).
-    FRED writes '.' for missing observations — skip those."""
-    r = httpx.get(_FRED_CSV.format(id=series_id), timeout=_TIMEOUT)
+def _fetch_series(series_id: str, api_key: str) -> tuple[str | None, float | None]:
+    """Latest non-missing (date, value) for a FRED series via the official API.
+    FRED encodes a missing observation as '.'; we pull the most recent few and
+    take the latest real value."""
+    r = httpx.get(_FRED_API, params={
+        "series_id": series_id, "api_key": api_key, "file_type": "json",
+        "sort_order": "desc", "limit": 10}, timeout=_TIMEOUT)
     r.raise_for_status()
-    last_date = last_val = None
-    for line in r.text.splitlines()[1:]:          # skip header
-        parts = line.split(",")
-        if len(parts) != 2:
-            continue
-        d, raw = parts[0].strip(), parts[1].strip()
+    for obs in r.json().get("observations", []):
+        raw = (obs.get("value") or "").strip()
         if raw and raw != ".":
-            last_date, last_val = d, float(raw)
-    return last_date, last_val
+            return obs.get("date"), float(raw)
+    return None, None
 
 
 def fetch_macro(config: dict) -> MacroContext | None:
-    """Run-level macro overlay. Returns None when disabled or on total failure
+    """Run-level macro overlay via the official FRED API (needs a free
+    FRED_API_KEY). Returns None when disabled, unkeyed, or on total failure
     (→ byte-identical downstream). Day-cached under .cache/fred/."""
     cfg = (config or {}).get("macro") or {}
     if not cfg.get("enabled"):
+        return None
+    api_key = os.environ.get("FRED_API_KEY")
+    if not api_key:
+        print("[macro] FRED_API_KEY not set; macro overlay disabled")
         return None
     try:
         series: dict[str, str] = cfg["series"]
@@ -81,7 +87,7 @@ def fetch_macro(config: dict) -> MacroContext | None:
             raw = {}
             as_of = None
             for key, sid in series.items():
-                d, v = _fetch_series(sid)
+                d, v = _fetch_series(sid, api_key)
                 raw[key] = v
                 as_of = as_of or d
             raw["as_of"] = as_of

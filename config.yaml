@@ -328,8 +328,9 @@ ranking:
   thin_below: 0.40  # mark a card "thin" when confidence < this. Omit/null to disable.
                     # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).
 
-# Run-level macro/credit-regime overlay (keyless FRED CSV). Display + advisory
-# only — never affects composite/gates/ranking. See data/macro.py.
+# Run-level macro/credit-regime overlay via the official FRED API (needs a free
+# FRED_API_KEY — the keyless fredgraph.csv host is IP-blocked on datacenter IPs).
+# Display + advisory only — never affects composite/gates/ranking. See data/macro.py.
 macro:
   enabled: true
   series:
