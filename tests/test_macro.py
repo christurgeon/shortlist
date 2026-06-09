@@ -48,8 +48,6 @@ CFG = {"macro": {
     "risk_off": {"hy_oas": 5.0, "t10y2y": 0.0, "vix": 25.0},
     "risk_on": {"hy_oas": 3.5, "vix": 18.0}}}
 
-_CSV = "observation_date,{id}\n2026-05-30,.\n2026-06-01,{val}\n"
-
 def _fake_series(monkeypatch, values: dict[str, float]):
     calls = {"n": 0}
     def fake_get(series_id: str, api_key: str) -> tuple[str | None, float | None]:
@@ -87,8 +85,11 @@ def test_fetch_macro_never_raises(monkeypatch, tmp_path):
     assert fetch_macro(CFG) is None  # degrades, no exception
 
 
-def test_fetch_macro_no_key_returns_none(monkeypatch, tmp_path):
+def test_fetch_macro_no_key_returns_none(monkeypatch, tmp_path, capsys):
     _fake_series(monkeypatch, {"DGS10": 4.45})
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
     monkeypatch.delenv("FRED_API_KEY", raising=False)
     assert fetch_macro(CFG) is None  # enabled but no key -> overlay disabled
+    # the diagnostic must go to stderr, never stdout (keeps `shortlist --json` clean)
+    out = capsys.readouterr()
+    assert out.out == "" and "FRED_API_KEY not set" in out.err

@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-
-import httpx
 
 from ..env import redact_secrets
 
@@ -56,6 +55,7 @@ def _fetch_series(series_id: str, api_key: str) -> tuple[str | None, float | Non
     """Latest non-missing (date, value) for a FRED series via the official API.
     FRED encodes a missing observation as '.'; we pull the most recent few and
     take the latest real value."""
+    import httpx  # lazy: only needed for live runs
     r = httpx.get(_FRED_API, params={
         "series_id": series_id, "api_key": api_key, "file_type": "json",
         "sort_order": "desc", "limit": 10}, timeout=_TIMEOUT)
@@ -76,7 +76,7 @@ def fetch_macro(config: dict) -> MacroContext | None:
         return None
     api_key = os.environ.get("FRED_API_KEY")
     if not api_key:
-        print("[macro] FRED_API_KEY not set; macro overlay disabled")
+        print("[macro] FRED_API_KEY not set; macro overlay disabled", file=sys.stderr)
         return None
     try:
         series: dict[str, str] = cfg["series"]
@@ -103,5 +103,5 @@ def fetch_macro(config: dict) -> MacroContext | None:
             fedfunds=vals.get("fedfunds"),
             regime=regime, risk_off=off)
     except Exception as e:               # never sink a run on the macro overlay
-        print(f"[macro] overlay unavailable: {redact_secrets(str(e))}")
+        print(f"[macro] overlay unavailable: {redact_secrets(str(e))}", file=sys.stderr)
         return None
