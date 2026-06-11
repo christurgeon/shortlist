@@ -36,10 +36,6 @@ class Candidate:
     def has_discovery(self) -> bool:
         return any(e.is_discovery for e in self.emissions)
 
-    @property
-    def signals(self) -> list[str]:
-        return [e.signal for e in self.emissions]
-
 
 @dataclass
 class SignalStatus:

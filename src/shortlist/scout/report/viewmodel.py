@@ -34,7 +34,6 @@ class MetricsVM:
     rating_sell: int | None = None
     target_upside: float | None = None   # from StockMetrics.upside_to_target()
     insider_net_6m: float | None = None
-    insider_distinct_buyers: int | None = None
 
 
 @dataclass
@@ -162,8 +161,7 @@ def _metrics_vm(m) -> MetricsVM:
         price_vs_200dma=m.price_vs_200dma, rel_strength_6m=m.rel_strength_6m,
         realized_vol=m.realized_vol, max_drawdown=m.max_drawdown,
         rating_buy=m.rating_buy, rating_hold=m.rating_hold, rating_sell=m.rating_sell,
-        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m,
-        insider_distinct_buyers=m.insider_distinct_buyers)
+        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m)
 
 
 def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
