@@ -8,7 +8,7 @@ Safe to import on the always-on bot path.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -25,7 +25,9 @@ class Holding:
 def load_holdings(path) -> tuple[list[Holding], list[str]]:
     """Parse `ticker,shares` rows leniently. Returns (holdings, warnings).
 
-    - Optional header row (a row whose 2nd column isn't numeric is skipped as a header).
+    - A header row (first column exactly "TICKER", case-insensitive) is silently
+      skipped; any OTHER row with non-numeric shares is treated as malformed and warned.
+    - `shares` is parsed as a float; negative values (short positions) are accepted as-is.
     - Extra columns ignored; blank/malformed rows skipped with a warning.
     - Tickers upper-cased + stripped; duplicate tickers summed (warned).
     - Missing/unreadable file -> ([], [warning]); never raises.
@@ -37,13 +39,13 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
     totals: dict[str, float] = {}
     order: list[str] = []
     try:
-        rows = list(csv.reader(p.read_text().splitlines()))
+        rows = list(csv.reader(p.read_text(encoding="utf-8-sig").splitlines()))
     except OSError as e:                      # unreadable file
         return [], [f"Could not read {p}: {e}"]
     for raw in rows:
         if not raw or not "".join(raw).strip():
             continue                          # blank line
-        ticker = (raw[0] if len(raw) > 0 else "").strip().upper()
+        ticker = raw[0].strip().upper()
         shares_s = (raw[1] if len(raw) > 1 else "").strip()
         if not ticker or len(raw) < 2:
             warnings.append(f"Skipped row (missing ticker/shares): {raw}")

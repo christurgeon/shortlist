@@ -47,3 +47,18 @@ def test_missing_file_returns_empty_and_warning(tmp_path):
     holdings, warnings = load_holdings(tmp_path / "nope.csv")
     assert holdings == []
     assert warnings and "not found" in warnings[0].lower()
+
+
+def test_ticker_only_row_skipped_and_warned(tmp_path):
+    p = _write(tmp_path, "AAPL,40\nLMT\nMSFT,10\n")
+    holdings, warnings = load_holdings(p)
+    assert holdings == [Holding("AAPL", 40.0), Holding("MSFT", 10.0)]
+    assert len(warnings) == 1
+
+
+def test_utf8_bom_handled(tmp_path):
+    p = tmp_path / "portfolio.csv"
+    p.write_bytes(b"\xef\xbb\xbfticker,shares\nAAPL,40\n")
+    holdings, warnings = load_holdings(p)
+    assert holdings == [Holding("AAPL", 40.0)]
+    assert warnings == []
