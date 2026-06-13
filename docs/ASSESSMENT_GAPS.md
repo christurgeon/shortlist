@@ -156,12 +156,20 @@ relative.) Two structural failure modes:
 > `value_score` was preserved. Bands/thresholds remain **unfitted priors**. Design + numbers
 > are summarized in this section; the `2026-06-03-piotroski-value-trap` working notes are local, not committed.
 
-- **Still open — absolute-multiple half (DEFERRED, gated):** add an absolute valuation leg
-  proper — **EV/EBIT** (fresh numerator vs `fcf_yield`; EV/FCF rejected as collinear), or a
-  reverse-DCF. If pursued, ship **OFF behind a config flag** and **first** extend the backtest
-  to emit per-leg `value`-IC attribution so it cannot silently degrade the validated `value`
-  average. The 5y `Statements` make a crude reverse-DCF feasible with no new feed; EV/EBIT
-  needs only a `cash` concept added to the XBRL panel.
+- **Absolute-multiple half — measurement shipped, production leg gated:** add an absolute
+  valuation leg proper — **EV/EBIT** (fresh numerator vs `fcf_yield`; EV/FCF rejected as
+  collinear), or a reverse-DCF. The leg ships **OFF behind a config flag** and **first**
+  extends the backtest to emit per-leg `value`-IC attribution so it cannot silently degrade
+  the validated `value` average. The 5y `Statements` make a crude reverse-DCF feasible with no
+  new feed; EV/EBIT needs only a `cash` concept added to the XBRL panel.
+- **MEASUREMENT SHIPPED (2026-06-13), production leg DEFERRED:** the EV/EBIT
+  earnings-yield metric (`StockMetrics.ebit_ev_yield`, derived on both the harness
+  and the XBRL panel) plus backtest instrumentation — standalone `ebit_ev_yield`
+  axis, per-leg `value_fcf_yield` / `value_pe_vs_history` attribution, a
+  `value_plus_evebit` combined axis, and a `corr(ebit_ev_yield, fcf_yield)`
+  collinearity diagnostic (`--source xbrl`). The production scoring leg ships
+  ONLY IF `IC(value_plus_evebit) > IC(value)` AND the leg correlation is materially
+  < 0.5 (spec `2026-06-13-absolute-valuation-leg-ev-ebit-design.md` §9/§11).
 
 #### 2.3 Absolute threshold bands misfire across sectors
 A 90%-margin software name and a 25%-margin industrial can't share one `gross_margin: [0.20,
