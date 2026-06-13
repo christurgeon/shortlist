@@ -67,7 +67,7 @@ def test_screen_runs_harness_and_delivers_full_artifacts():
     def screen_fn(tickers, sources, config, macro=None):
         calls["tickers"] = tickers; calls["sources"] = sources
         return [FakeCard("NVDA", 78.0), FakeCard("LMT", 61.0)]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         calls["assessments"] = assessments; calls["signals"] = manifest.signals
         return type("A", (), {"png": b"PNG", "html": "<h>", "text": "txt"})()
     def deliver_fn(notifier, *, png, html, text, caption, session):
@@ -89,7 +89,7 @@ def test_screen_runs_harness_and_delivers_full_artifacts():
 
 def test_screen_soft_cap_truncates_and_warns():
     def screen_fn(tickers, sources, config, macro=None): return [FakeCard(t) for t in tickers]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": None, "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): return None
 
@@ -104,7 +104,7 @@ def test_deep_researches_with_require_passed_false():
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         seen["require_passed"] = require_passed; seen["top_n"] = top_n
         return ({}, {"TSLA": {"synthesis": "ok"}}, ["TSLA"], None, {})
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         seen["assessments"] = assessments
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): return None
@@ -153,7 +153,7 @@ def test_screen_filters_malformed_and_notes_them():
     def screen_fn(tickers, sources, config, macro=None):
         seen["tickers"] = tickers
         return [FakeCard(t) for t in tickers]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): seen["delivered"] = True
     bot = _bot(screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
@@ -168,7 +168,7 @@ def test_screen_some_no_data_delivers_present_and_notes_missing():
     seen = {}
     def screen_fn(tickers, sources, config, macro=None):
         return [FakeCard("NVDA"), FakeCard("ZZZZ", empty=True)]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         seen["report_cards"] = [c.ticker for c in cards]
         seen["screened"] = manifest.screened; seen["raw"] = manifest.raw
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
@@ -188,7 +188,7 @@ def test_screen_composed_notes_order():
     # Expected message order: no-data note, then soft-cap note, then format note.
     def screen_fn(tickers, sources, config, macro=None):
         return [FakeCard(t, empty=(t == "ZZZZ")) for t in tickers]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
     cfg = {"scout": {"bot": {"max_screen": 3, "max_deep": 1},
@@ -210,7 +210,7 @@ def test_screen_all_no_data_skips_report_entirely():
     seen = {"report": False, "deliver": False}
     def screen_fn(tickers, sources, config, macro=None):
         return [FakeCard("ZZZZ", empty=True)]
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         seen["report"] = True
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): seen["deliver"] = True
@@ -235,7 +235,7 @@ def test_deep_filters_malformed_and_researches_present_only():
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         seen["research_cards"] = [c.ticker for c in cards]; seen["top_n"] = top_n
         return ({}, {}, [c.ticker for c in cards], None, {})
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
     # max_deep=2 so HELLOWORLD would survive the soft-cap if it weren't filtered —
@@ -257,7 +257,7 @@ def test_deep_researching_message_names_capped_tickers():
     def screen_fn(tickers, sources, config, macro=None): return [FakeCard(t) for t in tickers]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         return ({}, {}, [c.ticker for c in cards], None, {})
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
     bot = _deep_bot(1, screen_fn=screen_fn, research_fn=research_fn,
@@ -274,7 +274,7 @@ def test_deep_sends_skip_reason_when_assessment_missing():
         return [FakeCard("NVDA")]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         return ({}, {}, [], None, {"NVDA": "assessment failed"})
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): pass
     bot = _deep_bot(1, screen_fn=screen_fn, research_fn=research_fn,
@@ -290,7 +290,7 @@ def test_deep_all_no_data_skips_research_and_report():
         return [FakeCard("ZZZZ", empty=True)]
     def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
         seen["research"] = True; return ({}, {}, [], None, {})
-    def report_fn(cards, manifest, *, assessments, macro=None):
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         seen["report"] = True
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
     def deliver_fn(notifier, **kw): seen["deliver"] = True
@@ -300,3 +300,74 @@ def test_deep_all_no_data_skips_research_and_report():
     assert seen["research"] is False and seen["report"] is False
     assert seen["deliver"] is False                 # spec: never deliver on all-no-data
     assert any("No data for" in m for m in bot.notifier.messages)
+
+
+# --- /portfolio tests ---
+
+def _bot_pf(tmp_path, csv_text=None, **kw):
+    cfg = {"scout": {"bot": {"max_screen": 2, "max_deep": 1},
+                     "deep_screen_sources": ["mock"]},
+           "portfolio": {"path": str(tmp_path / "portfolio.csv"), "max_holdings": 2}}
+    if csv_text is not None:
+        (tmp_path / "portfolio.csv").write_text(csv_text)
+    return TelegramBot(FakeNotifier(), cfg, **kw)
+
+
+def test_portfolio_missing_file_replies_with_setup_hint(tmp_path):
+    bot = _bot_pf(tmp_path)                       # no file written
+    bot._handle(Command("portfolio", (), "/portfolio"))
+    assert any("portfolio.csv" in m for m in bot.notifier.messages)
+
+
+def test_portfolio_happy_path_screens_and_delivers(tmp_path):
+    calls = {}
+    def screen_fn(tickers, sources, config, macro=None):
+        calls["tickers"] = tickers
+        return [FakeCard("AAPL", 70.0), FakeCard("LMT", 60.0)]
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
+        calls["portfolio"] = portfolio
+        return type("A", (), {"png": b"P", "html": "<h>", "text": "t"})()
+    def deliver_fn(notifier, *, png, html, text, caption, session):
+        calls["delivered"] = True
+        return None
+    bot = _bot_pf(tmp_path, "AAPL,40\nLMT,15\n",
+                  screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("portfolio", (), "/portfolio"))
+    assert calls["tickers"] == ["AAPL", "LMT"]
+    assert calls["portfolio"] is not None          # summary threaded
+    assert hasattr(calls["portfolio"], "positions")   # a real PortfolioSummary, not a placeholder
+    assert calls["delivered"] is True
+
+
+def test_portfolio_over_cap_warns_incomplete(tmp_path):
+    def screen_fn(tickers, sources, config, macro=None):
+        return [FakeCard(t, 50.0) for t in tickers]
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
+        return type("A", (), {"png": b"P", "html": "<h>", "text": "t"})()
+    def deliver_fn(notifier, *, png, html, text, caption, session):
+        return None
+    bot = _bot_pf(tmp_path, "AAPL,1\nLMT,1\nMSFT,1\n",   # 3 > max_holdings=2
+                  screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("portfolio", (), "/portfolio"))
+    warn = " ".join(bot.notifier.messages)
+    assert "MSFT" in warn and "INCOMPLETE" in warn.upper()
+
+
+def test_portfolio_all_no_data_still_delivers(tmp_path):
+    # Monitoring intent: if every holding comes back no-data, still deliver a
+    # portfolio report (holdings shown as no-data alerts) — NOT a dead-end.
+    calls = {}
+    def screen_fn(tickers, sources, config, macro=None):
+        return [FakeCard(t, empty=True) for t in tickers]   # all no-data
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
+        calls["portfolio"] = portfolio
+        return type("A", (), {"png": b"P", "html": "<h>", "text": "t"})()
+    def deliver_fn(notifier, *, png, html, text, caption, session):
+        calls["delivered"] = True
+        return None
+    bot = _bot_pf(tmp_path, "AAPL,1\nLMT,1\n",
+                  screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("portfolio", (), "/portfolio"))
+    assert calls["delivered"] is True
+    assert calls["portfolio"] is not None
+    assert "INCOMPLETE" not in " ".join(bot.notifier.messages)   # nothing dropped

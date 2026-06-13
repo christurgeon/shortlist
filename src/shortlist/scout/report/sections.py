@@ -308,7 +308,71 @@ class _MacroHeader:
         return ["", self._line(vm.macro)]
 
 
-SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(), _Footer()]
+# ---- owned-holdings exposure + monitoring (bot /portfolio) ----
+class _Portfolio:
+    id, title = "portfolio", "Portfolio"
+
+    def applies(self, vm):
+        p = getattr(vm, "portfolio", None)
+        return p is not None and hasattr(p, "alerts")
+
+    @staticmethod
+    def _chips(pos):
+        if pos.no_data or pos.card is None:
+            return ["no data"]
+        c = list(pos.card.gates) + list(pos.card.flags)
+        if not pos.card.scored:
+            c.append("not scored")
+        return c
+
+    def render_html(self, vm, h):
+        p = vm.portfolio
+        parts = []
+        if p.alerts:
+            items = "".join(
+                h.tag("li", f"{pos.ticker} — {', '.join(self._chips(pos)) or 'flagged'}")
+                for pos in p.alerts)
+            parts.append(h.raw("div", h.raw("b", "Alerts") + h.raw("ul", items), _class="pf-alerts"))
+        rows = []
+        for pos in p.positions:
+            w = "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
+            comp = "·" if pos.card is None else f"{pos.card.composite:.0f}"
+            chips = self._chips(pos)
+            tags = ", ".join(chips) if chips else "·"
+            cells = (h.tag("td", pos.ticker) + h.tag("td", w) + h.tag("td", comp) + h.tag("td", tags))
+            rows.append(h.raw("tr", cells))
+        head = h.raw("tr", "".join(h.tag("th", c) for c in ("Ticker", "Weight", "Comp", "Gates/Flags")))
+        parts.append(h.raw("table", h.raw("thead", head) + h.raw("tbody", "".join(rows)), _class="pf"))
+        if p.sector_weights:
+            sec = " · ".join(f"{b} {w*100:.0f}%" for b, w in p.sector_weights)
+            parts.append(h.tag("div", "Sectors: " + sec, _class="pf-sectors"))
+        if p.total_value is not None:
+            wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
+            parts.append(h.tag("div", f"Book ${p.total_value/1e3:.0f}k{wc}", _class="pf-tot"))
+        # NOTE: pf/pf-alerts/pf-sectors/pf-tot are unstyled in v1 (html._CSS) — content
+        # renders readably on base table/div rules; theming is deferred.
+        return "".join(parts)
+
+    def render_text(self, vm, detail):
+        p = vm.portfolio
+        out = [""]
+        if p.alerts:
+            out.append("⚠️ Alerts:")
+            out += [f"  {pos.ticker} — {', '.join(self._chips(pos)) or 'flagged'}" for pos in p.alerts]
+        for pos in p.positions:
+            w = "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
+            comp = "·" if pos.card is None else f"{pos.card.composite:.0f}"
+            out.append(f"  {pos.ticker}  {w}  comp {comp}")
+        if p.sector_weights:
+            out.append("  Sectors: " + " · ".join(f"{b} {w*100:.0f}%" for b, w in p.sector_weights))
+        if p.total_value is not None:
+            wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
+            out.append(f"  Book ${p.total_value/1e3:.0f}k{wc}")
+        return out
+
+
+SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
+                            _Portfolio(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:

@@ -1,0 +1,4 @@
+# portfolio.example.csv  -> copy to portfolio.csv (gitignored) and edit
+ticker,shares
+AAPL,40
+LMT,15

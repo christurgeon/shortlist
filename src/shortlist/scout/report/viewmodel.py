@@ -97,6 +97,7 @@ class ReportVM:
     funnel: FunnelVM
     notes: list[str]
     macro: "object | None" = None   # data.macro.MacroContext | None (run-level)
+    portfolio: "object | None" = None   # shortlist.portfolio.PortfolioSummary | None
 
 
 def _claim(x) -> str:
@@ -183,7 +184,7 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
 
 
 def build_view_model(cards, manifest: RunManifest, *,
-                     assessments: dict[str, dict], macro=None) -> ReportVM:
+                     assessments: dict[str, dict], macro=None, portfolio=None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
     return ReportVM(
         session=manifest.session,
@@ -192,4 +193,5 @@ def build_view_model(cards, manifest: RunManifest, *,
         funnel=FunnelVM(manifest.raw, manifest.after_dedup, manifest.after_prefilter,
                         manifest.screened, manifest.dropped_for_budget),
         notes=list(manifest.notes),
-        macro=macro)
+        macro=macro,
+        portfolio=portfolio)
