@@ -161,7 +161,7 @@ relative.) Two structural failure modes:
   collinear), or a reverse-DCF. The leg ships **OFF behind a config flag** and **first**
   extends the backtest to emit per-leg `value`-IC attribution so it cannot silently degrade
   the validated `value` average. The 5y `Statements` make a crude reverse-DCF feasible with no
-  new feed; EV/EBIT needs only a `cash` concept added to the XBRL panel.
+  new feed; EV/EBIT needs no new feed either (the XBRL panel already carries `cash`).
 - **MEASUREMENT SHIPPED (2026-06-13), production leg DEFERRED:** the EV/EBIT
   earnings-yield metric (`StockMetrics.ebit_ev_yield`, derived on both the harness
   and the XBRL panel) plus backtest instrumentation — standalone `ebit_ev_yield`
