@@ -227,13 +227,29 @@ SEC companyfacts (point-in-time)           → _xbrl_facts.panel_to_metrics
   v1 (the EBIT>0 guard suffices; a margin floor is a tunable refinement), but flag
   it.
 
-## 9. Build order (honors "backtest first")
+## 9. Build order — **v1 scope = MEASUREMENT-FIRST** (chosen 2026-06-13)
 
-1. Shared derivation helper + metric field + bridge + XBRL-panel wiring (+ tests).
-2. Backtest attribution: `ebit_ev_yield_score` / `fcf_yield_score` /
-   `pe_vs_history_score` + `_AXES` entries (+ tests). **Measurable here.**
-3. Production gated leg: `_value_ev_on`, `_value_legs(m, config)`, config block,
-   masking, surfacing (+ byte-identical regression + fires-when-on tests).
+Per the §11 review resolution, v1 builds **only** the measurement infrastructure.
+The production scoring leg (§4.2/§4.3) is **explicitly deferred** until the
+diagnostics below justify it (and ideally until §2.3 lands). v1 makes **zero**
+change to any production score — it adds metric derivation + backtest-only signal.
+
+1. **Shared derivation** — `ebit_ev_yield_from(ebit, market_cap, total_debt, cash)`
+   pure helper (one home for formula + EBIT>0 / EV>0 guards + the §11(3)
+   date-alignment guard) + `StockMetrics.ebit_ev_yield` field + wiring in
+   `bridge.py` (~181) and `_xbrl_facts.py:panel_to_metrics` (~320). (+ tests)
+2. **Backtest attribution** — `scoring.ebit_ev_yield_score`, `fcf_yield_score`,
+   `pe_vs_history_score` (single-leg, backtest-only) + `_AXES` entries
+   `ebit_ev_yield`, `value_fcf_yield`, `value_pe_vs_history`. (+ tests)
+3. **Decision diagnostics (the point of v1)** — a `value_plus_evebit` axis (the
+   4-leg value average *with* the EV/EBIT leg folded in) and a cross-sectional
+   `corr(ebit_ev_yield, fcf_yield)` statistic in the backtest report. These make
+   the production-leg enable rule concrete and falsifiable:
+   **enable §4.2 later iff `IC(value_plus_evebit) > IC(value)` AND correlation < ~0.5.**
+
+**Deferred (NOT in v1):** `_value_ev_on`, `_value_legs(m, config)` threading, the
+`value.ev_ebit` config block, `sectors.masked_legs` entry, JSON/CSV surfacing, and
+the `ScoreCard.ebit_ev_yield` field/copy. These ship only if step 3 clears.
 
 ## 10. Is this providing value? (honest self-assessment)
 
