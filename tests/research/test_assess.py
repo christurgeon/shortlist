@@ -297,3 +297,49 @@ def test_quant_context_includes_series_when_present():
 def test_system_prompt_mentions_trajectory():
     from shortlist.research.assess import SYSTEM_PROMPT
     assert "trajectory" in SYSTEM_PROMPT.lower()
+
+
+def _dcf_card():
+    from shortlist.models import ScoreCard, StockMetrics
+    m = StockMetrics(ticker="AAPL", market_cap=2000e6, financial_series=[
+        {"free_cash_flow": 100e6}, {"free_cash_flow": 100e6},
+        {"free_cash_flow": 100e6}])
+    return ScoreCard(ticker="AAPL", composite=72.0, quality=80.0, moat=None,
+                     growth=None, momentum=None, value=88.0, opportunity=88.0,
+                     insider=None, metrics=m, sic_bucket="unknown")
+
+
+_RDCFG = {"enabled": True, "discount_rate": 0.10, "base_years": 3,
+          "run_rate_flag_ratio": 1.5, "display_floor": -0.50}
+
+
+def test_quant_context_includes_reverse_dcf_line():
+    from shortlist.research.assess import _quant_context
+    out = _quant_context(_dcf_card(), "", _RDCFG)
+    assert "Price-implied FCF growth:" in out
+
+
+def test_quant_context_omits_reverse_dcf_when_disabled():
+    from shortlist.research.assess import _quant_context
+    out = _quant_context(_dcf_card(), "", {"enabled": False})
+    assert "Price-implied FCF growth:" not in out
+
+
+def test_quant_context_two_arg_call_emits_no_dcf_line():
+    # back-compat: existing 2-arg / 1-arg callers must still work, no DCF line.
+    from shortlist.research.assess import _quant_context
+    assert "Price-implied FCF growth:" not in _quant_context(_dcf_card(), "")
+    assert "Price-implied FCF growth:" not in _quant_context(_dcf_card())
+
+
+def test_reverse_dcf_line_excluded_from_haystack():
+    # the computed number must never be verifiable as a filing quote.
+    from shortlist.research.assess import _quant_context
+    from shortlist.research.models import FilingBundle, FilingText
+    line = _quant_context(_dcf_card(), "", _RDCFG)
+    assert "perpetual FCF growth" in line
+    tenk = FilingText("AAPL", "acc", "2025-10-31", business="b", mda="m",
+                      risk_factors="r")
+    bundle = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                          filing_date="2025-10-31")
+    assert "perpetual FCF growth" not in bundle.haystack()

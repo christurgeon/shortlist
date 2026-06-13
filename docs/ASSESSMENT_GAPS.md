@@ -180,6 +180,20 @@ relative.) Two structural failure modes:
   decisively, so the leg is **not** wired into production. A real trial needs a
   small/mid-cap universe (EV/EBIT's natural habitat; large-cap is the wrong set per
   §10) and a sector-relative home (§2.3) — on a bigger box than the VPS.
+- **Reverse-DCF — SHIPPED to the RESEARCH layer (2026-06-13), NOT a scored leg.**
+  The EV/EBIT review routed reverse-DCF out of the composite (free knobs, no clean
+  backtest) and into the brief instead. `research/reverse_dcf.py` now emits one
+  deterministic QUANT-CONTEXT line — *"price implies ~X%/yr perpetual FCF growth"*
+  (single-stage Gordon `g = R − F0/P`, normalized median-FCF base) — for Claude to
+  reconcile against the realized revenue/FCF CAGR. Research-only, scorer
+  byte-identical, no feed, no rank impact. A three-agent review hardened it:
+  single-stage (not two-stage — proven a monotone 1:1 transform of FCF yield, so
+  two-stage was false precision); a **symmetric** prompt nudge (high implied growth
+  is NOT "expensive" on a durable compounder — guards the canonical reverse-DCF
+  misread); a deterministic run-rate caveat; NaN/inf guards; honest base-count label.
+  Spec `2026-06-13-reverse-dcf-implied-growth-design.md`. **Unfalsifiable framing aid,
+  not a signal** — never backtested, never feeds the score; its job is forcing a
+  price-vs-realized-growth reconciliation the brief otherwise lacks.
 
 #### 2.3 Absolute threshold bands misfire across sectors
 A 90%-margin software name and a 25%-margin industrial can't share one `gross_margin: [0.20,
@@ -452,3 +466,67 @@ in `DATA_SOURCES.md`:
 Two house rules from `CLAUDE.md` apply to every change here: route any error string that may
 contain a URL through `env.py:redact_secrets()`, and keep coverage **honest** — a missing
 input must lower coverage / redistribute weight, never silently zero a sub-score.
+
+---
+
+## 5. Competitive-feature breadcrumbs (UNVETTED — verify before building)
+
+**These are clues, not commitments. Read this whole preamble before picking one up.**
+
+This section records features seen in comparable products — open-source screeners
+(OpenBB, FinanceToolkit) and commercial tools (GuruFocus, Zacks, Simply Wall St, Stock
+Rover, Koyfin, Portfolio123, Unusual Whales) — so the ideas aren't lost. They are **not**
+validated as worth building. Each line is a one-sentence prompt written from the outside,
+with **zero** of the scrutiny every shipped feature in this doc was forced through.
+
+### Trust but verify — the rule for any session that picks one of these up
+
+Do **not** read a breadcrumb and start implementing. The EV/EBIT and reverse-DCF specs
+both had their naive version **killed or de-scoped by adversarial review** (EV/EBIT's
+scored leg measured `corr = 0.724` and stayed OFF; reverse-DCF was routed out of the
+composite entirely). Assume yours will too. Before writing any code you MUST:
+
+1. **Vet it adversarially.** Is there a free/keyless feed, or is it paid/absent? Does the
+   signal clear a rank-IC bar (§2.1), or is it un-backtestable framing that belongs in the
+   research layer only? Does it re-derive something we already have (collinearity — the
+   EV/EBIT and reverse-DCF traps)? What decision does it actually change?
+2. **Run the full pipeline:** `superpowers:brainstorming` → spec in
+   `docs/superpowers/specs/` → **three-agent review** (implementation fact-checker /
+   signal-value PM skeptic / red-team, as in the EV/EBIT §11 and reverse-DCF §12) →
+   `superpowers:writing-plans` → TDD. The one-liner is a starting hypothesis, not a design.
+3. **Check the cross-reference first** — most of these already have a real home below or in
+   `DATA_SOURCES.md`; the breadcrumb just points there so the prior thinking isn't redone.
+
+### Already homed (start here — don't re-spec from scratch)
+
+| Competitive feature | Where it already lives |
+|---|---|
+| Reverse-DCF / fair value | **SHIPPED** research-layer line (§2.2; spec `2026-06-13-reverse-dcf-implied-growth-design.md`); EV/EBIT scored-leg measurement also in §2.2 |
+| Piotroski F-score | **SHIPPED** (`DATA_SOURCES.md` D1; §2.2 value-trap refinement) |
+| Altman Z (bankruptcy distance) | `DATA_SOURCES.md` D2 (proposed); §2.7 (smarter than the raw D/E gate) |
+| Beneish M / accruals (earnings quality) | `DATA_SOURCES.md` D3; §2.5 accruals half (still open) |
+| Estimate-revision / earnings-surprise momentum | `DATA_SOURCES.md` §2 + Tier B — needs an estimates feed (the cleaner momentum signal; Zacks' whole edge) |
+| 13F institutional / smart-money flow | `DATA_SOURCES.md` C3 (free via EDGAR) |
+| Congressional / gov-contract trades | `DATA_SOURCES.md` C2 (Quiver scaffold; the highest-leverage *alt-data* add) |
+| Sector-relative / peer-percentile scoring | §2.3 — highest-leverage **scoring** fix; subsumes the cross-sector band misfire most absolute metrics inherit |
+| Earnings-call transcripts + DEF 14A proxy | §3.1 (deferred) — **highest-leverage research-layer next step** per the reverse-DCF red-team |
+| News / event tone | `DATA_SOURCES.md` A5 (GDELT); EDGAR 8-K/13D/13G/144 events already SHIPPED |
+| Portfolio-level exposure/concentration | scout `_Portfolio` section SHIPPED (see `CLAUDE.md`) |
+
+### Net-new clues (no home yet — feed AND value both unproven)
+
+- **Options-implied signals** — IV rank, put/call skew, unusual-options flow (cf. Unusual
+  Whales). *Vet:* no keyless feed known (mostly paid); likely noise for a fundamental
+  pre-screen. Justify hard before building.
+- **Dividend-safety / coverage** — payout ratio vs FCF, streak, cut-risk (cf. Simply Wall
+  St, Stock Rover). *Vet:* derivable from existing statements (no feed), but only relevant
+  to an income tilt the screener doesn't currently have — scope the use-case first.
+- **Backtested portfolio simulation with turnover + transaction costs** — a real equity
+  curve net of costs, not just rank IC (cf. Portfolio123). *Vet:* this is the genuine
+  "does the composite make money" test and the most valuable net-new item — but it is
+  largely the §2.1 Phase-2 composite work, **blocked on snapshot-accumulation history**,
+  not a new feature. Pursue via §2.1, not as a bolt-on.
+
+**Strategic steer (from the reverse-DCF red-team):** before reaching for any new *signal*,
+the two highest-leverage items already in this doc are **§2.3 sector-relative scoring** and
+**§3.1 earnings-call transcripts**. A new feature should justify why it outranks those two.

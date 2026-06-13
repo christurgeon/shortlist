@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from . import claude_cli
+from . import reverse_dcf
 from .claude_cli import CliResult
 from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
                      assessment_from_payload, STANCES, _screening_call)
@@ -45,6 +46,14 @@ SYSTEM_PROMPT = (
     "financial series; when reconciling, weigh the TRAJECTORY (whether a single "
     "CAGR masks a recent decline, a one-off spike, or net-income-vs-cash-flow "
     "divergence), not only the latest value.\n"
+    "If a 'Price-implied FCF growth' line is present, weigh the implied rate against "
+    "the realized revenue/FCF CAGR in your reconciliation (signal token 'value'). A "
+    "gap is informative in EITHER direction: a high implied rate can be perfectly "
+    "rational for a durable compounder that has consistently delivered at or above "
+    "it — treat a high bar as a red flag ONLY when realized growth is well below it "
+    "AND quality/durability/persistence are weak. If the line carries a 'run-rate' "
+    "caveat, the implied rate is biased high for this name; discount it accordingly. "
+    "Never read 'high implied growth' as 'overvalued' on its own.\n"
     "THESIS is your interpretive judgment (bull_case, bear_case, "
     "what_would_change_my_mind, takeaway) — it carries NO quotes and is NOT a filing "
     "fact. Build it from the grounded risks/red_flags/reconciliation above; do not "
@@ -143,7 +152,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
     gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
-    quant = _quant_context(card, gaps_line)
+    quant = _quant_context(card, gaps_line, rcfg.get("reverse_dcf"))
     events_line = ""
     if filing_events:
         items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
@@ -204,7 +213,13 @@ def _render_series(series) -> str:
             + "\n".join(rows))
 
 
-def _quant_context(card, gaps_line="") -> str:
+def _fcf_col(m) -> list:
+    """Newest-first free_cash_flow column from m.financial_series, None-safe."""
+    series = getattr(m, "financial_series", None) or []
+    return [row.get("free_cash_flow") for row in series]
+
+
+def _quant_context(card, gaps_line="", rdcfg=None) -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -243,6 +258,11 @@ def _quant_context(card, gaps_line="") -> str:
         series_block = _render_series(getattr(m, "financial_series", None))
         if series_block:
             lines.append(series_block)
+        if rdcfg:
+            ig = reverse_dcf.implied_growth(
+                _fcf_col(m), getattr(m, "market_cap", None), rdcfg)
+            if ig is not None:
+                lines.append(reverse_dcf.format_line(ig))
     if card.gates:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:

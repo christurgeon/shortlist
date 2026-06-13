@@ -274,6 +274,13 @@ research:
       medium_below: 0.70       # confidence below this -> at most MEDIUM
     high_conviction:
       contra_flags: [value_trap]  # flags that block HIGH on a bullish call
+  reverse_dcf:                 # price-implied FCF growth line in the brief (research-only;
+                               # NOT a scored signal — see docs/.../2026-06-13-reverse-dcf-*).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    discount_rate: 0.10        # cost-of-equity prior (long-run equity return); the only model knob
+    base_years: 3              # FCF normalization window (median of positive years)
+    run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
+    display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.

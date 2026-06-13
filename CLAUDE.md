@@ -472,6 +472,25 @@ sinks a brief). Tune via `config.yaml: research.risk_diff` / `max_added_risks` /
 `max_chars.tenq_mda`. DEF 14A proxy + earnings-call transcripts remain deferred
 (no keyless source); `FilingBundle` leaves room to add the proxy later.
 
+The QUANT CONTEXT also carries a **reverse-DCF "price-implied FCF growth" line**
+(`research/reverse_dcf.py`, config `research.reverse_dcf`, ships **ON**) — a
+deterministic, **research-only** reframing the EV/EBIT review routed *out* of the
+scored composite (`ASSESSMENT_GAPS.md` §2.2). A single-stage Gordon inversion
+(`g = discount_rate − F0/market_cap`, `F0` = median of the last K positive FCF years
+from `m.financial_series`) prints *"market embeds ~X%/yr perpetual FCF growth"* so
+Claude can reconcile it against the realized revenue/FCF CAGR (signal token `value`).
+It is a **framing aid, NOT a scored or backtested signal**: the scorer is
+byte-identical (a `test_scoring.py` invariance test pins it), no `StockMetrics` field
+or feed is added, and the line lives in the prompt but **not** `bundle.haystack()`, so
+a computed number can never pass quote-verification as a filing fact. Three hardening
+choices from the adversarial review (spec §12) matter when editing: it is **single-stage**
+(two-stage is a monotone 1:1 transform of FCF yield → false precision); the prompt nudge
+is deliberately **symmetric** (high implied growth is rational for a durable compounder —
+never read as "expensive" alone, the canonical reverse-DCF misread); and it abstains
+(line omitted) on any non-finite/non-positive input, with a deterministic run-rate caveat
+when the latest FCF outruns the median base. `enabled: false` → byte-identical (line
+omitted), but cached briefs need `--refresh` to pick up the change.
+
 The brief ends with a **screening call** (`research/models.py:ScreeningCall`,
 config `research.screening_call`, ships **ON**) — a buy/hold/avoid stance +
 conviction + one-sentence rationale, authored by Claude but bounded by three
