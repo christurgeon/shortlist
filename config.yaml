@@ -341,3 +341,8 @@ macro:
     fedfunds: FEDFUNDS      # fed funds (%)
   risk_off: { hy_oas: 5.0, t10y2y: 0.0, vix: 25.0 }   # any one trips risk-off
   risk_on:  { hy_oas: 3.5, vix: 18.0 }                # unfitted priors
+
+# --- portfolio-awareness (bot /portfolio) ---
+portfolio:
+  path: portfolio.csv      # gitignored holdings file (ticker,shares); relative to cwd
+  max_holdings: 50         # safety cap; over this, screen the cap + WARN (never silent-drop)
