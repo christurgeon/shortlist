@@ -7,8 +7,11 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 from statistics import mean, stdev
 from typing import Optional
+
+from .signals import Observation
 
 
 def rank(xs: list[float]) -> list[float]:
@@ -52,13 +55,15 @@ def spearman_ic(signal: list[Optional[float]],
     return round(ic, 10) if ic is not None else None
 
 
-def cross_signal_xs_corr(observations, sig_a: str, sig_b: str) -> Optional[float]:
+def cross_signal_xs_corr(observations: list[Observation], sig_a: str,
+                         sig_b: str) -> Optional[float]:
     """Mean per-date Spearman rank correlation between two emitted signals over the
     names where BOTH are present. Diagnoses leg collinearity (e.g. ebit_ev_yield vs
     fcf_yield): a high value means a new leg duplicates an existing one and would
     dilute, not add to, an unweighted value average. None if no date has >= 3
     co-present pairs (spearman_ic itself returns None below 3 usable pairs)."""
-    by_date: dict = defaultdict(lambda: ([], []))
+    by_date: dict[date, tuple[list[float], list[float]]] = defaultdict(
+        lambda: ([], []))
     for obs in observations:
         sigs = obs.signals
         if sig_a in sigs and sig_b in sigs:

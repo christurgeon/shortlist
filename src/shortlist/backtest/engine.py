@@ -11,7 +11,7 @@ from typing import Optional
 
 from .metrics import ICStats, QuantileResult, aggregate_ic, quantile_spread, spearman_ic
 from .prices import PriceHistory, _add_months
-from .signals import SignalSource
+from .signals import Observation, SignalSource
 
 _TRUST_MIN_PERIODS = 24
 _TRUST_MIN_BREADTH = 30
@@ -47,7 +47,7 @@ def _collect_rows(src: SignalSource, universe: list[str],
 
 
 def collect_observations(src: SignalSource, universe: list[str],
-                         grid: list[date]) -> list:
+                         grid: list[date]) -> list[Observation]:
     """All non-empty Observations a source emits over (grid x universe). Used by
     diagnostics (e.g. cross-signal correlation) that need raw signal vectors, not
     forward-return joins. Cheap: companyfacts/prices are already cached."""
