@@ -81,3 +81,25 @@ def test_section_renders_alerts_table_sectors_totals():
     assert "financials" in html
     text = render_text(vm, Detail.FULL)
     assert "LMT" in text and "negative_fcf" in text
+
+
+def test_no_data_position_renders_safely():
+    s = _summary([_pos("APPL", no_data=True)])   # typo ticker, card=None
+    vm = _vm(s)
+    html = render_html_body(vm)
+    text = render_text(vm, Detail.FULL)
+    assert "APPL" in html and "no data" in html
+    assert "APPL" in text and "no data" in text
+
+
+def test_totals_omitted_when_total_value_none():
+    s = _summary([_pos("AAPL", weight=None)])     # unpriced -> no totals
+    html = render_html_body(vm := _vm(s))
+    assert "Book $" not in html
+    assert "·" in html                             # unpriced weight shown as a dot
+
+
+def test_unpriced_weight_renders_dot_in_text():
+    s = _summary([_pos("AAPL", weight=None)])
+    text = render_text(_vm(s), Detail.FULL)
+    assert "AAPL" in text and "·" in text

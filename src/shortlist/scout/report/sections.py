@@ -318,7 +318,7 @@ class _Portfolio:
 
     @staticmethod
     def _chips(pos):
-        if pos.no_data:
+        if pos.no_data or pos.card is None:
             return ["no data"]
         c = list(pos.card.gates) + list(pos.card.flags)
         if not pos.card.scored:
@@ -330,15 +330,15 @@ class _Portfolio:
         parts = []
         if p.alerts:
             items = "".join(
-                h.raw("li", h.esc(f"{pos.ticker} — {', '.join(self._chips(pos)) or 'flagged'}"))
+                h.tag("li", f"{pos.ticker} — {', '.join(self._chips(pos)) or 'flagged'}")
                 for pos in p.alerts)
             parts.append(h.raw("div", h.raw("b", "Alerts") + h.raw("ul", items), _class="pf-alerts"))
         rows = []
         for pos in p.positions:
             w = "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
             comp = "·" if pos.card is None else f"{pos.card.composite:.0f}"
-            tags = ", ".join(self._chips(pos)) if (pos.no_data or
-                   (pos.card and (pos.card.gates or pos.card.flags or not pos.card.scored))) else "·"
+            chips = self._chips(pos)
+            tags = ", ".join(chips) if chips else "·"
             cells = (h.tag("td", pos.ticker) + h.tag("td", w) + h.tag("td", comp) + h.tag("td", tags))
             rows.append(h.raw("tr", cells))
         head = h.raw("tr", "".join(h.tag("th", c) for c in ("Ticker", "Weight", "Comp", "Gates/Flags")))
@@ -349,6 +349,8 @@ class _Portfolio:
         if p.total_value is not None:
             wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
             parts.append(h.tag("div", f"Book ${p.total_value/1e3:.0f}k{wc}", _class="pf-tot"))
+        # NOTE: pf/pf-alerts/pf-sectors/pf-tot are unstyled in v1 (html._CSS) — content
+        # renders readably on base table/div rules; theming is deferred.
         return "".join(parts)
 
     def render_text(self, vm, detail):
