@@ -335,6 +335,7 @@ def test_portfolio_happy_path_screens_and_delivers(tmp_path):
     bot._handle(Command("portfolio", (), "/portfolio"))
     assert calls["tickers"] == ["AAPL", "LMT"]
     assert calls["portfolio"] is not None          # summary threaded
+    assert hasattr(calls["portfolio"], "positions")   # a real PortfolioSummary, not a placeholder
     assert calls["delivered"] is True
 
 
@@ -350,3 +351,23 @@ def test_portfolio_over_cap_warns_incomplete(tmp_path):
     bot._handle(Command("portfolio", (), "/portfolio"))
     warn = " ".join(bot.notifier.messages)
     assert "MSFT" in warn and "INCOMPLETE" in warn.upper()
+
+
+def test_portfolio_all_no_data_still_delivers(tmp_path):
+    # Monitoring intent: if every holding comes back no-data, still deliver a
+    # portfolio report (holdings shown as no-data alerts) — NOT a dead-end.
+    calls = {}
+    def screen_fn(tickers, sources, config, macro=None):
+        return [FakeCard(t, empty=True) for t in tickers]   # all no-data
+    def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
+        calls["portfolio"] = portfolio
+        return type("A", (), {"png": b"P", "html": "<h>", "text": "t"})()
+    def deliver_fn(notifier, *, png, html, text, caption, session):
+        calls["delivered"] = True
+        return None
+    bot = _bot_pf(tmp_path, "AAPL,1\nLMT,1\n",
+                  screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
+    bot._handle(Command("portfolio", (), "/portfolio"))
+    assert calls["delivered"] is True
+    assert calls["portfolio"] is not None
+    assert "INCOMPLETE" not in " ".join(bot.notifier.messages)   # nothing dropped

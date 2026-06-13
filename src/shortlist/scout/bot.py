@@ -282,6 +282,7 @@ class TelegramBot:
             self.notifier.send_message(fmt_note)
 
     def _do_portfolio(self) -> None:
+        # lazy import: keep the always-on bot import path light
         from .. import portfolio as pf
         pf_cfg = self.config.get("portfolio") or {}
         path = pf_cfg.get("path", "portfolio.csv")
@@ -296,7 +297,7 @@ class TelegramBot:
             return
         # NO silent truncation — dropping an owned name hides its alerts. Screen the
         # full list up to the safety cap; warn explicitly about any overflow.
-        screened_holdings, dropped = holdings[:cap], [h.ticker for h in holdings[cap:]]
+        screened_holdings, dropped_tickers = holdings[:cap], [h.ticker for h in holdings[cap:]]
         tickers = [h.ticker for h in screened_holdings]
         self.notifier.send_chat_action("upload_photo")
         from ..data.macro import fetch_macro
@@ -308,13 +309,13 @@ class TelegramBot:
         art = self._report_fn()(present, manifest, assessments={}, macro=macro,
                                 portfolio=summary)
         self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                           caption=_caption(manifest, present) if present else "Portfolio",
+                           caption=_caption(manifest, present),
                            session=manifest.session.isoformat())
         if warnings:
             self.notifier.send_message("⚠️ portfolio file:\n" + "\n".join(warnings))
-        if dropped:
+        if dropped_tickers:
             self.notifier.send_message(
-                f"⚠️ {len(dropped)} holdings NOT screened (cap {cap}): {', '.join(dropped)}. "
+                f"⚠️ {len(dropped_tickers)} holdings NOT screened (cap {cap}): {', '.join(dropped_tickers)}. "
                 "Alerts for these are INCOMPLETE — raise portfolio.max_holdings or warm the cache.")
 
     # --- loop machinery ---
