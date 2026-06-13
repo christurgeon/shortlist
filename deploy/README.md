@@ -7,7 +7,7 @@ Two independent jobs live here:
 - **Autonomous scout** (`shortlist-scout.{service,timer}`) — daily candidate
   discovery + ranked Telegram report. See [Autonomous Scout](#autonomous-scout).
 - **Interactive bot** (`shortlist-bot.service`) — always-on Telegram bot; operator
-  triggers `/screen` and `/deep` on demand. See [Interactive Bot](#interactive-bot).
+  triggers `/screen`, `/deep`, and `/portfolio` on demand. See [Interactive Bot](#interactive-bot).
 - **Snapshot accumulation** (`shortlist-accumulate.{service,timer}`) — builds the
   daily-snapshot history the backtest replay needs. See [Snapshot accumulation](#snapshot-accumulation-disabled-by-default).
 
@@ -201,6 +201,7 @@ The operator drives screening by chatting:
 |---------|--------------|
 | `/screen NVDA, LMT, MSFT` | Fast scores + gates report; same PNG dashboard + HTML deep-dive the daily push sends |
 | `/deep TSLA` | Same as `/screen` but also runs the Claude 10-K research brief (slower) |
+| `/portfolio` | Re-screens your holdings from a gitignored `portfolio.csv` (`ticker,shares`, in the bot's working dir); adds a Portfolio section with exposure, sector concentration, and deterioration alerts. Cap: `config.yaml: portfolio.max_holdings` |
 | `/help` | Lists available commands |
 
 > **This unit is NOT auto-installed.** Copy it manually after reviewing the paths

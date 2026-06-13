@@ -213,11 +213,13 @@ the `claude` CLI on PATH (uses your existing CLI auth — no API key) and the
 
 ## Reading the output
 
-The composite ranks **business quality + value** (with momentum a lighter tilt). It deliberately does
-*not* know your existing portfolio — so a name can top the screen on merit yet
-still be a poor *addition* if it doubles an exposure you already hold. Use the
-ranking to surface candidates; use your own allocation judgment to decide what
-actually goes in.
+The composite ranks **business quality + value** (with momentum a lighter tilt). The
+composite itself is portfolio-blind — a name can top the screen on merit yet still be a
+poor *addition* if it doubles an exposure you already hold. Use the ranking to surface
+candidates; use your own allocation judgment to decide what actually goes in. (The
+bot's `/portfolio` command closes part of this gap: it re-screens what you *own* and
+reports your exposure + sector concentration alongside the same scores — see
+[Interactive bot](#interactive-bot).)
 
 ## Autonomous scout
 
@@ -226,7 +228,8 @@ to drive it:
 
 - **Interactive bot (primary).** `shortlist-bot` long-polls Telegram so you drive
   screening by chatting — `/screen nvda, lmt, msft` returns the ranked dashboard in
-  seconds, `/deep tsla` adds the Claude 10-K brief. No webhook / inbound ports; it only
+  seconds, `/deep tsla` adds the Claude 10-K brief, and `/portfolio` re-screens your own
+  holdings for exposure + deterioration alerts. No webhook / inbound ports; it only
   answers your allowlisted chat. See [Interactive bot](#interactive-bot) below.
 - **Autonomous daily push (opt-in).** A `shortlist-scout` run discovers candidates from
   free signal feeds, deep-screens them, and pushes a daily Telegram report — no watchlist
@@ -259,6 +262,7 @@ uv run shortlist-bot           # starts the long-poll loop (Ctrl-C to stop)
 |---------|-------|
 | `/screen nvda, lmt, msft` | Ranked dashboard (PNG chart + HTML deep-dive), seconds. Comma/space-separated, case-insensitive. |
 | `/deep tsla` | Same, plus the Claude 10-K research brief (slower — opt-in). |
+| `/portfolio` | Re-screens your own holdings from a gitignored `portfolio.csv` (`ticker,shares`): exposure weights, sector concentration, and per-holding deterioration alerts. No arguments. |
 | `/help` | Command list. |
 
 It reuses the exact scorer and report pipeline as the daily push. Soft per-request caps
@@ -267,6 +271,23 @@ makes warm re-screens free. It shares the bot token with the daily push — poll
 sending coexist, only **two concurrent pollers** conflict (run one instance). Always-on
 systemd unit: [`deploy/shortlist-bot.service`](deploy/shortlist-bot.service) (see
 [`deploy/README.md`](deploy/README.md)).
+
+**Holdings (`/portfolio`).** Copy `portfolio.example.csv` to `portfolio.csv` (gitignored;
+resolved relative to the bot's working directory — `config.yaml: portfolio.path`) and list
+your positions, one `ticker,shares` per line:
+
+```csv
+ticker,shares
+AAPL,40
+LMT,15
+```
+
+`/portfolio` then screens those names and replies with the usual report plus a **Portfolio**
+section: position weights, sector concentration, and alerts on any holding that trips a gate,
+fires a flag, isn't scored, or comes back as an unknown ticker. It's a hand-maintained file —
+no brokerage sync, no cost basis. A portfolio larger than `portfolio.max_holdings` (default
+50) is screened up to the cap with an explicit "alerts incomplete" warning naming the
+un-screened tickers — never a silent drop.
 
 ### Telegram delivery setup
 
