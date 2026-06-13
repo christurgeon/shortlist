@@ -13,7 +13,8 @@ import httpx
 import yaml
 
 from ..env import load_env
-from .engine import run_backtest
+from .engine import collect_observations, observation_grid, run_backtest
+from .metrics import cross_signal_xs_corr
 from .prices import _UA, _add_months, fetch_history
 from .report import render_table, report_to_dict
 from .signals import MomentumSignalSource, XbrlSignalSource
@@ -245,6 +246,18 @@ def main(argv=None) -> int:
                           horizons=horizons, step_months=(args.step_months or None),
                           n_buckets=args.buckets, return_mode=args.return_mode,
                           price_asof=date.fromisoformat(today))
+
+    # Collinearity diagnostic (spec §11): is the new EV/EBIT leg redundant with the
+    # existing absolute fcf_yield leg? Only meaningful for the XBRL fundamental
+    # source. Printed to stderr so --json stdout stays clean.
+    if args.source == "xbrl":
+        diag_grid = observation_grid(start, end, args.step_months or horizons[0])
+        diag_obs = collect_observations(src, sorted(hists.keys()), diag_grid)
+        corr = cross_signal_xs_corr(diag_obs, "ebit_ev_yield", "value_fcf_yield")
+        if corr is not None:
+            print(f"Leg collinearity  corr(ebit_ev_yield, fcf_yield) = {corr:+.3f} "
+                  f"(>~0.5 => the EV/EBIT leg largely duplicates fcf_yield)",
+                  file=sys.stderr)
 
     if args.csv:
         _write_csv(report, args.csv)

@@ -1,6 +1,42 @@
 import random
+from datetime import date
 
-from shortlist.backtest.metrics import rank, spearman_ic, aggregate_ic, quantile_spread
+from shortlist.backtest.metrics import (
+    cross_signal_xs_corr,
+    rank,
+    spearman_ic,
+    aggregate_ic,
+    quantile_spread,
+)
+from shortlist.backtest.signals import Observation
+
+
+def test_cross_signal_xs_corr_perfect_rank_agreement():
+    d = date(2023, 1, 1)
+    obs = [
+        Observation(d, "A", {"x": 1.0, "y": 10.0}),
+        Observation(d, "B", {"x": 2.0, "y": 20.0}),
+        Observation(d, "C", {"x": 3.0, "y": 30.0}),
+    ]
+    assert cross_signal_xs_corr(obs, "x", "y") == 1.0
+
+
+def test_cross_signal_xs_corr_skips_rows_missing_a_leg():
+    d = date(2023, 1, 1)
+    obs = [
+        Observation(d, "A", {"x": 1.0, "y": 30.0}),
+        Observation(d, "B", {"x": 2.0}),            # no y -> skipped
+        Observation(d, "C", {"x": 3.0, "y": 10.0}),
+        Observation(d, "D", {"x": 4.0, "y": 20.0}),
+    ]
+    # usable: (1,30),(3,10),(4,20) -> ranks x:1,2,3 y:3,1,2 -> negative corr
+    assert cross_signal_xs_corr(obs, "x", "y") < 0
+
+
+def test_cross_signal_xs_corr_none_when_too_few_pairs():
+    d = date(2023, 1, 1)
+    obs = [Observation(d, "A", {"x": 1.0, "y": 1.0})]
+    assert cross_signal_xs_corr(obs, "x", "y") is None
 
 
 def test_rank_averages_ties():

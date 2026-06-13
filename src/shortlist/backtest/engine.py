@@ -46,6 +46,20 @@ def _collect_rows(src: SignalSource, universe: list[str],
     return rows
 
 
+def collect_observations(src: SignalSource, universe: list[str],
+                         grid: list[date]) -> list:
+    """All non-empty Observations a source emits over (grid x universe). Used by
+    diagnostics (e.g. cross-signal correlation) that need raw signal vectors, not
+    forward-return joins. Cheap: companyfacts/prices are already cached."""
+    out = []
+    for t in grid:
+        for tk in universe:
+            obs = src.observe(tk, t)
+            if obs is not None and obs.signals:
+                out.append(obs)
+    return out
+
+
 @dataclass
 class SignalReport:
     signal: str

@@ -1,8 +1,20 @@
 from datetime import date, timedelta
 
 from shortlist.backtest.prices import PriceHistory
-from shortlist.backtest.signals import MomentumSignalSource
-from shortlist.backtest.engine import observation_grid, run_backtest
+from shortlist.backtest.signals import MomentumSignalSource, Observation
+from shortlist.backtest.engine import collect_observations, observation_grid, run_backtest
+
+
+class _StubSource:
+    def observe(self, ticker, as_of):
+        return Observation(as_of, ticker, {"x": 1.0})
+
+
+def test_collect_observations_covers_grid_and_universe():
+    grid = [date(2023, 1, 1), date(2023, 4, 1)]
+    obs = collect_observations(_StubSource(), ["A", "B"], grid)
+    assert len(obs) == 4
+    assert {o.ticker for o in obs} == {"A", "B"}
 
 THRESH = {"price_vs_200dma": [-0.10, 0.30], "rel_strength_6m": [-0.15, 0.25],
           "eps_revision": [-0.05, 0.10]}

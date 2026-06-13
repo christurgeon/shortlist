@@ -5,6 +5,7 @@ No numpy/scipy — Spearman is Pearson-on-ranks, ranks use average tie handling.
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass
 from statistics import mean, stdev
 from typing import Optional
@@ -49,6 +50,24 @@ def spearman_ic(signal: list[Optional[float]],
     s_vals, f_vals = zip(*pairs, strict=True)
     ic = _pearson(rank(list(s_vals)), rank(list(f_vals)))
     return round(ic, 10) if ic is not None else None
+
+
+def cross_signal_xs_corr(observations, sig_a: str, sig_b: str) -> Optional[float]:
+    """Mean per-date Spearman rank correlation between two emitted signals over the
+    names where BOTH are present. Diagnoses leg collinearity (e.g. ebit_ev_yield vs
+    fcf_yield): a high value means a new leg duplicates an existing one and would
+    dilute, not add to, an unweighted value average. None if no date has >= 3
+    co-present pairs (spearman_ic itself returns None below 3 usable pairs)."""
+    by_date: dict = defaultdict(lambda: ([], []))
+    for obs in observations:
+        sigs = obs.signals
+        if sig_a in sigs and sig_b in sigs:
+            a, b = by_date[obs.as_of]
+            a.append(sigs[sig_a])
+            b.append(sigs[sig_b])
+    cors = [spearman_ic(a, b) for a, b in by_date.values()]
+    cors = [c for c in cors if c is not None]
+    return round(mean(cors), 4) if cors else None
 
 
 @dataclass(frozen=True)
