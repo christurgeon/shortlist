@@ -64,3 +64,80 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
             totals[ticker] += shares
             warnings.append(f"Duplicate ticker {ticker}: summed shares.")
     return [Holding(t, totals[t]) for t in order], warnings
+
+
+@dataclass(frozen=True)
+class Position:
+    ticker: str
+    shares: float
+    price: Optional[float]
+    value: Optional[float]
+    weight: Optional[float]
+    card: Optional[ScoreCard]
+    no_data: bool = False
+
+
+@dataclass(frozen=True)
+class PortfolioSummary:
+    positions: list[Position]                 # weight-desc, priceless last
+    total_value: Optional[float]
+    sector_weights: list[tuple[str, float]]   # (sic_bucket, weight) desc
+    alerts: list[Position]
+    priced_count: int
+    unpriced: list[str]
+    no_data_tickers: list[str]
+    weighted_composite: Optional[float]
+
+
+def _is_alert(card, no_data: bool) -> bool:
+    if no_data:
+        return True
+    return bool(card.gates) or bool(card.flags) or not getattr(card, "scored", True)
+
+
+def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSummary:
+    """Pure. Join holdings to their ScoreCards by ticker; read live price from
+    card.metrics.price; compute exposure, sector mix, and monitoring alerts.
+
+    A holding with no matching card OR a no-data card (validation.no_data) is an
+    alert and contributes no exposure (so a CSV typo can't hide)."""
+    by_ticker = {c.ticker: c for c in cards}
+    # First pass: resolve card / no_data / price / raw value.
+    raw: list[dict] = []
+    total = 0.0
+    for h in holdings:
+        card = by_ticker.get(h.ticker)
+        nd = card is None or _no_data(card)
+        price = None
+        if card is not None and not nd:
+            m = getattr(card, "metrics", None)
+            p = getattr(m, "price", None) if m is not None else None
+            price = p if p else None          # 0/None -> unpriced
+        value = h.shares * price if price else None
+        if value is not None:
+            total += value
+        raw.append({"h": h, "card": card, "nd": nd, "price": price, "value": value})
+
+    total_value = total if total > 0 else None
+    positions: list[Position] = []
+    sector_acc: dict[str, float] = {}
+    wcomp = 0.0
+    for r in raw:
+        h, card, nd, price, value = r["h"], r["card"], r["nd"], r["price"], r["value"]
+        weight = (value / total_value) if (value is not None and total_value) else None
+        pos = Position(h.ticker, h.shares, price, value, weight, card, nd)
+        positions.append(pos)
+        if weight is not None:
+            bucket = getattr(card, "sic_bucket", None) or "unknown"
+            sector_acc[bucket] = sector_acc.get(bucket, 0.0) + weight
+            wcomp += weight * card.composite
+
+    positions.sort(key=lambda p: (p.weight is not None, p.weight or 0.0), reverse=True)
+    sector_weights = sorted(sector_acc.items(), key=lambda kv: kv[1], reverse=True)
+    alerts = [p for p in positions if _is_alert(p.card, p.no_data)]
+    unpriced = [p.ticker for p in positions if p.price is None and not p.no_data]
+    no_data_tickers = [p.ticker for p in positions if p.no_data]
+    priced_count = sum(1 for p in positions if p.weight is not None)
+    weighted_composite = wcomp if total_value else None
+    return PortfolioSummary(positions, total_value, sector_weights, alerts,
+                            priced_count, unpriced, no_data_tickers, weighted_composite)
