@@ -95,6 +95,7 @@ def test_weights_sum_to_one_over_priced():
     assert abs(by["LMT"].weight - 0.75) < 1e-9
     assert abs(sum(p.weight for p in s.positions) - 1.0) < 1e-9
     assert s.positions[0].ticker == "LMT"   # ordered weight-desc
+    assert s.priced_count == 2
 
 
 def test_unpriced_excluded_from_denominator():
@@ -107,6 +108,7 @@ def test_unpriced_excluded_from_denominator():
     assert by["XXX"].weight is None
     assert "XXX" in s.unpriced
     assert s.positions[-1].ticker == "XXX"  # priceless sorts last
+    assert s.priced_count == 1
 
 
 def test_alerts_capture_gates_flags_notscored_nodata():
@@ -146,3 +148,16 @@ def test_all_unpriced_total_value_none():
     assert s.total_value is None
     assert s.positions[0].weight is None
     assert s.weighted_composite is None
+
+
+def test_short_position_is_net_exposure():
+    # Net-exposure convention: long-heavy book -> weight > 100%, short -> negative weight,
+    # priced weights still sum to 1.0. Deliberate, not a bug.
+    holdings = [Holding("LONG", 10), Holding("SHRT", -5)]
+    cards = [_Card("LONG", price=100.0), _Card("SHRT", price=100.0)]  # 1000 + (-500) = 500
+    s = summarize(holdings, cards)
+    assert s.total_value == 500.0
+    by = {p.ticker: p for p in s.positions}
+    assert abs(by["LONG"].weight - 2.0) < 1e-9
+    assert abs(by["SHRT"].weight - (-1.0)) < 1e-9
+    assert abs(sum(p.weight for p in s.positions) - 1.0) < 1e-9

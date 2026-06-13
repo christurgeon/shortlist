@@ -100,7 +100,13 @@ def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSumma
     card.metrics.price; compute exposure, sector mix, and monitoring alerts.
 
     A holding with no matching card OR a no-data card (validation.no_data) is an
-    alert and contributes no exposure (so a CSV typo can't hide)."""
+    alert and contributes no exposure (so a CSV typo can't hide).
+
+    Weights are NET exposure computed against the sum of priced position values
+    (the standard portfolio convention): a long-heavy book can give a single
+    holding a weight above 100%, and a short (negative shares, which
+    `load_holdings` accepts) gets a negative weight; weights over the priced
+    set sum to 1.0. This is intentional, not a bug."""
     by_ticker = {c.ticker: c for c in cards}
     # First pass: resolve card / no_data / price / raw value.
     raw: list[dict] = []
@@ -112,7 +118,7 @@ def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSumma
         if card is not None and not nd:
             m = getattr(card, "metrics", None)
             p = getattr(m, "price", None) if m is not None else None
-            price = p if p else None          # 0/None -> unpriced
+            price = p if p else None          # 0/None price -> unpriced: excluded from total_value & weights, listed in `unpriced`
         value = h.shares * price if price else None
         if value is not None:
             total += value
