@@ -44,9 +44,16 @@ validation, and history, not new scoring:
   (`Observation(as_of, ticker, {signal: sub-score})`). Momentum is validated on live
   prices; **`--source xbrl`** now validates the fundamental axes (quality/moat/growth/
   value) point-in-time, keylessly, from SEC companyfacts, and can **fit fundamental
-  weights** walk-forward (`--fit` — proposes only, never writes `config.yaml`). The
-  snapshot-replay path stays **guarded** on accumulated history. See `HARNESS.md` →
-  "Backtesting" / "XBRL source" and `docs/ASSESSMENT_GAPS.md` §2.1.
+  weights** walk-forward (`--fit` — proposes only, never writes `config.yaml`). It also
+  emits standalone **measurement-only** axes whose rank IC can be checked before any
+  production wiring: `share_count`, `net_debt_to_ebitda`, and the **EV/EBIT slice** —
+  `ebit_ev_yield` (EBIT/EV earnings yield) plus the per-leg value-attribution axes
+  (`value_fcf_yield` / etc.) and a cross-signal collinearity diagnostic. `ebit_ev_yield`
+  is derived on both paths (`bridge.py` + XBRL panel) and carried on `StockMetrics`, but
+  there is **no production sub-score reading it** — the value leg is deferred pending the
+  backtest (`scoring.py:ebit_ev_yield_score` is backtest-only). The snapshot-replay path
+  stays **guarded** on accumulated history. See `HARNESS.md` → "Backtesting" / "XBRL
+  source" and `docs/ASSESSMENT_GAPS.md` §2.1 / §2.2.
 - **Accumulation** (`shortlist.data.accumulate`, CLI `shortlist-accumulate`):
   idempotent, point-in-time daily capture of `TickerSnapshot`s into `store.py` so the
   guarded backtest paths can activate (≥24 daily snapshots). **Scheduling ships OFF**
@@ -423,12 +430,15 @@ legs explicitly instead of dropping-then-averaging them.
 ## Extension scaffolds (not wired)
 
 `providers/extensions.py` contains `QuiverProvider` and `FredProvider` stubs sketching
-the signals to implement. Quiver (congressional trades, gov-contract awards) and FRED
-(10y yield, 2s10s curve) are the highest-leverage next additions, in that order. **They
-predate the harness and are written against the retired screener `Provider` interface** —
-to actually wire them, reimplement each as an async `Source` in `data/sources.py` and
-register it in that module's `_REGISTRY` (the `--provider`/`harness_sources` chain resolves
-against the harness Source registry now, **not** `providers/__init__.py:build_providers`).
+the signals to implement. **FRED has since shipped** as a run-level macro overlay
+(`data/macro.py:fetch_macro` — risk-off regime, display + advisory only; the
+`FredProvider` stub now raises, since FRED is a macro overlay, not a per-ticker source).
+**Quiver** (congressional trades, gov-contract awards) is therefore the remaining
+highest-leverage next addition. **The stubs predate the harness and are written against the
+retired screener `Provider` interface** — to wire Quiver, reimplement it as an async
+`Source` in `data/sources.py` and register it in that module's `_REGISTRY` (the
+`--provider`/`harness_sources` chain resolves against the harness Source registry now,
+**not** `providers/__init__.py:build_providers`).
 
 ## Skills
 

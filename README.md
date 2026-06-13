@@ -122,7 +122,7 @@ A missing key just skips that provider with a warning, so set only what you need
 
 ### Command-line tools
 
-Four console scripts ship with the package (see `HARNESS.md` for the data-layer ones):
+Six console scripts ship with the package (see `HARNESS.md` for the data-layer ones):
 
 | Command | Purpose |
 |---|---|
@@ -130,6 +130,8 @@ Four console scripts ship with the package (see `HARNESS.md` for the data-layer 
 | `shortlist-harness` | Fetch one assessment-ready `TickerSnapshot` per ticker (`--out` to persist). |
 | `shortlist-backtest` | Validate scores against forward returns — rank IC + quantile spreads (`ASSESSMENT_GAPS.md` §2.1). |
 | `shortlist-accumulate` | Capture point-in-time snapshots daily so the snapshot-replay backtest accrues history. **Scheduling is off by default** (`deploy/`). |
+| `shortlist-scout` | Autonomous daily discovery → deep-screen → Telegram report (off by default). See [Autonomous scout](#autonomous-scout). |
+| `shortlist-bot` | Interactive Telegram bot — drive screening on demand (`/screen`, `/deep`, `/portfolio`). See [Interactive bot](#interactive-bot). |
 
 ## Why these data sources (the part that adds the value)
 
@@ -147,10 +149,11 @@ beats any single API.
 | **Yahoo** chart (wired) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
 
 FMP, Finnhub, EDGAR, **Yahoo**, **FINRA**, and **WSB** are all wired as harness
-sources (`data/sources.py`). Quiver and FRED are scaffolded in
-`providers/extensions.py` with the interface and the specific signals to add —
-they're the highest-leverage next additions, in that order (awaiting a harness-side
-`Source`).
+sources (`data/sources.py`). **FRED is now wired** as a run-level macro overlay
+(`data/macro.py` — risk-off regime, display + advisory only, needs a free
+`FRED_API_KEY`), not as a per-ticker source. **Quiver** (congressional trades,
+gov-contract awards) remains scaffolded in `providers/extensions.py` — the
+highest-leverage next addition (awaiting a harness-side `Source`).
 
 ## How scoring works (`scoring.py`)
 
