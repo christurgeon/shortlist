@@ -4,7 +4,15 @@ import dataclasses
 from typing import Optional
 
 from ..models import StockMetrics
-from ..stats import cagr, gross_margin_stability, growth_persistence, median_pe, piotroski_f
+from ..stats import (
+    cagr,
+    compute_ebit_ev_yield,
+    gross_margin_stability,
+    growth_persistence,
+    median_pe,
+    net_debt_from,
+    piotroski_f,
+)
 from .models import TickerSnapshot
 
 
@@ -179,6 +187,13 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         if (m.net_debt_to_ebitda is None and m.ebitda and debt0 is not None
                 and m.cash_and_equivalents is not None):
             m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
+        # EV/EBIT earnings yield (absolute valuation leg, §2.2). EBIT = operating
+        # income; EV = market_cap + net_debt. Same positional [0] alignment the
+        # net_debt_to_ebitda derivation above already relies on. Sole producer
+        # (no source sets it) -> the is-None guard is for symmetry. UNITS: USD.
+        if m.ebit_ev_yield is None:
+            m.ebit_ev_yield = compute_ebit_ev_yield(
+                oi0, m.market_cap, net_debt_from(debt0, m.cash_and_equivalents))
         # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
         # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
         # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave
