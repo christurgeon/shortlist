@@ -323,10 +323,14 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     net_debt_series = sum_aligned(p.total_debt, {e: -v for e, v in p.cash.items()})
     m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series)
 
-    # EV/EBIT earnings yield, point-in-time. EBIT and net_debt are both taken at
-    # the latest common fiscal end (net_debt_series is sum_aligned, so no
-    # cross-end mixing); EV pairs that net_debt with the as_of market cap (the
-    # standard EV convention). Backtest axis only.
+    # EV/EBIT earnings yield, point-in-time. EBIT and net_debt are each taken at
+    # their OWN latest fiscal end (two independent latest() calls — no common-end
+    # intersection like ratio_latest above). In practice both share the latest
+    # annual fiscal end, so this relies on that shared-end assumption rather than
+    # abstaining on disagreement (design spec §11(3) wanted abstention on >1-quarter
+    # disagreement; this slice deliberately relies on the shared end instead).
+    # net_debt_series is internally sum_aligned (debt/cash coherent); EV pairs that
+    # net_debt with the as_of market cap (the standard EV convention). Backtest axis only.
     m.ebit_ev_yield = compute_ebit_ev_yield(
         latest(p.operating_income), m.market_cap, latest(net_debt_series))
 
