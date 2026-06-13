@@ -1,7 +1,8 @@
 # Absolute valuation leg — EV/EBIT earnings yield (§2.2) — design
 
 **Date:** 2026-06-13
-**Status:** Draft — pending adversarial review
+**Status:** Draft — REVISED per three-agent review (see §11). Production leg
+de-scoped to a measurement-first slice; full enablement gated behind §2.3.
 **Author:** brainstormed with Claude
 **Closes:** `docs/ASSESSMENT_GAPS.md` §2.2 "still open — absolute-multiple half"
 
@@ -264,4 +265,63 @@ The cost is low (no new feed, ~tens of lines + tests), the risk is near-zero
 **Disposition:** ship the derivation + backtest attribution regardless (pure
 measurement infrastructure, always useful); ship the production leg **OFF**; only
 advocate turning it on after the standalone IC + collinearity read justify it.
+
+## 11. Three-agent review findings (2026-06-13)
+
+Reviewed by three independent agents: an implementation fact-checker, a
+signal-value PM skeptic, and an adversarial red-team. Verdicts:
+
+- **Implementation:** IMPLEMENTABLE-AS-SPEC. Every technical claim verified true
+  (locals in scope at `bridge.py:165-181`; XBRL panel already has `cash` at
+  `_xbrl_facts.py:203,319` — "no new feed" holds; `_value_legs` has no config param;
+  `value_score()` is backtest-only; gating/masking/byte-identical patterns all
+  precedented). **Two fixes required:** (1) surfacing reads the *ScoreCard*, not
+  metrics — so it needs a new `ScoreCard.ebit_ev_yield` field (`models.py:145`) + a
+  copy line in `ScoreCard(...)` (`scoring.py:~534`), which §4.4 omitted; (2) the
+  byte-identical regression mirror is `test_scoring.py:test_dilution_leg_absent_is_byte_identical`.
+
+- **Signal-value PM:** SHIP-BUT-CHANGE — ship §4.0+§4.1 (derivation + standalone
+  axes) ONLY; do **not** build the production leg (§4.2/4.3). EBIT/EV vs
+  FCF/market-cap rank-correlate **~0.6–0.8**; folding a correlated 5th leg into an
+  unweighted average **double-weights the crowded cash-earnings-yield factor and
+  mutes the orthogonal legs** (dilutive by construction). Single-year EBIT is
+  anti-predictive at turning points for the cyclicals the leg targets. Net
+  re-ranking ≈ 0 (value 0.22 ÷ 5 ≈ 4.4% correlated weight). **Measure the
+  cross-sectional rank correlation first; if >0.5 on this universe, the production
+  half is permanently DON'T-SHIP.**
+
+- **Red-team:** NOT a sensible direction *right now*. Top objections: (1) **wrong
+  priority** — §4 ranks EV/EBIT last; §2.3 sector-relative scoring is higher-leverage
+  *and a prerequisite* (this leg's absolute band misfires across sectors, the disease
+  §2.3 cures); (2) **un-enable-able by design** — the 4-leg/5-leg divergence means the
+  standalone-axis IC never measures the *production* combined-average IC, and a null
+  is pre-excused, so the OFF leg has no honest path to ON (measurement theater); (3)
+  **noisy/misaligned numerator** — single-year EBIT (income flow) over a
+  balance-sheet-instant net-debt, alignment asserted not proven. Recommendation:
+  **build §2.3 first.**
+
+### Resolution (revised plan)
+
+1. **Measurement-design fix (addresses the central flaw).** Standalone-axis IC
+   cannot answer "additive-or-dilutive *to the value average*." So the backtest must
+   also emit a **`value_plus_evebit` axis** = the combined value average *with* the
+   EV/EBIT leg folded in, alongside the existing 4-leg `value` axis and a
+   **`corr(ebit_ev_yield, fcf_yield)`** cross-sectional statistic. The enable rule
+   becomes concrete: turn the production leg ON only if `value_plus_evebit` IC >
+   `value` IC **and** the leg correlation is materially < 0.5.
+
+2. **De-scope to measurement-first.** Build §4.0 (derivation, with the
+   date-alignment guard below) + §4.1 (standalone axes) + the `value_plus_evebit`
+   and correlation diagnostics. **Do NOT build §4.2/§4.3 (the production gated leg)**
+   in this pass — it ships only if the diagnostics clear, and ideally after §2.3
+   gives it a sector-relative home.
+
+3. **Date-alignment guard (new).** EBIT (income-statement FY flow) and net_debt
+   (balance-sheet instant) must come from the same fiscal period. Abstain
+   (`ebit_ev_yield = None`) when the operating-income period end and the balance-sheet
+   instant date disagree by more than a quarter, rather than blindly pairing `[0]`
+   with `[0]`.
+
+4. **Surfacing fix.** Add `ScoreCard.ebit_ev_yield` + the copy line per the
+   implementation review (only when/if the production leg is built).
 ```
