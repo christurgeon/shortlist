@@ -69,8 +69,15 @@ validation, and history, not new scoring:
   Telegram is unconfigured or failing.
   An interactive **`shortlist-bot`** (`shortlist.scout.bot`, CLI `shortlist-bot`) long-polls
   Telegram `getUpdates` (no webhook, no inbound ports) so the operator drives screening on
-  demand: `/screen <tickers>` (fast scores/gates → same PNG+HTML report pipeline) and
-  `/deep <ticker>` (adds the Claude research brief). It allowlists `TELEGRAM_CHAT_ID`
+  demand: `/screen <tickers>` (fast scores/gates → same PNG+HTML report pipeline),
+  `/deep <ticker>` (adds the Claude research brief), and `/portfolio` (reads the
+  gitignored `portfolio.csv` — `ticker,shares`; path and cap in `config.yaml: portfolio`
+  — runs `run_harness` on held tickers, then delivers the same report with a new
+  applies()-gated `_Portfolio` section showing exposure, sector concentration by
+  `sic_bucket`, and per-holding deterioration alerts for gates/flags/not-scored/unknown
+  tickers; **never silently truncates** — overflow past `portfolio.max_holdings` is
+  warned as incomplete, naming the dropped tickers; no cost basis, no brokerage API;
+  pure leaf in `shortlist/portfolio.py`). It allowlists `TELEGRAM_CHAT_ID`
   (ignores all other senders), runs command handlers on a single worker thread (the poll
   loop never blocks), and reuses `run_harness`/`build_report`/`deliver` unchanged.
   Coexists with the daily push on one token (polling + sendMessage don't conflict; only
