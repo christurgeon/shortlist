@@ -808,6 +808,24 @@ def test_financial_series_does_not_affect_scoring():
     assert fields(base) == fields(after)
 
 
+def test_reverse_dcf_config_does_not_affect_scoring():
+    # The reverse-DCF line is a research-only brief addition; the scorer must never
+    # read research.reverse_dcf. Pin that a wild config leaves every score identical.
+    import copy
+    m = StockMetrics(ticker="X", revenue_cagr=0.1, net_margin=0.2, roic=0.2,
+                     gross_margin=0.4, fcf_yield=0.05, market_cap=2000e6,
+                     financial_series=[{"free_cash_flow": 100e6}])
+    base = score(m, CONFIG)
+    cfg2 = copy.deepcopy(CONFIG)
+    cfg2.setdefault("research", {})["reverse_dcf"] = {
+        "enabled": True, "discount_rate": 0.99, "base_years": 1}
+    after = score(m, cfg2)
+    def fields(c):
+        return (c.composite, c.quality, c.moat, c.growth, c.momentum,
+                c.value, c.insider, c.risk, c.gates, c.flags)
+    assert fields(base) == fields(after)
+
+
 def test_social_hype_flag_fires_and_is_advisory():
     from shortlist.scoring import check_flags
     from shortlist.models import StockMetrics
