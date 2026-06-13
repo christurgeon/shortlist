@@ -28,6 +28,10 @@ thresholds:
   # Value
   upside_to_target:    [0.00, 0.40]
   fcf_yield:           [0.02, 0.08]
+  # EV/EBIT earnings yield (EBIT/EV; higher = cheaper). UNFITTED prior: ~4% yield
+  # -> 0, ~12%+ -> 100 (Greenblatt-cheap territory). Backtest-measured only; no
+  # production sub-score reads this yet (spec §2.2 / 2026-06-13 design §9).
+  ebit_ev_yield: [0.04, 0.12]
   pe_vs_history:       [-0.20, 0.30]   # positive = cheaper than own 5y median
   peg:                 [3.0, 0.5]      # inverted: lower PEG scores higher (growth at a discount)
 
