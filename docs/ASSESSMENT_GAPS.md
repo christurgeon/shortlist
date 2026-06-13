@@ -170,6 +170,16 @@ relative.) Two structural failure modes:
   collinearity diagnostic (`--source xbrl`). The production scoring leg ships
   ONLY IF `IC(value_plus_evebit) > IC(value)` AND the leg correlation is materially
   < 0.5 (spec `2026-06-13-absolute-valuation-leg-ev-ebit-design.md` §9/§11).
+- **MEASURED (2026-06-13) → production leg STAYS OFF.** First `--source xbrl` run
+  (16 large-caps — the oracle-prod VPS RAM ceiling, XS-IC below the ~30-name trust
+  floor, so directional only) returned `corr(ebit_ev_yield, fcf_yield) = +0.724` —
+  well above the 0.5 kill-switch (and squarely in the PM-skeptic's predicted
+  0.6–0.8 band). `value_plus_evebit` TS-IC only marginally edged `value`
+  (h3 0.153 vs 0.143; h6 0.180 vs 0.164; h12 0.230 vs 0.212), on the
+  anti-conservative metric. The enable rule is an AND; the collinearity half fails
+  decisively, so the leg is **not** wired into production. A real trial needs a
+  small/mid-cap universe (EV/EBIT's natural habitat; large-cap is the wrong set per
+  §10) and a sector-relative home (§2.3) — on a bigger box than the VPS.
 
 #### 2.3 Absolute threshold bands misfire across sectors
 A 90%-margin software name and a 25%-margin industrial can't share one `gross_margin: [0.20,
