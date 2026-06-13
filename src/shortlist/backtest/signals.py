@@ -106,10 +106,17 @@ class XbrlSignalSource:
     a standalone `share_count` axis (diluted-share-count dilution, unfitted prior), and a
     standalone `net_debt_to_ebitda` axis (net-debt/EBITDA leverage, unfitted prior) so
     their rank IC is measurable before any is trusted in production scoring.
+
+    Also emits the absolute-valuation axes `ebit_ev_yield` (EBIT/EV earnings yield,
+    unfitted prior), the per-leg value-attribution axes `value_fcf_yield` /
+    `value_pe_vs_history`, and `value_plus_evebit` (the value average WITH the
+    EV/EBIT leg) so the leg's additive-or-dilutive effect on the combined `value`
+    IC is measurable before any production use (spec §11).
     """
     name = "xbrl"
     _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",
-             "net_debt_to_ebitda")
+             "net_debt_to_ebitda", "ebit_ev_yield", "value_fcf_yield",
+             "value_pe_vs_history", "value_plus_evebit")
 
     def __init__(self, facts: dict[str, dict], histories: dict[str, PriceHistory],
                  thresholds: dict):
