@@ -1,8 +1,8 @@
 import pytest
 
 from shortlist.stats import (
-    avg_roic, cagr, gross_margin_stability, growth_persistence, median_pe,
-    piotroski_f,
+    avg_roic, cagr, compute_ebit_ev_yield, gross_margin_stability,
+    growth_persistence, median_pe, net_debt_from, piotroski_f,
 )
 
 
@@ -189,3 +189,39 @@ def test_piotroski_none_leading_level_legs_abstain():
     won, legs = piotroski_f(**d)
     assert legs == 2          # only F5 and F6 evaluate
     assert won == 2           # both pass in the _improving fixture
+
+
+def test_net_debt_from_both_present():
+    assert net_debt_from(100.0, 30.0) == 70.0
+
+def test_net_debt_from_net_cash_is_negative():
+    assert net_debt_from(20.0, 50.0) == -30.0
+
+def test_net_debt_from_one_missing_treats_other_as_zero():
+    assert net_debt_from(100.0, None) == 100.0
+    assert net_debt_from(None, 40.0) == -40.0
+
+def test_net_debt_from_both_missing_abstains():
+    # O1: a market-cap-only EV would silently ignore leverage -> abstain.
+    assert net_debt_from(None, None) is None
+
+def test_ebit_ev_yield_basic():
+    # EBIT=100, mktcap=900, net_debt=100 -> EV=1000 -> yield 0.10
+    assert compute_ebit_ev_yield(100.0, 900.0, 100.0) == 0.10
+
+def test_ebit_ev_yield_net_cash_raises_yield():
+    # net cash shrinks EV: EV = 900 - 100 = 800 -> 100/800 = 0.125
+    assert compute_ebit_ev_yield(100.0, 900.0, -100.0) == 0.125
+
+def test_ebit_ev_yield_abstains_on_nonpositive_ebit():
+    assert compute_ebit_ev_yield(0.0, 900.0, 100.0) is None
+    assert compute_ebit_ev_yield(-50.0, 900.0, 100.0) is None
+
+def test_ebit_ev_yield_abstains_on_nonpositive_ev():
+    # net cash exceeds market cap -> EV <= 0 artifact
+    assert compute_ebit_ev_yield(100.0, 50.0, -60.0) is None
+
+def test_ebit_ev_yield_abstains_on_missing_inputs():
+    assert compute_ebit_ev_yield(None, 900.0, 100.0) is None
+    assert compute_ebit_ev_yield(100.0, None, 100.0) is None
+    assert compute_ebit_ev_yield(100.0, 900.0, None) is None

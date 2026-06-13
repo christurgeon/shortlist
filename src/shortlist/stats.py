@@ -163,3 +163,28 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
             won += 1
 
     return (won, legs) if legs else (None, None)
+
+
+def net_debt_from(total_debt: Optional[float],
+                  cash: Optional[float]) -> Optional[float]:
+    """Net debt = total_debt - cash (signed; net cash -> negative). Returns None
+    only when BOTH inputs are missing — a market-cap-only enterprise value would
+    silently ignore leverage, so we abstain rather than guess (spec O1). A single
+    missing side is treated as zero (conservative)."""
+    if total_debt is None and cash is None:
+        return None
+    return (total_debt or 0.0) - (cash or 0.0)
+
+
+def compute_ebit_ev_yield(ebit: Optional[float], market_cap: Optional[float],
+                          net_debt: Optional[float]) -> Optional[float]:
+    """EBIT/EV earnings yield (higher = cheaper). EV = market_cap + net_debt.
+    Abstains (None) on EBIT <= 0 (unprofitable is growth/quality's job, not a
+    valuation of negative earnings) and on EV <= 0 (net-cash-exceeds-market-cap
+    artifact). UNITS: ebit/market_cap/net_debt all absolute USD."""
+    if ebit is None or market_cap is None or net_debt is None or ebit <= 0:
+        return None
+    ev = market_cap + net_debt
+    if ev <= 0:
+        return None
+    return ebit / ev
