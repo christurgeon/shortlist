@@ -215,6 +215,7 @@ from ..models import StockMetrics  # noqa: E402
 from ..stats import (  # noqa: E402
     avg_roic,
     cagr,
+    compute_ebit_ev_yield,
     gross_margin_stability,
     growth_persistence,
     median_pe,
@@ -321,5 +322,12 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     # panel helpers (never mixing ends across the three series).
     net_debt_series = sum_aligned(p.total_debt, {e: -v for e, v in p.cash.items()})
     m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series)
+
+    # EV/EBIT earnings yield, point-in-time. EBIT and net_debt are both taken at
+    # the latest common fiscal end (net_debt_series is sum_aligned, so no
+    # cross-end mixing); EV pairs that net_debt with the as_of market cap (the
+    # standard EV convention). Backtest axis only.
+    m.ebit_ev_yield = compute_ebit_ev_yield(
+        latest(p.operating_income), m.market_cap, latest(net_debt_series))
 
     return m

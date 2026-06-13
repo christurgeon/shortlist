@@ -1,5 +1,8 @@
 # tests/test_xbrl_facts.py
 from datetime import date
+
+import pytest
+
 from shortlist.providers._xbrl_facts import annual_series
 
 def _row(start, end, val, filed, form="10-K"):
@@ -305,6 +308,22 @@ def test_piotroski_aligns_delta_legs_by_fiscal_end_not_position():
     # total_debt has ends {2023, 2021}; F5's latest YoY (2023 vs 2022) needs 2022 debt,
     # which is missing -> F5 abstains. The other 5 legs all pass.
     assert (m.piotroski_f, m.piotroski_f_legs) == (5, 5)
+
+def test_panel_to_metrics_ebit_ev_yield():
+    # operating_income=300, net_debt = total_debt 400 - cash 100 = 300,
+    # market_cap = price 120 * shares 10 = 1200, EV = 1200 + 300 = 1500,
+    # EBIT/EV = 300 / 1500 = 0.20.
+    p = XbrlPanel(
+        revenue={"2023-12-31": 1000.0},
+        operating_income={"2023-12-31": 300.0},
+        total_debt={"2023-12-31": 400.0},
+        cash={"2023-12-31": 100.0},
+        dep_amort={"2023-12-31": 0.0},
+        shares=10.0,
+    )
+    m = panel_to_metrics(p, ticker="TEST", sic=None, price=120.0,
+                         price_at=lambda d: None)
+    assert m.ebit_ev_yield == pytest.approx(0.20, rel=1e-6)
 
 
 def test_panel_to_metrics_populates_piotroski_two_years():
