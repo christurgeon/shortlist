@@ -164,6 +164,46 @@ def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.net_debt_to_ebitda, *t["net_debt_to_ebitda"])
 
 
+def ebit_ev_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone absolute-valuation axis for the backtest: the EBIT/EV earnings-
+    yield band -> 0..100 (higher yield = cheaper scores higher). Backtest-only,
+    like share_count_score; there is NO production sub-score reading ebit_ev_yield
+    yet (spec §11 deferred the leg). None when the band or the signal is absent."""
+    if "ebit_ev_yield" not in t or m.ebit_ev_yield is None:
+        return None
+    return _norm(m.ebit_ev_yield, *t["ebit_ev_yield"])
+
+
+def value_fcf_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Backtest-only per-leg attribution: the value axis's fcf_yield leg in
+    isolation, so its standalone rank IC sits beside the combined `value` IC."""
+    return _norm(m.fcf_yield, *t["fcf_yield"])
+
+
+def value_pe_vs_history_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Backtest-only per-leg attribution: the value axis's pe_vs_history leg in
+    isolation (see value_fcf_yield_score)."""
+    return _norm(m.pe_vs_history(), *t["pe_vs_history"])
+
+
+def value_plus_evebit_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Backtest-only: the `value` average WITH the EV/EBIT earnings-yield leg
+    folded in. Comparing IC(value_plus_evebit) vs IC(value) answers whether the
+    leg is additive or dilutive TO THE AVERAGE — the question a standalone-leg IC
+    cannot. Mirrors value_score() exactly plus the (None-safe) 5th leg, so it
+    equals value_score when ebit_ev_yield / its band is absent. NOT a production
+    sub-score."""
+    legs = [
+        _norm(m.upside_to_target(), *t["upside_to_target"]),
+        _norm(m.fcf_yield, *t["fcf_yield"]),
+        _norm(m.pe_vs_history(), *t["pe_vs_history"]),
+        _norm(m.peg, *t["peg"]),
+    ]
+    if "ebit_ev_yield" in t and m.ebit_ev_yield is not None:
+        legs.append(_norm(m.ebit_ev_yield, *t["ebit_ev_yield"]))
+    return _avg(legs)
+
+
 # --- Sector-aware abstention -------------------------------------------------
 # The legacy *_score helpers above are kept verbatim (imported by tests and called
 # by the backtest). The new score() routes through the leg machinery below so it

@@ -9,8 +9,10 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, check_flags, growth_score, insider_score, moat_score,
-    momentum_score, piotroski_score, quality_score, score, value_score,
+    _avg, _norm, check_flags, ebit_ev_yield_score, growth_score, insider_score,
+    moat_score, momentum_score, piotroski_score, quality_score, score,
+    value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score,
+    value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -874,3 +876,50 @@ def test_social_hype_fires_when_delta_none_no_baseline():
     m = StockMetrics(ticker="GME", social_mentions=300, social_mentions_rising=True,
                      social_mention_delta_pct=None, social_data_age_days=0)
     assert "social_hype" in check_flags(m, cfg)
+
+
+# --- Backtest-only EV/EBIT + per-leg value attribution scores ----------------
+
+_T = {
+    "ebit_ev_yield": [0.04, 0.12],
+    "fcf_yield": [0.0, 0.08],
+    "pe_vs_history": [-0.3, 0.3],
+    "upside_to_target": [0.0, 0.4],
+    "peg": [3.0, 0.5],
+}
+
+
+def test_ebit_ev_yield_score_maps_band():
+    m = StockMetrics(ticker="X", ebit_ev_yield=0.12)
+    assert ebit_ev_yield_score(m, _T) == 100.0
+    m2 = StockMetrics(ticker="X", ebit_ev_yield=0.04)
+    assert ebit_ev_yield_score(m2, _T) == 0.0
+
+
+def test_ebit_ev_yield_score_none_when_absent():
+    assert ebit_ev_yield_score(StockMetrics(ticker="X"), _T) is None
+    assert ebit_ev_yield_score(StockMetrics(ticker="X", ebit_ev_yield=0.1), {}) is None
+
+
+def test_value_fcf_yield_score_single_leg():
+    m = StockMetrics(ticker="X", fcf_yield=0.08)
+    assert value_fcf_yield_score(m, _T) == 100.0
+
+
+def test_value_pe_vs_history_score_single_leg():
+    # pe_vs_history = pe_median_5y / pe_ttm - 1 = 13/10 - 1 = 0.3 -> band top -> 100
+    m = StockMetrics(ticker="X", pe_ttm=10.0, pe_median_5y=13.0)
+    assert value_pe_vs_history_score(m, _T) == 100.0
+
+
+def test_value_plus_evebit_folds_leg_into_average():
+    # fcf_yield=0.04 -> _norm(0.04;0,0.08)=50; ebit_ev_yield=0.08 -> _norm(0.08;0.04,0.12)=50
+    # only two legs present -> average 50
+    m = StockMetrics(ticker="X", fcf_yield=0.04, ebit_ev_yield=0.08)
+    assert value_plus_evebit_score(m, _T) == pytest.approx(50.0)
+
+
+def test_value_plus_evebit_equals_value_when_leg_absent():
+    # With no ebit_ev_yield, value_plus_evebit == value_score (same legs).
+    m = StockMetrics(ticker="X", fcf_yield=0.04)
+    assert value_plus_evebit_score(m, _T) == value_score(m, _T)
