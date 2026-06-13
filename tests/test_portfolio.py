@@ -22,6 +22,14 @@ def test_header_optional_and_case_whitespace_normalized(tmp_path):
     assert holdings == [Holding("AAPL", 40.0), Holding("LMT", 15.0)]
 
 
+def test_comment_lines_skipped_without_warning(tmp_path):
+    # Matches the shipped portfolio.example.csv (leading "# ..." comment line).
+    p = _write(tmp_path, "# my holdings — copy to portfolio.csv\nticker,shares\nAAPL,40\n")
+    holdings, warnings = load_holdings(p)
+    assert holdings == [Holding("AAPL", 40.0)]
+    assert warnings == []
+
+
 def test_extra_columns_ignored(tmp_path):
     p = _write(tmp_path, "ticker,shares,cost_basis\nAAPL,40,180.25\n")
     holdings, warnings = load_holdings(p)

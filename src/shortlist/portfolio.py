@@ -28,7 +28,8 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
     - A header row (first column exactly "TICKER", case-insensitive) is silently
       skipped; any OTHER row with non-numeric shares is treated as malformed and warned.
     - `shares` is parsed as a float; negative values (short positions) are accepted as-is.
-    - Extra columns ignored; blank/malformed rows skipped with a warning.
+    - Blank lines and `#` comment lines are silently skipped (annotations are fine).
+    - Extra columns ignored; malformed rows skipped with a warning.
     - Tickers upper-cased + stripped; duplicate tickers summed (warned).
     - Missing/unreadable file -> ([], [warning]); never raises.
     """
@@ -45,6 +46,8 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
     for raw in rows:
         if not raw or not "".join(raw).strip():
             continue                          # blank line
+        if raw[0].lstrip().startswith("#"):
+            continue                          # comment line (annotations in a hand-kept file)
         ticker = raw[0].strip().upper()
         shares_s = (raw[1] if len(raw) > 1 else "").strip()
         if not ticker or len(raw) < 2:
