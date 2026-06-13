@@ -24,13 +24,13 @@ from ..models import rank_key
 from ..validation import no_data, partition_format
 from .models import RunManifest
 
-_KNOWN = {"screen", "deep", "help", "start"}
+_KNOWN = {"screen", "deep", "portfolio", "help", "start"}
 _SPLIT = re.compile(r"[,\s]+")
 
 
 @dataclass(frozen=True)
 class Command:
-    name: str                  # "screen" | "deep" | "help" | "start" | "unknown"
+    name: str                  # "screen" | "deep" | "portfolio" | "help" | "start" | "unknown"
     tickers: tuple[str, ...]
     raw: str
 
@@ -78,6 +78,7 @@ _HELP = (
     "Shortlist scout bot. Commands:\n"
     "/screen NVDA, LMT, MSFT — score tickers (seconds), reply with the dashboard\n"
     "/deep TSLA — score + Claude 10-K research brief (slower)\n"
+    "/portfolio — screen your holdings (portfolio.csv): exposure + deterioration alerts\n"
     "/help — this message"
 )
 
@@ -193,6 +194,8 @@ class TelegramBot:
             self._do_screen(cmd.tickers)
         elif cmd.name == "deep":
             self._do_deep(cmd.tickers)
+        elif cmd.name == "portfolio":
+            self._do_portfolio()
         elif cmd.name in ("help", "start"):
             self.notifier.send_message(_HELP)
         else:
@@ -277,6 +280,42 @@ class TelegramBot:
                 f"(researched first {len(kept)}; {dropped} more not run — re-send them)")
         if fmt_note:
             self.notifier.send_message(fmt_note)
+
+    def _do_portfolio(self) -> None:
+        from .. import portfolio as pf
+        pf_cfg = self.config.get("portfolio") or {}
+        path = pf_cfg.get("path", "portfolio.csv")
+        cap = int(pf_cfg.get("max_holdings", 50))
+        holdings, warnings = pf.load_holdings(path)
+        if not holdings:
+            msg = ("No holdings found. Create portfolio.csv (ticker,shares) — "
+                   "copy portfolio.example.csv to portfolio.csv and edit it.")
+            if warnings:
+                msg += "\n" + "\n".join(warnings)
+            self.notifier.send_message(msg)
+            return
+        # NO silent truncation — dropping an owned name hides its alerts. Screen the
+        # full list up to the safety cap; warn explicitly about any overflow.
+        screened_holdings, dropped = holdings[:cap], [h.ticker for h in holdings[cap:]]
+        tickers = [h.ticker for h in screened_holdings]
+        self.notifier.send_chat_action("upload_photo")
+        from ..data.macro import fetch_macro
+        macro = fetch_macro(self.config)
+        cards = self._screen_fn()(tickers, self.sources, self.config, macro=macro)
+        present = [c for c in cards if not no_data(c)]
+        summary = pf.summarize(screened_holdings, present)
+        manifest = _interactive_manifest(len(tickers), len(present), "portfolio", [])
+        art = self._report_fn()(present, manifest, assessments={}, macro=macro,
+                                portfolio=summary)
+        self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
+                           caption=_caption(manifest, present) if present else "Portfolio",
+                           session=manifest.session.isoformat())
+        if warnings:
+            self.notifier.send_message("⚠️ portfolio file:\n" + "\n".join(warnings))
+        if dropped:
+            self.notifier.send_message(
+                f"⚠️ {len(dropped)} holdings NOT screened (cap {cap}): {', '.join(dropped)}. "
+                "Alerts for these are INCOMPLETE — raise portfolio.max_holdings or warm the cache.")
 
     # --- loop machinery ---
     def _handle_safely(self, cmd: Command) -> None:
