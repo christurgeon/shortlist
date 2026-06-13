@@ -177,6 +177,8 @@ def ebit_ev_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
 def value_fcf_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Backtest-only per-leg attribution: the value axis's fcf_yield leg in
     isolation, so its standalone rank IC sits beside the combined `value` IC."""
+    # No band guard (unlike ebit_ev_yield_score): mirrors value_score's unguarded
+    # indexing; the value bands are core config the backtest always supplies.
     return _norm(m.fcf_yield, *t["fcf_yield"])
 
 
