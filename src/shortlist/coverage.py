@@ -35,9 +35,10 @@ _FMP_RATE_LIMIT_NOTE = (
 def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optional[Coverage]:
     """Assemble a Coverage record, or None when every provider is "ok".
 
-    `outcomes` maps provider/source name -> fetch status ("ok" on success, else
-    "gated_402"/"rate_limited_429"/"empty"/"error"; the harness path derives these
-    in `data/coverage_adapt.py`). `contributed` is the set of provider names whose own
+    `outcomes` maps provider/source name -> fetch status: "ok"/"gated_402"/
+    "rate_limited_429"/"error" come from the harness adapter in
+    `data/coverage_adapt.py`; "empty" is derived HERE (an "ok" provider absent from
+    `contributed`). `contributed` is the set of provider names whose own
     fetch returned at least one field — judged BEFORE merge, so a provider that
     fetched real data but lost every field to a higher-priority source still counts
     as contributing. An "ok" provider absent from `contributed` returned nothing

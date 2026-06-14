@@ -43,9 +43,11 @@ def pct(x: Any) -> Optional[float]:
 
 
 def from_millions(x: Any) -> Optional[float]:
-    """Millions of USD -> absolute dollars (Finnhub reports market cap in $M).
+    """Millions of USD -> absolute dollars (e.g. Finnhub reports market cap in $M).
 
-    Stored absolute to match FMP's ``quote.marketCap``; the ``below_min_mktcap``
-    gate and the insider net-flow ratio both assume dollars.
+    A generic millions->dollars scaler. The motivating case is market cap, stored
+    absolute to match FMP's ``quote.marketCap`` so the ``below_min_mktcap`` gate and
+    the insider net-flow ratio (both assuming dollars) line up. Non-numeric input
+    returns ``None`` rather than raising.
     """
     return x * 1.0e6 if isinstance(x, (int, float)) else None

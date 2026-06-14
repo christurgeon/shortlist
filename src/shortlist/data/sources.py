@@ -288,6 +288,11 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
 _EDGAR_MAX_CONCURRENCY = 3
 _edgar_gate: dict = {}
 
+# Max recent Form 4 filings fetched per ticker for insider aggregation. A
+# high-velocity insider universe could exceed this within the lookback window,
+# truncating net_value_6m / buy_count / sell_count (acceptable for typical tickers).
+_FORM4_FETCH_LIMIT = 40
+
 
 def _edgar_semaphore() -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
@@ -385,7 +390,7 @@ class EdgarSource(Source):
         cutoff = date.today() - timedelta(days=self.lookback_days)
         try:
             summary = aggregate_form4(
-                Company(ticker).get_filings(form="4").latest(40), cutoff, self._conviction)
+                Company(ticker).get_filings(form="4").latest(_FORM4_FETCH_LIMIT), cutoff, self._conviction)
         except Exception as e:
             res.errors.append(f"edgar: {e}")
             res.partial = TickerSnapshot(ticker=ticker)

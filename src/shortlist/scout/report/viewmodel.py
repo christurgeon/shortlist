@@ -116,10 +116,12 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         call_rationale = f"Auto-downgraded: {note}."
     else:
         call_rationale = (sc.get("rationale") or "") if sc else ""
+    mo = rec.get("moat")
+    moat = (mo if isinstance(mo, dict) else {}).get("summary", "") or ""
     return AssessmentVM(
         business_model=rec.get("business_model_summary", "") or "",
         takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
-        moat=(rec.get("moat") if isinstance(rec.get("moat"), dict) else {}).get("summary", "") or "",
+        moat=moat,
         reconciliation=[(str(e.get("signal", "")), str(e.get("tension", "")))
                         for e in (rec.get("reconciliation") or [])
                         if isinstance(e, dict)],

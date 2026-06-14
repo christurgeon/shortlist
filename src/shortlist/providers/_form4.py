@@ -4,8 +4,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Iterable, Optional
 
-# Shared SEC Form 4 aggregation, used by BOTH the synchronous screener provider
-# (providers/edgar.py) and the async harness source (data/sources.py). Kept as a
+# Shared SEC Form 4 aggregation, used by the async harness source
+# (data/sources.py's EdgarSource) and the XBRL backtest. (The legacy synchronous
+# screener and providers/edgar.py that this once also served were retired.) Kept as a
 # dependency-free leaf module: it imports nothing from `edgar`/`edgartools` (it
 # operates on already-fetched objects) and nothing from the data layer (it returns
 # a neutral intermediate, not the data layer's InsiderTxn), so neither layer takes
@@ -50,6 +51,8 @@ _10B5_1_PATTERNS = ("10b5-1", "10b-5-1", "rule 10b5", "rule 10b-5", "10b5 plan",
 
 
 def is_10b5_1(footnotes_text: Optional[str]) -> bool:
+    """High-precision/low-recall footnote-text heuristic: detection implies a planned
+    10b5-1 sale; absence proves nothing (edgartools parses no structured checkbox)."""
     if not footnotes_text or not footnotes_text.strip():
         return False
     text = footnotes_text.lower()

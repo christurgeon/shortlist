@@ -89,7 +89,10 @@ def fetch_macro(config: dict) -> MacroContext | None:
             for key, sid in series.items():
                 d, v = _fetch_series(sid, api_key)
                 raw[key] = v
-                as_of = as_of or d
+                # Track the MAXIMUM (most recent) observation date across series —
+                # ISO date strings, so lexicographic compare == chronological.
+                if d is not None and (as_of is None or d > as_of):
+                    as_of = d
             raw["as_of"] = as_of
             _CACHE_DIR.mkdir(parents=True, exist_ok=True)
             cache.write_text(json.dumps(raw))

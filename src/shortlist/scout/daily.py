@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from ..env import load_env, redact_secrets
-from ..models import rank_key
+from ._caption import _CAPTION_SUPPRESS_FLAGS, _caption  # re-exported (tests import daily._*)
 from .budget import select
 from .calendar import last_session
 from .funnel import aggregate, prefilter
@@ -119,9 +119,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
                 state.mark_yahoo_blocked(session)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
-            # weight by config: map signal prefix back to its config key
-            cfg_key = {"yahoo_screener": "yahoo_screener", "edgar_form4": "edgar_form4",
-                       "mock": "yahoo_screener"}.get(s.name, s.name)
+            # weight by config: map signal name back to its config key. Names are
+            # identity except the demo "mock" signal, which borrows yahoo_screener's weight.
+            cfg_key = "yahoo_screener" if s.name == "mock" else s.name
             w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
             for e in ems:
                 weights_by_signal[e.signal] = w
@@ -302,44 +302,32 @@ def _research_phase(
     return briefs, assessments, researched, None, skipped
 
 
-def _assessment_record_from_file(brief_path) -> dict | None:
-    """Read the full QualitativeAssessment record (JSON) report.write() saved next to the .md."""
+def _record_json(brief_path) -> dict | None:
+    """Load the JSON record report.write() saves alongside the .md (<ticker>/<accession>.json).
+
+    Suffix-safe (.with_suffix avoids replacing any ".md" substring); returns None on any
+    read/parse failure.
+    """
     try:
-        json_path = Path(str(brief_path).replace(".md", ".json"))
-        return json.loads(json_path.read_text())
+        return json.loads(Path(brief_path).with_suffix(".json").read_text())
     except Exception:  # noqa: BLE001
         return None
 
 
+def _assessment_record_from_file(brief_path) -> dict | None:
+    """Read the full QualitativeAssessment record (JSON) report.write() saved next to the .md."""
+    return _record_json(brief_path)
+
+
 def _one_line_brief_from_file(brief_path) -> str:
     """Read synthesis from the JSON record file that report.write() writes alongside the .md."""
-    try:
-        # report.write() writes <ticker>/<accession>.json as the JSON record
-        json_path = Path(str(brief_path).replace(".md", ".json"))
-        data = json.loads(json_path.read_text())
-        # QualitativeAssessment fields in the JSON: 'synthesis' is the 2-3 sentence text
-        return (data.get("synthesis")
-                or (data.get("thesis") or {}).get("takeaway")
-                or data.get("summary") or "")[:200]
-    except Exception:  # noqa: BLE001
+    data = _record_json(brief_path)
+    if data is None:
         return "brief generated"
-
-
-# Routine presence-based filing advisories kept OUT of the at-a-glance caption (they still
-# show in the HTML Flags column). Keep in sync with bot._CAPTION_SUPPRESS_FLAGS.
-_CAPTION_SUPPRESS_FLAGS = frozenset({"recent_8k", "passive_13g", "planned_insider_sale_144"})
-
-
-def _caption(manifest, cards, top_n: int) -> str:
-    ordered = sorted(cards, key=rank_key, reverse=True)
-    top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
-    lines = [f"Scout — {manifest.session.isoformat()}", f"Top: {top}"]
-    for c in ordered:
-        notable = [f for f in (getattr(c, "flags", ()) or ()) if f not in _CAPTION_SUPPRESS_FLAGS]
-        if notable:
-            lines.append(f"🏷️ {c.ticker}: {', '.join(notable)}")
-    lines.append(f"{manifest.screened} screened from {manifest.raw} raw")
-    return "\n".join(lines)[:1024]
+    # QualitativeAssessment fields in the JSON: 'synthesis' is the 2-3 sentence text
+    return (data.get("synthesis")
+            or (data.get("thesis") or {}).get("takeaway")
+            or data.get("summary") or "")[:200]
 
 
 def _persist(scout_cfg, manifest, artifacts) -> None:

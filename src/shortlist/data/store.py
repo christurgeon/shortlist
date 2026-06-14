@@ -30,10 +30,17 @@ def save(snapshot: TickerSnapshot, root: str | Path) -> Path:
 
 
 def load(ticker: str, root: str | Path, day: str | None = None) -> dict:
+    """Load a ticker's snapshot for `day` (or the latest); FileNotFoundError if none."""
     tdir = Path(root) / ticker.upper()
     if day:
         return json.loads((tdir / f"{day}.json").read_text())
-    latest = max(tdir.glob("*.json"), key=lambda p: p.stem)
+    if not tdir.is_dir():
+        raise FileNotFoundError(f"no snapshots for {ticker.upper()} under {root}")
+    files = list(tdir.glob("*.json"))
+    if not files:
+        raise FileNotFoundError(f"no snapshots for {ticker.upper()} under {root}")
+    # ISO-date filenames (YYYY-MM-DD) => lexicographic max == chronologically latest.
+    latest = max(files, key=lambda p: p.stem)
     return json.loads(latest.read_text())
 
 

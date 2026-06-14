@@ -1,3 +1,4 @@
+"""``shortlist-harness`` CLI: fetch and emit raw ``TickerSnapshot``s per ticker."""
 from __future__ import annotations
 
 import argparse
@@ -10,6 +11,8 @@ from .store import save
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Fetch snapshots for the given tickers, print a per-ticker coverage line,
+    optionally save dated JSON (``--out``) and dump full JSON (``--print``)."""
     ap = argparse.ArgumentParser(prog="shortlist-harness",
                                  description="Fetch an assessment-ready data snapshot per ticker.")
     ap.add_argument("--tickers", required=True, help="comma-separated, e.g. GEV,LMT,SCHW")

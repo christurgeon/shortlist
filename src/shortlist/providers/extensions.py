@@ -6,8 +6,10 @@ from typing import Optional
 from ..models import StockMetrics
 from .base import Provider
 
-# These two are scaffolded, not wired, on purpose — they're the "add value"
-# extensions. Each has a clear reason to exist beyond the core three sources.
+# QuiverProvider is the one genuinely unwired scaffold left — the "add value"
+# extension still to implement. FRED has since shipped as a run-level macro overlay
+# (data/macro.py:fetch_macro), so FredProvider below is a vestigial stub whose
+# fetch() raises; it is kept only as a signpost to the overlay.
 
 
 class QuiverProvider(Provider):
@@ -34,12 +36,12 @@ class QuiverProvider(Provider):
 
 
 class FredProvider(Provider):
-    """Free macro overlay (10y yield, fed funds, 2s10s curve). Not per-stock —
-    use it to gate or tilt the *whole* run (e.g. de-emphasize rate-sensitive
-    names when the curve is moving against them). Plug into screen.py as a
-    context object rather than a per-ticker provider.
+    """Vestigial stub — FRED already SHIPPED as a run-level macro overlay
+    (data/macro.py:fetch_macro: 10y yield, fed funds, 2s10s curve, HY OAS, VIX →
+    risk-off regime, display + advisory only). It is not a per-ticker source, so
+    fetch() raises; use the macro overlay instead.
 
-    pip install fredapi ; export FRED_API_KEY=...
+    export FRED_API_KEY=...
     """
 
     name = "fred"

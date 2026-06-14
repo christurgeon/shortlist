@@ -20,7 +20,7 @@ import httpx
 import yaml
 
 from ..env import load_env, redact_secrets
-from ..models import rank_key
+from ._caption import _CAPTION_SUPPRESS_FLAGS, _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
 from ..validation import no_data, partition_format
 from .models import RunManifest
 
@@ -104,27 +104,6 @@ def _interactive_manifest(n_requested: int, n_cards: int, command: str,
         signals=[], raw=n_requested, after_dedup=n_requested,
         after_prefilter=n_requested, screened=n_cards, dropped_for_budget=0,
         researched=list(researched), notes=[f"interactive /{command} request"])
-
-
-# Routine presence-based filing advisories — informative but high-frequency, so they're
-# kept OUT of the at-a-glance caption (they still show in the HTML Flags column). Every
-# other (discretionary) advisory — social_hype, crowded_short, value_trap, … — surfaces.
-_CAPTION_SUPPRESS_FLAGS = frozenset({"recent_8k", "passive_13g", "planned_insider_sale_144"})
-
-
-# NOTE: intentional copy of daily._caption — avoids importing the heavy `daily`
-# module (and its eager imports) onto the always-on bot path. Keep in sync manually
-# if the caption format changes, or extract to a shared helper.
-def _caption(manifest, cards, top_n: int = 3) -> str:
-    ordered = sorted(cards, key=rank_key, reverse=True)
-    top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
-    lines = [f"Scout — {manifest.session.isoformat()}", f"Top: {top}"]
-    for c in ordered:
-        notable = [f for f in (getattr(c, "flags", ()) or ()) if f not in _CAPTION_SUPPRESS_FLAGS]
-        if notable:
-            lines.append(f"🏷️ {c.ticker}: {', '.join(notable)}")
-    lines.append(f"{manifest.screened} screened from {manifest.raw} raw")
-    return "\n".join(lines)[:1024]
 
 
 def _call_summary(assessments: dict) -> str | None:

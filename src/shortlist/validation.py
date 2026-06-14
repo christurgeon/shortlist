@@ -38,6 +38,6 @@ def no_data(card) -> bool:
     and is never independently non-None when both legs are None.
     """
     subs = [card.quality, card.moat, card.growth, card.momentum,
-            card.value, card.insider, card.risk]
+            card.value, card.insider, getattr(card, "risk", None)]
     mcap = getattr(card.metrics, "market_cap", None) if card.metrics else None
     return not any(s is not None for s in subs) and mcap is None

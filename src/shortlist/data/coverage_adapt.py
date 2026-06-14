@@ -3,11 +3,12 @@
 shortlist.coverage.build_coverage consumes, so harness-engine cards carry the same
 per-source diagnostic the screener path produces.
 
-`outcomes`: source -> "ok" | "gated_402" | "error". The harness records failures as
-strings in snapshot.errors, prefixed "<source>: ..." (plain colon form),
-"<source>-<phase>: ..." (e.g. "edgar-financials: ..."), or
+`outcomes`: source -> "ok" | "gated_402" | "rate_limited_429" | "error". The harness
+records failures as strings in snapshot.errors, prefixed "<source>: ..." (plain colon
+form), "<source>-<phase>: ..." (e.g. "edgar-financials: ..."), or
 "<source>.<section>: ..." (e.g. "fmp.profile: ...", "finnhub.metrics: ...").
-A 402 substring -> gated_402; any other error -> "error"; absence -> "ok".
+A 402 substring -> gated_402; a 429 substring -> rate_limited_429; any other error ->
+"error"; absence -> "ok".
 `contributed`: sources that supplied >=1 field, from snapshot.provenance (populated
 by merge_snapshots)."""
 from __future__ import annotations
@@ -37,6 +38,8 @@ def snapshot_to_coverage_inputs(snap: TickerSnapshot, sources: list[str]) -> tup
         errs = err_by_source.get(s, [])
         if any("402" in e for e in errs):
             outcomes[s] = "gated_402"
+        elif any("429" in e for e in errs):
+            outcomes[s] = "rate_limited_429"
         elif errs:
             outcomes[s] = "error"
         else:

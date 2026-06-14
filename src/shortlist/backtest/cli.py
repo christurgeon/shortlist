@@ -15,7 +15,7 @@ import yaml
 from ..env import load_env
 from .engine import collect_observations, observation_grid, run_backtest
 from .metrics import cross_signal_xs_corr
-from .prices import _UA, _add_months, fetch_history
+from .prices import _UA, PriceHistory, _add_months, fetch_history
 from .report import render_table, report_to_dict
 from .signals import MomentumSignalSource, XbrlSignalSource
 from .universe import load_universe
@@ -102,7 +102,12 @@ async def _load_companyfacts(tickers, cache_dir, month):
 
 async def _load_histories(tickers, cache_dir, today):
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
-        spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)
+        try:
+            spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)
+        except Exception as e:               # empty spy => main()'s `not spy.dates` clean exit
+            print(f"warn: SPY benchmark fetch failed: {type(e).__name__}",
+                  file=sys.stderr)
+            spy = PriceHistory("SPY", [], [])
         hists = {}
         for tk in tickers:
             try:
@@ -213,7 +218,15 @@ def main(argv=None) -> int:
         return 2
 
     tickers = load_universe(args.tickers or args.universe)
-    horizons = [int(h) for h in args.horizons.split(",")]
+    try:
+        horizons = [int(h) for h in args.horizons.split(",") if h.strip()]
+    except ValueError:
+        print("--horizons must be comma-separated integer months, e.g. 1,3,6,12",
+              file=sys.stderr)
+        return 2
+    if not horizons:
+        print("--horizons must contain at least one integer month", file=sys.stderr)
+        return 2
     if any(h < 1 for h in horizons):
         print("--horizons must be positive integer months (>= 1)", file=sys.stderr)
         return 2
@@ -230,6 +243,9 @@ def main(argv=None) -> int:
     earliest = min(min(h.dates) for h in hists.values())
     start = date.fromisoformat(args.start) if args.start else _grid_start(earliest)
     end = date.fromisoformat(args.end) if args.end else date.fromisoformat(today)
+    if start > end:
+        print("--start must be <= --end", file=sys.stderr)
+        return 2
 
     if args.source == "xbrl":
         month = today[:7]   # YYYY-MM — companyfacts is month-cached

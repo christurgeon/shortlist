@@ -14,6 +14,7 @@ def utcnow_iso() -> str:
 
 @dataclass
 class Profile:
+    """Company identity + classification; market_cap in absolute dollars, beta unitless."""
     name: Optional[str] = None
     sector: Optional[str] = None
     industry: Optional[str] = None
@@ -71,6 +72,7 @@ class Statements:
 
 @dataclass
 class Analyst:
+    """Sell-side recommendation counts + price targets (targets in dollars)."""
     buy: Optional[int] = None
     hold: Optional[int] = None
     sell: Optional[int] = None
@@ -82,6 +84,7 @@ class Analyst:
 
 @dataclass
 class InsiderTxn:
+    """One open-market insider trade; price/value in dollars, value = shares * price."""
     date: Optional[str] = None
     name: Optional[str] = None
     role: Optional[str] = None
@@ -93,6 +96,7 @@ class InsiderTxn:
 
 @dataclass
 class Insider:
+    """Aggregated Form 4 insider flow; dollar values signed (buys +, sells -), mspr in -1..1."""
     net_value_6m: Optional[float] = None       # buys positive, sells negative
     buy_count: Optional[int] = None
     sell_count: Optional[int] = None
@@ -108,6 +112,7 @@ class Insider:
 
 @dataclass
 class Price:
+    """OHLCV-derived price/momentum/risk; returns as fractions, max_drawdown is negative."""
     price: Optional[float] = None
     ma50: Optional[float] = None
     ma200: Optional[float] = None

@@ -59,10 +59,10 @@ def _watch_line(a) -> str:
 
 
 def _call_md(a, config=None):
-    """Return (badge_line, block_lines) for the screening call, or [] if no call."""
+    """Return (badge_line, block_lines) for the screening call, or None if no call."""
     c = a.screening_call
     if c is None:
-        return []
+        return None
     label = stance_label(c.stance, config)
     disc = call_disclaimer(config)
     watch = _watch_line(a)
@@ -94,7 +94,7 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     t = a.thesis
     call_badge, call_block = "", []
     rendered = _call_md(a, config)
-    if rendered:
+    if rendered is not None:
         call_badge, call_block = rendered
     cmm = [f"- {x}" for x in t.what_would_change_my_mind] or ["- (none stated)"]
     lines = [
@@ -140,9 +140,9 @@ def write(a: QualitativeAssessment, root, config=None) -> Path:
     key = a.cache_key or a.filing_accession
     bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)
-    bp.write_text(to_markdown(a, config))
+    bp.write_text(to_markdown(a, config), encoding="utf-8")
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
     record_path(a.ticker, key, root).write_text(
-        json.dumps(record, indent=2, default=str))
+        json.dumps(record, indent=2, default=str), encoding="utf-8")
     return bp

@@ -65,7 +65,7 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
             totals[ticker] = shares
         else:
             totals[ticker] += shares
-            warnings.append(f"Duplicate ticker {ticker}: summed shares.")
+            warnings.append(f"Duplicate ticker {ticker} (row folded into earlier entry; shares summed).")
     return [Holding(t, totals[t]) for t in order], warnings
 
 

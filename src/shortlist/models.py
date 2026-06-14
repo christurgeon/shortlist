@@ -136,7 +136,7 @@ class StockMetrics:
 @dataclass
 class Coverage:
     """Why a ticker's data is thin. `providers` maps provider name -> status
-    ("ok" | "gated_402" | "empty" | "error"); `unavailable` lists output fields
+    ("ok" | "gated_402" | "rate_limited_429" | "empty" | "error"); `unavailable` lists output fields
     that came out null (fact); `note` is interpretive prose for recognized
     patterns (e.g. FMP symbol gating). See coverage.py for assembly."""
     providers: dict[str, str]

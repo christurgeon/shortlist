@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Protocol
 
 import httpx
@@ -232,7 +232,7 @@ class FinnhubNewsSignal:
             return []
         client = self._client or httpx.Client(timeout=15.0)
         out, ok = [], 0
-        frm = (session.replace(day=1)).isoformat()
+        frm = (session - timedelta(days=7)).isoformat()  # fixed trailing 7-day window
         try:
             for t in tickers:
                 resp = client.get("https://finnhub.io/api/v1/company-news",
@@ -283,9 +283,11 @@ class WikipediaAttentionSignal:
                 article = self.ticker_map.get(t.upper())
                 if not article:
                     continue
-                # Request full pageview history (fixed 2000-2100 range); the trailing
-                # 14 days are sliced client-side below (views[-14:-7] / views[-7:]).
-                resp = client.get(f"{self._BASE}/{article}/daily/2000010100/2100010100")
+                # Request ~last 30 days (ample headroom for the trailing-14-day slice
+                # below: views[-14:-7] / views[-7:]).
+                start = (session - timedelta(days=30)).strftime("%Y%m%d00")
+                end = session.strftime("%Y%m%d00")
+                resp = client.get(f"{self._BASE}/{article}/daily/{start}/{end}")
                 if resp.status_code != 200:
                     continue
                 ok += 1

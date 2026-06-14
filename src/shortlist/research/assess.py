@@ -213,10 +213,9 @@ def _render_series(series) -> str:
             + "\n".join(rows))
 
 
-def _fcf_col(m) -> list:
-    """Newest-first free_cash_flow column from m.financial_series, None-safe."""
-    series = getattr(m, "financial_series", None) or []
-    return [row.get("free_cash_flow") for row in series]
+def _fcf_col(series) -> list:
+    """Newest-first free_cash_flow column from a financial_series, None-safe."""
+    return [row.get("free_cash_flow") for row in (series or [])]
 
 
 def _quant_context(card, gaps_line="", rdcfg=None) -> str:
@@ -255,12 +254,13 @@ def _quant_context(card, gaps_line="", rdcfg=None) -> str:
             trend = "rising" if m.short_interest_rising else "not rising"
             lines.append(f"Short interest: {m.short_pct_outstanding * 100:.1f}% of "
                          f"shares, {m.days_to_cover:.1f} days to cover, {trend}.")
-        series_block = _render_series(getattr(m, "financial_series", None))
+        series = getattr(m, "financial_series", None)
+        series_block = _render_series(series)
         if series_block:
             lines.append(series_block)
         if rdcfg:
             ig = reverse_dcf.implied_growth(
-                _fcf_col(m), getattr(m, "market_cap", None), rdcfg)
+                _fcf_col(series), getattr(m, "market_cap", None), rdcfg)
             if ig is not None:
                 lines.append(reverse_dcf.format_line(ig))
     if card.gates:

@@ -49,8 +49,10 @@ class TelegramNotifier:
         try:
             for attempt in range(self.max_retries + 1):
                 resp = c.post(url, **kwargs)
-                if resp.status_code == 429 and attempt < self.max_retries:
-                    # Retry-After-aware backoff, mirroring FMPSource._get's 429 idiom.
+                retriable = resp.status_code == 429 or 500 <= resp.status_code < 600
+                if retriable and attempt < self.max_retries:
+                    # Retry-After-aware backoff, mirroring FMPSource._get's 429 idiom;
+                    # transient 5xx use the same capped exponential backoff.
                     delay = float(resp.headers.get("Retry-After", 2 ** attempt))
                     time.sleep(min(delay, 30.0))
                     continue

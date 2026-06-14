@@ -49,8 +49,8 @@ class _Leaderboard:
         return f'<span class="chip{extra}" style="{style}">{txt}</span>'
 
     @staticmethod
-    def _tags(items, cls):
-        return "".join(f'<span class="tag {cls}">{HtmlBuilder().esc(x)}</span>' for x in items)
+    def _tags(h, items, cls):
+        return "".join(f'<span class="tag {cls}">{h.esc(x)}</span>' for x in items)
 
     def render_html(self, vm, h):
         rows = []
@@ -62,8 +62,8 @@ class _Leaderboard:
                      h.raw("td", self._chip(ld.composite, " comp"))]
             for s in SUBS:
                 cells.append(h.raw("td", self._chip(ld.subscores.get(s))))
-            cells.append(h.raw("td", self._tags(ld.gates, "tag-gate"), _class="tags"))
-            cells.append(h.raw("td", self._tags(ld.flags, "tag-flag"), _class="tags"))
+            cells.append(h.raw("td", self._tags(h, ld.gates, "tag-gate"), _class="tags"))
+            cells.append(h.raw("td", self._tags(h, ld.flags, "tag-flag"), _class="tags"))
             rows.append(h.raw("tr", "".join(cells)))
         cols = (["#", "Ticker", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates", "Flags"])
         head = h.raw("tr", "".join(
@@ -74,6 +74,9 @@ class _Leaderboard:
         return h.raw("div", h.raw("div", table, _class="scroll-x"), _class="board-wrap")
 
     def render_text(self, vm, detail):
+        # The leaderboard is deliberately full at both detail levels — the ranked
+        # table is the report's spine, so GLANCE does not terse it (unlike
+        # _Fundamentals). `detail` is therefore intentionally unused here.
         out = []
         for i, ld in enumerate(vm.leaders, 1):
             gate = f"  ⚠️ {', '.join(ld.gates)}" if ld.gates else ""
@@ -250,18 +253,27 @@ class _Footer:
     def _sig(self, vm):
         return " · ".join(f"{s.name} {'✓' if s.ran else '✗'} ({s.detail})" for s in vm.signals)
 
-    def _funnel(self, vm):
+    @staticmethod
+    def _funnel_steps(vm):
+        # Shared ordered pipeline: (value, text_label, html_label). Text and HTML
+        # deliberately differ in the third label ("after prefilter" vs "prefilter")
+        # and in markup, so each renderer keeps its own label/format — only the
+        # numeric step values are sourced here once.
         f = vm.funnel
-        return (f"{f.raw} raw → {f.after_dedup} deduped → {f.after_prefilter} after prefilter "
-                f"→ {f.screened} screened ({f.dropped_for_budget} dropped: budget)")
+        return [(f.raw, "raw", "raw"), (f.after_dedup, "deduped", "deduped"),
+                (f.after_prefilter, "after prefilter", "prefilter"),
+                (f.screened, "screened", "screened")]
+
+    def _funnel(self, vm):
+        steps = self._funnel_steps(vm)
+        body = " → ".join(f"{n} {tlabel}" for n, tlabel, _ in steps)
+        return f"{body} ({vm.funnel.dropped_for_budget} dropped: budget)"
 
     def _funnel_html(self, vm, h):
-        f = vm.funnel
-        steps = [(f.raw, "raw"), (f.after_dedup, "deduped"),
-                 (f.after_prefilter, "prefilter"), (f.screened, "screened")]
+        steps = self._funnel_steps(vm)
         arw = '<span class="arw">›</span>'
-        body = arw.join(f'<b>{n}</b> {h.esc(label)}' for n, label in steps)
-        drop = f' <span class="drop">({f.dropped_for_budget} dropped: budget)</span>'
+        body = arw.join(f'<b>{n}</b> {h.esc(hlabel)}' for n, _, hlabel in steps)
+        drop = f' <span class="drop">({vm.funnel.dropped_for_budget} dropped: budget)</span>'
         return h.raw("div", body + drop, _class="funnel")
 
     def render_html(self, vm, h):
@@ -325,6 +337,24 @@ class _Portfolio:
             c.append("not scored")
         return c
 
+    # Display-string helpers shared by both renderers so the scaling math lives once.
+    @staticmethod
+    def _pos_weight(pos):
+        return "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
+
+    @staticmethod
+    def _pos_comp(pos):
+        return "·" if pos.card is None else f"{pos.card.composite:.0f}"
+
+    @staticmethod
+    def _sector_line(sector_weights):
+        return " · ".join(f"{b} {w*100:.0f}%" for b, w in sector_weights)
+
+    @staticmethod
+    def _book_line(p):
+        wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
+        return f"Book ${p.total_value/1e3:.0f}k{wc}"
+
     def render_html(self, vm, h):
         p = vm.portfolio
         parts = []
@@ -335,8 +365,8 @@ class _Portfolio:
             parts.append(h.raw("div", h.raw("b", "Alerts") + h.raw("ul", items), _class="pf-alerts"))
         rows = []
         for pos in p.positions:
-            w = "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
-            comp = "·" if pos.card is None else f"{pos.card.composite:.0f}"
+            w = self._pos_weight(pos)
+            comp = self._pos_comp(pos)
             chips = self._chips(pos)
             tags = ", ".join(chips) if chips else "·"
             cells = (h.tag("td", pos.ticker) + h.tag("td", w) + h.tag("td", comp) + h.tag("td", tags))
@@ -344,11 +374,9 @@ class _Portfolio:
         head = h.raw("tr", "".join(h.tag("th", c) for c in ("Ticker", "Weight", "Comp", "Gates/Flags")))
         parts.append(h.raw("table", h.raw("thead", head) + h.raw("tbody", "".join(rows)), _class="pf"))
         if p.sector_weights:
-            sec = " · ".join(f"{b} {w*100:.0f}%" for b, w in p.sector_weights)
-            parts.append(h.tag("div", "Sectors: " + sec, _class="pf-sectors"))
+            parts.append(h.tag("div", "Sectors: " + self._sector_line(p.sector_weights), _class="pf-sectors"))
         if p.total_value is not None:
-            wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
-            parts.append(h.tag("div", f"Book ${p.total_value/1e3:.0f}k{wc}", _class="pf-tot"))
+            parts.append(h.tag("div", self._book_line(p), _class="pf-tot"))
         # NOTE: pf/pf-alerts/pf-sectors/pf-tot are unstyled in v1 (html._CSS) — content
         # renders readably on base table/div rules; theming is deferred.
         return "".join(parts)
@@ -360,14 +388,13 @@ class _Portfolio:
             out.append("⚠️ Alerts:")
             out += [f"  {pos.ticker} — {', '.join(self._chips(pos)) or 'flagged'}" for pos in p.alerts]
         for pos in p.positions:
-            w = "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
-            comp = "·" if pos.card is None else f"{pos.card.composite:.0f}"
+            w = self._pos_weight(pos)
+            comp = self._pos_comp(pos)
             out.append(f"  {pos.ticker}  {w}  comp {comp}")
         if p.sector_weights:
-            out.append("  Sectors: " + " · ".join(f"{b} {w*100:.0f}%" for b, w in p.sector_weights))
+            out.append("  Sectors: " + self._sector_line(p.sector_weights))
         if p.total_value is not None:
-            wc = f" · wtd comp {p.weighted_composite:.0f}" if p.weighted_composite is not None else ""
-            out.append(f"  Book ${p.total_value/1e3:.0f}k{wc}")
+            out.append("  " + self._book_line(p))
         return out
 
 

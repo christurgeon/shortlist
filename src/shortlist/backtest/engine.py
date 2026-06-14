@@ -38,7 +38,10 @@ def _collect_rows(src: SignalSource, universe: list[str],
             obs = src.observe(tk, t)
             if obs is None or not obs.signals:
                 continue
-            fr = fwd_return(histories[tk], spy, t, horizon, return_mode)
+            hist = histories.get(tk)
+            if hist is None:                  # universe broader than histories: skip
+                continue
+            fr = fwd_return(hist, spy, t, horizon, return_mode)
             if fr is None:
                 continue
             for sig_name, sv in obs.signals.items():
