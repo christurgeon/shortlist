@@ -35,27 +35,43 @@ def _facts_cache_path(cache_dir: str, cik: str, month: str) -> Path:
     return Path(cache_dir) / f"CIK{cik}-{month}.json"
 
 
+# Marker persisted for a CIK whose companyfacts carry no us-gaap section (IFRS /
+# 20-F foreign issuers). Caching the miss stops a full-universe backtest re-hitting
+# SEC for the same never-resolving issuers every run; it's month-scoped like the
+# positive cache, so a newcomer to us-gaap is picked up next month.
+_NO_US_GAAP = {"_shortlist_no_us_gaap": True}
+
+
+def _write_facts_cache(cp: Path, cache_dir: str, payload: dict) -> None:
+    try:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps(payload))
+    except Exception:
+        pass  # cache write failure is non-fatal
+
+
 async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
                              month: str) -> Optional[dict]:
     """companyfacts JSON for a zero-padded CIK, month-cached on disk. Returns
-    None on empty payload (no us-gaap facts, e.g. IFRS 20-F issuers). A true 404
-    raises from raise_for_status() and is handled by the caller."""
+    None on empty payload (no us-gaap facts, e.g. IFRS 20-F issuers) — that miss
+    is cached too (negative marker) so the next run within the month doesn't refetch.
+    A true 404 raises from raise_for_status() and is handled by the caller."""
     cp = _facts_cache_path(cache_dir, cik, month)
     try:
         if cp.exists():
-            return json.loads(cp.read_text())
+            cached = json.loads(cp.read_text())
+            if isinstance(cached, dict) and cached.get("_shortlist_no_us_gaap"):
+                return None                    # cached "no us-gaap" miss
+            return cached
     except (ValueError, OSError):
         pass  # corrupt cache -> refetch
     resp = await client.get(_FACTS_URL.format(cik=cik))
     resp.raise_for_status()
     raw = resp.json()
     if not raw or "us-gaap" not in raw.get("facts", {}):
+        _write_facts_cache(cp, cache_dir, _NO_US_GAAP)
         return None
-    try:
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        cp.write_text(json.dumps(raw))
-    except Exception:
-        pass  # cache write failure is non-fatal
+    _write_facts_cache(cp, cache_dir, raw)
     return raw
 
 

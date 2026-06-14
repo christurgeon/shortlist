@@ -89,17 +89,39 @@ def _utcnow_iso() -> str:
 
 def _salvage_json(text: str) -> Optional[str]:
     """Best-effort extraction of a JSON object from model output: strip code
-    fences and any surrounding prose, then take the outermost {...} span."""
+    fences, then return the first *balanced* {...} object starting at the first
+    `{`. A brace-depth scan (string- and escape-aware) avoids the first-`{`..
+    last-`}` trap, where trailing prose containing a `}` would swallow non-JSON
+    text into the slice and break json.loads on an otherwise-valid object."""
     if not text:
         return None
     t = text.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)```", t, re.DOTALL)
     if fence:
         t = fence.group(1).strip()
-    start, end = t.find("{"), t.rfind("}")
-    if start == -1 or end == -1 or end <= start:
+    start = t.find("{")
+    if start == -1:
         return None
-    return t[start:end + 1]
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(t)):
+        c = t[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return t[start:i + 1]
+    return None   # unbalanced / truncated object -> let the caller retry
 
 
 def _norm(s: str) -> str:
@@ -379,8 +401,10 @@ def assess(card, bundle: FilingBundle, config: dict,
     system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
 
     prompt = user_prompt
+    total_cost = 0.0
     for _ in range(2):
         res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
+        total_cost += res.cost_usd or 0.0     # accumulate so a reparse retry's cost isn't lost
         if res.error:
             return None                       # transport/CLI failure — skip name
         if res.stop_reason == "max_tokens":
@@ -393,7 +417,7 @@ def assess(card, bundle: FilingBundle, config: dict,
                 assessment = assessment_from_payload(
                     payload, ticker=filing.ticker, as_of=_utcnow_iso(),
                     accession=bundle.primary_accession, filing_date=bundle.filing_date,
-                    model=res.model or model, cost_usd=res.cost_usd,
+                    model=res.model or model, cost_usd=total_cost,
                     stop_reason=res.stop_reason,
                     valid_signals=vs, max_conflicts=max_conflicts,
                     max_falsifiers=max_falsifiers, max_added_risks=max_added_risks)

@@ -94,22 +94,16 @@ reputation.
 > `build_sources`). 402 gating is not retried. Pinned by `tests/test_fmp_retry.py`; CLAUDE.md's
 > claim is now accurate. `FinnhubSource` was deliberately left out (60/min is comfortable).
 
-### [research] `_salvage_json` grabs first-`{` .. last-`}`
-`research/assess.py` ~L99 uses `t.find('{')`/`t.rfind('}')`, so trailing model prose
-containing a `}` is swallowed into the slice and `json.loads` fails even when a valid
-object was present — forcing a wasted reparse LLM call. **Approach:** a brace-depth scanner
-returning the first *balanced* `{...}` object. Changes parse behavior → needs test coverage.
+> **RESOLVED 2026-06-14:** `_salvage_json` now uses a string/escape-aware brace-depth
+> scanner returning the first *balanced* `{...}` object (was first-`{` .. last-`}`), so
+> trailing prose containing a `}` no longer breaks parsing. Pinned by `tests/research/test_assess.py`.
 
-### [research] Reparse retry drops the first call's `cost_usd`
-`research/assess.py` ~L382: when the first model call fails to parse and the second
-succeeds, only the second call's `cost_usd` is persisted, understating true spend on names
-that needed a reparse. Not a scoring defect — the persisted cost figure (kept for
-retrospective accounting) is just low. **Approach:** accumulate `cost_usd` across loop
-iterations.
+> **RESOLVED 2026-06-14:** `assess()` now accumulates `cost_usd` across the reparse retry,
+> so a name that needed a second call records the full spend. Pinned by `tests/research/test_assess.py`.
 
 ## Test-only hardening (cheap, low risk — do opportunistically)
 
-- **[backtest] `fetch_companyfacts` re-fetches IFRS/20-F issuers every run**
-  (`backtest/xbrl.py` ~L52): returns `None` before the cache-write block when there's no
-  us-gaap section, so foreign issuers (a stable, month-scoped miss) are re-requested from
-  SEC each run. Persist a negative-result marker and short-circuit on it.
+> **RESOLVED 2026-06-14:** `fetch_companyfacts` now persists a `_shortlist_no_us_gaap`
+> negative marker for IFRS/20-F issuers (month-scoped like the positive cache) and
+> short-circuits on it, so a full-universe backtest no longer re-hits SEC for the same
+> never-resolving foreign issuers each run. Pinned by `tests/test_xbrl_fetch.py`.

@@ -52,6 +52,36 @@ def test_salvage_returns_none_when_no_object():
     assert _salvage_json("no braces here") is None
 
 
+def test_salvage_returns_first_balanced_object_despite_trailing_brace_prose():
+    # The old first-{ .. last-} slice would swallow the trailing "{y}" and fail to parse.
+    raw = '{"a": 1, "b": "x"}\n\nNote: the placeholder {y} is illustrative.'
+    assert json.loads(_salvage_json(raw)) == {"a": 1, "b": "x"}
+
+
+def test_salvage_ignores_braces_inside_strings():
+    raw = '{"note": "a } brace and a { brace inside a string"}'
+    assert json.loads(_salvage_json(raw)) == {"note": "a } brace and a { brace inside a string"}
+
+
+def test_salvage_returns_none_on_unbalanced_truncated_object():
+    assert _salvage_json('{"a": 1, "b":') is None
+
+
+def test_assess_accumulates_cost_across_reparse_retry():
+    # First call returns unparseable JSON (cost 0.02), retry succeeds (cost 0.03);
+    # the persisted cost must reflect BOTH calls, not just the second.
+    seq = [CliResult(text="not json", cost_usd=0.02, stop_reason="end_turn", model="m"),
+           CliResult(text=json.dumps(GOOD), cost_usd=0.03, stop_reason="end_turn", model="m")]
+    calls = {"i": 0}
+    def runner(prompt, system, model, timeout_s):
+        r = seq[calls["i"]]
+        calls["i"] += 1
+        return r
+    a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
+    assert a is not None and calls["i"] == 2
+    assert abs(a.cost_usd - 0.05) < 1e-9     # 0.02 (failed parse) + 0.03 (success)
+
+
 def test_assess_happy_path_and_grounding():
     runner = _runner_returning(json.dumps(GOOD))
     a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)

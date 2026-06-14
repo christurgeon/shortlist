@@ -48,19 +48,24 @@ def test_fetch_companyfacts_caches_to_disk(tmp_path):
     assert client.calls == 1   # second call served from disk
     assert (tmp_path / "CIK0000320193-2026-06.json").exists()
 
-def test_fetch_companyfacts_returns_none_for_empty_payload(tmp_path):
+def test_fetch_companyfacts_negative_caches_empty_payload(tmp_path):
     client = _FakeClient({"cik": 12345})  # no "facts" key
-    result = asyncio.run(fetch_companyfacts(
+    r1 = asyncio.run(fetch_companyfacts(
         "0000012345", client, cache_dir=str(tmp_path), month="2026-06"))
-    assert result is None
-    assert client.calls == 1
-    assert not list(tmp_path.iterdir())   # nothing written to disk
+    r2 = asyncio.run(fetch_companyfacts(
+        "0000012345", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert r1 is None and r2 is None
+    assert client.calls == 1   # miss cached -> second call served from disk
+    assert (tmp_path / "CIK0000012345-2026-06.json").exists()
 
 
-def test_fetch_companyfacts_returns_none_for_ifrs_only_filer(tmp_path):
-    """IFRS 20-F filers have facts but no us-gaap key; must return None and not cache."""
+def test_fetch_companyfacts_negative_caches_ifrs_only_filer(tmp_path):
+    """IFRS 20-F filers have facts but no us-gaap key; return None and cache the miss
+    so subsequent runs within the month don't re-hit SEC for the same issuer."""
     client = _FakeClient({"cik": 1, "facts": {"ifrs-full": {"Revenue": {}}}})
-    result = asyncio.run(fetch_companyfacts(
+    r1 = asyncio.run(fetch_companyfacts(
         "0000000001", client, cache_dir=str(tmp_path), month="2026-06"))
-    assert result is None
-    assert not list(tmp_path.iterdir())   # not cached
+    r2 = asyncio.run(fetch_companyfacts(
+        "0000000001", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert r1 is None and r2 is None
+    assert client.calls == 1   # negative marker served from disk on the second call
