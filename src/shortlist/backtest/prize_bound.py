@@ -239,3 +239,62 @@ def _verdict(bound: dict, candidates: dict, top_ns) -> str:
     if candidates and all(inert(c) for c in candidates.values()):
         return "STOP_COLLINEAR"             # weight has headroom, candidates too collinear
     return "PROCEED"
+
+
+def run_live(config: dict, *, universe_file: str = None) -> dict:
+    """Assemble real cards (cache-backed screen) + candidate closes (fetch_history),
+    then call prize_bound. Yahoo-dependent (won't run on a Yahoo-blocked host).
+
+    Caveat: prize_bound's verdict does not down-weight candidates with tiny coverage
+    (a candidate present for only a few names trivially shows tau==1.0). The per-
+    candidate 'n' field is reported so a reader can judge coverage before trusting a
+    STOP_COLLINEAR verdict."""
+    import asyncio
+    from datetime import date
+    import httpx
+    from ..screen import run_harness
+    from .universe import load_universe
+    from .prices import _UA, fetch_history
+    from ..data.sources import mom_6m, mom_12_1
+
+    tickers = load_universe(universe_file or "largecap")
+    sources = config.get("harness_sources",
+                         ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
+    cards = [c for c in run_harness(tickers, sources, config) if c.composite is not None]
+    scored = [c.ticker for c in cards]
+    today = date.today().isoformat()
+
+    async def _closes():
+        out = {}
+        async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
+            for tk in scored:
+                try:
+                    h = await fetch_history(tk, client, cache_dir=".cache/yahoo", today=today)
+                    out[tk] = h.closes
+                except Exception as e:   # one bad symbol never aborts the gate
+                    print(f"warn: closes fetch failed for {tk}: {type(e).__name__}")
+        return out
+
+    closes = asyncio.run(_closes())
+    cand = {
+        "mom_6m": {t: v for t in closes if (v := mom_6m(closes[t])) is not None},
+        "mom_12_1": {t: v for t in closes if (v := mom_12_1(closes[t])) is not None},
+    }
+    return prize_bound(cards, cand, config["weights"], config)
+
+
+def _main() -> int:
+    import json
+    import yaml
+    from pathlib import Path
+    from ..env import load_env
+    load_env()
+    config = yaml.safe_load(Path("config.yaml").read_text())
+    result = run_live(config)
+    print(json.dumps(result, indent=2))
+    print(f"\nVERDICT: {result['verdict']}  (n_cards={result['n_cards']})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
