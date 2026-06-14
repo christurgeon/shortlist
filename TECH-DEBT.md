@@ -89,15 +89,10 @@ reputation.
 
 ## Coordination / behavior-shaping
 
-### [cache-store / data-harness] FMPSource has no Retry-After 429 backoff (CLAUDE.md overstates it)
-CLAUDE.md claims "FMPSource._get retries with Retry-After-aware backoff
-(`fmp.max_retries`)", but `FMPSource._get` (`data/sources.py` ~L70) only calls
-`raise_for_status()` — there is no retry loop and no `fmp.max_retries` wiring. The review's
-quick half was applied (a 429 error string now maps to `rate_limited_429` in
-`coverage_adapt`, activating coverage.py's previously-dead 429 note). **Remaining:**
-implement the documented Retry-After/backoff in `FMPSource._get` (and `FinnhubSource`),
-add `fmp.max_retries` to config, and reconcile CLAUDE.md — or, if backoff isn't wanted,
-correct CLAUDE.md to drop the claim.
+> **RESOLVED 2026-06-14:** `FMPSource._get` now implements the documented Retry-After-
+> aware 429/5xx backoff, wired to the existing `fmp.max_retries` config knob (threaded via
+> `build_sources`). 402 gating is not retried. Pinned by `tests/test_fmp_retry.py`; CLAUDE.md's
+> claim is now accurate. `FinnhubSource` was deliberately left out (60/min is comfortable).
 
 ### [research] `_salvage_json` grabs first-`{` .. last-`}`
 `research/assess.py` ~L99 uses `t.find('{')`/`t.rfind('}')`, so trailing model prose

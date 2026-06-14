@@ -304,10 +304,14 @@ def test_fmp_source_get_uses_cache(tmp_path):
     s.key = "test"
     s._cache = real
     s.BASE = "https://example.invalid/stable"
+    s._max_retries = 0
 
     calls = {"n": 0}
 
     class FakeResp:
+        status_code = 200
+        headers: dict = {}
+
         def raise_for_status(self):
             pass
 
@@ -342,9 +346,13 @@ def test_source_dedups_through_configured_global(tmp_path):
         s.key = "test"
         s._cache = None  # NOT injected -> must fall back to the global
         s.BASE = "https://example.invalid/stable"
+        s._max_retries = 0
         calls = {"n": 0}
 
         class FakeResp:
+            status_code = 200
+            headers: dict = {}
+
             def raise_for_status(self):
                 pass
 

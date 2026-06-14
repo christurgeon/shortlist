@@ -56,13 +56,15 @@ class FMPSource(Source):
     # new keys on 2025-08-31. Every endpoint takes `?symbol=`.
     BASE = "https://financialmodelingprep.com/stable"
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *, cache=None):
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *,
+                 cache=None, config: Optional[dict] = None):
         self.key = api_key or os.environ.get("FMP_API_KEY")
         if not self.key:
             raise RuntimeError("FMP_API_KEY not set")
         import httpx  # lazy: only needed for live runs
         self._client = httpx.AsyncClient(timeout=timeout)
         self._cache = cache
+        self._max_retries = int(((config or {}).get("fmp") or {}).get("max_retries", 2))
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -71,9 +73,19 @@ class FMPSource(Source):
         params["apikey"] = self.key
 
         async def fetch():
-            r = await self._client.get(f"{self.BASE}/{path}", params=params)
-            r.raise_for_status()
-            return r.json()
+            # Retry transient throttling (429, per-minute) and 5xx with Retry-After-
+            # aware, capped backoff; 402 gating and 4xx are NOT retried (won't clear).
+            # A recovered call returns a real 200 (cacheable); an exhausted one raises
+            # a 429-bearing error that coverage_adapt maps to rate_limited_429.
+            for attempt in range(self._max_retries + 1):
+                r = await self._client.get(f"{self.BASE}/{path}", params=params)
+                retriable = r.status_code == 429 or 500 <= r.status_code < 600
+                if retriable and attempt < self._max_retries:
+                    delay = float(r.headers.get("Retry-After", 2 ** attempt))
+                    await asyncio.sleep(min(delay, 30.0))
+                    continue
+                r.raise_for_status()
+                return r.json()
 
         cache = self._cache or get_default_cache()
         return await cache.aget_or_fetch("fmp", path, params, fetch)
