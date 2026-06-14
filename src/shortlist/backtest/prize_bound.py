@@ -102,3 +102,40 @@ def to_rank_scores(values: list[float]) -> list[float]:
             avg_rank[order[k]] = r
         i = j + 1
     return [100.0 * r / (n - 1) for r in avg_rank]
+
+
+def ranking_from(scores: dict[str, float]) -> list[str]:
+    """Tickers ordered by composite descending (ties broken by ticker for determinism)."""
+    return [t for t, _ in sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def topn_overlap(rank_a: list[str], rank_b: list[str], n: int) -> float:
+    """Fraction of the top-n set shared between two rankings (1.0 == identical top-n)."""
+    n = min(n, len(rank_a), len(rank_b))
+    if n == 0:
+        return 1.0
+    return len(set(rank_a[:n]) & set(rank_b[:n])) / n
+
+
+def kendall_tau(rank_a: list[str], rank_b: list[str]) -> float:
+    """Kendall rank correlation over the items common to both rankings. O(n^2), fine
+    for <=100 names. +1 identical order, -1 reversed, 0 independent."""
+    common = [t for t in rank_a if t in set(rank_b)]
+    pos_b = {t: i for i, t in enumerate(rank_b)}
+    pos_a = {t: i for i, t in enumerate(common)}
+    items = common
+    m = len(items)
+    if m < 2:
+        return 1.0
+    concordant = discordant = 0
+    for i in range(m):
+        for j in range(i + 1, m):
+            ti, tj = items[i], items[j]
+            da = pos_a[ti] - pos_a[tj]
+            db = pos_b[ti] - pos_b[tj]
+            if da * db > 0:
+                concordant += 1
+            else:
+                discordant += 1
+    total = m * (m - 1) / 2
+    return (concordant - discordant) / total
