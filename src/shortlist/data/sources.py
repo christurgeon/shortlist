@@ -13,6 +13,7 @@ from typing import Any, Awaitable, Callable, Optional
 from .._util import first as _first
 from .._util import from_millions as _mm
 from .._util import pct as _pct
+from .._util import retry_after_seconds as _retry_after_seconds
 from ..cache import get_default_cache
 from ..env import redact_secrets
 from ..providers._fmp_insider import is_buy, tx_value
@@ -76,13 +77,14 @@ class FMPSource(Source):
             # Retry transient throttling (429, per-minute) and 5xx with Retry-After-
             # aware, capped backoff; 402 gating and 4xx are NOT retried (won't clear).
             # A recovered call returns a real 200 (cacheable); an exhausted one raises
-            # a 429-bearing error that coverage_adapt maps to rate_limited_429.
+            # the last response's error — a 429 maps to rate_limited_429 in
+            # coverage_adapt, a persistent 5xx to the generic "error" status.
             for attempt in range(self._max_retries + 1):
                 r = await self._client.get(f"{self.BASE}/{path}", params=params)
                 retriable = r.status_code == 429 or 500 <= r.status_code < 600
                 if retriable and attempt < self._max_retries:
-                    delay = float(r.headers.get("Retry-After", 2 ** attempt))
-                    await asyncio.sleep(min(delay, 30.0))
+                    await asyncio.sleep(
+                        _retry_after_seconds(r.headers.get("Retry-After"), 2 ** attempt))
                     continue
                 r.raise_for_status()
                 return r.json()

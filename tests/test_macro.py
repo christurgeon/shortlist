@@ -69,6 +69,21 @@ def test_fetch_macro_builds_context(monkeypatch, tmp_path):
     c = fetch_macro(CFG)
     assert c is not None and c.regime == "risk-off" and c.hy_oas == 5.4
 
+def test_fetch_macro_as_of_is_max_observation_date(monkeypatch, tmp_path):
+    # Series update on different cadences; as_of must be the MOST RECENT observation
+    # across them, independent of fetch order (DGS10 is fetched first but is not max).
+    dates = {"DGS10": "2026-06-01", "T10Y2Y": "2026-06-03", "BAMLH0A0HYM2": "2026-06-12",
+             "VIXCLS": "2026-06-05", "FEDFUNDS": "2026-05-30"}
+    vals = {"DGS10": 4.45, "T10Y2Y": -0.2, "BAMLH0A0HYM2": 5.4, "VIXCLS": 16.0, "FEDFUNDS": 3.64}
+    def fake_get(series_id, api_key):
+        return (dates.get(series_id), vals.get(series_id))
+    monkeypatch.setattr(macro_mod, "_fetch_series", fake_get)
+    monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
+    monkeypatch.setenv("FRED_API_KEY", "testkey")
+    c = fetch_macro(CFG)
+    assert c is not None and c.as_of == "2026-06-12"   # max, not first (06-01) or last (05-30)
+
+
 def test_fetch_macro_day_cache_avoids_second_pull(monkeypatch, tmp_path):
     calls = _fake_series(monkeypatch, {"DGS10": 4.45})
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)

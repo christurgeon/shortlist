@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from .._util import retry_after_seconds
 from ..env import redact_secrets
 
 _API = "https://api.telegram.org/bot{token}/{method}"
@@ -52,9 +53,9 @@ class TelegramNotifier:
                 retriable = resp.status_code == 429 or 500 <= resp.status_code < 600
                 if retriable and attempt < self.max_retries:
                     # Retry-After-aware backoff, mirroring FMPSource._get's 429 idiom;
-                    # transient 5xx use the same capped exponential backoff.
-                    delay = float(resp.headers.get("Retry-After", 2 ** attempt))
-                    time.sleep(min(delay, 30.0))
+                    # transient 5xx use the same capped exponential backoff. The shared
+                    # parser tolerates the RFC-7231 HTTP-date header form.
+                    time.sleep(retry_after_seconds(resp.headers.get("Retry-After"), 2 ** attempt))
                     continue
                 return resp.status_code == 200
             return False

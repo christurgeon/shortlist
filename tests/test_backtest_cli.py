@@ -74,3 +74,47 @@ def test_fit_prior_is_only_the_fit_axes():
     prior, s_f = _fit_prior_from_config(config, ["quality", "moat", "growth", "value"])
     assert set(prior) == {"quality", "moat", "growth", "value"}
     assert abs(s_f - 0.715) < 1e-9
+
+
+# --- CLI clean-exit guards (added 2026-06-14: bad/empty horizons, start>end, SPY fail) ---
+
+def test_main_rejects_non_integer_horizons():
+    from shortlist.backtest.cli import main
+    assert main(["--tickers", "AAPL", "--horizons", "3,abc"]) == 2
+
+
+def test_main_rejects_empty_horizons():
+    from shortlist.backtest.cli import main
+    assert main(["--tickers", "AAPL", "--horizons", ""]) == 2
+
+
+def test_main_rejects_non_positive_horizons():
+    from shortlist.backtest.cli import main
+    assert main(["--tickers", "AAPL", "--horizons", "0"]) == 2
+
+
+def test_main_rejects_start_after_end(monkeypatch):
+    from shortlist.backtest import cli
+    from shortlist.backtest.prices import PriceHistory
+
+    async def fake_load(tickers, cache_dir, today):
+        h = PriceHistory("AAPL", ["2024-01-02", "2024-02-01"], [100.0, 110.0])
+        spy = PriceHistory("SPY", ["2024-01-02", "2024-02-01"], [400.0, 410.0])
+        return {"AAPL": h}, spy
+
+    monkeypatch.setattr(cli, "_load_histories", fake_load)
+    rc = cli.main(["--tickers", "AAPL", "--horizons", "6",
+                   "--start", "2025-01-01", "--end", "2024-01-01"])
+    assert rc == 2
+
+
+def test_main_clean_exit_when_price_fetch_fails(monkeypatch):
+    # SPY benchmark + ticker fetches all raise -> empty histories -> clean return 1,
+    # never an unhandled traceback (the SPY-fetch isolation path).
+    from shortlist.backtest import cli
+
+    async def boom(*a, **k):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(cli, "fetch_history", boom)
+    assert cli.main(["--tickers", "AAPL", "--horizons", "6"]) == 1

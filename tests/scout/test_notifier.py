@@ -104,6 +104,19 @@ def test_retries_on_429_then_succeeds(monkeypatch):
     assert slept == [1.0]                      # honored Retry-After once
 
 
+def test_retries_on_transient_5xx_then_succeeds(monkeypatch):
+    slept = []
+    monkeypatch.setattr("shortlist.scout.notify.time.sleep", lambda s: slept.append(s))
+    seq = [503, 200]
+
+    def handler(request):
+        return httpx.Response(seq.pop(0), json={"ok": True})
+
+    n = TelegramNotifier("T", "42", client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert n.send_message("hi") is True       # retried past the 503 to the 200
+    assert len(slept) == 1                     # backed off once (no Retry-After -> default)
+
+
 def test_429_exhausts_retries_and_returns_false(monkeypatch):
     monkeypatch.setattr("shortlist.scout.notify.time.sleep", lambda s: None)
 

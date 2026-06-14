@@ -57,6 +57,41 @@ def test_retries_transient_5xx_then_succeeds():
     assert calls["n"] == 2
 
 
+def test_gives_up_after_max_retries_and_raises_5xx():
+    # A persistent 5xx exhausts retries and raises a 503-bearing error. (coverage_adapt
+    # maps that to the generic "error" status, NOT rate_limited_429 — only 429 does.)
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(503, text="unavailable")
+
+    src = _src(handler, max_retries=2)
+    with pytest.raises(httpx.HTTPStatusError) as ei:
+        asyncio.run(src._get("quote", symbol="AAPL"))
+    assert "503" in str(ei.value)
+    assert calls["n"] == 3  # initial + max_retries
+
+
+def test_retry_after_http_date_header_does_not_abort_retry():
+    # RFC-7231 allows an HTTP-date Retry-After (an intermediary 5xx can emit it). A bare
+    # float() would raise ValueError BEFORE retrying; the shared parser must tolerate it
+    # so the retry still happens and a recovered call returns 200.
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(503, headers={"Retry-After": "Wed, 21 Oct 2099 07:28:00 GMT"},
+                                  text="unavailable")
+        return httpx.Response(200, json={"ok": True})
+
+    src = _src(handler)
+    out = asyncio.run(src._get("quote", symbol="AAPL"))
+    assert out == {"ok": True}
+    assert calls["n"] == 2  # date-form header did not defeat the retry
+
+
 def test_gives_up_after_max_retries_and_raises_429():
     calls = {"n": 0}
 

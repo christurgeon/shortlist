@@ -115,6 +115,13 @@ def test_zero_mean_returns_none():
     assert gross_margin_stability([0.0, 0.0, 0.0]) is None
 
 
+def test_negative_mean_returns_none():
+    # A negative mean margin is not a meaningful stability base: dividing pstdev by a
+    # negative mean made the old `if not avg:` guard return a proxy > 1 (out of 0..1).
+    # The zero-mean test above can't catch this — 0.0 is falsy under both guards.
+    assert gross_margin_stability([-0.40, -0.41, -0.39]) is None
+
+
 def test_never_negative():
     # huge dispersion would push 1 - stdev/mean below 0; clamp to 0.0
     assert gross_margin_stability([0.01, 0.99, 0.02]) == 0.0

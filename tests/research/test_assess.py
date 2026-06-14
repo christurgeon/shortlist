@@ -67,6 +67,14 @@ def test_salvage_returns_none_on_unbalanced_truncated_object():
     assert _salvage_json('{"a": 1, "b":') is None
 
 
+def test_salvage_handles_escaped_quote_before_brace_in_string():
+    # An escaped quote inside a string must not end string-tracking early; a `}` that
+    # follows it is still inside the string, not the object's closing brace.
+    obj = {"k": 'a \\" } still in string'}
+    raw = json.dumps(obj)
+    assert json.loads(_salvage_json(raw)) == obj
+
+
 def test_assess_accumulates_cost_across_reparse_retry():
     # First call returns unparseable JSON (cost 0.02), retry succeeds (cost 0.03);
     # the persisted cost must reflect BOTH calls, not just the second.

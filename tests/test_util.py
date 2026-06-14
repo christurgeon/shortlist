@@ -1,4 +1,4 @@
-from shortlist._util import first, from_millions, pct, pick
+from shortlist._util import first, from_millions, pct, pick, retry_after_seconds
 
 
 def test_pick_returns_first_present_key():
@@ -65,3 +65,28 @@ def test_from_millions_scales_to_absolute_dollars():
 def test_from_millions_none_for_non_numeric():
     assert from_millions(None) is None
     assert from_millions("1000") is None
+
+
+def test_retry_after_seconds_numeric_header():
+    assert retry_after_seconds("5", 1.0) == 5.0
+
+
+def test_retry_after_seconds_falls_back_when_absent():
+    assert retry_after_seconds(None, 4.0) == 4.0
+    assert retry_after_seconds("", 4.0) == 4.0
+
+
+def test_retry_after_seconds_caps_huge_values():
+    assert retry_after_seconds("9999", 1.0) == 30.0
+    assert retry_after_seconds(None, 1000.0) == 30.0
+
+
+def test_retry_after_seconds_http_date_does_not_raise():
+    # RFC-7231 HTTP-date form must NOT crash (the old bare float() did). A far-future
+    # date clamps to the cap; the key property is it returns a finite, non-raising value.
+    out = retry_after_seconds("Wed, 21 Oct 2099 07:28:00 GMT", 2.0)
+    assert isinstance(out, float) and 0.0 <= out <= 30.0
+
+
+def test_retry_after_seconds_garbage_header_falls_back():
+    assert retry_after_seconds("not-a-date-or-number", 3.0) == 3.0
