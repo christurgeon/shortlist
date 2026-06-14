@@ -49,36 +49,39 @@ class Source(ABC):
         pass
 
 
-# --- FMP: primary, broad coverage ----------------------------------------
+class _KeyedHttpSource(Source):
+    """Shared scaffolding for keyed JSON-over-HTTP sources (FMP, Finnhub): env-key
+    resolution, a lazily-built httpx ``AsyncClient``, and a cache-delegating GET with
+    optional Retry-After-aware backoff. Subclasses set ``BASE`` / ``_AUTH_PARAM`` /
+    ``_ENV_VAR`` / ``_PROVIDER`` and implement ``fetch``; the default ``_max_retries``
+    of 0 means a single attempt (no retry) — a subclass opts in by raising it. Keeping
+    the request/cache path in one place means the cacheability + redaction invariants
+    don't drift between the two sources."""
 
-class FMPSource(Source):
-    name = "fmp"
-    # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
-    # new keys on 2025-08-31. Every endpoint takes `?symbol=`.
-    BASE = "https://financialmodelingprep.com/stable"
+    BASE: str = ""
+    _AUTH_PARAM: str = ""    # query param that carries the key ("apikey" / "token")
+    _ENV_VAR: str = ""       # env var holding the key
+    _PROVIDER: str = ""      # cache provider tag
 
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *,
-                 cache=None, config: Optional[dict] = None):
-        self.key = api_key or os.environ.get("FMP_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *, cache=None):
+        self.key = api_key or os.environ.get(self._ENV_VAR)
         if not self.key:
-            raise RuntimeError("FMP_API_KEY not set")
+            raise RuntimeError(f"{self._ENV_VAR} not set")
         import httpx  # lazy: only needed for live runs
         self._client = httpx.AsyncClient(timeout=timeout)
         self._cache = cache
-        self._max_retries = int(((config or {}).get("fmp") or {}).get("max_retries", 2))
+        self._max_retries = 0   # subclasses opt into retry
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
     async def _get(self, path: str, **params: Any) -> Any:
-        params["apikey"] = self.key
+        params[self._AUTH_PARAM] = self.key
 
         async def fetch():
-            # Retry transient throttling (429, per-minute) and 5xx with Retry-After-
-            # aware, capped backoff; 402 gating and 4xx are NOT retried (won't clear).
-            # A recovered call returns a real 200 (cacheable); an exhausted one raises
-            # the last response's error — a 429 maps to rate_limited_429 in
-            # coverage_adapt, a persistent 5xx to the generic "error" status.
+            # Retry transient throttling (429) and 5xx with Retry-After-aware, capped
+            # backoff when _max_retries > 0; 402 gating and other 4xx are NOT retried.
+            # With _max_retries == 0 this is a single attempt (the no-retry default).
             for attempt in range(self._max_retries + 1):
                 r = await self._client.get(f"{self.BASE}/{path}", params=params)
                 retriable = r.status_code == 429 or 500 <= r.status_code < 600
@@ -90,7 +93,28 @@ class FMPSource(Source):
                 return r.json()
 
         cache = self._cache or get_default_cache()
-        return await cache.aget_or_fetch("fmp", path, params, fetch)
+        return await cache.aget_or_fetch(self._PROVIDER, path, params, fetch)
+
+
+# --- FMP: primary, broad coverage ----------------------------------------
+
+class FMPSource(_KeyedHttpSource):
+    name = "fmp"
+    # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
+    # new keys on 2025-08-31. Every endpoint takes `?symbol=`.
+    BASE = "https://financialmodelingprep.com/stable"
+    _AUTH_PARAM = "apikey"
+    _ENV_VAR = "FMP_API_KEY"
+    _PROVIDER = "fmp"
+
+    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *,
+                 cache=None, config: Optional[dict] = None):
+        super().__init__(api_key, timeout, cache=cache)
+        # FMP opts into Retry-After-aware retry (per-minute 429s clear on backoff; a
+        # recovered call caches a real 200, an exhausted 429 -> coverage rate_limited_429,
+        # a persistent 5xx -> the generic "error" status). Daily-quota 429s won't clear,
+        # so max_retries is deliberately small (config: fmp.max_retries, default 2).
+        self._max_retries = int(((config or {}).get("fmp") or {}).get("max_retries", 2))
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
@@ -213,31 +237,14 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
 
 # --- Finnhub: complements with insider sentiment + recommendation trend ----
 
-class FinnhubSource(Source):
+class FinnhubSource(_KeyedHttpSource):
     name = "finnhub"
     BASE = "https://finnhub.io/api/v1"
-
-    def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *, cache=None):
-        self.key = api_key or os.environ.get("FINNHUB_API_KEY")
-        if not self.key:
-            raise RuntimeError("FINNHUB_API_KEY not set")
-        import httpx
-        self._client = httpx.AsyncClient(timeout=timeout)
-        self._cache = cache
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
-
-    async def _get(self, path: str, **params: Any) -> Any:
-        params["token"] = self.key
-
-        async def fetch():
-            r = await self._client.get(f"{self.BASE}/{path}", params=params)
-            r.raise_for_status()
-            return r.json()
-
-        cache = self._cache or get_default_cache()
-        return await cache.aget_or_fetch("finnhub", path, params, fetch)
+    _AUTH_PARAM = "token"
+    _ENV_VAR = "FINNHUB_API_KEY"
+    _PROVIDER = "finnhub"
+    # No retry override: Finnhub's 60/min is comfortable, so the base default
+    # (_max_retries = 0, single attempt) is intentional.
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)

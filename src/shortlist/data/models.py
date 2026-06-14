@@ -10,6 +10,15 @@ def utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _is_present(v: Any) -> bool:
+    """Whether a field value counts as supplied by a source. The single definition
+    of the merge/coverage 'present-ness' convention: None, the empty list, and the
+    empty string all read as absent (so a lower-priority source can fill the field).
+    Reused by merge (`_merge_flat`/`_merge_insider`/`_has_data`) and coverage()/
+    missing() so the rule lives in exactly one place."""
+    return v not in (None, [], "")
+
+
 # --- Sections -------------------------------------------------------------
 
 @dataclass
@@ -224,7 +233,7 @@ class TickerSnapshot:
                 continue
             for f in _signal_fields(obj):
                 total += 1
-                filled += getattr(obj, f.name) not in (None, [], "")
+                filled += _is_present(getattr(obj, f.name))
         return round(filled / total, 3) if total else 0.0
 
     def missing(self) -> list[str]:
@@ -235,7 +244,7 @@ class TickerSnapshot:
                 out.append(name)
                 continue
             for f in _signal_fields(obj):
-                if getattr(obj, f.name) in (None, [], ""):
+                if not _is_present(getattr(obj, f.name)):
                     out.append(f"{name}.{f.name}")
         return out
 
@@ -312,7 +321,7 @@ def _merge_flat(instances: list[tuple[str, T]]) -> tuple[Optional[T], list[str]]
     for f in fields(merged):
         for src, obj in present:
             v = getattr(obj, f.name)
-            if v not in (None, [], ""):
+            if _is_present(v):
                 setattr(merged, f.name, v)
                 if src not in contributors:
                     contributors.append(src)
@@ -328,7 +337,7 @@ def _pick_first(instances: list[tuple[str, T]]) -> tuple[Optional[T], list[str]]
 
 
 def _has_data(obj: Any) -> bool:
-    return any(getattr(obj, f.name) not in (None, [], "") for f in fields(obj))
+    return any(_is_present(getattr(obj, f.name)) for f in fields(obj))
 
 
 # The transaction facts in Insider are one accounting derived from a single set
@@ -351,7 +360,7 @@ def _merge_insider(instances: list[tuple[str, Optional["Insider"]]]) -> tuple[Op
     merged = Insider()
     contributors: list[str] = []
     for src, obj in present:
-        if any(getattr(obj, f) not in (None, [], "") for f in _INSIDER_TXN_FIELDS):
+        if any(_is_present(getattr(obj, f)) for f in _INSIDER_TXN_FIELDS):
             for f in _INSIDER_TXN_FIELDS:
                 setattr(merged, f, getattr(obj, f))
             contributors.append(src)

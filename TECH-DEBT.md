@@ -55,14 +55,11 @@ the monotonic check — a silent numeric substitution that violates the module's
 
 ## Cross-cutting refactors (drift risk; keep byte-identical)
 
-### [data-harness] Shared keyed-HTTP base for FMPSource / FinnhubSource
-`FMPSource._get` (~L70) and `FinnhubSource._get` (~L217) are near-identical (build params
-with key/token → inner `fetch()` GET → `raise_for_status` → `.json()` →
-`cache.aget_or_fetch`), differing only in the auth param name (`apikey` vs `token`) and
-the cache provider tag; the two `__init__` bodies likewise. The redact + cacheability
-invariants must currently be kept in sync by hand. **Approach:** extract a small base
-parameterized by `base_url`, `auth_param_name`, `provider_tag`. Pure refactor — pin with
-a byte-identical-output test across both sources.
+> **RESOLVED 2026-06-14:** Extracted `_KeyedHttpSource` (data/sources.py) — env-key
+> resolution, lazy httpx client, and the cache-delegating GET with optional Retry-After
+> backoff now live once; `FMPSource`/`FinnhubSource` set `BASE`/`_AUTH_PARAM`/`_ENV_VAR`/
+> `_PROVIDER`. Default `_max_retries = 0` (single attempt) keeps Finnhub's no-retry
+> behavior byte-identical; FMP opts in. Suite unchanged at 1006 passing; demo output identical.
 
 ### [data-harness] Shared disk-cache + bulk-index scaffolding for Finra / Wsb
 `FinraSource` and `WsbSource` share the load-once-then-O(1)-lookup shape, and the
@@ -72,13 +69,10 @@ triplicated across `FinraSource._read_cache/_write_cache`, `YahooSource._get_cha
 helpers and optionally a `BulkIndexSource` mixin. Touches three live caching paths — needs
 behavior-preserving test coverage.
 
-### [data-harness] One named present-ness predicate for the merge/coverage machinery
-`_merge_flat`, `_has_data`, `_merge_insider`, and `coverage()` in `data/models.py` all
-inline `v not in (None, [], "")` to mean "present", conflating a legitimately-empty `""`
-with "absent". Fine for the current Optional fields, but the convention is duplicated in
-four places with no single named home. **Approach:** factor into one `_is_present(v)`
-reused everywhere. Cross-cutting over merge/coverage that scoring depends on — verify no
-behavior change.
+> **RESOLVED 2026-06-14:** Factored the `v not in (None, [], "")` convention into one
+> `_is_present(v)` in `data/models.py`, reused by `_merge_flat`/`_merge_insider`/`_has_data`
+> and `coverage()`/`missing()`. Behavior-identical (suite unchanged at 1006); the rule now
+> lives in exactly one place.
 
 ### [backtest] `_load_histories` fetches SPY + every ticker serially
 `backtest/cli.py` ~L103 awaits SPY then each ticker one at a time; `_load_companyfacts`
