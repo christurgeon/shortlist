@@ -861,6 +861,22 @@ def _yh_ret_over(xs: list[float], n: int) -> Optional[float]:
     return xs[-1] / xs[-1 - n] - 1.0 if len(xs) > n and xs[-1 - n] else None
 
 
+def ret_between(xs: list[float], start_back: int, end_back: int) -> Optional[float]:
+    """Return over a window of a price series: xs[-end_back] / xs[-start_back] - 1.
+
+    `start_back` is the older endpoint (further back), `end_back` the newer one
+    (`end_back=1` == most recent close). Guards the denominator's truthiness and
+    sufficient history exactly like `_yh_ret_over`, so a zero/None-filtered price or a
+    too-short series yields None rather than raising. `ret_between(xs, 127, 1)` is the
+    trailing 6m return; `ret_between(xs, 274, 22)` is the 12-1 skip-month return."""
+    if end_back < 1 or start_back <= end_back or len(xs) < start_back:
+        return None
+    denom = xs[-start_back]
+    if not denom:
+        return None
+    return xs[-end_back] / denom - 1.0
+
+
 def _yh_annualized_vol(xs: list[float], window: int = _YH_VOL_WINDOW) -> Optional[float]:
     rets = [xs[i] / xs[i - 1] - 1.0 for i in range(1, len(xs)) if xs[i - 1]][-window:]
     if len(rets) < 2:
