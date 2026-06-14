@@ -139,3 +139,103 @@ def kendall_tau(rank_a: list[str], rank_b: list[str]) -> float:
                 discordant += 1
     total = m * (m - 1) / 2
     return (concordant - discordant) / total
+
+
+import random as _random
+
+# Pre-registered STOP thresholds (band-free, rank-based churn). See spec Stage 0.
+_STOP_OVERLAP = 0.9       # top-N set overlap at/above this == "did not move"
+_STOP_TAU = 0.95          # full-basket Kendall tau at/above this == "did not move"
+_MC_TRIALS = 200          # random-rank Monte-Carlo trials for the weight bound
+
+
+def _churn(base_rank: list[str], scores: dict[str, float], top_ns) -> dict:
+    new_rank = ranking_from(scores)
+    return {
+        "kendall_tau": round(kendall_tau(base_rank, new_rank), 4),
+        "topn_overlap": {n: round(topn_overlap(base_rank, new_rank, n), 4) for n in top_ns},
+    }
+
+
+def _effective_momentum_weight(cards, weights) -> dict:
+    vals = []
+    for c in cards:
+        present = [weights[k] for k in _COMPONENTS if getattr(c, k, None) is not None]
+        if getattr(c, "risk", None) is not None:
+            present.append(weights["risk"])
+        den = sum(present)
+        if den and getattr(c, "momentum", None) is not None:
+            vals.append(weights["momentum"] / den)
+    vals.sort()
+    if not vals:
+        return {"min": 0.0, "median": 0.0, "max": 0.0}
+    mid = vals[len(vals) // 2]
+    return {"min": round(vals[0], 4), "median": round(mid, 4), "max": round(vals[-1], 4)}
+
+
+def prize_bound(cards, candidate_values: dict, weights: dict, config: dict, *,
+                top_ns=(5, 10, 20), seed: int = 0) -> dict:
+    """Stage 0 verdict. `cards`: real ScoreCards (full composites). `candidate_values`:
+    {candidate_name: {ticker: raw_value}}. `config` is threaded to composite_with so it
+    re-blends from the cards' UNROUNDED sub-scores (faithful to the real composite).
+    Returns weight-bound churn, per-candidate churn, effective-weight distribution, and
+    a pre-registered verdict string.
+
+    Everything is rank-based to isolate the leg's cross-sectional ORDERING effect from
+    scale: the baseline composite uses momentum = rank-mapped(incumbent momentum), and
+    every comparison (reverse, random, candidates) replaces momentum with another
+    rank-mapped [0,100] leg. A candidate whose ordering equals the incumbent therefore
+    churns nothing (tau == 1.0)."""
+    cards = [c for c in cards if c.composite is not None]
+    card_by = {c.ticker: c for c in cards}
+    tickers = list(card_by)
+
+    def composites(score_by_ticker: dict) -> dict:
+        return {t: composite_with(card_by[t], score_by_ticker[t], weights, config)
+                for t in score_by_ticker}
+
+    inc_scores = dict(zip(tickers,
+                          to_rank_scores([(card_by[t].momentum or 0.0) for t in tickers])))
+    base_rank = ranking_from(composites(inc_scores))
+
+    # (A) weight bound: rank-reverse of incumbent (max-decorrelated legal leg) plus a
+    #     random-rank Monte-Carlo band; keep the WORST (lowest tau) churn vs base_rank.
+    bound = _churn(base_rank, composites({t: 100.0 - inc_scores[t] for t in tickers}), top_ns)
+    rng = _random.Random(seed)
+    for _ in range(_MC_TRIALS):
+        perm = to_rank_scores([rng.random() for _ in tickers])
+        sc = {t: perm[i] for i, t in enumerate(tickers)}
+        trial = _churn(base_rank, composites(sc), top_ns)
+        if trial["kendall_tau"] < bound["kendall_tau"]:
+            bound = trial
+
+    # (B) per-candidate churn over the candidate's common universe, each vs a
+    #     rank-mapped-incumbent baseline restricted to that same universe.
+    candidates = {}
+    for name, vals in candidate_values.items():
+        ct = [t for t in tickers if t in vals]
+        cand = dict(zip(ct, to_rank_scores([vals[t] for t in ct])))
+        inc = dict(zip(ct, to_rank_scores([(card_by[t].momentum or 0.0) for t in ct])))
+        cbase = ranking_from({t: composite_with(card_by[t], inc[t], weights, config) for t in ct})
+        cnew = {t: composite_with(card_by[t], cand[t], weights, config) for t in ct}
+        candidates[name] = _churn(cbase, cnew, top_ns)
+        candidates[name]["n"] = len(ct)
+
+    return {
+        "n_cards": len(cards),
+        "weight_bound": bound,
+        "candidates": candidates,
+        "effective_momentum_weight": _effective_momentum_weight(cards, weights),
+        "verdict": _verdict(bound, candidates, top_ns),
+    }
+
+
+def _verdict(bound: dict, candidates: dict, top_ns) -> str:
+    n = max(top_ns)
+    def inert(churn):
+        return churn["kendall_tau"] >= _STOP_TAU and churn["topn_overlap"][n] >= _STOP_OVERLAP
+    if inert(bound):
+        return "STOP_WEIGHT_INERT"          # even the max-disruptive leg can't move it
+    if candidates and all(inert(c) for c in candidates.values()):
+        return "STOP_COLLINEAR"             # weight has headroom, candidates too collinear
+    return "PROCEED"
