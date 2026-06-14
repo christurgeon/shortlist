@@ -877,6 +877,23 @@ def ret_between(xs: list[float], start_back: int, end_back: int) -> Optional[flo
     return xs[-end_back] / denom - 1.0
 
 
+# Multi-horizon momentum candidates (Stage 0 prize-bound + Stage 1 measurement).
+# Pure functions over a daily adjusted-close series, oldest -> newest.
+_MOM_SKIP = 22          # skip the most recent ~21 trading days (1m reversal guard)
+_MOM_12_1_BACK = 274    # 274 - 22 == 252 td (12-month) formation window
+
+
+def mom_6m(closes: list[float]) -> Optional[float]:
+    """Absolute trailing 6-month return (== _yh_ret_over(closes, _YH_SIX_MONTHS))."""
+    return ret_between(closes, _YH_SIX_MONTHS + 1, 1)
+
+
+def mom_12_1(closes: list[float]) -> Optional[float]:
+    """Canonical 12-1 momentum: 252-td formation return ending ~21 td (one month) back,
+    skipping the most recent month to avoid short-term reversal."""
+    return ret_between(closes, _MOM_12_1_BACK, _MOM_SKIP)
+
+
 def _yh_annualized_vol(xs: list[float], window: int = _YH_VOL_WINDOW) -> Optional[float]:
     rets = [xs[i] / xs[i - 1] - 1.0 for i in range(1, len(xs)) if xs[i - 1]][-window:]
     if len(rets) < 2:
