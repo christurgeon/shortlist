@@ -116,7 +116,10 @@ def quantile_spread(pairs: list[tuple[float, float]], n_buckets: int = 5) -> Opt
     nb = n_buckets
     while nb > 2 and len(clean) // nb < 2:
         nb -= 1
-    clean.sort(key=lambda p: p[0])
+    # Tie-break on the forward return so tied signal values bucket deterministically,
+    # independent of row emission order (date-major vs ticker-major) — a stable sort on
+    # the signal alone would otherwise let upstream order shift bucket boundaries.
+    clean.sort(key=lambda p: (p[0], p[1]))
     size = len(clean) / nb
     bucket_means: list[float] = []
     for b in range(nb):

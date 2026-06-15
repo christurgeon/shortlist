@@ -241,6 +241,39 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
+    # Government contracts (USAspending). Runs AFTER the statements block above, so
+    # m.revenue is populated for the materiality ratio. Raw facts -> derived ratios.
+    gc = snap.gov_contracts
+    if gc:
+        m.gov_contract_ttm_usd = gc.ttm_obligated
+        m.gov_contract_prior_ttm_usd = gc.prior_ttm_obligated
+        m.gov_contract_award_count = gc.award_count_ttm
+        m.gov_contract_match_confidence = gc.match_confidence
+        m.gov_contract_recipient_count = gc.recipient_count
+        m.gov_contract_truncated = gc.truncated
+        m.gov_contract_total_txns = gc.total_txns
+        if gc.ttm_obligated is not None and gc.prior_ttm_obligated:  # truthy excludes 0
+            m.gov_contract_yoy_growth = (
+                (gc.ttm_obligated - gc.prior_ttm_obligated) / gc.prior_ttm_obligated)
+        if gc.ttm_obligated is not None and m.revenue:  # truthy excludes 0/None
+            m.gov_contract_to_revenue = gc.ttm_obligated / m.revenue
+        # Staleness from the newest captured Action Date (real data age), not the
+        # query date — falls back to query date when no action captured.
+        m.gov_contract_data_age_days = _age_days(snap.as_of, gc.latest_action or gc.as_of)
+    # Federal lobbying (Senate LDA). Raw facts -> derived YoY + staleness. None-safe.
+    lb = snap.lobbying
+    if lb:
+        m.lobbying_ttm_usd = lb.ttm_spend
+        m.lobbying_prior_ttm_usd = lb.prior_ttm_spend
+        m.lobbying_filing_count = lb.filing_count_ttm
+        m.lobbying_registrant_count = lb.registrant_count
+        m.lobbying_match_confidence = lb.match_confidence
+        m.lobbying_truncated = lb.truncated
+        m.lobbying_total_filings = lb.total_filings
+        if lb.ttm_spend is not None and lb.prior_ttm_spend:  # truthy excludes 0
+            m.lobbying_yoy_growth = (
+                (lb.ttm_spend - lb.prior_ttm_spend) / lb.prior_ttm_spend)
+        m.lobbying_data_age_days = _age_days(snap.as_of, lb.latest_filing or lb.as_of)
     # News flow (Finnhub company-news). Raw counts -> rising + staleness. None-safe.
     nf = snap.news
     if nf:

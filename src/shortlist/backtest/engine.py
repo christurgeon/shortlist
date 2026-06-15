@@ -33,8 +33,11 @@ def _collect_rows(src: SignalSource, universe: list[str],
     name. A source may emit several signals per observation (e.g. the XBRL source
     emits quality/moat/growth/value); each becomes its own report."""
     rows: dict[str, list[tuple[date, str, float, float]]] = defaultdict(list)
-    for t in grid:
-        for tk in universe:
+    # Ticker-major (NOT date-major): a ticker's companyfacts are date-independent, so this
+    # lets a lazy XBRL source load each ticker's facts once across all grid dates (bounded
+    # RAM). The emitted row set is identical — downstream IC/spread regroups by date/name.
+    for tk in universe:
+        for t in grid:
             obs = src.observe(tk, t)
             if obs is None or not obs.signals:
                 continue
@@ -55,8 +58,8 @@ def collect_observations(src: SignalSource, universe: list[str],
     diagnostics (e.g. cross-signal correlation) that need raw signal vectors, not
     forward-return joins. Cheap: companyfacts/prices are already cached."""
     out = []
-    for t in grid:
-        for tk in universe:
+    for tk in universe:                       # ticker-major (see _collect_rows)
+        for t in grid:
             obs = src.observe(tk, t)
             if obs is not None and obs.signals:
                 out.append(obs)
