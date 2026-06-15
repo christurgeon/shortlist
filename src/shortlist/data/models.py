@@ -187,6 +187,23 @@ class GovContracts:
 
 
 @dataclass
+class Lobbying:
+    """Senate LDA federal lobbying-disclosure spend for one client, window-scoped.
+    Raw facts only — YoY/staleness are DERIVED in the bridge. Auxiliary (NOT a
+    KEY_OBJECT): sparse, never moves coverage."""
+    as_of: Optional[str] = None             # query date "YYYY-MM-DD"
+    latest_filing: Optional[str] = None         # newest dt_posted date (staleness)
+    ttm_spend: Optional[float] = None           # USD, 0-12m (income-or-expenses summed)
+    prior_ttm_spend: Optional[float] = None     # USD, 12-24m
+    filing_count_ttm: Optional[int] = None      # captured filings, 0-12m
+    matched_client: Optional[str] = None        # audit: best-matched client name
+    match_confidence: Optional[float] = None    # audit: 0-1
+    registrant_count: Optional[int] = None      # distinct registrants in the TTM sum
+    truncated: bool = False                     # paging hit the cap -> sum is partial
+    total_filings: Optional[int] = None         # pre-match count across queried years
+
+
+@dataclass
 class FilingEvent:
     form: str                          # "8-K", "SC 13D", "SC 13G", "144", ...
     filed: str                         # ISO date (filing date)
@@ -233,6 +250,7 @@ class TickerSnapshot:
     events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
     social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     gov_contracts: Optional["GovContracts"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    lobbying: Optional["Lobbying"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -307,7 +325,8 @@ _DEFAULTS = {
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
 _AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
-                 "social": SocialSentiment, "gov_contracts": GovContracts}
+                 "social": SocialSentiment, "gov_contracts": GovContracts,
+                 "lobbying": Lobbying}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:

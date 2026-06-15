@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from . import claude_cli
 from . import gov_contracts as gov_contracts_ctx
+from . import lobbying as lobbying_ctx
 from . import reverse_dcf
 from .claude_cli import CliResult
 from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
@@ -176,7 +177,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     scfg = (config.get("research") or {}).get("screening_call") or {}
     gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
     quant = _quant_context(card, gaps_line, rcfg.get("reverse_dcf"),
-                           rcfg.get("gov_contracts"))
+                           rcfg.get("gov_contracts"), rcfg.get("lobbying"))
     events_line = ""
     if filing_events:
         items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
@@ -242,7 +243,7 @@ def _fcf_col(series) -> list:
     return [row.get("free_cash_flow") for row in (series or [])]
 
 
-def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None) -> str:
+def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None) -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -290,6 +291,9 @@ def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None) -> str:
         gc_line = gov_contracts_ctx.context_line(m, gcfg)
         if gc_line:
             lines.append(gc_line)
+        lb_line = lobbying_ctx.context_line(m, lbcfg)
+        if lb_line:
+            lines.append(lb_line)
     if card.gates:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:

@@ -153,6 +153,16 @@ per ticker**, resolving the recipient by name and confidence-filtering matches
 `gov_contract_award_count`, and `gov_contract_data_age_days` onto `StockMetrics`.
 **Not scored in v1** — flat data + a research context line only (no sub-score, no
 flag); see `CLAUDE.md` → "Government contracts" and the design spec.
+`LobbyingSource` (keyless) fills the `lobbying` aux section — trailing federal
+lobbying-disclosure spend from the official Senate LDA API (`lda.gov`). It resolves
+the client by name (SEC `company_tickers.json` + `data/entity_match.py`,
+confidence-filtered), sums `income`/`expenses` across the client's filings, and buckets
+by `dt_posted` into TTM / prior-TTM. Retry-After-aware (LDA is ~15 req/min) and
+self-cached per `(ticker, day)` under `.cache/lda`. The bridge derives `lobbying_ttm_usd`,
+`lobbying_prior_ttm_usd`, `lobbying_yoy_growth`, `lobbying_filing_count`,
+`lobbying_registrant_count`, and `lobbying_data_age_days` onto `StockMetrics`. **Not
+scored in v1** — flat data + a research context line only; see `CLAUDE.md` → "Federal
+lobbying".
 
 **Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
 `ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card

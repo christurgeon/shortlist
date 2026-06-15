@@ -334,6 +334,24 @@ backtest path can measure its IC). Tune via `config.yaml: gov_contracts` +
 names are under-counted (a small alias seed map in `govcontract_match.py` covers
 marquee defense parents). Self-caches under `.cache/usaspending` (Yahoo/FINRA
 precedent — `cache.py` is GET-param-keyed and can't key a POST body).
+## Federal lobbying (harness + research)
+
+`LobbyingSource` (keyless) queries the **official Senate LDA REST API**
+(`lda.gov/api/v1/filings/`, base URL config-driven — `lda.senate.gov` is retired
+after 2026-06-30) for trailing federal lobbying-disclosure **spend**, resolving
+ticker→client name via SEC `company_tickers.json` and confidence-filtering clients
+(`data/entity_match.py` — a **generic** name matcher; abstains below
+`lobbying.match_min_confidence`). Per filing, spend = `income` (outside-firm fee) **or**
+`expenses` (in-house), summed across the client's registrants and bucketed into TTM /
+prior-TTM by `dt_posted`. It populates the `lobbying` aux section → bridge `lobbying_*`
+metrics (TTM spend, YoY, registrant count), surfaced in `--json`. **No scored leg or
+flag in v1** — it rides only as a caveated **research context line**
+(`research/lobbying.py`, config `research.lobbying`, the reverse-DCF pattern: prompt,
+never the haystack). **No `to_revenue`** — lobbying spend is tiny vs revenue; the signal
+is presence + trend (YoY). Keyless LDA allows ~15 req/min, so the source does
+Retry-After-aware backoff (`lobbying.max_retries`) and self-caches per `(ticker, day)`
+under `.cache/lda`. Known limitation: registrant/parent rollup isn't resolved. Tune via
+`config.yaml: lobbying` + `research.lobbying`.
 
 ## Yahoo screener WAF gotcha (scout discovery)
 
