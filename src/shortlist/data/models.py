@@ -170,6 +170,21 @@ class SocialSentiment:
 
 
 @dataclass
+class GovContracts:
+    """USAspending federal procurement-contract obligations for one recipient,
+    window-scoped. Raw facts only — rates/ratios are DERIVED in the bridge.
+    Auxiliary (NOT a KEY_OBJECT): sparse, never moves coverage."""
+    as_of: Optional[str] = None             # query date "YYYY-MM-DD" (staleness)
+    ttm_obligated: Optional[float] = None       # net USD obligated, 0-12m
+    prior_ttm_obligated: Optional[float] = None # net USD obligated, 12-24m
+    award_count_ttm: Optional[int] = None       # captured txn count, 0-12m
+    matched_recipient: Optional[str] = None     # audit: best-matched recipient
+    match_confidence: Optional[float] = None    # audit: 0-1
+    truncated: bool = False                     # paging hit the cap (partial sum)
+    total_txns: Optional[int] = None            # from _count endpoint
+
+
+@dataclass
 class FilingEvent:
     form: str                          # "8-K", "SC 13D", "SC 13G", "144", ...
     filed: str                         # ISO date (filing date)
@@ -215,6 +230,7 @@ class TickerSnapshot:
     short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
     social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    gov_contracts: Optional["GovContracts"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -289,7 +305,7 @@ _DEFAULTS = {
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
 _AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
-                 "social": SocialSentiment}
+                 "social": SocialSentiment, "gov_contracts": GovContracts}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:
