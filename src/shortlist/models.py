@@ -123,6 +123,46 @@ class StockMetrics:
     social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
     social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
 
+    # Government contracts (USAspending via gov_contracts source; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only (no sub-score, no flag).
+    gov_contract_ttm_usd: Optional[float] = None        # net USD obligated, trailing 12m
+    gov_contract_prior_ttm_usd: Optional[float] = None  # net USD obligated, 12-24m
+    gov_contract_yoy_growth: Optional[float] = None     # (ttm - prior)/prior
+    gov_contract_award_count: Optional[int] = None      # captured txn count, 12m
+    gov_contract_to_revenue: Optional[float] = None     # ttm_usd / revenue (materiality)
+    gov_contract_match_confidence: Optional[float] = None  # primary recipient match 0-1
+    gov_contract_recipient_count: Optional[int] = None  # distinct matched recipients in the sum
+    gov_contract_truncated: Optional[bool] = None       # paging hit cap -> sum is partial
+    gov_contract_total_txns: Optional[int] = None       # pre-match action count (search breadth)
+    gov_contract_data_age_days: Optional[int] = None    # days since latest captured Action Date
+    # Federal lobbying (Senate LDA via lobbying source; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only (no sub-score, no flag).
+    lobbying_ttm_usd: Optional[float] = None        # USD on federal lobbying, trailing 12m
+    lobbying_prior_ttm_usd: Optional[float] = None  # USD, 12-24m
+    lobbying_yoy_growth: Optional[float] = None     # (ttm - prior)/prior
+    lobbying_filing_count: Optional[int] = None     # captured filings, 12m
+    lobbying_registrant_count: Optional[int] = None  # distinct registrants in the sum
+    lobbying_match_confidence: Optional[float] = None  # client match 0-1
+    lobbying_truncated: Optional[bool] = None       # paging hit cap -> sum is partial
+    lobbying_total_filings: Optional[int] = None    # pre-match filing count (search breadth)
+    lobbying_data_age_days: Optional[int] = None    # days since latest filing
+    # News flow (Finnhub company-news; derived in bridge.py). Soft-flag inputs only —
+    # NOT scored, never feed any sub-score or the composite.
+    news_count_7d: Optional[int] = None            # articles in the last 7d
+    news_count_prior_7d: Optional[int] = None      # articles in days 7-14
+    news_count_30d: Optional[int] = None           # articles in the 30d lookback
+    news_flow_rising: Optional[bool] = None        # count_7d > prior 7d (None if truncated)
+    news_truncated: Optional[bool] = None          # free-tier cap hit -> counts are lower bounds
+    news_data_age_days: Optional[int] = None       # as_of - latest article date (staleness)
+    # Earnings execution (Finnhub earnings surprises + calendar; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only.
+    earnings_beat_rate: Optional[float] = None     # fraction of recent quarters that beat
+    earnings_beats: Optional[int] = None           # # recent quarters that beat (raw count)
+    earnings_avg_surprise_pct: Optional[float] = None  # mean surprise % over recent quarters
+    earnings_last_surprise_pct: Optional[float] = None # newest quarter's surprise %
+    earnings_quarters: Optional[int] = None        # # recent quarters with a usable surprise
+    earnings_days_to_next: Optional[int] = None    # days until the next scheduled report
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 

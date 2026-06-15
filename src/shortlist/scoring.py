@@ -444,6 +444,18 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
         if (m.social_mentions >= sh["min_mentions"]
                 and rising_ok and delta_ok and fresh):
             out.append("social_hype")
+
+    # news_spike: elevated AND rising mainstream news flow (Finnhub company-news).
+    # Advisory only; mirrors social_hype. No-op when the config block is absent.
+    ns = f.get("news_spike") if f else None
+    # Explicitly suppress on truncated (free-tier-capped, always-noisy) names: a spike
+    # is meaningful for a normally-quiet name, and the counts are lower bounds there.
+    if ns and m.news_count_7d is not None and not m.news_truncated:
+        fresh = (m.news_data_age_days is None
+                 or m.news_data_age_days <= ns["max_staleness_days"])
+        rising_ok = (not ns.get("require_rising")) or (m.news_flow_rising is True)
+        if m.news_count_7d >= ns["min_count_7d"] and rising_ok and fresh:
+            out.append("news_spike")
     return out
 
 

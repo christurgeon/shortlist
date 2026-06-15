@@ -66,6 +66,9 @@ _BUCKET_BY_KEY = {
     ("fmp", "insider-trading/search"): "analyst",
     ("finnhub", "stock/recommendation"): "analyst",
     ("finnhub", "stock/insider-sentiment"): "analyst",
+    ("finnhub", "company-news"): "quote",   # 6h — news has a short half-life
+    ("finnhub", "stock/earnings"): "fundamentals",   # 1d — past surprises change on a print
+    ("finnhub", "calendar/earnings"): "quote",       # 6h — the scheduled date can be revised
     ("fmp", "income-statement"): "statements",
     ("fmp", "balance-sheet-statement"): "statements",
     ("fmp", "cash-flow-statement"): "statements",
