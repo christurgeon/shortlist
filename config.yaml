@@ -282,6 +282,11 @@ research:
     run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
     display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
+  insider_detail:              # recent Form-4 trades as a brief context line (enrichment;
+                               # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    max_items: 6               # cap recent trades listed (newest-first)
+
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.
 edgar_events:

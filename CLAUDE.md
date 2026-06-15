@@ -491,6 +491,14 @@ never read as "expensive" alone, the canonical reverse-DCF misread); and it abst
 when the latest FCF outruns the median base. `enabled: false` → byte-identical (line
 omitted), but cached briefs need `--refresh` to pick up the change.
 
+The prompt also carries two **context lines** (prompt-only, NOT in the grounding haystack —
+so a value can't pass quote-verification as a 10-K fact): the **recent-SEC-filings** line
+(`filing_events`, always on when present) and the **recent insider Form-4 trades** line
+(`assess.py:_insider_line`, config `research.insider_detail`, ships **ON**) — role/name/
+direction/$amount/date per trade from `StockMetrics.insider_recent` (compacted in the bridge
+from `snap.insider.recent`), capped at `max_items`. Both are labeled "context only — … not
+10-K text"; `enabled: false` → byte-identical (cached briefs need `--refresh`).
+
 The brief ends with a **screening call** (`research/models.py:ScreeningCall`,
 config `research.screening_call`, ships **ON**) — a buy/hold/avoid stance +
 conviction + one-sentence rationale, authored by Claude but bounded by three
