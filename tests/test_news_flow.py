@@ -45,11 +45,44 @@ def test_news_flow_detects_free_tier_cap_truncation():
 
 
 def test_high_but_spread_volume_is_not_truncated():
-    # 220 articles spread across the full 30d window (oldest reaches back) -> real data.
+    # 220 articles spread across the full 30d window (< cap) -> real data.
     articles = [{"datetime": _ts(d % 28 + 1)} for d in range(220)]
     nf = _news_flow(articles, ref=REF)
     assert nf.truncated is False
     assert nf.count_prior is not None
+
+
+def test_capped_but_prior_reliable_keeps_prior():
+    # 260 articles spread across the FULL 30d (oldest reaches back past 14d): the list
+    # is capped (truncated=True) but the prior window survived, so prior stays reliable.
+    articles = [{"datetime": _ts(d % 28 + 1)} for d in range(260)]
+    nf = _news_flow(articles, ref=REF)
+    assert nf.truncated is True          # honest: the list IS capped
+    assert nf.count_prior is not None    # ...but prior was not eaten -> kept
+
+
+def test_boundary_7d_and_14d_buckets():
+    # exactly 7d ago -> recent (>= recent_cut); exactly 14d ago -> prior; 15d -> window only
+    nf = _news_flow([{"datetime": _ts(7)}, {"datetime": _ts(14)}, {"datetime": _ts(15)}],
+                    ref=REF)
+    assert nf.count_recent == 1
+    assert nf.count_prior == 1
+    assert nf.count_window == 3
+
+
+def test_cache_hit_reaging_shifts_buckets():
+    # Same raw list re-bucketed a day later: an article that was 7d-recent ages into prior.
+    articles = [{"datetime": _ts(7)}]
+    today = _news_flow(articles, ref=REF)
+    tomorrow = _news_flow(articles, ref=REF + timedelta(days=1))
+    assert today.count_recent == 1 and today.count_prior == 0
+    assert tomorrow.count_recent == 0 and tomorrow.count_prior == 1
+
+
+def test_millisecond_timestamp_tolerated():
+    ms = int((datetime(2026, 6, 15, tzinfo=timezone.utc) - timedelta(days=2)).timestamp()) * 1000
+    nf = _news_flow([{"datetime": ms}], ref=REF)
+    assert nf.count_window == 1 and nf.count_recent == 1   # not silently dropped
 
 
 def test_normalize_finnhub_populates_news_section():
@@ -86,13 +119,14 @@ def test_bridge_rising_false_and_none_safe():
 def test_news_section_roundtrips():
     s = TickerSnapshot(ticker="AAPL")
     s.news = NewsFlow(as_of="2026-06-15", count_recent=12, count_prior=4,
-                      count_window=30, latest_dt="2026-06-14")
+                      count_window=30, latest_dt="2026-06-14", truncated=True)
     back = TickerSnapshot.from_dict(s.to_dict())
     assert back.news.count_recent == 12 and back.news.latest_dt == "2026-06-14"
+    assert back.news.truncated is True   # the bool survives the round-trip
 
 
 def test_metrics_fields_default_none():
     m = StockMetrics(ticker="AAPL")
     for fld in ("news_count_7d", "news_count_prior_7d", "news_count_30d",
-                "news_flow_rising", "news_data_age_days"):
+                "news_flow_rising", "news_truncated", "news_data_age_days"):
         assert getattr(m, fld) is None

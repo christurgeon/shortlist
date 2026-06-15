@@ -41,7 +41,7 @@ _NEWS_RECENT_DAYS = 7      # recent vs prior bucket size
 # Finnhub's free company-news returns only the ~250 most-recent articles. For a
 # high-volume name that cap can fall entirely inside the recent window, so the
 # prior bucket is a false 0 -> we DETECT it and mark the window truncated.
-_NEWS_TRUNCATE_AT = 200    # window count this high + no older history => capped
+_NEWS_TRUNCATE_AT = 240    # near the ~250 cap: a list this long is almost certainly capped
 
 
 class Source(ABC):
@@ -289,6 +289,8 @@ def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
         ts = a.get("datetime")
         if not ts:
             continue
+        if ts > 1e12:        # tolerate a millisecond feed (Finnhub sends seconds)
+            ts = ts / 1000
         try:
             d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
         except (TypeError, ValueError, OSError):
@@ -302,14 +304,16 @@ def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
             recent += 1
         elif d >= prior_cut:
             prior += 1
-    # Truncated when the list is near the free-tier cap AND no history reaches past
-    # the prior window — i.e. older articles were dropped, so `prior` is a false 0.
-    truncated = window >= _NEWS_TRUNCATE_AT and oldest is not None and oldest > prior_cut
+    # `capped`: the list hit the free-tier ~250 cap (always-noisy name). Separately,
+    # `prior_unreliable`: the cap also ate the prior window (no history past 14d), so
+    # `prior`'s 0 is a false 0 -> blank it. truncated == capped (honest: any capped list).
+    capped = window >= _NEWS_TRUNCATE_AT
+    prior_unreliable = capped and oldest is not None and oldest > prior_cut
     return NewsFlow(
         as_of=today.isoformat(), count_recent=recent,
-        count_prior=None if truncated else prior,   # unreliable when capped
+        count_prior=None if prior_unreliable else prior,
         count_window=window, latest_dt=latest.isoformat() if latest else None,
-        truncated=truncated)
+        truncated=capped)
 
 
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
@@ -347,6 +351,8 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         snap.price = Price(price=q["c"])
     news = raw.get("news")
     if isinstance(news, list):          # present (even empty) -> a real 0-count fact
+        # Re-bucketed against date.today() every call; correctness on a cache HIT
+        # relies on the from/to dates being in the cache key (so it's day-partitioned).
         snap.news = _news_flow(news)
     return snap
 
