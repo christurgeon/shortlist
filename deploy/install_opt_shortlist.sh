@@ -48,11 +48,11 @@ fi
 
 echo "==> deploying $SRC -> $DEST, service runs as $RUN_USER ($RUN_HOME)"
 
-echo "==> 1/6  Create $DEST (owned by $RUN_USER)"
+echo "==> 1/7  Create $DEST (owned by $RUN_USER)"
 mkdir -p "$DEST"
 chown "$RUN_USER:$RUN_GROUP" "$DEST"
 
-echo "==> 2/6  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
+echo "==> 2/7  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
 # NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only
 # the repo-root dirs, NOT the like-named source packages src/shortlist/{scout,research}.
 # (__pycache__ stays unanchored — strip it at every level.)
@@ -73,13 +73,13 @@ chown -R "$RUN_USER:$RUN_GROUP" "$DEST"
 # .env carries secrets -> lock it down
 if [[ -f "$DEST/.env" ]]; then chmod 600 "$DEST/.env"; fi
 
-echo "==> 3/6  Build the venv in place (uv sync --extra scout --extra edgar) as $RUN_USER"
+echo "==> 3/7  Build the venv in place (uv sync --extra scout --extra edgar) as $RUN_USER"
 sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra scout --extra edgar"
 
-echo "==> 4/6  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
+echo "==> 4/7  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
 sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist-scout' --demo >/dev/null && echo '    demo OK'"
 
-echo "==> 5/6  Install systemd units"
+echo "==> 5/7  Install systemd units"
 cat > "$UNIT_DIR/shortlist-scout.service" <<UNIT
 [Unit]
 Description=shortlist autonomous scout — daily candidate discovery + report
@@ -119,9 +119,21 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
-echo "==> 6/6  Reload systemd, enable + start the timer"
+echo "==> 6/7  Reload systemd, enable + start the timer"
 systemctl daemon-reload
 systemctl enable --now shortlist-scout.timer
+
+echo "==> 7/7  Restart the interactive bot so it picks up the synced code"
+# shortlist-bot is a long-running Type=simple service: it loads its modules at startup and
+# keeps running the OLD code after an rsync until restarted. `try-restart` updates it IFF
+# it is already running — a no-op on hosts without the bot, and it never force-starts an
+# unconfigured one (so a missing token / not-yet-installed bot can't fail the deploy).
+# NOTE the asymmetry: the scout above is a oneshot driven by its timer and is deliberately
+# NOT restarted here — bouncing an in-flight scout run re-hits the unofficial Yahoo endpoint
+# (see the scout-unit comment). Only the stateful long-running bot needs the bounce.
+systemctl try-restart shortlist-bot.service 2>/dev/null \
+  && echo "    bot restarted" \
+  || echo "    bot not running — skipped (start it with: systemctl enable --now shortlist-bot.service)"
 
 echo
 echo "===== DONE. Timer status: ====="
