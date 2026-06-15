@@ -145,8 +145,7 @@ class XbrlSignalSource:
             self._lru.move_to_end(tk)
             return self._lru[tk]
         cf = self._loader(tk) if self._loader else None
-        self._lru[tk] = cf
-        self._lru.move_to_end(tk)
+        self._lru[tk] = cf                     # inserted last (most-recent) by construction
         while len(self._lru) > self._lru_size:
             self._lru.popitem(last=False)
         return cf

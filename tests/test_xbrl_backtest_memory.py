@@ -6,8 +6,11 @@ from pathlib import Path
 
 import yaml
 
+import random
+
 from shortlist.backtest.signals import XbrlSignalSource
 from shortlist.backtest.engine import collect_observations, observation_grid
+from shortlist.backtest.metrics import quantile_spread
 from shortlist.backtest.xbrl import read_companyfacts_cache, _facts_cache_path
 from shortlist.backtest.prices import PriceHistory
 
@@ -80,6 +83,25 @@ def test_negative_load_is_cached_not_retried():
     for t in _grid():
         assert src.observe("GHOST", t) is None
     assert misses == ["GHOST"]                  # loaded once, negative cached
+
+
+def test_quantile_spread_is_order_invariant():
+    """The ticker-major loop swap re-orders the (signal, fwd_return) rows. With ties
+    straddling a bucket boundary, a signal-only stable sort would shift buckets and
+    change the spread (the bug the review caught). The deterministic tie-break must
+    make quantile_spread identical regardless of input row order."""
+    # 10 rows, signals heavily tied at 50.0 (straddle the median bucket boundary)
+    # with varying forward returns — the exact regression shape for clamped sub-scores.
+    pairs = [(10.0, -0.2), (50.0, 0.3), (50.0, -0.4), (50.0, 0.1), (50.0, -0.1),
+             (50.0, 0.2), (50.0, -0.3), (90.0, 0.5), (90.0, 0.4), (30.0, 0.0)]
+    base = quantile_spread(list(pairs), n_buckets=5)
+    for seed in range(8):
+        shuffled = list(pairs)
+        random.Random(seed).shuffle(shuffled)
+        r = quantile_spread(shuffled, n_buckets=5)
+        assert r.spread == base.spread
+        assert r.bucket_means == base.bucket_means
+        assert r.monotonic == base.monotonic
 
 
 def test_read_companyfacts_cache_roundtrip(tmp_path):
