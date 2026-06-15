@@ -31,6 +31,19 @@ def cik_for(ticker: str, index: dict[str, str]) -> Optional[str]:
     return index.get(ticker.upper())
 
 
+def build_name_index(raw: dict) -> dict[str, str]:
+    """{TICKER -> registrant title} from SEC company_tickers.json (rows carry
+    `ticker` + `title`). Skips rows missing either field."""
+    idx = {}
+    for row in raw.values():
+        tk = str(row.get("ticker", "")).upper()
+        title = row.get("title")
+        if not tk or not title:
+            continue
+        idx[tk] = str(title)
+    return idx
+
+
 def _facts_cache_path(cache_dir: str, cik: str, month: str) -> Path:
     return Path(cache_dir) / f"CIK{cik}-{month}.json"
 
@@ -112,3 +125,23 @@ async def fetch_cik_index(client, *, cache_dir: str, month: str) -> dict[str, st
     except Exception:
         pass
     return build_cik_index(raw)
+
+
+async def fetch_company_tickers_raw(client, *, cache_dir: str, month: str) -> dict:
+    """Raw SEC company_tickers.json, month-cached on disk. Callers build whichever
+    index they need (build_cik_index / build_name_index) from the one payload."""
+    cp = Path(cache_dir) / f"company_tickers-{month}.json"
+    try:
+        if cp.exists():
+            return json.loads(cp.read_text())
+    except (ValueError, OSError):
+        pass
+    resp = await client.get(_TICKERS_URL)
+    resp.raise_for_status()
+    raw = resp.json()
+    try:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps(raw))
+    except Exception:
+        pass
+    return raw
