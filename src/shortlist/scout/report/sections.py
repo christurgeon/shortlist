@@ -27,6 +27,28 @@ class Section(Protocol):
     def render_text(self, vm: ReportVM, detail: Detail) -> list[str]: ...
 
 
+_SI_MIN_DISPLAY = 0.05   # only surface short interest once it's material (FINRA covers
+                         # most names at ~1%, which is noise); crowded_short fires at 10%.
+
+
+def _short_interest_text(mvm) -> "str | None":
+    """Compact FINRA short-interest string, or None when absent / immaterial. Pairs with
+    the crowded_short flag: '22.4% / 8.1d ↑' (days-to-cover + rising arrow each optional).
+    Note: unsigned, 1-decimal % (deliberately unlike _fmt's signed integer %) — short
+    interest is a magnitude, not a +/- signal, and precision matters near the gate."""
+    sp = getattr(mvm, "short_pct_outstanding", None)
+    if sp is None or sp < _SI_MIN_DISPLAY:
+        return None
+    parts = [f"{sp * 100:.1f}%"]
+    dtc = getattr(mvm, "days_to_cover", None)
+    if dtc is not None:
+        parts.append(f"{dtc:.1f}d")
+    txt = " / ".join(parts)
+    if getattr(mvm, "short_interest_rising", None):
+        txt += " ↑"
+    return txt
+
+
 def _fmt(v, pct=False, money=False, **_):   # tolerate display-only opts (e.g. `neutral`)
     if v is None:
         return "·"
@@ -152,6 +174,9 @@ class _Fundamentals:
             analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
                         f"{ld.metrics.rating_sell or 0}S")
             cells.append(self._metric(h, "Analysts", analysts, False))
+            si = _short_interest_text(ld.metrics)   # conditional — only crowded names
+            if si:
+                cells.append(self._metric(h, "Short interest", si, False))
             pio = _piotroski_text(ld.metrics)   # conditional (None on lean/masked stacks)
             if pio:
                 cells.append(self._metric(h, "Piotroski", pio, False))
@@ -171,6 +196,9 @@ class _Fundamentals:
             out.append(f"-- {ld.ticker} metrics --")
             out += [f"   {label}: {_fmt(getattr(ld.metrics, attr), **opt)}"
                     for label, attr, opt in _FUND_ROWS]
+            si = _short_interest_text(ld.metrics)
+            if si:
+                out.append(f"   Short interest: {si}")
             pio = _piotroski_text(ld.metrics)
             if pio:
                 out.append(f"   Piotroski: {pio}")

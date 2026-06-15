@@ -142,6 +142,28 @@ run. The bridge derives `short_pct_outstanding` (vs. derived shares outstanding,
 conservative vs. float), `days_to_cover`, `short_interest_rising`, and
 `short_data_age_days` onto `StockMetrics`.
 
+`GovContractsSource` (keyless) fills the `gov_contracts` aux section — trailing
+federal procurement-contract obligations from USAspending's
+`spending_by_transaction` endpoint. It does **one bulk SEC `company_tickers.json`
+name-map load per run** (month-cached) plus **one `spending_by_transaction` query
+per ticker**, resolving the recipient by name and confidence-filtering matches
+(`data/govcontract_match.py`; abstains rather than mis-attribute). Self-caches under
+`.cache/usaspending`. The bridge derives `gov_contract_ttm_usd`,
+`gov_contract_prior_ttm_usd`, `gov_contract_yoy_growth`, `gov_contract_to_revenue`,
+`gov_contract_award_count`, and `gov_contract_data_age_days` onto `StockMetrics`.
+**Not scored in v1** — flat data + a research context line only (no sub-score, no
+flag); see `CLAUDE.md` → "Government contracts" and the design spec.
+`LobbyingSource` (keyless) fills the `lobbying` aux section — trailing federal
+lobbying-disclosure spend from the official Senate LDA API (`lda.gov`). It resolves
+the client by name (SEC `company_tickers.json` + `data/entity_match.py`,
+confidence-filtered), sums `income`/`expenses` across the client's filings, and buckets
+by `dt_posted` into TTM / prior-TTM. Retry-After-aware (LDA is ~15 req/min) and
+self-cached per `(ticker, day)` under `.cache/lda`. The bridge derives `lobbying_ttm_usd`,
+`lobbying_prior_ttm_usd`, `lobbying_yoy_growth`, `lobbying_filing_count`,
+`lobbying_registrant_count`, and `lobbying_data_age_days` onto `StockMetrics`. **Not
+scored in v1** — flat data + a research context line only; see `CLAUDE.md` → "Federal
+lobbying".
+
 **Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
 `ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card
 but **never change `composite` or `passed`**. The `crowded_short` flag fires only
@@ -235,6 +257,15 @@ under `.cache/sec_xbrl`).
 
 **Requirements:** set `SEC_IDENTITY` to a contact email in `.env` (SEC fair-access
 `User-Agent`); no API key is needed otherwise.
+
+**Memory-bounded:** companyfacts are loaded **lazily, one ticker at a time** from the
+disk cache (`XbrlSignalSource`'s `fact_loader` + a small LRU), and the engine iterates
+**ticker-major** so each ticker's facts load once. Peak RAM is therefore O(LRU × one
+companyfacts) instead of O(universe × companyfacts) — a full-universe XBRL backtest runs
+in ~155 MB on the 1.9 GB VPS (a 12-name run measured). The CLI's `_load_companyfacts`
+just *warms* the disk cache (one fetch per ticker, not retained). Results are identical
+to the old eager path; `quantile_spread` tie-breaks on the forward return so the bucket
+spread is independent of row emission order.
 
 **IFRS 20-F foreign issuers** (facts filed under `ifrs-full` rather than `us-gaap`)
 are **skipped** — their concept names don't map to the extractor's alias tables, so

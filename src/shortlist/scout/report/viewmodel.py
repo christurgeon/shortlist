@@ -38,6 +38,10 @@ class MetricsVM:
     piotroski_f: int | None = None        # Core-6 quality, 0..6
     piotroski_f_legs: int | None = None   # legs evaluated (the "/N" denominator)
     net_debt_to_ebitda: float | None = None   # display-floored to >=0 (net cash -> 0.0x)
+    # Short interest (FINRA; conditional display — pairs with the crowded_short flag)
+    short_pct_outstanding: float | None = None
+    days_to_cover: float | None = None
+    short_interest_rising: bool | None = None
 
 
 @dataclass
@@ -172,7 +176,9 @@ def _metrics_vm(m) -> MetricsVM:
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
         # net cash (negative) floors to 0.0x for display, matching the --json output.
         net_debt_to_ebitda=(max(0.0, m.net_debt_to_ebitda)
-                            if m.net_debt_to_ebitda is not None else None))
+                            if m.net_debt_to_ebitda is not None else None),
+        short_pct_outstanding=m.short_pct_outstanding, days_to_cover=m.days_to_cover,
+        short_interest_rising=m.short_interest_rising)
 
 
 def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
