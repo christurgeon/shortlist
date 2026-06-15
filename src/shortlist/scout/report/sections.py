@@ -140,6 +140,23 @@ def _piotroski_text(mvm) -> "str | None":
     return f"{pf}/{getattr(mvm, 'piotroski_f_legs', None) or 6}"
 
 
+def _earnings_text(mvm) -> "str | None":
+    """Compact earnings-execution string, or None when absent: beat consistency,
+    avg surprise, and days to the next report — e.g. '4/4 beats · +3.7% · next 18d'.
+    avg-surprise and next-report are each included only when present."""
+    q = getattr(mvm, "earnings_quarters", None)
+    if not q:
+        return None
+    parts = [f"{getattr(mvm, 'earnings_beats', None) or 0}/{q} beats"]
+    avg = getattr(mvm, "earnings_avg_surprise_pct", None)
+    if avg is not None:
+        parts.append(f"{avg:+.1f}%")
+    d = getattr(mvm, "earnings_days_to_next", None)
+    if d is not None:
+        parts.append(f"next {d}d")
+    return " · ".join(parts)
+
+
 class _Fundamentals:
     id, title = "fundamentals", "Fundamentals"
 
@@ -180,6 +197,9 @@ class _Fundamentals:
             pio = _piotroski_text(ld.metrics)   # conditional (None on lean/masked stacks)
             if pio:
                 cells.append(self._metric(h, "Piotroski", pio, False))
+            ern = _earnings_text(ld.metrics)    # conditional (None without earnings history)
+            if ern:
+                cells.append(self._metric(h, "Earnings", ern, False))
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
@@ -202,6 +222,9 @@ class _Fundamentals:
             pio = _piotroski_text(ld.metrics)
             if pio:
                 out.append(f"   Piotroski: {pio}")
+            ern = _earnings_text(ld.metrics)
+            if ern:
+                out.append(f"   Earnings: {ern}")
         return out
 
 

@@ -42,6 +42,11 @@ class MetricsVM:
     short_pct_outstanding: float | None = None
     days_to_cover: float | None = None
     short_interest_rising: bool | None = None
+    # Earnings execution (Finnhub; conditional display — beat consistency + next report)
+    earnings_beats: int | None = None
+    earnings_quarters: int | None = None
+    earnings_avg_surprise_pct: float | None = None
+    earnings_days_to_next: int | None = None
 
 
 @dataclass
@@ -178,7 +183,10 @@ def _metrics_vm(m) -> MetricsVM:
         net_debt_to_ebitda=(max(0.0, m.net_debt_to_ebitda)
                             if m.net_debt_to_ebitda is not None else None),
         short_pct_outstanding=m.short_pct_outstanding, days_to_cover=m.days_to_cover,
-        short_interest_rising=m.short_interest_rising)
+        short_interest_rising=m.short_interest_rising,
+        earnings_beats=m.earnings_beats, earnings_quarters=m.earnings_quarters,
+        earnings_avg_surprise_pct=m.earnings_avg_surprise_pct,
+        earnings_days_to_next=m.earnings_days_to_next)
 
 
 def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
