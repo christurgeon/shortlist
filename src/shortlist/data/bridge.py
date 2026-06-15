@@ -247,6 +247,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         if e.quarters:
             m.earnings_quarters = e.quarters
             if e.beats is not None:
+                m.earnings_beats = e.beats
                 m.earnings_beat_rate = e.beats / e.quarters
         if e.recent_surprise_pcts:
             m.earnings_avg_surprise_pct = sum(e.recent_surprise_pcts) / len(e.recent_surprise_pcts)

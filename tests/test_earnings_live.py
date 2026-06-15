@@ -27,6 +27,10 @@ def test_aapl_has_earnings_history_and_next_date():
     assert e is not None
     assert e.quarters and e.quarters >= 1          # AAPL has surprise history
     assert e.beats is not None
-    # next_date may be None right after a print, but the field must exist; when present it's future.
+    # Units guard: surprisePercent is already percent (~single digits), not a fraction
+    # x100 — catches a 100x regression that only live data can surface.
+    if e.last_surprise_pct is not None:
+        assert abs(e.last_surprise_pct) < 100
+    # next_date may be None right after a print; when present it's today-or-future.
     if e.next_date:
-        assert e.next_date > e.as_of
+        assert e.next_date >= e.as_of

@@ -121,6 +121,7 @@ class StockMetrics:
     # Earnings execution (Finnhub earnings surprises + calendar; derived in bridge.py).
     # NOT scored in v1 — flat data + a research context line only.
     earnings_beat_rate: Optional[float] = None     # fraction of recent quarters that beat
+    earnings_beats: Optional[int] = None           # # recent quarters that beat (raw count)
     earnings_avg_surprise_pct: Optional[float] = None  # mean surprise % over recent quarters
     earnings_last_surprise_pct: Optional[float] = None # newest quarter's surprise %
     earnings_quarters: Optional[int] = None        # # recent quarters with a usable surprise

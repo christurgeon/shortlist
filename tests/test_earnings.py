@@ -26,6 +26,23 @@ def test_earnings_counts_beats_and_skips_none():
     assert e.recent_surprise_pcts == [1.1, -2.0, 3.5]
 
 
+def test_earnings_orders_newest_first_by_period():
+    # Rows supplied OUT of order; latest must be the most-recent period regardless.
+    rows = [{"surprisePercent": 1.0, "period": "2025-06-30"},
+            {"surprisePercent": 9.0, "period": "2026-03-31"},   # newest
+            {"surprisePercent": 2.0, "period": "2025-12-31"}]
+    e = _earnings(rows, None, ref=REF)
+    assert e.last_surprise_pct == 9.0
+    assert e.recent_surprise_pcts == [9.0, 2.0, 1.0]
+
+
+def test_earnings_same_day_amc_report_is_next():
+    # A report dated exactly today (after-close print, no actual yet) must be selected.
+    cal = _cal((REF.isoformat(), None))
+    e = _earnings(_rows(1.0), cal, ref=REF)
+    assert e.next_date == REF.isoformat()
+
+
 def test_earnings_next_date_picks_earliest_future_unreported():
     cal = _cal(("2026-05-01", 2.0),   # past + reported -> ignored
                ("2026-07-29", None),  # future, unreported -> candidate
@@ -62,6 +79,7 @@ def test_bridge_derives_earnings_metrics():
                           quarters=4, beats=2, last_surprise_pct=2.0, next_date="2026-07-29")
     m = snapshot_to_metrics(s)
     assert m.earnings_quarters == 4
+    assert m.earnings_beats == 2
     assert m.earnings_beat_rate == 0.5
     assert abs(m.earnings_avg_surprise_pct - 1.25) < 1e-9
     assert m.earnings_last_surprise_pct == 2.0
@@ -87,7 +105,7 @@ def test_earnings_section_roundtrips():
 
 def test_metrics_fields_default_none():
     m = StockMetrics(ticker="AAPL")
-    for fld in ("earnings_beat_rate", "earnings_avg_surprise_pct",
+    for fld in ("earnings_beat_rate", "earnings_beats", "earnings_avg_surprise_pct",
                 "earnings_last_surprise_pct", "earnings_quarters", "earnings_days_to_next"):
         assert getattr(m, fld) is None
 
@@ -101,7 +119,7 @@ def _m(**kw):
 
 
 def test_line_renders_with_beats_avg_and_next():
-    line = context_line(_m(earnings_quarters=4, earnings_beat_rate=1.0,
+    line = context_line(_m(earnings_quarters=4, earnings_beats=4, earnings_beat_rate=1.0,
                            earnings_avg_surprise_pct=4.2, earnings_last_surprise_pct=1.1,
                            earnings_days_to_next=44), CFG)
     assert line is not None

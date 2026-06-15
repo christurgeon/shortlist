@@ -18,9 +18,9 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
     if not q:                                # None or 0 -> abstain
         return None
     parts = []
-    beat_rate = getattr(m, "earnings_beat_rate", None)
-    if beat_rate is not None:
-        parts.append(f"beat estimates in {round(beat_rate * q)}/{q} recent quarters")
+    beats = getattr(m, "earnings_beats", None)
+    if beats is not None:
+        parts.append(f"beat estimates in {beats}/{q} recent quarters")
     avg = getattr(m, "earnings_avg_surprise_pct", None)
     if avg is not None:
         last = getattr(m, "earnings_last_surprise_pct", None)

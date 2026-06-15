@@ -272,14 +272,17 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
     """Build an Earnings section from Finnhub `stock/earnings` rows (newest-first)
     and a `calendar/earnings` payload. Pure. surprisePercent is already in percent."""
     today = ref or date.today()
-    surprises = [r.get("surprisePercent") for r in (rows or [])
+    # Sort newest-first by period so correctness doesn't depend on Finnhub's ordering.
+    ordered = sorted((rows or []), key=lambda r: r.get("period") or "", reverse=True)
+    surprises = [r.get("surprisePercent") for r in ordered
                  if isinstance(r.get("surprisePercent"), (int, float))]
     beats = sum(1 for s in surprises if s > 0) if surprises else None
-    # Next report = earliest calendar entry strictly after today with no actual yet.
+    # Next report = earliest calendar entry today-or-later with no actual yet (>= so a
+    # same-day after-close print isn't dropped on the morning it matters most).
     next_date = None
     cal = (calendar or {}).get("earningsCalendar") or []
     future = sorted(d["date"] for d in cal
-                    if d.get("date") and d["date"] > today.isoformat()
+                    if d.get("date") and d["date"] >= today.isoformat()
                     and d.get("epsActual") is None)
     if future:
         next_date = future[0]
