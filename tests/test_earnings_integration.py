@@ -44,10 +44,10 @@ class _Card:
 def test_quant_context_includes_earnings_line():
     m = StockMetrics(ticker="AAPL", earnings_quarters=4, earnings_beat_rate=1.0,
                      earnings_avg_surprise_pct=4.2)
-    out = assess._quant_context(_Card(m), "", None, {"enabled": True})
+    out = assess._quant_context(_Card(m), "", None, ecfg={"enabled": True})   # ecfg follows gcfg/lbcfg
     assert "Earnings execution" in out
 
 
 def test_quant_context_omits_earnings_line_when_absent():
-    out = assess._quant_context(_Card(StockMetrics(ticker="AAPL")), "", None, {"enabled": True})
+    out = assess._quant_context(_Card(StockMetrics(ticker="AAPL")), "", None, ecfg={"enabled": True})
     assert "Earnings execution" not in out

@@ -312,6 +312,61 @@ is the free, documented substitute (mention volume + 24h delta, not finance-tune
 bull/bear). Tune via `config.yaml: flags.social_hype` (scoring) and
 `scout.wsb_hype` (discovery thresholds + index-ETF deny-list).
 
+## Government contracts (harness + research)
+
+`GovContractsSource` (keyless) queries USAspending's **`spending_by_transaction`**
+endpoint for trailing-24m federal **procurement** obligations (award types A/B/C/D),
+resolving ticker→recipient name via SEC `company_tickers.json` (the `xbrl.py`
+name-index) and confidence-filtering recipients (`data/govcontract_match.py`;
+**abstains** below `gov_contracts.match_min_confidence` rather than mis-attribute).
+It populates the `gov_contracts` aux section → bridge `gov_contract_*` metrics
+(TTM / prior-TTM obligations, YoY, materiality-to-revenue), surfaced in `--json`.
+**No scored leg or flag in v1** — the signal is lumpy and fuzzily attributed, so it
+rides only as a caveated **research context line** (`research/gov_contracts.py`,
+config `research.gov_contracts`, the reverse-DCF pattern: in the prompt, **never** the
+grounding haystack). **Use `spending_by_transaction`, NOT `spending_by_award`** —
+the latter's `time_period` is an award-overlap filter that returns un-window-scoped
+award totals (would double-count decade-old awards; live-verified). Flag + scored leg
+are deferred to Phase 2, gated on matcher-recall validation and accumulated daily
+snapshots (USAspending isn't in SEC companyfacts, so only the snapshot-replay
+backtest path can measure its IC). Tune via `config.yaml: gov_contracts` +
+`research.gov_contracts`. Known limitation: subsidiary awards booked under other
+names are under-counted (a small alias seed map in `govcontract_match.py` covers
+marquee defense parents). Self-caches under `.cache/usaspending` (Yahoo/FINRA
+precedent — `cache.py` is GET-param-keyed and can't key a POST body).
+## Federal lobbying (harness + research)
+
+`LobbyingSource` (keyless) queries the **official Senate LDA REST API**
+(`lda.gov/api/v1/filings/`, base URL config-driven — `lda.senate.gov` is retired
+after 2026-06-30) for trailing federal lobbying-disclosure **spend**, resolving
+ticker→client name via SEC `company_tickers.json` and confidence-filtering clients
+(`data/entity_match.py` — a **generic** name matcher; abstains below
+`lobbying.match_min_confidence`). Per filing, spend = `income` (outside-firm fee) **or**
+`expenses` (in-house), summed across the client's registrants and bucketed into TTM /
+prior-TTM by `dt_posted`. It populates the `lobbying` aux section → bridge `lobbying_*`
+metrics (TTM spend, YoY, registrant count), surfaced in `--json`. **No scored leg or
+flag in v1** — it rides only as a caveated **research context line**
+(`research/lobbying.py`, config `research.lobbying`, the reverse-DCF pattern: prompt,
+never the haystack). **No `to_revenue`** — lobbying spend is tiny vs revenue; the signal
+is presence + trend (YoY). Keyless LDA allows ~15 req/min, so the source does
+Retry-After-aware backoff (`lobbying.max_retries`) and self-caches per `(ticker, day)`
+under `.cache/lda`. Known limitation: registrant/parent rollup isn't resolved. Tune via
+`config.yaml: lobbying` + `research.lobbying`.
+## News flow (harness)
+
+`FinnhubSource` also pulls **`company-news`** (free tier, exact ticker join) into the
+`news` aux section (`NewsFlow`: 7d / prior-7d / 30d article counts + latest date),
+bucketed by the pure `_news_flow` helper. The bridge derives `news_count_7d` /
+`news_count_prior_7d` / `news_count_30d` / `news_flow_rising` / `news_truncated` /
+`news_data_age_days`. Surfaced as the soft advisory **`news_spike`** flag (elevated +
+rising + fresh; `config.yaml` → `flags.news_spike`), mirroring `social_hype` —
+**advisory only, never affects `passed`/`composite`/`scored`**, no-op when the config
+block is absent. **Finnhub's free tier caps company-news at ~250 most-recent articles**;
+for a high-volume name (e.g. AAPL) the 30d window collapses into the last few days, so
+`_news_flow` **detects the cap** (`truncated`), blanks the unreliable prior count, and
+the flag is **explicitly suppressed on truncated names** (a spike is meaningful for a
+normally-quiet name, not an always-noisy mega-cap). Distinct from WSB social hype (retail
+chatter) — this is mainstream press volume. Cached 6h (`cache.py` quote bucket).
 ## Earnings execution (harness + research)
 
 `FinnhubSource` also pulls **`stock/earnings`** (last ~4 quarters of actual-vs-estimate

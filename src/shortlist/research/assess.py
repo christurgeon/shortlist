@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from . import claude_cli
+from . import gov_contracts as gov_contracts_ctx
+from . import lobbying as lobbying_ctx
 from . import earnings as earnings_ctx
 from . import reverse_dcf
 from .claude_cli import CliResult
@@ -176,6 +178,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     scfg = (config.get("research") or {}).get("screening_call") or {}
     gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
     quant = _quant_context(card, gaps_line, rcfg.get("reverse_dcf"),
+                           rcfg.get("gov_contracts"), rcfg.get("lobbying"),
                            rcfg.get("earnings"))
     events_line = ""
     if filing_events:
@@ -242,7 +245,7 @@ def _fcf_col(series) -> list:
     return [row.get("free_cash_flow") for row in (series or [])]
 
 
-def _quant_context(card, gaps_line="", rdcfg=None, ecfg=None) -> str:
+def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=None) -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -287,6 +290,12 @@ def _quant_context(card, gaps_line="", rdcfg=None, ecfg=None) -> str:
                 _fcf_col(series), getattr(m, "market_cap", None), rdcfg)
             if ig is not None:
                 lines.append(reverse_dcf.format_line(ig))
+        gc_line = gov_contracts_ctx.context_line(m, gcfg)
+        if gc_line:
+            lines.append(gc_line)
+        lb_line = lobbying_ctx.context_line(m, lbcfg)
+        if lb_line:
+            lines.append(lb_line)
         e_line = earnings_ctx.context_line(m, ecfg)
         if e_line:
             lines.append(e_line)
