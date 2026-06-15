@@ -39,8 +39,15 @@ def test_net_debt_floors_net_cash_to_zero():
 
 def test_piotroski_text():
     assert _piotroski_text(MetricsVM(piotroski_f=5, piotroski_f_legs=6)) == "5/6"
+    assert _piotroski_text(MetricsVM(piotroski_f=1, piotroski_f_legs=2)) == "1/2"   # partial coverage
+    assert _piotroski_text(MetricsVM(piotroski_f=0, piotroski_f_legs=4)) == "0/4"   # zero won still renders
     assert _piotroski_text(MetricsVM(piotroski_f=4)) == "4/6"   # legs default to 6
     assert _piotroski_text(MetricsVM()) is None
+
+
+def test_zero_won_piotroski_still_renders_in_html():
+    body = render_html_body(_vm([_leader("X", MetricsVM(piotroski_f=0, piotroski_f_legs=5))]))
+    assert "Piotroski" in body and ">0/5<" in body   # the `if pio:` guard must not drop "0/5"
 
 
 # --- rendering ---

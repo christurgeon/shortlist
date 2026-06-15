@@ -105,9 +105,9 @@ _FUND_ROWS = [("Price", "price", {}), ("Mkt cap", "market_cap", {"money": True})
               ("Volatility", "realized_vol", {"pct": True, "neutral": True}),
               ("Max DD", "max_drawdown", {"pct": True}), ("Target upside", "target_upside", {"pct": True}),
               ("Insider 6m", "insider_net_6m", {"money": True}),
-              # Net-debt/EBITDA (the over_leveraged gate's measure; floored >=0 in the VM, so
-              # neutral — high leverage is bad but always-positive can't color good/bad cleanly).
-              ("Net debt/EBITDA", "net_debt_to_ebitda", {"neutral": True})]
+              # Net-debt/EBITDA (the over_leveraged gate's measure; floored >=0 in the VM).
+              # Uncolored like the sibling debt_to_equity row (a plain ratio, not a +/- signal).
+              ("Net debt/EBITDA", "net_debt_to_ebitda", {})]
 
 
 def _piotroski_text(mvm) -> "str | None":
