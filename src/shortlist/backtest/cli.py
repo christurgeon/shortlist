@@ -19,7 +19,7 @@ from .prices import _UA, PriceHistory, _add_months, fetch_history
 from .report import render_table, report_to_dict
 from .signals import MomentumSignalSource, XbrlSignalSource
 from .universe import load_universe
-from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts
+from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -63,15 +63,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 async def _load_companyfacts(tickers, cache_dir, month):
-    """Resolve CIKs and fetch companyfacts for the universe. Keyless; SEC
-    fair-access requires a descriptive User-Agent carrying a contact email.
-    IFRS 20-F foreign issuers have no us-gaap facts and degrade to a skip."""
+    """WARM the companyfacts disk cache for the universe (one fetch per ticker,
+    written to `CIK{cik}-{month}.json`) WITHOUT retaining the payloads in memory —
+    the source reads them back lazily one at a time (memory-bounded). Returns
+    `(resolved_tickers, cik_index)`. Keyless; SEC fair-access requires a descriptive
+    User-Agent carrying a contact email. IFRS 20-F foreign issuers have no us-gaap
+    facts and degrade to a skip."""
     identity = os.environ.get("SEC_IDENTITY")
     if not identity:
         raise RuntimeError(
             "SEC_IDENTITY (a contact email) is required by the SEC for the XBRL "
             "source — set it in .env, e.g. SEC_IDENTITY='you@example.com'.")
-    facts = {}
+    resolved: list[str] = []
     async with httpx.AsyncClient(headers={"User-Agent": identity},
                                  timeout=30.0) as client:
         try:
@@ -79,7 +82,7 @@ async def _load_companyfacts(tickers, cache_dir, month):
         except Exception as e:
             print(f"warn: SEC ticker map fetch failed: {type(e).__name__}",
                   file=sys.stderr)
-            return {}
+            return [], {}
         for tk in tickers:
             cik = cik_for(tk, index)
             if cik is None:
@@ -89,7 +92,7 @@ async def _load_companyfacts(tickers, cache_dir, month):
                 cf = await fetch_companyfacts(cik, client, cache_dir=cache_dir,
                                               month=month)
                 if cf is not None:
-                    facts[tk] = cf
+                    resolved.append(tk)        # disk cache now warm; cf is NOT retained
                 else:
                     print(f"warn: {tk} has no us-gaap companyfacts "
                           f"(IFRS/20-F foreign issuer or recent spin-off)",
@@ -97,7 +100,7 @@ async def _load_companyfacts(tickers, cache_dir, month):
             except Exception as e:
                 print(f"warn: {tk} companyfacts fetch failed: {type(e).__name__}",
                       file=sys.stderr)
-    return facts
+    return resolved, index
 
 
 async def _load_histories(tickers, cache_dir, today):
@@ -249,11 +252,21 @@ def main(argv=None) -> int:
 
     if args.source == "xbrl":
         month = today[:7]   # YYYY-MM — companyfacts is month-cached
-        facts = asyncio.run(_load_companyfacts(tickers, args.xbrl_cache_dir, month))
-        if not facts:
+        resolved, cik_index = asyncio.run(
+            _load_companyfacts(tickers, args.xbrl_cache_dir, month))
+        if not resolved:
             print("no companyfacts available for the universe", file=sys.stderr)
             return 1
-        src = XbrlSignalSource(facts, hists, thresholds)
+        # Lazy loader: read one ticker's (already-warmed) companyfacts from disk on
+        # demand. With the engine's ticker-major iteration, each loads once -> RAM is
+        # bounded to the source's small LRU instead of the whole universe.
+        _cdir, _month = args.xbrl_cache_dir, month
+
+        def _fact_loader(tk, _idx=cik_index):
+            return read_companyfacts_cache(
+                cik_for(tk, _idx), cache_dir=_cdir, month=_month)
+
+        src = XbrlSignalSource(None, hists, thresholds, fact_loader=_fact_loader)
     else:
         src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
     if args.fit:
