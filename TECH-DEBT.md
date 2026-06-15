@@ -10,17 +10,41 @@ Format: **[area] title** — what / why deferred / suggested approach.
 
 ---
 
+## Open next steps
+
+### [backtest] Momentum Stage 0 — de-risk re-run before any Stage 1 build
+The multi-horizon momentum "prize-bound" gate (`backtest/prize_bound.py`, shipped
+2026-06-14; design/plan in the local `docs/superpowers/specs|plans/2026-06-14-multi-horizon-momentum-*`)
+returned a **marginal PROCEED** on a 28-name large-cap subset: `mom_6m` is fully redundant
+with the incumbent `rel_strength_6m` (τ 0.995, zero churn), `mom_12_1` moves only ~1 name in
+the top-10 (full-basket τ **0.947**, just under the 0.95 inert prior), and the weight bound
+(τ 0.80) confirms momentum at 0.08 has only ~2-top-10 of theoretical headroom.
+
+**Next step (do this before committing to the Stage 1 measurement build):** re-run on the
+**full 80-name** largecap basket once FMP's daily quota has reset (a quota-starved run
+inflates momentum's effective weight and would overstate churn):
+
+```
+uv run python -m shortlist.backtest.prize_bound   # full largecap (80)
+```
+
+**Decision rule:** compare `mom_12_1`'s full-basket τ to today's 0.947 — holds or drops
+(more churn) → the prize is real, write the Stage 1 plan; rises toward 1.0 (less churn) →
+**stop**: momentum at 0.08 is a near-zero mover (EV/EBIT-style "measured, not shipped"), and
+the only remaining lever is the value/momentum **weight split** (a separate question). Drop
+`mom_6m` either way.
+
+---
+
 ## Numerics-affecting (backtest before shipping)
 
-### [data-harness] Yahoo source never populates `ret_1m` / `ret_3m` / `ret_12m`
-`_normalize_yahoo` (`data/sources.py` ~L897) only sets `ret_6m`, `rel_strength_6m`,
-`realized_vol`, `max_drawdown`, `ma200`. Because Yahoo **leads** the price merge, the
-1m/3m/12m momentum legs fall through to FMP — and go `null` whenever FMP gates the
-symbol (402) even though Yahoo holds the full 5y daily series. The `_yh_ret_over`
-helper already exists. **Why deferred:** adding non-None values on a merge-priority-
-leading source shifts momentum/composite numerics for gated names. **Approach:** add
-`ret_1m=_yh_ret_over(closes,21)`, `ret_3m=…(63)`, `ret_12m=…(252)`; validate with
-`shortlist-backtest` momentum rank IC before/after.
+> **INVESTIGATED 2026-06-15 — NO-OP, do not pursue as scoped.** The original item proposed
+> populating `ret_1m`/`ret_3m`/`ret_12m` in `_normalize_yahoo`. Tracing the chain showed
+> those fields are **dead**: set by FMP/mock but read by nothing (not the bridge, scorer,
+> backtest, or reports), and `momentum_score` is already 100% Yahoo-sourced + gating-immune
+> (`price_vs_200dma` + `rel_strength_6m`; `eps_revision` is permanently `None`). The real
+> adjacent question — does a better multi-horizon momentum signal help — became the
+> momentum Stage 0 prize-bound work (see "Open next steps" above).
 
 ### [data-harness] Finnhub `roiTTM` mapped to `roic`
 `data/sources.py` ~L257 maps Finnhub's `roiTTM` (Return *on Investment*) into the
