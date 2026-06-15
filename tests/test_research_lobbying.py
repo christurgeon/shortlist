@@ -53,10 +53,10 @@ class _Card:
 def test_quant_context_includes_lobbying_line():
     m = _m(lobbying_ttm_usd=1.3e7, lobbying_registrant_count=22,
            lobbying_match_confidence=0.99)
-    out = assess._quant_context(_Card(m), "", None, CFG)
+    out = assess._quant_context(_Card(m), "", None, lbcfg=CFG)   # lbcfg now follows gcfg
     assert "Federal lobbying" in out
 
 
 def test_quant_context_omits_lobbying_line_when_none():
-    out = assess._quant_context(_Card(_m()), "", None, CFG)
+    out = assess._quant_context(_Card(_m()), "", None, lbcfg=CFG)
     assert "Federal lobbying" not in out

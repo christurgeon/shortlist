@@ -215,7 +215,7 @@ fmp:
 # Default source chain for the harness (yahoo first => wins the price merge). Used
 # whenever `--provider` is omitted; passing `--provider` overrides this list, so omit
 # it to keep yahoo/finra.
-harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, lobbying]
+harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, gov_contracts, lobbying]
 
 # Persistent HTTP-response cache for the FMP/Finnhub sources. On by default so
 # repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
@@ -282,6 +282,24 @@ research:
     run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
     display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
+  gov_contracts:               # USAspending gov-contracts context line (research-only;
+                               # NOT a scored signal — see docs/.../2026-06-15-gov-contracts-*).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    min_confidence: 0.80       # render floor: omit the line below this recipient-match confidence
+
+  lobbying:                    # federal lobbying-spend context line (research-only;
+                               # NOT a scored signal — see docs/.../2026-06-15-lobbying-*).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    min_confidence: 0.85       # render floor: omit the line below this client-match confidence
+
+# Government contracts (harness GovContractsSource, USAspending). Keyless aux source;
+# flat data + a research context line only (no sub-score, no flag in v1) — see
+# docs/superpowers/specs/2026-06-15-gov-contracts-source-design.md.
+gov_contracts:
+  trailing_months: 24
+  match_min_confidence: 0.80   # validated against the labeled set (tests/test_govcontract_match.py)
+  max_pages: 5                 # page cap on spending_by_transaction (sorted by amount desc)
+  cache_dir: .cache/usaspending
   lobbying:                    # federal lobbying-spend context line (research-only;
                                # NOT a scored signal — see docs/.../2026-06-15-lobbying-*).
     enabled: true              # flip false for a byte-identical no-op (line omitted)
