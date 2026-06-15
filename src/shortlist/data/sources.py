@@ -1041,9 +1041,11 @@ class LobbyingSource(Source):
         try:
             cp = self._cache_path(ticker, day)
             if cp.exists():
-                return json.loads(cp.read_text())
+                payload = json.loads(cp.read_text())
+                if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
+                    return payload
         except Exception:
-            pass  # corrupt cache -> refetch
+            pass  # corrupt / stale-shape cache -> refetch
         return None
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
@@ -1053,9 +1055,14 @@ class LobbyingSource(Source):
         except Exception:
             pass  # cache write failure is non-fatal
 
+    _CACHE_V = 1   # bump if the cached Lobbying shape changes
+
     @staticmethod
     def _spend(row: dict) -> Optional[float]:
-        """A filing reports EITHER income (outside firm fee) OR expenses (in-house)."""
+        """A filing reports EITHER income (outside firm fee) OR expenses (in-house).
+        Summing across a client's filings can modestly double-count when the same
+        activity is reported by a retained firm (income) AND in-house (expenses) —
+        bounded and acceptable for a research-only presence/trend signal."""
         for k in ("income", "expenses"):
             v = row.get(k)
             if v not in (None, ""):
@@ -1105,7 +1112,7 @@ class LobbyingSource(Source):
                     payload = await self._get_json(
                         "filings/",
                         {"client_name": name, "filing_year": yr, "page": page}) or {}
-                    total += payload.get("count") or 0 if page == 1 else 0
+                    total += (payload.get("count") or 0) if page == 1 else 0
                     rows = payload.get("results") or []
                     for row in rows:
                         client = (row.get("client") or {}).get("name") or ""
@@ -1118,14 +1125,17 @@ class LobbyingSource(Source):
                             continue
                         if conf > best_conf:
                             best_conf, best_client = conf, client
-                        reg = (row.get("registrant") or {}).get("name")
-                        if reg:
-                            registrants.add(reg)
                         if latest is None or posted > latest:
                             latest = posted
+                        # Window by dt_posted (submission date): it lags the activity
+                        # quarter by up to a filing cycle, but it's the only monotone
+                        # timestamp — acceptable for a trend context line.
                         if posted >= cutoff:
                             ttm += spend
                             ttm_n += 1
+                            reg = (row.get("registrant") or {}).get("name")
+                            if reg:
+                                registrants.add(reg)   # TTM-scoped: matches the surfaced count
                         elif posted >= window_start.isoformat():
                             prior += spend
                     if not payload.get("next"):
@@ -1134,7 +1144,7 @@ class LobbyingSource(Source):
                         truncated = True
                     page += 1
             if best_client is None:
-                self._write_cache(ticker, end, {"matched": False})
+                self._write_cache(ticker, end, {"v": self._CACHE_V, "matched": False})
                 res.raw = {"resolved_name": name, "matched": False, "total_filings": total}
                 return res
             lb = Lobbying(
@@ -1143,7 +1153,7 @@ class LobbyingSource(Source):
                 match_confidence=best_conf, registrant_count=len(registrants),
                 truncated=truncated, total_filings=total)
             snap.lobbying = lb
-            self._write_cache(ticker, end, {"matched": True,
+            self._write_cache(ticker, end, {"v": self._CACHE_V, "matched": True,
                                             "lb": dataclasses.asdict(lb)})
             res.raw = {"resolved_name": name, "matched": True, "total_filings": total}
         except Exception as e:

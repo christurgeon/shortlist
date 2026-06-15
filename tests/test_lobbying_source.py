@@ -63,8 +63,43 @@ def test_aggregates_and_buckets_by_window():
     assert lb.prior_ttm_spend == 20000.0    # matched expenses (in-house), prior window
     assert lb.filing_count_ttm == 1
     assert lb.match_confidence >= 0.9
-    assert lb.registrant_count == 2         # Etherton (ttm) + In House (prior)
+    assert lb.registrant_count == 1         # TTM-scoped: only Etherton (the TTM filing)
     assert lb.latest_filing == _TTM
+    _run(src.aclose())
+
+
+def test_filing_before_window_is_excluded():
+    # A filing posted >24m ago is returned by its edge-year query but must land in
+    # NEITHER spend bucket (falls through both the if/elif window guards).
+    old = (date.today() - timedelta(days=800)).isoformat()
+    old_year = int(old[:4])
+
+    def handler(req):
+        if int(req.url.params.get("filing_year")) == old_year:
+            return httpx.Response(200, json={"count": 1, "next": None, "results": [
+                {"client": {"name": "LOCKHEED MARTIN CORPORATION"},
+                 "registrant": {"name": "OLD FIRM"}, "income": "777.00",
+                 "expenses": None, "dt_posted": old + "T00:00:00-04:00"}]})
+        return httpx.Response(200, json={"count": 0, "next": None, "results": []})
+    src = _source_with(handler)
+    lb = _run(src.fetch("LMT")).partial.lobbying
+    assert lb.ttm_spend == 0.0          # 800d-old filing excluded from TTM
+    assert lb.prior_ttm_spend == 0.0    # ...and from prior-TTM (before window_start)
+    _run(src.aclose())
+
+
+def test_retries_429_then_succeeds():
+    state = {"hits": 0}
+
+    def handler(req):
+        state["hits"] += 1
+        if state["hits"] == 1:
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+        return _year_handler(req)
+    src = _source_with(handler, max_retries=1)
+    lb = _run(src.fetch("LMT")).partial.lobbying
+    assert lb is not None and lb.ttm_spend == 30000.0   # recovered after the retry
+    assert state["hits"] >= 2
     _run(src.aclose())
 
 
