@@ -302,6 +302,11 @@ research:
                                # NOT a scored signal — see docs/.../2026-06-15-earnings-surprise-*).
     enabled: true              # flip false for a byte-identical no-op (line omitted)
 
+
+  insider_detail:              # recent Form-4 trades as a brief context line (enrichment;
+                               # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    max_items: 6               # cap recent trades listed (newest-first)
 # Government contracts (harness GovContractsSource, USAspending). Keyless aux source;
 # flat data + a research context line only (no sub-score, no flag in v1) — see
 # docs/superpowers/specs/2026-06-15-gov-contracts-source-design.md.

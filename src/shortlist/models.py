@@ -96,6 +96,11 @@ class StockMetrics:
     planned_insider_sale_144: Optional[bool] = None
     filing_events: Optional[list] = None   # list of {form, filed, accession, url} dicts
 
+    # Recent open-market insider Form-4 trades (enrichment only; NOT scored). Set by the
+    # bridge from snap.insider.recent — a compact {date, name, role, kind, value} per trade
+    # (newest-first) for the research brief's context, parallel to filing_events.
+    insider_recent: Optional[list] = None
+
     # Up-to-5y financial series (newest-first), each entry a dict:
     # {fiscal_year, period_end, revenue, gross_profit, net_income,
     #  operating_cash_flow, free_cash_flow, diluted_eps, total_debt, diluted_shares}.

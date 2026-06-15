@@ -171,8 +171,39 @@ def _data_gaps_line(card) -> str:
     return "DATA GAPS (factor into conviction): " + ". ".join(parts) + ".\n"
 
 
+def _fmt_usd(val) -> str:
+    """' $X.XM' / ' $XK' / ' $X' magnitude, or '' if not numeric. abs() so a
+    direction-signed source value never renders as '$-0.5M' (direction is `kind`)."""
+    if not isinstance(val, (int, float)):
+        return ""
+    a = abs(val)
+    if a >= 1e6:
+        return f" ${a / 1e6:.1f}M"
+    if a >= 1e3:
+        return f" ${a / 1e3:.0f}K"
+    return f" ${a:.0f}"
+
+
+def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
+    """One context line of recent Form-4 trades, or '' to omit (disabled / no trades).
+    Prompt context only — never enters the grounding haystack."""
+    if not cfg or not cfg.get("enabled", False) or not insider_recent:
+        return ""
+    items = []
+    for t in insider_recent[:int(cfg.get("max_items", 6))]:
+        verb = {"buy": "bought", "sell": "sold"}.get(t.get("kind"), t.get("kind") or "traded")
+        who = " ".join(x for x in (t.get("role"), t.get("name")) if x) or "insider"
+        dt = f" ({t['date']})" if t.get("date") else ""
+        items.append(f"{who} {verb}{_fmt_usd(t.get('value'))}{dt}")
+    if not items:
+        return ""
+    return ("\n\nRecent insider trades (context only — Form 4 derived, not 10-K text): "
+            + "; ".join(items) + ".")
+
+
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
-                       filing_events: Optional[list] = None) -> str:
+                       filing_events: Optional[list] = None,
+                       insider_recent: Optional[list] = None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
@@ -186,6 +217,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         events_line = (
             "\n\nRecent SEC filings (context only — do not treat as 10-K text): "
             f"{items}.")
+    insider_line = _insider_line(insider_recent, rcfg.get("insider_detail"))
     tenq_section = ""
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
@@ -209,6 +241,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{rcfg.get('max_falsifiers', 3)} 'what would change my mind' items, "
         "most material first."
         f"{events_line}"
+        f"{insider_line}"
     )
 
 
@@ -411,7 +444,9 @@ def assess(card, bundle: FilingBundle, config: dict,
     max_added_risks = rcfg.get("max_added_risks", 8)
     filing = bundle.tenk
     fe = getattr(getattr(card, "metrics", None), "filing_events", None)
-    user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe)
+    ir = getattr(getattr(card, "metrics", None), "insider_recent", None)
+    user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
+                                     insider_recent=ir)
     system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
 
     prompt = user_prompt
