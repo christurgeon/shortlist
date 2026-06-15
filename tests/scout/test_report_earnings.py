@@ -43,6 +43,14 @@ def test_earnings_text_none_without_quarters():
     assert _earnings_text(MetricsVM(earnings_quarters=0)) is None   # 0 quarters -> absent
 
 
+def test_earnings_text_zero_days_and_zero_surprise_render():
+    # 'reports today' (days=0) and a flat 0.0% surprise must NOT be dropped by a
+    # truthiness bug — the guards are `is not None`, not truthiness.
+    assert _earnings_text(MetricsVM(earnings_beats=4, earnings_quarters=4,
+                                    earnings_avg_surprise_pct=0.0,
+                                    earnings_days_to_next=0)) == "4/4 beats · +0.0% · next 0d"
+
+
 def test_html_and_text_conditional_render():
     full = MetricsVM(earnings_beats=4, earnings_quarters=4,
                      earnings_avg_surprise_pct=3.7, earnings_days_to_next=18)
