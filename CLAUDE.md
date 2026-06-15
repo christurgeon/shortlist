@@ -48,7 +48,11 @@ validation, and history, not new scoring:
   emits standalone **measurement-only** axes whose rank IC can be checked before any
   production wiring: `share_count`, `net_debt_to_ebitda`, and the **EV/EBIT slice** —
   `ebit_ev_yield` (EBIT/EV earnings yield) plus the per-leg value-attribution axes
-  (`value_fcf_yield` / etc.) and a cross-signal collinearity diagnostic. `ebit_ev_yield`
+  (`value_fcf_yield` / etc.) and a **multi-pair cross-signal collinearity diagnostic**
+  (`cli.py:_COLLINEARITY_PAIRS`, emitted to stderr + the `--json` `collinearity` block:
+  a candidate axis with corr ≳ 0.5 vs an already-scored axis duplicates it — `ebit_ev_yield`
+  ~ `fcf_yield` ≈ 0.73 and `net_debt_to_ebitda` ~ `growth` ≈ 0.54 both trip it, so neither
+  is wired). `ebit_ev_yield`
   is derived on both paths (`bridge.py` + XBRL panel) and carried on `StockMetrics`, but
   there is **no production sub-score reading it** — the value leg is deferred pending the
   backtest (`scoring.py:ebit_ev_yield_score` is backtest-only). The snapshot-replay path
