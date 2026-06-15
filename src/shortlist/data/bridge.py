@@ -241,6 +241,22 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
+    # Earnings execution (Finnhub surprises + calendar). Raw facts -> rates. None-safe.
+    e = snap.earnings
+    if e:
+        if e.quarters:
+            m.earnings_quarters = e.quarters
+            if e.beats is not None:
+                m.earnings_beat_rate = e.beats / e.quarters
+        if e.recent_surprise_pcts:
+            m.earnings_avg_surprise_pct = sum(e.recent_surprise_pcts) / len(e.recent_surprise_pcts)
+        m.earnings_last_surprise_pct = e.last_surprise_pct
+        # days_to_next: as_of -> next_date (forward); _age_days returns as_of - other,
+        # so negate to get a positive "days until".
+        days = _age_days(snap.as_of, e.next_date)
+        if days is not None:
+            m.earnings_days_to_next = -days
+
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events

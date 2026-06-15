@@ -282,6 +282,10 @@ research:
     run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
     display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
+  earnings:                    # earnings-surprise history + next-report line (research-only;
+                               # NOT a scored signal — see docs/.../2026-06-15-earnings-surprise-*).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+
 # EDGAR filing-stream events (harness EdgarSource). Advisory flags only — see
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.
 edgar_events:

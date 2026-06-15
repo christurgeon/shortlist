@@ -170,6 +170,19 @@ class SocialSentiment:
 
 
 @dataclass
+class Earnings:
+    """Finnhub earnings-surprise history + next-report date for one symbol. Raw facts
+    only — beat_rate/avg/days-to-next are DERIVED in the bridge. Auxiliary (NOT a
+    KEY_OBJECT): sparse, never moves coverage."""
+    as_of: Optional[str] = None
+    recent_surprise_pcts: list = field(default_factory=list)  # newest-first surprisePercent (None skipped)
+    quarters: Optional[int] = None        # # quarters with a usable surprise
+    beats: Optional[int] = None           # # of those with surprise > 0
+    last_surprise_pct: Optional[float] = None  # newest quarter's surprise %
+    next_date: Optional[str] = None       # next earnings date (ISO) or None
+
+
+@dataclass
 class FilingEvent:
     form: str                          # "8-K", "SC 13D", "SC 13G", "144", ...
     filed: str                         # ISO date (filing date)
@@ -215,6 +228,7 @@ class TickerSnapshot:
     short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
     social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    earnings: Optional["Earnings"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -289,7 +303,7 @@ _DEFAULTS = {
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
 _AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
-                 "social": SocialSentiment}
+                 "social": SocialSentiment, "earnings": Earnings}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:

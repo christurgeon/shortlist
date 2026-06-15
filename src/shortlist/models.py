@@ -118,6 +118,14 @@ class StockMetrics:
     social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
     social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
 
+    # Earnings execution (Finnhub earnings surprises + calendar; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only.
+    earnings_beat_rate: Optional[float] = None     # fraction of recent quarters that beat
+    earnings_avg_surprise_pct: Optional[float] = None  # mean surprise % over recent quarters
+    earnings_last_surprise_pct: Optional[float] = None # newest quarter's surprise %
+    earnings_quarters: Optional[int] = None        # # recent quarters with a usable surprise
+    earnings_days_to_next: Optional[int] = None    # days until the next scheduled report
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 
