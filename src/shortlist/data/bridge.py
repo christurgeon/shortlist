@@ -249,12 +249,17 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.gov_contract_prior_ttm_usd = gc.prior_ttm_obligated
         m.gov_contract_award_count = gc.award_count_ttm
         m.gov_contract_match_confidence = gc.match_confidence
+        m.gov_contract_recipient_count = gc.recipient_count
+        m.gov_contract_truncated = gc.truncated
+        m.gov_contract_total_txns = gc.total_txns
         if gc.ttm_obligated is not None and gc.prior_ttm_obligated:  # truthy excludes 0
             m.gov_contract_yoy_growth = (
                 (gc.ttm_obligated - gc.prior_ttm_obligated) / gc.prior_ttm_obligated)
         if gc.ttm_obligated is not None and m.revenue:  # truthy excludes 0/None
             m.gov_contract_to_revenue = gc.ttm_obligated / m.revenue
-        m.gov_contract_data_age_days = _age_days(snap.as_of, gc.as_of)
+        # Staleness from the newest captured Action Date (real data age), not the
+        # query date — falls back to query date when no action captured.
+        m.gov_contract_data_age_days = _age_days(snap.as_of, gc.latest_action or gc.as_of)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 

@@ -989,15 +989,16 @@ class GovContractsSource(Source):
     COUNT_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction_count/"
     DATA_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"
     _CONTRACT_CODES = ["A", "B", "C", "D"]
+    _TTM_DAYS = 365            # TTM vs prior-TTM split boundary
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/usaspending",
                  config: Optional[dict] = None):
         import httpx  # lazy: only needed for live runs
-        self._client = httpx.AsyncClient(
-            timeout=timeout,
-            headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"})
-        self._cache_dir = Path(cache_dir)
         cfg = (config or {}).get("gov_contracts", {}) if config else {}
+        self._client = httpx.AsyncClient(
+            timeout=float(cfg.get("timeout", timeout)),
+            headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"})
+        self._cache_dir = Path(cfg.get("cache_dir", cache_dir))
         self._min_conf = float(cfg.get("match_min_confidence", 0.80))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages", 5))
@@ -1025,6 +1026,25 @@ class GovContractsSource(Source):
                 "award_type_codes": self._CONTRACT_CODES,
                 "time_period": [{"start_date": start, "end_date": end}]}
 
+    def _cache_path(self, ticker: str, day: str) -> Path:
+        return self._cache_dir / f"contracts-{ticker.upper()}-{day}.json"
+
+    def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
+        try:
+            cp = self._cache_path(ticker, day)
+            if cp.exists():
+                return json.loads(cp.read_text())
+        except Exception:
+            pass  # corrupt cache -> refetch
+        return None
+
+    def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._cache_path(ticker, day).write_text(json.dumps(payload))
+        except Exception:
+            pass  # cache write failure is non-fatal
+
     async def fetch(self, ticker: str) -> SourceResult:
         from .govcontract_match import match_confidence
         from .models import GovContracts
@@ -1040,9 +1060,18 @@ class GovContractsSource(Source):
             res.raw = {"resolved_name": None}
             return res
         today = date.today()
-        start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
         end = today.isoformat()
-        cutoff = (today - timedelta(days=365)).isoformat()  # TTM boundary
+        # Warm per-ticker cache (Yahoo/FINRA precedent): a same-day re-run of the
+        # basket makes zero USAspending calls.
+        cached = self._read_cache(ticker, end)
+        if cached is not None:
+            if cached.get("matched"):
+                snap.gov_contracts = GovContracts(**cached["gc"])
+            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
+                       "total_txns": cached.get("total_txns"), "cached": True}
+            return res
+        start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
+        cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         try:
             cnt = await self._client.post(
                 self.COUNT_URL, json={"filters": self._filters(name, start, end)})
@@ -1050,8 +1079,9 @@ class GovContractsSource(Source):
             total = ((cnt.json() or {}).get("results") or {}).get("contracts")
             ttm = prior = 0.0
             ttm_n = 0
-            best_conf = 0.0
-            best_name = None
+            recipients: set[str] = set()
+            primary_name, primary_amt, primary_conf = None, -1.0, 0.0
+            latest_action = None
             truncated = False
             page = 1
             while page <= self._max_pages:
@@ -1073,8 +1103,11 @@ class GovContractsSource(Source):
                     adate = row.get("Action Date")
                     if amt is None or adate is None:
                         continue
-                    if conf > best_conf:
-                        best_conf, best_name = conf, recip
+                    recipients.add(recip)
+                    if abs(amt) > primary_amt:   # primary = largest single action by |$|
+                        primary_amt, primary_name, primary_conf = abs(amt), recip, conf
+                    if latest_action is None or adate > latest_action:
+                        latest_action = adate
                     if adate >= cutoff:        # ISO dates compare lexicographically
                         ttm += amt
                         ttm_n += 1
@@ -1086,13 +1119,18 @@ class GovContractsSource(Source):
                 if page == self._max_pages and has_next:
                     truncated = True
                 page += 1
-            if best_name is None:              # nothing cleared the match guard
+            if primary_name is None:           # nothing cleared the match guard
+                self._write_cache(ticker, end, {"matched": False, "total_txns": total})
                 res.raw = {"resolved_name": name, "matched": False, "total_txns": total}
                 return res
-            snap.gov_contracts = GovContracts(
-                as_of=end, ttm_obligated=ttm, prior_ttm_obligated=prior,
-                award_count_ttm=ttm_n, matched_recipient=best_name,
-                match_confidence=best_conf, truncated=truncated, total_txns=total)
+            gc = GovContracts(
+                as_of=end, latest_action=latest_action, ttm_obligated=ttm,
+                prior_ttm_obligated=prior, award_count_ttm=ttm_n,
+                matched_recipient=primary_name, match_confidence=primary_conf,
+                recipient_count=len(recipients), truncated=truncated, total_txns=total)
+            snap.gov_contracts = gc
+            self._write_cache(ticker, end, {"matched": True, "total_txns": total,
+                                            "gc": dataclasses.asdict(gc)})
             res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
         except Exception as e:
             res.errors.append(f"gov_contracts: {redact_secrets(str(e))}")

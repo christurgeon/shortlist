@@ -25,8 +25,10 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
         return None
     if conf is None or conf < float(cfg.get("min_confidence", 0.8)):
         return None
-    parts = [f"~{_money_b(ttm)} federal contract obligations "
-             f"(trailing 12m, recipient matched at {conf:.2f} confidence)"]
+    n_recip = getattr(m, "gov_contract_recipient_count", None) or 1
+    who = (f"primary recipient matched at {conf:.2f}" if n_recip == 1
+           else f"summed across {n_recip} recipients (primary matched at {conf:.2f})")
+    parts = [f"~{_money_b(ttm)} federal contract obligations (trailing 12m, {who})"]
     tr = getattr(m, "gov_contract_to_revenue", None)
     if tr is not None:
         parts.append(f"~{tr * 100:.0f}% of revenue")
@@ -34,6 +36,12 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
     if yoy is not None:
         parts.append(f"{yoy * 100:+.0f}% vs prior 12m")
     body = "; ".join(parts)
-    return (f"Government contracts: {body}. Attribution is fuzzy and excludes "
+    caveat = ""
+    if getattr(m, "gov_contract_truncated", None):
+        total = getattr(m, "gov_contract_total_txns", None)
+        of = f" of ~{total:,}" if total else ""
+        caveat = (f" [PARTIAL: top actions{of} by size only — figure is approximate "
+                  f"and omits smaller/negative (de-obligation) actions]")
+    return (f"Government contracts: {body}.{caveat} Attribution is fuzzy and excludes "
             f"subsidiaries booked under other names — reconcile against the "
             f"business (a new award is a tailwind; a recompete loss a risk).")

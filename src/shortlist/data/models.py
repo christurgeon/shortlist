@@ -174,14 +174,16 @@ class GovContracts:
     """USAspending federal procurement-contract obligations for one recipient,
     window-scoped. Raw facts only — rates/ratios are DERIVED in the bridge.
     Auxiliary (NOT a KEY_OBJECT): sparse, never moves coverage."""
-    as_of: Optional[str] = None             # query date "YYYY-MM-DD" (staleness)
-    ttm_obligated: Optional[float] = None       # net USD obligated, 0-12m
-    prior_ttm_obligated: Optional[float] = None # net USD obligated, 12-24m
+    as_of: Optional[str] = None             # query date "YYYY-MM-DD"
+    latest_action: Optional[str] = None         # newest captured Action Date (staleness)
+    ttm_obligated: Optional[float] = None       # NET USD obligated, 0-12m (incl. de-obligations)
+    prior_ttm_obligated: Optional[float] = None # NET USD obligated, 12-24m
     award_count_ttm: Optional[int] = None       # captured txn count, 0-12m
-    matched_recipient: Optional[str] = None     # audit: best-matched recipient
-    match_confidence: Optional[float] = None    # audit: 0-1
-    truncated: bool = False                     # paging hit the cap (partial sum)
-    total_txns: Optional[int] = None            # from _count endpoint
+    matched_recipient: Optional[str] = None     # audit: PRIMARY recipient (largest single action)
+    match_confidence: Optional[float] = None    # audit: primary recipient's match 0-1
+    recipient_count: Optional[int] = None       # distinct matched recipients in the sum
+    truncated: bool = False                     # paging hit the cap -> sum is a partial/approx
+    total_txns: Optional[int] = None            # from _count endpoint (pre-match search breadth)
 
 
 @dataclass

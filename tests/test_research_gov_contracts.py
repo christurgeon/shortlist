@@ -19,6 +19,15 @@ def test_line_renders_when_material_and_confident():
     assert "subsidiaries" in line  # the caveat is always present
 
 
+def test_line_discloses_partial_when_truncated():
+    line = context_line(_m(gov_contract_ttm_usd=5.3e10, gov_contract_match_confidence=1.0,
+                           gov_contract_truncated=True, gov_contract_total_txns=63369,
+                           gov_contract_recipient_count=4), CFG)
+    assert "PARTIAL" in line
+    assert "63,369" in line
+    assert "summed across 4 recipients" in line
+
+
 def test_abstains_when_disabled():
     assert context_line(_m(gov_contract_ttm_usd=1e10,
                            gov_contract_match_confidence=0.98),

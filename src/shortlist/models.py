@@ -125,8 +125,11 @@ class StockMetrics:
     gov_contract_yoy_growth: Optional[float] = None     # (ttm - prior)/prior
     gov_contract_award_count: Optional[int] = None      # captured txn count, 12m
     gov_contract_to_revenue: Optional[float] = None     # ttm_usd / revenue (materiality)
-    gov_contract_match_confidence: Optional[float] = None  # recipient match 0-1
-    gov_contract_data_age_days: Optional[int] = None    # staleness
+    gov_contract_match_confidence: Optional[float] = None  # primary recipient match 0-1
+    gov_contract_recipient_count: Optional[int] = None  # distinct matched recipients in the sum
+    gov_contract_truncated: Optional[bool] = None       # paging hit cap -> sum is partial
+    gov_contract_total_txns: Optional[int] = None       # pre-match action count (search breadth)
+    gov_contract_data_age_days: Optional[int] = None    # days since latest captured Action Date
 
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)

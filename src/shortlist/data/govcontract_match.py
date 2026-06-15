@@ -46,9 +46,12 @@ def match_confidence(sec_name: str, recipient_name: str,
     if not a or not b:
         return 0.0
     base = SequenceMatcher(None, a, b).ratio()
+    b_tokens = set(b.split())
     for tk in (alias_for or ()):
         for tok in _ALIAS_SEED.get(tk.upper(), ()):  # token already in normalized form
-            if tok in b:
+            # whole-word (token-set) containment, NOT raw substring — a short alias
+            # token must appear as complete words, never as a fragment of another name.
+            if set(tok.split()) <= b_tokens:
                 return max(base, 1.0)
     return base
 
