@@ -168,6 +168,19 @@ def _data_gaps_line(card) -> str:
     return "DATA GAPS (factor into conviction): " + ". ".join(parts) + ".\n"
 
 
+def _fmt_usd(val) -> str:
+    """' $X.XM' / ' $XK' / ' $X' magnitude, or '' if not numeric. abs() so a
+    direction-signed source value never renders as '$-0.5M' (direction is `kind`)."""
+    if not isinstance(val, (int, float)):
+        return ""
+    a = abs(val)
+    if a >= 1e6:
+        return f" ${a / 1e6:.1f}M"
+    if a >= 1e3:
+        return f" ${a / 1e3:.0f}K"
+    return f" ${a:.0f}"
+
+
 def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
     """One context line of recent Form-4 trades, or '' to omit (disabled / no trades).
     Prompt context only — never enters the grounding haystack."""
@@ -177,10 +190,8 @@ def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
     for t in insider_recent[:int(cfg.get("max_items", 6))]:
         verb = {"buy": "bought", "sell": "sold"}.get(t.get("kind"), t.get("kind") or "traded")
         who = " ".join(x for x in (t.get("role"), t.get("name")) if x) or "insider"
-        val = t.get("value")
-        amt = f" ${val / 1e6:.1f}M" if isinstance(val, (int, float)) else ""
         dt = f" ({t['date']})" if t.get("date") else ""
-        items.append(f"{who} {verb}{amt}{dt}")
+        items.append(f"{who} {verb}{_fmt_usd(t.get('value'))}{dt}")
     if not items:
         return ""
     return ("\n\nRecent insider trades (context only — Form 4 derived, not 10-K text): "

@@ -20,8 +20,27 @@ _TRADES = [
 def test_line_renders_role_name_verb_amount_date():
     line = _insider_line(_TRADES, CFG_ON)
     assert "CEO Jane Doe bought $2.1M (2026-05-01)" in line
-    assert "Director John Roe sold $0.5M (2026-04-15)" in line
+    assert "Director John Roe sold $500K (2026-04-15)" in line   # <$1M -> $K
     assert "Form 4 derived" in line
+
+
+def test_amount_magnitude_scales_and_abs():
+    # $M / $K / $ scaling; abs() so a (defensive) signed value never shows "$-..".
+    big = _insider_line([{"kind": "sell", "name": "X", "value": 111_200_000.0}], CFG_ON)
+    assert "sold $111.2M" in big
+    small = _insider_line([{"kind": "buy", "name": "Y", "value": 40_000.0}], CFG_ON)
+    assert "bought $40K" in small        # not the confusing "$0.0M"
+    tiny = _insider_line([{"kind": "buy", "name": "Z", "value": 800.0}], CFG_ON)
+    assert "bought $800" in tiny
+    neg = _insider_line([{"kind": "sell", "name": "W", "value": -500_000.0}], CFG_ON)
+    assert "sold $500K" in neg and "$-" not in neg
+
+
+def test_line_preserves_newest_first_order():
+    trades = [{"kind": "buy", "name": "A", "value": 1e6, "date": "2026-05-03"},
+              {"kind": "sell", "name": "B", "value": 1e6, "date": "2026-05-01"}]
+    line = _insider_line(trades, CFG_ON)
+    assert line.index("A bought") < line.index("B sold")   # order preserved from input
 
 
 def test_line_omitted_when_disabled_or_empty():
@@ -90,6 +109,33 @@ def test_bridge_no_recent_or_no_insider_leaves_none():
     snap.insider = Insider(net_value_6m=1.0, recent=[])
     assert snapshot_to_metrics(snap).insider_recent is None
     assert snapshot_to_metrics(TickerSnapshot(ticker="KO")).insider_recent is None
+
+
+def test_assess_threads_card_metrics_insider_recent_into_prompt(monkeypatch):
+    # The real plumbing: assess() reads card.metrics.insider_recent and passes it
+    # to _build_user_prompt. Capture there; the injectable runner stops before the CLI.
+    import shortlist.research.assess as A
+    from shortlist.models import StockMetrics
+
+    captured = {}
+
+    def fake_build(bundle, config, card=None, filing_events=None, insider_recent=None):
+        captured["insider_recent"] = insider_recent
+        return "PROMPT"
+
+    monkeypatch.setattr(A, "_build_user_prompt", fake_build)
+
+    def runner(*a, **k):
+        raise RuntimeError("stop after prompt build")
+
+    class _Card:
+        metrics = StockMetrics(ticker="AAPL", insider_recent=_TRADES)
+
+    try:
+        A.assess(_Card(), _bundle(), {"research": {"insider_detail": CFG_ON}}, runner=runner)
+    except Exception:
+        pass
+    assert captured.get("insider_recent") == _TRADES
 
 
 def test_config_has_insider_detail_block():
