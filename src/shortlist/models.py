@@ -118,6 +118,18 @@ class StockMetrics:
     social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
     social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
 
+    # Federal lobbying (Senate LDA via lobbying source; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only (no sub-score, no flag).
+    lobbying_ttm_usd: Optional[float] = None        # USD on federal lobbying, trailing 12m
+    lobbying_prior_ttm_usd: Optional[float] = None  # USD, 12-24m
+    lobbying_yoy_growth: Optional[float] = None     # (ttm - prior)/prior
+    lobbying_filing_count: Optional[int] = None     # captured filings, 12m
+    lobbying_registrant_count: Optional[int] = None  # distinct registrants in the sum
+    lobbying_match_confidence: Optional[float] = None  # client match 0-1
+    lobbying_truncated: Optional[bool] = None       # paging hit cap -> sum is partial
+    lobbying_total_filings: Optional[int] = None    # pre-match filing count (search breadth)
+    lobbying_data_age_days: Optional[int] = None    # days since latest filing
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 

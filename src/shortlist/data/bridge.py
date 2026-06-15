@@ -241,6 +241,21 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
+    # Federal lobbying (Senate LDA). Raw facts -> derived YoY + staleness. None-safe.
+    lb = snap.lobbying
+    if lb:
+        m.lobbying_ttm_usd = lb.ttm_spend
+        m.lobbying_prior_ttm_usd = lb.prior_ttm_spend
+        m.lobbying_filing_count = lb.filing_count_ttm
+        m.lobbying_registrant_count = lb.registrant_count
+        m.lobbying_match_confidence = lb.match_confidence
+        m.lobbying_truncated = lb.truncated
+        m.lobbying_total_filings = lb.total_filings
+        if lb.ttm_spend is not None and lb.prior_ttm_spend:  # truthy excludes 0
+            m.lobbying_yoy_growth = (
+                (lb.ttm_spend - lb.prior_ttm_spend) / lb.prior_ttm_spend)
+        m.lobbying_data_age_days = _age_days(snap.as_of, lb.latest_filing or lb.as_of)
+
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events
