@@ -241,6 +241,18 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
+    # News flow (Finnhub company-news). Raw counts -> rising + staleness. None-safe.
+    nf = snap.news
+    if nf:
+        m.news_count_7d = nf.count_recent
+        m.news_count_prior_7d = nf.count_prior
+        m.news_count_30d = nf.count_window
+        m.news_truncated = nf.truncated
+        # rising only when prior is reliable (None when the free-tier cap truncated it)
+        if nf.count_recent is not None and nf.count_prior is not None:
+            m.news_flow_rising = nf.count_recent > nf.count_prior
+        m.news_data_age_days = _age_days(snap.as_of, nf.latest_dt)
+
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events

@@ -118,6 +118,15 @@ class StockMetrics:
     social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
     social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
 
+    # News flow (Finnhub company-news; derived in bridge.py). Soft-flag inputs only —
+    # NOT scored, never feed any sub-score or the composite.
+    news_count_7d: Optional[int] = None            # articles in the last 7d
+    news_count_prior_7d: Optional[int] = None      # articles in days 7-14
+    news_count_30d: Optional[int] = None           # articles in the 30d lookback
+    news_flow_rising: Optional[bool] = None        # count_7d > prior 7d (None if truncated)
+    news_truncated: Optional[bool] = None          # free-tier cap hit -> counts are lower bounds
+    news_data_age_days: Optional[int] = None       # as_of - latest article date (staleness)
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 
