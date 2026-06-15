@@ -34,6 +34,10 @@ class MetricsVM:
     rating_sell: int | None = None
     target_upside: float | None = None   # from StockMetrics.upside_to_target()
     insider_net_6m: float | None = None
+    # Fundamental quality + leverage (already in --json; surfaced in the report too)
+    piotroski_f: int | None = None        # Core-6 quality, 0..6
+    piotroski_f_legs: int | None = None   # legs evaluated (the "/N" denominator)
+    net_debt_to_ebitda: float | None = None   # display-floored to >=0 (net cash -> 0.0x)
 
 
 @dataclass
@@ -164,7 +168,11 @@ def _metrics_vm(m) -> MetricsVM:
         price_vs_200dma=m.price_vs_200dma, rel_strength_6m=m.rel_strength_6m,
         realized_vol=m.realized_vol, max_drawdown=m.max_drawdown,
         rating_buy=m.rating_buy, rating_hold=m.rating_hold, rating_sell=m.rating_sell,
-        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m)
+        target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m,
+        piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
+        # net cash (negative) floors to 0.0x for display, matching the --json output.
+        net_debt_to_ebitda=(max(0.0, m.net_debt_to_ebitda)
+                            if m.net_debt_to_ebitda is not None else None))
 
 
 def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:

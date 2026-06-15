@@ -104,7 +104,18 @@ _FUND_ROWS = [("Price", "price", {}), ("Mkt cap", "market_cap", {"money": True})
               ("Rel str 6m", "rel_strength_6m", {"pct": True}),
               ("Volatility", "realized_vol", {"pct": True, "neutral": True}),
               ("Max DD", "max_drawdown", {"pct": True}), ("Target upside", "target_upside", {"pct": True}),
-              ("Insider 6m", "insider_net_6m", {"money": True})]
+              ("Insider 6m", "insider_net_6m", {"money": True}),
+              # Net-debt/EBITDA (the over_leveraged gate's measure; floored >=0 in the VM, so
+              # neutral — high leverage is bad but always-positive can't color good/bad cleanly).
+              ("Net debt/EBITDA", "net_debt_to_ebitda", {"neutral": True})]
+
+
+def _piotroski_text(mvm) -> "str | None":
+    """'won/legs' Piotroski fraction (e.g. '5/6'), or None when absent."""
+    pf = getattr(mvm, "piotroski_f", None)
+    if pf is None:
+        return None
+    return f"{pf}/{getattr(mvm, 'piotroski_f_legs', None) or 6}"
 
 
 class _Fundamentals:
@@ -141,6 +152,9 @@ class _Fundamentals:
             analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
                         f"{ld.metrics.rating_sell or 0}S")
             cells.append(self._metric(h, "Analysts", analysts, False))
+            pio = _piotroski_text(ld.metrics)   # conditional (None on lean/masked stacks)
+            if pio:
+                cells.append(self._metric(h, "Piotroski", pio, False))
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
@@ -157,6 +171,9 @@ class _Fundamentals:
             out.append(f"-- {ld.ticker} metrics --")
             out += [f"   {label}: {_fmt(getattr(ld.metrics, attr), **opt)}"
                     for label, attr, opt in _FUND_ROWS]
+            pio = _piotroski_text(ld.metrics)
+            if pio:
+                out.append(f"   Piotroski: {pio}")
         return out
 
 
