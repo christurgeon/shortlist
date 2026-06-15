@@ -27,11 +27,17 @@ class Section(Protocol):
     def render_text(self, vm: ReportVM, detail: Detail) -> list[str]: ...
 
 
+_SI_MIN_DISPLAY = 0.05   # only surface short interest once it's material (FINRA covers
+                         # most names at ~1%, which is noise); crowded_short fires at 10%.
+
+
 def _short_interest_text(mvm) -> "str | None":
-    """Compact FINRA short-interest string, or None when absent. Pairs with the
-    crowded_short flag: '22.4% / 8.1d ↑' (days-to-cover + rising arrow each optional)."""
+    """Compact FINRA short-interest string, or None when absent / immaterial. Pairs with
+    the crowded_short flag: '22.4% / 8.1d ↑' (days-to-cover + rising arrow each optional).
+    Note: unsigned, 1-decimal % (deliberately unlike _fmt's signed integer %) — short
+    interest is a magnitude, not a +/- signal, and precision matters near the gate."""
     sp = getattr(mvm, "short_pct_outstanding", None)
-    if sp is None:
+    if sp is None or sp < _SI_MIN_DISPLAY:
         return None
     parts = [f"{sp * 100:.1f}%"]
     dtc = getattr(mvm, "days_to_cover", None)

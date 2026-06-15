@@ -55,15 +55,32 @@ def test_text_none_when_no_short_pct():
     assert _short_interest_text(MetricsVM(days_to_cover=5.0)) is None   # need the % to render
 
 
+def test_immaterial_short_interest_is_hidden():
+    # FINRA covers most names at ~1% — below the 5% materiality floor it's noise.
+    assert _short_interest_text(MetricsVM(short_pct_outstanding=0.01, days_to_cover=3.0)) is None
+    assert _short_interest_text(MetricsVM(short_pct_outstanding=0.05)) == "5.0%"   # at the floor, shows
+
+
 # --- rendering (conditional) ---
 
 def test_html_shows_short_interest_only_when_present():
     crowded = MetricsVM(short_pct_outstanding=0.224, days_to_cover=8.1, short_interest_rising=True)
     body = render_html_body(_vm([_leader("GME", crowded)]))
-    assert "Short interest" in body and "22.4% / 8.1d" in body
+    assert "Short interest" in body and "22.4% / 8.1d ↑" in body   # full string incl. arrow survives escape
 
     plain = render_html_body(_vm([_leader("AAPL", MetricsVM(pe_ttm=30.0))]))
     assert "Short interest" not in plain
+    # immaterial (1%) -> hidden in the rendered body too
+    low = render_html_body(_vm([_leader("AAPL", MetricsVM(short_pct_outstanding=0.01))]))
+    assert "Short interest" not in low
+
+
+def test_end_to_end_stockmetrics_to_rendered_html():
+    # Guards the _metrics_vm field-name mapping all the way to the rendered body.
+    m = StockMetrics(ticker="BYND", short_pct_outstanding=0.274, days_to_cover=4.5,
+                     short_interest_rising=True)
+    body = render_html_body(_vm([_leader("BYND", _metrics_vm(m))]))
+    assert "27.4% / 4.5d ↑" in body
 
 
 def test_text_full_shows_short_interest_only_when_present():
