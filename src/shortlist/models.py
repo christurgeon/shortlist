@@ -149,6 +149,14 @@ class StockMetrics:
     news_flow_rising: Optional[bool] = None        # count_7d > prior 7d (None if truncated)
     news_truncated: Optional[bool] = None          # free-tier cap hit -> counts are lower bounds
     news_data_age_days: Optional[int] = None       # as_of - latest article date (staleness)
+    # Earnings execution (Finnhub earnings surprises + calendar; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only.
+    earnings_beat_rate: Optional[float] = None     # fraction of recent quarters that beat
+    earnings_beats: Optional[int] = None           # # recent quarters that beat (raw count)
+    earnings_avg_surprise_pct: Optional[float] = None  # mean surprise % over recent quarters
+    earnings_last_surprise_pct: Optional[float] = None # newest quarter's surprise %
+    earnings_quarters: Optional[int] = None        # # recent quarters with a usable surprise
+    earnings_days_to_next: Optional[int] = None    # days until the next scheduled report
 
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)

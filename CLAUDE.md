@@ -367,6 +367,18 @@ for a high-volume name (e.g. AAPL) the 30d window collapses into the last few da
 the flag is **explicitly suppressed on truncated names** (a spike is meaningful for a
 normally-quiet name, not an always-noisy mega-cap). Distinct from WSB social hype (retail
 chatter) — this is mainstream press volume. Cached 6h (`cache.py` quote bucket).
+## Earnings execution (harness + research)
+
+`FinnhubSource` also pulls **`stock/earnings`** (last ~4 quarters of actual-vs-estimate
+surprises) and **`calendar/earnings`** (next scheduled report) into the `earnings` aux
+section (`Earnings`), via the pure `_earnings` helper. The bridge derives
+`earnings_beat_rate` (fraction of recent quarters beating), `earnings_avg_surprise_pct`,
+`earnings_last_surprise_pct`, `earnings_quarters`, and `earnings_days_to_next`. Surfaced
+as a research context line (`research/earnings.py`, config `research.earnings`, reverse-DCF
+pattern: prompt only, never the haystack) — beat consistency is a quality/PEAD-drift signal,
+an imminent report a near-term catalyst. **Not scored in v1** — flat data + research line
+only. `surprisePercent` is already in percent (don't ×100). Both endpoints are on the free
+tier; cached 1d (history) / 6h (calendar).
 
 ## Yahoo screener WAF gotcha (scout discovery)
 

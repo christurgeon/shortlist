@@ -298,6 +298,10 @@ research:
     enabled: true              # flip false for a byte-identical no-op (line omitted)
     min_confidence: 0.85       # render floor: omit the line below this client-match confidence
 
+  earnings:                    # earnings-surprise history + next-report line (research-only;
+                               # NOT a scored signal — see docs/.../2026-06-15-earnings-surprise-*).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+
 # Government contracts (harness GovContractsSource, USAspending). Keyless aux source;
 # flat data + a research context line only (no sub-score, no flag in v1) — see
 # docs/superpowers/specs/2026-06-15-gov-contracts-source-design.md.
@@ -306,10 +310,7 @@ gov_contracts:
   match_min_confidence: 0.80   # validated against the labeled set (tests/test_govcontract_match.py)
   max_pages: 5                 # page cap on spending_by_transaction (sorted by amount desc)
   cache_dir: .cache/usaspending
-  lobbying:                    # federal lobbying-spend context line (research-only;
-                               # NOT a scored signal — see docs/.../2026-06-15-lobbying-*).
-    enabled: true              # flip false for a byte-identical no-op (line omitted)
-    min_confidence: 0.85       # render floor: omit the line below this client-match confidence
+  timeout: 20
 
 # Federal lobbying (harness LobbyingSource, Senate LDA). Keyless aux source; flat data
 # + a research context line only (no sub-score, no flag in v1) — see

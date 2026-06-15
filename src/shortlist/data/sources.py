@@ -20,6 +20,7 @@ from ..providers._fmp_insider import is_buy, tx_value
 from ..stats import avg_roic, median_pe
 from .models import (
     Analyst,
+    Earnings,
     Events,
     FilingEvent,
     Fundamentals,
@@ -270,6 +271,10 @@ class FinnhubSource(_KeyedHttpSource):
                 "symbol": ticker,
                 "from": (today - timedelta(days=_NEWS_LOOKBACK_DAYS)).isoformat(),
                 "to": today.isoformat()}),
+            "earnings": ("stock/earnings", {"symbol": ticker}),
+            "earnings_calendar": ("calendar/earnings", {
+                "symbol": ticker,
+                "from": today.isoformat(), "to": (today + timedelta(days=90)).isoformat()}),
         }
         await _fetch_sections(res, self._get, calls)
         res.partial = _normalize_finnhub(ticker, res.raw)
@@ -314,6 +319,28 @@ def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
         count_prior=None if prior_unreliable else prior,
         count_window=window, latest_dt=latest.isoformat() if latest else None,
         truncated=capped)
+def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) -> Earnings:
+    """Build an Earnings section from Finnhub `stock/earnings` rows (newest-first)
+    and a `calendar/earnings` payload. Pure. surprisePercent is already in percent."""
+    today = ref or date.today()
+    # Sort newest-first by period so correctness doesn't depend on Finnhub's ordering.
+    ordered = sorted((rows or []), key=lambda r: r.get("period") or "", reverse=True)
+    surprises = [r.get("surprisePercent") for r in ordered
+                 if isinstance(r.get("surprisePercent"), (int, float))]
+    beats = sum(1 for s in surprises if s > 0) if surprises else None
+    # Next report = earliest calendar entry today-or-later with no actual yet (>= so a
+    # same-day after-close print isn't dropped on the morning it matters most).
+    next_date = None
+    cal = (calendar or {}).get("earningsCalendar") or []
+    future = sorted(d["date"] for d in cal
+                    if d.get("date") and d["date"] >= today.isoformat()
+                    and d.get("epsActual") is None)
+    if future:
+        next_date = future[0]
+    return Earnings(
+        as_of=today.isoformat(), recent_surprise_pcts=surprises,
+        quarters=len(surprises) or None, beats=beats,
+        last_surprise_pct=surprises[0] if surprises else None, next_date=next_date)
 
 
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
@@ -354,6 +381,9 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         # Re-bucketed against date.today() every call; correctness on a cache HIT
         # relies on the from/to dates being in the cache key (so it's day-partitioned).
         snap.news = _news_flow(news)
+    er = raw.get("earnings")
+    if isinstance(er, list):            # present (even empty) -> a real Earnings fact
+        snap.earnings = _earnings(er, raw.get("earnings_calendar"))
     return snap
 
 
