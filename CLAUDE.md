@@ -312,6 +312,29 @@ is the free, documented substitute (mention volume + 24h delta, not finance-tune
 bull/bear). Tune via `config.yaml: flags.social_hype` (scoring) and
 `scout.wsb_hype` (discovery thresholds + index-ETF deny-list).
 
+## Government contracts (harness + research)
+
+`GovContractsSource` (keyless) queries USAspending's **`spending_by_transaction`**
+endpoint for trailing-24m federal **procurement** obligations (award types A/B/C/D),
+resolving ticker→recipient name via SEC `company_tickers.json` (the `xbrl.py`
+name-index) and confidence-filtering recipients (`data/govcontract_match.py`;
+**abstains** below `gov_contracts.match_min_confidence` rather than mis-attribute).
+It populates the `gov_contracts` aux section → bridge `gov_contract_*` metrics
+(TTM / prior-TTM obligations, YoY, materiality-to-revenue), surfaced in `--json`.
+**No scored leg or flag in v1** — the signal is lumpy and fuzzily attributed, so it
+rides only as a caveated **research context line** (`research/gov_contracts.py`,
+config `research.gov_contracts`, the reverse-DCF pattern: in the prompt, **never** the
+grounding haystack). **Use `spending_by_transaction`, NOT `spending_by_award`** —
+the latter's `time_period` is an award-overlap filter that returns un-window-scoped
+award totals (would double-count decade-old awards; live-verified). Flag + scored leg
+are deferred to Phase 2, gated on matcher-recall validation and accumulated daily
+snapshots (USAspending isn't in SEC companyfacts, so only the snapshot-replay
+backtest path can measure its IC). Tune via `config.yaml: gov_contracts` +
+`research.gov_contracts`. Known limitation: subsidiary awards booked under other
+names are under-counted (a small alias seed map in `govcontract_match.py` covers
+marquee defense parents). Self-caches under `.cache/usaspending` (Yahoo/FINRA
+precedent — `cache.py` is GET-param-keyed and can't key a POST body).
+
 ## Yahoo screener WAF gotcha (scout discovery)
 
 The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**

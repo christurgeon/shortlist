@@ -142,6 +142,18 @@ run. The bridge derives `short_pct_outstanding` (vs. derived shares outstanding,
 conservative vs. float), `days_to_cover`, `short_interest_rising`, and
 `short_data_age_days` onto `StockMetrics`.
 
+`GovContractsSource` (keyless) fills the `gov_contracts` aux section — trailing
+federal procurement-contract obligations from USAspending's
+`spending_by_transaction` endpoint. It does **one bulk SEC `company_tickers.json`
+name-map load per run** (month-cached) plus **one `spending_by_transaction` query
+per ticker**, resolving the recipient by name and confidence-filtering matches
+(`data/govcontract_match.py`; abstains rather than mis-attribute). Self-caches under
+`.cache/usaspending`. The bridge derives `gov_contract_ttm_usd`,
+`gov_contract_prior_ttm_usd`, `gov_contract_yoy_growth`, `gov_contract_to_revenue`,
+`gov_contract_award_count`, and `gov_contract_data_age_days` onto `StockMetrics`.
+**Not scored in v1** — flat data + a research context line only (no sub-score, no
+flag); see `CLAUDE.md` → "Government contracts" and the design spec.
+
 **Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
 `ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card
 but **never change `composite` or `passed`**. The `crowded_short` flag fires only

@@ -118,6 +118,19 @@ class StockMetrics:
     social_rank: Optional[int] = None              # ApeWisdom volume rank (1 = most-mentioned)
     social_data_age_days: Optional[int] = None     # as_of - fetch date (staleness guard input)
 
+    # Government contracts (USAspending via gov_contracts source; derived in bridge.py).
+    # NOT scored in v1 — flat data + a research context line only (no sub-score, no flag).
+    gov_contract_ttm_usd: Optional[float] = None        # net USD obligated, trailing 12m
+    gov_contract_prior_ttm_usd: Optional[float] = None  # net USD obligated, 12-24m
+    gov_contract_yoy_growth: Optional[float] = None     # (ttm - prior)/prior
+    gov_contract_award_count: Optional[int] = None      # captured txn count, 12m
+    gov_contract_to_revenue: Optional[float] = None     # ttm_usd / revenue (materiality)
+    gov_contract_match_confidence: Optional[float] = None  # primary recipient match 0-1
+    gov_contract_recipient_count: Optional[int] = None  # distinct matched recipients in the sum
+    gov_contract_truncated: Optional[bool] = None       # paging hit cap -> sum is partial
+    gov_contract_total_txns: Optional[int] = None       # pre-match action count (search breadth)
+    gov_contract_data_age_days: Optional[int] = None    # days since latest captured Action Date
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 
