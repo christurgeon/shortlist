@@ -50,6 +50,26 @@ def _write_facts_cache(cp: Path, cache_dir: str, payload: dict) -> None:
         pass  # cache write failure is non-fatal
 
 
+def read_companyfacts_cache(cik: Optional[str], *, cache_dir: str,
+                            month: str) -> Optional[dict]:
+    """Disk-only read of a month-cached companyfacts payload (no network) — the
+    lazy counterpart to fetch_companyfacts, for a memory-bounded backtest that
+    loads one ticker's facts at a time. Returns None for the no-us-gaap marker,
+    a missing/corrupt file, or a None cik."""
+    if not cik:
+        return None
+    cp = _facts_cache_path(cache_dir, cik, month)
+    try:
+        if cp.exists():
+            cached = json.loads(cp.read_text())
+            if isinstance(cached, dict) and cached.get("_shortlist_no_us_gaap"):
+                return None
+            return cached
+    except (ValueError, OSError):
+        pass  # corrupt cache -> treat as miss
+    return None
+
+
 async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
                              month: str) -> Optional[dict]:
     """companyfacts JSON for a zero-padded CIK, month-cached on disk. Returns

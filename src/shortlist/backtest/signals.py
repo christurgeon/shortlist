@@ -4,6 +4,7 @@ across heterogeneous sources and a future XBRL source slots in unchanged.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional, Protocol
@@ -118,14 +119,40 @@ class XbrlSignalSource:
              "net_debt_to_ebitda", "ebit_ev_yield", "value_fcf_yield",
              "value_pe_vs_history", "value_plus_evebit")
 
-    def __init__(self, facts: dict[str, dict], histories: dict[str, PriceHistory],
-                 thresholds: dict):
-        self.facts = {k.upper(): v for k, v in facts.items()}
-        self.histories = {k.upper(): v for k, v in histories.items()}
-        self.thresholds = thresholds
+    def __init__(self, facts: Optional[dict[str, dict]] = None,
+                 histories: Optional[dict[str, PriceHistory]] = None,
+                 thresholds: Optional[dict] = None, *,
+                 fact_loader=None, lru_size: int = 4):
+        """Two construction modes:
+        - EAGER (`facts` dict): all companyfacts held in memory (small universes / tests).
+        - LAZY (`fact_loader`, a `TICKER -> Optional[dict]` callable): facts are loaded one
+          at a time from the disk cache and held in a small LRU, so peak RAM is bounded —
+          the full-universe path on memory-constrained boxes. Pair with the engine's
+          ticker-major iteration so each ticker loads once. Identical Observations either way."""
+        self.facts = {k.upper(): v for k, v in facts.items()} if facts is not None else None
+        self.histories = {k.upper(): v for k, v in (histories or {}).items()}
+        self.thresholds = thresholds or {}
+        self._loader = fact_loader
+        self._lru: "OrderedDict[str, Optional[dict]]" = OrderedDict()
+        self._lru_size = max(1, lru_size)
+
+    def _get_facts(self, tk: str) -> Optional[dict]:
+        """companyfacts for an UPPER ticker — from the eager dict, or lazily from the
+        loader with an LRU (negatives cached too, so a missing ticker isn't reloaded)."""
+        if self.facts is not None:
+            return self.facts.get(tk)
+        if tk in self._lru:
+            self._lru.move_to_end(tk)
+            return self._lru[tk]
+        cf = self._loader(tk) if self._loader else None
+        self._lru[tk] = cf
+        self._lru.move_to_end(tk)
+        while len(self._lru) > self._lru_size:
+            self._lru.popitem(last=False)
+        return cf
 
     def observe(self, ticker: str, as_of: date) -> Optional[Observation]:
-        cf = self.facts.get(ticker.upper())
+        cf = self._get_facts(ticker.upper())
         if cf is None:
             return None
         hist = self.histories.get(ticker.upper())
