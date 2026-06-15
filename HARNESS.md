@@ -236,6 +236,15 @@ under `.cache/sec_xbrl`).
 **Requirements:** set `SEC_IDENTITY` to a contact email in `.env` (SEC fair-access
 `User-Agent`); no API key is needed otherwise.
 
+**Memory-bounded:** companyfacts are loaded **lazily, one ticker at a time** from the
+disk cache (`XbrlSignalSource`'s `fact_loader` + a small LRU), and the engine iterates
+**ticker-major** so each ticker's facts load once. Peak RAM is therefore O(LRU × one
+companyfacts) instead of O(universe × companyfacts) — a full-universe XBRL backtest runs
+in ~155 MB on the 1.9 GB VPS (a 12-name run measured). The CLI's `_load_companyfacts`
+just *warms* the disk cache (one fetch per ticker, not retained). Results are identical
+to the old eager path; `quantile_spread` tie-breaks on the forward return so the bucket
+spread is independent of row emission order.
+
 **IFRS 20-F foreign issuers** (facts filed under `ifrs-full` rather than `us-gaap`)
 are **skipped** — their concept names don't map to the extractor's alias tables, so
 they return `None` cleanly rather than producing garbled scores.
