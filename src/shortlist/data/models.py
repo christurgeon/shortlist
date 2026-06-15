@@ -201,6 +201,17 @@ class Lobbying:
     registrant_count: Optional[int] = None      # distinct registrants in the TTM sum
     truncated: bool = False                     # paging hit the cap -> sum is partial
     total_filings: Optional[int] = None         # pre-match count across queried years
+@dataclass
+class NewsFlow:
+    """Finnhub company-news volume for one symbol, window-scoped. Raw counts only —
+    rising/staleness are DERIVED in the bridge. Auxiliary (NOT a KEY_OBJECT):
+    sparse attention signal, never moves coverage."""
+    as_of: Optional[str] = None         # query date "YYYY-MM-DD"
+    count_recent: Optional[int] = None     # articles in the last 7d (lower bound if truncated)
+    count_prior: Optional[int] = None      # articles in days 7-14 (None when truncated -> unreliable)
+    count_window: Optional[int] = None     # articles in the 30d lookback (lower bound if truncated)
+    latest_dt: Optional[str] = None        # newest article date (staleness)
+    truncated: bool = False                # free-tier ~250-article cap hit -> prior/rising unreliable
 
 
 @dataclass
@@ -251,6 +262,7 @@ class TickerSnapshot:
     social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     gov_contracts: Optional["GovContracts"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
     lobbying: Optional["Lobbying"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    news: Optional["NewsFlow"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
@@ -326,7 +338,7 @@ _DEFAULTS = {
 # assessment-ready fundamentals). from_dict round-trips them via this map.
 _AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
                  "social": SocialSentiment, "gov_contracts": GovContracts,
-                 "lobbying": Lobbying}
+                 "lobbying": Lobbying, "news": NewsFlow}
 
 
 def _signal_fields(obj_or_cls: Any) -> list:

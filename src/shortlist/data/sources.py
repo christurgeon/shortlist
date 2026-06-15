@@ -25,6 +25,7 @@ from .models import (
     Fundamentals,
     Insider,
     InsiderTxn,
+    NewsFlow,
     Price,
     Profile,
     ShortInterest,
@@ -33,6 +34,14 @@ from .models import (
     Statements,
     TickerSnapshot,
 )
+
+# News-flow windows (fixed priors; only the flag thresholds in config are tunable).
+_NEWS_LOOKBACK_DAYS = 30   # company-news fetch window
+_NEWS_RECENT_DAYS = 7      # recent vs prior bucket size
+# Finnhub's free company-news returns only the ~250 most-recent articles. For a
+# high-volume name that cap can fall entirely inside the recent window, so the
+# prior bucket is a false 0 -> we DETECT it and mark the window truncated.
+_NEWS_TRUNCATE_AT = 240    # near the ~250 cap: a list this long is almost certainly capped
 
 
 class Source(ABC):
@@ -257,10 +266,54 @@ class FinnhubSource(_KeyedHttpSource):
             "insider_sentiment": ("stock/insider-sentiment", {
                 "symbol": ticker,
                 "from": (today - timedelta(days=183)).isoformat(), "to": today.isoformat()}),
+            "news": ("company-news", {
+                "symbol": ticker,
+                "from": (today - timedelta(days=_NEWS_LOOKBACK_DAYS)).isoformat(),
+                "to": today.isoformat()}),
         }
         await _fetch_sections(res, self._get, calls)
         res.partial = _normalize_finnhub(ticker, res.raw)
         return res
+
+
+def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
+    """Bucket Finnhub company-news articles into recent/prior/window counts by
+    article `datetime` (unix seconds) vs a reference date. Pure."""
+    today = ref or date.today()
+    recent_cut = today - timedelta(days=_NEWS_RECENT_DAYS)
+    prior_cut = today - timedelta(days=2 * _NEWS_RECENT_DAYS)
+    recent = prior = window = 0
+    latest: Optional[date] = None
+    oldest: Optional[date] = None
+    for a in articles:
+        ts = a.get("datetime")
+        if not ts:
+            continue
+        if ts > 1e12:        # tolerate a millisecond feed (Finnhub sends seconds)
+            ts = ts / 1000
+        try:
+            d = datetime.fromtimestamp(ts, tz=timezone.utc).date()
+        except (TypeError, ValueError, OSError):
+            continue
+        window += 1
+        if latest is None or d > latest:
+            latest = d
+        if oldest is None or d < oldest:
+            oldest = d
+        if d >= recent_cut:
+            recent += 1
+        elif d >= prior_cut:
+            prior += 1
+    # `capped`: the list hit the free-tier ~250 cap (always-noisy name). Separately,
+    # `prior_unreliable`: the cap also ate the prior window (no history past 14d), so
+    # `prior`'s 0 is a false 0 -> blank it. truncated == capped (honest: any capped list).
+    capped = window >= _NEWS_TRUNCATE_AT
+    prior_unreliable = capped and oldest is not None and oldest > prior_cut
+    return NewsFlow(
+        as_of=today.isoformat(), count_recent=recent,
+        count_prior=None if prior_unreliable else prior,
+        count_window=window, latest_dt=latest.isoformat() if latest else None,
+        truncated=capped)
 
 
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
@@ -296,6 +349,11 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     q = raw.get("quote") or {}
     if q.get("c"):
         snap.price = Price(price=q["c"])
+    news = raw.get("news")
+    if isinstance(news, list):          # present (even empty) -> a real 0-count fact
+        # Re-bucketed against date.today() every call; correctness on a cache HIT
+        # relies on the from/to dates being in the cache key (so it's day-partitioned).
+        snap.news = _news_flow(news)
     return snap
 
 

@@ -352,6 +352,21 @@ is presence + trend (YoY). Keyless LDA allows ~15 req/min, so the source does
 Retry-After-aware backoff (`lobbying.max_retries`) and self-caches per `(ticker, day)`
 under `.cache/lda`. Known limitation: registrant/parent rollup isn't resolved. Tune via
 `config.yaml: lobbying` + `research.lobbying`.
+## News flow (harness)
+
+`FinnhubSource` also pulls **`company-news`** (free tier, exact ticker join) into the
+`news` aux section (`NewsFlow`: 7d / prior-7d / 30d article counts + latest date),
+bucketed by the pure `_news_flow` helper. The bridge derives `news_count_7d` /
+`news_count_prior_7d` / `news_count_30d` / `news_flow_rising` / `news_truncated` /
+`news_data_age_days`. Surfaced as the soft advisory **`news_spike`** flag (elevated +
+rising + fresh; `config.yaml` → `flags.news_spike`), mirroring `social_hype` —
+**advisory only, never affects `passed`/`composite`/`scored`**, no-op when the config
+block is absent. **Finnhub's free tier caps company-news at ~250 most-recent articles**;
+for a high-volume name (e.g. AAPL) the 30d window collapses into the last few days, so
+`_news_flow` **detects the cap** (`truncated`), blanks the unreliable prior count, and
+the flag is **explicitly suppressed on truncated names** (a spike is meaningful for a
+normally-quiet name, not an always-noisy mega-cap). Distinct from WSB social hype (retail
+chatter) — this is mainstream press volume. Cached 6h (`cache.py` quote bucket).
 
 ## Yahoo screener WAF gotcha (scout discovery)
 
