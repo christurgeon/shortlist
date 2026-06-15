@@ -241,6 +241,21 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
+    # Government contracts (USAspending). Runs AFTER the statements block above, so
+    # m.revenue is populated for the materiality ratio. Raw facts -> derived ratios.
+    gc = snap.gov_contracts
+    if gc:
+        m.gov_contract_ttm_usd = gc.ttm_obligated
+        m.gov_contract_prior_ttm_usd = gc.prior_ttm_obligated
+        m.gov_contract_award_count = gc.award_count_ttm
+        m.gov_contract_match_confidence = gc.match_confidence
+        if gc.ttm_obligated is not None and gc.prior_ttm_obligated:  # truthy excludes 0
+            m.gov_contract_yoy_growth = (
+                (gc.ttm_obligated - gc.prior_ttm_obligated) / gc.prior_ttm_obligated)
+        if gc.ttm_obligated is not None and m.revenue:  # truthy excludes 0/None
+            m.gov_contract_to_revenue = gc.ttm_obligated / m.revenue
+        m.gov_contract_data_age_days = _age_days(snap.as_of, gc.as_of)
+
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events
