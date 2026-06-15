@@ -21,6 +21,29 @@ from .signals import MomentumSignalSource, XbrlSignalSource
 from .universe import load_universe
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
+# Collinearity diagnostic pairs (candidate axis, already-scored axis). Each is checked
+# for cross-sectional rank correlation; >~_COLLINEARITY_REDUNDANT means the candidate
+# duplicates the existing axis (the EV/EBIT-vs-fcf_yield precedent: don't-ship a
+# correlated leg). Add a pair here when proposing a new standalone axis for scoring.
+_COLLINEARITY_PAIRS = [
+    ("ebit_ev_yield", "value_fcf_yield"),   # EV/EBIT leg vs absolute fcf yield (spec §11)
+    ("net_debt_to_ebitda", "growth"),       # leverage vs scored growth (measured corr ~0.54)
+    ("net_debt_to_ebitda", "value"),        # leverage vs scored value
+    ("net_debt_to_ebitda", "quality"),      # leverage vs scored quality
+]
+_COLLINEARITY_REDUNDANT = 0.5   # |corr| at/above this => the candidate is redundant
+
+
+def _collinearity(diag_obs) -> dict[str, float]:
+    """corr(a, b) for each diagnostic pair over co-present names, keyed 'a~b'. Pairs
+    with no co-present data (cross_signal_xs_corr -> None) are skipped."""
+    out: dict[str, float] = {}
+    for a, b in _COLLINEARITY_PAIRS:
+        c = cross_signal_xs_corr(diag_obs, a, b)
+        if c is not None:
+            out[f"{a}~{b}"] = c
+    return out
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
@@ -276,22 +299,27 @@ def main(argv=None) -> int:
                           n_buckets=args.buckets, return_mode=args.return_mode,
                           price_asof=date.fromisoformat(today))
 
-    # Collinearity diagnostic (spec §11): is the new EV/EBIT leg redundant with the
-    # existing absolute fcf_yield leg? Only meaningful for the XBRL fundamental
-    # source. Printed to stderr so --json stdout stays clean.
+    # Collinearity diagnostics: does a candidate standalone axis duplicate an
+    # already-scored one? A high cross-sectional rank corr (>~0.5) means the candidate
+    # adds a CORRELATED bet, not new signal, and would dilute the composite rather than
+    # improve it (the EV/EBIT-vs-fcf_yield precedent: corr 0.72 -> don't-ship). Only
+    # meaningful for the XBRL fundamental source. Printed to stderr so --json stays clean.
+    collinearity: dict[str, float] = {}
     if args.source == "xbrl":
         diag_grid = observation_grid(start, end, args.step_months or horizons[0])
         diag_obs = collect_observations(src, sorted(hists.keys()), diag_grid)
-        corr = cross_signal_xs_corr(diag_obs, "ebit_ev_yield", "value_fcf_yield")
-        if corr is not None:
-            print(f"Leg collinearity  corr(ebit_ev_yield, fcf_yield) = {corr:+.3f} "
-                  f"(>~0.5 => the EV/EBIT leg largely duplicates fcf_yield)",
-                  file=sys.stderr)
+        collinearity = _collinearity(diag_obs)
+        for pair, c in collinearity.items():
+            warn = "  <-- >~0.5: largely duplicates, would dilute not add" if abs(c) >= _COLLINEARITY_REDUNDANT else ""
+            print(f"Leg collinearity  corr({pair}) = {c:+.3f}{warn}", file=sys.stderr)
 
     if args.csv:
         _write_csv(report, args.csv)
     if args.json:
-        print(json.dumps(report_to_dict(report), indent=2))
+        d = report_to_dict(report)
+        if collinearity:
+            d["collinearity"] = collinearity
+        print(json.dumps(d, indent=2))
     else:
         print(render_table(report))
     return 0
