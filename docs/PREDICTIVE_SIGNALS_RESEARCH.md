@@ -134,6 +134,17 @@ crashes). Likely a replacement/augmentation of `rel_strength_6m`, not a 7th axis
 
 ## 3. Investment & earnings-quality fundamentals (asset growth + accruals)
 
+> **Status: IMPLEMENTED (task-002).** Both ride as standalone measurement-only
+> backtest axes (`asset_growth`, `accruals` in `XbrlSignalSource._AXES`, with the
+> `accruals~piotroski` / `asset_growth~growth` collinearity pairs) AND as opt-in,
+> **OFF-by-default** inverted legs in `quality_score` (the `quality.earnings_quality`
+> config block, byte-identical when absent). Extraction is on both paths
+> (`providers/_edgar_facts.py` standard_concept "Assets"; `providers/_xbrl_facts.py`
+> raw us-gaap `Assets`); shared math is `stats.asset_growth`/`stats.accruals` (a
+> consecutive ~1yr fiscal-end guard drops gap-spanning ratios). Masked for
+> financials/REITs on the production path; the backtest axis stays unmasked. See
+> `CLAUDE.md` → "quality.earnings_quality".
+
 **The idea.** Two of the most-replicated cross-sectional anomalies, both **absent
 from shortlist** and both pure SEC-XBRL (the path the backtest already validates
 point-in-time). They answer "is this 'cheap' name cheap for a *good* reason?" —

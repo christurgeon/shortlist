@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+from datetime import date
 from statistics import mean, median, pstdev
 from typing import Optional
+
+# Consecutive-fiscal-end spacing window for the asset-growth / accruals signals.
+# Admits 52/53-week years; excludes gap-spanning ratios (a missing year would put
+# the prior end ~2yr back) and transition/stub-period annuals. Mirrors the
+# _xbrl_facts annual_series period guard, applied here to INSTANT balance-sheet
+# dates (which annual_series does not length-check).
+_FY_MIN_DAYS = 350
+_FY_MAX_DAYS = 380
 
 
 def median_pe(pes: list[Optional[float]], min_points: int = 2) -> Optional[float]:
@@ -175,6 +184,61 @@ def net_debt_from(total_debt: Optional[float],
     if total_debt is None and cash is None:
         return None
     return (total_debt or 0.0) - (cash or 0.0)
+
+
+def _consecutive_ends(assets_by_end: dict[str, float]) -> Optional[tuple[str, str]]:
+    """The two latest fiscal ends in `assets_by_end` (ISO-date keys) spaced ~1yr
+    apart, or None. Guards against gap-spanning ratios when an intermediate year
+    is missing (the prior end would then sit ~2yr back, outside the window) and
+    against stub/transition periods. Ends with a None value are ignored."""
+    ends = sorted((e for e, v in assets_by_end.items() if v is not None), reverse=True)
+    if len(ends) < 2:
+        return None
+    e_t, e_p = ends[0], ends[1]
+    try:
+        span = (date.fromisoformat(e_t) - date.fromisoformat(e_p)).days
+    except ValueError:
+        return None
+    if not (_FY_MIN_DAYS <= span <= _FY_MAX_DAYS):
+        return None
+    return e_t, e_p
+
+
+def asset_growth(assets_by_end: dict[str, float]) -> Optional[float]:
+    """Asset-growth anomaly (Cooper-Gulen-Schill 2008): Assets_t/Assets_{t-1} - 1
+    over the two latest CONSECUTIVE (~1yr-spaced) fiscal ends. A NEGATIVE predictor
+    (high growth -> low future returns) — the scorer inverts the band, not this.
+    None when there is no consecutive pair or the prior denominator is 0/None."""
+    pair = _consecutive_ends(assets_by_end)
+    if pair is None:
+        return None
+    e_t, e_p = pair
+    a_t, a_p = assets_by_end[e_t], assets_by_end[e_p]
+    if not a_p:                      # zero (or falsy) denominator -> abstain
+        return None
+    return a_t / a_p - 1.0
+
+
+def accruals(net_income_by_end: dict[str, float], cfo_by_end: dict[str, float],
+             assets_by_end: dict[str, float]) -> Optional[float]:
+    """Accruals anomaly (Sloan 1996, cash-flow form): (NetIncome - CFO) / average
+    total assets, where average assets = (Assets_t + Assets_{t-1})/2 over the two
+    latest CONSECUTIVE fiscal ends. CFO is used AS-REPORTED (no sign flip). NI and
+    CFO are taken at the latest end `t`. A NEGATIVE predictor (high accruals -> low
+    future returns) — the scorer inverts the band. None when any input is missing
+    at the aligned ends or average assets is 0."""
+    pair = _consecutive_ends(assets_by_end)
+    if pair is None:
+        return None
+    e_t, e_p = pair
+    ni, cfo = net_income_by_end.get(e_t), cfo_by_end.get(e_t)
+    a_t, a_p = assets_by_end.get(e_t), assets_by_end.get(e_p)
+    if ni is None or cfo is None or a_t is None or a_p is None:
+        return None
+    avg_assets = (a_t + a_p) / 2.0
+    if not avg_assets:
+        return None
+    return (ni - cfo) / avg_assets
 
 
 def compute_ebit_ev_yield(ebit: Optional[float], market_cap: Optional[float],

@@ -30,6 +30,8 @@ _COLLINEARITY_PAIRS = [
     ("net_debt_to_ebitda", "growth"),       # leverage vs scored growth (measured corr ~0.54)
     ("net_debt_to_ebitda", "value"),        # leverage vs scored value
     ("net_debt_to_ebitda", "quality"),      # leverage vs scored quality
+    ("accruals", "piotroski"),              # accruals vs Piotroski CFO>NI overlap (§3)
+    ("asset_growth", "growth"),             # asset growth vs scored growth (§3)
 ]
 _COLLINEARITY_REDUNDANT = 0.5   # |corr| at/above this => the candidate is redundant
 

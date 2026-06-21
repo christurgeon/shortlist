@@ -155,6 +155,12 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.eps_cagr_ps = cagr(st.diluted_eps)             # genuine per-share (dilution-aware)
         m.share_count_cagr = cagr(st.diluted_shares)     # + = net issuance, - = buybacks
         m.revenue_growth_persistence = growth_persistence(st.revenue)
+        # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3) are pre-computed
+        # at extraction (the source aligns NI/CFO/Assets by their own statement dates);
+        # copy them through. None where the source didn't supply them (e.g. FMP-won
+        # statements) -> the opt-in quality legs redistribute.
+        m.asset_growth = st.asset_growth
+        m.accruals = st.accruals
         # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Statements lists
         # are newest-first and index-parallel by fiscal year; free-source derivable so
         # it survives FMP-402 gating (serves broad ticker coverage).

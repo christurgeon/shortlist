@@ -277,12 +277,17 @@ they return `None` cleanly rather than producing garbled scores.
 XBRL and is absent from this source.
 
 **Standalone (non-production) axes.** Beyond the four production sub-scores, the
-source also emits three diagnostic axes so their rank IC is measurable before they
+source also emits diagnostic axes so their rank IC is measurable before they
 graduate to the live composite: `net_debt_to_ebitda` (the leverage input behind the
-`over_leveraged` gate), `share_count` (dilution), and `piotroski` (fundamental
-quality). Their scorers (`scoring.py:share_count_score`/`piotroski_score`) are
-backtest-only — not production sub-scores. All three are **unfitted priors**; this
-is how we validate them point-in-time. See `CLAUDE.md` → dilution / Piotroski / gate
+`over_leveraged` gate), `share_count` (dilution), `piotroski` (fundamental quality),
+and the investment & earnings-quality pair `asset_growth` (Cooper-Gulen-Schill 2008)
+and `accruals` (Sloan 1996) — both **negative** predictors the score helpers invert,
+paired with `accruals~piotroski` (Piotroski's CFO>NI overlap) and `asset_growth~growth`
+collinearity diagnostics. Their scorers (`scoring.py:share_count_score`/`piotroski_score`/
+`asset_growth_score`/`accruals_score`) are backtest-only — not production sub-scores.
+All are **unfitted priors**; this is how we validate them point-in-time. The
+`asset_growth`/`accruals` pair also has an opt-in `quality.earnings_quality` production
+leg (OFF by default). See `CLAUDE.md` → dilution / Piotroski / earnings-quality / gate
 notes.
 
 ```bash

@@ -17,6 +17,8 @@ from typing import Optional
 
 import pandas as pd
 
+from ..stats import accruals, asset_growth
+
 _FY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s*\(FY\)$")
 _INSTANT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})$")
 
@@ -36,6 +38,12 @@ class EdgarFinancials:
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     total_debt: list[float] = field(default_factory=list)
     cash_and_equivalents: list[float] = field(default_factory=list)
+    total_assets: list[float] = field(default_factory=list)   # instant total assets, newest-first
+    # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3), computed here
+    # because they need each series keyed by its OWN statement dates (NI on income,
+    # CFO on cash-flow, Assets on balance-sheet instant) — list positions can differ.
+    asset_growth: Optional[float] = None
+    accruals: Optional[float] = None
 
 
 def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -140,6 +148,21 @@ def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
     return fallback
 
 
+def _end_map(row: Optional[pd.Series],
+             cols: list[tuple[str, str]]) -> dict[str, float]:
+    """{iso_end: float} for the columns this row populates, tolerant of gaps
+    (unlike _series, which is all-or-nothing). Used to align NI/CFO/Assets by their
+    OWN statement dates for the asset-growth / accruals scalars."""
+    if row is None:
+        return {}
+    out: dict[str, float] = {}
+    for iso, col in cols:
+        v = row.get(col)
+        if v is not None and not pd.isna(v):
+            out[iso] = float(v)
+    return out
+
+
 def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[float]:
     if row is None:
         return []
@@ -218,4 +241,19 @@ def extract_financials(
     # concept. Verified on live AAPL (~$30B, not the ~$160B incl. securities).
     fin.cash_and_equivalents = _series(
         _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
+
+    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Total
+    # assets ("Assets" is edgartools' standard_concept for us-gaap:Assets, the
+    # balance-sheet total — verified against the gaap standardization map). asset_growth
+    # and accruals align NI/CFO/Assets by their OWN statement dates (the three spines can
+    # differ in length), then apply the consecutive-fiscal-end guard + Sloan average-
+    # assets in shared stats helpers. CFO is the as-reported operating cash flow (no sign
+    # flip — distinct from the capex-style negation align_fcf applies).
+    assets_by_end = _end_map(_row_by_standard_concept(balance_df, "Assets"), bal_inst)
+    ni_by_end = _end_map(_row_by_standard_concept(income_df, "NetIncomeLoss"), inc_fy)
+    cfo_by_end = _end_map(
+        _row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), cf_fy)
+    fin.total_assets = [assets_by_end[e] for e in sorted(assets_by_end, reverse=True)]
+    fin.asset_growth = asset_growth(assets_by_end)
+    fin.accruals = accruals(ni_by_end, cfo_by_end, assets_by_end)
     return fin

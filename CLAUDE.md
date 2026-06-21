@@ -52,7 +52,9 @@ validation, and history, not new scoring:
   (`cli.py:_COLLINEARITY_PAIRS`, emitted to stderr + the `--json` `collinearity` block:
   a candidate axis with corr ≳ 0.5 vs an already-scored axis duplicates it — `ebit_ev_yield`
   ~ `fcf_yield` ≈ 0.73 and `net_debt_to_ebitda` ~ `growth` ≈ 0.54 both trip it, so neither
-  is wired). `ebit_ev_yield`
+  is wired). It also emits standalone **`asset_growth`** and **`accruals`** axes (PREDICTIVE_SIGNALS
+  §3 — Cooper-Gulen-Schill 2008 / Sloan 1996, both negative predictors) with the
+  `accruals~piotroski` and `asset_growth~growth` collinearity pairs. `ebit_ev_yield`
   is derived on both paths (`bridge.py` + XBRL panel) and carried on `StockMetrics`, but
   there is **no production sub-score reading it** — the value leg is deferred pending the
   backtest (`scoring.py:ebit_ev_yield_score` is backtest-only). The snapshot-replay path
@@ -214,6 +216,28 @@ JSON/CSV. The band/threshold/leg are **unfitted priors** — `backtest/signals.p
 measurable (`scoring.py:share_count_score` is backtest-only, not a production sub-score). Not
 masked for financials/REITs (share count is universally defined); reads **as-reported** counts
 with no split-flag guard yet (a reverse split can inject a spurious jump). See ASSESSMENT_GAPS §2.5.
+
+The **`quality.earnings_quality`** block (`config.yaml`) is the **scoring** half of the
+investment & earnings-quality feature (PREDICTIVE_SIGNALS §3) — two of the most-replicated
+cross-sectional anomalies, both pure SEC-XBRL **negative** predictors. It ships **commented
+out** (OFF): when enabled, `quality_score` gains two **inverted** legs — `asset_growth`
+(`Assets_t/Assets_{t-1}−1` over consecutive fiscal ends; Cooper-Gulen-Schill 2008) and
+`accruals` (`(NetIncome−CFO)/avg-assets`, Sloan 1996 convention — average assets `(A_t+A_{t-1})/2`,
+CFO **as-reported, no sign flip**), so asset-ballooning / soft-accrual names score below
+capital-disciplined, cash-backed ones. The scorer is **byte-identical** to the pre-feature
+scorer when the block is absent (None-safe leg redistribution, mirroring `quality.dilution`).
+`asset_growth`/`accruals` are derived from already-fetched data on **both** the harness
+(`providers/_edgar_facts.py`: total `Assets` via the edgartools `standard_concept` "Assets",
+aligned by each statement's own dates) and the XBRL backtest (`providers/_xbrl_facts.py`:
+raw us-gaap `Assets`/`NetIncomeLoss`/`NetCashProvidedByUsedInOperatingActivities`), and both
+are surfaced in JSON/CSV. The shared math lives in `stats.py` (`asset_growth`/`accruals` — a
+consecutive ~1yr fiscal-end guard drops gap-spanning ratios + stub years). The bands/legs are
+**unfitted priors** — `backtest/signals.py` `XbrlSignalSource` emits standalone `asset_growth`
+and `accruals` axes (`--source xbrl`; `scoring.asset_growth_score`/`accruals_score` are
+backtest-only), with `accruals~piotroski` (Piotroski's CFO>NI overlap) and `asset_growth~growth`
+collinearity pairs (`backtest/cli.py`). **Masked** for financials/REITs on the production path
+(`sectors.masked_legs`); the backtest axis stays unmasked (`sic=None`) for raw-IC comparability.
+See PREDICTIVE_SIGNALS_RESEARCH §3.
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell

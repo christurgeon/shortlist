@@ -58,6 +58,13 @@ thresholds:
   # UNFITTED prior — backtest standalone rank IC before trusting (like risk).
   share_count_cagr: [0.04, -0.04]   # +4%/yr dilution -> 0 ; -4%/yr buyback -> 100
 
+  # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Both INVERTED
+  # (high -> lower score): asset balloon / soft accruals score low. Feed the BACKTEST
+  # axes (asset_growth / accruals) and the opt-in quality.earnings_quality legs below.
+  # UNFITTED priors — backtest standalone rank IC before trusting (like risk/dilution).
+  asset_growth: [0.30, -0.10]   # +30%/yr asset growth -> 0 ; -10% (shrinking) -> 100
+  accruals:     [0.15, -0.15]   # high accruals -> 0 ; strongly cash-backed -> 100
+
 weights:
   quality:      0.18   # was 0.20 (x0.9 on risk-axis introduction)
   moat:         0.18   # was 0.20
@@ -110,7 +117,10 @@ sectors:
   # net_margin is intentionally NOT masked (it is defined, only miscalibrated -> deferred).
   # Exchanges (6231), advisers/asset managers (6282), funds (672x), SPACs (6770) and
   # real-estate operators (65xx) are deliberately NOT bucketed -> unknown -> unmasked.
-  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f]
+  # asset_growth / accruals are balance-sheet legs undefined/non-representative for
+  # financials & REITs (lumpy AUM/loan books, externally-financed asset growth) -> masked
+  # on the production path. The backtest axis stays unmasked (sic=None) for raw-IC comparability.
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals]
   masked_gates: [negative_fcf, over_leveraged]
 
 validity:
@@ -216,6 +226,17 @@ fmp:
 # diluted-EPS CAGR. UNFITTED priors — backtest before trusting.
 # quality:
 #   dilution:
+#     enabled: true
+
+# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). DISABLED by default:
+# leave commented so quality_score is byte-identical to the pre-feature scorer (the
+# asset_growth / accruals signals are still surfaced + backtest-measured regardless).
+# When enabled, quality gains two INVERTED legs — asset growth (Cooper-Gulen-Schill
+# 2008) and accruals (Sloan 1996): asset-ballooning / soft-accrual names score below
+# capital-disciplined, cash-backed ones. UNFITTED priors — backtest before trusting.
+# (If both quality blocks are wanted, merge them under one `quality:` mapping.)
+# quality:
+#   earnings_quality:
 #     enabled: true
 
 # Default source chain for the harness (yahoo first => wins the price merge). Used

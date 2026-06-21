@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from shortlist.providers._edgar_facts import extract_financials
 
@@ -49,3 +50,36 @@ def test_total_debt_partial_components_still_sum():
     balance = _instant_df([("LongTermDebt", {"2024": 300.0, "2023": 280.0})])
     ef = extract_financials(income, cashflow, balance, shares_diluted=None)
     assert ef.total_debt[0] == 300.0
+
+
+def test_asset_growth_and_accruals_extracted():
+    # Assets ("Assets" standard_concept) on the balance sheet drives both signals.
+    # NI on the income spine, CFO ("NetCashFromOperatingActivities") on the cash-flow
+    # spine, Assets on the balance instant spine — aligned by ISO date.
+    income = _fy_df([
+        ("Revenue", {"2024": 1000.0, "2023": 900.0}),
+        ("NetIncomeLoss", {"2024": 200.0, "2023": 150.0}),
+    ])
+    cashflow = _fy_df([
+        ("NetCashFromOperatingActivities", {"2024": 150.0, "2023": 140.0}),
+    ])
+    balance = _instant_df([
+        ("Assets", {"2024": 1100.0, "2023": 1000.0}),
+    ])
+    ef = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert ef.total_assets == [1100.0, 1000.0]          # newest-first
+    # asset_growth = 1100/1000 - 1 = 0.10
+    assert ef.asset_growth == pytest.approx(0.10)
+    # accruals = (NI - CFO) / avg_assets = (200 - 150) / ((1100+1000)/2) = 50/1050
+    assert ef.accruals == pytest.approx(50.0 / 1050.0)
+
+
+def test_asset_growth_none_when_assets_absent():
+    # No Assets row -> both signals abstain (None), other extraction unaffected.
+    income = _fy_df([("NetIncomeLoss", {"2024": 200.0, "2023": 150.0})])
+    cashflow = _fy_df([("NetCashFromOperatingActivities", {"2024": 150.0, "2023": 140.0})])
+    balance = _instant_df([("LongTermDebt", {"2024": 300.0, "2023": 280.0})])
+    ef = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert ef.total_assets == []
+    assert ef.asset_growth is None
+    assert ef.accruals is None

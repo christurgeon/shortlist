@@ -1,8 +1,9 @@
 import pytest
 
 from shortlist.stats import (
-    avg_roic, cagr, compute_ebit_ev_yield, gross_margin_stability,
-    growth_persistence, median_pe, net_debt_from, piotroski_f,
+    accruals, asset_growth, avg_roic, cagr, compute_ebit_ev_yield,
+    gross_margin_stability, growth_persistence, median_pe, net_debt_from,
+    piotroski_f,
 )
 
 
@@ -232,3 +233,54 @@ def test_ebit_ev_yield_abstains_on_missing_inputs():
     assert compute_ebit_ev_yield(None, 900.0, 100.0) is None
     assert compute_ebit_ev_yield(100.0, None, 100.0) is None
     assert compute_ebit_ev_yield(100.0, 900.0, None) is None
+
+
+# --- asset_growth / accruals (PREDICTIVE_SIGNALS §3) -----------------------
+
+def test_asset_growth_consecutive_ends():
+    # Two consecutive ~1yr-spaced fiscal ends: 1100/1000 - 1 = 0.10.
+    assets = {"2024-12-31": 1100.0, "2023-12-31": 1000.0}
+    assert asset_growth(assets) == pytest.approx(0.10)
+
+
+def test_asset_growth_uses_two_latest_ends():
+    # Picks the two LATEST ends (2024 vs 2023), ignoring the older 2022.
+    assets = {"2024-12-31": 1200.0, "2023-12-31": 1000.0, "2022-12-31": 800.0}
+    assert asset_growth(assets) == pytest.approx(0.20)
+
+
+def test_asset_growth_rejects_gap_spanning_pair():
+    # A missing 2023 leaves a ~2yr gap between the two latest ends -> abstain
+    # (never a gap-spanning ratio).
+    assets = {"2024-12-31": 1200.0, "2022-12-31": 800.0}
+    assert asset_growth(assets) is None
+
+
+def test_asset_growth_none_below_two_ends_or_zero_denominator():
+    assert asset_growth({"2024-12-31": 1100.0}) is None
+    assert asset_growth({}) is None
+    assert asset_growth({"2024-12-31": 1100.0, "2023-12-31": 0.0}) is None
+
+
+def test_accruals_sloan_average_assets_no_sign_flip():
+    # accruals = (NI - CFO) / avg_assets, avg = (1100 + 1000)/2 = 1050.
+    # NI=200, CFO=150 (as-reported, NO sign flip) -> 50 / 1050.
+    assets = {"2024-12-31": 1100.0, "2023-12-31": 1000.0}
+    ni = {"2024-12-31": 200.0}
+    cfo = {"2024-12-31": 150.0}
+    assert accruals(ni, cfo, assets) == pytest.approx((200.0 - 150.0) / 1050.0)
+
+
+def test_accruals_average_is_not_end_of_period():
+    # Confirm the Sloan denominator is the AVERAGE, not Assets_t. With NI-CFO=105
+    # and avg=1050, accruals=0.10; using end-of-period (1100) would give ~0.0955.
+    assets = {"2024-12-31": 1100.0, "2023-12-31": 1000.0}
+    assert accruals({"2024-12-31": 205.0}, {"2024-12-31": 100.0}, assets) == pytest.approx(0.10)
+
+
+def test_accruals_none_on_missing_inputs_or_gap():
+    assets = {"2024-12-31": 1100.0, "2023-12-31": 1000.0}
+    assert accruals({}, {"2024-12-31": 150.0}, assets) is None              # NI missing at t
+    assert accruals({"2024-12-31": 200.0}, {}, assets) is None              # CFO missing at t
+    gap = {"2024-12-31": 1100.0, "2022-12-31": 1000.0}                      # gap-spanning
+    assert accruals({"2024-12-31": 200.0}, {"2024-12-31": 150.0}, gap) is None

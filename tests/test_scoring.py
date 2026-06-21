@@ -9,10 +9,10 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, check_flags, ebit_ev_yield_score, growth_score, insider_score,
-    moat_score, momentum_score, piotroski_score, quality_score, score,
-    value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score,
-    value_score,
+    _avg, _norm, accruals_score, asset_growth_score, check_flags, ebit_ev_yield_score,
+    growth_score, insider_score, moat_score, momentum_score, piotroski_score,
+    quality_score, score, value_fcf_yield_score, value_pe_vs_history_score,
+    value_plus_evebit_score, value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -237,6 +237,93 @@ def test_dilution_leg_redistributes_when_signal_missing():
     c = _dilution_config(score_leg=True, flag=False)
     m = dataclasses.replace(metrics_all_50(), share_count_cagr=None)
     assert score(m, c).quality == 50.0
+
+
+# --- asset-growth + accruals earnings-quality legs (PREDICTIVE_SIGNALS §3) ----
+
+def _eq_config(*, enabled: bool = True) -> dict:
+    """CONFIG plus the inverted asset_growth / accruals bands and (optionally) the
+    opt-in quality.earnings_quality scoring block."""
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"],
+                                  "asset_growth": [0.30, -0.10],   # +30% -> 0, -10% -> 100
+                                  "accruals": [0.15, -0.15]}}      # high accruals -> 0
+    if enabled:
+        c["quality"] = {"earnings_quality": {"enabled": True}}
+    return c
+
+
+def test_earnings_quality_legs_absent_is_byte_identical():
+    # Signals present on the metrics, but no quality.earnings_quality block -> the
+    # scorer ignores them: quality is the legacy 4-leg average. Bands present in
+    # thresholds must NOT matter (mirrors the dilution invariance guarantee).
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"],
+                                  "asset_growth": [0.30, -0.10], "accruals": [0.15, -0.15]}}
+    m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=0.15)
+    assert score(m, c).quality == 50.0       # unchanged 4-leg quality
+    assert score(m, c).composite == score(metrics_all_50(), CONFIG).composite
+
+
+def test_earnings_quality_leg_really_wired():
+    # With the block ENABLED and the signals present, the composite MUST measurably
+    # differ from the disabled run (the guard against a silently-unwired no-op leg).
+    on = _eq_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=0.15)
+    # Both legs invert to 0 -> quality = avg(50, 50, 50, 50, 0, 0) (rounded to 1dp).
+    assert score(m, on).quality == pytest.approx(round((50 * 4 + 0 + 0) / 6, 1))
+    # Disabled run on the same metrics -> legacy 50.
+    off = score(m, CONFIG)
+    assert off.quality == 50.0
+    assert score(m, on).composite != off.composite
+
+
+def test_earnings_quality_legs_penalize_high_growth_and_accruals():
+    on = _eq_config(enabled=True)
+    base = metrics_all_50()
+    # Capital-disciplined, cash-backed: shrinking assets + negative accruals -> top
+    # of both inverted bands (100) -> quality strictly ABOVE the ballooning name.
+    clean = dataclasses.replace(base, asset_growth=-0.10, accruals=-0.15)
+    dirty = dataclasses.replace(base, asset_growth=0.30, accruals=0.15)
+    assert score(clean, on).quality == pytest.approx(round((50 * 4 + 100 + 100) / 6, 1))
+    assert score(dirty, on).quality < score(clean, on).quality
+
+
+def test_earnings_quality_legs_redistribute_when_signal_missing():
+    # Block on but both signals None -> legs absent, quality is the legacy 4-leg
+    # average (byte-identical to the no-block case).
+    on = _eq_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), asset_growth=None, accruals=None)
+    assert score(m, on).quality == 50.0
+
+
+def test_earnings_quality_legs_masked_for_financials():
+    # Production sector mask: financials/REITs abstain the two balance-sheet legs
+    # even with the block enabled, so quality stays the legacy average and the
+    # legs are recorded as inapplicable (the backtest axis stays unmasked).
+    on = _eq_config(enabled=True)
+    on["sectors"] = {"buckets": [{"name": "financials", "sic_ranges": [[6020, 6099]]}],
+                     "masked_legs": ["asset_growth", "accruals"]}
+    m = dataclasses.replace(metrics_all_50(), sic="6020", asset_growth=0.30, accruals=0.15)
+    card = score(m, on)
+    assert card.sic_bucket == "financials"
+    assert card.quality == 50.0          # masked -> legacy 4-leg average
+    masked = {a["field"] for a in card.abstentions if a["reason"] == "inapplicable"}
+    assert {"asset_growth", "accruals"} <= masked
+
+
+def test_asset_growth_and_accruals_backtest_axes():
+    # Backtest-only standalone axes: inverted bands -> 0..100; None-safe when the
+    # band or the signal is absent (mirrors share_count_score).
+    t = {"asset_growth": [0.30, -0.10], "accruals": [0.15, -0.15]}
+    m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=-0.15)
+    assert asset_growth_score(m, t) == 0.0      # +30% growth -> bottom of inverted band
+    assert accruals_score(m, t) == 100.0        # strongly cash-backed -> top
+    # Absent band -> None.
+    assert asset_growth_score(m, {}) is None
+    assert accruals_score(m, {}) is None
+    # Absent signal -> None.
+    none_m = dataclasses.replace(metrics_all_50(), asset_growth=None, accruals=None)
+    assert asset_growth_score(none_m, t) is None
+    assert accruals_score(none_m, t) is None
 
 
 # --- value/momentum independent weighting ---------------------------------

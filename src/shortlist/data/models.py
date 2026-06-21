@@ -74,6 +74,12 @@ class Statements:
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     cash_and_equivalents: list[float] = field(default_factory=list)
+    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). total_assets
+    # is plumbing; asset_growth/accruals are pre-computed scalars (the source aligns
+    # NI/CFO/Assets by their own statement dates — the bridge can't, so it copies).
+    total_assets: list[float] = field(default_factory=list)
+    asset_growth: Optional[float] = None
+    accruals: Optional[float] = None
 
     def gross_margins(self) -> list[float]:
         return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False) if r]
@@ -255,7 +261,10 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       # Leverage derivation plumbing (feed net_debt_to_ebitda / coverage,
                       # not assessment-ready signals themselves) — §2.7.
                       "operating_income", "dep_amort", "interest_expense", "ebitda",
-                      "cash_and_equivalents")
+                      "cash_and_equivalents",
+                      # Asset-growth / accruals plumbing + pre-computed scalars (§3) —
+                      # surfaced via StockMetrics, not coverage-accounted here.
+                      "total_assets", "asset_growth", "accruals")
 
 
 @dataclass

@@ -154,6 +154,27 @@ def share_count_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.share_count_cagr, *t["share_count_cagr"])
 
 
+def asset_growth_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone asset-growth axis (Cooper-Gulen-Schill 2008): the INVERTED
+    asset-growth band -> 0..100 (asset balloon scores low, shrinkers high). Exists
+    so the backtest can measure the rank IC on its own (like share_count_score); the
+    PRODUCTION signal is the opt-in quality earnings_quality leg, not this. None when
+    the band or the signal is absent."""
+    if "asset_growth" not in t or m.asset_growth is None:
+        return None
+    return _norm(m.asset_growth, *t["asset_growth"])
+
+
+def accruals_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone accruals axis (Sloan 1996): the INVERTED accruals band -> 0..100
+    (high accruals = soft earnings score low). Backtest-only, like asset_growth_score;
+    partly overlaps the Piotroski CFO>NI leg (the `accruals~piotroski` collinearity
+    pair measures it). None when the band or the signal is absent."""
+    if "accruals" not in t or m.accruals is None:
+        return None
+    return _norm(m.accruals, *t["accruals"])
+
+
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
@@ -277,6 +298,15 @@ def _dilution_on(config: dict) -> bool:
     return bool(d) and d.get("enabled", True)
 
 
+def _earnings_quality_on(config: dict) -> bool:
+    """True when the opt-in investment/earnings-quality (asset-growth + accruals)
+    scoring block is present and enabled. Absent (it ships commented out) -> the two
+    legs are skipped, so quality_score is byte-identical to the pre-feature version.
+    Mirrors _dilution_on / the insider.conviction gating."""
+    d = ((config or {}).get("quality") or {}).get("earnings_quality")
+    return bool(d) and d.get("enabled", True)
+
+
 def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     legs = [
         _Leg("roe", m.roe, "roe"),
@@ -289,6 +319,16 @@ def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     # enables the block without the band. None signal -> _eval_subscore redistributes.
     if _dilution_on(config) and "share_count_cagr" in ((config or {}).get("thresholds") or {}):
         legs.append(_Leg("share_count_cagr", m.share_count_cagr, "share_count_cagr"))
+    # Investment & earnings-quality legs (PREDICTIVE_SIGNALS §3): asset growth and
+    # accruals, both INVERTED (high -> lower quality). Opt-in + threshold-guarded like
+    # the dilution leg; absent -> byte-identical. Masked for financials/REITs (the leg
+    # names are in sectors.masked_legs) so they abstain there on the production path.
+    if _earnings_quality_on(config):
+        thresholds = (config or {}).get("thresholds") or {}
+        if "asset_growth" in thresholds:
+            legs.append(_Leg("asset_growth", m.asset_growth, "asset_growth"))
+        if "accruals" in thresholds:
+            legs.append(_Leg("accruals", m.accruals, "accruals"))
     return legs
 
 
