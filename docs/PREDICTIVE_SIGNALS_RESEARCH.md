@@ -118,6 +118,24 @@ already have and could ride as an advisory "reports within N days" flag.
 
 ## 2. Residual (idiosyncratic) momentum
 
+> **Status: IMPLEMENTED (task-004).** Folded into `momentum_score` as an opt-in,
+> **OFF-by-default** STRAIGHT leg (the `momentum.residual` config block, byte-identical when
+> absent — the `momentum.sue` precedent). The real work was **price plumbing**: the live
+> merge discards dates (scalars like `rel_strength_6m`), so `PriceHistory.through(d)` (dated
+> truncation), a `snapshot_from_closes_dated` seam, and a `Price.residual_momentum` field were
+> added (carried to `StockMetrics` by the bridge). The signal **DATE-INNER-JOINS** the stock
+> and SPY closes on shared dates (`stats.join_on_dates`) BEFORE computing returns — position-
+> pairing `closes[i]` vs `spy_closes[i]` garbles beta under different listing dates / halts /
+> lengths. `stats.residual_momentum` then estimates the CAPM beta **point-in-time** (stdlib OLS,
+> no numpy) on the truncated window, takes residuals over **t-12..t-2 (the 12-1 skip preserved)**,
+> and standardizes by `sd(resid)`. **Vol-guard:** `sd==0` / flat-market / too-few-points → None
+> (never divide by 0). UNLIKE SUE, it IS price-reconstructable, so it rides the **LIVE-price**
+> `MomentumSignalSource` as a real `residual_momentum` axis (backtest-only `scoring.residual_
+> momentum_score` + the `residual_momentum~momentum` collinearity pair). **Honest caveat:** some
+> recent replications report residual momentum UNDERPERFORMING, so it ships OFF as a measured
+> candidate, NOT a replacement for raw momentum. See `CLAUDE.md` → "Residual (idiosyncratic)
+> momentum leg".
+
 **The idea.** Our momentum leg (`scoring.py:58`,
 `avg(price_vs_200dma, rel_strength_6m, eps_revision)`) is **raw total-return**
 trend — the version that crashes hardest at turning points. Residual momentum

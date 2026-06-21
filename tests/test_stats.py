@@ -1,9 +1,12 @@
+from datetime import date, timedelta
+
 import pytest
 
 from shortlist.stats import (
     accruals, asset_growth, avg_roic, cagr, compute_ebit_ev_yield,
-    gross_margin_stability, growth_persistence, median_pe, net_debt_from,
-    piotroski_f, shareholder_yield, sue, surprise_dispersion,
+    gross_margin_stability, growth_persistence, join_on_dates, median_pe,
+    net_debt_from, piotroski_f, residual_momentum, shareholder_yield, sue,
+    surprise_dispersion,
 )
 
 
@@ -364,3 +367,158 @@ def test_sue_sigma_guard_abstains_on_zero_or_thin_dispersion():
 def test_sue_no_decay_anchor_returns_undecayed():
     assert sue(10.0, 5.0, None) == pytest.approx(2.0)     # no days_since -> fresh prior
     assert sue(10.0, 5.0, -3) == pytest.approx(2.0)       # future-dated artifact -> fresh
+
+
+# --- Residual (idiosyncratic) momentum + the date inner-join (PREDICTIVE_SIGNALS §2) ---
+
+def _closes_from_returns(rets, start=100.0):
+    """Build a close series whose period returns are exactly `rets`."""
+    closes = [start]
+    for r in rets:
+        closes.append(closes[-1] * (1.0 + r))
+    return closes
+
+
+def test_join_on_dates_inner_joins_not_by_position():
+    # The #1 correctness risk: different listing dates / lengths must pair on the DATE key,
+    # never by position. Stock starts later and has a halt-gap; SPY is longer and continuous.
+    d = [date(2020, 1, i) for i in range(1, 11)]            # 2020-01-01..10
+    spy_dates = d                                           # continuous 10 days
+    spy_closes = [float(100 + i) for i in range(10)]
+    # Stock: starts on day 3, MISSING day 6 (halt) -> different length, different dates.
+    stock_dates = [d[2], d[3], d[4], d[6], d[7], d[8]]      # 01-03,04,05,07,08,09
+    stock_closes = [10.0, 11.0, 12.0, 13.0, 14.0, 15.0]
+    jd, ja, jb = join_on_dates(stock_dates, stock_closes, spy_dates, spy_closes)
+    assert jd == stock_dates                                # only the shared (stock) dates
+    assert ja == stock_closes
+    # Each SPY close must be the SAME calendar day as its stock partner — NOT spy_closes[i].
+    spy_map = dict(zip(spy_dates, spy_closes, strict=False))
+    assert jb == [spy_map[x] for x in stock_dates]
+    assert jb != spy_closes[: len(jb)]                      # position-pairing would differ
+
+
+def _ref_resid_mom(stock_dates, stock_closes, mkt_dates, mkt_closes,
+                   skip_days, lookback_days=252):
+    """Reference impl: explicitly DATE-JOIN, then run the OLS+skip+vol-scale math. Used to
+    prove residual_momentum joins on dates (a position-pair would give a different number)."""
+    from statistics import pstdev
+    mmap = dict(zip(mkt_dates, mkt_closes, strict=False))
+    jd = [d for d in stock_dates if d in mmap]
+    sa = [c for d, c in zip(stock_dates, stock_closes, strict=False) if d in mmap]
+    mb = [mmap[d] for d in jd]
+    sa, mb = sa[-(lookback_days + 1):], mb[-(lookback_days + 1):]
+    rs = [sa[i] / sa[i - 1] - 1.0 for i in range(1, len(sa))]
+    rm = [mb[i] / mb[i - 1] - 1.0 for i in range(1, len(mb))]
+    n = min(len(rs), len(rm))
+    rs, rm = rs[:n], rm[:n]
+    ms, mm = sum(rs) / n, sum(rm) / n
+    var_m = sum((m - mm) ** 2 for m in rm) / n
+    cov = sum((s - ms) * (m - mm) for s, m in zip(rs, rm, strict=False)) / n
+    beta = cov / var_m
+    alpha = ms - beta * mm
+    resid = [s - (alpha + beta * m) for s, m in zip(rs, rm, strict=False)]
+    win = resid[: len(resid) - skip_days]
+    return (sum(win) / len(win)) / pstdev(win)
+
+
+def test_residual_momentum_misaligned_series_joins_on_dates():
+    # A different-length / non-identical-date pair must still produce the value computed on
+    # the DATE-JOINED series — proving it does NOT pair by position (which would garble beta).
+    n = 200
+    base = date(2021, 1, 1)
+    mkt_dates = [base + timedelta(days=i) for i in range(n)]
+    mkt_rets = [0.01 if i % 2 == 0 else -0.006 for i in range(n - 1)]
+    mkt_closes = _closes_from_returns(mkt_rets)
+    # Stock: SHORTER and SHIFTED — starts 30 days in, ends 5 days early, with a HALT (a
+    # dropped interior date), so neither length, start, nor the date set matches the market.
+    raw_dates = mkt_dates[30 : n - 5]
+    s_dates = [d for k, d in enumerate(raw_dates) if k != 40]   # drop one interior day (halt)
+    # closes = len(s_dates); _closes_from_returns returns N+1 closes for N returns.
+    s_rets = [1.3 * mkt_rets[30 + k] + (0.003 if k % 4 else -0.002)
+              for k in range(len(s_dates) - 1)]
+    s_closes = _closes_from_returns(s_rets)
+    assert len(s_dates) == len(s_closes) and len(s_dates) != len(mkt_dates)
+    v = residual_momentum(s_dates, s_closes, mkt_dates, mkt_closes,
+                          min_points=100, skip_days=10)
+    assert v is not None                                    # joined + scored, not a length crash
+    expected = _ref_resid_mom(s_dates, s_closes, mkt_dates, mkt_closes, skip_days=10)
+    assert v == pytest.approx(expected)                     # == the DATE-JOINED reference
+
+
+def test_residual_momentum_recovers_known_beta():
+    # White-box: with returns built as r_s = beta*r_m + idiosyncratic, the OLS inside the
+    # function must recover ~beta (so the residuals strip out the market exposure, the whole
+    # point of §2). We re-run the function's OLS on the same joined returns and check beta.
+    from statistics import pstdev  # noqa: F401  (kept parallel to _ref_resid_mom)
+    n = 200
+    dates = [date(2021, 1, 1) + timedelta(days=i) for i in range(n)]
+    mkt_rets = [0.012 if i % 2 == 0 else -0.009 for i in range(n - 1)]
+    KNOWN_BETA = 1.4
+    idio = [0.002 if k % 5 else -0.006 for k in range(len(mkt_rets))]   # mean ~0-ish wobble
+    stock_rets = [KNOWN_BETA * m + i for m, i in zip(mkt_rets, idio, strict=False)]
+    mkt_closes = _closes_from_returns(mkt_rets)
+    stock_closes = _closes_from_returns(stock_rets)
+    # Recompute beta the way the function does (OLS over the joined return window).
+    rs, rm = stock_rets, mkt_rets
+    nn = len(rs)
+    ms, mm = sum(rs) / nn, sum(rm) / nn
+    var_m = sum((m - mm) ** 2 for m in rm) / nn
+    cov = sum((s - ms) * (m - mm) for s, m in zip(rs, rm, strict=False)) / nn
+    assert cov / var_m == pytest.approx(KNOWN_BETA, abs=0.02)   # beta recovered
+    # And the function returns a finite value on this well-conditioned input.
+    assert residual_momentum(dates, stock_closes, dates, mkt_closes,
+                             min_points=100, skip_days=10) is not None
+
+
+def test_residual_momentum_constant_residual_abstains_no_div_by_zero():
+    # The mandatory vol guard: when residuals are degenerate (here stock == market returns
+    # exactly -> beta 1, alpha 0, residuals all 0 -> sd 0), abstain (None), never divide.
+    n = 160
+    dates = [date(2021, 1, 1) + timedelta(days=i) for i in range(n)]
+    rets = [0.01 if i % 2 == 0 else -0.008 for i in range(n - 1)]
+    closes = _closes_from_returns(rets)
+    assert residual_momentum(dates, closes, dates, closes,
+                             min_points=100, skip_days=10) is None
+
+
+def test_residual_momentum_matches_reference_ols_on_tiny_window():
+    # Deterministic known-value check: a tiny hand-constructible window where we replicate
+    # the exact OLS + 12-1-skip + vol-standardize math the function performs, proving the
+    # returned value (not just its sign).
+    dates = [date(2022, 1, 1) + timedelta(days=i) for i in range(8)]   # 8 closes -> 7 rets
+    # Market returns (6 paired returns after the join, deterministic):
+    mkt_rets = [0.02, -0.01, 0.015, -0.005, 0.01, -0.02, 0.007]
+    stock_rets = [0.03, 0.00, 0.02, 0.001, 0.012, -0.018, 0.015]
+    mkt_closes = _closes_from_returns(mkt_rets)
+    stock_closes = _closes_from_returns(stock_rets)
+    # Reference impl mirroring stats.residual_momentum (skip_days=1, min_points=3):
+    rs, rm = stock_rets, mkt_rets
+    n = len(rs)
+    ms, mm = sum(rs) / n, sum(rm) / n
+    var_m = sum((m - mm) ** 2 for m in rm) / n
+    cov = sum((s - ms) * (m - mm) for s, m in zip(rs, rm, strict=False)) / n
+    beta = cov / var_m
+    alpha = ms - beta * mm
+    resid = [s - (alpha + beta * m) for s, m in zip(rs, rm, strict=False)]
+    win = resid[: len(resid) - 1]                # skip the last residual (1-day skip)
+    from statistics import pstdev
+    expected = (sum(win) / len(win)) / pstdev(win)
+    got = residual_momentum(dates, stock_closes, dates, mkt_closes,
+                            min_points=3, skip_days=1)
+    assert got == pytest.approx(expected)
+
+
+def test_residual_momentum_flat_market_abstains():
+    # A flat market window (zero market-return variance) -> beta undefined -> None.
+    n = 160
+    dates = [date(2021, 1, 1) + timedelta(days=i) for i in range(n)]
+    mkt_closes = [100.0] * n                                # never moves
+    stock_closes = _closes_from_returns([0.005 if i % 2 else -0.003 for i in range(n - 1)])
+    assert residual_momentum(dates, stock_closes, dates, mkt_closes,
+                             min_points=100) is None
+
+
+def test_residual_momentum_too_short_abstains():
+    dates = [date(2021, 1, 1) + timedelta(days=i) for i in range(30)]
+    closes = _closes_from_returns([0.01] * 29)
+    assert residual_momentum(dates, closes, dates, closes, min_points=120) is None

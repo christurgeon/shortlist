@@ -11,8 +11,8 @@ from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
     _avg, _norm, accruals_score, asset_growth_score, check_flags, ebit_ev_yield_score,
     growth_score, insider_score, moat_score, momentum_score, piotroski_score,
-    quality_score, score, shareholder_yield_score, sue_score, value_fcf_yield_score,
-    value_pe_vs_history_score, value_plus_evebit_score, value_score,
+    quality_score, residual_momentum_score, score, shareholder_yield_score, sue_score,
+    value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score, value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -1190,3 +1190,65 @@ def test_sue_backtest_axis():
     # σ-guard: zero/thin dispersion and 1-quarter both abstain on the axis too.
     assert sue_score(_sue_metrics(earnings_surprise_dispersion=0.0), t) is None
     assert sue_score(_sue_metrics(earnings_quarters=1, earnings_surprise_dispersion=None), t) is None
+
+
+# --- Residual (idiosyncratic) momentum leg (PREDICTIVE_SIGNALS §2) ------------
+
+def _residmom_config(*, enabled: bool = True) -> dict:
+    """CONFIG plus the (straight, non-inverted) residual_momentum band [0,1] and the opt-in
+    momentum.residual block. Band [0,1] so a value of 1.0 -> 100, 0.5 -> 50 (matches all_50)."""
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"], "residual_momentum": [0.0, 1.0]}}
+    if enabled:
+        c["momentum"] = {"residual": {"enabled": True}}
+    return c
+
+
+def test_residmom_leg_absent_is_byte_identical():
+    # residual_momentum present on the metrics, but no momentum.residual block -> the scorer
+    # ignores it: momentum is the legacy 3-leg average. A band in thresholds must NOT matter.
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"], "residual_momentum": [0.0, 1.0]}}
+    m = dataclasses.replace(metrics_all_50(), residual_momentum=1.0)
+    assert score(m, c).momentum == 50.0                     # unchanged 3-leg momentum
+    assert score(m, c).composite == score(metrics_all_50(), CONFIG).composite
+
+
+def test_residmom_leg_really_wired():
+    # Block ENABLED + input present -> composite MUST measurably differ from disabled.
+    on = _residmom_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), residual_momentum=1.0)   # -> 100
+    # momentum legs: 3 at 50 + residual 100 -> avg = 62.5
+    assert score(m, on).momentum == pytest.approx((50 * 3 + 100) / 4)
+    off = score(m, CONFIG)
+    assert off.momentum == 50.0
+    assert score(m, on).composite != off.composite
+
+
+def test_residmom_leg_strong_scores_above_weak():
+    on = _residmom_config(enabled=True)
+    strong = dataclasses.replace(metrics_all_50(), residual_momentum=1.0)   # -> 100
+    weak = dataclasses.replace(metrics_all_50(), residual_momentum=0.0)     # -> 0
+    assert score(strong, on).momentum > score(weak, on).momentum
+    assert score(weak, on).momentum == pytest.approx((50 * 3 + 0) / 4)
+
+
+def test_residmom_leg_redistributes_when_input_missing():
+    # None signal -> the leg drops and momentum stays the legacy 3-leg average (None-safe).
+    on = _residmom_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), residual_momentum=None)
+    assert score(m, on).momentum == 50.0
+
+
+def test_residmom_leg_no_band_is_noop():
+    # Block enabled but NO band in thresholds -> the threshold guard drops the leg.
+    on = {**CONFIG, "momentum": {"residual": {"enabled": True}}}
+    m = dataclasses.replace(metrics_all_50(), residual_momentum=1.0)
+    assert score(m, on).momentum == 50.0
+
+
+def test_residmom_backtest_axis():
+    # Backtest-only standalone axis: STRAIGHT band -> 0..100 (strong idiosyncratic uptrend high).
+    t = {"residual_momentum": [-1.0, 1.0]}
+    assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=1.0), t) == 100.0
+    assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=-1.0), t) == 0.0
+    assert residual_momentum_score(metrics_all_50(), t) is None              # signal absent on all_50
+    assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=0.5), {}) is None  # no band

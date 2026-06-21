@@ -124,6 +124,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.price = pr.price
         m.price_vs_200dma = pr.price_vs_200dma()
         m.rel_strength_6m = pr.rel_strength_6m
+        m.residual_momentum = pr.residual_momentum
         m.realized_vol = pr.realized_vol
         m.max_drawdown = pr.max_drawdown
 

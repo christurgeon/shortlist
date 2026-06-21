@@ -18,6 +18,7 @@ from ..cache import get_default_cache
 from ..env import redact_secrets
 from ..providers._fmp_insider import is_buy, tx_value
 from ..stats import avg_roic, median_pe
+from ..stats import residual_momentum as _stats_residual_momentum
 from .models import (
     Analyst,
     Earnings,
@@ -1059,13 +1060,20 @@ def _monthly_closes_from_chart(raw: Any) -> list[list]:
     return [by_month[k] for k in sorted(by_month)]
 
 
-def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float]) -> TickerSnapshot:
+def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float],
+                     dates: Optional[list] = None,
+                     spy_dates: Optional[list] = None) -> TickerSnapshot:
     snap = TickerSnapshot(ticker=ticker)
     if not closes:
         return snap
     stock_6m = _yh_ret_over(closes, _YH_SIX_MONTHS)
     spy_6m = _yh_ret_over(spy_closes, _YH_SIX_MONTHS) if spy_closes else None
     rel = stock_6m - spy_6m if (stock_6m is not None and spy_6m is not None) else None
+    # Residual momentum needs the DATE-ALIGNED stock+SPY series (§2). The scalar live-merge
+    # path (no dates) leaves it None; the dated backtest seam supplies dates so it computes.
+    resid = None
+    if dates is not None and spy_dates is not None:
+        resid = _stats_residual_momentum(dates, closes, spy_dates, spy_closes)
     snap.price = Price(
         price=closes[-1],
         ma200=_yh_sma(closes, 200),
@@ -1073,6 +1081,7 @@ def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float]) 
         rel_strength_6m=rel,
         realized_vol=_yh_annualized_vol(closes),
         max_drawdown=_yh_max_drawdown(closes),
+        residual_momentum=resid,
     )
     return snap
 
@@ -1081,8 +1090,20 @@ def snapshot_from_closes(ticker: str, closes: list[float],
                          spy_closes: list[float]) -> TickerSnapshot:
     """Public seam: build a point-in-time Price snapshot from a close series,
     delegating to the same math the live Yahoo source uses. Pass closes already
-    truncated to the as-of date for a look-ahead-free reconstruction."""
+    truncated to the as-of date for a look-ahead-free reconstruction.
+
+    NOTE: scalar (date-less) — residual_momentum stays None here. Use
+    snapshot_from_closes_dated when you have the date-aligned stock + SPY series."""
     return _normalize_yahoo(ticker, closes, spy_closes)
+
+
+def snapshot_from_closes_dated(ticker: str, dates: list, closes: list[float],
+                               spy_dates: list, spy_closes: list[float]) -> TickerSnapshot:
+    """Dated seam (§2): identical to snapshot_from_closes PLUS a date-aligned residual-
+    momentum leg. The stock and SPY series are DATE-INNER-JOINED inside stats.residual_
+    momentum before any return is computed — they need NOT be the same length or share
+    listing dates. Pass both series truncated to as_of for a look-ahead-free read."""
+    return _normalize_yahoo(ticker, closes, spy_closes, dates, spy_dates)
 
 
 class GovContractsSource(Source):

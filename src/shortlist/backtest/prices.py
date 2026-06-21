@@ -70,6 +70,14 @@ class PriceHistory:
         i = self._idx_asof(d)
         return self.closes[: i + 1] if i is not None else []
 
+    def through(self, d: date) -> tuple[list[date], list[float]]:
+        """(dates, closes) PAIRED and truncated to dates <= d — the dated counterpart
+        of closes_through, for the date-aligned residual-momentum regression (§2)."""
+        i = self._idx_asof(d)
+        if i is None:
+            return [], []
+        return self.dates[: i + 1], self.closes[: i + 1]
+
     def price_on(self, target: date, tol_days: int = 5) -> Optional[float]:
         """Close on the nearest trading day to target, within +/- tol_days."""
         if not self.dates:

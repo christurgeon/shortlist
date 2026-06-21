@@ -12,7 +12,7 @@ from typing import Optional, Protocol
 from .. import scoring
 from ..data.bridge import snapshot_to_metrics
 from ..data.models import TickerSnapshot
-from ..data.sources import snapshot_from_closes
+from ..data.sources import snapshot_from_closes_dated
 from ..data.store import load
 from ..providers._xbrl_facts import extract_panel, panel_to_metrics
 from .prices import PriceHistory
@@ -55,15 +55,28 @@ class MomentumSignalSource:
         hist = self.histories.get(ticker.upper())
         if hist is None:
             return None
-        closes = hist.closes_through(as_of)          # strict: dates <= as_of
+        dates, closes = hist.through(as_of)          # strict: dates <= as_of, PAIRED
         if len(closes) < self.min_history:
             return None                               # dropped, never zeroed
-        spy_closes = self.spy.closes_through(as_of)
-        snap = snapshot_from_closes(ticker.upper(), closes, spy_closes)
-        score = scoring.momentum_score(snapshot_to_metrics(snap), self.thresholds)
+        spy_dates, spy_closes = self.spy.through(as_of)
+        # Dated seam: residual_momentum needs the date-aligned stock+SPY series, which it
+        # INNER-JOINS internally (§2). The production `momentum` sub-score is byte-identical
+        # to the scalar seam (the dated path only ADDS m.residual_momentum).
+        snap = snapshot_from_closes_dated(ticker.upper(), dates, closes, spy_dates, spy_closes)
+        m = snapshot_to_metrics(snap)
+        score = scoring.momentum_score(m, self.thresholds)
         if score is None:
             return None
-        return Observation(as_of, ticker.upper(), {"momentum": score})
+        sig: dict[str, float] = {"momentum": score}
+        # Standalone residual-momentum axis (Blitz-Huij-Martens 2011, §2). UNLIKE SUE this
+        # IS price-reconstructable, so it rides the LIVE-price path. Emitting it lets the
+        # `residual_momentum~momentum` collinearity pair (and head-to-head rank IC) be
+        # measured — the point is to show it dominates raw momentum. None-safe (a flat/thin
+        # window or absent band drops it).
+        rm = scoring.residual_momentum_score(m, self.thresholds)
+        if rm is not None:
+            sig["residual_momentum"] = rm
+        return Observation(as_of, ticker.upper(), sig)
 
 
 class SnapshotSignalSource:
