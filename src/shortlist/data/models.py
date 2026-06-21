@@ -237,6 +237,7 @@ class Earnings:
     beats: Optional[int] = None           # # of those with surprise > 0
     last_surprise_pct: Optional[float] = None  # newest quarter's surprise %
     next_date: Optional[str] = None       # next earnings date (ISO) or None
+    last_report_date: Optional[str] = None  # APPROX last-announcement date (ISO); see _earnings
 
 
 @dataclass

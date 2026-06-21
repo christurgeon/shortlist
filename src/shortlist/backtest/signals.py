@@ -84,12 +84,22 @@ class SnapshotSignalSource:
         except (FileNotFoundError, OSError):
             return None
         snap = TickerSnapshot.from_dict(raw)
-        card = scoring.score(snapshot_to_metrics(snap), self.config)
+        m = snapshot_to_metrics(snap)
+        card = scoring.score(m, self.config)
         sig: dict[str, float] = {"composite": card.composite}
         for axis in ("quality", "moat", "growth", "value", "momentum", "insider"):
             v = getattr(card, axis, None)
             if v is not None:
                 sig[axis] = v
+        # Standalone SUE axis (PREDICTIVE_SIGNALS §1). SUE cannot be reconstructed on the
+        # live-price MomentumSignalSource (price-only snapshots carry NO earnings) nor on
+        # the XBRL path (surprises aren't in companyfacts), so it rides ONLY this guarded
+        # snapshot-replay path — and only once accumulation captures the earnings fields.
+        # Emitting it here lets the `sue~momentum` collinearity pair be measured (no-op
+        # until accumulated snapshots carry the SUE inputs; the score helper is None-safe).
+        sue = scoring.sue_score(m, (self.config or {}).get("thresholds") or {})
+        if sue is not None:
+            sig["sue"] = sue
         return Observation(as_of, ticker.upper(), sig)
 
 

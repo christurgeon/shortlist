@@ -436,6 +436,46 @@ an imminent report a near-term catalyst. **Not scored in v1** — flat data + re
 only. `surprisePercent` is already in percent (don't ×100). Both endpoints are on the free
 tier; cached 1d (history) / 6h (calendar).
 
+## SUE / post-earnings-announcement-drift leg (scoring; PREDICTIVE_SIGNALS §1)
+
+The **`momentum.sue`** block (`config.yaml`) folds a **standardized earnings surprise** leg
+into `momentum_score` (Bernard-Thomas 1989 drift; Novy-Marx 2015 — earnings surprise is the
+*fundamental* momentum price momentum only weakly proxies). It ships **commented out** (OFF
+by default); the scorer is **byte-identical** to the pre-feature scorer when absent (the
+`quality.dilution` / `value.shareholder_yield` precedent, None-safe leg redistribution).
+`SUE = last_surprise_pct / dispersion`, **decayed** linearly to 0 over `decay_trading_days`
+(~60) since the last announcement. Reuses the already-fetched Finnhub earnings — no new feed.
+
+Two prerequisite bridge derivations were added (the SUE inputs did not exist):
+- **`earnings_surprise_dispersion`** — population std-dev of the firm's own recent surprise
+  %s (`stats.surprise_dispersion`, ≥3 quarters), the SUE denominator. Today the bridge only
+  collapsed the surprise list to a *mean*; this surfaces the spread.
+- **`earnings_days_since_last_report`** — the SUE decay anchor. **APPROXIMATION (read this):**
+  Finnhub `stock/earnings` rows carry only the fiscal `period` (quarter-END), NOT the
+  announcement date. `_earnings` derives a `last_report_date` preferring the most recent PAST
+  `calendar/earnings` entry that has an `epsActual` (a true announcement date); it **falls
+  back to the fiscal quarter-end** when the calendar lacks past entries — a weaker proxy that
+  *over-states* staleness (the print lands ~30-45d after quarter-end), so the leg decays a
+  touch faster than reality. Decay is keyed off this PAST report — **never** `days_to_next`
+  (that report is unannounced → look-ahead).
+
+**Mandatory σ-guard** (`stats.sue` + `scoring._sue_value`): abstain (None) when dispersion is
+None / below `sigma_floor` (the all-equal / common 4-equal case has σ≈0) **or** fewer than
+`min_quarters` (~3) surprises exist — so the leg **never divides by ~0** (no inf/NaN). Sign:
+a beat (`last_surprise_pct > 0`) → higher score; a fully-decayed stale print → exactly 0 (a
+real "no drift left" reading, not an abstention). Momentum legs are never sector-masked, so
+SUE is universally applicable. The SUE inputs are surfaced in `--json`.
+
+**Measurement gating (deferred, documented honestly):** SUE is **NOT a live-price backtest
+axis** — the momentum backtest replays price-only snapshots (`snapshot_from_closes`) carrying
+NO earnings, and historical surprises aren't in SEC companyfacts (so the XBRL path can't reach
+it either). A backtest-only `scoring.sue_score` (same metrics) + a `sue ~ momentum`
+`_COLLINEARITY_PAIRS` entry are wired, and `SnapshotSignalSource` emits a standalone `sue`
+axis — but it rides ONLY the **guarded snapshot-replay path** and **no-ops until daily
+accumulation captures the earnings fields**. No live-price SUE axis was fabricated in
+`MomentumSignalSource` (it would always be empty). All SUE knobs are **unfitted priors** —
+measure the rank IC + collinearity on the snapshot-replay path before trusting.
+
 ## Yahoo screener WAF gotcha (scout discovery)
 
 The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**

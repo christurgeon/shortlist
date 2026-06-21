@@ -57,6 +57,25 @@ history needed for a rating-change signal.
 
 ## 1. Standardized earnings surprise (SUE) + post-earnings-announcement drift
 
+> **Status: IMPLEMENTED (task-001).** Folded into `momentum_score` as an opt-in,
+> **OFF-by-default** STRAIGHT leg (the `momentum.sue` config block, byte-identical when
+> absent — the `quality.dilution` / `value.shareholder_yield` precedent). `SUE =
+> last_surprise_pct / dispersion`, **time-decayed** over ~60 trading days since the last
+> announcement. Two prerequisite bridge derivations were added: **`earnings_surprise_dispersion`**
+> (`stats.surprise_dispersion`, the SUE denominator — the bridge previously collapsed the
+> surprise list to a mean only) and **`earnings_days_since_last_report`** (the decay anchor).
+> **Announcement-date APPROXIMATION:** Finnhub `stock/earnings` carries only the fiscal
+> quarter-END, so `_earnings` derives `last_report_date` from the most recent PAST
+> `calendar/earnings` entry with an `epsActual`, falling back to the quarter-end (over-states
+> staleness) — documented in code + `CLAUDE.md`. **Mandatory σ-guard:** abstains (None) on
+> dispersion None/below floor (the all-equal / 4-equal σ≈0 case) or <~3 quarters — never
+> divides by ~0. Decay is keyed off the PAST report, NEVER days-to-next (look-ahead).
+> **Measurement gating (deferred, honest):** SUE is NOT a live-price backtest axis (price-only
+> snapshots carry no earnings; surprises aren't in companyfacts), so `scoring.sue_score` + the
+> `sue~momentum` collinearity pair ride ONLY the guarded **snapshot-replay** path
+> (`SnapshotSignalSource` emits a `sue` axis) and no-op until accumulation exists — no live-price
+> SUE axis was fabricated. See `CLAUDE.md` → "SUE / post-earnings-announcement-drift leg".
+
 **The idea.** Stocks that beat earnings keep drifting *up* for weeks; stocks that
 miss keep drifting *down*. The magnitude that matters is the surprise
 **standardized** by its own dispersion (SUE), not the raw percentage. shortlist

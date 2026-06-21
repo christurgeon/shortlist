@@ -90,6 +90,29 @@ def test_snapshot_source_missing_day_none(tmp_path):
     assert src.observe("ZZZ", date(2026, 1, 15)) is None
 
 
+def test_snapshot_source_emits_sue_axis_when_earnings_accumulated(tmp_path):
+    # SUE (§1) rides ONLY the snapshot-replay path: it emits a standalone `sue` axis when
+    # an accumulated snapshot carries the earnings inputs (no-op otherwise).
+    from shortlist.data.models import Earnings
+    snap = TickerSnapshot(ticker="AAA", as_of="2026-01-15T00:00:00+00:00")
+    snap.profile = Profile(name="A", sector="Tech", market_cap=50e9)
+    snap.price = Price(price=120.0, ma200=100.0, rel_strength_6m=0.1)
+    # A fresh +10% beat over 4 quarters -> positive SUE -> scores above the band midpoint.
+    snap.earnings = Earnings(as_of="2026-01-15", recent_surprise_pcts=[10.0, 0.0, 5.0, -5.0],
+                             quarters=4, last_surprise_pct=10.0, last_report_date="2026-01-15")
+    save(snap, str(tmp_path))
+    config = {"thresholds": THRESH | {"sue": [-2.0, 2.0],
+                                      "insider_sentiment": [-0.30, 0.30],
+                                      "insider_net_ratio": [-0.0005, 0.0005]},
+              "weights": {"quality": 0.2, "moat": 0.2, "growth": 0.15,
+                          "value": 0.22, "momentum": 0.08, "insider": 0.15},
+              "gates": {"min_market_cap": 2e9, "max_debt_to_equity": 5.0,
+                        "min_insider_sentiment": -0.60}}
+    obs = SnapshotSignalSource(str(tmp_path), config).observe("AAA", date(2026, 1, 15))
+    assert obs is not None
+    assert "sue" in obs.signals and obs.signals["sue"] > 50.0   # a fresh beat tilts up
+
+
 # --- XBRL source: EV/EBIT + per-leg value attribution axes (spec §11) ---------
 
 _XBRL_THRESH = yaml.safe_load(

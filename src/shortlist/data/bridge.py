@@ -13,6 +13,7 @@ from ..stats import (
     net_debt_from,
     piotroski_f,
     shareholder_yield,
+    surprise_dispersion,
 )
 from .models import TickerSnapshot
 
@@ -322,6 +323,15 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         days = _age_days(snap.as_of, e.next_date)
         if days is not None:
             m.earnings_days_to_next = -days
+        # SUE inputs (PREDICTIVE_SIGNALS §1). Dispersion = pop std-dev of the firm's own
+        # recent surprises (the SUE denominator); None below the min-quarters floor — its
+        # presence also serves as the >=min-quarters guard for the scoring SUE leg.
+        m.earnings_surprise_dispersion = surprise_dispersion(e.recent_surprise_pcts)
+        # days_since_last_report: as_of - last_report_date. APPROXIMATION (see _earnings):
+        # the last-announcement date is taken from the calendar where available, else the
+        # fiscal quarter-END (which over-states staleness). Keyed off the PAST report, so
+        # the SUE decay anchor never leaks the next (unannounced) report.
+        m.earnings_days_since_last_report = _age_days(snap.as_of, e.last_report_date)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 

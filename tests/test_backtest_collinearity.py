@@ -45,3 +45,9 @@ def test_pairs_registry_includes_leverage_vs_growth():
     # Guard: the leverage-vs-growth check (the decision-relevant one) stays registered.
     assert ("net_debt_to_ebitda", "growth") in _COLLINEARITY_PAIRS
     assert ("ebit_ev_yield", "value_fcf_yield") in _COLLINEARITY_PAIRS   # original preserved
+
+
+def test_pairs_registry_includes_sue_vs_momentum():
+    # SUE (§1) rides the SNAPSHOT-REPLAY path; its drift-vs-price-momentum collinearity
+    # is measured once accumulation carries the earnings inputs (no-op until then).
+    assert ("sue", "momentum") in _COLLINEARITY_PAIRS

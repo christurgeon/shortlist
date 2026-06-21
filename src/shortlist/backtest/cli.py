@@ -34,6 +34,7 @@ _COLLINEARITY_PAIRS = [
     ("asset_growth", "growth"),             # asset growth vs scored growth (§3)
     ("shareholder_yield", "value_fcf_yield"),  # total payout vs cash GENERATED (§5; the standalone fcf-yield axis)
     ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution (§5)
+    ("sue", "momentum"),                       # earnings-surprise drift vs price momentum (§1) — SNAPSHOT-REPLAY only
 ]
 _COLLINEARITY_REDUNDANT = 0.5   # |corr| at/above this => the candidate is redundant
 
