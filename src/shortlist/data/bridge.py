@@ -12,6 +12,7 @@ from ..stats import (
     median_pe,
     net_debt_from,
     piotroski_f,
+    shareholder_yield,
 )
 from .models import TickerSnapshot
 
@@ -205,6 +206,15 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         if m.ebit_ev_yield is None:
             m.ebit_ev_yield = compute_ebit_ev_yield(
                 oi0, m.market_cap, net_debt_from(debt0, m.cash_and_equivalents))
+        # Total shareholder yield (PREDICTIVE_SIGNALS §5): (dividends + net buybacks +
+        # net debt reduction) / market_cap. Derived here (not at extraction) because it
+        # needs market_cap, a price-merge product. The financing legs are latest-FY dollar
+        # magnitudes; shareholder_yield() abs()-normalizes each, nets repayments-issuance
+        # (signed), and abstains when all legs or market_cap are absent.
+        if m.shareholder_yield is None:
+            m.shareholder_yield = shareholder_yield(
+                st.dividends_paid, st.repurchases,
+                st.debt_repayments, st.debt_issuance, m.market_cap)
         # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
         # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
         # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave

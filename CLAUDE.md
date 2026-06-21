@@ -54,7 +54,11 @@ validation, and history, not new scoring:
   ~ `fcf_yield` ≈ 0.73 and `net_debt_to_ebitda` ~ `growth` ≈ 0.54 both trip it, so neither
   is wired). It also emits standalone **`asset_growth`** and **`accruals`** axes (PREDICTIVE_SIGNALS
   §3 — Cooper-Gulen-Schill 2008 / Sloan 1996, both negative predictors) with the
-  `accruals~piotroski` and `asset_growth~growth` collinearity pairs. `ebit_ev_yield`
+  `accruals~piotroski` and `asset_growth~growth` collinearity pairs, and a
+  **`shareholder_yield`** axis (PREDICTIVE_SIGNALS §5 — Boudoukh et al. 2007 / Faber, a
+  *positive* total-payout predictor) with the `shareholder_yield~value_fcf_yield` and
+  `shareholder_yield~share_count` pairs (the buyback leg is the dollar-twin of dilution).
+  `ebit_ev_yield`
   is derived on both paths (`bridge.py` + XBRL panel) and carried on `StockMetrics`, but
   there is **no production sub-score reading it** — the value leg is deferred pending the
   backtest (`scoring.py:ebit_ev_yield_score` is backtest-only). The snapshot-replay path
@@ -238,6 +242,30 @@ backtest-only), with `accruals~piotroski` (Piotroski's CFO>NI overlap) and `asse
 collinearity pairs (`backtest/cli.py`). **Masked** for financials/REITs on the production path
 (`sectors.masked_legs`); the backtest axis stays unmasked (`sic=None`) for raw-IC comparability.
 See PREDICTIVE_SIGNALS_RESEARCH §3.
+
+The **`value.shareholder_yield`** block (`config.yaml`) is the **scoring** half of the total
+shareholder-yield feature (PREDICTIVE_SIGNALS §5; Boudoukh-Michaely-Richardson-Roberts 2007 /
+Faber). It ships **commented out** (OFF): when enabled, `value_score` gains one **straight**
+(non-inverted, unlike the §3 legs) leg — `shareholder_yield = (dividends + net buybacks + net
+debt reduction) / market_cap` — so names returning more cash to owners score higher. The scorer
+is **byte-identical** to the pre-feature scorer when the block is absent (None-safe leg
+redistribution; mirrors `quality.dilution`/`quality.earnings_quality`). **SIGN DISCIPLINE:**
+dividends + repurchases are added (`shareholder_yield()` in `stats.py` abs()-normalizes each leg,
+so it agrees whether the source reports positive magnitudes — raw companyfacts — or sign-flipped
+negative outflows — edgartools' `to_dataframe()`); the net-debt leg is `repayments − issuance`
+with **sign preserved**, so a net debt *issuer* carries a **negative** leg (never clamped to 0).
+The four financing legs are **net-new XBRL extraction** on both paths via concept **families**
+(`providers/_edgar_facts.py` reads the raw us-gaap `concept` column — `standard_concept` mislabels
+financing rows, e.g. it buckets `PaymentsOfDividends` under `DistributionsToMinorityInterests` —
+excluding dimensional breakdown rows; `providers/_xbrl_facts.py` `sum_family` sums distinct
+common+preferred members per fiscal end); the bridge / XBRL panel divide the latest-FY legs by
+`market_cap`. Surfaced in `--json`. The band/leg are **unfitted priors** — `backtest/signals.py`
+`XbrlSignalSource` emits a standalone `shareholder_yield` axis (`--source xbrl`;
+`scoring.shareholder_yield_score` is backtest-only) with the `shareholder_yield~value_fcf_yield`
+(payout vs cash generated — expect moderate corr) and `shareholder_yield~share_count` (buyback
+leg ≈ dilution dollar-twin) collinearity pairs. **Masked** for financials on the production path
+(bank capital returns ride CCAR/SCB cycles; loan-book debt flows distort the net-debt leg); the
+backtest axis stays unmasked. See PREDICTIVE_SIGNALS_RESEARCH §5.
 
 The **`insider.conviction`** block (`config.yaml`) enriches `insider_score` with three
 Form-4-derived signals — cluster buys, role-weighted buy pressure, and 10b5-1 planned-sell

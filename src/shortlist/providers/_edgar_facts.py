@@ -22,6 +22,26 @@ from ..stats import accruals, asset_growth
 _FY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s*\(FY\)$")
 _INSTANT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})$")
 
+# Cash-flow financing concept FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS
+# §5). Raw us-gaap tags (matched on the `concept` column). MUST mirror the XBRL panel's
+# families in _xbrl_facts.py — edit both. Verified live (AAPL/MSFT/LMT). Dividends and
+# repurchases are summed across common+preferred members; debt repayment/issuance are
+# netted (repayments - issuance) downstream.
+_DIVIDEND_TAGS = ("PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
+                  "PaymentsOfDividendsPreferredStockAndPreferenceStock",
+                  "PaymentsOfDividendsMinorityInterest")
+_REPURCHASE_TAGS = ("PaymentsForRepurchaseOfCommonStock",
+                    "PaymentsForRepurchaseOfEquity",
+                    "PaymentsForRepurchaseOfPreferredStockAndPreferenceStock",
+                    "PaymentsForRepurchaseOfRedeemablePreferredStock")
+_DEBT_REPAYMENT_TAGS = ("RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
+                        "RepaymentsOfDebtMaturingInMoreThanThreeMonths",
+                        "RepaymentsOfLongTermDebtAndCapitalSecurities",
+                        "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable")
+_DEBT_ISSUANCE_TAGS = ("ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
+                       "ProceedsFromIssuanceOfSeniorLongTermDebt",
+                       "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable")
+
 
 @dataclass
 class EdgarFinancials:
@@ -44,6 +64,13 @@ class EdgarFinancials:
     # CFO on cash-flow, Assets on balance-sheet instant) — list positions can differ.
     asset_growth: Optional[float] = None
     accruals: Optional[float] = None
+    # Total shareholder yield (PREDICTIVE_SIGNALS §5). Computed at extraction (needs
+    # market_cap, supplied by the bridge) -> these are the three latest-FY dollar legs;
+    # the bridge divides by market_cap. All are OUTFLOW MAGNITUDES (abs in shareholder_yield).
+    dividends_paid: Optional[float] = None        # latest FY, outflow magnitude
+    repurchases: Optional[float] = None           # latest FY, outflow magnitude (common+preferred)
+    debt_repayments: Optional[float] = None       # latest FY, outflow magnitude
+    debt_issuance: Optional[float] = None          # latest FY, inflow magnitude
 
 
 def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -111,6 +138,40 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
         if lvl.notna().any():
             return hit.loc[lvl.idxmin()]
     return hit.iloc[0]
+
+
+def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
+                           cols: list[tuple[str, str]]) -> Optional[float]:
+    """Latest-FY value of a us-gaap concept FAMILY on the CASH-FLOW statement, summed
+    across the family's distinct member tags (PREDICTIVE_SIGNALS §5). Matches the raw
+    `concept` column (e.g. 'us-gaap_PaymentsOfDividends'), NOT `standard_concept` —
+    edgartools' standard_concept mislabels financing rows (it buckets PaymentsOfDividends
+    under 'DistributionsToMinorityInterests'), so we read the authoritative raw tag instead.
+
+    A FAMILY because filers tag the same economic line differently — dividends are
+    `PaymentsOfDividends` (AAPL) or `PaymentsOfDividendsCommonStock` (MSFT/LMT); debt
+    repayment is `RepaymentsOfLongTermDebt` / `RepaymentsOfDebt` / `RepaymentsOfDebt-
+    MaturingInMoreThanThreeMonths`. We sum the DISTINCT tags present (e.g. common +
+    preferred repurchases), but EXCLUDE dimensional breakdown rows (`dimension=True`)
+    so a member's by-instrument sub-rows aren't double-counted with its total.
+
+    Returns the value at the LATEST FY column reporting any family member, or None when
+    no family member is tagged. The value is returned VERBATIM (signed as edgartools
+    presents it — outflows negative); shareholder_yield() abs()-normalizes each leg."""
+    if "concept" not in df.columns or not cols:
+        return None
+    rows = df.copy()
+    if "dimension" in rows.columns:
+        rows = rows[rows["dimension"] != True]      # noqa: E712 — drop dimensional breakdowns
+    concept = rows["concept"].astype(str)
+    mask = concept.str.startswith("us-gaap_") & concept.apply(
+        lambda c: any(c == f"us-gaap_{s}" for s in suffixes))
+    hit = rows[mask]
+    if hit.empty:
+        return None
+    _, latest_col = cols[0]                          # cols are newest-first
+    vals = [float(v) for v in hit[latest_col] if v is not None and not pd.isna(v)]
+    return sum(vals) if vals else None
 
 
 def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:
@@ -256,4 +317,12 @@ def extract_financials(
     fin.total_assets = [assets_by_end[e] for e in sorted(assets_by_end, reverse=True)]
     fin.asset_growth = asset_growth(assets_by_end)
     fin.accruals = accruals(ni_by_end, cfo_by_end, assets_by_end)
+
+    # Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5). All four are
+    # cash-flow FAMILIES, read off the raw us-gaap `concept` column (standard_concept
+    # mislabels these). Latest-FY dollar magnitudes; the bridge divides by market_cap.
+    fin.dividends_paid = _concept_family_latest(cashflow_df, _DIVIDEND_TAGS, cf_fy)
+    fin.repurchases = _concept_family_latest(cashflow_df, _REPURCHASE_TAGS, cf_fy)
+    fin.debt_repayments = _concept_family_latest(cashflow_df, _DEBT_REPAYMENT_TAGS, cf_fy)
+    fin.debt_issuance = _concept_family_latest(cashflow_df, _DEBT_ISSUANCE_TAGS, cf_fy)
     return fin

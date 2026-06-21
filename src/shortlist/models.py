@@ -47,6 +47,12 @@ class StockMetrics:
     # fiscal ends; accruals = (NetIncome-CFO)/avg-assets (Sloan). UNFITTED priors.
     asset_growth: Optional[float] = None
     accruals: Optional[float] = None
+    # Total shareholder yield (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber):
+    # (dividends + net buybacks + net debt reduction) / market_cap — cash RETURNED to
+    # owners, the legs fcf_yield misses. A POSITIVE predictor; the opt-in value leg
+    # scores it straight (higher yield -> higher score). UNFITTED prior. Net debt issuers
+    # can carry a NEGATIVE leg (debt issuance is the opposite of returning cash).
+    shareholder_yield: Optional[float] = None
 
     # Leverage / coverage (ASSESSMENT_GAPS §2.7). Absolute USD. revenue feeds the
     # EBITDA-margin denominator floor; net_debt_to_ebitda is SIGNED (net cash -> <0)

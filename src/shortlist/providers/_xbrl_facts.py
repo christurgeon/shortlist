@@ -107,6 +107,25 @@ INCOME_TAX = ["IncomeTaxExpenseBenefit"]
 SHARES_OUT = ["EntityCommonStockSharesOutstanding"]                   # dei, instant, unit="shares"
 WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"; feeds share_count_cagr
 ASSETS = ["Assets"]   # us-gaap, instant balance-sheet total; feeds asset_growth + accruals (PREDICTIVE_SIGNALS §3)
+# Cash-flow financing FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS §5).
+# Raw us-gaap, ANNUAL flow, POSITIVE magnitudes (companyfacts reports PaymentsOf* /
+# RepaymentsOf* as positive outflows). MUST mirror the edgartools families in
+# _edgar_facts.py — edit both. Verified live (AAPL/MSFT/LMT). Unlike the priority-with-
+# fallback aliases elsewhere, these are SUMMED per fiscal end (common + preferred, etc.)
+# via sum_family, since a filer may tag several distinct members in the same year.
+DIVIDENDS_PAID = ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
+                  "PaymentsOfDividendsPreferredStockAndPreferenceStock",
+                  "PaymentsOfDividendsMinorityInterest"]
+REPURCHASES = ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity",
+               "PaymentsForRepurchaseOfPreferredStockAndPreferenceStock",
+               "PaymentsForRepurchaseOfRedeemablePreferredStock"]
+DEBT_REPAYMENTS = ["RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
+                   "RepaymentsOfDebtMaturingInMoreThanThreeMonths",
+                   "RepaymentsOfLongTermDebtAndCapitalSecurities",
+                   "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable"]
+DEBT_ISSUANCE = ["ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
+                 "ProceedsFromIssuanceOfSeniorLongTermDebt",
+                 "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable"]
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +141,19 @@ def align_fcf(ocf: dict, capex: dict) -> dict:
 def sum_aligned(a: dict, b: dict) -> dict:
     """a + b per fiscal end reporting both."""
     return {e: a[e] + b[e] for e in a if e in b}
+
+
+def sum_family(facts: dict, concepts: list[str], as_of: date) -> dict:
+    """{fiscal_end: sum} over a us-gaap concept FAMILY — distinct from annual_series's
+    priority-with-fallback (which lets ONE concept own each end). Used for the financing
+    families (PREDICTIVE_SIGNALS §5) where a filer can tag several distinct members in
+    the SAME year (common + preferred repurchases) that must be ADDED, not overridden.
+    Each member is its own annual_series; per end we sum every member reporting it."""
+    out: dict[str, float] = {}
+    for concept in concepts:
+        for end, val in annual_series(facts, [concept], as_of).items():
+            out[end] = out.get(end, 0.0) + val
+    return out
 
 
 def ratio_latest(num: dict, den: dict) -> Optional[float]:
@@ -168,6 +200,12 @@ class XbrlPanel:
     dep_amort: dict[str, float] = field(default_factory=dict)
     cash: dict[str, float] = field(default_factory=dict)            # instant (balance sheet)
     assets: dict[str, float] = field(default_factory=dict)          # instant total assets (balance sheet)
+    # Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5). Annual flow,
+    # POSITIVE outflow/inflow magnitudes (raw companyfacts convention).
+    dividends_paid: dict[str, float] = field(default_factory=dict)
+    repurchases: dict[str, float] = field(default_factory=dict)
+    debt_repayments: dict[str, float] = field(default_factory=dict)
+    debt_issuance: dict[str, float] = field(default_factory=dict)
 
 
 def _gross_profit(facts: dict, as_of: date) -> dict:
@@ -208,6 +246,10 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
         shares=latest(shares),
         diluted_shares=annual_series(facts, WTD_DIL_SHARES, as_of, units=("shares",)),
         assets=annual_series(facts, ASSETS, as_of, instant=True),
+        dividends_paid=sum_family(facts, DIVIDENDS_PAID, as_of),
+        repurchases=sum_family(facts, REPURCHASES, as_of),
+        debt_repayments=sum_family(facts, DEBT_REPAYMENTS, as_of),
+        debt_issuance=sum_family(facts, DEBT_ISSUANCE, as_of),
     )
 
 
@@ -225,6 +267,7 @@ from ..stats import (  # noqa: E402
     growth_persistence,
     median_pe,
     piotroski_f,
+    shareholder_yield,
 )
 
 _STATUTORY_TAX = 0.21
@@ -312,6 +355,13 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     fcf_latest = latest(p.fcf)
     if fcf_latest is not None and m.market_cap:
         m.fcf_yield = fcf_latest / m.market_cap
+
+    # Total shareholder yield (PREDICTIVE_SIGNALS §5): latest-FY financing legs (positive
+    # magnitudes in raw companyfacts) / market_cap. shareholder_yield() abs()-normalizes
+    # each leg + nets repayments-issuance (signed). Abstains when all legs/market_cap absent.
+    m.shareholder_yield = shareholder_yield(
+        latest(p.dividends_paid), latest(p.repurchases),
+        latest(p.debt_repayments), latest(p.debt_issuance), m.market_cap)
     eps_latest = latest(p.diluted_eps)
     if price and eps_latest:
         m.pe_ttm = price / eps_latest        # latest annual EPS as a TTM proxy
