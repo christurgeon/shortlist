@@ -150,3 +150,64 @@ def test_monthly_closes_empty_when_no_timestamps(tmp_path, monkeypatch):
     monkeypatch.setattr(src, "_get_chart", fake_get)
     res = asyncio.run(src.fetch("AAPL"))
     assert res.partial.price.monthly_closes == []   # no timestamps -> no dated history, no crash
+
+
+# --- residual momentum plumbed into the LIVE source path ---------------------
+
+def _closes_from_returns(rets, start=100.0):
+    out = [start]
+    for r in rets:
+        out.append(out[-1] * (1.0 + r))
+    return out
+
+
+def _resid_mom_chart_pair():
+    """A ~260-bar daily chart fixture (dated) for stock + SPY where the stock has real
+    idiosyncratic wobble around its market beta, so residual_momentum is finite (not the
+    flat-residual abstain case). Returns (stock_payload, spy_payload)."""
+    n = 260
+    ts = [i * 86400 for i in range(n)]                       # n daily bars, 1 day apart
+    mkt_rets = [0.011 if i % 2 == 0 else -0.008 for i in range(n - 1)]
+    # stock = beta*market + an idiosyncratic component with a positive recent drift
+    idio = [0.004 if k % 5 else -0.003 for k in range(n - 1)]
+    stock_rets = [1.3 * m + i for m, i in zip(idio, mkt_rets, strict=False)]
+    spy_closes = _closes_from_returns(mkt_rets)
+    stock_closes = _closes_from_returns(stock_rets)
+    return (_chart_payload_with_ts(stock_closes, ts),
+            _chart_payload_with_ts(spy_closes, ts))
+
+
+def test_yahoo_live_path_populates_residual_momentum(tmp_path, monkeypatch):
+    # END-TO-END: a DATED chart through YahooSource.fetch must populate
+    # price.residual_momentum (it was None on the live path before the date plumbing).
+    from shortlist.data.sources import YahooSource
+    src = YahooSource(cache_dir=str(tmp_path))
+    stock_payload, spy_payload = _resid_mom_chart_pair()
+
+    async def fake_get(symbol):
+        return spy_payload if symbol == "SPY" else stock_payload
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+
+    res = asyncio.run(src.fetch("AAA"))
+    assert res.partial.price is not None
+    rm = res.partial.price.residual_momentum
+    assert rm is not None and isinstance(rm, float)          # leg computed live, not None
+    asyncio.run(src.aclose())
+
+
+def test_yahoo_live_path_residual_none_when_dateless(tmp_path, monkeypatch):
+    # ROBUSTNESS: a date-less payload (no timestamp array) falls back to the prior
+    # behavior — residual_momentum stays None, no crash — so the leg simply abstains.
+    from shortlist.data.sources import YahooSource
+    src = YahooSource(cache_dir=str(tmp_path))
+    n = 260
+    base = [100.0 + i for i in range(n)]
+
+    async def fake_get(symbol):
+        return _chart_payload(base)                          # no "timestamp" key
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+
+    res = asyncio.run(src.fetch("AAA"))
+    assert res.partial.price is not None
+    assert res.partial.price.residual_momentum is None
+    asyncio.run(src.aclose())

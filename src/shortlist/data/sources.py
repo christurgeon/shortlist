@@ -693,6 +693,7 @@ class YahooSource(Source):
         self._client = httpx.AsyncClient(timeout=timeout, headers={"User-Agent": self.UA})
         self._cache_dir = Path(cache_dir)
         self._spy_closes: Optional[list[float]] = None
+        self._spy_dates: Optional[list[date]] = None
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -723,8 +724,12 @@ class YahooSource(Source):
         return _closes_from_chart(await self._get_chart(symbol))
 
     async def _spy(self) -> list[float]:
+        """SPY closes, fetched once per run. Also populates `_spy_dates` from the same
+        payload so the residual-momentum leg can date-inner-join stock vs SPY."""
         if self._spy_closes is None:
-            self._spy_closes = await self._closes("SPY")
+            raw = await self._get_chart("SPY")
+            self._spy_closes = _closes_from_chart(raw)
+            self._spy_dates = _dates_from_chart(raw)
         return self._spy_closes
 
     async def fetch(self, ticker: str) -> SourceResult:
@@ -733,7 +738,15 @@ class YahooSource(Source):
             raw = await self._get_chart(ticker)
             closes = _closes_from_chart(raw)
             spy = await self._spy()
-            res.partial = _normalize_yahoo(ticker, closes, spy)
+            # Plumb the date-aligned stock + SPY series so residual_momentum computes on
+            # the live path (PREDICTIVE_SIGNALS §2). _dates_from_chart drops to [] on a
+            # date-less / misaligned payload; _normalize_yahoo then leaves residual_momentum
+            # None (the leg abstains) rather than crashing the screen.
+            dates = _dates_from_chart(raw)
+            spy_dates = self._spy_dates
+            if not dates or not spy_dates:
+                dates = spy_dates = None  # fall back to the date-less (None-residual) path
+            res.partial = _normalize_yahoo(ticker, closes, spy, dates, spy_dates)
             if res.partial.price is not None:
                 res.partial.price.monthly_closes = _monthly_closes_from_chart(raw)
             res.raw = {"close_count": len(closes)}
@@ -1037,6 +1050,27 @@ def _closes_from_chart(raw: Any) -> list[float]:
     except (KeyError, IndexError, TypeError):
         return []
     return [c for c in series if isinstance(c, (int, float))]
+
+
+def _dates_from_chart(raw: Any) -> list[date]:
+    """Bar dates aligned 1:1 to `_closes_from_chart(raw)` (same numeric-close filter),
+    oldest->newest, as `datetime.date`. Returns [] when timestamps are absent (older
+    cached 5y payloads lacking a timestamp array) or misaligned (len(ts) != len(series)),
+    so the caller can fall back to the date-less (residual-momentum-None) behavior."""
+    try:
+        result = raw["chart"]["result"][0]
+        ts = result["timestamp"]
+        series = result["indicators"]["adjclose"][0]["adjclose"]
+    except (KeyError, IndexError, TypeError):
+        return []
+    if not ts or not series or len(ts) != len(series):
+        return []
+    out: list[date] = []
+    for t, c in zip(ts, series, strict=False):
+        if not isinstance(c, (int, float)):
+            continue  # mirror _closes_from_chart: drop non-numeric closes + their date
+        out.append(datetime.fromtimestamp(t, tz=timezone.utc).date())
+    return out
 
 
 def _monthly_closes_from_chart(raw: Any) -> list[list]:
