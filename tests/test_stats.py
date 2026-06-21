@@ -3,7 +3,7 @@ import pytest
 from shortlist.stats import (
     accruals, asset_growth, avg_roic, cagr, compute_ebit_ev_yield,
     gross_margin_stability, growth_persistence, median_pe, net_debt_from,
-    piotroski_f,
+    piotroski_f, shareholder_yield,
 )
 
 
@@ -284,3 +284,40 @@ def test_accruals_none_on_missing_inputs_or_gap():
     assert accruals({"2024-12-31": 200.0}, {}, assets) is None              # CFO missing at t
     gap = {"2024-12-31": 1100.0, "2022-12-31": 1000.0}                      # gap-spanning
     assert accruals({"2024-12-31": 200.0}, {"2024-12-31": 150.0}, gap) is None
+
+
+# --- shareholder_yield (PREDICTIVE_SIGNALS §5) -----------------------------
+
+def test_shareholder_yield_adds_dividends_and_buybacks():
+    # (div + repur + (repay - issue)) / mcap = (50 + 150 + (80 - 30)) / 1000 = 0.25.
+    assert shareholder_yield(50, 150, 80, 30, 1000) == pytest.approx(0.25)
+
+
+def test_shareholder_yield_sign_normalizes_both_source_conventions():
+    # Raw companyfacts (positive magnitudes) and edgartools (negative outflows) must
+    # yield the SAME number — abs() on each leg. Issuance is an inflow (positive in both).
+    pos = shareholder_yield(50, 150, 80, 30, 1000)        # companyfacts
+    neg = shareholder_yield(-50, -150, -80, 30, 1000)     # edgartools-style outflows
+    assert pos == neg == pytest.approx(0.25)
+
+
+def test_shareholder_yield_bigger_repurchaser_scores_higher():
+    big = shareholder_yield(0, 300, 0, 0, 1000)
+    small = shareholder_yield(0, 100, 0, 0, 1000)
+    assert big > small
+
+
+def test_shareholder_yield_net_debt_issuer_leg_negative_not_clamped():
+    # issuance > repayments, no dividends/buybacks -> the whole yield goes negative.
+    assert shareholder_yield(0, 0, 20, 120, 1000) == pytest.approx(-0.10)
+
+
+def test_shareholder_yield_missing_legs_treated_as_zero():
+    # A dividend-only payer (no buyback / debt rows present) still yields dividends/mcap.
+    assert shareholder_yield(50, None, None, None, 1000) == pytest.approx(0.05)
+
+
+def test_shareholder_yield_abstains_when_all_legs_or_mktcap_missing():
+    assert shareholder_yield(None, None, None, None, 1000) is None       # no financing data
+    assert shareholder_yield(50, 150, 80, 30, None) is None              # no market cap
+    assert shareholder_yield(50, 150, 80, 30, 0) is None                 # non-positive mcap

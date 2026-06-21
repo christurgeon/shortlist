@@ -80,6 +80,14 @@ class Statements:
     total_assets: list[float] = field(default_factory=list)
     asset_growth: Optional[float] = None
     accruals: Optional[float] = None
+    # Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5). Latest-FY dollar
+    # magnitudes; the bridge divides by market_cap to derive shareholder_yield (it can't
+    # be pre-computed at extraction — market_cap is a price-merge product). None where
+    # the source didn't supply financing rows (e.g. FMP-won statements).
+    dividends_paid: Optional[float] = None
+    repurchases: Optional[float] = None
+    debt_repayments: Optional[float] = None
+    debt_issuance: Optional[float] = None
 
     def gross_margins(self) -> list[float]:
         return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False) if r]
@@ -264,7 +272,10 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       "cash_and_equivalents",
                       # Asset-growth / accruals plumbing + pre-computed scalars (§3) —
                       # surfaced via StockMetrics, not coverage-accounted here.
-                      "total_assets", "asset_growth", "accruals")
+                      "total_assets", "asset_growth", "accruals",
+                      # Shareholder-yield financing legs (§5) — plumbing the bridge
+                      # divides by market_cap; surfaced via StockMetrics, not here.
+                      "dividends_paid", "repurchases", "debt_repayments", "debt_issuance")
 
 
 @dataclass

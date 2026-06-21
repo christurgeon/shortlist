@@ -175,6 +175,18 @@ def accruals_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.accruals, *t["accruals"])
 
 
+def shareholder_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone shareholder-yield axis (Boudoukh et al. 2007 / Faber): the (NON-
+    inverted) total-payout band -> 0..100 (higher cash returned to owners scores higher,
+    UNLIKE asset_growth/accruals which invert). Exists so the backtest can measure the
+    rank IC + its collinearity vs fcf_yield and share_count on its own; the PRODUCTION
+    signal is the opt-in value shareholder_yield leg, not this. None when the band or the
+    signal is absent."""
+    if "shareholder_yield" not in t or m.shareholder_yield is None:
+        return None
+    return _norm(m.shareholder_yield, *t["shareholder_yield"])
+
+
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
@@ -307,6 +319,15 @@ def _earnings_quality_on(config: dict) -> bool:
     return bool(d) and d.get("enabled", True)
 
 
+def _shareholder_yield_on(config: dict) -> bool:
+    """True when the opt-in total-shareholder-yield (value) scoring block is present
+    and enabled. Absent (it ships commented out) -> the value leg is skipped, so
+    value_score is byte-identical to the pre-feature version. Mirrors _dilution_on /
+    _earnings_quality_on / the insider.conviction gating."""
+    d = ((config or {}).get("value") or {}).get("shareholder_yield")
+    return bool(d) and d.get("enabled", True)
+
+
 def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     legs = [
         _Leg("roe", m.roe, "roe"),
@@ -363,13 +384,21 @@ def _momentum_legs(m: StockMetrics) -> list[_Leg]:
     ]
 
 
-def _value_legs(m: StockMetrics) -> list[_Leg]:
-    return [
+def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
+    legs = [
         _Leg("upside_to_target", m.upside_to_target(), "upside_to_target"),
         _Leg("fcf_yield", m.fcf_yield, "fcf_yield"),
         _Leg("pe_vs_history", m.pe_vs_history(), "pe_vs_history"),
         _Leg("peg", m.peg, "peg"),
     ]
+    # Total shareholder yield (PREDICTIVE_SIGNALS §5): dividends + net buybacks + net
+    # debt reduction / market_cap. A POSITIVE predictor scored STRAIGHT (high -> high,
+    # NOT inverted like the §3 legs). Opt-in + threshold-guarded like the dilution leg;
+    # absent -> byte-identical. Masked for financials (the leg name is in
+    # sectors.masked_legs) so it abstains there on the production path.
+    if _shareholder_yield_on(config) and "shareholder_yield" in ((config or {}).get("thresholds") or {}):
+        legs.append(_Leg("shareholder_yield", m.shareholder_yield, "shareholder_yield"))
+    return legs
 
 
 def _fcf_excused(m: StockMetrics, fc: dict) -> bool:
@@ -515,7 +544,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     mo = sub("moat", _moat_legs(m))
     gr = sub("growth", _growth_legs(m, config))
     mom = sub("momentum", _momentum_legs(m))
-    val = sub("value", _value_legs(m))
+    val = sub("value", _value_legs(m, config))
     # Value-tilt: value and momentum are weighted INDEPENDENTLY in the composite
     # (see spec 2026-06-02-value-tilt-scoring-design). `opp` is retained only as a
     # display-only convenience on the ScoreCard, not as a composite component.

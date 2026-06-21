@@ -118,12 +118,16 @@ class XbrlSignalSource:
     Schill 2008) and `accruals` (Sloan 1996), both unfitted priors and both NEGATIVE
     predictors the score helpers invert, so their rank IC + collinearity (`accruals~
     piotroski`, `asset_growth~growth`) are measurable before the opt-in quality legs
-    are trusted (PREDICTIVE_SIGNALS §3).
+    are trusted (PREDICTIVE_SIGNALS §3). And `shareholder_yield` (Boudoukh et al. 2007 /
+    Faber, PREDICTIVE_SIGNALS §5) — a POSITIVE predictor scored straight, with the
+    `shareholder_yield~fcf_yield` and `shareholder_yield~share_count` collinearity pairs
+    (the buyback leg is the dollar-twin of dilution) measured before the opt-in value leg.
     """
     name = "xbrl"
     _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",
              "net_debt_to_ebitda", "ebit_ev_yield", "value_fcf_yield",
-             "value_pe_vs_history", "value_plus_evebit", "asset_growth", "accruals")
+             "value_pe_vs_history", "value_plus_evebit", "asset_growth", "accruals",
+             "shareholder_yield")
 
     def __init__(self, facts: Optional[dict[str, dict]] = None,
                  histories: Optional[dict[str, PriceHistory]] = None,

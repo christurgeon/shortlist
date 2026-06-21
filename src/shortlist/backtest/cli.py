@@ -32,6 +32,8 @@ _COLLINEARITY_PAIRS = [
     ("net_debt_to_ebitda", "quality"),      # leverage vs scored quality
     ("accruals", "piotroski"),              # accruals vs Piotroski CFO>NI overlap (§3)
     ("asset_growth", "growth"),             # asset growth vs scored growth (§3)
+    ("shareholder_yield", "value_fcf_yield"),  # total payout vs cash GENERATED (§5; the standalone fcf-yield axis)
+    ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution (§5)
 ]
 _COLLINEARITY_REDUNDANT = 0.5   # |corr| at/above this => the candidate is redundant
 

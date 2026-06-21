@@ -83,3 +83,61 @@ def test_asset_growth_none_when_assets_absent():
     assert ef.total_assets == []
     assert ef.asset_growth is None
     assert ef.accruals is None
+
+
+# --- Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5) ----------
+
+def _cf_concept_df(rows):
+    """Cash-flow DataFrame with a raw us-gaap `concept` column + optional `dimension`
+    flag — the shape _concept_family_latest reads (financing tags are mislabeled by
+    standard_concept, so the families match `concept`). rows: (concept, {2024,2023},
+    dimension=False)."""
+    cols = ["concept", "dimension", "2024-12-31 (FY)", "2023-12-31 (FY)"]
+    data = [[c, dim, v.get("2024"), v.get("2023")] for c, v, dim in rows]
+    return pd.DataFrame(data, columns=cols)
+
+
+def test_shareholder_yield_legs_extracted_family_sum():
+    # Common + preferred members of the SAME family are summed; debt repayment/issuance
+    # are read into distinct legs. Values are passed VERBATIM (signed as edgartools
+    # presents them — here positive magnitudes for clarity).
+    income = _fy_df([("Revenue", {"2024": 1000.0, "2023": 900.0})])
+    balance = _instant_df([("LongTermDebt", {"2024": 300.0, "2023": 280.0})])
+    cashflow = _cf_concept_df([
+        ("us-gaap_PaymentsOfDividendsCommonStock", {"2024": 100.0, "2023": 90.0}, False),
+        ("us-gaap_PaymentsOfDividendsPreferredStockAndPreferenceStock", {"2024": 10.0, "2023": 8.0}, False),
+        ("us-gaap_PaymentsForRepurchaseOfCommonStock", {"2024": 500.0, "2023": 400.0}, False),
+        ("us-gaap_RepaymentsOfLongTermDebt", {"2024": 200.0, "2023": 150.0}, False),
+        ("us-gaap_ProceedsFromIssuanceOfLongTermDebt", {"2024": 50.0, "2023": 40.0}, False),
+    ])
+    ef = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert ef.dividends_paid == pytest.approx(110.0)     # 100 common + 10 preferred (FAMILY sum)
+    assert ef.repurchases == pytest.approx(500.0)
+    assert ef.debt_repayments == pytest.approx(200.0)
+    assert ef.debt_issuance == pytest.approx(50.0)
+
+
+def test_shareholder_yield_excludes_dimensional_breakdown_rows():
+    # A dimensional breakdown (dimension=True) of repurchases must NOT be double-counted
+    # with its parent total (real filers tag e.g. "Accelerated Share Repurchase" rows).
+    income = _fy_df([("Revenue", {"2024": 1.0, "2023": 1.0})])
+    balance = _instant_df([("LongTermDebt", {"2024": 1.0, "2023": 1.0})])
+    cashflow = _cf_concept_df([
+        ("us-gaap_PaymentsForRepurchaseOfCommonStock", {"2024": 300.0, "2023": 200.0}, False),
+        ("us-gaap_PaymentsForRepurchaseOfCommonStock", {"2024": 300.0, "2023": 200.0}, True),  # breakdown
+    ])
+    ef = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert ef.repurchases == pytest.approx(300.0)        # the breakdown row is dropped
+
+
+def test_shareholder_yield_legs_none_when_no_financing_rows():
+    income = _fy_df([("Revenue", {"2024": 1.0, "2023": 1.0})])
+    balance = _instant_df([("LongTermDebt", {"2024": 1.0, "2023": 1.0})])
+    cashflow = _cf_concept_df([
+        ("us-gaap_NetCashProvidedByUsedInOperatingActivities", {"2024": 50.0, "2023": 40.0}, False),
+    ])
+    ef = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert ef.dividends_paid is None
+    assert ef.repurchases is None
+    assert ef.debt_repayments is None
+    assert ef.debt_issuance is None

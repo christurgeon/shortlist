@@ -11,8 +11,8 @@ from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
     _avg, _norm, accruals_score, asset_growth_score, check_flags, ebit_ev_yield_score,
     growth_score, insider_score, moat_score, momentum_score, piotroski_score,
-    quality_score, score, value_fcf_yield_score, value_pe_vs_history_score,
-    value_plus_evebit_score, value_score,
+    quality_score, score, shareholder_yield_score, value_fcf_yield_score,
+    value_pe_vs_history_score, value_plus_evebit_score, value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -324,6 +324,82 @@ def test_asset_growth_and_accruals_backtest_axes():
     none_m = dataclasses.replace(metrics_all_50(), asset_growth=None, accruals=None)
     assert asset_growth_score(none_m, t) is None
     assert accruals_score(none_m, t) is None
+
+
+# --- total shareholder-yield value leg (PREDICTIVE_SIGNALS §5) ----------------
+
+def _sy_config(*, enabled: bool = True) -> dict:
+    """CONFIG plus the (straight, non-inverted) shareholder_yield band and (optionally)
+    the opt-in value.shareholder_yield scoring block."""
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"],
+                                  "shareholder_yield": [-0.02, 0.10]}}  # -2% -> 0, +10% -> 100
+    if enabled:
+        c["value"] = {"shareholder_yield": {"enabled": True}}
+    return c
+
+
+def test_shareholder_yield_leg_absent_is_byte_identical():
+    # Signal present on the metrics, but no value.shareholder_yield block -> the scorer
+    # ignores it: value is the legacy 4-leg average. A band in thresholds must NOT matter.
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"], "shareholder_yield": [-0.02, 0.10]}}
+    m = dataclasses.replace(metrics_all_50(), shareholder_yield=0.10)
+    assert score(m, c).value == 50.0       # unchanged 4-leg value
+    assert score(m, c).composite == score(metrics_all_50(), CONFIG).composite
+
+
+def test_shareholder_yield_leg_really_wired():
+    # Block ENABLED + signal present -> composite MUST measurably differ from disabled.
+    on = _sy_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), shareholder_yield=0.10)
+    # metrics_all_50 leaves peg=None, so value has 3 present legs at 50; the maxed
+    # shareholder_yield leg (100) makes it avg(50, 50, 50, 100) = 62.5.
+    assert score(m, on).value == pytest.approx(round((50 * 3 + 100) / 4, 1))
+    off = score(m, CONFIG)
+    assert off.value == 50.0
+    assert score(m, on).composite != off.composite
+
+
+def test_shareholder_yield_leg_bigger_payout_scores_higher():
+    on = _sy_config(enabled=True)
+    base = metrics_all_50()
+    # A net debt ISSUER carries a NEGATIVE leg (bottom of band, 0); a big returner tops it.
+    issuer = dataclasses.replace(base, shareholder_yield=-0.02)
+    returner = dataclasses.replace(base, shareholder_yield=0.10)
+    assert score(issuer, on).value == pytest.approx(round((50 * 3 + 0) / 4, 1))
+    assert score(returner, on).value > score(issuer, on).value
+
+
+def test_shareholder_yield_leg_redistributes_when_signal_missing():
+    # Block on but signal None -> leg absent, value is the legacy 4-leg average.
+    on = _sy_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), shareholder_yield=None)
+    assert score(m, on).value == 50.0
+
+
+def test_shareholder_yield_leg_masked_for_financials():
+    # Production sector mask: financials abstain the leg even with the block enabled, so
+    # value stays the legacy average and the leg is recorded inapplicable.
+    on = _sy_config(enabled=True)
+    on["sectors"] = {"buckets": [{"name": "financials", "sic_ranges": [[6020, 6099]]}],
+                     "masked_legs": ["shareholder_yield"]}
+    m = dataclasses.replace(metrics_all_50(), sic="6020", shareholder_yield=0.10)
+    card = score(m, on)
+    assert card.sic_bucket == "financials"
+    assert card.value == 50.0            # masked -> legacy 4-leg average
+    masked = {a["field"] for a in card.abstentions if a["reason"] == "inapplicable"}
+    assert "shareholder_yield" in masked
+
+
+def test_shareholder_yield_backtest_axis():
+    # Backtest-only standalone axis: STRAIGHT band -> 0..100 (NOT inverted); None-safe.
+    t = {"shareholder_yield": [-0.02, 0.10]}
+    m = dataclasses.replace(metrics_all_50(), shareholder_yield=0.10)
+    assert shareholder_yield_score(m, t) == 100.0      # high payout -> top of band
+    issuer = dataclasses.replace(metrics_all_50(), shareholder_yield=-0.02)
+    assert shareholder_yield_score(issuer, t) == 0.0   # net issuer -> bottom
+    assert shareholder_yield_score(m, {}) is None      # absent band
+    none_m = dataclasses.replace(metrics_all_50(), shareholder_yield=None)
+    assert shareholder_yield_score(none_m, t) is None  # absent signal
 
 
 # --- value/momentum independent weighting ---------------------------------
