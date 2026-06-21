@@ -6,6 +6,14 @@ from typing import Optional
 
 from .models import ScoreCard, StockMetrics
 from .sectors import gate_applicable, leg_applicable, resolve_bucket
+from .stats import sue as _stats_sue
+
+# SUE leg defaults (PREDICTIVE_SIGNALS §1). Used by the backtest-only sue_score and as
+# the momentum.sue config fallbacks: decay over ~60 trading days, abstain when the
+# firm's own surprise dispersion is below 1 percentage point (the σ≈0 guard).
+_SUE_DECAY_TRADING_DAYS = 60
+_SUE_SIGMA_FLOOR = 1.0
+_SUE_MIN_QUARTERS = 3
 
 
 def _norm(value: Optional[float], lo: float, hi: float) -> Optional[float]:
@@ -187,6 +195,41 @@ def shareholder_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.shareholder_yield, *t["shareholder_yield"])
 
 
+def _sue_value(m: StockMetrics, *, sigma_floor: float = _SUE_SIGMA_FLOOR,
+               decay_trading_days: int = _SUE_DECAY_TRADING_DAYS,
+               min_quarters: int = _SUE_MIN_QUARTERS) -> Optional[float]:
+    """The decayed standardized-earnings-surprise scalar from the metrics, applying the
+    σ-guard (PREDICTIVE_SIGNALS §1). Abstains (None) when the firm has fewer than
+    `min_quarters` usable surprises (`earnings_quarters` floor — so the common 1-quarter
+    case yields None), then delegates the σ-floor / decay guards to stats.sue. Decay is
+    anchored on `earnings_days_since_last_report` (the PAST report), never days-to-next."""
+    if m.earnings_quarters is None or m.earnings_quarters < min_quarters:
+        return None
+    return _stats_sue(
+        m.earnings_last_surprise_pct, m.earnings_surprise_dispersion,
+        m.earnings_days_since_last_report,
+        sigma_floor=sigma_floor, decay_trading_days=decay_trading_days)
+
+
+def sue_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone SUE axis (Bernard-Thomas 1989, Novy-Marx 2015): the decayed,
+    dispersion-standardized earnings surprise mapped through the `sue` band -> 0..100
+    (a fresh beat scores high). Backtest-only, like share_count_score / piotroski_score
+    — the PRODUCTION signal is the opt-in momentum.sue leg folded into momentum_score,
+    not this. Uses the default decay/σ-floor priors (the config knobs are a scoring
+    concern). None when the band, the inputs, or the σ-guard abstain.
+
+    MEASUREMENT GATING: SUE is NOT a live-price backtest axis — the momentum backtest
+    replays price-only snapshots (`snapshot_from_closes`) that carry NO earnings, and
+    historical surprises aren't in SEC companyfacts (so the XBRL path can't reach it
+    either). This axis therefore rides ONLY the guarded snapshot-replay path
+    (SnapshotSignalSource), which no-ops until daily accumulation exists. See CLAUDE.md."""
+    if "sue" not in t:
+        return None
+    v = _sue_value(m)
+    return _norm(v, *t["sue"]) if v is not None else None
+
+
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
@@ -319,6 +362,32 @@ def _earnings_quality_on(config: dict) -> bool:
     return bool(d) and d.get("enabled", True)
 
 
+def _sue_on(config: dict) -> bool:
+    """True when the opt-in SUE (momentum) scoring block is present and enabled. Absent
+    (it ships commented out) -> the SUE leg is skipped, so momentum_score is byte-
+    identical to the pre-feature scorer. Mirrors _dilution_on / _shareholder_yield_on."""
+    d = ((config or {}).get("momentum") or {}).get("sue")
+    return bool(d) and d.get("enabled", True)
+
+
+def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
+    """The opt-in, threshold-guarded SUE momentum leg, or None when OFF / no band /
+    the σ-guard abstains. Reads the momentum.sue decay/σ knobs (falling back to the
+    module priors), so the SAME guarded math the backtest sue_score uses applies here."""
+    if not _sue_on(config) or "sue" not in ((config or {}).get("thresholds") or {}):
+        return None
+    blk = ((config or {}).get("momentum") or {}).get("sue") or {}
+    v = _sue_value(
+        m,
+        sigma_floor=blk.get("sigma_floor", _SUE_SIGMA_FLOOR),
+        decay_trading_days=blk.get("decay_trading_days", _SUE_DECAY_TRADING_DAYS),
+        min_quarters=blk.get("min_quarters", _SUE_MIN_QUARTERS))
+    # None value -> still emit the leg so _eval_subscore redistributes (None-safe); it is
+    # filtered out of `present`. Returning the _Leg with a None value matches the dilution
+    # / shareholder_yield precedent (the leg exists; its absence is a missing-value drop).
+    return _Leg("sue", v, "sue")
+
+
 def _shareholder_yield_on(config: dict) -> bool:
     """True when the opt-in total-shareholder-yield (value) scoring block is present
     and enabled. Absent (it ships commented out) -> the value leg is skipped, so
@@ -376,12 +445,21 @@ def _growth_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     ]
 
 
-def _momentum_legs(m: StockMetrics) -> list[_Leg]:
-    return [
+def _momentum_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
+    legs = [
         _Leg("price_vs_200dma", m.price_vs_200dma, "price_vs_200dma"),
         _Leg("rel_strength_6m", m.rel_strength_6m, "rel_strength_6m"),
         _Leg("eps_revision", m.eps_revision, "eps_revision"),
     ]
+    # SUE / post-earnings-announcement drift (PREDICTIVE_SIGNALS §1): the decayed,
+    # dispersion-standardized earnings surprise. A fundamental momentum leg that price
+    # momentum only weakly proxies (Novy-Marx 2015). Opt-in + threshold-guarded like the
+    # value/quality legs; absent -> byte-identical. Momentum legs are never sector-masked,
+    # so SUE is universally applicable (unlike the balance-sheet legs).
+    sue_leg = _sue_leg(m, config)
+    if sue_leg is not None:
+        legs.append(sue_leg)
+    return legs
 
 
 def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
@@ -543,7 +621,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     q = sub("quality", _quality_legs(m, config))
     mo = sub("moat", _moat_legs(m))
     gr = sub("growth", _growth_legs(m, config))
-    mom = sub("momentum", _momentum_legs(m))
+    mom = sub("momentum", _momentum_legs(m, config))
     val = sub("value", _value_legs(m, config))
     # Value-tilt: value and momentum are weighted INDEPENDENTLY in the composite
     # (see spec 2026-06-02-value-tilt-scoring-design). `opp` is retained only as a

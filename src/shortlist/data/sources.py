@@ -337,10 +337,28 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
                     and d.get("epsActual") is None)
     if future:
         next_date = future[0]
+    # last_report_date: the best-available APPROXIMATION of the most-recent ANNOUNCEMENT
+    # date (PREDICTIVE_SIGNALS §1 SUE leg). Finnhub `stock/earnings` rows carry only the
+    # fiscal `period` (quarter-END), NOT the print date, so we prefer the `calendar/
+    # earnings` entries that DO carry a true announcement `date` AND an `epsActual` (i.e.
+    # a report that has already happened, date <= today). Pick the latest such date.
+    # Fallback (calendar missing past entries): the most recent `stock/earnings` period
+    # (quarter-end) — a WEAKER proxy, since the actual print lands ~30-45 days later, so
+    # this OVER-states staleness (the SUE leg decays a touch faster than reality). Both
+    # are approximations; documented in CLAUDE.md / HARNESS.md.
+    last_report_date = None
+    past = sorted(d["date"] for d in cal
+                  if d.get("date") and d["date"] <= today.isoformat()
+                  and d.get("epsActual") is not None)
+    if past:
+        last_report_date = past[-1]
+    elif ordered:
+        last_report_date = ordered[0].get("period") or None
     return Earnings(
         as_of=today.isoformat(), recent_surprise_pcts=surprises,
         quarters=len(surprises) or None, beats=beats,
-        last_surprise_pct=surprises[0] if surprises else None, next_date=next_date)
+        last_surprise_pct=surprises[0] if surprises else None, next_date=next_date,
+        last_report_date=last_report_date)
 
 
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:

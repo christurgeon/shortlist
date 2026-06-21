@@ -294,6 +294,14 @@ All are **unfitted priors**; this is how we validate them point-in-time. The
 `shareholder_yield` an opt-in `value.shareholder_yield` leg (both OFF by default). See
 `CLAUDE.md` → dilution / Piotroski / earnings-quality / shareholder-yield / gate notes.
 
+**SUE is the exception — it is NOT an XBRL/live-price axis.** The standardized-earnings-surprise
+leg (`momentum.sue`, PREDICTIVE_SIGNALS §1) needs Finnhub earnings, which are absent from both
+the price-only momentum source (`snapshot_from_closes`) and SEC companyfacts. So `scoring.sue_score`
++ the `sue~momentum` collinearity pair ride ONLY the **guarded snapshot-replay** path
+(`SnapshotSignalSource` emits a standalone `sue` axis) and **no-op until daily accumulation
+captures the earnings fields** — no live-price SUE axis is fabricated. See `CLAUDE.md` →
+"SUE / post-earnings-announcement-drift leg" (incl. the announcement-date approximation).
+
 ```bash
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
 ```

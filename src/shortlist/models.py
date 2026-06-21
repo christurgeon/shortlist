@@ -174,6 +174,10 @@ class StockMetrics:
     earnings_last_surprise_pct: Optional[float] = None # newest quarter's surprise %
     earnings_quarters: Optional[int] = None        # # recent quarters with a usable surprise
     earnings_days_to_next: Optional[int] = None    # days until the next scheduled report
+    # SUE (standardized earnings surprise) inputs (PREDICTIVE_SIGNALS §1; derived in
+    # bridge.py). The decayed SUE leg itself is computed in scoring (needs config).
+    earnings_surprise_dispersion: Optional[float] = None  # pop std-dev of recent surprise % (>=min quarters)
+    earnings_days_since_last_report: Optional[int] = None  # APPROX days since the last announcement (see bridge)
 
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)

@@ -11,7 +11,7 @@ from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
     _avg, _norm, accruals_score, asset_growth_score, check_flags, ebit_ev_yield_score,
     growth_score, insider_score, moat_score, momentum_score, piotroski_score,
-    quality_score, score, shareholder_yield_score, value_fcf_yield_score,
+    quality_score, score, shareholder_yield_score, sue_score, value_fcf_yield_score,
     value_pe_vs_history_score, value_plus_evebit_score, value_score,
 )
 
@@ -1104,3 +1104,89 @@ def test_value_plus_evebit_equals_value_when_leg_absent():
     # With no ebit_ev_yield, value_plus_evebit == value_score (same legs).
     m = StockMetrics(ticker="X", fcf_yield=0.04)
     assert value_plus_evebit_score(m, _T) == value_score(m, _T)
+
+
+# --- SUE / PEAD momentum leg (PREDICTIVE_SIGNALS §1) ----------------------
+
+def _sue_config(*, enabled: bool = True) -> dict:
+    """CONFIG plus the (straight, non-inverted) SUE band and the opt-in momentum.sue block."""
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"], "sue": [-2.0, 2.0]}}  # -2σ->0, +2σ->100
+    if enabled:
+        c["momentum"] = {"sue": {"enabled": True}}
+    return c
+
+
+def _sue_metrics(**kw):
+    """metrics_all_50 with SUE inputs that standardize to a clean value. Default: a fresh
+    (day-0) +10% beat with σ=5 -> SUE +2.0 -> top of the band (100)."""
+    defaults = dict(earnings_quarters=4, earnings_last_surprise_pct=10.0,
+                    earnings_surprise_dispersion=5.0, earnings_days_since_last_report=0)
+    defaults.update(kw)
+    return dataclasses.replace(metrics_all_50(), **defaults)
+
+
+def test_sue_leg_absent_is_byte_identical():
+    # SUE inputs present on the metrics, but no momentum.sue block -> the scorer ignores
+    # them: momentum is the legacy 3-leg average. A band in thresholds must NOT matter.
+    c = {**CONFIG, "thresholds": {**CONFIG["thresholds"], "sue": [-2.0, 2.0]}}
+    m = _sue_metrics()
+    assert score(m, c).momentum == 50.0          # unchanged 3-leg momentum
+    assert score(m, c).composite == score(metrics_all_50(), CONFIG).composite
+
+
+def test_sue_leg_really_wired():
+    # Block ENABLED + inputs present -> composite MUST measurably differ from disabled.
+    on = _sue_config(enabled=True)
+    m = _sue_metrics()   # SUE +2.0 -> 100
+    # momentum legs: 3 at 50 + SUE 100 -> avg = 62.5
+    assert score(m, on).momentum == pytest.approx((50 * 3 + 100) / 4)
+    off = score(m, CONFIG)
+    assert off.momentum == 50.0
+    assert score(m, on).composite != off.composite
+
+
+def test_sue_leg_beat_scores_above_miss():
+    on = _sue_config(enabled=True)
+    beat = _sue_metrics(earnings_last_surprise_pct=10.0)    # +2σ -> 100
+    miss = _sue_metrics(earnings_last_surprise_pct=-10.0)   # -2σ -> 0
+    assert score(beat, on).momentum > score(miss, on).momentum
+    assert score(miss, on).momentum == pytest.approx((50 * 3 + 0) / 4)
+
+
+def test_sue_leg_decays_with_staleness():
+    on = _sue_config(enabled=True)
+    fresh = _sue_metrics(earnings_days_since_last_report=0)    # SUE 2.0 -> 100
+    half = _sue_metrics(earnings_days_since_last_report=30)    # SUE 1.0 -> 75
+    stale = _sue_metrics(earnings_days_since_last_report=60)   # SUE 0.0 -> 50
+    assert score(fresh, on).momentum > score(half, on).momentum > score(stale, on).momentum
+    assert score(stale, on).momentum == 50.0   # fully decayed SUE 0 -> band midpoint -> no tilt
+
+
+def test_sue_sigma_guard_abstains_no_inf_nan():
+    # The mandatory σ-guard: four EQUAL surprises (dispersion 0) and the 1-quarter case
+    # both yield a dropped leg -> momentum stays the legacy 3-leg average (no inf/NaN).
+    on = _sue_config(enabled=True)
+    zero_disp = _sue_metrics(earnings_surprise_dispersion=0.0)
+    assert score(zero_disp, on).momentum == 50.0
+    one_q = _sue_metrics(earnings_quarters=1, earnings_surprise_dispersion=None)
+    assert score(one_q, on).momentum == 50.0
+    # below the σ floor (1.0) also abstains
+    thin = _sue_metrics(earnings_surprise_dispersion=0.5)
+    assert score(thin, on).momentum == 50.0
+
+
+def test_sue_leg_redistributes_when_inputs_missing():
+    on = _sue_config(enabled=True)
+    m = dataclasses.replace(metrics_all_50(), earnings_last_surprise_pct=None)
+    assert score(m, on).momentum == 50.0
+
+
+def test_sue_backtest_axis():
+    # Backtest-only standalone axis: STRAIGHT band -> 0..100 (a fresh beat scores high).
+    t = {"sue": [-2.0, 2.0]}
+    assert sue_score(_sue_metrics(), t) == 100.0                       # +2σ fresh beat
+    assert sue_score(_sue_metrics(earnings_last_surprise_pct=-10.0), t) == 0.0  # -2σ miss
+    assert sue_score(_sue_metrics(), {}) is None                       # absent band
+    # σ-guard: zero/thin dispersion and 1-quarter both abstain on the axis too.
+    assert sue_score(_sue_metrics(earnings_surprise_dispersion=0.0), t) is None
+    assert sue_score(_sue_metrics(earnings_quarters=1, earnings_surprise_dispersion=None), t) is None

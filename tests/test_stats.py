@@ -3,7 +3,7 @@ import pytest
 from shortlist.stats import (
     accruals, asset_growth, avg_roic, cagr, compute_ebit_ev_yield,
     gross_margin_stability, growth_persistence, median_pe, net_debt_from,
-    piotroski_f, shareholder_yield,
+    piotroski_f, shareholder_yield, sue, surprise_dispersion,
 )
 
 
@@ -321,3 +321,46 @@ def test_shareholder_yield_abstains_when_all_legs_or_mktcap_missing():
     assert shareholder_yield(None, None, None, None, 1000) is None       # no financing data
     assert shareholder_yield(50, 150, 80, 30, None) is None              # no market cap
     assert shareholder_yield(50, 150, 80, 30, 0) is None                 # non-positive mcap
+
+
+# --- surprise_dispersion + sue (PREDICTIVE_SIGNALS §1) ---------------------
+
+def test_surprise_dispersion_pop_stdev():
+    from statistics import pstdev
+    assert surprise_dispersion([2.0, 4.0, 0.0, -1.0]) == pytest.approx(pstdev([2.0, 4.0, 0.0, -1.0]))
+
+
+def test_surprise_dispersion_drops_none_and_floors_min_quarters():
+    assert surprise_dispersion([2.0, None, 4.0, 0.0]) == pytest.approx(surprise_dispersion([2.0, 4.0, 0.0]))
+    assert surprise_dispersion([2.0, 4.0]) is None        # 2 < min_quarters=3
+    assert surprise_dispersion([]) is None
+    # The all-equal case has dispersion 0.0 (a real reading, NOT None) — the sue() guard,
+    # not this helper, must keep that out of the denominator.
+    assert surprise_dispersion([5.0, 5.0, 5.0, 5.0]) == 0.0
+
+
+def test_sue_beat_is_positive_and_decays():
+    # SUE = 10 / 5 = 2.0 at day 0; decays linearly to 0 over 60 trading days.
+    assert sue(10.0, 5.0, 0) == pytest.approx(2.0)
+    assert sue(10.0, 5.0, 30) == pytest.approx(1.0)       # halfway through the window
+    assert sue(10.0, 5.0, 60) == pytest.approx(0.0)       # fully decayed (no abstain)
+    assert sue(10.0, 5.0, 90) == pytest.approx(0.0)       # past the window -> clamped 0
+    # A miss is negative.
+    assert sue(-10.0, 5.0, 0) == pytest.approx(-2.0)
+
+
+def test_sue_sigma_guard_abstains_on_zero_or_thin_dispersion():
+    # The mandatory σ-guard: dispersion below the floor (the all-equal / 4-equal σ≈0 case)
+    # MUST return None — never inf/NaN.
+    assert sue(10.0, 0.0, 0) is None                      # dispersion exactly 0
+    assert sue(10.0, 0.5, 0) is None                      # below default floor 1.0
+    assert sue(10.0, None, 0) is None                     # dispersion None (too few quarters)
+    assert sue(None, 5.0, 0) is None                      # no last surprise
+    # finite/real reading just above the floor
+    v = sue(10.0, 1.0, 0)
+    assert v is not None and v == pytest.approx(10.0)
+
+
+def test_sue_no_decay_anchor_returns_undecayed():
+    assert sue(10.0, 5.0, None) == pytest.approx(2.0)     # no days_since -> fresh prior
+    assert sue(10.0, 5.0, -3) == pytest.approx(2.0)       # future-dated artifact -> fresh

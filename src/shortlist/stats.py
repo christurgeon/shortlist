@@ -276,6 +276,54 @@ def shareholder_yield(dividends: Optional[float], repurchases: Optional[float],
     return (div + repur + net_debt_reduction) / market_cap
 
 
+def surprise_dispersion(surprise_pcts: list[Optional[float]],
+                        min_quarters: int = 3) -> Optional[float]:
+    """Population std-dev of a firm's own recent earnings-surprise percentages —
+    the denominator for SUE (PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989).
+
+    Drops None entries; requires >= `min_quarters` usable points (a 1-quarter or
+    empty history has no dispersion). Returns None below that floor. NOTE: this can
+    legitimately return 0.0 (all surprises identical — the common 4-equal case);
+    the SUE guard, not this helper, is responsible for never dividing by ~0."""
+    vals = [s for s in (surprise_pcts or []) if s is not None]
+    if len(vals) < min_quarters:
+        return None
+    return pstdev(vals)
+
+
+def sue(last_surprise_pct: Optional[float], dispersion: Optional[float],
+        days_since_last_report: Optional[int], *,
+        sigma_floor: float = 1.0, decay_trading_days: int = 60) -> Optional[float]:
+    """Standardized earnings surprise (SUE), time-decayed over the post-announcement
+    drift window (PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989, Novy-Marx 2015).
+
+    SUE = last_surprise_pct / dispersion  (a beat -> positive -> a higher score),
+    then linearly DECAYED to 0 over `decay_trading_days` trading days since the last
+    announcement, keyed off `days_since_last_report` (NOT days-to-NEXT — that report
+    is unannounced, so anchoring decay there would leak look-ahead).
+
+    MANDATORY GUARD (the σ≈0 trap): abstain (return None) when dispersion is None
+    (too few quarters — see surprise_dispersion's min floor) OR below `sigma_floor`
+    (the all-equal-surprises case, dispersion ~0, would otherwise divide to ±inf/NaN).
+    Also abstain when last_surprise_pct is None. A stale print past the decay window
+    decays to exactly 0 (a real, non-abstaining "no drift left" reading). Pure; no I/O.
+
+    UNITS: last_surprise_pct and the dispersion are both in PERCENT (Finnhub's
+    surprisePercent is already a percent), so SUE is dimensionless. `sigma_floor` is
+    therefore in percentage points."""
+    if last_surprise_pct is None or dispersion is None or dispersion < sigma_floor:
+        return None
+    raw = last_surprise_pct / dispersion
+    if days_since_last_report is None:
+        return raw                              # no decay anchor -> undecayed (fresh prior)
+    if days_since_last_report < 0:
+        return raw                              # future-dated artifact -> treat as fresh
+    if decay_trading_days <= 0:
+        return raw
+    weight = max(0.0, 1.0 - days_since_last_report / decay_trading_days)
+    return raw * weight
+
+
 def compute_ebit_ev_yield(ebit: Optional[float], market_cap: Optional[float],
                           net_debt: Optional[float]) -> Optional[float]:
     """EBIT/EV earnings yield (higher = cheaper). EV = market_cap + net_debt.

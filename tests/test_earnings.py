@@ -56,6 +56,27 @@ def test_earnings_no_future_date_is_none():
     assert e.next_date is None
 
 
+def test_earnings_last_report_date_prefers_calendar_past():
+    # SUE leg input: the latest PAST calendar entry with an actual is the announcement date.
+    cal = _cal(("2026-03-01", 2.0),   # past + reported -> candidate
+               ("2026-05-10", 3.0),   # latest past + reported -> picked
+               ("2026-07-29", None))  # future -> ignored
+    e = _earnings(_rows(1.0), cal, ref=REF)
+    assert e.last_report_date == "2026-05-10"
+
+
+def test_earnings_last_report_date_falls_back_to_period():
+    # No past calendar entries -> the weaker fiscal-quarter-END proxy (over-states staleness).
+    rows = [{"surprisePercent": 1.0, "period": "2026-03-31"},   # newest period
+            {"surprisePercent": 2.0, "period": "2025-12-31"}]
+    e = _earnings(rows, _cal(("2026-07-29", None)), ref=REF)
+    assert e.last_report_date == "2026-03-31"
+
+
+def test_earnings_last_report_date_none_when_no_data():
+    assert _earnings([], None, ref=REF).last_report_date is None
+
+
 def test_earnings_empty_inputs():
     e = _earnings([], None, ref=REF)
     assert e.quarters is None and e.beats is None and e.last_surprise_pct is None
@@ -84,6 +105,35 @@ def test_bridge_derives_earnings_metrics():
     assert abs(m.earnings_avg_surprise_pct - 1.25) < 1e-9
     assert m.earnings_last_surprise_pct == 2.0
     assert m.earnings_days_to_next == 44    # 2026-06-15 -> 2026-07-29
+
+
+def test_bridge_derives_sue_inputs():
+    # dispersion = pop std-dev of [2,4,0,-1]; days_since from last_report_date.
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-06-15")
+    s.earnings = Earnings(as_of="2026-06-15", recent_surprise_pcts=[2.0, 4.0, 0.0, -1.0],
+                          quarters=4, beats=2, last_surprise_pct=2.0,
+                          next_date="2026-07-29", last_report_date="2026-05-10")
+    m = snapshot_to_metrics(s)
+    from statistics import pstdev
+    assert abs(m.earnings_surprise_dispersion - pstdev([2.0, 4.0, 0.0, -1.0])) < 1e-9
+    assert m.earnings_days_since_last_report == 36   # 2026-05-10 -> 2026-06-15
+
+
+def test_bridge_sue_dispersion_none_below_min_quarters():
+    # 2 quarters < the min-quarters floor -> dispersion None (the SUE >=3 guard).
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-06-15")
+    s.earnings = Earnings(as_of="2026-06-15", recent_surprise_pcts=[2.0, 4.0],
+                          quarters=2, last_surprise_pct=2.0)
+    m = snapshot_to_metrics(s)
+    assert m.earnings_surprise_dispersion is None
+    assert m.earnings_days_since_last_report is None  # no last_report_date
+
+
+def test_earnings_section_roundtrips_last_report_date():
+    s = TickerSnapshot(ticker="AAPL")
+    s.earnings = Earnings(as_of="2026-06-15", last_report_date="2026-05-10")
+    back = TickerSnapshot.from_dict(s.to_dict())
+    assert back.earnings.last_report_date == "2026-05-10"
 
 
 def test_bridge_none_safe_and_no_section():

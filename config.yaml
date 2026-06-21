@@ -24,6 +24,11 @@ thresholds:
   price_vs_200dma:     [-0.10, 0.30]
   rel_strength_6m:     [-0.15, 0.25]
   eps_revision:        [-0.05, 0.10]
+  # SUE / post-earnings-announcement drift (PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989).
+  # The decayed, dispersion-standardized earnings surprise (last_surprise_% / own-σ),
+  # NOT inverted (a fresh beat scores high). Feeds the BACKTEST axis (sue) and the opt-in
+  # momentum.sue leg below. UNFITTED prior — backtest standalone rank IC before trusting.
+  sue:                 [-2.0, 2.0]   # SUE -2σ (big miss) -> 0 ; +2σ (big beat) -> 100
 
   # Value
   upside_to_target:    [0.00, 0.40]
@@ -259,6 +264,24 @@ fmp:
 # value:
 #   shareholder_yield:
 #     enabled: true
+
+# SUE / post-earnings-announcement-drift SCORING (PREDICTIVE_SIGNALS §1; Bernard-Thomas
+# 1989, Novy-Marx 2015). DISABLED by default: leave commented so momentum_score is byte-
+# identical to the pre-feature scorer (the SUE signal is still surfaced + snapshot-replay-
+# backtest-measured regardless). When enabled, momentum gains one STRAIGHT leg — the
+# decayed, dispersion-standardized last surprise (SUE = last_surprise_% / own-σ): a fresh
+# beat tilts momentum up, a fresh miss down. MANDATORY σ-GUARD: the leg ABSTAINS when the
+# firm has < min_quarters usable surprises or its surprise dispersion is below sigma_floor
+# percentage points (the all-equal / 4-equal case has σ≈0 -> never divide to inf/NaN). The
+# leg DECAYS linearly to 0 over decay_trading_days since the LAST (announced) report — it
+# is keyed off earnings_days_since_last_report, NEVER days-to-next (that report is
+# unannounced -> look-ahead). UNFITTED priors — backtest before trusting.
+# momentum:
+#   sue:
+#     enabled: true
+#     decay_trading_days: 60     # post-announcement drift window (Bernard-Thomas ~60d)
+#     sigma_floor: 1.0           # min surprise dispersion (pct points) below which SUE abstains
+#     min_quarters: 3            # min usable past surprises required to standardize
 
 # Default source chain for the harness (yahoo first => wins the price merge). Used
 # whenever `--provider` is omitted; passing `--provider` overrides this list, so omit
