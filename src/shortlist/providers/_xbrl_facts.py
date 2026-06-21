@@ -106,6 +106,7 @@ PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItems
 INCOME_TAX = ["IncomeTaxExpenseBenefit"]
 SHARES_OUT = ["EntityCommonStockSharesOutstanding"]                   # dei, instant, unit="shares"
 WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"; feeds share_count_cagr
+ASSETS = ["Assets"]   # us-gaap, instant balance-sheet total; feeds asset_growth + accruals (PREDICTIVE_SIGNALS §3)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +167,7 @@ class XbrlPanel:
     diluted_shares: dict[str, float] = field(default_factory=dict)  # weighted-avg annual series
     dep_amort: dict[str, float] = field(default_factory=dict)
     cash: dict[str, float] = field(default_factory=dict)            # instant (balance sheet)
+    assets: dict[str, float] = field(default_factory=dict)          # instant total assets (balance sheet)
 
 
 def _gross_profit(facts: dict, as_of: date) -> dict:
@@ -205,6 +207,7 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
         income_tax=annual_series(facts, INCOME_TAX, as_of),
         shares=latest(shares),
         diluted_shares=annual_series(facts, WTD_DIL_SHARES, as_of, units=("shares",)),
+        assets=annual_series(facts, ASSETS, as_of, instant=True),
     )
 
 
@@ -213,6 +216,8 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
 # ---------------------------------------------------------------------------
 from ..models import StockMetrics  # noqa: E402
 from ..stats import (  # noqa: E402
+    accruals,
+    asset_growth,
     avg_roic,
     cagr,
     compute_ebit_ev_yield,
@@ -277,6 +282,12 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     m.eps_cagr_ps = cagr(desc(p.diluted_eps))         # genuine per-share (dilution-aware)
     m.share_count_cagr = cagr(desc(p.diluted_shares)) # + = net issuance, - = buybacks
     m.revenue_growth_persistence = growth_persistence(desc(p.revenue))
+
+    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Both keyed
+    # by fiscal end so the consecutive-end guard + Sloan average-assets align by date
+    # (p.ocf is CFO as-reported -> NO sign flip, the accruals convention).
+    m.asset_growth = asset_growth(p.assets)
+    m.accruals = accruals(p.net_income, p.ocf, p.assets)
 
     # Fundamental-quality (Piotroski-inspired Core-6, asset-free). The panel series are
     # independently-keyed {end: val} dicts that need NOT share fiscal ends (e.g.

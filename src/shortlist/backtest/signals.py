@@ -113,11 +113,17 @@ class XbrlSignalSource:
     `value_pe_vs_history`, and `value_plus_evebit` (the value average WITH the
     EV/EBIT leg) so the leg's additive-or-dilutive effect on the combined `value`
     IC is measurable before any production use (spec §11).
+
+    Also emits the investment & earnings-quality axes `asset_growth` (Cooper-Gulen-
+    Schill 2008) and `accruals` (Sloan 1996), both unfitted priors and both NEGATIVE
+    predictors the score helpers invert, so their rank IC + collinearity (`accruals~
+    piotroski`, `asset_growth~growth`) are measurable before the opt-in quality legs
+    are trusted (PREDICTIVE_SIGNALS §3).
     """
     name = "xbrl"
     _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",
              "net_debt_to_ebitda", "ebit_ev_yield", "value_fcf_yield",
-             "value_pe_vs_history", "value_plus_evebit")
+             "value_pe_vs_history", "value_plus_evebit", "asset_growth", "accruals")
 
     def __init__(self, facts: Optional[dict[str, dict]] = None,
                  histories: Optional[dict[str, PriceHistory]] = None,

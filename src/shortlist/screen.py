@@ -245,6 +245,11 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "piotroski_f": c.piotroski_f,
         "piotroski_f_legs": c.piotroski_f_legs,
         "share_count_cagr": round(c.share_count_cagr, 4) if c.share_count_cagr is not None else None,
+        # Investment & earnings-quality (§3); surfaced from metrics (no ScoreCard field).
+        "asset_growth": (round(c.metrics.asset_growth, 4)
+                         if c.metrics and c.metrics.asset_growth is not None else None),
+        "accruals": (round(c.metrics.accruals, 4)
+                     if c.metrics and c.metrics.accruals is not None else None),
         "ebitda": c.ebitda,
         # Display floor: net cash (signed < 0) shows as 0.0 here; the gate read the raw sign.
         "net_debt_to_ebitda": (round(max(0.0, c.net_debt_to_ebitda), 2)

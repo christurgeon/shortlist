@@ -561,6 +561,9 @@ class EdgarSource(Source):
                 dep_amort=ef.dep_amort,
                 interest_expense=ef.interest_expense,
                 ebitda=ef.ebitda,
+                total_assets=ef.total_assets,
+                asset_growth=ef.asset_growth,
+                accruals=ef.accruals,
             )
         # gross_profit/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
         return snap

@@ -357,3 +357,37 @@ def test_panel_to_metrics_populates_piotroski_two_years():
     m = panel_to_metrics(panel, ticker="T", sic=None, price=None, price_at=lambda d: None)
     # F1 NI>0, F2 OCF>0, F3 OCF>NI, F4 net-margin rising, F5 debt/rev falling, F6 GM rising -> 6/6
     assert (m.piotroski_f, m.piotroski_f_legs) == (6, 6)
+
+
+# ---------------------------------------------------------------------------
+# Asset-growth + accruals (PREDICTIVE_SIGNALS §3)
+# ---------------------------------------------------------------------------
+
+def test_extract_panel_collects_assets_instant_series():
+    gaap = _annual("Assets", [
+        _inst("2021-12-31", 1000, "2022-02-01"),
+        _inst("2022-12-31", 1100, "2023-02-01")])
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.assets == {"2022-12-31": 1100.0, "2021-12-31": 1000.0}
+
+
+def test_panel_to_metrics_derives_asset_growth_and_accruals():
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200, "2021-12-31": 1100},
+        net_income={"2022-12-31": 200, "2021-12-31": 150},
+        ocf={"2022-12-31": 150, "2021-12-31": 140},
+        assets={"2022-12-31": 1100, "2021-12-31": 1000})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
+    # asset_growth = 1100/1000 - 1 = 0.10
+    assert m.asset_growth == pytest.approx(0.10)
+    # accruals = (NI - CFO) / avg_assets = (200 - 150) / 1050 ; CFO as-reported (no sign flip)
+    assert m.accruals == pytest.approx(50.0 / 1050.0)
+
+
+def test_panel_to_metrics_asset_signals_none_without_assets():
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200, "2021-12-31": 1100},
+        net_income={"2022-12-31": 200, "2021-12-31": 150},
+        ocf={"2022-12-31": 150, "2021-12-31": 140})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
+    assert m.asset_growth is None and m.accruals is None

@@ -41,6 +41,12 @@ class StockMetrics:
     # buyback). Always populated where a share-count series exists; feeds the opt-in
     # quality dilution leg + the advisory `dilution` flag. UNFITTED prior.
     share_count_cagr: Optional[float] = None
+    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Both are
+    # NEGATIVE predictors (high -> lower future returns); the opt-in quality legs
+    # invert the band. asset_growth = Assets_t/Assets_{t-1}-1 over consecutive
+    # fiscal ends; accruals = (NetIncome-CFO)/avg-assets (Sloan). UNFITTED priors.
+    asset_growth: Optional[float] = None
+    accruals: Optional[float] = None
 
     # Leverage / coverage (ASSESSMENT_GAPS §2.7). Absolute USD. revenue feeds the
     # EBITDA-margin denominator floor; net_debt_to_ebitda is SIGNED (net cash -> <0)
