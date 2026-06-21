@@ -283,12 +283,16 @@ graduate to the live composite: `net_debt_to_ebitda` (the leverage input behind 
 and the investment & earnings-quality pair `asset_growth` (Cooper-Gulen-Schill 2008)
 and `accruals` (Sloan 1996) — both **negative** predictors the score helpers invert,
 paired with `accruals~piotroski` (Piotroski's CFO>NI overlap) and `asset_growth~growth`
-collinearity diagnostics. Their scorers (`scoring.py:share_count_score`/`piotroski_score`/
-`asset_growth_score`/`accruals_score`) are backtest-only — not production sub-scores.
+collinearity diagnostics — and `shareholder_yield` (Boudoukh et al. 2007 / Faber, a
+**positive** total-payout predictor scored straight), paired with
+`shareholder_yield~value_fcf_yield` (payout vs cash generated) and
+`shareholder_yield~share_count` (the buyback leg is the dollar-twin of dilution).
+Their scorers (`scoring.py:share_count_score`/`piotroski_score`/`asset_growth_score`/
+`accruals_score`/`shareholder_yield_score`) are backtest-only — not production sub-scores.
 All are **unfitted priors**; this is how we validate them point-in-time. The
-`asset_growth`/`accruals` pair also has an opt-in `quality.earnings_quality` production
-leg (OFF by default). See `CLAUDE.md` → dilution / Piotroski / earnings-quality / gate
-notes.
+`asset_growth`/`accruals` pair has an opt-in `quality.earnings_quality` production leg and
+`shareholder_yield` an opt-in `value.shareholder_yield` leg (both OFF by default). See
+`CLAUDE.md` → dilution / Piotroski / earnings-quality / shareholder-yield / gate notes.
 
 ```bash
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json

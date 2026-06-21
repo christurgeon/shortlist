@@ -241,6 +241,41 @@ def accruals(net_income_by_end: dict[str, float], cfo_by_end: dict[str, float],
     return (ni - cfo) / avg_assets
 
 
+def shareholder_yield(dividends: Optional[float], repurchases: Optional[float],
+                      debt_repayments: Optional[float], debt_issuance: Optional[float],
+                      market_cap: Optional[float]) -> Optional[float]:
+    """Total shareholder yield (Boudoukh-Michaely-Richardson-Roberts 2007; Faber):
+    (dividends + net buybacks + net debt reduction) / market_cap — cash RETURNED to
+    owners, the legs FCF-yield misses (PREDICTIVE_SIGNALS §5).
+
+    SIGN DISCIPLINE (the subtle part):
+      * `dividends` / `repurchases` are OUTFLOW MAGNITUDES taken as their absolute
+        value at the call site — a bigger payment is a bigger yield, so they ADD
+        (never negated). abs() here normalizes the two source conventions: raw SEC
+        companyfacts report `PaymentsOfDividends` / `PaymentsForRepurchaseOfCommonStock`
+        as POSITIVE magnitudes, while edgartools' to_dataframe() sign-flips them to
+        NEGATIVE (cash-flow direction). abs() on each leg makes both paths agree.
+      * The net-debt leg is `debt_repayments - debt_issuance` with SIGN PRESERVED:
+        a NET DEBT ISSUER yields a NEGATIVE leg (do NOT clamp to 0) — issuing debt is
+        the opposite of returning cash. Both inputs are abs()'d magnitudes, so the
+        subtraction is repayment-minus-issuance regardless of source sign.
+
+    Any missing leg is treated as 0 (a company that didn't repurchase still has a
+    dividend yield), BUT abstains (None) if ALL three legs are missing (no financing
+    data at all) or market_cap is missing/non-positive."""
+    legs = (dividends, repurchases, debt_repayments, debt_issuance)
+    if all(x is None for x in legs):
+        return None
+    if not market_cap or market_cap <= 0:
+        return None
+    div = abs(dividends) if dividends is not None else 0.0
+    repur = abs(repurchases) if repurchases is not None else 0.0
+    repay = abs(debt_repayments) if debt_repayments is not None else 0.0
+    issue = abs(debt_issuance) if debt_issuance is not None else 0.0
+    net_debt_reduction = repay - issue          # signed: net issuer -> negative leg
+    return (div + repur + net_debt_reduction) / market_cap
+
+
 def compute_ebit_ev_yield(ebit: Optional[float], market_cap: Optional[float],
                           net_debt: Optional[float]) -> Optional[float]:
     """EBIT/EV earnings yield (higher = cheaper). EV = market_cap + net_debt.

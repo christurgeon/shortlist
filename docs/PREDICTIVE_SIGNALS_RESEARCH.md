@@ -218,6 +218,20 @@ but the *live scoring* leg can ship independently of the backtest.
 
 ## 5. Shareholder yield (total payout)
 
+> **Status: IMPLEMENTED (task-003).** Rides as a standalone measurement-only backtest
+> axis (`shareholder_yield` in `XbrlSignalSource._AXES`, with the
+> `shareholder_yield~value_fcf_yield` and `shareholder_yield~share_count` collinearity
+> pairs — the buyback leg is the dollar-twin of dilution) AND as an opt-in,
+> **OFF-by-default** *straight* (non-inverted) leg in `value_score` (the
+> `value.shareholder_yield` config block, byte-identical when absent). The four financing
+> legs are net-new XBRL extraction on both paths via concept FAMILIES
+> (`providers/_edgar_facts.py` reads the raw us-gaap `concept` column — `standard_concept`
+> mislabels them — excluding dimensional breakdowns; `providers/_xbrl_facts.py` `sum_family`).
+> Shared math is `stats.shareholder_yield` (abs()-normalizes each leg, so it agrees across
+> the two source sign conventions; net-debt leg = repayments − issuance, sign preserved, a
+> net issuer scores negative). Masked for financials on the production path; the backtest
+> axis stays unmasked. See `CLAUDE.md` → "value.shareholder_yield".
+
 **The idea.** FCF yield measures cash *generated*; shareholder yield measures cash
 *returned* — dividends **plus net buybacks plus net debt paydown**. The buyback
 and debt-reduction legs are exactly what FCF yield misses, and total payout is a

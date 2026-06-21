@@ -391,3 +391,65 @@ def test_panel_to_metrics_asset_signals_none_without_assets():
         ocf={"2022-12-31": 150, "2021-12-31": 140})
     m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
     assert m.asset_growth is None and m.accruals is None
+
+
+# ---------------------------------------------------------------------------
+# Total shareholder yield (PREDICTIVE_SIGNALS §5)
+# ---------------------------------------------------------------------------
+
+def test_extract_panel_sum_family_adds_common_and_preferred():
+    # sum_family ADDS distinct members reporting the same end (vs annual_series's
+    # priority-with-fallback). Raw companyfacts report positive outflow magnitudes.
+    gaap = {}
+    gaap.update(_annual("PaymentsOfDividendsCommonStock",
+                        [_row("2022-01-01", "2022-12-31", 100, "2023-02-01")]))
+    gaap.update(_annual("PaymentsOfDividendsPreferredStockAndPreferenceStock",
+                        [_row("2022-01-01", "2022-12-31", 10, "2023-02-01")]))
+    gaap.update(_annual("ProceedsFromIssuanceOfLongTermDebt",
+                        [_row("2022-01-01", "2022-12-31", 50, "2023-02-01")]))
+    gaap.update(_annual("RepaymentsOfDebt",
+                        [_row("2022-01-01", "2022-12-31", 200, "2023-02-01")]))
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+    assert p.dividends_paid == {"2022-12-31": 110.0}     # 100 common + 10 preferred
+    assert p.debt_issuance == {"2022-12-31": 50.0}
+    assert p.debt_repayments == {"2022-12-31": 200.0}
+
+
+def test_panel_to_metrics_derives_shareholder_yield():
+    # shareholder_yield = (dividends + repurchases + (repayments - issuance)) / market_cap.
+    # Raw companyfacts -> positive magnitudes; ADD dividends + repurchases; net the debt leg.
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200},
+        shares=100.0,
+        dividends_paid={"2022-12-31": 50.0},
+        repurchases={"2022-12-31": 150.0},
+        debt_repayments={"2022-12-31": 80.0},
+        debt_issuance={"2022-12-31": 30.0})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=10.0, price_at=lambda d: None)
+    # market_cap = 10 * 100 = 1000 ; payout = 50 + 150 + (80 - 30) = 250 -> 0.25
+    assert m.market_cap == pytest.approx(1000.0)
+    assert m.shareholder_yield == pytest.approx(0.25)
+
+
+def test_panel_to_metrics_shareholder_yield_net_debt_issuer_negative():
+    # A net debt ISSUER (issuance > repayments) -> the net-debt leg goes NEGATIVE and is
+    # NOT clamped; with no dividends/buybacks the whole yield can be negative.
+    p = XbrlPanel(
+        revenue={"2022-12-31": 1200}, shares=100.0,
+        debt_repayments={"2022-12-31": 20.0},
+        debt_issuance={"2022-12-31": 120.0})
+    m = panel_to_metrics(p, ticker="X", sic=None, price=10.0, price_at=lambda d: None)
+    # payout = 0 + 0 + (20 - 120) = -100 ; / 1000 = -0.10 (negative, not clamped)
+    assert m.shareholder_yield == pytest.approx(-0.10)
+
+
+def test_panel_to_metrics_shareholder_yield_none_without_financing_or_mktcap():
+    # No financing legs -> abstain.
+    p = XbrlPanel(revenue={"2022-12-31": 1200}, shares=100.0)
+    assert panel_to_metrics(p, ticker="X", sic=None, price=10.0,
+                            price_at=lambda d: None).shareholder_yield is None
+    # Financing present but no market_cap (no price) -> abstain.
+    p2 = XbrlPanel(revenue={"2022-12-31": 1200},
+                   dividends_paid={"2022-12-31": 50.0})
+    assert panel_to_metrics(p2, ticker="X", sic=None, price=None,
+                            price_at=lambda d: None).shareholder_yield is None

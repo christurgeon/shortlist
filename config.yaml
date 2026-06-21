@@ -65,6 +65,13 @@ thresholds:
   asset_growth: [0.30, -0.10]   # +30%/yr asset growth -> 0 ; -10% (shrinking) -> 100
   accruals:     [0.15, -0.15]   # high accruals -> 0 ; strongly cash-backed -> 100
 
+  # Total shareholder yield (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber): a
+  # POSITIVE predictor scored STRAIGHT (not inverted): (dividends + net buybacks + net
+  # debt reduction) / market_cap. Feeds the BACKTEST axis (shareholder_yield) and the
+  # opt-in value.shareholder_yield leg below. A net debt issuer can score < 0% yield.
+  # UNFITTED prior — backtest standalone rank IC + collinearity before trusting.
+  shareholder_yield: [-0.02, 0.10]   # -2%/yr (net issuer) -> 0 ; +10%/yr payout -> 100
+
 weights:
   quality:      0.18   # was 0.20 (x0.9 on risk-axis introduction)
   moat:         0.18   # was 0.20
@@ -120,7 +127,10 @@ sectors:
   # asset_growth / accruals are balance-sheet legs undefined/non-representative for
   # financials & REITs (lumpy AUM/loan books, externally-financed asset growth) -> masked
   # on the production path. The backtest axis stays unmasked (sic=None) for raw-IC comparability.
-  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals]
+  # shareholder_yield (§5) is likewise masked for financials: bank capital returns ride
+  # regulatory (CCAR/SCB) cycles & loan-book debt flows distort the net-debt leg; the
+  # backtest axis stays unmasked (sic=None).
+  masked_legs:  [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals, shareholder_yield]
   masked_gates: [negative_fcf, over_leveraged]
 
 validity:
@@ -237,6 +247,17 @@ fmp:
 # (If both quality blocks are wanted, merge them under one `quality:` mapping.)
 # quality:
 #   earnings_quality:
+#     enabled: true
+
+# Total-shareholder-yield SCORING (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber).
+# DISABLED by default: leave commented so value_score is byte-identical to the pre-feature
+# scorer (the shareholder_yield signal is still surfaced + backtest-measured regardless).
+# When enabled, value gains one STRAIGHT (non-inverted) leg — (dividends + net buybacks +
+# net debt reduction) / market_cap: names returning more cash to owners score higher. The
+# net-debt leg is signed (a net debt ISSUER scores below 0% yield). UNFITTED prior —
+# backtest the rank IC + its collinearity vs fcf_yield / share_count before trusting.
+# value:
+#   shareholder_yield:
 #     enabled: true
 
 # Default source chain for the harness (yahoo first => wins the price merge). Used
