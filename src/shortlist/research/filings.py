@@ -4,7 +4,7 @@ import dataclasses
 import os
 from typing import Any, Optional
 
-from . import riskdiff
+from . import riskdiff, textsim
 from .models import FilingBundle, FilingText
 
 
@@ -99,6 +99,76 @@ def _prior_year_risk_factors(ticker: str) -> str:
         return ""
     except Exception:
         return ""
+
+
+def _filing_sections(obj: Any, form: str) -> tuple[str, str]:
+    """(risk_factors, mda) text for a parsed filing object. 10-K MD&A is the
+    `management_discussion` attribute; 10-Q MD&A is Part I Item 2 (see _tenq_mda).
+    Item 1A (risk_factors) exists on both. Returns "" for any missing section."""
+    risk = _section(obj, "risk_factors")
+    mda = _tenq_mda(obj) if str(form).upper().startswith("10-Q") else _section(
+        obj, "management_discussion")
+    return risk, mda
+
+
+def _acceptance_date(filing: Any) -> str:
+    """Sortable point-in-time date for a filing: its acceptance/filing date as a
+    'YYYY-MM-DD' string. Uses filing_date (the date the filing became public);
+    a string compare orders ISO dates correctly. "" if unknown (sorts first)."""
+    return str(getattr(filing, "filing_date", "") or "")
+
+
+def filing_text_change(
+    ticker: str,
+    form: str = "10-K",
+    as_of: Optional[str] = None,
+    identity: Optional[str] = None,
+) -> Optional[dict]:
+    """POINT-IN-TIME "Lazy Prices" similarity for `ticker`.
+
+    Compares the current same-`form` filing against the **immediately-prior**
+    same-type filing, restricted to those whose acceptance (filing) date is
+    `<= as_of` (an ISO 'YYYY-MM-DD' string; None == "now", live-screen path).
+    This is the look-ahead guard: in any backtest/replay the comparison NEVER
+    uses a filing dated after as_of, so a historical date is never compared
+    against a future (e.g. 2026) filing.
+
+    Returns a dict {similarity, current_accession, prior_accession,
+    current_date, prior_date} or None when there is no usable
+    current-and-prior pair (fewer than two filings at-or-before as_of, or no
+    extractable text). Never raises. Requires SEC_IDENTITY (the [edgar] extra).
+    """
+    from edgar import Company, set_identity  # lazy: optional [edgar] extra
+
+    ident = identity or os.environ.get("SEC_IDENTITY")
+    if not ident:
+        raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
+    set_identity(ident)
+    try:
+        filings = Company(ticker).get_filings(form=form)
+        # Exact-form only (drop /A amendments and adjacent forms), then restrict to
+        # filings available AT as_of (filing_date <= as_of). This is the PiT cut.
+        rows = [f for f in filings if str(getattr(f, "form", "")) == form]
+        if as_of is not None:
+            rows = [f for f in rows if _acceptance_date(f) and _acceptance_date(f) <= as_of]
+        if len(rows) < 2:
+            return None
+        rows.sort(key=_acceptance_date, reverse=True)
+        current, prior = rows[0], rows[1]
+        cur_risk, cur_mda = _filing_sections(current.obj(), form)
+        pri_risk, pri_mda = _filing_sections(prior.obj(), form)
+        sim = textsim.combined_similarity(cur_risk, pri_risk, cur_mda, pri_mda)
+        if sim is None:
+            return None
+        return {
+            "similarity": sim,
+            "current_accession": str(getattr(current, "accession_no", "") or ""),
+            "prior_accession": str(getattr(prior, "accession_no", "") or ""),
+            "current_date": _acceptance_date(current),
+            "prior_date": _acceptance_date(prior),
+        }
+    except Exception:
+        return None
 
 
 def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:

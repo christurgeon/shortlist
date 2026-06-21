@@ -436,6 +436,36 @@ an imminent report a near-term catalyst. **Not scored in v1** — flat data + re
 only. `surprisePercent` is already in percent (don't ×100). Both endpoints are on the free
 tier; cached 1d (history) / 6h (calendar).
 
+## Lazy-Prices filing-text-change flag (research/PiT; PREDICTIVE_SIGNALS §4)
+
+The "Lazy Prices" signal (Cohen-Malloy-Nguyen 2020: big YoY 10-K/10-Q text changes —
+esp. risk factors / MD&A — predict negative returns) ships as a **config-gated advisory
+flag**, NOT a scored leg (the `social_hype`/`news_spike` precedent): `flags.filing_text_change`
+fires when `StockMetrics.filing_text_similarity < max_similarity` (default 0.7), is
+**byte-identical** when the block is absent, and **never affects `passed`/`composite`/
+`scored`** (`scoring.py:check_flags`). The metric surfaces in `--json`. The similarity is a
+**new stdlib bag-of-words cosine** (`research/textsim.py`, `collections.Counter`, **no new
+dependency** — NOT an extension of `riskdiff`, which is a block-EXTRACTOR, Item-1A-only):
+`normalize_tokens` reuses riskdiff's normalization intent (lowercase, strip
+digits/currency/punctuation, collapse whitespace) over the WHOLE Item-1A + MD&A section, so
+boilerplate / number / caption-renumber churn cancels out and does NOT depress the score (the
+false-positive guard). LOW similarity (big rewrite) → the signal; `None` when either side
+lacks a baseline (never fabricated as 0.0).
+
+**Point-in-time correctness:** `research/filings.py:filing_text_change(ticker, form, as_of)`
+compares the current same-`form` filing vs the **immediately-prior** one, restricted to those
+whose acceptance (filing) date is `≤ as_of` — the look-ahead guard for any replay (it can
+NEVER compare a historical date against a future filing; `fetch_bundle`'s live "latest" is
+never used in replay). `as_of=None` is the live-screen "now".
+
+**Scope (wired vs deferred):** full filing text is NOT in the per-ticker harness snapshot —
+`EdgarSource` fetches Form 4 + financials + filing-index only; full text lives in the research
+layer. Wiring a heavy per-ticker full-text fetch onto `EdgarSource` (which would bloat every
+screen) was **deliberately deferred**, as was the snapshot-replay backtest axis (text isn't in
+companyfacts; persisting it into accumulated snapshots is a separate heavy build). The PiT
+accessor is built + tested so future accumulation/backtest wiring is correct-by-construction.
+The flag is exercisable today via any path that sets `m.filing_text_similarity` (the accessor).
+
 ## SUE / post-earnings-announcement-drift leg (scoring; PREDICTIVE_SIGNALS §1)
 
 The **`momentum.sue`** block (`config.yaml`) folds a **standardized earnings surprise** leg

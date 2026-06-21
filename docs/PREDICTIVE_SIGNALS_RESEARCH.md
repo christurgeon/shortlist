@@ -220,6 +220,28 @@ flag) and **Altman Z-score** (distress) as soft red-flag flags, both XBRL-deriva
 
 ## 4. "Lazy Prices" — year-over-year filing-text-change signal
 
+> **Status: IMPLEMENTED (task-005) — ADVISORY FLAG ONLY, research/PiT slice.** Shipped
+> the lowest-risk wiring: a config-gated soft **`filing_text_change`** flag (the
+> `social_hype`/`news_spike` precedent), **NOT** a scored leg — byte-identical when the
+> `flags.filing_text_change` block is absent, never affects `passed`/`composite`/`scored`.
+> A NEW stdlib similarity scorer (`research/textsim.py`, bag-of-words **cosine** via
+> `collections.Counter`, **no new dependency**) measures YoY similarity over the
+> normalized Item-1A + MD&A token bag; it reuses riskdiff's normalization intent
+> (lowercase, strip digits/currency/punctuation, collapse whitespace) so boilerplate /
+> number / caption-renumber churn does NOT depress the score. LOW similarity (big YoY
+> change) trips the flag (`max_similarity` default 0.7). A **point-in-time** filing
+> accessor (`research/filings.py:filing_text_change`) compares the current same-type
+> filing vs the **immediately-prior** one restricted to acceptance date ≤ `as_of` — the
+> look-ahead guard for any replay (it can NEVER compare a historical date against a future
+> filing; `fetch_bundle`'s live "latest" is never used in replay). The metric rides on
+> `StockMetrics.filing_text_similarity` and surfaces in `--json`. **DEFERRED (honest):**
+> full filing-text fetch is NOT bolted onto the per-ticker harness `EdgarSource` (it fetches
+> Form 4 + financials + filing-index only — full text lives in the research layer), and the
+> snapshot-replay backtest axis is deferred (text isn't in companyfacts and persisting it
+> into accumulated snapshots is a separate heavy build). The PiT accessor is built + tested
+> so that future accumulation/backtest wiring is correct-by-construction. See `CLAUDE.md` →
+> "Lazy-Prices filing-text-change flag".
+
 **The idea.** When a company **changes the language** of its 10-K/10-Q
 year-over-year (especially risk factors and MD&A), it is usually hiding bad news —
 and the stock subsequently **underperforms**. shortlist is uniquely positioned to
