@@ -148,6 +148,11 @@ class Price:
     rel_strength_6m: Optional[float] = None     # 6m return minus benchmark 6m return
     realized_vol: Optional[float] = None        # annualized stdev of daily returns
     max_drawdown: Optional[float] = None        # trailing ~1y peak-to-trough, negative
+    # Residual (idiosyncratic) momentum: 12-1 momentum of CAPM (vs SPY) residuals,
+    # standardized by residual vol (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2).
+    # Needs the DATE-ALIGNED stock + SPY series, so it is set only on the dated seam
+    # (snapshot_from_closes_dated), None on the scalar live-merge path that lacks dates.
+    residual_momentum: Optional[float] = None
     # ~monthly-sampled (date, close) pairs over the fetch window, oldest->newest.
     # Lets the bridge align EDGAR fiscal-year-end dates to a historical price.
     monthly_closes: list[list] = field(default_factory=list)

@@ -476,6 +476,51 @@ accumulation captures the earnings fields**. No live-price SUE axis was fabricat
 `MomentumSignalSource` (it would always be empty). All SUE knobs are **unfitted priors** —
 measure the rank IC + collinearity on the snapshot-replay path before trusting.
 
+## Residual (idiosyncratic) momentum leg (scoring; PREDICTIVE_SIGNALS §2)
+
+The **`momentum.residual`** block (`config.yaml`) folds a **residual-momentum** leg into
+`momentum_score` (Blitz-Huij-Martens 2011): the **12-1 momentum of CAPM residuals**, vol-
+standardized — raw momentum with the market-beta exposure stripped out. It ships **commented
+out** (OFF by default); the scorer is **byte-identical** to the pre-feature scorer when absent
+(the `momentum.sue` / `quality.dilution` precedent, None-safe leg redistribution).
+**HONEST CAVEAT:** the original study reports ~2× the Sharpe of raw momentum, but some recent
+replications report it **underperforming** — so it ships **OFF as a measured candidate, NOT a
+replacement** for the raw-momentum legs. Wire only after the backtest confirms it dominates
+raw momentum on rank IC.
+
+**The real work was the price plumbing.** The live merge reduces Yahoo closes to scalars
+(`rel_strength_6m` etc.) and `snapshot_from_closes` throws dates away — but the regression
+needs **date-aligned** stock and SPY series. Added: `PriceHistory.through(d)` (the dated
+counterpart of `closes_through`, returns `(dates, closes)` truncated to `dates <= d`), a
+`snapshot_from_closes_dated` seam in `data/sources.py` that carries the dated stock+SPY series,
+a `Price.residual_momentum` field (set ONLY on the dated seam — None on the scalar live-merge
+path that lacks dates), and the bridge copies it to `StockMetrics.residual_momentum`.
+
+**The #1 correctness risk — date-join, NOT position-pairing.** `stats.join_on_dates` **inner-
+joins** the stock and SPY closes on their shared date keys **before** any return is computed.
+Position-indexing `closes[i]` vs `spy_closes[i]` silently misaligns whenever the two series
+have different listing dates, trading halts, or lengths (a stock that IPO'd later, or halted a
+day, shifts every subsequent pair) → a garbage beta. `stats.residual_momentum` joins first,
+then OLS-regresses stock returns on market returns (**stdlib only — manual covariance/variance,
+no numpy**), takes residuals over **t-12..t-2 (the 12-1 skip is preserved — the most recent
+~month of residuals is dropped before the mean; raw momentum reverses in the latest month)**,
+and standardizes by `sd(resid)` over that window.
+
+**Point-in-time:** the caller passes series already truncated to `as_of` (via
+`PriceHistory.through`/`closes_through`), so the beta, residuals, and the 12-1 sum use **only**
+data `<= as_of` — no look-ahead by construction (a regression test corrupts post-`as_of` closes
+and asserts the value is unchanged). **Residual-vol guard** (`sd == 0` / too few points / flat
+market window with zero market-return variance) → **return None** (drops the leg; never divides
+by ~0, no inf/NaN).
+
+**Measurement axis (LIVE-price, UNLIKE SUE):** residual momentum **is** reconstructable from
+prices alone, so it rides the **live-price** `MomentumSignalSource` as a real `residual_momentum`
+axis (the dated seam computes it), with a backtest-only `scoring.residual_momentum_score` and a
+`residual_momentum ~ momentum` `_COLLINEARITY_PAIRS` entry. It **will** correlate with raw
+momentum (it IS momentum, de-betaed) — the diagnostic exists to confirm it **dominates on rank
+IC**, not that it is orthogonal. Momentum legs are never sector-masked, so it is universally
+applicable. The band/window are **unfitted priors** — measure before trusting.
+
 ## Yahoo screener WAF gotcha (scout discovery)
 
 The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**

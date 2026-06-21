@@ -52,6 +52,94 @@ def test_momentum_unknown_ticker_none():
     assert src.observe("ZZZ", date(2020, 6, 1)) is None
 
 
+# --- Residual (idiosyncratic) momentum axis on the LIVE-price path (§2) -------
+
+def _wobble_hist(ticker, n=300, beta=1.2, seed=1, start_px=100.0):
+    """A history with a real market-beta exposure PLUS idiosyncratic wobble, so the CAPM
+    regression has nonzero residual variance (a pure ramp would be degenerate)."""
+    d0 = date(2020, 1, 1)
+    dates = [d0 + timedelta(days=i) for i in range(n)]
+    # Deterministic pseudo-random returns: market + idiosyncratic, distinct per ticker.
+    mkt_rets = [0.01 if i % 2 == 0 else -0.006 for i in range(n - 1)]
+    closes = [start_px]
+    for i, mr in enumerate(mkt_rets):
+        idio = ((i * 7 + seed * 13) % 11 - 5) / 1000.0   # deterministic ±0.5% wobble
+        closes.append(closes[-1] * (1 + beta * mr + idio))
+    return PriceHistory(ticker, dates, closes), dates, mkt_rets
+
+
+def _mkt_hist(ticker="SPY", n=300, start_px=100.0):
+    d0 = date(2020, 1, 1)
+    dates = [d0 + timedelta(days=i) for i in range(n)]
+    mkt_rets = [0.01 if i % 2 == 0 else -0.006 for i in range(n - 1)]
+    closes = [start_px]
+    for mr in mkt_rets:
+        closes.append(closes[-1] * (1 + mr))
+    return PriceHistory(ticker, dates, closes)
+
+
+def test_momentum_source_emits_residual_momentum_axis():
+    # residual_momentum IS price-reconstructable (unlike SUE), so it rides the LIVE-price
+    # MomentumSignalSource alongside the production `momentum` sub-score.
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
+    t = THRESH | {"residual_momentum": [-1.0, 1.0]}
+    src = MomentumSignalSource({"AAA": hist}, spy, t, min_history=200)
+    obs = src.observe("AAA", hist.dates[280])
+    assert obs is not None
+    assert "momentum" in obs.signals
+    assert "residual_momentum" in obs.signals
+    assert 0.0 <= obs.signals["residual_momentum"] <= 100.0
+
+
+def test_momentum_production_subscore_unchanged_by_dated_seam():
+    # The dated seam only ADDS residual_momentum; the production `momentum` sub-score must be
+    # byte-identical to the scalar reconstruction (no look-ahead, no behavior change).
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
+    T = hist.dates[280]
+    src = MomentumSignalSource({"AAA": hist}, spy, THRESH, min_history=200)
+    obs = src.observe("AAA", T)
+    scalar = snapshot_from_closes("AAA", hist.closes_through(T), spy.closes_through(T))
+    expected = scoring.momentum_score(snapshot_to_metrics(scalar), THRESH)
+    assert obs.signals["momentum"] == expected
+
+
+def test_residual_momentum_axis_is_point_in_time():
+    # The beta/residuals must use ONLY data <= as_of. Building the SAME history but with
+    # later (post-as_of) closes mutated must NOT change the residual_momentum at as_of.
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
+    t = THRESH | {"residual_momentum": [-1.0, 1.0]}
+    T = hist.dates[240]
+    base = MomentumSignalSource({"AAA": hist}, spy, t, min_history=200).observe("AAA", T)
+    # Corrupt every close AFTER T (these are not <= as_of, so must be ignored).
+    idx = hist.dates.index(T)
+    tampered_closes = list(hist.closes)
+    for j in range(idx + 1, len(tampered_closes)):
+        tampered_closes[j] = tampered_closes[j] * 3.0 + 1.0
+    tampered = PriceHistory("AAA", hist.dates, tampered_closes)
+    after = MomentumSignalSource({"AAA": tampered}, spy, t, min_history=200).observe("AAA", T)
+    assert base is not None and after is not None
+    assert after.signals["residual_momentum"] == base.signals["residual_momentum"]
+
+
+def test_residual_momentum_axis_dropped_on_flat_window():
+    # A flat (constant) stock+market window -> degenerate residuals -> the axis abstains,
+    # but the production momentum sub-score still emits (the source still returns an obs).
+    n = 300
+    d0 = date(2020, 1, 1)
+    dates = [d0 + timedelta(days=i) for i in range(n)]
+    flat = PriceHistory("AAA", dates, [100.0] * n)          # never moves -> var_m 0
+    t = THRESH | {"residual_momentum": [-1.0, 1.0]}
+    src = MomentumSignalSource({"AAA": flat}, PriceHistory("SPY", dates, [100.0] * n),
+                               t, min_history=200)
+    obs = src.observe("AAA", dates[280])
+    # A flat series yields rel_strength/price_vs_200dma -> momentum may still score; the
+    # residual axis must be ABSENT (None dropped), never an inf/NaN.
+    assert obs is None or "residual_momentum" not in obs.signals
+
+
 def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
     # Build a real snapshot, persist it, then re-score via the snapshot source.
     snap = TickerSnapshot(ticker="AAA", as_of="2026-01-15T00:00:00+00:00")

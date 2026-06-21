@@ -230,6 +230,20 @@ def sue_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(v, *t["sue"]) if v is not None else None
 
 
+def residual_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone residual-momentum axis (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2):
+    the 12-1 momentum of CAPM (vs SPY) residuals, vol-standardized, mapped through the
+    `residual_momentum` band -> 0..100 (a strong de-betaed uptrend scores high; NOT
+    inverted). UNLIKE the SUE axis this IS reconstructable from prices alone, so it rides
+    the LIVE-price MomentumSignalSource (the dated seam computes m.residual_momentum). The
+    PRODUCTION signal is the opt-in momentum.residual leg folded into momentum_score, not
+    this — exists so the backtest can measure its rank IC + collinearity vs raw momentum.
+    None when the band or the signal is absent."""
+    if "residual_momentum" not in t or m.residual_momentum is None:
+        return None
+    return _norm(m.residual_momentum, *t["residual_momentum"])
+
+
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
@@ -388,6 +402,14 @@ def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
     return _Leg("sue", v, "sue")
 
 
+def _residual_momentum_on(config: dict) -> bool:
+    """True when the opt-in residual-momentum (momentum) scoring block is present and
+    enabled. Absent (it ships commented out) -> the residual-momentum leg is skipped, so
+    momentum_score is byte-identical to the pre-feature scorer. Mirrors _sue_on."""
+    d = ((config or {}).get("momentum") or {}).get("residual")
+    return bool(d) and d.get("enabled", True)
+
+
 def _shareholder_yield_on(config: dict) -> bool:
     """True when the opt-in total-shareholder-yield (value) scoring block is present
     and enabled. Absent (it ships commented out) -> the value leg is skipped, so
@@ -459,6 +481,14 @@ def _momentum_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]
     sue_leg = _sue_leg(m, config)
     if sue_leg is not None:
         legs.append(sue_leg)
+    # Residual (idiosyncratic) momentum (PREDICTIVE_SIGNALS §2): the 12-1 momentum of CAPM
+    # residuals, vol-standardized. A de-betaed momentum leg shown to ~2x the Sharpe of raw
+    # momentum (Blitz-Huij-Martens 2011) — but some replications report it underperforming,
+    # so it ships OFF as a MEASURED candidate, NOT a replacement for the raw-momentum legs.
+    # Opt-in + threshold-guarded like the SUE leg; absent -> byte-identical. Momentum legs
+    # are never sector-masked. None signal -> _eval_subscore redistributes (None-safe).
+    if _residual_momentum_on(config) and "residual_momentum" in ((config or {}).get("thresholds") or {}):
+        legs.append(_Leg("residual_momentum", m.residual_momentum, "residual_momentum"))
     return legs
 
 

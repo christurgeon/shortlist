@@ -302,6 +302,15 @@ the price-only momentum source (`snapshot_from_closes`) and SEC companyfacts. So
 captures the earnings fields** — no live-price SUE axis is fabricated. See `CLAUDE.md` →
 "SUE / post-earnings-announcement-drift leg" (incl. the announcement-date approximation).
 
+**Residual momentum (§2) IS a live-price axis** (unlike SUE). The `MomentumSignalSource` now
+date-INNER-JOINS the stock + SPY series (`stats.join_on_dates`) on the dated seam
+(`snapshot_from_closes_dated`, `PriceHistory.through`) and emits a real `residual_momentum` axis
+(the 12-1 momentum of point-in-time CAPM residuals, vol-scaled) alongside the production
+`momentum` sub-score — with `scoring.residual_momentum_score` + the `residual_momentum~momentum`
+collinearity pair. It WILL correlate with raw momentum; the point is to confirm it dominates on
+rank IC. The production `momentum` sub-score is byte-identical to the scalar seam (the dated path
+only ADDS the residual leg). See `CLAUDE.md` → "Residual (idiosyncratic) momentum leg".
+
 ```bash
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
 ```

@@ -29,6 +29,12 @@ thresholds:
   # NOT inverted (a fresh beat scores high). Feeds the BACKTEST axis (sue) and the opt-in
   # momentum.sue leg below. UNFITTED prior — backtest standalone rank IC before trusting.
   sue:                 [-2.0, 2.0]   # SUE -2σ (big miss) -> 0 ; +2σ (big beat) -> 100
+  # Residual (idiosyncratic) momentum (PREDICTIVE_SIGNALS §2; Blitz-Huij-Martens 2011).
+  # 12-1 momentum of CAPM (vs SPY) residuals, standardized by residual vol — NOT inverted
+  # (a strong de-betaed uptrend scores high). Feeds the BACKTEST axis (residual_momentum,
+  # LIVE-price) and the opt-in momentum.residual leg below. UNFITTED prior — backtest the
+  # standalone rank IC + its collinearity vs raw momentum before trusting.
+  residual_momentum:   [-1.0, 1.0]   # vol-scaled iMOM -1 -> 0 ; +1 -> 100
 
   # Value
   upside_to_target:    [0.00, 0.40]
@@ -282,6 +288,22 @@ fmp:
 #     decay_trading_days: 60     # post-announcement drift window (Bernard-Thomas ~60d)
 #     sigma_floor: 1.0           # min surprise dispersion (pct points) below which SUE abstains
 #     min_quarters: 3            # min usable past surprises required to standardize
+
+# Residual (idiosyncratic) MOMENTUM SCORING (PREDICTIVE_SIGNALS §2; Blitz-Huij-Martens
+# 2011). DISABLED by default: leave commented so momentum_score is byte-identical to the
+# pre-feature scorer (the residual_momentum signal is still surfaced + LIVE-price-backtest-
+# measured regardless). When enabled, momentum gains one STRAIGHT leg — the 12-1 momentum
+# of CAPM (vs SPY) residuals, standardized by residual vol: a stock trending up AFTER its
+# market beta is stripped out scores higher. HONEST CAVEAT: while the original study reports
+# ~2x the Sharpe of raw momentum, some recent replications report it UNDERPERFORMING — so it
+# ships OFF as a measured candidate, NOT a replacement for the raw-momentum legs. Wire only
+# after the backtest confirms it dominates raw momentum on rank IC. The leg ABSTAINS (drops,
+# never divides by 0) on a thin/flat price window. Note: the leg needs the date-aligned
+# stock+SPY series, populated only on the dated backtest seam — on the live merge path
+# m.residual_momentum is None, so the leg abstains there.
+# momentum:
+#   residual:
+#     enabled: true
 
 # Default source chain for the harness (yahoo first => wins the price merge). Used
 # whenever `--provider` is omitted; passing `--provider` overrides this list, so omit

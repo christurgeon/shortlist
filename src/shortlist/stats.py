@@ -324,6 +324,111 @@ def sue(last_surprise_pct: Optional[float], dispersion: Optional[float],
     return raw * weight
 
 
+# Residual-momentum window (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2). The 12-1
+# convention in MONTHLY terms: regress on the trailing ~12 months, then take residuals
+# over t-12..t-2 (skip the most recent month). Expressed in trading days at ~21/month.
+_RESID_MOM_LOOKBACK_DAYS = 252   # ~12 months of trailing daily closes for the regression
+_RESID_MOM_SKIP_DAYS = 21        # ~1 month skip (the 12-1 convention) — drop the most recent month
+_RESID_MOM_MIN_POINTS = 120      # min joined daily returns for a usable beta + residual series
+
+
+def join_on_dates(dates_a: list[date], closes_a: list[float],
+                  dates_b: list[date], closes_b: list[float],
+                  ) -> tuple[list[date], list[float], list[float]]:
+    """INNER-JOIN two dated close series on their shared dates, ascending.
+
+    Returns (dates, closes_a, closes_b) covering only dates present in BOTH series.
+    This is the load-bearing correctness step for the residual-momentum regression:
+    position-pairing closes_a[i] with closes_b[i] silently misaligns whenever the two
+    series have different listing dates, trading halts, or lengths — producing a garbage
+    beta. Joining on the date keys guarantees each paired (stock, market) close is the
+    SAME calendar day. Pure; no I/O. Assumes each input's dates are ascending & unique
+    (the Yahoo chart parser guarantees this); duplicate dates take the last close."""
+    map_b = dict(zip(dates_b, closes_b, strict=False))
+    out_d: list[date] = []
+    out_a: list[float] = []
+    out_b: list[float] = []
+    seen: set[date] = set()
+    for d, ca in zip(dates_a, closes_a, strict=False):
+        if d in map_b and d not in seen:
+            seen.add(d)
+            out_d.append(d)
+            out_a.append(ca)
+            out_b.append(map_b[d])
+    return out_d, out_a, out_b
+
+
+def _simple_returns(closes: list[float]) -> list[float]:
+    """Period-over-period simple returns; a non-positive prior close yields 0.0 (a
+    halt/placeholder, not a real move) rather than a divide-by-zero."""
+    out: list[float] = []
+    for i in range(1, len(closes)):
+        prev = closes[i - 1]
+        out.append(closes[i] / prev - 1.0 if prev > 0 else 0.0)
+    return out
+
+
+def residual_momentum(stock_dates: list[date], stock_closes: list[float],
+                      mkt_dates: list[date], mkt_closes: list[float], *,
+                      lookback_days: int = _RESID_MOM_LOOKBACK_DAYS,
+                      skip_days: int = _RESID_MOM_SKIP_DAYS,
+                      min_points: int = _RESID_MOM_MIN_POINTS) -> Optional[float]:
+    """Residual (idiosyncratic) momentum (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2).
+
+    Estimate the stock's CAPM beta over the trailing window by OLS of stock returns on
+    market (SPY) returns — stdlib only, no numpy — over the DATE-INNER-JOINED series, take
+    the residuals e_t = r_stock,t - (alpha + beta * r_mkt,t), then form the 12-1 momentum
+    of the residuals: mean(residuals over t-12..t-2, i.e. EXCLUDING the most recent ~month)
+    STANDARDIZED by the residual std-dev over that same window:
+
+        iMOM = mean(resid_{t-12..t-2}) / sd(resid_{t-12..t-2})
+
+    POINT-IN-TIME: pass series already truncated to as_of (dates <= as_of). The whole
+    computation — beta, residuals, the 12-1 sum — uses only the supplied closes, so there
+    is no look-ahead by construction; the caller truncates via PriceHistory.closes_through.
+
+    The 12-1 SKIP is preserved: `skip_days` (~1 month) of the most recent residuals are
+    dropped before the mean (raw momentum reverses in the latest month). The market excess
+    is taken against itself (no risk-free leg — a daily T-bill rate is a negligible, non-
+    keyless input; the alpha intercept absorbs the constant drift).
+
+    GUARDS (never divide by ~0): returns None when the joined series is too short
+    (< min_points returns), when the regression's market-return variance is ~0 (a flat
+    market window -> beta undefined), when fewer than ~2 residuals survive the skip, or
+    when the residual std-dev over the scoring window is 0 (a degenerate flat residual).
+    Pure; no I/O."""
+    _, sa, mb = join_on_dates(stock_dates, stock_closes, mkt_dates, mkt_closes)
+    # Use the most recent `lookback_days` JOINED closes (returns need N+1 closes for N rets).
+    sa = sa[-(lookback_days + 1):]
+    mb = mb[-(lookback_days + 1):]
+    rs = _simple_returns(sa)
+    rm = _simple_returns(mb)
+    n = min(len(rs), len(rm))
+    if n < min_points:
+        return None
+    rs, rm = rs[:n], rm[:n]
+
+    # OLS of rs on rm: beta = cov(rs, rm) / var(rm), alpha = mean(rs) - beta*mean(rm).
+    mean_s = sum(rs) / n
+    mean_m = sum(rm) / n
+    var_m = sum((m - mean_m) ** 2 for m in rm) / n
+    if var_m <= 0:                       # flat market window -> beta undefined
+        return None
+    cov = sum((s - mean_s) * (m - mean_m) for s, m in zip(rs, rm, strict=False)) / n
+    beta = cov / var_m
+    alpha = mean_s - beta * mean_m
+    resid = [s - (alpha + beta * m) for s, m in zip(rs, rm, strict=False)]
+
+    # 12-1 skip: drop the most recent ~month of residuals before forming the signal.
+    scoring_window = resid[: len(resid) - skip_days] if skip_days > 0 else resid
+    if len(scoring_window) < 2:
+        return None
+    sd = pstdev(scoring_window)
+    if sd <= 0:                          # degenerate flat residual -> abstain (no /0)
+        return None
+    return (sum(scoring_window) / len(scoring_window)) / sd
+
+
 def compute_ebit_ev_yield(ebit: Optional[float], market_cap: Optional[float],
                           net_debt: Optional[float]) -> Optional[float]:
     """EBIT/EV earnings yield (higher = cheaper). EV = market_cap + net_debt.

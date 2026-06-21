@@ -51,3 +51,10 @@ def test_pairs_registry_includes_sue_vs_momentum():
     # SUE (§1) rides the SNAPSHOT-REPLAY path; its drift-vs-price-momentum collinearity
     # is measured once accumulation carries the earnings inputs (no-op until then).
     assert ("sue", "momentum") in _COLLINEARITY_PAIRS
+
+
+def test_pairs_registry_includes_residual_vs_momentum():
+    # Residual momentum (§2) rides the LIVE-price path; it WILL correlate with raw
+    # momentum (it IS momentum, de-betaed) — the diagnostic exists to confirm it
+    # dominates on rank IC, not that it is orthogonal.
+    assert ("residual_momentum", "momentum") in _COLLINEARITY_PAIRS
