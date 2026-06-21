@@ -259,6 +259,11 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
                                          if c.metrics and c.metrics.earnings_surprise_dispersion is not None else None),
         "earnings_days_since_last_report": (c.metrics.earnings_days_since_last_report
                                             if c.metrics else None),
+        # "Lazy Prices" YoY filing-text similarity (§4); surfaced from metrics (no
+        # ScoreCard field). LOW values trip the advisory filing_text_change flag.
+        "filing_text_similarity": (round(c.metrics.filing_text_similarity, 4)
+                                   if c.metrics and c.metrics.filing_text_similarity is not None
+                                   else None),
         "ebitda": c.ebitda,
         # Display floor: net cash (signed < 0) shows as 0.0 here; the gate read the raw sign.
         "net_debt_to_ebitda": (round(max(0.0, c.net_debt_to_ebitda), 2)

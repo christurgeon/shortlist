@@ -203,6 +203,15 @@ flags:
     min_count_7d: 10           # absolute floor: >=10 articles in the last 7d
     require_rising: true       # last-7d count > the prior 7d (the change is the signal)
     max_staleness_days: 3      # ignore if the newest article is older than ~3 days
+  # filing_text_change ("Lazy Prices", Cohen-Malloy-Nguyen 2020): a big YoY change in
+  # the 10-K/10-Q risk-factor + MD&A language predicts negative returns. Fires when the
+  # point-in-time cosine similarity vs the immediately-prior same-type filing is BELOW
+  # max_similarity. Advisory only; never affects passed/composite/scored. The similarity
+  # is computed on the research / accumulation path (full filing text is NOT in the
+  # per-ticker harness snapshot), so this is a no-op on a plain screen. UNFITTED prior —
+  # remove this whole block for the byte-identical pre-feature scorer.
+  filing_text_change:
+    max_similarity: 0.7        # similarity < 0.7 (>~30% rewritten) -> flag
   # Advisory only: in a risk-off regime, flag leveraged names. The cyclical arm is
   # a forward-compatible hook — it ships EMPTY because sectors.buckets defines only
   # reit/insurer/financials (no cyclical buckets yet); a cyclical name resolves to

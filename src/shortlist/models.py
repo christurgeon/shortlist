@@ -180,6 +180,14 @@ class StockMetrics:
     earnings_surprise_dispersion: Optional[float] = None  # pop std-dev of recent surprise % (>=min quarters)
     earnings_days_since_last_report: Optional[int] = None  # APPROX days since the last announcement (see bridge)
 
+    # "Lazy Prices" YoY filing-text similarity (PREDICTIVE_SIGNALS §4). Cosine over
+    # the normalized Item-1A + MD&A token bag of the current filing vs the
+    # immediately-prior same-type filing (point-in-time). LOW similarity (big YoY
+    # text change) -> the soft `filing_text_change` flag. Soft-flag input ONLY —
+    # NOT scored, never feeds any sub-score or the composite. Set on the research /
+    # accumulation path (full filing text is not in the per-ticker harness snapshot).
+    filing_text_similarity: Optional[float] = None  # 1.0 == unchanged, 0.0 == fully rewritten
+
     # Bookkeeping: which provider supplied each populated field
     sources: dict = field(default_factory=dict)
 

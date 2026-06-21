@@ -633,6 +633,16 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
         rising_ok = (not ns.get("require_rising")) or (m.news_flow_rising is True)
         if m.news_count_7d >= ns["min_count_7d"] and rising_ok and fresh:
             out.append("news_spike")
+
+    # filing_text_change ("Lazy Prices", PREDICTIVE_SIGNALS §4): a big YoY change in
+    # the 10-K/10-Q risk-factor + MD&A language predicts negative returns. Fires when
+    # the point-in-time similarity vs the immediately-prior same-type filing is BELOW
+    # max_similarity. Advisory only; mirrors social_hype/news_spike — None-safe, a
+    # no-op when the config block is absent, never affects passed/composite/scored.
+    ft = f.get("filing_text_change") if f else None
+    if ft and m.filing_text_similarity is not None \
+            and m.filing_text_similarity < ft["max_similarity"]:
+        out.append("filing_text_change")
     return out
 
 
