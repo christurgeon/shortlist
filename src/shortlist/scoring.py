@@ -435,11 +435,17 @@ def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     # accruals, both INVERTED (high -> lower quality). Opt-in + threshold-guarded like
     # the dilution leg; absent -> byte-identical. Masked for financials/REITs (the leg
     # names are in sectors.masked_legs) so they abstain there on the production path.
+    # Each leg also has a per-leg on/off switch under quality.earnings_quality
+    # (asset_growth / accruals), defaulting to True when absent -> an `enabled: true`
+    # block with no per-leg keys keeps both legs (back-compat). Shipped config enables
+    # accruals only (validated XS-IC +0.036 t=2.1 broad); asset_growth stays measured-
+    # but-off in the backtest (no cross-sectional edge: XS-IC -0.006 t=-0.3).
     if _earnings_quality_on(config):
         thresholds = (config or {}).get("thresholds") or {}
-        if "asset_growth" in thresholds:
+        eq = ((config or {}).get("quality") or {}).get("earnings_quality") or {}
+        if eq.get("asset_growth", True) and "asset_growth" in thresholds:
             legs.append(_Leg("asset_growth", m.asset_growth, "asset_growth"))
-        if "accruals" in thresholds:
+        if eq.get("accruals", True) and "accruals" in thresholds:
             legs.append(_Leg("accruals", m.accruals, "accruals"))
     return legs
 
