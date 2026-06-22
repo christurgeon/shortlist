@@ -339,6 +339,26 @@ FMP (`--sources finnhub,edgar,yahoo`) and accept a null `value` axis. Finnhub
 
 ## Enabling the daily timer (opt-in — only when you decide to)
 
+**Easiest (system unit, staggered, real paths filled in):** the deploy script installs
+and enables it for you when you pass the opt-in flag — staggered to **21:30 UTC**, one hour
+before the scout (22:30), so the two harness runs never overlap (the EDGAR concurrency
+semaphore is per-process; concurrent runs would double SEC load + compete for FMP's 250/day
+cap and Yahoo):
+
+```bash
+sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh
+# store defaults to /opt/shortlist/state/snapshots (override: SHORTLIST_ACCUMULATE_ROOT=...)
+sudo systemctl start shortlist-accumulate.service              # optional: seed day 1 now
+/opt/shortlist/.venv/bin/shortlist-accumulate status --root /opt/shortlist/state/snapshots
+```
+
+The backtest must later read the **same** `--root`. Memory footprint is ~48 MB (measured),
+so it's well within the 1.9 GB box.
+
+---
+
+**Manual (user unit) alternative:**
+
 1. Edit `<REPO_ROOT>` and `<STORE_ROOT>` in `shortlist-accumulate.service`.
 2. Install as a **user** unit (no root needed):
    ```bash

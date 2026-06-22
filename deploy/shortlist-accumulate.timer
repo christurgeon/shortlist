@@ -1,10 +1,14 @@
 # DISABLED SAMPLE — not installed, not enabled. See deploy/README.md.
-# Fires the capture once per day after the US close (22:30 UTC ~= 18:30 ET).
+# Fires the capture once per day after the US close. STAGGERED to 21:30 UTC — one hour
+# BEFORE the scout (22:30) — so the two harness runs never overlap (the EDGAR concurrency
+# semaphore is per-process; concurrent runs would double SEC load + compete for FMP/Yahoo).
+# Easiest install (staggered, real paths, run-user): from the repo,
+#   sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh
 [Unit]
 Description=Daily shortlist snapshot capture
 
 [Timer]
-OnCalendar=*-*-* 22:30:00 UTC
+OnCalendar=*-*-* 21:30:00 UTC
 Persistent=true          # run on next boot if a fire was missed (laptop/VPS asleep)
 
 [Install]
