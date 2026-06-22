@@ -223,13 +223,20 @@ with no split-flag guard yet (a reverse split can inject a spurious jump). See A
 
 The **`quality.earnings_quality`** block (`config.yaml`) is the **scoring** half of the
 investment & earnings-quality feature (PREDICTIVE_SIGNALS §3) — two of the most-replicated
-cross-sectional anomalies, both pure SEC-XBRL **negative** predictors. It ships **commented
-out** (OFF): when enabled, `quality_score` gains two **inverted** legs — `asset_growth`
-(`Assets_t/Assets_{t-1}−1` over consecutive fiscal ends; Cooper-Gulen-Schill 2008) and
-`accruals` (`(NetIncome−CFO)/avg-assets`, Sloan 1996 convention — average assets `(A_t+A_{t-1})/2`,
-CFO **as-reported, no sign flip**), so asset-ballooning / soft-accrual names score below
-capital-disciplined, cash-backed ones. The scorer is **byte-identical** to the pre-feature
-scorer when the block is absent (None-safe leg redistribution, mirroring `quality.dilution`).
+cross-sectional anomalies, both pure SEC-XBRL **negative** predictors. It now ships **ON** with
+**per-leg control**: `accruals` is **ENABLED** (an ACTIVE quality leg — backtest-validated:
+significant XS-IC +0.036 t=2.1 at 3m / +0.059 t=1.6 at 12m on the 195-name broad universe,
+hit-rate 60–69%, orthogonal to Piotroski), while its sibling `asset_growth` stays **OFF**
+(`asset_growth: false` — no cross-sectional edge, XS-IC −0.006 t=−0.3; still measured-but-off in
+the backtest). Each leg has a per-leg flag under `quality.earnings_quality` (`asset_growth` /
+`accruals`), **defaulting to True when absent** (so an `enabled: true` block with no per-leg keys
+keeps both legs — back-compat). When a leg is on, `quality_score` gains that **inverted** leg —
+`asset_growth` (`Assets_t/Assets_{t-1}−1` over consecutive fiscal ends; Cooper-Gulen-Schill 2008)
+and `accruals` (`(NetIncome−CFO)/avg-assets`, Sloan 1996 convention — average assets
+`(A_t+A_{t-1})/2`, CFO **as-reported, no sign flip**), so asset-ballooning / soft-accrual names
+score below capital-disciplined, cash-backed ones. The scorer is **byte-identical** to the
+pre-feature scorer when the **block is absent** (None-safe leg redistribution, mirroring
+`quality.dilution`).
 `asset_growth`/`accruals` are derived from already-fetched data on **both** the harness
 (`providers/_edgar_facts.py`: total `Assets` via the edgartools `standard_concept` "Assets",
 aligned by each statement's own dates) and the XBRL backtest (`providers/_xbrl_facts.py`:

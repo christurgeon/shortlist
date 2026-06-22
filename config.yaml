@@ -258,16 +258,21 @@ fmp:
 #   dilution:
 #     enabled: true
 
-# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). DISABLED by default:
-# leave commented so quality_score is byte-identical to the pre-feature scorer (the
-# asset_growth / accruals signals are still surfaced + backtest-measured regardless).
-# When enabled, quality gains two INVERTED legs — asset growth (Cooper-Gulen-Schill
-# 2008) and accruals (Sloan 1996): asset-ballooning / soft-accrual names score below
-# capital-disciplined, cash-backed ones. UNFITTED priors — backtest before trusting.
+# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). The accruals leg
+# (Sloan 1996) is now ENABLED — backtest-validated: significant cross-sectional rank IC
+# (195-name broad universe, excess returns), XS-IC +0.036 (t=2.1) at 3m, +0.059 (t=1.6)
+# at 12m, hit-rate 60–69%, orthogonal to Piotroski (collinearity -0.00). Cheap, cash-
+# backed names score above soft-accrual ones. The sibling asset_growth leg (Cooper-Gulen-
+# Schill 2008) stays OFF (asset_growth: false): flat / wrong-signed even broadly
+# (XS-IC -0.006, t=-0.3) — it remains measured in the backtest, just not scored. Both
+# legs are INVERTED (high -> lower score). Per-leg keys default to True when absent, so an
+# `enabled: true` block with no per-leg keys keeps both legs (back-compat).
 # (If both quality blocks are wanted, merge them under one `quality:` mapping.)
-# quality:
-#   earnings_quality:
-#     enabled: true
+quality:
+  earnings_quality:
+    enabled: true
+    asset_growth: false   # no cross-sectional edge (XS-IC -0.006 t=-0.3) — measured-but-off
+    accruals: true        # validated XS-IC +0.036 t=2.1 broad — ACTIVE quality leg
 
 # Total-shareholder-yield SCORING (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber).
 # DISABLED by default: leave commented so value_score is byte-identical to the pre-feature

@@ -311,6 +311,43 @@ def test_earnings_quality_legs_masked_for_financials():
     assert {"asset_growth", "accruals"} <= masked
 
 
+def test_earnings_quality_per_leg_toggle():
+    # Per-leg control: with asset_growth: false the accruals leg is scored but the
+    # asset_growth leg is NOT; with no per-leg keys (just enabled: true) BOTH appear.
+    from shortlist.scoring import _quality_legs
+    base_t = {**CONFIG["thresholds"],
+              "asset_growth": [0.30, -0.10], "accruals": [0.15, -0.15]}
+    m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=0.15)
+
+    accruals_only = {**CONFIG, "thresholds": base_t,
+                     "quality": {"earnings_quality": {"enabled": True, "asset_growth": False}}}
+    names = {leg.name for leg in _quality_legs(m, accruals_only)}
+    assert "accruals" in names
+    assert "asset_growth" not in names
+
+    both = {**CONFIG, "thresholds": base_t,
+            "quality": {"earnings_quality": {"enabled": True}}}
+    names_both = {leg.name for leg in _quality_legs(m, both)}
+    assert {"accruals", "asset_growth"} <= names_both
+
+
+def test_shipped_config_enables_accruals_only():
+    # The shipped default config.yaml must enable the accruals leg (measurably moving
+    # quality/composite vs the block-absent run) while leaving asset_growth OFF.
+    from shortlist.scoring import _quality_legs
+    cfg = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
+    m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=0.15)
+    names = {leg.name for leg in _quality_legs(m, cfg)}
+    assert "accruals" in names           # ACTIVE
+    assert "asset_growth" not in names   # measured-but-off
+    # Leg-really-wired: composite/quality differs from a block-absent run (drop only
+    # the earnings_quality block, keeping any other quality.* sub-blocks intact).
+    no_block = {**cfg, "quality": {k: v for k, v in (cfg.get("quality") or {}).items()
+                                   if k != "earnings_quality"}}
+    assert score(m, cfg).quality != score(m, no_block).quality
+    assert score(m, cfg).composite != score(m, no_block).composite
+
+
 def test_asset_growth_and_accruals_backtest_axes():
     # Backtest-only standalone axes: inverted bands -> 0..100; None-safe when the
     # band or the signal is absent (mirrors share_count_score).
