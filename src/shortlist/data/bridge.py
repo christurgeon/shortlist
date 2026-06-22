@@ -197,7 +197,11 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         if m.ebitda is None and ebitda0 is not None:
             m.ebitda = ebitda0
         if m.interest_coverage is None and oi0 is not None and ie0:
-            m.interest_coverage = oi0 / ie0
+            # edgartools to_dataframe() reports InterestExpense as a NEGATIVE
+            # deduction (e.g. CMCSA -4.409B). abs() the denominator so coverage
+            # stays positive; the numerator's sign is meaningful (a real
+            # operating loss -> negative coverage).
+            m.interest_coverage = oi0 / abs(ie0)
         if (m.net_debt_to_ebitda is None and m.ebitda and debt0 is not None
                 and m.cash_and_equivalents is not None):
             m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
