@@ -123,6 +123,51 @@ echo "==> 6/7  Reload systemd, enable + start the timer"
 systemctl daemon-reload
 systemctl enable --now shortlist-scout.timer
 
+# --- OPTIONAL: daily snapshot accumulation (OFF by default) -------------------
+# Enable with SHORTLIST_ACCUMULATE=1. Builds the >=24-day point-in-time history the
+# snapshot-replay backtest needs (unblocks SUE / Lazy-Prices validation). Staggered to
+# 21:30 UTC — one hour BEFORE the scout (22:30) so the two harness runs never overlap:
+# the EDGAR concurrency semaphore is PER-PROCESS, so concurrent runs would double SEC load
+# and compete for FMP's 250/day cap + the Yahoo endpoint. Memory is a non-issue (~48 MB).
+# Override the store dir with SHORTLIST_ACCUMULATE_ROOT (default: $DEST/state/snapshots,
+# which the rsync preserves across deploys). The backtest must read the SAME --root.
+if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then
+  ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-$DEST/state/snapshots}"
+  echo "==> 6b/7  (opt-in) Install + enable the daily accumulate timer (21:30 UTC) -> $ACCUM_ROOT"
+  cat > "$UNIT_DIR/shortlist-accumulate.service" <<UNIT
+[Unit]
+Description=shortlist daily point-in-time snapshot capture
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=$RUN_USER
+Group=$RUN_GROUP
+WorkingDirectory=$DEST
+Environment=HOME=$RUN_HOME
+Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+Nice=10
+ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 15
+TimeoutStartSec=900
+UNIT
+  cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
+[Unit]
+Description=Daily shortlist snapshot capture (staggered 1h before the scout)
+
+[Timer]
+OnCalendar=*-*-* 21:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now shortlist-accumulate.timer
+  echo "    accumulate timer enabled (21:30 UTC); seed day 1 now with:"
+  echo "      sudo systemctl start shortlist-accumulate.service"
+fi
+
 echo "==> 7/7  Restart the interactive bot so it picks up the synced code"
 # shortlist-bot is a long-running Type=simple service: it loads its modules at startup and
 # keeps running the OLD code after an rsync until restarted. `try-restart` updates it IFF
