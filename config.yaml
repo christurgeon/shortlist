@@ -299,20 +299,20 @@ fmp:
 #     min_quarters: 3            # min usable past surprises required to standardize
 
 # Residual (idiosyncratic) MOMENTUM SCORING (PREDICTIVE_SIGNALS §2; Blitz-Huij-Martens
-# 2011). DISABLED by default: leave commented so momentum_score is byte-identical to the
-# pre-feature scorer (the residual_momentum signal is still surfaced + LIVE-price-backtest-
-# measured regardless). When enabled, momentum gains one STRAIGHT leg — the 12-1 momentum
-# of CAPM (vs SPY) residuals, standardized by residual vol: a stock trending up AFTER its
-# market beta is stripped out scores higher. HONEST CAVEAT: while the original study reports
-# ~2x the Sharpe of raw momentum, some recent replications report it UNDERPERFORMING — so it
-# ships OFF as a measured candidate, NOT a replacement for the raw-momentum legs. Wire only
-# after the backtest confirms it dominates raw momentum on rank IC. The leg ABSTAINS (drops,
-# never divides by 0) on a thin/flat price window. Note: the leg needs the date-aligned
-# stock+SPY series, populated only on the dated backtest seam — on the live merge path
-# m.residual_momentum is None, so the leg abstains there.
-# momentum:
-#   residual:
-#     enabled: true
+# 2011). ENABLED: momentum gains one STRAIGHT leg — the 12-1 momentum of CAPM (vs SPY)
+# residuals, standardized by residual vol: a stock trending up AFTER its market beta is
+# stripped out scores higher. RATIONALE: the LIVE-price backtest validated it as the only
+# new signal with a significant cross-sectional t-stat — 1-month XS rank-IC +0.023, t=2.6 —
+# while RAW momentum is anti-predictive there (TS-IC -0.03, t=-3.9). HONEST CAVEAT: this is
+# a SHORT-HORIZON signal — its edge decays past ~3 months, so it is a de-betaed near-term
+# tilt, not a long-hold thesis. The leg now FIRES on live screens: m.residual_momentum is
+# populated from the date-aligned stock+SPY Yahoo series (data/sources.py:YahooSource.fetch
+# plumbs bar dates; was backtest-seam-only). The leg ABSTAINS (drops, never divides by 0) on
+# a thin/flat/date-less price window. COMMENT OUT the block below for a byte-identical
+# pre-feature momentum_score.
+momentum:
+  residual:
+    enabled: true
 
 # Default source chain for the harness (yahoo first => wins the price merge). Used
 # whenever `--provider` is omitted; passing `--provider` overrides this list, so omit

@@ -510,21 +510,29 @@ measure the rank IC + collinearity on the snapshot-replay path before trusting.
 
 The **`momentum.residual`** block (`config.yaml`) folds a **residual-momentum** leg into
 `momentum_score` (Blitz-Huij-Martens 2011): the **12-1 momentum of CAPM residuals**, vol-
-standardized — raw momentum with the market-beta exposure stripped out. It ships **commented
-out** (OFF by default); the scorer is **byte-identical** to the pre-feature scorer when absent
-(the `momentum.sue` / `quality.dilution` precedent, None-safe leg redistribution).
-**HONEST CAVEAT:** the original study reports ~2× the Sharpe of raw momentum, but some recent
-replications report it **underperforming** — so it ships **OFF as a measured candidate, NOT a
-replacement** for the raw-momentum legs. Wire only after the backtest confirms it dominates
-raw momentum on rank IC.
+standardized — raw momentum with the market-beta exposure stripped out. It now ships **ON**
+and **fires on live screens** (was backtest-only); the scorer is **byte-identical** to the
+pre-feature scorer when the block is **absent** (comment it out for the byte-identical pre-
+feature `momentum_score` — the `momentum.sue` / `quality.dilution` precedent, None-safe leg
+redistribution; the invariance tests build configs without the block and still pass).
+**ENABLEMENT RATIONALE:** the **LIVE-price backtest** validated it as the **only** new signal
+with a significant cross-sectional t-stat — **1-month XS rank-IC +0.023, t=2.6** — while **RAW**
+momentum is **anti-predictive** there (TS-IC −0.03, t=−3.9), so the de-betaed leg is the live
+edge raw momentum isn't. **HONEST CAVEAT:** this is a **short-horizon** signal — its edge **decays
+past ~3 months**, so treat it as a near-term de-betaed tilt, not a long-hold thesis.
 
 **The real work was the price plumbing.** The live merge reduces Yahoo closes to scalars
 (`rel_strength_6m` etc.) and `snapshot_from_closes` throws dates away — but the regression
-needs **date-aligned** stock and SPY series. Added: `PriceHistory.through(d)` (the dated
-counterpart of `closes_through`, returns `(dates, closes)` truncated to `dates <= d`), a
-`snapshot_from_closes_dated` seam in `data/sources.py` that carries the dated stock+SPY series,
-a `Price.residual_momentum` field (set ONLY on the dated seam — None on the scalar live-merge
-path that lacks dates), and the bridge copies it to `StockMetrics.residual_momentum`.
+needs **date-aligned** stock and SPY series. The dated backtest seam
+(`snapshot_from_closes_dated`) always had them; the **live `YahooSource.fetch` path now plumbs
+dates too** (`data/sources.py`): `_dates_from_chart(raw)` extracts the bar dates aligned 1:1 to
+`_closes_from_chart` (same numeric-close filter), `_spy()` caches `(_spy_dates, _spy_closes)`
+once per run from the SPY payload, and `fetch` calls `_normalize_yahoo(ticker, closes, spy,
+dates, spy_dates)`. **Robust fallback:** when the chart payload is **date-less or misaligned**
+(`len(ts) != len(series)`, e.g. older cached 5y payloads with no `timestamp` array),
+`_dates_from_chart` returns `[]`, `fetch` passes `dates=spy_dates=None`, and `_normalize_yahoo`
+leaves `Price.residual_momentum` **None** so the leg simply abstains — a screen never crashes.
+The bridge copies `Price.residual_momentum` to `StockMetrics.residual_momentum`.
 
 **The #1 correctness risk — date-join, NOT position-pairing.** `stats.join_on_dates` **inner-
 joins** the stock and SPY closes on their shared date keys **before** any return is computed.
@@ -549,7 +557,9 @@ axis (the dated seam computes it), with a backtest-only `scoring.residual_moment
 `residual_momentum ~ momentum` `_COLLINEARITY_PAIRS` entry. It **will** correlate with raw
 momentum (it IS momentum, de-betaed) — the diagnostic exists to confirm it **dominates on rank
 IC**, not that it is orthogonal. Momentum legs are never sector-masked, so it is universally
-applicable. The band/window are **unfitted priors** — measure before trusting.
+applicable. That backtest is now **done** (see the enablement rationale above): the production
+`momentum.residual` leg is **enabled and wired into live screens**. The band/window remain
+**unfitted priors**.
 
 ## Yahoo screener WAF gotcha (scout discovery)
 

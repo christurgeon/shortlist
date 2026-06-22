@@ -9,10 +9,11 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, accruals_score, asset_growth_score, check_flags, ebit_ev_yield_score,
-    growth_score, insider_score, moat_score, momentum_score, piotroski_score,
-    quality_score, residual_momentum_score, score, shareholder_yield_score, sue_score,
-    value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score, value_score,
+    _avg, _norm, _residual_momentum_on, accruals_score, asset_growth_score, check_flags,
+    ebit_ev_yield_score, growth_score, insider_score, moat_score, momentum_score,
+    piotroski_score, quality_score, residual_momentum_score, score, shareholder_yield_score,
+    sue_score, value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score,
+    value_score,
 )
 
 # A deliberately clean config: every [0, 1] band makes 0.5 normalize to exactly
@@ -1243,6 +1244,23 @@ def test_residmom_leg_no_band_is_noop():
     on = {**CONFIG, "momentum": {"residual": {"enabled": True}}}
     m = dataclasses.replace(metrics_all_50(), residual_momentum=1.0)
     assert score(m, on).momentum == 50.0
+
+
+def test_shipped_config_enables_residual_momentum_leg():
+    # The shipped config.yaml now ENABLES the residual-momentum leg on live screens
+    # (validated: 1-month XS rank-IC +0.023, t=2.6). Confirm the block is on AND that,
+    # with the signal present, the momentum sub-score reflects the leg (no longer a no-op).
+    cfg = yaml.safe_load((Path(__file__).parents[1] / "config.yaml").read_text())
+    assert _residual_momentum_on(cfg) is True
+    assert "residual_momentum" in cfg["thresholds"]
+    # A residual value that scores DIFFERENTLY from the other legs so the average shifts:
+    # band is residual_momentum [-1, 1], so 0.0 -> 50 (vs all_50's other legs at their own
+    # shipped-band scores) — the momentum average with vs without the leg must differ.
+    m = dataclasses.replace(metrics_all_50(), residual_momentum=0.0)
+    with_signal = score(m, cfg).momentum
+    without = score(dataclasses.replace(m, residual_momentum=None), cfg).momentum
+    assert with_signal is not None and without is not None
+    assert with_signal != without                           # the leg measurably moves momentum
 
 
 def test_residmom_backtest_axis():
