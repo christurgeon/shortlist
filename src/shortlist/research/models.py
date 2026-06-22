@@ -197,13 +197,18 @@ class QualitativeAssessment:
         return self.thesis.takeaway
 
 
+def _finding_from(item: dict) -> Finding:
+    """Build a Finding from a payload item's claim/evidence (missing -> empty)."""
+    return Finding(claim=str(item.get("claim", "")),
+                   evidence=str(item.get("evidence", "")))
+
+
 def _findings(payload: dict, key: str) -> list[Finding]:
     out: list[Finding] = []
     for item in (payload.get(key) or []):
         if not isinstance(item, dict):
             raise ValueError(f"{key} items must be objects")
-        out.append(Finding(claim=str(item.get("claim", "")),
-                            evidence=str(item.get("evidence", ""))))
+        out.append(_finding_from(item))
     return out
 
 
@@ -215,8 +220,7 @@ def _added_risks(payload: dict, limit: int) -> list[Finding]:
     for item in (payload.get("added_risks") or []):
         if not isinstance(item, dict):
             continue
-        out.append(Finding(claim=str(item.get("claim", "")),
-                            evidence=str(item.get("evidence", ""))))
+        out.append(_finding_from(item))
         if len(out) >= limit:
             break
     return out

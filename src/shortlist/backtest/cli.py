@@ -82,7 +82,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--fit-horizon", dest="fit_horizon", type=int,
                     help="forward-return horizon (months) to fit at; required with --fit")
     ap.add_argument("--fit-axes", dest="fit_axes",
-                    default="quality,moat,growth,value",
+                    default=",".join(_FUNDAMENTAL_AXES),
                     help="comma-separated axes to fit (subset of the fundamentals)")
     ap.add_argument("--n-folds", dest="n_folds", type=int, default=6,
                     help="walk-forward folds; >=6 needed to reach the 5-OOS-fold gate")

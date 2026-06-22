@@ -12,9 +12,6 @@ from typing import Any, Iterable, Optional
 # a neutral intermediate, not the data layer's InsiderTxn), so neither layer takes
 # a dependency on the other.
 
-# Open-market transaction codes we score: 'P' = purchase (buy), 'S' = sale.
-_BUY, _SELL = "P", "S"
-
 
 def classify_code(code: str) -> str:
     """Map a Form 4 transaction code to 'buy' | 'sell' | 'other'.

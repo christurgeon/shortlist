@@ -8,6 +8,11 @@ from . import riskdiff, textsim
 from .models import FilingBundle, FilingText
 
 
+def _cap(s: str, n) -> str:
+    """Prefix-trim `s` to `n` chars; no-op when `n` is falsy or `s` already fits."""
+    return s if not n or len(s) <= n else s[:n]
+
+
 def cap_sections(filing: FilingText, max_chars: dict | None) -> FilingText:
     """Prefix-trim each 10-K narrative section to its configured char cap, so the
     model prompt and the grounding haystack (filing.combined()) read identical text.
@@ -15,9 +20,6 @@ def cap_sections(filing: FilingText, max_chars: dict | None) -> FilingText:
     are ordered worst-first, so a prefix slice keeps the material content."""
     if not max_chars:
         return filing
-
-    def _cap(s: str, n) -> str:
-        return s if not n or len(s) <= n else s[:n]
 
     return dataclasses.replace(
         filing,
@@ -35,10 +37,7 @@ def cap_bundle(bundle: "FilingBundle", max_chars: dict | None) -> "FilingBundle"
     if not max_chars:
         return bundle
     capped_tenk = cap_sections(bundle.tenk, max_chars)
-    tenq_cap = max_chars.get("tenq_mda")
-    tenq = bundle.tenq_mda
-    if tenq_cap and len(tenq) > tenq_cap:
-        tenq = tenq[:tenq_cap]
+    tenq = _cap(bundle.tenq_mda, max_chars.get("tenq_mda"))
     return dataclasses.replace(bundle, tenk=capped_tenk, tenq_mda=tenq)
 
 
