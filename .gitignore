@@ -30,6 +30,9 @@ venv/
 /scout/
 state/scout_state.json
 
+# Prospect skill artifacts (weekly idea-hunt briefs)
+/prospect/
+
 # Superpowers process artifacts (design specs + implementation plans) — kept local, not published
 /docs/superpowers/specs/
 /docs/superpowers/plans/
