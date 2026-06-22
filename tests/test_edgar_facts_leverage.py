@@ -58,7 +58,10 @@ def test_asset_growth_and_accruals_extracted():
     # spine, Assets on the balance instant spine — aligned by ISO date.
     income = _fy_df([
         ("Revenue", {"2024": 1000.0, "2023": 900.0}),
-        ("NetIncomeLoss", {"2024": 200.0, "2023": 150.0}),
+        # edgartools 5.33 renamed the net-income standard_concept to "NetIncome"; this
+        # _fy_df fixture has no raw `concept` column, so it exercises the standard_concept
+        # fallback path of _row_net_income.
+        ("NetIncome", {"2024": 200.0, "2023": 150.0}),
     ])
     cashflow = _fy_df([
         ("NetCashFromOperatingActivities", {"2024": 150.0, "2023": 140.0}),
@@ -76,7 +79,7 @@ def test_asset_growth_and_accruals_extracted():
 
 def test_asset_growth_none_when_assets_absent():
     # No Assets row -> both signals abstain (None), other extraction unaffected.
-    income = _fy_df([("NetIncomeLoss", {"2024": 200.0, "2023": 150.0})])
+    income = _fy_df([("NetIncome", {"2024": 200.0, "2023": 150.0})])
     cashflow = _fy_df([("NetCashFromOperatingActivities", {"2024": 150.0, "2023": 140.0})])
     balance = _instant_df([("LongTermDebt", {"2024": 300.0, "2023": 280.0})])
     ef = extract_financials(income, cashflow, balance, shares_diluted=None)
