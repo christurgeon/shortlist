@@ -22,7 +22,9 @@ def _income_df():
     return pd.DataFrame([
         {"concept": "us-gaap_Revenue", "label": "Net sales", "standard_concept": "Revenue", "level": 0, "abstract": False,
          "2025-09-27 (FY)": 416_161_000_000.0, "2024-09-28 (FY)": 391_035_000_000.0, "2023-09-30 (FY)": 383_285_000_000.0},
-        {"concept": "us-gaap_NetIncomeLoss", "label": "Net income", "standard_concept": "NetIncomeLoss", "level": 0, "abstract": False,
+        # edgartools 5.33: standard_concept renamed "NetIncomeLoss" -> "NetIncome"; raw
+        # concept stays "us-gaap_NetIncomeLoss" (the stable key extraction matches on).
+        {"concept": "us-gaap_NetIncomeLoss", "label": "Net income", "standard_concept": "NetIncome", "level": 0, "abstract": False,
          "2025-09-27 (FY)": 112_010_000_000.0, "2024-09-28 (FY)": 93_736_000_000.0, "2023-09-30 (FY)": 96_995_000_000.0},
         {"concept": float("nan"), "label": "Diluted (in dollars per share)", "standard_concept": float("nan"), "level": 2, "abstract": False,
          "2025-09-27 (FY)": 7.46, "2024-09-28 (FY)": 6.08, "2023-09-30 (FY)": 6.13},
@@ -203,3 +205,47 @@ def test_fy_columns_detected_by_suffix_and_sorted_desc():
                         "2023-09-30 (FY)": 1.0, "2025-09-27 (FY)": 3.0, "2024-09-28 (FY)": 2.0}])
     fin = extract_financials(df, df, pd.DataFrame(), shares_diluted=None)
     assert fin.revenue == [3.0, 2.0, 1.0]
+
+
+def _income_df_edgartools_533():
+    """Real edgartools 5.33 shape: the net-income row's standard_concept was RENAMED
+    from "NetIncomeLoss" to "NetIncome" (verified live on AAPL/MSFT/LMT), while the raw
+    `concept` column stays the stable "us-gaap_NetIncomeLoss". Extraction must key off the
+    stable raw concept so net_income (and the accruals leg) survive the rename."""
+    return pd.DataFrame([
+        {"concept": "us-gaap_Revenue", "label": "Net sales", "standard_concept": "Revenue", "level": 0, "abstract": False,
+         "2025-09-27 (FY)": 416_161_000_000.0, "2024-09-28 (FY)": 391_035_000_000.0, "2023-09-30 (FY)": 383_285_000_000.0},
+        {"concept": "us-gaap_NetIncomeLoss", "label": "Net income", "standard_concept": "NetIncome", "level": 0, "abstract": False,
+         "2025-09-27 (FY)": 112_010_000_000.0, "2024-09-28 (FY)": 93_736_000_000.0, "2023-09-30 (FY)": 96_995_000_000.0},
+    ])
+
+
+def test_net_income_matched_by_stable_concept_when_standard_concept_renamed():
+    # edgartools 5.33 renamed the net-income standard_concept "NetIncomeLoss" -> "NetIncome";
+    # matching on the stable raw concept "us-gaap_NetIncomeLoss" keeps net_income populated.
+    fin = extract_financials(
+        _income_df_edgartools_533(), _cashflow_df(), pd.DataFrame(), shares_diluted=None)
+    assert fin.net_income == [112_010_000_000.0, 93_736_000_000.0, 96_995_000_000.0]
+
+
+def test_accruals_survives_net_income_standard_concept_rename():
+    # The accruals leg = (NI - CFO) / avg_assets. Before the fix the renamed
+    # standard_concept made net_income empty -> ni_by_end {} -> accruals abstained even
+    # though Assets/CFO resolved fine. Assert it is now a real number.
+    income = _income_df_edgartools_533()
+    cashflow = pd.DataFrame([
+        {"concept": "us-gaap_NetCashProvidedByUsedInOperatingActivities", "label": "Net cash from ops",
+         "standard_concept": "NetCashFromOperatingActivities", "level": 1, "abstract": False,
+         "2025-09-27 (FY)": 90_000_000_000.0, "2024-09-28 (FY)": 80_000_000_000.0, "2023-09-30 (FY)": 70_000_000_000.0},
+    ])
+    balance = pd.DataFrame([
+        {"concept": "us-gaap_Assets", "label": "Total assets", "standard_concept": "Assets",
+         "level": 0, "abstract": False,
+         "2025-09-27": 360_000_000_000.0, "2024-09-28": 340_000_000_000.0, "2023-09-30": 350_000_000_000.0},
+    ])
+    fin = extract_financials(income, cashflow, balance, shares_diluted=None)
+    assert fin.net_income == [112_010_000_000.0, 93_736_000_000.0, 96_995_000_000.0]
+    assert fin.accruals is not None
+    # accruals = (NI_2025 - CFO_2025) / avg(Assets_2025, Assets_2024)
+    #          = (112.01B - 90B) / ((360B + 340B) / 2) = 22.01B / 350B
+    assert fin.accruals == pytest.approx(22_010_000_000.0 / 350_000_000_000.0)

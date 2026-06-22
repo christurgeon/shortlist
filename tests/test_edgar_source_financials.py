@@ -24,7 +24,7 @@ class _FakeFinancials:
 def _inc():
     return pd.DataFrame([
         {"standard_concept": "Revenue", "label": "r", "2025-09-27 (FY)": 416_161_000_000.0, "2024-09-28 (FY)": 391_035_000_000.0},
-        {"standard_concept": "NetIncomeLoss", "label": "ni", "2025-09-27 (FY)": 112_010_000_000.0, "2024-09-28 (FY)": 93_736_000_000.0},
+        {"standard_concept": "NetIncome", "label": "ni", "2025-09-27 (FY)": 112_010_000_000.0, "2024-09-28 (FY)": 93_736_000_000.0},
         {"standard_concept": float("nan"), "label": "Diluted (in dollars per share)", "2025-09-27 (FY)": 7.46, "2024-09-28 (FY)": 6.08},
     ])
 

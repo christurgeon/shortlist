@@ -140,6 +140,24 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     return hit.iloc[0]
 
 
+def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
+    """Net-income row, robust to edgartools' `standard_concept` drift. edgartools 5.33
+    RENAMED the net-income bucket from "NetIncomeLoss" to "NetIncome" (verified live on
+    AAPL/MSFT/LMT), while the raw `concept` column stays the stable "us-gaap_NetIncomeLoss".
+    Prefer the stable raw concept (same pattern as _concept_family_latest's financing rows),
+    then fall back to either standard_concept spelling so older edgartools shapes and the
+    leverage-test fixtures (standard_concept only, no `concept` column) still resolve."""
+    if "concept" in df.columns:
+        hit = df[df["concept"].astype(str) == "us-gaap_NetIncomeLoss"]
+        if not hit.empty:
+            return hit.iloc[0]
+    for sc in ("NetIncome", "NetIncomeLoss"):
+        row = _row_by_standard_concept(df, sc)
+        if row is not None:
+            return row
+    return None
+
+
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                            cols: list[tuple[str, str]]) -> Optional[float]:
     """Latest-FY value of a us-gaap concept FAMILY on the CASH-FLOW statement, summed
@@ -263,7 +281,7 @@ def extract_financials(
         fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex, strict=True)]
 
     fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)
-    fin.net_income = _series(_row_by_standard_concept(income_df, "NetIncomeLoss"), inc_fy)
+    fin.net_income = _series(_row_net_income(income_df), inc_fy)
 
     eps = _series(_row_diluted_eps(income_df), inc_fy)
     if not eps and fin.net_income and shares_diluted:
@@ -311,7 +329,7 @@ def extract_financials(
     # assets in shared stats helpers. CFO is the as-reported operating cash flow (no sign
     # flip — distinct from the capex-style negation align_fcf applies).
     assets_by_end = _end_map(_row_by_standard_concept(balance_df, "Assets"), bal_inst)
-    ni_by_end = _end_map(_row_by_standard_concept(income_df, "NetIncomeLoss"), inc_fy)
+    ni_by_end = _end_map(_row_net_income(income_df), inc_fy)
     cfo_by_end = _end_map(
         _row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), cf_fy)
     fin.total_assets = [assets_by_end[e] for e in sorted(assets_by_end, reverse=True)]
