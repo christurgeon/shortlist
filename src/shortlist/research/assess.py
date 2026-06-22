@@ -443,8 +443,9 @@ def assess(card, bundle: FilingBundle, config: dict,
     max_falsifiers = rcfg.get("max_falsifiers", 3)
     max_added_risks = rcfg.get("max_added_risks", 8)
     filing = bundle.tenk
-    fe = getattr(getattr(card, "metrics", None), "filing_events", None)
-    ir = getattr(getattr(card, "metrics", None), "insider_recent", None)
+    m = getattr(card, "metrics", None)
+    fe = getattr(m, "filing_events", None)
+    ir = getattr(m, "insider_recent", None)
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
                                      insider_recent=ir)
     system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")

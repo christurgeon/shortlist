@@ -92,10 +92,8 @@ def _call_md(a, config=None):
 
 def to_markdown(a: QualitativeAssessment, config=None) -> str:
     t = a.thesis
-    call_badge, call_block = "", []
     rendered = _call_md(a, config)
-    if rendered is not None:
-        call_badge, call_block = rendered
+    call_badge, call_block = rendered if rendered is not None else ("", [])
     cmm = [f"- {x}" for x in t.what_would_change_my_mind] or ["- (none stated)"]
     lines = [
         f"# {a.ticker} — qualitative read",

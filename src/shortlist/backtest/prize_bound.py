@@ -9,13 +9,14 @@ docs/superpowers/specs/2026-06-14-multi-horizon-momentum-design.md.
 """
 from __future__ import annotations
 
+import random as _random
 from typing import Optional
 
 # Composite components in weight order; risk is added separately when present.
 _COMPONENTS = ("quality", "moat", "growth", "value", "momentum", "insider")
 
 
-def composite_with(card, momentum: Optional[float], weights: dict, config: dict = None) -> float:
+def composite_with(card, momentum: Optional[float], weights: dict, config: Optional[dict] = None) -> float:
     """Recompute a card's composite with its momentum sub-score replaced by `momentum`.
 
     Faithful replica of scoring.score()'s composite: a normalized weighted average over
@@ -140,8 +141,6 @@ def kendall_tau(rank_a: list[str], rank_b: list[str]) -> float:
     total = m * (m - 1) / 2
     return (concordant - discordant) / total
 
-
-import random as _random
 
 # Pre-registered STOP thresholds (band-free, rank-based churn). See spec Stage 0.
 _STOP_OVERLAP = 0.9       # top-N set overlap at/above this == "did not move"

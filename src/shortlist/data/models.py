@@ -220,6 +220,8 @@ class Lobbying:
     registrant_count: Optional[int] = None      # distinct registrants in the TTM sum
     truncated: bool = False                     # paging hit the cap -> sum is partial
     total_filings: Optional[int] = None         # pre-match count across queried years
+
+
 @dataclass
 class NewsFlow:
     """Finnhub company-news volume for one symbol, window-scoped. Raw counts only —
@@ -231,6 +233,8 @@ class NewsFlow:
     count_window: Optional[int] = None     # articles in the 30d lookback (lower bound if truncated)
     latest_dt: Optional[str] = None        # newest article date (staleness)
     truncated: bool = False                # free-tier ~250-article cap hit -> prior/rising unreliable
+
+
 @dataclass
 class Earnings:
     """Finnhub earnings-surprise history + next-report date for one symbol. Raw facts

@@ -21,7 +21,7 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
         return None
     ttm = getattr(m, "gov_contract_ttm_usd", None)
     conf = getattr(m, "gov_contract_match_confidence", None)
-    if ttm is None or not ttm:                       # None or 0 -> abstain
+    if not ttm:                                      # None or 0 -> abstain
         return None
     if conf is None or conf < float(cfg.get("min_confidence", 0.8)):
         return None

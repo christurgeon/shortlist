@@ -7,13 +7,10 @@ otherwise (honest degradation — never a wrong attribution). No I/O.
 """
 from __future__ import annotations
 
-import re
 from difflib import SequenceMatcher
 from typing import Iterable, Optional
 
-# Corporate suffixes / noise words stripped before comparison.
-_SUFFIXES = {"corp", "corporation", "inc", "incorporated", "llc", "lp", "co",
-             "company", "holdings", "holding", "the", "ltd", "plc", "group"}
+from .entity_match import normalize_name  # shared generic name normalizer
 
 # Non-exhaustive seed map: SEC-ticker -> known USAspending recipient name tokens
 # (already in normalize_name() form) for subsidiaries/divisions whose names don't
@@ -26,15 +23,6 @@ _ALIAS_SEED: dict[str, tuple[str, ...]] = {
     "NOC": ("northrop grumman systems",),
     "BA": ("boeing",),
 }
-
-
-def normalize_name(name: str) -> str:
-    """Casefold, strip punctuation, drop corporate suffixes/noise words."""
-    if not name:
-        return ""
-    s = re.sub(r"[^a-z0-9 ]", " ", name.lower())
-    toks = [t for t in s.split() if t and t not in _SUFFIXES]
-    return " ".join(toks)
 
 
 def match_confidence(sec_name: str, recipient_name: str,

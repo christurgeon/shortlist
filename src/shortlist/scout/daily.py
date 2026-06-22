@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from ..env import load_env, redact_secrets
-from ._caption import _CAPTION_SUPPRESS_FLAGS, _caption  # re-exported (tests import daily._*)
+from ._caption import _caption
 from .budget import select
 from .calendar import last_session
 from .funnel import aggregate, prefilter
