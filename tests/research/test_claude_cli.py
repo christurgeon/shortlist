@@ -74,6 +74,33 @@ def test_run_timeout(monkeypatch):
     assert res.error and "timed out" in res.error.lower()
 
 
+def test_run_timeout_is_transient(monkeypatch):
+    # A timeout is a transient failure — a fresh retry can succeed (the call was
+    # slow/stuck, not broken). assess() relies on this flag to decide whether to retry.
+    def boom(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="claude", timeout=5)
+    monkeypatch.setattr(subprocess, "run", boom)
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.transient is True
+
+
+def test_run_binary_missing_is_not_transient(monkeypatch):
+    # A missing binary is permanent — retrying is pointless, so it must NOT be transient.
+    def boom(*a, **k):
+        raise FileNotFoundError()
+    monkeypatch.setattr(subprocess, "run", boom)
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.transient is False
+
+
+def test_run_nonzero_exit_is_transient(monkeypatch):
+    # A non-zero exit is usually an API/transport hiccup, not a code bug — retryable.
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k:
+        _completed(returncode=1, stderr="overloaded"))
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.error and res.transient is True
+
+
 def test_run_nonzero_exit_redacts_stderr(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k:
         _completed(returncode=1, stderr="Error: sk-ant-abc123 unauthorized"))

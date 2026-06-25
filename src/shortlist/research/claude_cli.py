@@ -17,6 +17,9 @@ class CliResult:
     stop_reason: Optional[str] = None
     model: Optional[str] = None
     error: Optional[str] = None
+    # True when `error` is a transient failure (timeout / API or transport hiccup) a
+    # fresh retry could recover; False for permanent failures (e.g. binary missing).
+    transient: bool = False
 
 
 def is_available() -> bool:
@@ -48,22 +51,22 @@ def run(prompt: str, system: str, model: str, timeout_s: float) -> CliResult:
             timeout=timeout_s, cwd=tempfile.gettempdir(),
         )
     except FileNotFoundError:
-        return CliResult(error="claude CLI not found on PATH")
+        return CliResult(error="claude CLI not found on PATH")  # permanent — not transient
     except subprocess.TimeoutExpired:
-        return CliResult(error=f"claude timed out after {timeout_s}s")
+        return CliResult(error=f"claude timed out after {timeout_s}s", transient=True)
 
     if proc.returncode != 0:
         return CliResult(error=redact_secrets(
-            f"claude exited {proc.returncode}: {(proc.stderr or '')[:500]}"))
+            f"claude exited {proc.returncode}: {(proc.stderr or '')[:500]}"), transient=True)
     try:
         envelope = json.loads(proc.stdout)
     except json.JSONDecodeError:
         return CliResult(error=redact_secrets(
-            f"non-JSON envelope from claude: {(proc.stdout or '')[:300]}"))
+            f"non-JSON envelope from claude: {(proc.stdout or '')[:300]}"), transient=True)
     if envelope.get("is_error"):
         detail = envelope.get("result") or envelope.get("subtype") or "unknown"
         return CliResult(error=redact_secrets(f"claude error: {detail}"),
-                         stop_reason=envelope.get("stop_reason"))
+                         stop_reason=envelope.get("stop_reason"), transient=True)
     return CliResult(
         text=envelope.get("result", ""),
         cost_usd=envelope.get("total_cost_usd"),

@@ -450,13 +450,20 @@ def assess(card, bundle: FilingBundle, config: dict,
                                      insider_recent=ir)
     system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
 
+    # A single slow `claude` call intermittently exceeds the CLI timeout; that failure
+    # is transient (the next call usually succeeds), so retry it rather than dropping the
+    # whole brief. max_attempts caps total tries (transient errors + reparse retries).
+    max_attempts = max(1, int(rcfg.get("max_attempts", 3)))
     prompt = user_prompt
     total_cost = 0.0
-    for _ in range(2):
+    for _ in range(max_attempts):
         res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
         total_cost += res.cost_usd or 0.0     # accumulate so a reparse retry's cost isn't lost
         if res.error:
-            return None                       # transport/CLI failure — skip name
+            if res.transient:                 # timeout / API hiccup — a fresh retry can win
+                prompt = user_prompt          # discard any reparse addendum; start clean
+                continue
+            return None                       # permanent CLI failure (e.g. missing binary)
         if res.stop_reason == "max_tokens":
             return None                       # truncated → unreliable, skip
         salvaged = _salvage_json(res.text)
