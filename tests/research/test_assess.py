@@ -115,7 +115,7 @@ def test_assess_retries_then_gives_up_returns_none():
         return CliResult(text="totally not json", stop_reason="end_turn", model=model)
     a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
     assert a is None
-    assert len(prompts) == 2                          # one retry, then give up
+    assert len(prompts) == 3                          # max_attempts default, then give up
     assert "could not be parsed" in prompts[1]        # retry prompt has feedback
 
 
@@ -154,6 +154,31 @@ def test_assess_ellipsis_evidence_is_not_verified():
 def test_assess_skips_on_runner_error():
     runner = _runner_returning("", error="claude CLI not found on PATH")
     assert assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner) is None
+
+
+def test_assess_retries_on_transient_error_then_succeeds():
+    # A transient CLI failure (e.g. a timeout) must NOT sink the assessment — the
+    # very next call commonly succeeds (the observed production failure mode).
+    seq = [CliResult(text="", error="claude timed out after 600s", transient=True),
+           CliResult(text=json.dumps(GOOD), cost_usd=0.03, stop_reason="end_turn", model="m")]
+    calls = {"i": 0}
+    def runner(prompt, system, model, timeout_s):
+        r = seq[calls["i"]]
+        calls["i"] += 1
+        return r
+    a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
+    assert a is not None and calls["i"] == 2
+    assert a.synthesis == "High-quality franchise."
+
+
+def test_assess_does_not_retry_permanent_error():
+    # A permanent failure (binary missing) is not worth retrying — give up after one call.
+    calls = {"i": 0}
+    def runner(prompt, system, model, timeout_s):
+        calls["i"] += 1
+        return CliResult(text="", error="claude CLI not found on PATH", transient=False)
+    a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
+    assert a is None and calls["i"] == 1
 
 
 def test_assess_skips_on_truncation():

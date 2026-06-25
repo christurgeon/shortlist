@@ -348,6 +348,11 @@ research:
   timeout_s: 600               # generous ceiling; a real NVDA assessment measured ~246s on the
                                # VPS, so 300 was too tight (intermittent timeouts). Headroom for
                                # the larger sections + richer output below.
+  max_attempts: 3              # total assess() tries (transient CLI timeouts + reparse retries).
+                               # A single claude call still intermittently exceeds timeout_s; that
+                               # failure is transient, so retry instead of dropping the brief.
+                               # Worst case ~ max_attempts x timeout_s of wall-clock per ticker —
+                               # keep <= scout.research_phase_budget_s.
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 12
   max_red_flags: 12
