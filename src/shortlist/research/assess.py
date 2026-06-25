@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
@@ -10,6 +12,7 @@ from . import gov_contracts as gov_contracts_ctx
 from . import lobbying as lobbying_ctx
 from . import earnings as earnings_ctx
 from . import reverse_dcf
+from ..env import redact_secrets
 from .claude_cli import CliResult
 from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
                      assessment_from_payload, STANCES, _screening_call)
@@ -88,6 +91,18 @@ CALL_SYSTEM_ADDENDUM = (
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _log_attempt(ticker: str, attempt: int, total: int, dur: float,
+                 outcome: str, detail: str = "") -> None:
+    """One observability line per `claude` call → stderr → journald, so the timeout /
+    retry rate can be tuned against real durations instead of priors. Redacts the detail
+    (it may carry an error string with a request URL)."""
+    msg = (f"research: {ticker} attempt {attempt}/{total} "
+           f"outcome={outcome} dur={dur:.1f}s")
+    if detail:
+        msg += " " + redact_secrets(detail)
+    print(msg, file=sys.stderr)
 
 
 def _salvage_json(text: str) -> Optional[str]:
@@ -456,15 +471,22 @@ def assess(card, bundle: FilingBundle, config: dict,
     max_attempts = max(1, int(rcfg.get("max_attempts", 3)))
     prompt = user_prompt
     total_cost = 0.0
-    for _ in range(max_attempts):
+    for attempt in range(1, max_attempts + 1):
+        t0 = time.monotonic()
         res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
+        dur = time.monotonic() - t0
         total_cost += res.cost_usd or 0.0     # accumulate so a reparse retry's cost isn't lost
         if res.error:
-            if res.transient:                 # timeout / API hiccup — a fresh retry can win
+            transient = bool(res.transient)
+            _log_attempt(filing.ticker, attempt, max_attempts, dur,
+                         "transient_error" if transient else "permanent_error",
+                         f"err={res.error}")
+            if transient:                     # timeout / API hiccup — a fresh retry can win
                 prompt = user_prompt          # discard any reparse addendum; start clean
                 continue
             return None                       # permanent CLI failure (e.g. missing binary)
         if res.stop_reason == "max_tokens":
+            _log_attempt(filing.ticker, attempt, max_attempts, dur, "max_tokens")
             return None                       # truncated → unreliable, skip
         salvaged = _salvage_json(res.text)
         parse_error = "invalid JSON"
@@ -483,9 +505,13 @@ def assess(card, bundle: FilingBundle, config: dict,
                 if scfg.get("enabled", True):
                     assessment.screening_call = _screening_call(payload)
                     apply_guards(assessment, card, config)
+                _log_attempt(filing.ticker, attempt, max_attempts, dur, "ok",
+                             f"stop={res.stop_reason} cost=${total_cost:.4f}")
                 return assessment
             except (ValueError, json.JSONDecodeError) as e:
                 parse_error = str(e)
+        _log_attempt(filing.ticker, attempt, max_attempts, dur, "parse_fail",
+                     f"detail={parse_error}")
         prompt = (user_prompt + "\n\nYour previous response could not be parsed "
                   f"({parse_error}). Return ONLY the JSON object, "
                   "with no prose and no code fences.")

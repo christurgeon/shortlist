@@ -171,6 +171,25 @@ def test_assess_retries_on_transient_error_then_succeeds():
     assert a.synthesis == "High-quality franchise."
 
 
+def test_assess_logs_per_attempt_duration_and_outcome(capsys):
+    # Each claude call emits one observability line (ticker, attempt, duration, outcome)
+    # to stderr -> journald, so timeout/retry rates can be tuned against real numbers.
+    seq = [CliResult(text="", error="claude timed out after 600s", transient=True),
+           CliResult(text=json.dumps(GOOD), cost_usd=0.03, stop_reason="end_turn", model="m")]
+    calls = {"i": 0}
+    def runner(prompt, system, model, timeout_s):
+        r = seq[calls["i"]]
+        calls["i"] += 1
+        return r
+    a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
+    assert a is not None
+    err = capsys.readouterr().err
+    assert "AAPL" in err
+    assert "attempt 1/" in err and "attempt 2/" in err
+    assert "outcome=transient_error" in err and "outcome=ok" in err
+    assert "dur=" in err
+
+
 def test_assess_does_not_retry_permanent_error():
     # A permanent failure (binary missing) is not worth retrying — give up after one call.
     calls = {"i": 0}
