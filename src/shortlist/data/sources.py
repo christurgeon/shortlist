@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import inspect
-import json
 import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta, timezone
@@ -19,6 +18,7 @@ from ..env import redact_secrets
 from ..providers._fmp_insider import is_buy, tx_value
 from ..stats import avg_roic, median_pe
 from ..stats import residual_momentum as _stats_residual_momentum
+from .diskcache import read_json_cache, write_json_cache
 from .models import (
     Analyst,
     Earnings,
@@ -373,6 +373,10 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         )
     m = (raw.get("metric") or {}).get("metric", {})
     if m:
+        # `roiTTM` is Return on *Investment*, mapped here as a deliberate ROIC proxy.
+        # It only surfaces on the FMP-gated fallback path (FMP leads the fundamentals
+        # merge); whether to keep the proxy or drop it to None is an open TECH-DEBT
+        # item gated on a quality/moat backtest.
         snap.fundamentals = Fundamentals(
             roe=_pct(m.get("roeTTM")), roic=_pct(m.get("roiTTM")),
             gross_margin=_pct(m.get("grossMarginTTM")),
@@ -704,20 +708,14 @@ class YahooSource(Source):
     async def _get_chart(self, symbol: str) -> Any:
         """Raw chart payload, day-cached on disk. Override target in tests."""
         cp = self._cache_path(symbol)
-        try:
-            if cp.exists():
-                return json.loads(cp.read_text())
-        except Exception:
-            pass  # corrupt cache -> refetch
+        cached = read_json_cache(cp)
+        if cached is not None:
+            return cached
         r = await self._client.get(
             f"{self.BASE}/{symbol}", params={"range": "5y", "interval": "1d"})
         r.raise_for_status()
         raw = r.json()
-        try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            cp.write_text(json.dumps(raw))
-        except Exception:
-            pass  # cache write failure is non-fatal
+        write_json_cache(cp, raw)
         return raw
 
     async def _closes(self, symbol: str) -> list[float]:
@@ -798,20 +796,10 @@ class FinraSource(Source):
         return self._cache_dir / f"{settlement}.json"
 
     def _read_cache(self, settlement: str):
-        cp = self._cache_path(settlement)
-        try:
-            if cp.exists():
-                return json.loads(cp.read_text())
-        except Exception:
-            pass  # corrupt cache -> refetch
-        return None
+        return read_json_cache(self._cache_path(settlement))
 
     def _write_cache(self, settlement: str, rows: list) -> None:
-        try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._cache_path(settlement).write_text(json.dumps(rows))
-        except Exception:
-            pass  # cache write failure is non-fatal
+        write_json_cache(self._cache_path(settlement), rows)
 
     async def _load(self) -> None:
         """Discover the latest cycle and build the symbol index once."""
@@ -1198,20 +1186,10 @@ class GovContractsSource(Source):
         return self._cache_dir / f"contracts-{ticker.upper()}-{day}.json"
 
     def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        try:
-            cp = self._cache_path(ticker, day)
-            if cp.exists():
-                return json.loads(cp.read_text())
-        except Exception:
-            pass  # corrupt cache -> refetch
-        return None
+        return read_json_cache(self._cache_path(ticker, day))
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._cache_path(ticker, day).write_text(json.dumps(payload))
-        except Exception:
-            pass  # cache write failure is non-fatal
+        write_json_cache(self._cache_path(ticker, day), payload)
 
     async def fetch(self, ticker: str) -> SourceResult:
         from .govcontract_match import match_confidence
@@ -1371,22 +1349,14 @@ class LobbyingSource(Source):
         return self._cache_dir / f"lobby-{ticker.upper()}-{day}.json"
 
     def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        try:
-            cp = self._cache_path(ticker, day)
-            if cp.exists():
-                payload = json.loads(cp.read_text())
-                if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
-                    return payload
-        except Exception:
-            pass  # corrupt / stale-shape cache -> refetch
+        # version-gated: ignore a stale-shape payload so a _CACHE_V bump refetches
+        payload = read_json_cache(self._cache_path(ticker, day))
+        if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
+            return payload
         return None
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._cache_path(ticker, day).write_text(json.dumps(payload))
-        except Exception:
-            pass  # cache write failure is non-fatal
+        write_json_cache(self._cache_path(ticker, day), payload)
 
     _CACHE_V = 1   # bump if the cached Lobbying shape changes
 

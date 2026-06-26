@@ -6,13 +6,13 @@ top tickers by volume), normalized + disk-cached by fetch date. NEVER raises.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
 from ..env import redact_secrets
+from .diskcache import read_json_cache, write_json_cache
 
 WSB_URL = "https://apewisdom.io/api/v1.0/filter/wallstreetbets"
 _DEFAULT_CACHE_DIR = ".cache/apewisdom"
@@ -88,12 +88,12 @@ def fetch_wsb_mentions(
     NEVER raises — on failure returns ({}, redacted_error)."""
     as_of = _today_iso()
     cp = Path(cache_dir) / f"{as_of}.json"
-    try:
-        if cp.exists():
-            cached = json.loads(cp.read_text())
+    cached = read_json_cache(cp)
+    if cached is not None:
+        try:
             return parse_wsb(cached.get("payload"), cached.get("as_of", as_of)), None
-    except Exception:
-        pass  # corrupt cache -> refetch
+        except Exception:
+            pass  # corrupt cache payload -> refetch
     try:
         import httpx  # lazy: only needed for live runs
         r = httpx.get(WSB_URL, timeout=timeout, headers={"Accept": "application/json"})
@@ -101,9 +101,5 @@ def fetch_wsb_mentions(
         payload = r.json()
     except Exception as e:
         return {}, redact_secrets(str(e))
-    try:
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        cp.write_text(json.dumps({"as_of": as_of, "payload": payload}))
-    except Exception:
-        pass  # cache write failure is non-fatal
+    write_json_cache(cp, {"as_of": as_of, "payload": payload})
     return parse_wsb(payload, as_of), None

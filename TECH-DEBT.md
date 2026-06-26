@@ -47,13 +47,15 @@ the only remaining lever is the value/momentum **weight split** (a separate ques
 > momentum Stage 0 prize-bound work (see "Open next steps" above).
 
 ### [data-harness] Finnhub `roiTTM` mapped to `roic`
-`data/sources.py` ~L257 maps Finnhub's `roiTTM` (Return *on Investment*) into the
-snapshot's `roic` (Return *on Invested Capital*) — different metrics. Only surfaces on
-the FMP-gated fallback path, and unlike the other documented approximations it carries
-no note. **Why deferred:** changing/removing a fundamentals input shifts quality/moat
-scores; low confidence on intent. **Approach:** confirm Finnhub field semantics; either
-add an inline comment that it's a deliberate ROIC proxy on the gated path, or drop the
-mapping so `roic` stays `None`. Backtest the quality/moat axes either way.
+`data/sources.py` `_normalize_finnhub` maps Finnhub's `roiTTM` (Return *on Investment*)
+into the snapshot's `roic` (Return *on Invested Capital*) — different metrics. Only
+surfaces on the FMP-gated fallback path. **PARTIALLY ADDRESSED 2026-06-26:** the
+no-note half is fixed — the mapping now carries an inline comment marking it a
+*deliberate* ROIC proxy on the gated path (so it's no longer an undocumented
+approximation). The numerics half remains open: whether to keep the proxy or drop it
+to `None` shifts quality/moat scores, so it stays deferred pending a quality/moat
+backtest. **Approach (remaining):** backtest the quality/moat axes with the proxy on
+vs. off; drop the mapping if it doesn't help.
 
 ### [providers] FMP insider treats every non-`P` code as a sale
 `providers/_fmp_insider.py` `is_buy()` returns True only for `P`-prefixed codes, and
@@ -68,14 +70,15 @@ on the free tier, and the current behavior is documented as intentional. **Appro
 share a single `classify_code` between `_fmp_insider` and `_form4` so both skip non-trade
 codes; backtest the insider axis.
 
-### [backtest] `quantile_spread` substitutes `0.0` for an empty bucket
-`backtest/metrics.py` ~L126: after the average-occupancy collapse, an individual edge
-bucket can still be empty for small/uneven n, and `mean(rets) if rets else 0.0` feeds a
-fabricated `0.0` return straight into `spread = bucket_means[-1] - bucket_means[0]` and
-the monotonic check — a silent numeric substitution that violates the module's
-"drop, never impute" discipline. Low confidence it fires in practice (n≥4, nb≥2).
-**Approach:** treat an empty bucket as abstain — re-collapse `nb` further or return
-`None` rather than computing the spread against a 0.0.
+> **INVESTIGATED 2026-06-26 — CANNOT FIRE, do not pursue.** The concern was that the
+> `mean(rets) if rets else 0.0` at `backtest/metrics.py:129` imputes a fabricated `0.0`
+> for an empty bucket. Tracing the guards shows the `else 0.0` branch is **unreachable**:
+> `len(clean) >= 4` (early return otherwise) and the collapse loop exits with either
+> `nb == 2` or `len(clean) // nb >= 2`, so `size = len(clean) / nb >= 2` in every case.
+> Each bucket then spans `round((b+1)*size) - round(b*size) >= size - 1 >= 1` rows (and the
+> last bucket runs to `len(clean)`), so `rets` is never empty. The branch is dead defensive
+> code — left in place as a belt-and-suspenders guard rather than churned, since removing it
+> changes no output. (Mirrors the `ret_1m` no-op finding above: investigated, not a real bug.)
 
 ## Cross-cutting refactors (drift risk; keep byte-identical)
 
@@ -85,25 +88,33 @@ the monotonic check — a silent numeric substitution that violates the module's
 > `_PROVIDER`. Default `_max_retries = 0` (single attempt) keeps Finnhub's no-retry
 > behavior byte-identical; FMP opts in. Suite unchanged at 1006 passing; demo output identical.
 
-### [data-harness] Shared disk-cache + bulk-index scaffolding for Finra / Wsb
-`FinraSource` and `WsbSource` share the load-once-then-O(1)-lookup shape, and the
-try/exists/`json.loads` + `mkdir`/`write_text` + `except: pass` disk-cache idiom is
-triplicated across `FinraSource._read_cache/_write_cache`, `YahooSource._get_chart`, and
-`apewisdom.fetch_wsb_mentions`. **Approach:** extract `read_json_cache`/`write_json_cache`
-helpers and optionally a `BulkIndexSource` mixin. Touches three live caching paths — needs
-behavior-preserving test coverage.
+> **RESOLVED 2026-06-26 (disk-cache half):** Extracted `read_json_cache`/`write_json_cache`
+> into the new `data/diskcache.py` leaf; the `try/exists/json.loads` + `mkdir/write_text` +
+> `except: pass` idiom now lives once. Five data-layer sites delegate to it —
+> `YahooSource._get_chart`, `FinraSource`, `GovContractsSource`, `LobbyingSource` (keeps its
+> `_CACHE_V` version gate around the shared load), and `apewisdom.fetch_wsb_mentions`.
+> Behavior-preserving (the helper's contract — present-falsy `[]`/`{}` is a hit, missing-or-
+> corrupt is a `None` miss — is pinned by `tests/test_diskcache.py`; full suite 1286 passing,
+> demo output identical). `macro.py` (TTL-gated single file) and `backtest/xbrl.py` (different
+> layer + "treat as miss" semantics) intentionally keep their own shapes. The optional
+> `BulkIndexSource` mixin (the shared load-once-then-O(1)-lookup shape of `FinraSource`/
+> `WsbSource`) was **not** pursued — the two index structures differ enough that a mixin would
+> add coupling without removing real duplication.
 
 > **RESOLVED 2026-06-14:** Factored the `v not in (None, [], "")` convention into one
 > `_is_present(v)` in `data/models.py`, reused by `_merge_flat`/`_merge_insider`/`_has_data`
 > and `coverage()`/`missing()`. Behavior-identical (suite unchanged at 1006); the rule now
 > lives in exactly one place.
 
-### [backtest] `_load_histories` fetches SPY + every ticker serially
-`backtest/cli.py` ~L103 awaits SPY then each ticker one at a time; `_load_companyfacts`
-is the same shape. Pure latency, not correctness — and serial requests are a defensible
-politeness choice against Yahoo's edge WAF (see CLAUDE.md). **Approach (only if runtime
-bites):** gather under a bounded `asyncio.Semaphore` (3–5), keeping SPY first to seed IP
-reputation.
+> **RESOLVED 2026-06-26 — keep as by-design, do not pursue.** `backtest/cli.py`
+> `_load_histories` (and `_load_companyfacts`) fetch SPY then each ticker serially. This is
+> **pure latency, not correctness**, and serial requests are the *intended* politeness choice
+> against Yahoo's edge WAF (see the "Yahoo screener WAF gotcha" in CLAUDE.md — a burst of
+> concurrent requests risks the fingerprint block the cooldown machinery is built to avoid).
+> The note itself scoped this "only if runtime bites"; backtest runs are offline-batch and
+> not latency-sensitive, so the trade-off favors the current behavior. Revisit only if a
+> full-universe backtest's wall-clock becomes a real bottleneck — then gather under a bounded
+> `asyncio.Semaphore` (3–5) with SPY first to seed IP reputation.
 
 ## Coordination / behavior-shaping
 
