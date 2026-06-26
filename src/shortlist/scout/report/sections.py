@@ -10,7 +10,8 @@ import enum
 from typing import Protocol
 
 from .html import HtmlBuilder
-from .theme import SUB_LABELS, SUBS, rgb_hex, score_to_rgb, stance_emoji, stance_to_rgb, text_on
+from .theme import (FLAG_DESCRIPTIONS, GATE_DESCRIPTIONS, SUB_LABELS, SUBS, describe_code,
+                    rgb_hex, score_to_rgb, stance_emoji, stance_to_rgb, text_on)
 from .viewmodel import ReportVM
 
 
@@ -84,16 +85,33 @@ class _Leaderboard:
                      h.raw("td", self._chip(ld.composite, " comp"))]
             for s in SUBS:
                 cells.append(h.raw("td", self._chip(ld.subscores.get(s))))
-            cells.append(h.raw("td", self._tags(h, ld.gates, "tag-gate"), _class="tags"))
-            cells.append(h.raw("td", self._tags(h, ld.flags, "tag-flag"), _class="tags"))
             rows.append(h.raw("tr", "".join(cells)))
-        cols = (["#", "Ticker", "Comp"] + [SUB_LABELS[s] for s in SUBS] + ["Gates", "Flags"])
+        cols = (["#", "Ticker", "Comp"] + [SUB_LABELS[s] for s in SUBS])
         head = h.raw("tr", "".join(
             h.tag("th", x, _class=("tik" if c == 1 else "")) for c, x in enumerate(cols)))
         table = h.raw("table", h.raw("thead", head) + h.raw("tbody", "".join(rows)),
                       _class="board")
         # board-wrap hosts a static right-edge fade (no-JS scroll affordance on mobile)
-        return h.raw("div", h.raw("div", table, _class="scroll-x"), _class="board-wrap")
+        board = h.raw("div", h.raw("div", table, _class="scroll-x"), _class="board-wrap")
+        # Gates+flags live OUTSIDE the scrolling heatmap so they wrap at viewport
+        # width instead of trailing off the right edge (where they read as cut off).
+        return board + self._flags_strip(vm, h)
+
+    def _flags_strip(self, vm, h):
+        """One wrapping chip row per leader that carries a gate or flag; nothing for
+        clean names. Sits below the heatmap, free of its horizontal scroll."""
+        rows = []
+        for ld in vm.leaders:
+            if not ld.gates and not ld.flags:
+                continue
+            chips = (self._tags(h, ld.gates, "tag-gate") +
+                     self._tags(h, ld.flags, "tag-flag"))
+            rows.append(h.raw("div",
+                              h.raw("span", h.esc(ld.ticker), _class="fs-tik") + chips,
+                              _class="flags-row"))
+        if not rows:
+            return ""
+        return h.raw("div", "".join(rows), _class="flags-strip")
 
     def render_text(self, vm, detail):
         # The leaderboard is deliberately full at both detail levels — the ranked
@@ -466,8 +484,83 @@ class _Portfolio:
         return out
 
 
+# ---- flag/gate glossary (conditional: only what appears in this report) ----
+def _order_codes(encountered: list[str], reference: dict) -> list[str]:
+    """Dedupe order-preservingly; known ids first in `reference`'s defined order,
+    then any unknown/future ids in stable first-encounter order."""
+    seen = list(dict.fromkeys(encountered))
+    known = [c for c in reference if c in seen]
+    unknown = [c for c in seen if c not in reference]
+    return known + unknown
+
+
+def _present_codes(vm) -> tuple[list[str], list[str]]:
+    """(gate ids, flag ids) actually present across the leaderboard and any
+    portfolio holdings. Reads `card.gates`/`card.flags` directly — NOT
+    `_Portfolio._chips`, which injects synthetic non-codes ('not scored'/'no data')."""
+    gates: list[str] = []
+    flags: list[str] = []
+    for ld in vm.leaders:
+        gates += ld.gates
+        flags += ld.flags
+    p = getattr(vm, "portfolio", None)
+    if p is not None:
+        for pos in getattr(p, "positions", []):
+            card = getattr(pos, "card", None)
+            if card is not None:
+                gates += list(card.gates)
+                flags += list(getattr(card, "flags", []))
+    return _order_codes(gates, GATE_DESCRIPTIONS), _order_codes(flags, FLAG_DESCRIPTIONS)
+
+
+def _gloss_line(code: str) -> str:
+    d = describe_code(code)
+    return f"  {code} — {d}" if d else f"  {code}"
+
+
+class _Glossary:
+    id, title = "glossary", "Flags & gates in this report"
+
+    def applies(self, vm):
+        gates, flags = _present_codes(vm)
+        return bool(gates or flags)
+
+    @staticmethod
+    def _items_html(h, codes, cls):
+        out = []
+        for c in codes:
+            chip = h.raw("span", h.esc(c), _class=f"tag {cls}")
+            out.append(h.raw("div", chip + h.tag("span", describe_code(c), _class="gloss-desc"),
+                             _class="gloss-item"))
+        return "".join(out)
+
+    def _group_html(self, h, head, codes, cls):
+        return h.raw("div", h.tag("div", head, _class="gloss-head") + self._items_html(h, codes, cls),
+                     _class="gloss-group")
+
+    def render_html(self, vm, h):
+        gates, flags = _present_codes(vm)
+        parts = []
+        if gates:
+            parts.append(self._group_html(h, "Gates (hard filters)", gates, "tag-gate"))
+        if flags:
+            parts.append(self._group_html(h, "Flags (advisory)", flags, "tag-flag"))
+        return h.raw("div", "".join(parts), _class="glossary")
+
+    def render_text(self, vm, detail):
+        gates, flags = _present_codes(vm)
+        out = []
+        if gates:
+            out.append("Gates (hard filters):")
+            out += [_gloss_line(c) for c in gates]
+        if flags:
+            out.append("Flags (advisory):")
+            out += [_gloss_line(c) for c in flags]
+        return out
+
+
 SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
-                            _Portfolio(), _Footer()]
+                            _Portfolio(), _Glossary(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:

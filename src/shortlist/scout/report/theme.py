@@ -5,6 +5,43 @@ SUBS = ["quality", "moat", "growth", "value", "momentum", "insider", "risk"]
 SUB_LABELS = {"quality": "Qual", "moat": "Moat", "growth": "Grow", "value": "Value",
               "momentum": "Mom", "insider": "Insdr", "risk": "Risk"}
 
+# Plain-English descriptions for the hard gates and soft flags that ScoreCard can
+# emit — the single source of truth for the report glossary. Insertion order here
+# is the glossary's display order within each group. Keep each one line; grounded
+# in scoring.py:check_gates / check_flags. Any id absent from these maps still
+# renders (its raw id, no description) — describe_code never raises.
+GATE_DESCRIPTIONS = {
+    "negative_fcf":          "Negative free cash flow (stage-aware: excused for fast, durable growers).",
+    "over_leveraged":        "Net-debt/EBITDA (or a debt/equity fallback) above the safe threshold.",
+    "below_min_mktcap":      "Market cap below the screen's minimum size.",
+    "heavy_insider_selling": "Strongly negative insider sentiment (net selling) over the trailing window.",
+}
+
+FLAG_DESCRIPTIONS = {
+    "crowded_short":            "High short interest, rising and hard to cover — squeeze / short-thesis risk.",
+    "value_trap":              "Looks cheap, but quality or growth is weak.",
+    "cash_burn":               "Free cash flow is negative (advisory, any magnitude).",
+    "dilution":                "Persistent net share issuance (roughly +3%/yr or more).",
+    "social_hype":             "Elevated and rising Reddit/WSB mention volume.",
+    "news_spike":              "Elevated and rising mainstream news volume.",
+    "filing_text_change":      "Large year-over-year change in 10-K/10-Q risk factors or MD&A (Lazy Prices).",
+    "risk_off_regime":         "Leveraged or cyclical name during a risk-off macro regime.",
+    "insider_cluster_buy":     "Multiple distinct insiders buying together.",
+    "planned_sale":            "Insider sale appears pre-planned (10b5-1).",
+    "recent_8k":               "Recent 8-K material-event filing.",
+    "activist_13d":            "Activist investor (Schedule 13D) ownership stake filed.",
+    "passive_13g":             "Passive large-holder (Schedule 13G) ownership stake filed.",
+    "planned_insider_sale_144": "Form 144 notice of intent to sell.",
+}
+
+
+def describe_code(code: str) -> str:
+    """Plain-English description for a gate/flag id, or '' when unknown.
+
+    The displayed label is always the raw id itself; this supplies only the
+    description, so unknown/future ids degrade gracefully (id shown, no blurb)."""
+    return FLAG_DESCRIPTIONS.get(code) or GATE_DESCRIPTIONS.get(code) or ""
+
 BG = (23, 33, 43)        # #17212b
 FG = (233, 237, 239)     # #e9edef
 GRID = (43, 57, 71)      # #2b3947

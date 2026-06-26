@@ -145,6 +145,21 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
 .tag-gate{background:rgba(245,134,127,.14); color:#ffb4af; border:1px solid rgba(245,134,127,.32)}
 .tag-flag{background:rgba(244,192,116,.13); color:#f6d294; border:1px solid rgba(244,192,116,.30)}
 
+/* ---- per-ticker flags strip (below the heatmap, outside its scroll) ---- */
+.flags-strip{margin-top:10px; display:flex; flex-direction:column; gap:6px}
+.flags-row{display:flex; flex-wrap:wrap; align-items:center; gap:2px}
+.flags-row .fs-tik{font:700 11px/1.2 var(--mono); color:var(--text-2);
+  min-width:52px; margin-right:6px}
+
+/* ---- flag/gate glossary ---- */
+.glossary{display:flex; flex-direction:column; gap:14px}
+.gloss-group{display:flex; flex-direction:column; gap:6px}
+.gloss-head{font:700 10px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text-3)}
+.gloss-item{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px}
+.gloss-item .tag{flex:none}
+.gloss-desc{color:var(--text-2); font-size:12.5px}
+
 /* ---- fundamentals metric grid ---- */
 .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
   background:var(--line-soft); border:1px solid var(--line-soft);
