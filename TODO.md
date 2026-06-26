@@ -6,6 +6,22 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## negative_fcf excuse — measurement path (scope B, follow-up to #83) (2026-06-26)
+
+#83 populated `fcf_positive` on the XBRL panel (`_xbrl_facts.panel_to_metrics`, with a
+stale-FY abstention guard mirroring the bridge), clearing the **field-level** blocker. The
+field is now correct on both paths — but the stage-aware `negative_fcf` excuse is **still
+unmeasured**: `XbrlSignalSource` emits sub-score axes only and never calls `check_gates`, so
+nothing reads `fcf_positive` in the backtest yet.
+
+**Remaining (scope B):** a gate-impact backtest diagnostic — compare forward returns of
+*excused* (high-growth) vs. *gated* negative-FCF names to test whether the excuse
+(`revenue_cagr ≥ 0.15 ∧ persistence ≥ 0.70`) actually improves returns vs. a blanket gate.
+New machinery (the XBRL source would need to evaluate the gate, or a parallel cohort path).
+Thresholds stay unfitted priors until then. See `docs/ASSESSMENT_GAPS.md` §2.7.
+
+---
+
 ## Broad-universe XBRL backtest — settled three unfitted priors (2026-06-25)
 
 Ran `--source xbrl` keylessly on a new bundled **`smallmid`** universe (158 small/mid-caps,
@@ -51,8 +67,12 @@ anywhere**, so rank IC is currently unmeasurable. Their scoring legs/flag are wi
 
 **Action:** enable `shortlist-accumulate` to capture point-in-time snapshots daily.
 - A **disabled** systemd timer sample lives in `deploy/` (scheduling ships OFF by design).
-  Operator can wire the systemd timer **or** a plain cron entry. Cap per run with
-  `--max-tickers` (defaults to 15/day for headroom).
+  Operator can wire the systemd timer **or** a plain cron entry.
+- **Breadth is now ready (#82, 2026-06-26):** the snapshot-replay path needs ≥30 names/date
+  (`engine._TRUST_MIN_BREADTH`), so the bundled watchlist is now **42** names and the `deploy/`
+  sample sets `--max-tickers 42` (FMP 429s past ~19 names, but the overflow still saves on
+  keyless coverage). The library `--max-tickers` default stays 15 for ad-hoc runs, so a *default*
+  `shortlist-accumulate run` truncates to 15 and stays below the floor — the timer/cron must pass 42.
 - After ~24+ daily snapshots accumulate, run the snapshot-replay backtest to measure the
   `sue` and `filing_text_change` axes' rank IC + collinearity, then enable (or reject) them
   exactly like the other four — flip the config block only if the IC earns it.
@@ -61,7 +81,8 @@ anywhere**, so rank IC is currently unmeasurable. Their scoring legs/flag are wi
 
 **Pointers:** `CLAUDE.md` → "Accumulation"; `HARNESS.md` → "Feeding the snapshot path";
 `shortlist.data.accumulate` / CLI `shortlist-accumulate`; `deploy/` (disabled sample).
-**Status:** not started — operator action (wire the timer/cron).
+**Status:** pipeline breadth-ready (#82); remaining = operator enables the timer/cron with
+`--max-tickers 42`. Not started — operator action.
 
 ### 2. (Optional, low priority) Tune the now-live legs — `--fit` is NOT the right tool
 
