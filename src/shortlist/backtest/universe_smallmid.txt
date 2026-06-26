@@ -1,0 +1,188 @@
+# Bundled SMALL/MID-CAP universe for the XBRL fundamental backtest.
+# Purpose: the `largecap` list is the WRONG universe for small-cap fundamental
+# anomalies (Piotroski F, accruals, asset growth, dilution) — those signals are
+# documented to live in small/mid-cap, higher-book-to-market names, so a near-zero
+# IC on mega-caps is uninformative about the signal's merit (see
+# docs/superpowers/specs/2026-06-03-xbrl-piotroski-results.md, caveat #1).
+# This basket gives the `--source xbrl` path a properly-powered cross-section.
+#
+# These are CURRENTLY-LISTED constituents and are therefore SURVIVORSHIP-BIASED
+# (names delisted/acquired/bankrupt are absent). Realized IC/spreads are an upper
+# bound — read the report as RELATIVE signal validation, not tradeable PnL.
+# Foreign private issuers (20-F / IFRS, no us-gaap companyfacts) and any dead
+# ticker self-prune: the XBRL source returns None and the engine skips them.
+# One ticker per line; blank lines and #-comments ignored.
+
+# --- Industrials & machinery ---
+AGCO
+ALG
+GBX
+WNC
+MLI
+AIT
+PRIM
+GVA
+CSWI
+HLIO
+KMT
+FELE
+ATKR
+MTRN
+HAYW
+DY
+MYRG
+TRN
+WTS
+POWL
+AIN
+B
+KAI
+THR
+
+# --- Consumer discretionary ---
+CRI
+OXM
+BOOT
+SHOO
+GIII
+SCVL
+DBI
+LZB
+ETD
+PATK
+LCII
+FOXF
+SMP
+DORM
+MNRO
+CWH
+HELE
+MHO
+CCS
+GRBK
+CVCO
+TPH
+SCS
+HNI
+
+# --- Consumer staples ---
+JJSF
+LANC
+CALM
+FDP
+JBSS
+USNA
+MED
+SMPL
+UNFI
+CENT
+COKE
+POST
+
+# --- Healthcare ---
+LMAT
+UTMD
+CRVL
+HSTM
+ADUS
+AMED
+CORT
+SUPN
+PCRX
+COLL
+AMPH
+HRMY
+ATRC
+CNMD
+MMSI
+HAE
+IART
+NEOG
+MYGN
+VCEL
+PRGO
+
+# --- Technology / semis / software ---
+PLAB
+UCTT
+COHU
+FORM
+CEVA
+DIOD
+OSIS
+NSSC
+AGYS
+SPSC
+CALX
+EXTR
+NTCT
+SLAB
+POWI
+AMBA
+SITM
+VRNS
+TENB
+PRGS
+RPD
+BL
+
+# --- Financials (banks / thrifts / insurers) ---
+CASH
+FFIN
+WSFS
+INDB
+FIBK
+BANF
+CVBF
+TRMK
+UCBI
+PFS
+NBTB
+WAFD
+FFBC
+ABCB
+SBCF
+TOWN
+LKFN
+STBA
+WABC
+AUB
+FBNC
+NWBI
+SAFT
+KMPR
+THG
+PLMR
+NMIH
+AGO
+HMN
+
+# --- Energy ---
+PTEN
+NBR
+HP
+RES
+MGY
+SM
+CIVI
+CNX
+CRK
+NOG
+TALO
+VTLE
+CHRD
+MTDR
+
+# --- Materials ---
+SLVM
+WOR
+HWKN
+KOP
+IOSP
+SXT
+NGVT
+CMP
+UFPT
+BCC
+SCL
+TROX

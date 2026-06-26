@@ -6,6 +6,30 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Broad-universe XBRL backtest — settled three unfitted priors (2026-06-25)
+
+Ran `--source xbrl` keylessly on a new bundled **`smallmid`** universe (158 small/mid-caps,
+`backtest/universe_smallmid.txt`) — the properly-powered cross-section the prior large-cap
+piotroski null lacked. **No config flip earned.** Cross-sectional rank IC (the |t|≥2 bar):
+
+- **`share_count` (→ `quality.dilution`): NULL on both universes** (XS |t|<0.8). Robust — the
+  big large-cap TS IC is a shared-factor artifact, not cross-sectional discrimination. Keep OFF.
+- **`net_debt_to_ebitda` gate-threshold fit: NULL** (XS |t|<1). The `~growth` collinearity is
+  universe-sensitive (+0.54 largecap trips, +0.19 smallmid doesn't), so even the "duplicates
+  growth" rejection isn't stable. No basis to retune the 4.0 prior.
+- **`piotroski` (→ `flags.value_trap.piotroski`): significantly *negative* on smallmid**
+  (XS −0.072 t=−3.0 @6m) — a **value-regime artifact** (whole basket: value TS-t +5.9 vs
+  quality −4.5 / piotroski −5.1 over ~2021–26), NOT a green light. The conditional value_trap
+  mechanism still needs a through-cycle test. Keep OFF.
+- Note: `accruals` (a LIVE leg, earned at +0.036 t=2.1 on its 195-name broad universe) reads
+  −0.04 (not sig.) here — one regime-contaminated window, not grounds to reverse, but its edge
+  is fragile across universes. Worth a through-cycle re-check once snapshot history allows.
+
+Evidence-of-record: `docs/superpowers/specs/2026-06-25-xbrl-broad-universe-results.md` (local,
+gitignored per the specs/ convention). The `smallmid` universe is bundled so it's re-runnable.
+
+---
+
 ## Predictive-signal pipeline — remaining work (2026-06-21)
 
 Five free-data signals were researched, built (PRs #65/#67/#68/#69/#70, all gated OFF),

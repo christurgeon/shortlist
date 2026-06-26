@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_NAMED = {"largecap": "universe_largecap.txt"}
+_NAMED = {"largecap": "universe_largecap.txt", "smallmid": "universe_smallmid.txt"}
 
 
 def load_universe(spec: str) -> list[str]:
