@@ -11,6 +11,11 @@ Type=oneshot
 # WorkingDirectory must be the repo root so env.load_env() finds .env (keys).
 WorkingDirectory=<REPO_ROOT>
 # uv runs the console script in the project venv.
-ExecStart=/usr/bin/env uv run shortlist-accumulate run --root <STORE_ROOT>
-# Don't hammer FMP's free 250/day cap; --max-tickers defaults to 15.
+ExecStart=/usr/bin/env uv run shortlist-accumulate run --root <STORE_ROOT> --max-tickers 42
+# --max-tickers 42 captures the whole bundled watchlist so accumulated breadth can
+# clear the snapshot backtest's 30-names/date trust floor. This exceeds FMP's free
+# 250/day cap (~13 calls/ticker) so FMP 429s after ~19 names — handled with backoff;
+# the overflow names still save on keyless coverage (Yahoo/EDGAR/Finnhub/FINRA), so
+# only the FMP-only legs go thin. Lower to 15 for an FMP-polite run that stays UNDER
+# the breadth floor (EXPLORATORY-only snapshots). Paid FMP Starter lifts the gating.
 Nice=10
