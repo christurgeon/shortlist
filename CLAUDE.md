@@ -158,9 +158,11 @@ and `net_debt_to_ebitda` from those. All thresholds are **unfitted priors** — 
 backtest emits a standalone `net_debt_to_ebitda` axis. Gate names are unchanged, so sector masking
 and `research.screening_call.gate_clamp` are untouched. **Note:** `fcf_positive` is the sign of
 the latest-year real FCF, derived on **both** the harness (`bridge.py`, from `Statements`) **and**
-the XBRL backtest panel (`_xbrl_facts.panel_to_metrics`, from `latest(p.fcf)` = OCF−capex). The
-field is now populated on both paths, but no XBRL-backtest path evaluates the `negative_fcf` gate
-yet (the source emits sub-score axes only), so the stage-aware FCF excuse remains a measurement gap.
+the XBRL backtest panel (`_xbrl_facts.panel_to_metrics`, sign of `latest(p.fcf)` = OCF−capex, but
+**abstaining to None when the latest FY lacks a capex tag** so it never reports a stale older-year
+sign — matching the bridge's None). The field is now populated on both paths, but no XBRL-backtest
+path evaluates the `negative_fcf` gate yet (the source emits sub-score axes only), so the
+stage-aware FCF excuse remains a measurement gap.
 
 The **risk** sub-score (7th axis: realized volatility + max drawdown, both
 inverted so safer scores higher) is a **composite-only tilt** — sector-neutral

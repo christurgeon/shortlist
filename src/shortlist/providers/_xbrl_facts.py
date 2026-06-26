@@ -354,8 +354,12 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     m.market_cap = (price * p.shares) if (price and p.shares) else None
     fcf_latest = latest(p.fcf)
     # Sign of the latest-FY FCF feeds the stage-aware negative_fcf gate (mirrors
-    # bridge.py: m.fcf_positive = fcf0 > 0). None when no FCF year is knowable.
-    m.fcf_positive = (fcf_latest > 0) if fcf_latest is not None else None
+    # bridge.py: m.fcf_positive = fcf0 > 0). align_fcf intersects OCF & capex ends,
+    # so a newest FY that tags OCF but NO capex alias drops out and latest(p.fcf)
+    # would fall back to a STALE older year. Abstain (None) in that case, matching the
+    # bridge which leaves fcf_positive None when the latest FY's FCF isn't computable.
+    fcf_is_current = bool(p.fcf) and bool(p.ocf) and max(p.fcf) == max(p.ocf)
+    m.fcf_positive = (fcf_latest > 0) if (fcf_latest is not None and fcf_is_current) else None
     if fcf_latest is not None and m.market_cap:
         m.fcf_yield = fcf_latest / m.market_cap
 

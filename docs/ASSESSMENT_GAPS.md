@@ -343,8 +343,10 @@ parses the granular trades to do far better:
 > read the standalone `net_debt_to_ebitda` axis rank IC before tightening/loosening the 4.0 gate
 > (the axis is wired so this is a one-command check; cf. §2.1). The **`negative_fcf` excuse is still
 > unmeasured, but the field-level blocker is cleared:** `_xbrl_facts.panel_to_metrics` now sets
-> `fcf_positive` (sign of `latest(p.fcf)`, mirroring `bridge.py`), so the gate is exercisable on
-> XBRL-derived metrics. What remains is a *measurement path* — `XbrlSignalSource` emits sub-score
+> `fcf_positive` (sign of `latest(p.fcf)`, abstaining to None when the latest FY's FCF isn't
+> computable — newest year tags OCF but no capex — so it mirrors `bridge.py`'s abstention rather
+> than reporting a stale older-year sign), so the gate is exercisable on XBRL-derived metrics. What
+> remains is a *measurement path* — `XbrlSignalSource` emits sub-score
 > axes only and never calls `check_gates`, so validating whether the stage-aware excuse improves
 > forward returns needs a new gate-impact backtest diagnostic (cohort comparison of excused vs.
 > gated negative-FCF names). The thresholds stay unfitted priors until then.
