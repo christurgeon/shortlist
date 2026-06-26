@@ -64,11 +64,46 @@ vs. off; drop the mapping if it doesn't help.
 both subtracting from `net_value_6m` and (in the sources loop) inflating `sell_count`.
 The sibling `_form4.py:classify_code` correctly three-ways these into buy/sell/other and
 skips `other`. The two insider paths therefore disagree, biasing the FMP insider
-sub-score bearish (a routine option exercise reads as selling). **Why deferred:** changes
-insider scoring numerics; the FMP insider endpoint is paid/402-gated so it rarely fires
-on the free tier, and the current behavior is documented as intentional. **Approach:**
-share a single `classify_code` between `_fmp_insider` and `_form4` so both skip non-trade
-codes; backtest the insider axis.
+net-flow bearish (a routine option exercise reads as selling).
+
+> **REVIEWED 2026-06-26 — the obvious fix is WRONG; stays deferred. Read this before
+> touching it.** The tempting one-liner — "just share `_form4.classify_code` between
+> both paths" — was adversarially reviewed against the code and **rejected on two
+> counts**:
+>
+> 1. **`classify_code` is not a drop-in for FMP's field format.** FMP's `transactionType`
+>    is an *enriched string* (`"P-Purchase"` / `"S-Sale"` — see the `tests/test_fmp_insider.py`
+>    fixtures), which is exactly why `is_buy` uses `.upper().startswith("P")` and not `== "P"`.
+>    `classify_code` does an **exact** `c == "P"` (it's written for edgartools' bare single-letter
+>    `Code` column). Feeding it `"P-PURCHASE"` returns `"other"`, so a naive swap classifies
+>    **100% of FMP transactions as `other`** and skips them all.
+> 2. **That all-`other` result clobbers EDGAR.** `harness_sources` (`config.yaml`) orders
+>    `fmp` *before* `edgar`, and `_merge_insider` (`data/models.py`) takes the coupled txn
+>    facts wholesale from the first source with a present field. The broken swap makes FMP
+>    build `Insider(net_value_6m=0, buy_count=0, sell_count=0, recent=[])`; `_is_present(0)`
+>    is `True`, so that zero record **wins the merge and discards EDGAR's authoritative
+>    data** — the opposite of the intended "make FMP agree with EDGAR". (Masked today only
+>    because FMP insider 402s to empty on the free tier, so the path never fires.)
+>
+> **Payoff is marginal even done right.** `buy_count`/`sell_count` are **never read by the
+> scorer** (`bridge.py` plumbs only `net_value_6m` / `sentiment_mspr` / conviction aggregates
+> — the counts are JSON/display-only), and the `heavy_insider_selling` gate runs off **Finnhub
+> MSPR**, not this classification. The sole scored effect is `net_value_6m`, and **only on a
+> paid FMP tier** (where FMP actually returns insider data and wins the merge) — which is
+> exactly the data the free-tier backtest can't measure. So "backtest the insider axis" is
+> close to unsatisfiable here.
+>
+> **If pursued (only worth it once a paid FMP tier is in use):** (a) give `_fmp_insider` its
+> own three-way that strips the `-suffix` / matches the leading letter — do **not** feed
+> enriched strings to the exact-match `classify_code`; (b) add a "saw at least one real P/S"
+> guard before `sources.py` constructs the FMP `Insider`, so an all-non-trade batch abstains
+> rather than zero-clobbers (mirror `_form4.Form4Summary.found`); (c) keep the existing
+> `"P-Purchase"` tests as the real-format contract — do **not** rewrite them to pass.
+>
+> **Deeper latent question this sits on:** should `fmp` outrank `edgar` for the insider txn
+> group at all (`config.yaml` `harness_sources`)? CLAUDE.md calls EDGAR "the authoritative,
+> free insider source," yet enabling FMP Starter would silently override EDGAR's insider
+> numbers. That priority/intent question deserves its own treatment, not a fix smuggled in here.
 
 > **INVESTIGATED 2026-06-26 — CANNOT FIRE, do not pursue.** The concern was that the
 > `mean(rets) if rets else 0.0` at `backtest/metrics.py:129` imputes a fabricated `0.0`
