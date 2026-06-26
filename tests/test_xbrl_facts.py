@@ -223,6 +223,51 @@ def test_panel_to_metrics_aligns_ratios_by_end_not_position():
     m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
     assert round(m.gross_margin, 4) == round(550 / 1100, 4)
 
+def test_panel_to_metrics_sets_fcf_positive_from_latest_fcf_sign():
+    # fcf_positive drives the stage-aware negative_fcf gate; it must mirror the
+    # harness bridge (sign of the latest-FY FCF), None when no FCF year is knowable.
+    mk = lambda p: panel_to_metrics(p, ticker="T", sic=None, price=None,
+                                    price_at=lambda d: None)
+    ocf = {"2022-12-31": 1.0, "2021-12-31": 1.0}                      # latest end = 2022
+    pos = XbrlPanel(fcf={"2022-12-31": 120.0, "2021-12-31": -50.0}, ocf=ocf)
+    neg = XbrlPanel(fcf={"2022-12-31": -30.0, "2021-12-31": 200.0}, ocf=ocf)
+    stale = XbrlPanel(fcf={"2021-12-31": 120.0}, ocf=ocf)            # fcf year < ocf year
+    assert mk(pos).fcf_positive is True
+    assert mk(neg).fcf_positive is False
+    assert mk(stale).fcf_positive is None                            # stale FY -> abstain
+    assert mk(XbrlPanel()).fcf_positive is None                      # no FCF -> abstain
+
+def test_panel_fcf_positive_through_extract_panel_subtracts_positive_capex():
+    # Real sign convention via align_fcf (panel SUBTRACTS a positive capex, vs the
+    # harness which ADDS a negative one). Newest FY burns cash (OCF 100 - capex 150
+    # = -50) -> fcf_positive False. Exercises extract_panel, not a hand-signed dict.
+    gaap = {}
+    gaap.update(_annual("NetCashProvidedByUsedInOperatingActivities",
+                        [_row("2023-01-01", "2023-12-31", 100, "2024-02-01")]))
+    gaap.update(_annual("PaymentsToAcquirePropertyPlantAndEquipment",
+                        [_row("2023-01-01", "2023-12-31", 150, "2024-02-01")]))
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 6, 1))
+    assert p.fcf == {"2023-12-31": -50.0}
+    m = panel_to_metrics(p, ticker="T", sic=None, price=None, price_at=lambda d: None)
+    assert m.fcf_positive is False
+
+def test_panel_fcf_positive_abstains_when_latest_fy_lacks_capex():
+    # Newest FY (2023) tags OCF but NO capex -> align_fcf drops 2023, so latest(p.fcf)
+    # is the STALE 2022. The harness bridge abstains (None) here; the panel MUST too,
+    # not report 2022's positive sign as if current -- else a 2023 cash-burner would
+    # evade the negative_fcf gate once it's wired onto the XBRL path.
+    gaap = {}
+    gaap.update(_annual("NetCashProvidedByUsedInOperatingActivities", [
+        _row("2022-01-01", "2022-12-31", 200, "2023-02-01"),
+        _row("2023-01-01", "2023-12-31", 180, "2024-02-01")]))
+    gaap.update(_annual("PaymentsToAcquirePropertyPlantAndEquipment",
+                        [_row("2022-01-01", "2022-12-31", 50, "2023-02-01")]))  # 2023 missing
+    p = extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 6, 1))
+    assert p.fcf == {"2022-12-31": 150.0}        # 2023 dropped (no capex)
+    assert max(p.ocf) == "2023-12-31"            # but OCF knows 2023
+    m = panel_to_metrics(p, ticker="T", sic=None, price=None, price_at=lambda d: None)
+    assert m.fcf_positive is None                 # latest-FY FCF unknowable -> abstain
+
 def test_panel_to_metrics_value_degrades_when_price_absent():
     p = XbrlPanel(
         revenue={"2022-12-31": 1200, "2021-12-31": 1100, "2020-12-31": 1000},

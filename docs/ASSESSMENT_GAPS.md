@@ -341,9 +341,15 @@ parses the granular trades to do far better:
 > 4.0, EBITDA-margin floor 0.03, D/E ceiling 20, coverage 2.0; FCF excuse 0.15 / 0.70) are
 > reasoned priors, not measured. **Next step:** run `uv run shortlist-backtest --source xbrl` and
 > read the standalone `net_debt_to_ebitda` axis rank IC before tightening/loosening the 4.0 gate
-> (the axis is wired so this is a one-command check; cf. §2.1). The **`negative_fcf` excuse is not
-> yet backtestable** — the XBRL panel (`_xbrl_facts.panel_to_metrics`) does not set `fcf_positive`,
-> so the stage-aware FCF gate stays an unvalidated prior until that field is populated there.
+> (the axis is wired so this is a one-command check; cf. §2.1). The **`negative_fcf` excuse is still
+> unmeasured, but the field-level blocker is cleared:** `_xbrl_facts.panel_to_metrics` now sets
+> `fcf_positive` (sign of `latest(p.fcf)`, abstaining to None when the latest FY's FCF isn't
+> computable — newest year tags OCF but no capex — so it mirrors `bridge.py`'s abstention rather
+> than reporting a stale older-year sign), so the gate is exercisable on XBRL-derived metrics. What
+> remains is a *measurement path* — `XbrlSignalSource` emits sub-score
+> axes only and never calls `check_gates`, so validating whether the stage-aware excuse improves
+> forward returns needs a new gate-impact backtest diagnostic (cohort comparison of excused vs.
+> gated negative-FCF names). The thresholds stay unfitted priors until then.
 
 #### 2.8 `opportunity = max(momentum, value)` discards a real signal
 `max()` (`scoring.py:97`) is the right call for "qualify on either axis," but when momentum
