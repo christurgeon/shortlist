@@ -329,13 +329,21 @@ uv run shortlist-accumulate run --tickers AAPL,MSFT --sources finnhub,yahoo --ro
 It is idempotent: re-running on the same day skips already-captured tickers and
 spends no API calls.
 
-## Free-tier caveat (read before scaling the watchlist)
+## Breadth + free-tier caveat (read before scaling the watchlist)
 
-The harness makes ~13 FMP calls/ticker; FMP's free tier is **250/day ≈ 19
-tickers/day**, so `--max-tickers` defaults to **15**. To capture a larger universe
-daily you need FMP's paid Starter tier (~$14–20/mo) or the caching layer — or drop
-FMP (`--sources finnhub,edgar,yahoo`) and accept a null `value` axis. Finnhub
-(60/min) and Yahoo (keyless) are comfortable either way.
+The snapshot-replay backtest needs **≥ 30 names/date** to clear the trust floor
+(`engine._TRUST_MIN_BREADTH`), so the bundled watchlist is **42** names and the timer
+install (below) runs `--max-tickers 42`. The *library* `--max-tickers` default stays
+**15** for ad-hoc runs, so a bare `shortlist-accumulate run` truncates to 15 and stays
+*below* the floor — pass `--max-tickers 42` (the installer does) to accumulate breadth.
+
+The harness makes ~13 FMP calls/ticker, and FMP's free tier is **250/day ≈ 19
+tickers/day**, so a 42-name run 429s past ~19 names. That's fine: `coverage()` is
+field-based, so the FMP-gated overflow still saves on keyless coverage (Yahoo / EDGAR /
+Finnhub / FINRA ≥ 0.5) — only the FMP-only value legs (PEG, analyst upside) go thin, and
+the snapshot backtest's target axes (momentum, SUE, fundamentals) are keyless anyway.
+FMP's paid Starter tier (~$14–20/mo) lifts the gating; Finnhub (60/min) and Yahoo
+(keyless) are comfortable either way.
 
 ## Enabling the daily timer (opt-in — only when you decide to)
 
