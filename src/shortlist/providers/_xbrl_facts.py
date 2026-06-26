@@ -353,6 +353,9 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     # Value (2 of 4 legs; peg + upside_to_target need analyst data absent from XBRL)
     m.market_cap = (price * p.shares) if (price and p.shares) else None
     fcf_latest = latest(p.fcf)
+    # Sign of the latest-FY FCF feeds the stage-aware negative_fcf gate (mirrors
+    # bridge.py: m.fcf_positive = fcf0 > 0). None when no FCF year is knowable.
+    m.fcf_positive = (fcf_latest > 0) if fcf_latest is not None else None
     if fcf_latest is not None and m.market_cap:
         m.fcf_yield = fcf_latest / m.market_cap
 

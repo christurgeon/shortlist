@@ -223,6 +223,17 @@ def test_panel_to_metrics_aligns_ratios_by_end_not_position():
     m = panel_to_metrics(p, ticker="X", sic=None, price=None, price_at=lambda d: None)
     assert round(m.gross_margin, 4) == round(550 / 1100, 4)
 
+def test_panel_to_metrics_sets_fcf_positive_from_latest_fcf_sign():
+    # fcf_positive drives the stage-aware negative_fcf gate; it must mirror the
+    # harness bridge (sign of the latest-FY FCF), None when no FCF year is knowable.
+    mk = lambda p: panel_to_metrics(p, ticker="T", sic=None, price=None,
+                                    price_at=lambda d: None)
+    pos = XbrlPanel(fcf={"2022-12-31": 120.0, "2021-12-31": -50.0})   # latest positive
+    neg = XbrlPanel(fcf={"2022-12-31": -30.0, "2021-12-31": 200.0})   # latest negative
+    assert mk(pos).fcf_positive is True
+    assert mk(neg).fcf_positive is False
+    assert mk(XbrlPanel()).fcf_positive is None                       # no FCF -> abstain
+
 def test_panel_to_metrics_value_degrades_when_price_absent():
     p = XbrlPanel(
         revenue={"2022-12-31": 1200, "2021-12-31": 1100, "2020-12-31": 1000},
