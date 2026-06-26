@@ -51,9 +51,52 @@ def test_leaderboard_renders_soft_flags_html_and_text():
     # renderers — distinct from hard gates. Empty flags render nothing extra.
     body = render_html_body(_vm([_leader("GME", 60, flags=["social_hype", "crowded_short"])]))
     assert "social_hype" in body and "crowded_short" in body
-    assert "Flags" in body                       # header column present
+    assert "flags-strip" in body                 # rendered via the strip, not a column
     txt = render_text(_vm([_leader("GME", 60, flags=["social_hype"])]), Detail.GLANCE)
     assert "social_hype" in txt
+
+
+def test_leaderboard_heatmap_drops_gates_and_flags_columns():
+    # The wide heatmap is now purely numeric; gates/flags moved out to the strip so
+    # they no longer trail off the right edge. The column headers must be gone.
+    body = render_html_body(_vm([_leader("GME", 60, gates=["over_leveraged"],
+                                         flags=["social_hype"])]))
+    assert ">Gates</th>" not in body and ">Flags</th>" not in body
+    assert "over_leveraged" in body and "social_hype" in body   # still present (strip)
+
+
+def test_flags_strip_only_for_flagged_tickers():
+    # A clean leader contributes no strip row; a flagged one does.
+    clean = render_html_body(_vm([_leader("AAPL", 80)]))
+    assert "flags-strip" not in clean
+    flagged = render_html_body(_vm([_leader("AAPL", 80, gates=["negative_fcf"])]))
+    assert "flags-strip" in flagged and "negative_fcf" in flagged
+
+
+def test_glossary_absent_when_nothing_flagged():
+    body = render_html_body(_vm([_leader("AAPL", 80), _leader("MSFT", 70)]))
+    assert "glossary" not in body
+    assert "Flags &amp; gates in this report" not in body
+
+
+def test_glossary_lists_present_codes_with_descriptions_grouped():
+    body = render_html_body(_vm([_leader("GME", 60, gates=["over_leveraged"],
+                                         flags=["value_trap"])]))
+    assert "Flags &amp; gates in this report" in body
+    assert "Gates (hard filters)" in body and "Flags (advisory)" in body
+    # description text, not just the bare id
+    assert "above the safe threshold" in body          # over_leveraged blurb
+    assert "quality or growth is weak" in body         # value_trap blurb
+    # a code NOT present must not leak into the glossary
+    assert "crowded_short" not in body
+
+
+def test_glossary_unknown_code_renders_without_crash():
+    # A future flag id with no description must still render (its id, no blurb).
+    body = render_html_body(_vm([_leader("GME", 60, flags=["brand_new_flag"])]))
+    assert "brand_new_flag" in body
+    txt = render_text(_vm([_leader("GME", 60, flags=["brand_new_flag"])]), Detail.FULL)
+    assert any("brand_new_flag" in line for line in txt.splitlines())
 
 
 def test_leaderboard_no_flags_renders_clean():
