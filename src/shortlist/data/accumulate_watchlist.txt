@@ -1,17 +1,76 @@
-# Default daily-accumulation watchlist: ~12 liquid large-caps that work on FMP's
-# free /stable/ tier. Deliberately AVOIDS the documented per-symbol 402-gated names
-# (GEV, AXON, MELI, ISRG, SCHW, TMO) so free-tier captures stay high-coverage.
-# Kept small so a daily run stays under FMP's 250-calls/day (~13 calls/ticker).
+# Default daily-accumulation watchlist: 42 liquid large-caps spanning every sector,
+# chosen to feed the SNAPSHOT-REPLAY backtest, which needs >= 30 distinct names per
+# grid date to clear the trust floor (backtest/engine.py `_TRUST_MIN_BREADTH = 30`).
+# A 12-name list could never reach that floor no matter how many days accumulate —
+# the SUE / Lazy-Prices axes would read "EXPLORATORY: below trust floor" forever.
+#
+# *** THE CAP MATTERS AS MUCH AS THIS LIST ***
+# accumulate captures `tickers[:max_tickers]`. `--max-tickers` DEFAULTS TO 15 (the
+# library default, FMP-free-quota-safe) — which silently truncates this list to 15
+# and keeps breadth below 30. To actually reach the floor you MUST run with
+# `--max-tickers 42` (the deploy sample sets this). That exceeds FMP's free 250/day
+# (~13 calls/ticker), so FMP 429s after ~19 names — but that's fine: coverage() is
+# FIELD-based, not source-based, so the FMP-gated overflow still clears the 0.5
+# save-gate on keyless coverage (Yahoo price/momentum/risk + EDGAR financials/insider
+# + Finnhub mktcap/earnings/news + FINRA short interest). Only the FMP-only legs
+# (PEG, analyst upside) go thin on the overflow — and the snapshot backtest's target
+# axes (momentum, SUE, fundamentals) are keyless anyway. A paid FMP Starter tier
+# removes the gating if you want full value coverage on all 42.
+#
+# Deliberately AVOIDS the documented per-symbol 402-gated names (GEV, AXON, MELI,
+# ISRG, SCHW, TMO) so the high-coverage core stays clean on the free tier.
 # One ticker per line; blank lines and #-comments ignored.
+
+# --- Mega-cap tech / semis ---
 AAPL
 MSFT
 GOOGL
 AMZN
 META
 NVDA
-JPM
-V
+ORCL
+CSCO
+ADBE
+CRM
+AMD
+QCOM
+TXN
+IBM
+
+# --- Media / communications ---
+NFLX
+DIS
+CMCSA
+VZ
+
+# --- Consumer (disc. + staples) ---
 HD
+NKE
+MCD
+COST
+WMT
 PG
 KO
+PEP
+MO
+
+# --- Healthcare ---
+JNJ
+UNH
+MRK
+ABBV
+LLY
+
+# --- Financials ---
+JPM
+V
+BAC
+WFC
+GS
+
+# --- Industrials / defense / energy ---
 LMT
+CAT
+HON
+XOM
+CVX

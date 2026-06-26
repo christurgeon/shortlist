@@ -148,8 +148,10 @@ WorkingDirectory=$DEST
 Environment=HOME=$RUN_HOME
 Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Nice=10
-ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 15
-TimeoutStartSec=900
+# --max-tickers 42 = whole watchlist, so breadth can clear the backtest's 30-name
+# trust floor (FMP 429s past ~19 names; overflow saves on keyless coverage).
+ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42
+TimeoutStartSec=1800
 UNIT
   cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
 [Unit]

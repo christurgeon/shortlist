@@ -370,8 +370,15 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
 - **Thin-gate:** snapshots below `--min-coverage` (default 0.5) are flagged THIN and
   **not saved**, so a gated/empty symbol (FMP per-symbol 402) can't pollute the
   backtest as if it were real signal. (Use `--min-coverage 0` for price-only runs.)
-- **Free-tier aware:** `--max-tickers` defaults to 15 (≈195 < FMP's 250/day);
-  default watchlist avoids the 402-gated symbols. Scale needs paid FMP or caching.
+- **Breadth vs. the free tier:** the snapshot-replay path needs **≥ 30 names/date**
+  to clear the trust floor, so the bundled watchlist holds **42** sector-spanning
+  large-caps. But `--max-tickers` **defaults to 15** (≈195 < FMP's 250/day) and
+  captures `tickers[:max_tickers]` — so a default run truncates to 15 and stays
+  *below* the floor. To reach breadth, run `--max-tickers 42` (the `deploy/` sample
+  does): FMP 429s past ~19 names, but `coverage()` is field-based so the overflow
+  still saves on keyless coverage (Yahoo/EDGAR/Finnhub/FINRA) — only the FMP-only
+  legs (PEG, analyst upside) go thin. Paid FMP Starter lifts the gating; the
+  watchlist still avoids the documented 402-gated symbols.
 - **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;
   enabling a daily timer is an explicit opt-in (`deploy/README.md`).
 
