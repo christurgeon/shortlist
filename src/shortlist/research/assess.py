@@ -84,8 +84,9 @@ PROXY_SYSTEM_ADDENDUM = (
     "misalignment, an outsized CEO pay slice, or concentrated/founder control are "
     "ASSOCIATED WITH governance/valuation risk — they are NOT return predictions, and "
     "founder control is double-edged (alignment vs entrenchment). Fold anything "
-    "decision-relevant into your reconciliation (use signal 'governance') and the "
-    "thesis/screening call; do not invent proxy facts beyond the line."
+    "decision-relevant into your reconciliation — using the signal token 'governance', "
+    "which EXTENDS the reconciliation 'signal' options listed in the schema above — and "
+    "into the thesis/screening call; do not invent proxy facts beyond the line."
 )
 
 CALL_SYSTEM_ADDENDUM = (

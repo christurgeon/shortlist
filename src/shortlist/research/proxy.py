@@ -47,18 +47,19 @@ class ProxyFacts:
 
     @property
     def cps(self) -> Optional[float]:
-        """CEO Pay Slice = CEO total comp / average-NEO total comp (power
-        concentration; Bebchuk-Cremers-Peyer). None when either input is absent/zero."""
+        """CEO-to-average-NEO pay multiple = CEO total comp / average-NEO total comp — a
+        pay-concentration proxy related to the Bebchuk-Cremers-Peyer CEO pay slice (which
+        uses sum-of-top-5; this is the simpler CEO/avg-NEO ratio). None if either is absent/zero."""
         if self.peo_total_comp and self.neo_avg_total_comp and self.neo_avg_total_comp > 0:
             return self.peo_total_comp / self.neo_avg_total_comp
         return None
 
     def usable(self) -> bool:
-        """Worth rendering: XBRL present AND at least one comp/ownership datum."""
+        """Worth rendering: XBRL present AND at least one comp/ownership/pvp datum."""
         return bool(self.has_xbrl and (
             self.peo_total_comp is not None or self.peo_actually_paid_comp is not None
             or self.neo_avg_total_comp is not None or self.ceo_pay_ratio is not None
-            or self.top_holders))
+            or self.top_holders or self.pvp))
 
 
 # --------------------------------------------------------------------------- #
@@ -129,8 +130,9 @@ def _safe(fn, default=None):
 # Extraction (pure given a ProxyStatement-like object)
 # --------------------------------------------------------------------------- #
 def _extract_pvp(df) -> list[dict]:
-    """Pay-vs-Performance rows, newest-first. edgartools sorts the source ascending
-    by fiscal_year_end, so we reverse."""
+    """Pay-vs-Performance rows, NEWEST-first. Sorted explicitly by fiscal year
+    (descending, undated rows last) rather than relying on edgartools' source order —
+    a positional reverse would silently flip the alignment verdict if that order changed."""
     out = []
     for r in _records(df):
         out.append({
@@ -141,8 +143,9 @@ def _extract_pvp(df) -> list[dict]:
             "peer_tsr": _num(r.get("peer_group_tsr")),
             "net_income": _num(r.get("net_income")),
         })
-    out.reverse()
-    return out
+    dated = sorted((r for r in out if r["fy"] is not None),
+                   key=lambda r: r["fy"], reverse=True)
+    return dated + [r for r in out if r["fy"] is None]
 
 
 def _extract_holders(df) -> list[dict]:
@@ -185,6 +188,20 @@ def _acceptance_date(filing) -> str:
     return str(getattr(filing, "filing_date", "") or "")
 
 
+def _pick_latest(filings, as_of: Optional[str]):
+    """The newest exact-form 'DEF 14A' at-or-before `as_of` (None == now), or None.
+    Pure given an iterable of objects with `.form` / `.filing_date` — the look-ahead
+    guard (filings dated after as_of are excluded) and exact-form filter live here so
+    they are unit-testable without the network."""
+    rows = [f for f in filings if str(getattr(f, "form", "")) == "DEF 14A"]
+    if as_of is not None:
+        rows = [f for f in rows if _acceptance_date(f) and _acceptance_date(f) <= as_of]
+    if not rows:
+        return None
+    rows.sort(key=_acceptance_date, reverse=True)
+    return rows[0]
+
+
 def fetch_proxy(ticker: str, as_of: Optional[str] = None,
                 identity: Optional[str] = None) -> Optional[ProxyFacts]:
     """Latest DEF 14A's structured comp/governance facts for `ticker`, or None.
@@ -193,7 +210,8 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
     acceptance date is <= as_of are considered (look-ahead guard for any replay;
     None == "now", the live-screen path). Exact-form ("DEF 14A") only — drops
     DEFA14A/amendments. Returns None when there is no usable proxy (no DEF 14A,
-    no XBRL, or nothing extractable). Never raises. Requires SEC_IDENTITY ([edgar]).
+    no XBRL, or nothing extractable). Never raises FROM THE edgartools fetch; it does
+    raise if SEC_IDENTITY is unset (like its filings.py siblings) — assess() guards that.
     """
     from edgar import Company, set_identity  # lazy: optional [edgar] extra
 
@@ -202,14 +220,9 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
         raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
     set_identity(ident)
     try:
-        filings = Company(ticker).get_filings(form="DEF 14A")
-        rows = [f for f in filings if str(getattr(f, "form", "")) == "DEF 14A"]
-        if as_of is not None:
-            rows = [f for f in rows if _acceptance_date(f) and _acceptance_date(f) <= as_of]
-        if not rows:
+        latest = _pick_latest(Company(ticker).get_filings(form="DEF 14A"), as_of)
+        if latest is None:
             return None
-        rows.sort(key=_acceptance_date, reverse=True)
-        latest = rows[0]
         facts = _facts_from_proxy(
             ticker, str(getattr(latest, "accession_no", "") or ""),
             _acceptance_date(latest), latest.obj())
@@ -222,12 +235,16 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
 # Render (pure; curated + evidence-framed)
 # --------------------------------------------------------------------------- #
 def _money(x: float) -> str:
+    """Signed USD magnitude. The sign matters: Item 402(v) 'compensation actually paid'
+    can be negative (underwater equity in a down year) — abs()'ing it would flip the
+    pay-for-performance read the caller relies on."""
+    sign = "-" if x < 0 else ""
     a = abs(x)
     if a >= 1e6:
-        return f"${a / 1e6:.1f}M"
+        return f"{sign}${a / 1e6:.1f}M"
     if a >= 1e3:
-        return f"${a / 1e3:.0f}K"
-    return f"${a:.0f}"
+        return f"{sign}${a / 1e3:.0f}K"
+    return f"{sign}${a:.0f}"
 
 
 def _fy_suffix(facts: ProxyFacts) -> str:
@@ -256,10 +273,11 @@ def _ownership_clause(holders: list[dict], cfg: dict) -> Optional[str]:
     rows = [h for h in holders if h.get("name") and h.get("pct") is not None]
     if not rows:
         return None
+    rows.sort(key=lambda h: h["pct"], reverse=True)   # largest-first (the documented order)
     n = int(cfg.get("max_holders", 3))
     named = ", ".join(f"{h['name']} {h['pct']:.1f}%" for h in rows[:n])
     clause = f"top holders {named}"
-    top = max(rows, key=lambda h: h["pct"])
+    top = rows[0]
     if top["pct"] >= float(cfg.get("control_pct", 30.0)):
         clause += (f"; concentrated control (largest {top['name']} {top['pct']:.1f}%) "
                    "— skin-in-the-game vs entrenchment, double-edged")
@@ -293,7 +311,7 @@ def context_line(facts: Optional[ProxyFacts], cfg: Optional[dict]) -> Optional[s
             s += f" (actually-paid {_money(facts.peo_actually_paid_comp)})"
         parts.append(s)
     if facts.cps is not None:
-        parts.append(f"CEO pay slice {facts.cps:.1f}x avg NEO")
+        parts.append(f"CEO pay {facts.cps:.1f}x avg NEO")
     if facts.ceo_pay_ratio is not None:
         parts.append(f"pay ratio {facts.ceo_pay_ratio:.0f}x median (context)")
     pvp = _pvp_clause(facts.pvp)

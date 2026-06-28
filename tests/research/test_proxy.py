@@ -275,3 +275,115 @@ def test_proxy_line_absent_when_no_facts():
 
 def test_governance_is_a_valid_reconciliation_signal():
     assert "governance" in default_valid_signals()
+
+
+# --- review fixes ------------------------------------------------------------
+
+def test_top_holders_sorted_largest_first_in_render():
+    # input order is NOT descending; the rendered top-N must be largest-first
+    holders = [{"name": "Small", "pct": 3.0}, {"name": "Big", "pct": 9.6},
+               {"name": "Mid", "pct": 7.1}]
+    line = context_line(_facts(top_holders=holders), {"enabled": True, "max_holders": 2})
+    assert "Big 9.6%, Mid 7.1%" in line
+    assert "Small" not in line
+
+
+def test_negative_actually_paid_renders_signed():
+    # Item 402(v) "compensation actually paid" can be negative (underwater awards) —
+    # it must NOT be abs()'d to a positive figure (that flips the alignment signal)
+    line = context_line(_facts(peo_total_comp=74e6, peo_actually_paid_comp=-20_000_000.0), CFG)
+    assert "actually-paid -$20.0M" in line
+
+
+def test_total_comp_still_unsigned():
+    line = context_line(_facts(peo_total_comp=74_294_811.0), CFG)
+    assert "comp $74.3M" in line and "-$74" not in line
+
+
+def test_usable_with_only_pvp():
+    pvp = [{"fy": 2025, "peo_ap": 108e6, "tsr": 90.0},
+           {"fy": 2023, "peo_ap": 80e6, "tsr": 130.0}]
+    f = _facts(pvp=pvp)
+    assert f.usable() is True
+    line = context_line(f, CFG)
+    assert line is not None and "pay-for-performance" in line
+
+
+def test_extract_pvp_orders_newest_first_regardless_of_source_order():
+    # rows arrive OUT of order; result must still be newest-first (not positional reverse)
+    df = _DF([{"fiscal_year_end": "2024-12-31", "peo_actually_paid_comp": 95e6,
+               "total_shareholder_return": 110.0},
+              {"fiscal_year_end": "2026-12-31", "peo_actually_paid_comp": 120e6,
+               "total_shareholder_return": 100.0},
+              {"fiscal_year_end": "2023-12-31", "peo_actually_paid_comp": 80e6,
+               "total_shareholder_return": 130.0}])
+    f = _facts_from_proxy("X", "a", "d", _Proxy(peo_total_comp=1.0, pay_vs_performance=df))
+    assert [r["fy"] for r in f.pvp] == [2026, 2024, 2023]
+
+
+# --- _pick_latest (pure PiT/exact-form selection; no network) -----------------
+
+from shortlist.research.proxy import _pick_latest
+
+
+class _Filing:
+    def __init__(self, form, filing_date):
+        self.form = form
+        self.filing_date = filing_date
+
+
+def test_pick_latest_exact_form_and_newest():
+    fs = [_Filing("DEF 14A", "2024-01-10"), _Filing("DEFA14A", "2025-06-01"),
+          _Filing("DEF 14A", "2026-01-08")]
+    picked = _pick_latest(fs, None)
+    assert picked is not None and picked.filing_date == "2026-01-08"   # DEFA14A ignored
+
+
+def test_pick_latest_point_in_time_excludes_future():
+    fs = [_Filing("DEF 14A", "2024-01-10"), _Filing("DEF 14A", "2026-01-08")]
+    assert _pick_latest(fs, "2025-01-01").filing_date == "2024-01-10"  # 2026 excluded
+    assert _pick_latest(fs, "2020-01-01") is None                      # nothing at/ before
+
+
+# --- assess(): PROXY_SYSTEM_ADDENDUM is gated on proxy.enabled ----------------
+
+class _AssessCard:
+    metrics = None
+    composite = None
+    gates: list = []
+    flags: list = []
+    def __init__(self):
+        for k in ("quality", "moat", "growth", "momentum", "value", "insider",
+                  "risk", "confidence", "sic_bucket"):
+            setattr(self, k, None)
+
+
+def _run_assess_capture(monkeypatch, proxy_enabled):
+    cap = {}
+
+    def runner(prompt, system, model, timeout_s):
+        cap["prompt"], cap["system"] = prompt, system
+        raise RuntimeError("halt before CLI parse")
+
+    monkeypatch.setattr(assess.proxy_ctx, "fetch_proxy",
+                        lambda *a, **k: _facts(peo_total_comp=74e6))
+    cfg = {"research": {"screening_call": {"enabled": False},
+                        "proxy": {"enabled": proxy_enabled, "max_holders": 3,
+                                  "control_pct": 30.0}}}
+    try:
+        assess.assess(_AssessCard(), _bundle(), cfg, runner=runner)
+    except Exception:
+        pass
+    return cap
+
+
+def test_system_addendum_and_line_present_when_enabled(monkeypatch):
+    cap = _run_assess_capture(monkeypatch, proxy_enabled=True)
+    assert assess.PROXY_SYSTEM_ADDENDUM in cap["system"]
+    assert "Proxy (DEF 14A" in cap["prompt"]
+
+
+def test_system_addendum_and_line_absent_when_disabled(monkeypatch):
+    cap = _run_assess_capture(monkeypatch, proxy_enabled=False)
+    assert assess.PROXY_SYSTEM_ADDENDUM not in cap["system"]
+    assert "Proxy (DEF 14A" not in cap["prompt"]

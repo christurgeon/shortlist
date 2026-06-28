@@ -458,8 +458,10 @@ quote-verification as a filing fact). **Not scored, not gated, no flag** (ASSESS
 The proxy's reliable signal is **structured XBRL** (Item 402(v) "Pay versus Performance",
 mandatory since FY2023), **not narrative** — there is no clean related-party/CD&A extractor and
 the raw text is ~350K chars, so v1 reads the structured fields only: CEO total + **actually-paid**
-comp, **CEO pay slice** (`peo_total/neo_avg`; Bebchuk-Cremers-Peyer), **pay-for-performance
-alignment** (CEO actually-paid comp vs TSR trend), **5%+ beneficial ownership / control
+comp (sign preserved — "actually paid" can be negative), the **CEO-to-average-NEO pay
+multiple** (`peo_total/neo_avg`; a pay-concentration proxy related to the Bebchuk-Cremers-Peyer
+CEO pay slice, which uses sum-of-top-5), **pay-for-performance alignment** (CEO actually-paid
+comp vs TSR trend), **5%+ beneficial ownership / control
 concentration** (the reliable table; the `0.5` "<1%" director sentinel is dropped via
 `_is_real_pct`), CEO **pay ratio** (context only — weak evidence), and governance-hygiene
 booleans. **Fetched per deep-dive in `assess()`** (NOT on every screen's snapshot — the heavy
