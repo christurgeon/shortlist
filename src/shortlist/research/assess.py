@@ -11,6 +11,7 @@ from . import claude_cli
 from . import gov_contracts as gov_contracts_ctx
 from . import lobbying as lobbying_ctx
 from . import earnings as earnings_ctx
+from . import proxy as proxy_ctx
 from . import reverse_dcf
 from ..env import redact_secrets
 from .claude_cli import CliResult
@@ -73,6 +74,18 @@ SYSTEM_PROMPT = (
     "like the 10-K sections).\n"
     "Respond with ONLY a JSON object — no prose, no markdown code fences — matching "
     "exactly this schema:\n" + SCHEMA_HINT
+)
+
+PROXY_SYSTEM_ADDENDUM = (
+    "\nA 'Proxy (DEF 14A …)' context line may be present below: it carries "
+    "compensation, pay-for-performance, ownership-concentration, and governance facts "
+    "from the proxy statement — context only, NOT 10-K text (never quote it as filing "
+    "evidence). Weigh it as GOVERNANCE/QUALITY context: CEO pay-for-performance "
+    "misalignment, an outsized CEO pay slice, or concentrated/founder control are "
+    "ASSOCIATED WITH governance/valuation risk — they are NOT return predictions, and "
+    "founder control is double-edged (alignment vs entrenchment). Fold anything "
+    "decision-relevant into your reconciliation (use signal 'governance') and the "
+    "thesis/screening call; do not invent proxy facts beyond the line."
 )
 
 CALL_SYSTEM_ADDENDUM = (
@@ -218,7 +231,8 @@ def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
 
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None,
-                       insider_recent: Optional[list] = None) -> str:
+                       insider_recent: Optional[list] = None,
+                       proxy_facts=None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
@@ -233,6 +247,10 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
             "\n\nRecent SEC filings (context only — do not treat as 10-K text): "
             f"{items}.")
     insider_line = _insider_line(insider_recent, rcfg.get("insider_detail"))
+    # Proxy (DEF 14A) compensation & governance — PROMPT-ONLY, never the haystack
+    # (a computed/interpretive proxy claim must not pass quote-verification).
+    proxy_ctx_line = proxy_ctx.context_line(proxy_facts, rcfg.get("proxy"))
+    proxy_section = f"\n\n{proxy_ctx_line}" if proxy_ctx_line else ""
     tenq_section = ""
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
@@ -257,6 +275,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         "most material first."
         f"{events_line}"
         f"{insider_line}"
+        f"{proxy_section}"
     )
 
 
@@ -461,9 +480,20 @@ def assess(card, bundle: FilingBundle, config: dict,
     m = getattr(card, "metrics", None)
     fe = getattr(m, "filing_events", None)
     ir = getattr(m, "insider_recent", None)
+    # DEF 14A proxy facts — research-layer fetch (per deep-dive, NOT on every screen).
+    # Failure-isolated: any error → None → the line simply abstains.
+    pcfg = rcfg.get("proxy") or {}
+    proxy_facts = None
+    if pcfg.get("enabled", False):
+        try:
+            proxy_facts = proxy_ctx.fetch_proxy(filing.ticker)
+        except Exception:
+            proxy_facts = None
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
-                                     insider_recent=ir)
-    system = SYSTEM_PROMPT + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
+                                     insider_recent=ir, proxy_facts=proxy_facts)
+    system = (SYSTEM_PROMPT
+              + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
+              + (PROXY_SYSTEM_ADDENDUM if pcfg.get("enabled", False) else ""))
 
     # A single slow `claude` call intermittently exceeds the CLI timeout; that failure
     # is transient (the next call usually succeeds), so retry it rather than dropping the

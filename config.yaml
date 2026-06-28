@@ -413,6 +413,14 @@ research:
                                # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
     enabled: true              # flip false for a byte-identical no-op (line omitted)
     max_items: 6               # cap recent trades listed (newest-first)
+
+  proxy:                       # DEF 14A compensation & governance context line (research-only;
+                               # prompt-only, NOT a scored signal — see 2026-06-27-def14a-proxy-reader).
+                               # Structured XBRL (pay-vs-performance, ownership, pay slice); fetched
+                               # per deep-dive in the research layer, NOT on every screen's snapshot.
+    enabled: true              # flip false (or remove the block) for a byte-identical no-op
+    max_holders: 3             # cap on 5%+ beneficial holders named (largest-first)
+    control_pct: 30.0          # a holder >= this % triggers the concentrated-control note (percent units)
 # Government contracts (harness GovContractsSource, USAspending). Keyless aux source;
 # flat data + a research context line only (no sub-score, no flag in v1) — see
 # docs/superpowers/specs/2026-06-15-gov-contracts-source-design.md.

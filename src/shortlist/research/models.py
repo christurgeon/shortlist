@@ -36,7 +36,7 @@ def call_disclaimer(config: dict | None = None) -> str:
 # flags (activist_13d…) are presence-based and harness-only — NOT config-derived,
 # so they must be hardcoded here, not assembled from config.
 _AXIS_SIGNALS = ("quality", "moat", "growth", "momentum", "value", "insider",
-                 "risk", "short_interest", "narrative_tone")
+                 "risk", "short_interest", "narrative_tone", "governance")
 _GATE_SIGNALS = ("negative_fcf", "below_min_mktcap", "over_leveraged",
                  "heavy_insider_selling")
 _FLAG_SIGNALS = ("crowded_short", "insider_cluster_buy", "planned_sale",
