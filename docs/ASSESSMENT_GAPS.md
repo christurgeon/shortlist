@@ -378,7 +378,7 @@ risk overlay and no risk-adjusted ranking.
 The qualitative layer is well-built — grounded, quote-verified, cached by accession, prompt
 hardened against injection — but **narrow**.
 
-### 3.1 Only the 10-K is read — 10-Q HALF SHIPPED
+### 3.1 Only the 10-K is read — 10-Q + DEF 14A SHIPPED
 `assess.py` ingests Item 1 / 1A / 7 of a single 10-K, which can be ~11 months stale and omits
 the richest qualitative sources:
 - **Earnings-call transcripts** — management tone, *fresh* guidance, analyst Q&A. The single
@@ -392,10 +392,23 @@ the richest qualitative sources:
 > `TenQ.get_item_with_part`, **not** the TenK-only `management_discussion` attribute;
 > validated by a live-EDGAR integration test) alongside the 10-K, fed to the prompt as a
 > labeled `=== LATEST 10-Q — MD&A ===` section. The brief caches on a **composite key**
-> (`<10-K-acc>+<10-Q-acc>`) so a new quarter invalidates. **Still deferred:** the DEF 14A
-> proxy (the `FilingBundle` leaves room to add it as a third section) and earnings-call
-> transcripts (no keyless source). The prompt already treats filing text as DATA, so each
-> remaining source is additive.
+> (`<10-K-acc>+<10-Q-acc>`) so a new quarter invalidates.
+
+> **SHIPPED — DEF 14A proxy half (compensation & governance, context-line scope):**
+> `research/proxy.py` reads the latest DEF 14A via edgartools' `ProxyStatement` and renders a
+> caveated, **prompt-only** compensation & governance context line (`research.proxy`, ships ON;
+> the reverse-DCF/gov-contracts discipline — never the grounding haystack, not scored/gated/
+> flagged). v1 reads the **structured XBRL** fields (Item 402(v) pay-vs-performance, CEO pay
+> slice, 5%+ ownership/control concentration, pay ratio, governance-hygiene booleans), since
+> there is no clean narrative extractor and the raw proxy is ~350K chars. Fetched per deep-dive
+> in `assess()` (not on the per-screen snapshot), point-in-time (`fetch_proxy(..., as_of=)`),
+> failure-isolated, byte-identical when disabled (a conditional `PROXY_SYSTEM_ADDENDUM` + a new
+> `governance` reconciliation token). See CLAUDE.md → "Proxy statement (DEF 14A) …" and
+> `docs/superpowers/specs/2026-06-27-def14a-proxy-reader-design.md`.
+> **Still deferred:** the proxy's **narrative** related-party / CD&A sections (needs custom
+> 350K-char text splitting), a `pay_for_performance_alignment` **backtest axis** (the PvP table
+> is structured XBRL — a legitimate future candidate), and **earnings-call transcripts** (no
+> keyless source). The prompt already treats filing text as DATA, so each remaining source is additive.
 
 
 ### 3.2 Reconcile the narrative against the numbers — ✅ SHIPPED
