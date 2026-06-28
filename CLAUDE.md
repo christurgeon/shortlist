@@ -448,6 +448,36 @@ an imminent report a near-term catalyst. **Not scored in v1** — flat data + re
 only. `surprisePercent` is already in percent (don't ×100). Both endpoints are on the free
 tier; cached 1d (history) / 6h (calendar).
 
+## Proxy statement (DEF 14A) compensation & governance (research-only)
+
+`research/proxy.py` (keyless, **research-layer only — no harness Source**) reads the latest
+**DEF 14A** via edgartools' `ProxyStatement` (`filing.obj()`) and renders a **caveated context
+line** for the brief — `research.proxy`, the reverse-DCF/gov-contracts pattern: **prompt only,
+NEVER the grounding haystack** (a computed/interpretive proxy claim must not pass
+quote-verification as a filing fact). **Not scored, not gated, no flag** (ASSESSMENT_GAPS §3.1).
+The proxy's reliable signal is **structured XBRL** (Item 402(v) "Pay versus Performance",
+mandatory since FY2023), **not narrative** — there is no clean related-party/CD&A extractor and
+the raw text is ~350K chars, so v1 reads the structured fields only: CEO total + **actually-paid**
+comp (sign preserved — "actually paid" can be negative), the **CEO-to-average-NEO pay
+multiple** (`peo_total/neo_avg`; a pay-concentration proxy related to the Bebchuk-Cremers-Peyer
+CEO pay slice, which uses sum-of-top-5), **pay-for-performance alignment** (CEO actually-paid
+comp vs TSR trend), **5%+ beneficial ownership / control
+concentration** (the reliable table; the `0.5` "<1%" director sentinel is dropped via
+`_is_real_pct`), CEO **pay ratio** (context only — weak evidence), and governance-hygiene
+booleans. **Fetched per deep-dive in `assess()`** (NOT on every screen's snapshot — the heavy
+per-ticker fetch stays out of the harness, the `filing_text_change` precedent), **point-in-time**
+(`fetch_proxy(ticker, as_of=…)` cuts to filings `≤ as_of`), **failure-isolated** (any error →
+line omitted), accession-cached via the brief. A new **`governance`** reconciliation token +
+the conditional **`PROXY_SYSTEM_ADDENDUM`** are added so the brief is **byte-identical when
+`research.proxy` is absent or `enabled: false`** (the model is never told about `governance`/the
+proxy line, so it can't emit either). Curated, evidence-framed: "**associated with**
+governance/valuation, **not** a return prediction; founder control is double-edged." Ships
+**enabled: true** (exact-ticker; fires only on researched names). **Phase 2 (deferred):** the
+narrative related-party/CD&A sections, and a `pay_for_performance_alignment` backtest axis (the
+PvP table is *structured* XBRL — a legitimate future candidate, unlike narrative inputs). Tune
+via `config.yaml: research.proxy` (`max_holders`, `control_pct`). Spec:
+`docs/superpowers/specs/2026-06-27-def14a-proxy-reader-design.md`.
+
 ## Lazy-Prices filing-text-change flag (research/PiT; PREDICTIVE_SIGNALS §4)
 
 The "Lazy Prices" signal (Cohen-Malloy-Nguyen 2020: big YoY 10-K/10-Q text changes —
