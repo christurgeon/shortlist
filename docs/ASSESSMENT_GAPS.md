@@ -425,10 +425,22 @@ is the most decision-useful thing the layer could produce.
 - **Still deferred:** DEF 14A proxy + earnings-call transcripts as quant/narrative inputs (no
   keyless source — tracked in §3.1).
 
-### 3.3 No bull / bear / pre-mortem structure
+### 3.3 No bull / bear / pre-mortem structure — ✅ SHIPPED
 Risks + red-flags + synthesis is a *summary*, not a decision aid.
-- **Plug:** restructure `QualitativeAssessment` (`research/models.py`) toward a falsifiable
-  thesis: explicit **bull case**, **bear case**, and **"what would change my mind."** Keep
+
+> **SHIPPED (#22, `9e833b9` — alongside §3.2):** `research/models.py` gained a `Thesis`
+> dataclass (`bull_case`, `bear_case`, `what_would_change_my_mind`, `takeaway` — the traveling
+> TL;DR that replaced the old flat `synthesis`), carried on every `QualitativeAssessment` and
+> parsed by `_thesis()` (presence is enforced there — a missing/non-dict `thesis` raises, like
+> the moat dict-check; `what_would_change_my_mind` is truncated to `research.max_falsifiers`,
+> default 3). The system prompt (`assess.py`) instructs Claude to build the thesis **from the
+> grounded risks/red_flags/reconciliation** and introduce NO new filing facts there — so the
+> quote-grounding discipline is preserved (the thesis itself carries no quotes BY DESIGN, since
+> it is interpretive judgment, not a filing fact). `report.py` renders a `## Thesis (analyst
+> judgment — not filing facts)` section (Bull / Bear / What would change my mind / Takeaway) and
+> threads the first falsifier into the screening-call badge as a *"but watch:"* line.
+- **Original plug (now done):** restructure `QualitativeAssessment` toward a falsifiable
+  thesis — explicit **bull case**, **bear case**, and **"what would change my mind"** — keeping
   the quote-grounding requirement on every factual claim.
 
 ### 3.4 No year-over-year risk-factor diff — ✅ SHIPPED
@@ -466,8 +478,8 @@ in `DATA_SOURCES.md`:
    needs a share-count series and (ideally) Altman Z from EDGAR XBRL (`DATA_SOURCES.md` A1).
 5. **Cross-sectional / sector-relative scoring (§2.3)** — biggest accuracy gain, but needs a
    universe run, so it follows the caching + paid-tier unlock in `DATA_SOURCES.md`.
-6. **Absolute valuation leg (§2.2), insider granularity (§2.6), risk overlay (§2.9),
-   bull/bear + YoY risk diff (§3.3, §3.4)** — as capacity allows.
+6. **Absolute valuation leg (§2.2), insider granularity (§2.6), risk overlay (§2.9)** — as
+   capacity allows. (Bull/bear thesis §3.3 and YoY risk diff §3.4 are now ✅ SHIPPED.)
 
 Two house rules from `CLAUDE.md` apply to every change here: route any error string that may
 contain a URL through `env.py:redact_secrets()`, and keep coverage **honest** — a missing
