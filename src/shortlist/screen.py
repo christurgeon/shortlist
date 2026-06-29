@@ -253,6 +253,14 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         # Total shareholder yield (§5); surfaced from metrics (no ScoreCard field).
         "shareholder_yield": (round(c.metrics.shareholder_yield, 4)
                               if c.metrics and c.metrics.shareholder_yield is not None else None),
+        # PREDICTIVE_SIGNALS §2 price-refinement measurement axes; surfaced from metrics
+        # (no ScoreCard field, no production leg — backtest-only).
+        "pct_to_52w_high": (round(c.metrics.pct_to_52w_high, 4)
+                            if c.metrics and c.metrics.pct_to_52w_high is not None else None),
+        "max_daily_return": (round(c.metrics.max_daily_return, 4)
+                             if c.metrics and c.metrics.max_daily_return is not None else None),
+        "vol_scaled_momentum": (round(c.metrics.vol_scaled_momentum, 4)
+                                if c.metrics and c.metrics.vol_scaled_momentum is not None else None),
         # SUE inputs (§1); surfaced from metrics (no ScoreCard field). days_since_last_report
         # is an APPROXIMATION (see bridge/_earnings). The decayed SUE leg itself is in momentum.
         "earnings_surprise_dispersion": (round(c.metrics.earnings_surprise_dispersion, 3)
