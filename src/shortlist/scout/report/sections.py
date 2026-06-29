@@ -559,8 +559,73 @@ class _Glossary:
         return out
 
 
+# tickers per /deep command line — matches the bot's scout.bot.max_deep default (3)
+_DEEP_PER_LINE = 3
+
+
+def _pct(v) -> str:
+    return "—" if v is None else f"{v * 100:+.0f}%"
+
+
+# ---- /deep handoff block ----
+class _DeepBlock:
+    """Copy-paste /deep commands for the non-gated, scored leaders — the 'stocks worth
+    passing into /deep' handoff. Conviction-ordered (the leader order), ≤3 per line."""
+    id, title = "deep", "Pass to /deep"
+
+    def applies(self, vm) -> bool:
+        return bool(getattr(vm, "deep_block", None))
+
+    def _lines(self, vm) -> list[str]:
+        t = list(getattr(vm, "deep_block", []) or [])
+        return [", ".join(t[i:i + _DEEP_PER_LINE]) for i in range(0, len(t), _DEEP_PER_LINE)]
+
+    def render_html(self, vm, h) -> str:
+        cmds = "".join(h.tag("div", f"/deep {ln}", _class="deepcmd") for ln in self._lines(vm))
+        note = h.tag("div", "activist re-rating candidates — screening triage, "
+                            "not investment advice", _class="muted")
+        return h.raw("div", cmds + note, _class="deep")
+
+    def render_text(self, vm, detail) -> list[str]:
+        lines = self._lines(vm)
+        if not lines:
+            return []
+        out = ["", "Pass to /deep (activist re-rating candidates — "
+                   "screening triage, not investment advice):"]
+        out += [f"/deep {ln}" for ln in lines]
+        return out
+
+
+# ---- prior-picks scoreboard (how past selections performed) ----
+class _PriorPicks:
+    """Return-since-selection vs SPY for recent picks, so every report shows whether the
+    discovery signal is catching winners (the over-time tracking deliverable)."""
+    id, title = "picks", "Prior picks"
+
+    def applies(self, vm) -> bool:
+        return bool(getattr(vm, "prior_picks", None))
+
+    @staticmethod
+    def _line(p: dict) -> str:
+        bucket = p.get("horizon_bucket") or "—"
+        return (f"{p.get('ticker', '?')} [{bucket}] ret {_pct(p.get('ret'))} · "
+                f"vs SPY {_pct(p.get('excess'))} — {p.get('evidence', '')}".rstrip(" —"))
+
+    def render_html(self, vm, h) -> str:
+        rows = "".join(h.tag("div", self._line(p), _class="pick")
+                       for p in getattr(vm, "prior_picks", []) or [])
+        return h.raw("div", rows, _class="picks")
+
+    def render_text(self, vm, detail) -> list[str]:
+        picks = list(getattr(vm, "prior_picks", []) or [])
+        if not picks:
+            return []
+        return ["", "Prior picks scoreboard (return since selection vs SPY):"] + \
+               [f"  {self._line(p)}" for p in picks]
+
+
 SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
-                            _Portfolio(), _Glossary(), _Footer()]
+                            _DeepBlock(), _PriorPicks(), _Portfolio(), _Glossary(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:
