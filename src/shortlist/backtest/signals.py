@@ -76,6 +76,16 @@ class MomentumSignalSource:
         rm = scoring.residual_momentum_score(m, self.thresholds)
         if rm is not None:
             sig["residual_momentum"] = rm
+        # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (George-Hwang 52wk-high,
+        # Bali MAX-effect, Barroso-Santa-Clara vol-scaled momentum) + the two LEG-reference
+        # axes (price_vs_200dma / rel_strength_6m) so the leg-level collinearity can be
+        # measured. Backtest-only — NO production leg reads them (the momentum sub-score above
+        # is byte-identical). Emitted None-safe.
+        for axis in ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
+                     "price_vs_200dma", "rel_strength_6m"):
+            v = getattr(scoring, f"{axis}_score")(m, self.thresholds)
+            if v is not None:
+                sig[axis] = v
         return Observation(as_of, ticker.upper(), sig)
 
 
