@@ -23,7 +23,7 @@ from .state import ScoutState
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 
-_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype"}
+_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype", "edgar_activist_13d"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -38,6 +38,7 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
 def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs."""
     wsb = scout_cfg.get("wsb_hype", {})
+    act = scout_cfg.get("activist_13d", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -46,6 +47,11 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
                           "min_mention_delta_pct": wsb.get("min_mention_delta_pct", 0.5),
                           "top_n": wsb.get("top_n", 15),
                           "deny_list": wsb.get("deny_list", [])},
+        "edgar_activist_13d": {"identity": os.environ.get("SEC_IDENTITY"),
+                               "max_filings": act.get("daily_cap", 300),
+                               "drop_spacs": act.get("drop_spacs", True),
+                               "drop_affiliates": act.get("drop_affiliates", True),
+                               "marquee_boost": act.get("marquee_boost", 0.2)},
     }
 
 
