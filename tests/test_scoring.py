@@ -938,6 +938,36 @@ def test_gate_untouched_by_10b5_1_when_conviction_off():
     assert a.passed == b.passed and a.gates == b.gates
 
 
+# --- FIX M3: MAX-effect monotonicity with interpolation (not clamping) -------
+
+def test_max_daily_return_score_interpolates_within_band():
+    from shortlist import scoring
+    t = {"max_daily_return": [0.15, 0.02]}            # inverted band
+    hi = StockMetrics(ticker="A"); hi.max_daily_return = 0.10   # mid-band
+    lo = StockMetrics(ticker="B"); lo.max_daily_return = 0.05   # mid-band
+    s_hi = scoring.max_daily_return_score(hi, t)
+    s_lo = scoring.max_daily_return_score(lo, t)
+    assert s_hi < s_lo                                  # bigger MAX still scores lower
+    assert 0.0 < s_hi < 100.0 and 0.0 < s_lo < 100.0    # genuinely interpolated, not clamped
+
+
+# --- FIX M4: None-branch coverage for all three price-axis scorers -----------
+
+def test_price_axis_scorers_none_safe_all_branches():
+    from shortlist import scoring
+    bands = {"max_daily_return": [0.15, 0.02], "vol_scaled_momentum": [0.0, 2.0],
+             "rel_strength_6m": [-0.15, 0.25]}
+    empty = StockMetrics(ticker="X")                    # metric absent -> None
+    assert scoring.max_daily_return_score(empty, bands) is None
+    assert scoring.vol_scaled_momentum_score(empty, bands) is None
+    assert scoring.rel_strength_6m_score(empty, bands) is None
+    m = StockMetrics(ticker="X")                        # band absent -> None
+    m.max_daily_return = 0.05; m.vol_scaled_momentum = 1.0; m.rel_strength_6m = 0.1
+    assert scoring.max_daily_return_score(m, {}) is None
+    assert scoring.vol_scaled_momentum_score(m, {}) is None
+    assert scoring.rel_strength_6m_score(m, {}) is None
+
+
 # --- piotroski_score + value_trap refinement (Task 6) ---------------------
 
 # value_trap refinement config: existing thresholds + the piotroski sub-block.

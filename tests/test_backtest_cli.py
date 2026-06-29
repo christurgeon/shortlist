@@ -118,3 +118,44 @@ def test_main_clean_exit_when_price_fetch_fails(monkeypatch):
 
     monkeypatch.setattr(cli, "fetch_history", boom)
     assert cli.main(["--tickers", "AAPL", "--horizons", "6"]) == 1
+
+
+# --- FIX M2: collinearity gate is exercised for --source momentum -------------
+
+def test_main_collinearity_emitted_for_momentum_source(monkeypatch, capsys):
+    """Run main(--source momentum) with synthetic deterministic histories and assert
+    that at least one 'Leg collinearity' line is printed to stderr. Guards against a
+    silent revert of `args.source in ('xbrl', 'momentum')` to `== 'xbrl'`."""
+    from datetime import date, timedelta
+    from shortlist.backtest import cli
+    from shortlist.backtest.prices import PriceHistory
+
+    def _ramp(ticker, step):
+        """600 consecutive calendar-day closes from 2020-01-01 with different steps
+        -> genuinely different max_daily_return / momentum / vol_scaled_momentum per
+        ticker, satisfying spearman_ic's n >= 3 co-present-pairs requirement."""
+        d0 = date(2020, 1, 1)
+        dates = [d0 + timedelta(days=i) for i in range(600)]
+        closes = [100.0 + step * i for i in range(600)]
+        return PriceHistory(ticker, dates, closes)
+
+    async def fake_load(tickers, cache_dir, today):
+        hists = {
+            "AAA": _ramp("AAA", step=3.0),
+            "BBB": _ramp("BBB", step=1.0),
+            "CCC": _ramp("CCC", step=0.3),
+        }
+        spy = _ramp("SPY", step=0.5)
+        return hists, spy
+
+    monkeypatch.setattr(cli, "_load_histories", fake_load)
+    rc = cli.main([
+        "--tickers", "AAA,BBB,CCC",
+        "--source", "momentum",
+        "--horizons", "1",
+        "--start", "2021-04-01",   # well inside the 600-day range (day 456)
+        "--end", "2021-06-01",     # day 517, forward-return horizon lands at day 547
+    ])
+    assert rc == 0
+    captured = capsys.readouterr()
+    assert "Leg collinearity" in captured.err

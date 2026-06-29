@@ -325,3 +325,17 @@ def test_bridge_financial_series_none_when_no_statements():
     snap = _full_snapshot()
     snap.statements = None
     assert snapshot_to_metrics(snap).financial_series is None
+
+
+# --- FIX M5: bridge round-trip for the three §2 price-refinement axes --------
+
+def test_bridge_copies_price_refinement_axes():
+    from shortlist.data.sources import _normalize_yahoo
+    from shortlist.data.bridge import snapshot_to_metrics
+    closes = [100.0 * (1.0 + 0.0008 * i) + (1.5 if i % 2 else -1.5) for i in range(300)]
+    snap = _normalize_yahoo("AAA", closes, closes)
+    m = snapshot_to_metrics(snap)
+    assert m.pct_to_52w_high == snap.price.pct_to_52w_high
+    assert m.max_daily_return == snap.price.max_daily_return
+    assert m.vol_scaled_momentum == snap.price.vol_scaled_momentum
+    assert m.pct_to_52w_high is not None        # the trending series populates it
