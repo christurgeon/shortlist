@@ -367,6 +367,52 @@ is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None` in the
 bridge. The source does one bulk fetch per run, caches by settlement date, and
 indexes in memory — **no per-ticker request load**.
 
+## Activist 13D discovery + selection ledger (scout)
+
+`EdgarActivist13DSignal` (`scout/signals.py`, keyless, **VPS-safe** — pure SEC EDGAR, no
+Yahoo WAF) is a **discovery originator** that scans the SEC daily index for fresh **initial
+SCHEDULE 13D** filings (an investor crossing 5% *with intent to influence* — a leading
+re-rating catalyst). It is the discovery analogue of the per-ticker `activist_13d` flag
+(which only confirms a *known* ticker). **It is discovery plumbing, NOT a scoring signal:**
+`scoring.score()` is byte-identical; there is no scored leg/flag/gate reading it, so per
+`AUTONOMOUS_SCOUT.md §9` it ships as a **defensible prior**, not behind the rank-IC backtest
+gate that new *scoring* legs require — the **selection ledger** (below) measures its
+forward-return quality empirically instead (13D events aren't in companyfacts).
+
+**Verified facts that shaped it (live-checked 2026-06-28; do not "fix" back):** the modern
+SEC form label is **`SCHEDULE 13D`**, not `SC 13D` (legacy, ~1/day — both accepted, `/A`
+amendments excluded); initial volume is **~4–12/day**; `get_filings` returns **every row
+twice** (dedup by accession before any header fetch); the **subject company** is the target
+(`filing.header.subject_companies[0].company_information.cik/.name`) while the filer is the
+*activist* — using the filer's ticker would be wrong; `company_tickers.json` lists the
+**common stock first** per CIK, so CIK→ticker is **first-occurrence-authoritative with a
+sibling-relative-only** unit/warrant/preferred backstop (a blunt suffix rule mis-binds ~54
+liquid issuers to `*F`/preferred siblings, e.g. EQNR→STOHF). The shared math/ingestion lives
+in `scout/cik_tickers.py` (resolver), `scout/quality.py` (`is_initial_13d` / SPAC-shell drop
+/ affiliate-name-overlap drop / marquee alias-map boost), and `scout/edgar_index.py`
+(`activist_stakes_from_records` pure aggregator + `fetch_recent_activist_records` live, with
+the same "index not published till ~02:00 UTC → walk back" fallback as the Form-4 path). The
+firehose is SPAC/affiliate/foreign-heavy, so `quality.py` filters it; the scorer + the
+`below_min_mktcap` gate remain the downstream skeptic. Tune via `config.yaml: scout.activist_13d`
+(`daily_cap`, `drop_spacs`, `drop_affiliates`, `marquee_boost`) + `scout.signals.edgar_activist_13d`.
+
+**Selection ledger + scoreboard (`scout/picks.py` + `state.py`):** each daily run records
+the surfaced picks (ticker, catalyst, scores, **as-of price**, gated flag) into `ScoutState`
+under a `picks` key (keyed upsert; old state files stay forward-compatible). The digest then
+shows a **prior-picks scoreboard** — return-since-selection vs SPY at fixed horizons
+(`pick_performance`, **split-safe**: computed from one fresh adjusted Yahoo series, never a
+fresh÷stored-scalar ratio) — so every report shows whether the signal is catching winners.
+Gated picks are recorded too (raw-signal measurement). Tune via `config.yaml: scout.picks`.
+
+**Daily digest mode:** `scout.daily_push.research: false` runs the push as a
+**screen+gate+rank digest** (the existing scorer + a copy-paste **`/deep` block** of the
+non-gated names) and **skips the Claude auto-research phase** — no daily Claude/FMP-research
+burn; default `true` preserves the legacy decision-ready push. The `/deep` block + scoreboard
+are two report sections (`report/sections.py`). The autonomous push still ships **OFF**
+(`scout.daily_push.enabled: false`); the operator arms it. Framed as **activist re-rating
+candidates to watch / pass to `/deep`** (we enter after-close, so the edge is the post-filing
+drift — Bebchuk-Brav-Jiang 2015 — not the filing-day pop), screening triage, not advice.
+
 ## WSB social hype (harness + scout)
 
 `WsbSource` (keyless) and the scout `WsbHypeSignal` both read **ApeWisdom**
