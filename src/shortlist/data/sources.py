@@ -1160,6 +1160,9 @@ def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float],
         realized_vol=_yh_annualized_vol(closes),
         max_drawdown=_yh_max_drawdown(closes),
         residual_momentum=resid,
+        pct_to_52w_high=pct_to_52w_high(closes),
+        max_daily_return=max_daily_return(closes),
+        vol_scaled_momentum=vol_scaled_momentum(closes),
     )
     return snap
 

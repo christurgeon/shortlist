@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from shortlist.data.models import TickerSnapshot, Price as _Price
 from shortlist.models import Coverage, ScoreCard, StockMetrics
 
 
@@ -179,3 +180,13 @@ def test_card_dict_emits_coverage_when_present():
 
 def test_card_dict_omits_coverage_when_absent():
     assert "coverage" not in screen._card_dict(_card())
+
+
+def test_price_refinement_axes_excluded_from_coverage():
+    # The 3 §2 measurement axes populate on every screen but must NOT move coverage (they live
+    # in _NON_SIGNAL_FIELDS, like asset_growth/accruals). A Price with ONLY these set must
+    # contribute zero present fields, so coverage equals a bare Price's coverage.
+    bare = TickerSnapshot(ticker="AAA", price=_Price())
+    withaxes = TickerSnapshot(ticker="AAA", price=_Price(
+        pct_to_52w_high=0.9, max_daily_return=0.05, vol_scaled_momentum=1.2))
+    assert withaxes.coverage() == bare.coverage()

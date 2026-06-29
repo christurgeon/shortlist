@@ -153,6 +153,12 @@ class Price:
     # Needs the DATE-ALIGNED stock + SPY series, so it is set only on the dated seam
     # (snapshot_from_closes_dated), None on the scalar live-merge path that lacks dates.
     residual_momentum: Optional[float] = None
+    # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (backtest-only; no production
+    # leg reads them). Pure closes functions, so unlike residual_momentum they populate on
+    # EVERY path — hence excluded from coverage via _NON_SIGNAL_FIELDS below.
+    pct_to_52w_high: Optional[float] = None       # closes[-1]/max(last 252) in (0,1] (George-Hwang)
+    max_daily_return: Optional[float] = None      # largest daily return, last ~21d (Bali MAX; negative pred.)
+    vol_scaled_momentum: Optional[float] = None   # mom_12_1 / 6m realized vol (Barroso-Santa-Clara)
     # ~monthly-sampled (date, close) pairs over the fetch window, oldest->newest.
     # Lets the bridge align EDGAR fiscal-year-end dates to a historical price.
     monthly_closes: list[list] = field(default_factory=list)
@@ -285,7 +291,11 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       "total_assets", "asset_growth", "accruals",
                       # Shareholder-yield financing legs (§5) — plumbing the bridge
                       # divides by market_cap; surfaced via StockMetrics, not here.
-                      "dividends_paid", "repurchases", "debt_repayments", "debt_issuance")
+                      "dividends_paid", "repurchases", "debt_repayments", "debt_issuance",
+                      # PREDICTIVE_SIGNALS §2 price-refinement measurement axes — populated on
+                      # every screen (pure closes fns), surfaced via StockMetrics, NOT coverage-
+                      # accounted here (mirrors asset_growth/accruals).
+                      "pct_to_52w_high", "max_daily_return", "vol_scaled_momentum")
 
 
 @dataclass

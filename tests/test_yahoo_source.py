@@ -249,3 +249,13 @@ def test_yahoo_live_path_residual_none_when_dateless(tmp_path, monkeypatch):
     assert res.partial.price is not None
     assert res.partial.price.residual_momentum is None
     asyncio.run(src.aclose())
+
+
+def test_normalize_populates_price_refinement_axes():
+    from shortlist.data.sources import _normalize_yahoo
+    closes = [100.0 * (1.0 + 0.0008 * i) + (1.5 if i % 2 else -1.5) for i in range(300)]
+    snap = _normalize_yahoo("AAA", closes, closes)   # spy == stock is fine for these single-series axes
+    p = snap.price
+    assert p.pct_to_52w_high is not None
+    assert p.max_daily_return is not None
+    assert p.vol_scaled_momentum is not None

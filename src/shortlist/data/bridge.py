@@ -127,6 +127,9 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         m.residual_momentum = pr.residual_momentum
         m.realized_vol = pr.realized_vol
         m.max_drawdown = pr.max_drawdown
+        m.pct_to_52w_high = pr.pct_to_52w_high
+        m.max_daily_return = pr.max_daily_return
+        m.vol_scaled_momentum = pr.vol_scaled_momentum
 
     a = snap.analyst
     if a:
