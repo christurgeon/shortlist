@@ -45,10 +45,16 @@ def test_marquee_boosts_strength_and_labels():
     assert "Elliott" in marq.evidence
 
 
-def test_mktcap_floor_callback_drops_subfloor():
-    recs = [_rec("BIG", "Outside Cap Co"), _rec("SMALL", "Outside Cap Co")]
-    ems = activist_stakes_from_records(recs, mktcap_floor_ok=lambda t: t == "BIG")
-    assert [e.ticker for e in ems] == ["BIG"]
+def test_emission_carries_subject_cik():
+    ems = activist_stakes_from_records([_rec("XYZ", "Outside Cap Co", cik="0001326200")])
+    assert ems[0].cik == "0001326200"
+
+
+def test_empty_filer_evidence_falls_back_to_subject():
+    # A valid 13D with an unparseable filer name (activist="") must not render "Activist 13D:  →".
+    ems = activist_stakes_from_records([_rec("XYZ", "", subject="XYZ Corp")])
+    assert ems and "XYZ Corp" in ems[0].evidence
+    assert "13D:  " not in ems[0].evidence
 
 
 class _FakeFiling:

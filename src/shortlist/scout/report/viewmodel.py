@@ -215,8 +215,10 @@ def build_view_model(cards, manifest: RunManifest, *,
     ordered = sorted(cards, key=rank_key, reverse=True)
     leaders = [_leader_vm(c, assessments) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
-    # in conviction (rank_key) order.
-    deep_block = [ld.ticker for ld in leaders if not ld.gates and ld.scored]
+    # in conviction (rank_key) order. Suppressed for /portfolio reports — suggesting you
+    # /deep names you already hold is noise (the section is for discovery/screen digests).
+    deep_block = ([ld.ticker for ld in leaders if not ld.gates and ld.scored]
+                  if portfolio is None else [])
     return ReportVM(
         session=manifest.session,
         leaders=leaders,

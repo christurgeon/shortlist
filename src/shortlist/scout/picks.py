@@ -15,9 +15,8 @@ from datetime import date
 @dataclass
 class Pick:
     ticker: str
-    cik: str | None
+    cik: str | None         # subject CIK (from the emission) — re-resolved at scoreboard time
     session: str            # ISO date the pick was surfaced
-    filing_date: str | None  # ISO date of the originating filing (when known)
     catalyst: str           # signal that surfaced it, e.g. "edgar:activist_13d"
     evidence: str           # human-readable, e.g. "Activist 13D: Elliott → XYZ"
     composite: float | None
@@ -31,9 +30,13 @@ class Pick:
         return asdict(self)
 
 
-def pick_from_card(card, candidate, session: date, filing_date: str | None = None) -> Pick:
+def pick_from_card(card, candidate, session: date) -> Pick:
     """Build a Pick from a scored ScoreCard + the discovery Candidate that surfaced it.
-    Catalyst/evidence prefer the activist-13D emission, else the first emission."""
+    Catalyst/evidence/CIK prefer the activist-13D emission, else the first emission.
+
+    Note: the selection session (not the filing date) anchors the pick — the after-close
+    walk-back means the originating filing is ≤4 trading days older; that small gap is an
+    accepted, documented approximation rather than a threaded filing-date field."""
     em = None
     emissions = getattr(candidate, "emissions", None) or []
     for e in emissions:
@@ -45,9 +48,8 @@ def pick_from_card(card, candidate, session: date, filing_date: str | None = Non
     m = getattr(card, "metrics", None)
     return Pick(
         ticker=card.ticker,
-        cik=None,
+        cik=getattr(em, "cik", None) if em else None,
         session=session.isoformat(),
-        filing_date=filing_date,
         catalyst=em.signal if em else "",
         evidence=em.evidence if em else "",
         composite=getattr(card, "composite", None),

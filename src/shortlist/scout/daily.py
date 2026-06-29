@@ -68,6 +68,16 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
     if not prior:
         return []
 
+    # Re-resolve each pick's CIK -> CURRENT ticker so a symbol reassigned within the
+    # lookback window doesn't fetch the wrong company's prices (spec §14 #16). Falls back
+    # to the stored ticker when the CIK is absent/unresolvable. Day-cached, keyless.
+    from .cik_tickers import load_cik_to_ticker, resolve_ticker
+    identity = os.environ.get("SEC_IDENTITY") or "shortlist-scout turgechr@duck.com"
+    cik_index = load_cik_to_ticker(identity)
+
+    def _current_ticker(p: dict) -> str:
+        return resolve_ticker(p.get("cik"), cik_index) or p["ticker"]
+
     async def _run() -> list[dict]:
         from ..data.sources import (YahooSource, _closes_from_chart,
                                      _dates_from_chart)
@@ -79,7 +89,7 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
             rows: list[dict] = []
             for p in prior:
                 try:
-                    raw = await src._get_chart(p["ticker"])
+                    raw = await src._get_chart(_current_ticker(p))
                     series = list(zip(_dates_from_chart(raw), _closes_from_chart(raw)))
                     perf = pick_performance(p, series, spy_series)
                     perf["evidence"] = p.get("evidence", "")
@@ -278,12 +288,15 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # Record this session's picks (gated ones too — for raw-signal measurement) so future
     # scoreboards can track them. Idempotent upsert; never blocks delivery.
     if picks_cfg.get("enabled", True):
-        from .picks import pick_from_card
-        cand_by_ticker = {c.ticker: c for c in chosen}
-        recs = [pick_from_card(card, cand_by_ticker[card.ticker], session)
-                for card in cards if card.ticker in cand_by_ticker]
-        if recs:
-            state.record_picks(recs, session)
+        try:
+            from .picks import pick_from_card
+            cand_by_ticker = {c.ticker: c for c in chosen}
+            recs = [pick_from_card(card, cand_by_ticker[card.ticker], session)
+                    for card in cards if card.ticker in cand_by_ticker]
+            if recs:
+                state.record_picks(recs, session)
+        except Exception as exc:  # noqa: BLE001 — ledger write must not crash a delivered run
+            print(f"scout: recording picks failed ({redact_secrets(str(exc))})", file=sys.stderr)
     if result.configured and not result.all_ok:
         return 2
     return 0

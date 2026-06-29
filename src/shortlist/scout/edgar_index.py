@@ -160,15 +160,15 @@ def _dedup_by_accession(filings):
 
 
 def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=True,
-                                 marquee_boost=0.2, mktcap_floor_ok=None):
+                                 marquee_boost=0.2):
     """Pure aggregation: records -> one Emission per resolved ticker (initial 13D only).
 
     record: {ticker, cik, subject_name, activist, form, accession}. Placeholder tickers
     (unresolved subjects) are skipped so they can't form a phantom candidate. Dedup is on
     the resolved TICKER (co-filers on the same target collapse to one emission). SPAC/shell
     subjects and affiliate filings (filer name echoes the subject) are dropped by config;
-    a marquee (credible) activist boosts strength. `mktcap_floor_ok(ticker)->bool`, when
-    given, drops sub-floor names (the caller resolves market cap)."""
+    a marquee (credible) activist boosts strength. The subject CIK is carried on the
+    Emission so the selection ledger can re-resolve a renamed ticker later."""
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         tkr = _is_real_ticker(r.get("ticker"))
@@ -183,18 +183,18 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
 
     out: list[Emission] = []
     for tkr, rows in sorted(by_ticker.items()):
-        if mktcap_floor_ok is not None and not mktcap_floor_ok(tkr):
-            continue
+        subject = rows[0].get("subject_name", "") or tkr
         activists = sorted({r.get("activist", "") or "" for r in rows})
         n = len(activists)
         marquee = next((marquee_activist(a) for a in activists if marquee_activist(a)), None)
         strength = min(1.0, 0.7 + (marquee_boost if marquee else 0.0)
                        + min(0.1, 0.05 * (n - 1)))
-        who = marquee or (activists[0] if activists else tkr)
+        # fall back to the subject when no filer name parsed (a deliberately-kept valid 13D)
+        who = marquee or next((a for a in activists if a), None) or subject
         who_part = who if n == 1 else f"{n} filers incl. {who}"
-        subject = rows[0].get("subject_name", "") or tkr
         ev = f"Activist 13D: {who_part} → {subject}"
-        out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True))
+        out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True,
+                            cik=rows[0].get("cik")))
     return out
 
 

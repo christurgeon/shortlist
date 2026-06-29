@@ -15,6 +15,8 @@ class Emission:
     strength: float        # 0..1, source-normalized
     evidence: str          # human-readable, for the report
     is_discovery: bool     # True = can originate an unknown ticker; False = confluence-only
+    cik: str | None = None  # optional EDGAR CIK (carried by filing-based signals so the
+                            # selection ledger can re-resolve a renamed ticker; None elsewhere)
 
 
 @dataclass
