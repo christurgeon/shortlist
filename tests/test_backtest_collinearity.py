@@ -58,3 +58,72 @@ def test_pairs_registry_includes_residual_vs_momentum():
     # momentum (it IS momentum, de-betaed) — the diagnostic exists to confirm it
     # dominates on rank IC, not that it is orthogonal.
     assert ("residual_momentum", "momentum") in _COLLINEARITY_PAIRS
+
+
+# ---------------------------------------------------------------------------
+# Integration: momentum-panel observations feed _collinearity correctly (§2)
+# ---------------------------------------------------------------------------
+
+def test_momentum_collinearity_yields_price_axis_pair():
+    """Integration: a MomentumSignalSource observation panel, fed through
+    _collinearity, produces the load-bearing pct_to_52w_high~price_vs_200dma pair.
+
+    Pins two things jointly:
+      (a) MomentumSignalSource emits both `pct_to_52w_high` and `price_vs_200dma`
+          axes when those bands are in thresholds;
+      (b) _collinearity finds the pair (registered in _COLLINEARITY_PAIRS) and
+          returns a float.
+
+    Three names are required — the cross_signal_xs_corr n>=3 guard means fewer
+    than 3 co-present names per date returns None (not a float), and the pair
+    would be absent from the result dict.  The names are given distinct price
+    trajectories (one rising, two declining at different rates) so both
+    pct_to_52w_high and price_vs_200dma have non-degenerate rank vectors.
+    """
+    from datetime import timedelta
+
+    from shortlist.backtest.engine import collect_observations, observation_grid
+    from shortlist.backtest.prices import PriceHistory
+    from shortlist.backtest.signals import MomentumSignalSource
+
+    d0 = date(2020, 1, 1)
+    n = 300
+
+    # Three names: rising, slowly declining, faster declining.
+    # Declining names land below their 52-week high AND below the 200dma,
+    # giving distinct, non-tied signal values so the rank correlation is defined.
+    hists = {
+        "AAA": PriceHistory("AAA",
+                            [d0 + timedelta(days=i) for i in range(n)],
+                            [150.0 + 0.5 * i for i in range(n)]),   # rising → at 52wk high
+        "BBB": PriceHistory("BBB",
+                            [d0 + timedelta(days=i) for i in range(n)],
+                            [180.0 - 0.1 * i for i in range(n)]),   # slow decline
+        "CCC": PriceHistory("CCC",
+                            [d0 + timedelta(days=i) for i in range(n)],
+                            [200.0 - 0.2 * i for i in range(n)]),   # faster decline
+    }
+    spy = PriceHistory("SPY",
+                       [d0 + timedelta(days=i) for i in range(n)],
+                       [100.0 + 0.1 * i for i in range(n)])
+
+    thresholds = {
+        "price_vs_200dma": [-0.10, 0.30],
+        "rel_strength_6m": [-0.15, 0.25],
+        "eps_revision":    [-0.05, 0.10],
+        "pct_to_52w_high": [0.70, 1.00],
+    }
+    src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
+
+    # Grid within the histories' date range, after >= 200 closes have accumulated.
+    # d0 + 200 days ~ 2020-07-18; end within the 300-day window (~ 2020-10-25).
+    grid = observation_grid(date(2020, 8, 1), date(2020, 10, 1), 1)
+    obs = collect_observations(src, sorted(hists.keys()), grid)
+
+    result = _collinearity(obs)
+    assert "pct_to_52w_high~price_vs_200dma" in result, (
+        f"Expected 'pct_to_52w_high~price_vs_200dma' in collinearity result; "
+        f"got keys={list(result)}")
+    val = result["pct_to_52w_high~price_vs_200dma"]
+    assert isinstance(val, float), f"Expected float, got {type(val)}: {val}"
+    assert -1.0 <= val <= 1.0, f"Correlation {val!r} out of [-1, 1]"
