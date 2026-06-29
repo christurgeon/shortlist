@@ -18,7 +18,7 @@ import httpx
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 # unit/warrant/right suffixes whose base, IF also a ticker of the same CIK, is the common
 _UNIT_SUFFIX = re.compile(r"^(?P<base>[A-Z]{2,})(?:U|W|R|WS)$")
-_PREF_SUFFIX = re.compile(r"^(?P<base>[A-Z]{1,})-P[A-Z]?$")
+_PREF_SUFFIX = re.compile(r"^(?P<base>[A-Z]+)-P[A-Z]?$")
 
 
 def _norm_cik(cik: str | int) -> str:
