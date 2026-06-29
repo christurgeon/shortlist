@@ -11,7 +11,7 @@ import warnings
 from datetime import date, timedelta
 from pathlib import Path
 
-_EMPTY: dict = {"screened": {}, "runs": [], "held": []}
+_EMPTY: dict = {"screened": {}, "runs": [], "held": [], "picks": {}}
 
 
 class ScoutState:
@@ -79,3 +79,28 @@ class ScoutState:
 
     def is_held(self, ticker: str) -> bool:
         return ticker.upper() in self._data.get("held", [])
+
+    # --- selection ledger (picks tracked over time) ---
+    def record_picks(self, picks, session: date) -> None:
+        """Keyed upsert of the session's surfaced picks. `.setdefault` keeps old state
+        files (which predate the "picks" key) forward-compatible; re-running a session
+        updates rather than duplicates. `picks` is a list of objects with .ticker +
+        .to_dict()."""
+        bucket = self._data.setdefault("picks", {}).setdefault(session.isoformat(), {})
+        for p in picks:
+            bucket[p.ticker.upper()] = p.to_dict()
+        self._save()
+
+    def recent_picks(self, on: date, lookback_days: int) -> list[dict]:
+        """All recorded picks within the trailing window (flattened, newest sessions
+        first). Tolerates malformed session keys (skips them)."""
+        cutoff = on - timedelta(days=lookback_days)
+        out: list[dict] = []
+        for sess in sorted(self._data.get("picks", {}), reverse=True):
+            try:
+                if date.fromisoformat(sess) < cutoff:
+                    continue
+            except ValueError:
+                continue
+            out.extend(self._data["picks"][sess].values())
+        return out

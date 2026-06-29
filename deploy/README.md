@@ -21,6 +21,17 @@ equity close (22:30 UTC / 18:30 ET) and deliver a ranked Telegram report.
 > **These units are NOT auto-installed.** Copy them manually after reviewing the
 > paths for your install location.
 
+> **Arming the daily push (ships OFF).** The autonomous push is feature-flagged
+> off (`config.yaml: scout.daily_push.enabled: false`); set it `true` to arm it.
+> For a lean **activist-catalyst digest** that surfaces names to pass to `/deep`
+> without the daily Claude/FMP-research burn, also set
+> `scout.daily_push.research: false` — the run does discover → screen → gate →
+> rank and emits a copy-paste `/deep` block plus a prior-picks scoreboard
+> (return-since-selection vs SPY). The keyless, **VPS-safe** `edgar_activist_13d`
+> discovery originator (fresh SCHEDULE 13D activist stakes) is on by default and
+> works where the Yahoo screener is WAF-blocked. Picks are journaled to
+> `state/scout_state.json` (`picks`) so the scoreboard can track them over time.
+
 ## Turnkey installer
 
 `install_opt_shortlist.sh` automates the whole install: it syncs the repo to

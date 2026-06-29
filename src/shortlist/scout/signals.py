@@ -355,6 +355,63 @@ class EdgarForm4Signal:
 register("edgar_form4", EdgarForm4Signal)
 
 
+class EdgarActivist13DSignal:
+    """Initial SCHEDULE 13D activist stakes from the SEC daily index (discovery).
+
+    A fresh 13D = an investor crossed 5% with intent to influence — a leading catalyst
+    for a re-rating, skewed toward smaller/interesting US names. Keyless and VPS-safe
+    (pure SEC EDGAR; no Yahoo WAF). We screen after-close, so these are activist
+    re-rating candidates to WATCH / pass to /deep (the post-filing drift), not early-pop
+    trades. The raw firehose is noise-dominated, so quality.py drops SPAC/affiliate noise
+    and a curated marquee list boosts credible activists; the scorer stays the skeptic.
+    """
+    name = "edgar_activist_13d"
+    is_discovery = True
+
+    def __init__(self, identity: str | None = None, max_filings: int = 300,
+                 drop_spacs: bool = True, drop_affiliates: bool = True,
+                 marquee_boost: float = 0.2, cache_dir: str = ".cache/sec_tickers") -> None:
+        self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self.max_filings = max_filings
+        self.drop_spacs = drop_spacs
+        self.drop_affiliates = drop_affiliates
+        self.marquee_boost = marquee_boost
+        self.cache_dir = cache_dir
+        self._resolver: dict[str, str] | None = None
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from .cik_tickers import load_cik_to_ticker, resolve_ticker
+        from .edgar_index import (activist_stakes_from_records,
+                                  fetch_recent_activist_records)
+        try:
+            if self._resolver is None:
+                self._resolver = load_cik_to_ticker(self.identity, cache_dir=self.cache_dir)
+            resolver = self._resolver
+
+            def resolve(cik):
+                return resolve_ticker(cik, resolver)
+
+            records, used = fetch_recent_activist_records(
+                session, self.max_filings, self.identity, resolve)
+        except Exception as e:  # noqa: BLE001 — degrade, never crash the run
+            self._status = (False, redact_secrets(str(e)))
+            return []
+        ems = activist_stakes_from_records(
+            records, drop_spacs=self.drop_spacs, drop_affiliates=self.drop_affiliates,
+            marquee_boost=self.marquee_boost)
+        fallback = "" if used == session else f"; {session} index empty, used {used}"
+        self._status = (True, f"{len(ems)} activist 13D from {len(records)} filings"
+                        f" (cap {self.max_filings}){fallback}")
+        return ems
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("edgar_activist_13d", EdgarActivist13DSignal)
+
+
 class WsbHypeSignal:
     """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
     rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""

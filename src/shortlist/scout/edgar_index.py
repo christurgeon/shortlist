@@ -14,6 +14,8 @@ from datetime import date, timedelta
 from ..providers._form4 import classify_code
 from .calendar import is_trading_day
 from .models import Emission
+from .quality import (is_affiliate_filing, is_initial_13d, is_spac_or_shell,
+                      marquee_activist)
 
 # Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
 # foreign filers). They are NOT real symbols — left unfiltered they bucket together
@@ -126,6 +128,134 @@ def fetch_recent_records(session: date, max_filings: int, identity: str,
     d = session
     for _ in range(lookback + 1):
         recs = fetch(d, max_filings, identity)
+        if recs:
+            return recs, d
+        d -= timedelta(days=1)
+        while not is_trading_day(d):
+            d -= timedelta(days=1)
+    return [], session
+
+
+# --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---
+# A fresh initial SCHEDULE 13D = an investor crossed 5% with intent to influence: a
+# leading catalyst for a re-rating. We enter after-close (T+1), so the catchable edge is
+# the post-filing DRIFT, not the filing-day pop — these are "watch / pass to /deep"
+# candidates, not early-pop trades. The raw firehose is noise-dominated (SPAC shells,
+# foreign holdcos, affiliate/sponsor filings), so quality.py filters it; the scorer + the
+# market-cap gate remain the downstream skeptic.
+
+
+def _dedup_by_accession(filings):
+    """edgartools get_filings returns every row TWICE (verified 2026-06-28). Keep the
+    first occurrence per accession so co-filer counts and header fetches aren't doubled."""
+    seen: set = set()
+    out = []
+    for f in filings:
+        acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+        if acc in seen:
+            continue
+        seen.add(acc)
+        out.append(f)
+    return out
+
+
+def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=True,
+                                 marquee_boost=0.2):
+    """Pure aggregation: records -> one Emission per resolved ticker (initial 13D only).
+
+    record: {ticker, cik, subject_name, activist, form, accession}. Placeholder tickers
+    (unresolved subjects) are skipped so they can't form a phantom candidate. Dedup is on
+    the resolved TICKER (co-filers on the same target collapse to one emission). SPAC/shell
+    subjects and affiliate filings (filer name echoes the subject) are dropped by config;
+    a marquee (credible) activist boosts strength. The subject CIK is carried on the
+    Emission so the selection ledger can re-resolve a renamed ticker later."""
+    by_ticker: dict[str, list[dict]] = defaultdict(list)
+    for r in records:
+        tkr = _is_real_ticker(r.get("ticker"))
+        if not tkr or not is_initial_13d(r.get("form", "")):
+            continue
+        subj, act = r.get("subject_name", "") or "", r.get("activist", "") or ""
+        if drop_spacs and is_spac_or_shell(subj):
+            continue
+        if drop_affiliates and is_affiliate_filing(act, subj):
+            continue
+        by_ticker[tkr].append(r)
+
+    out: list[Emission] = []
+    for tkr, rows in sorted(by_ticker.items()):
+        subject = rows[0].get("subject_name", "") or tkr
+        activists = sorted({r.get("activist", "") or "" for r in rows})
+        n = len(activists)
+        marquee = next((marquee_activist(a) for a in activists if marquee_activist(a)), None)
+        strength = min(1.0, 0.7 + (marquee_boost if marquee else 0.0)
+                       + min(0.1, 0.05 * (n - 1)))
+        # fall back to the subject when no filer name parsed (a deliberately-kept valid 13D)
+        who = marquee or next((a for a in activists if a), None) or subject
+        who_part = who if n == 1 else f"{n} filers incl. {who}"
+        ev = f"Activist 13D: {who_part} → {subject}"
+        out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True,
+                            cik=rows[0].get("cik")))
+    return out
+
+
+def fetch_activist_records(session: date, max_filings: int, identity: str,
+                           resolve_ticker_fn) -> list[dict]:
+    """Live: pull the SCHEDULE 13D (+ legacy SC 13D) daily index for `session`, dedup the
+    doubled rows, parse each header into a record. `resolve_ticker_fn(cik)->ticker|None`
+    maps the SUBJECT company's CIK to its ticker. Never raises (degrades to [])."""
+    try:
+        from edgar import get_filings, set_identity  # edgartools (optional dep)
+        set_identity(identity)
+        rows = []
+        for form in ("SCHEDULE 13D", "SC 13D"):
+            try:
+                rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
+            except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
+                continue
+        records: list[dict] = []
+        for f in _dedup_by_accession(rows)[:max_filings]:
+            try:
+                if not is_initial_13d(getattr(f, "form", "")):
+                    continue  # exclude /A amendments (prefix match returns them)
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if not subs:
+                    continue  # malformed/empty header -> skip this row, never abort the batch
+                ci = subs[0].company_information
+                cik = getattr(ci, "cik", None)
+                if not cik:
+                    continue
+                tkr = resolve_ticker_fn(cik)
+                if not tkr:
+                    continue  # unresolved (foreign issuer absent from company_tickers.json)
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    activist = (filers[0].company_information.name if filers else "") or ""
+                except Exception:  # noqa: BLE001 — a bad FILER name must not drop a valid subject
+                    activist = ""
+                acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                records.append({
+                    "ticker": tkr, "cik": f"{int(cik):010d}",
+                    "subject_name": getattr(ci, "name", "") or "",
+                    "activist": activist, "form": getattr(f, "form", ""),
+                    "accession": acc})
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return records
+    except Exception:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        return []
+
+
+def fetch_recent_activist_records(session: date, max_filings: int, identity: str,
+                                  resolve_ticker_fn, lookback: int = 4,
+                                  _fetch=None) -> tuple[list[dict], date]:
+    """Most-recent *published* SCHEDULE 13D index at or before `session` (the daily index
+    isn't published until ~02:00 UTC, so the after-close run walks back to the last
+    published session). Returns (records, session_used). Never raises."""
+    fetch = _fetch or fetch_activist_records
+    d = session
+    for _ in range(lookback + 1):
+        recs = fetch(d, max_filings, identity, resolve_ticker_fn)
         if recs:
             return recs, d
         d -= timedelta(days=1)

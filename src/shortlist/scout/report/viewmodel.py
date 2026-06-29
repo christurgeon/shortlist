@@ -111,6 +111,8 @@ class ReportVM:
     notes: list[str]
     macro: "object | None" = None   # data.macro.MacroContext | None (run-level)
     portfolio: "object | None" = None   # shortlist.portfolio.PortfolioSummary | None
+    deep_block: list[str] = field(default_factory=list)   # non-gated tickers for the /deep handoff
+    prior_picks: list[dict] = field(default_factory=list)  # scoreboard rows (pick_performance dicts)
 
 
 def _claim(x) -> str:
@@ -208,14 +210,23 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
 
 
 def build_view_model(cards, manifest: RunManifest, *,
-                     assessments: dict[str, dict], macro=None, portfolio=None) -> ReportVM:
+                     assessments: dict[str, dict], macro=None, portfolio=None,
+                     prior_picks=None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
+    leaders = [_leader_vm(c, assessments) for c in ordered]
+    # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
+    # in conviction (rank_key) order. Suppressed for /portfolio reports — suggesting you
+    # /deep names you already hold is noise (the section is for discovery/screen digests).
+    deep_block = ([ld.ticker for ld in leaders if not ld.gates and ld.scored]
+                  if portfolio is None else [])
     return ReportVM(
         session=manifest.session,
-        leaders=[_leader_vm(c, assessments) for c in ordered],
+        leaders=leaders,
         signals=[SignalStatusVM(s.name, s.ran, s.detail) for s in manifest.signals],
         funnel=FunnelVM(manifest.raw, manifest.after_dedup, manifest.after_prefilter,
                         manifest.screened, manifest.dropped_for_budget),
         notes=list(manifest.notes),
         macro=macro,
-        portfolio=portfolio)
+        portfolio=portfolio,
+        deep_block=deep_block,
+        prior_picks=list(prior_picks or []))

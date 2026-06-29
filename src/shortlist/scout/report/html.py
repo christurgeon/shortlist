@@ -207,6 +207,11 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
 .note{display:flex; gap:8px; color:var(--text-3); font-size:12.5px; padding:4px 0}
 .note::before{content:"›"; color:var(--accent); font-weight:700}
 .macro{font:600 12.5px/1.5 var(--mono); color:var(--text-2); letter-spacing:.01em}
+.deep{display:flex; flex-direction:column; gap:4px}
+.deepcmd{font:600 13px/1.5 var(--mono); color:var(--text); background:var(--surface);
+         border:1px solid var(--line); border-radius:var(--radius); padding:4px 8px}
+.picks{display:flex; flex-direction:column; gap:3px}
+.pick{font:13px/1.5 var(--mono); color:var(--text-2)}
 
 @media (min-width:560px){ body{padding-left:22px; padding-right:22px} }
 @media (prefers-reduced-motion:reduce){ *{animation:none !important} }

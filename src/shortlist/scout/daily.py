@@ -23,7 +23,7 @@ from .state import ScoutState
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 
-_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype"}
+_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype", "edgar_activist_13d"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -38,6 +38,7 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
 def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs."""
     wsb = scout_cfg.get("wsb_hype", {})
+    act = scout_cfg.get("activist_13d", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -46,7 +47,67 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
                           "min_mention_delta_pct": wsb.get("min_mention_delta_pct", 0.5),
                           "top_n": wsb.get("top_n", 15),
                           "deny_list": wsb.get("deny_list", [])},
+        "edgar_activist_13d": {"identity": os.environ.get("SEC_IDENTITY"),
+                               "max_filings": act.get("daily_cap", 300),
+                               "drop_spacs": act.get("drop_spacs", True),
+                               "drop_affiliates": act.get("drop_affiliates", True),
+                               "marquee_boost": act.get("marquee_boost", 0.2)},
     }
+
+
+def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
+    """Prior-picks scoreboard: for each recent pick, return-since-selection vs SPY from a
+    fresh keyless Yahoo chart series (split-safe). Bounded by scoreboard_max; per-name
+    failure-isolated; never raises (returns [] on any failure). Uses the chart endpoint
+    (VPS-safe), not the WAF-blocked screener."""
+    import asyncio
+
+    lookback = picks_cfg.get("scoreboard_lookback_days", 120)
+    cap = picks_cfg.get("scoreboard_max", 10)
+    prior = state.recent_picks(session, lookback)[:cap]   # newest sessions first
+    if not prior:
+        return []
+
+    # Re-resolve each pick's CIK -> CURRENT ticker so a symbol reassigned within the
+    # lookback window doesn't fetch the wrong company's prices (spec §14 #16). Falls back
+    # to the stored ticker when the CIK is absent/unresolvable. Day-cached, keyless.
+    from .cik_tickers import load_cik_to_ticker, resolve_ticker
+    identity = os.environ.get("SEC_IDENTITY") or "shortlist-scout turgechr@duck.com"
+    cik_index = load_cik_to_ticker(identity)
+
+    def _current_ticker(p: dict) -> str:
+        return resolve_ticker(p.get("cik"), cik_index) or p["ticker"]
+
+    async def _run() -> list[dict]:
+        from ..data.sources import (YahooSource, _closes_from_chart,
+                                     _dates_from_chart)
+        from .picks import pick_performance
+        src = YahooSource()
+        try:
+            spy_raw = await src._get_chart("SPY")
+            spy_series = list(zip(_dates_from_chart(spy_raw), _closes_from_chart(spy_raw)))
+            rows: list[dict] = []
+            for p in prior:
+                try:
+                    raw = await src._get_chart(_current_ticker(p))
+                    series = list(zip(_dates_from_chart(raw), _closes_from_chart(raw)))
+                    perf = pick_performance(p, series, spy_series)
+                    perf["evidence"] = p.get("evidence", "")
+                    rows.append(perf)
+                except Exception:  # noqa: BLE001 — one bad quote must not sink the scoreboard
+                    continue
+            return rows
+        finally:
+            await src.aclose()
+
+    try:
+        rows = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 — scoreboard is best-effort, never blocks the run
+        print(f"scout: scoreboard skipped ({redact_secrets(str(exc))})", file=sys.stderr)
+        return []
+    # Best performers first; rows with no excess (missing SPY/quote) sort last.
+    rows.sort(key=lambda r: (r.get("excess") is not None, r.get("excess") or 0.0), reverse=True)
+    return rows
 
 
 def run(config: dict, *, demo: bool, today: date) -> int:
@@ -169,18 +230,23 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     macro = None if demo else fetch_macro(config)  # --demo is offline: no FRED call
     cards = run_harness([c.ticker for c in chosen], sources, config, macro=macro)
 
-    # 3. Auto-research (guardrailed) — skipped in demo
+    # 3. Auto-research (guardrailed) — skipped in demo, and skippable by config so the
+    # daily push can run as a screen+gate+rank digest (surface names to pass to /deep)
+    # without the daily Claude/FMP-research burn. Default True preserves the legacy push.
     briefs: dict[str, str] = {}
     assessments: dict[str, dict] = {}
     researched: list[str] = []
     notes: list[str] = []
-    if not demo:
+    research_enabled = scout_cfg.get("daily_push", {}).get("research", True)
+    if not demo and research_enabled:
         briefs, assessments, researched, note, skipped = _research_phase(
             cards, config, scout_cfg)
         if note:
             notes.append(note)
         for t, why in skipped.items():
             notes.append(f"{t}: research unavailable ({why})")
+    elif not demo:
+        notes.append("research disabled by config (scout.daily_push.research=false)")
 
     manifest = RunManifest(
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
@@ -197,7 +263,13 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     from .notify import TelegramNotifier, deliver
     from .report import build_report
     rep_cfg = scout_cfg.get("report", {})
-    artifacts = build_report(cards, manifest, assessments=assessments, macro=macro)
+    # Prior-picks scoreboard (read BEFORE recording today's picks) so the digest shows how
+    # past selections performed vs SPY — the over-time tracking deliverable. Failure-isolated.
+    picks_cfg = scout_cfg.get("picks", {})
+    prior_picks = (_build_scoreboard(state, session, picks_cfg)
+                   if picks_cfg.get("enabled", True) else [])
+    artifacts = build_report(cards, manifest, assessments=assessments, macro=macro,
+                             prior_picks=prior_picks)
     caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
 
     notifier = TelegramNotifier()
@@ -213,6 +285,18 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     _persist(scout_cfg, manifest, artifacts)
     state.mark_run_completed(session)
     state.record_screened([c.ticker for c in cards], session)
+    # Record this session's picks (gated ones too — for raw-signal measurement) so future
+    # scoreboards can track them. Idempotent upsert; never blocks delivery.
+    if picks_cfg.get("enabled", True):
+        try:
+            from .picks import pick_from_card
+            cand_by_ticker = {c.ticker: c for c in chosen}
+            recs = [pick_from_card(card, cand_by_ticker[card.ticker], session)
+                    for card in cards if card.ticker in cand_by_ticker]
+            if recs:
+                state.record_picks(recs, session)
+        except Exception as exc:  # noqa: BLE001 — ledger write must not crash a delivered run
+            print(f"scout: recording picks failed ({redact_secrets(str(exc))})", file=sys.stderr)
     if result.configured and not result.all_ok:
         return 2
     return 0
