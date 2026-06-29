@@ -6,6 +6,46 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Activist 13D discovery + selection ledger — Phase 2 follow-ups (2026-06-29)
+
+Shipped (#93; CLAUDE.md "Activist 13D discovery + selection ledger", AUTONOMOUS_SCOUT §4):
+the `EdgarActivist13DSignal` discovery originator (initial SCHEDULE 13D), the common-stock
+CIK→ticker resolver, `quality.py` filters, the selection ledger + excess-over-SPY scoreboard,
+and the `scout.daily_push.research: false` digest mode with a `/deep` block. **Discovery-only —
+no scored leg** (it ships as a defensible prior; the ledger measures it). Deferred, in priority
+order:
+
+1. **Forward-return analysis of the ledger ← the whole point of the ledger.** Once daily picks
+   accumulate, analyze the scoreboard: excess-over-SPY hit-rate at 1/3/6/12m and the
+   `activist_13d` vs `edgar_form4` cohort split (the `catalyst` field). This converts the
+   defensible-prior signal weight (1.5) into evidence and tests the after-close-drift thesis
+   (Bebchuk-Brav-Jiang 2015). **Gated on accumulated picks** — arm `scout.daily_push.enabled`
+   (+ `research: false` for the lean digest) and let the timer run.
+2. **Pre-screen market-cap floor in the funnel.** v1 relies on the post-screen
+   `below_min_mktcap` gate + the non-gated `/deep`-block filter, so a micro-cap shell can still
+   consume one of the ~10/day FMP deep-screen slots before exclusion. A keyless pre-screen floor
+   would protect the budget, but there's no clean keyless market-cap source (needs shares×price),
+   so it was deferred (spec §14). Revisit only if budget pressure bites at 13D volume (~4-12/day).
+3. **8-K + FINRA short-interest discovery originators.** Deferred from v1 (scoped to 13D). The
+   natural next VPS-safe originators to widen the funnel: curated 8-K item classes (1.01/8.01/5.02)
+   and FINRA short-interest jumps (`FinraSource` already bulk-pulls the data). Each is a one-file
+   `SignalSource` against the existing interface (+ `daily.py` registry wiring).
+4. **SCHEDULE 13D/A amendment signal.** `scout.activist_13d.include_amendments` exists (off —
+   amendments run ~20-46/day and are spammy), but a stake-*increase* amendment is a real
+   escalation. A future version could surface only amendments that raise the stake materially.
+   Measure before enabling.
+5. **Stake-% extraction.** The % owned lives in the filing body, not the index/header, so v1
+   doesn't parse it (strength is 0.7 + marquee/co-filer bumps). A larger stake is a stronger
+   signal — parse it if item 1's cohort analysis shows it discriminates.
+6. **Marquee-activist alias map** (`scout/quality.py:_MARQUEE`) is curated + non-exhaustive (fires
+   on a minority of filings by design — substring-anywhere match, narrow filer-name space). Extend
+   as new credible activists appear.
+
+**Status:** not started — all deferred at ship. Item 1 is the keystone and is gated on accumulated
+daily picks; 2-6 are independent. None are correctness blockers (the feature is complete + reviewed).
+
+---
+
 ## §2 price-refinement axes — measured, NONE wired (2026-06-28)
 
 Built three OHLCV-only price signals as **backtest-only measurement axes** on the live-price
