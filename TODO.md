@@ -6,6 +6,21 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Daily scout push armed in config — VPS deploy + first run pending (2026-06-29)
+
+`scout.daily_push.enabled` is now `true` (#95; lean digest, `research: false`) — but the flag
+alone does nothing until the **VPS** runs it. Remaining operator steps: sync the repo to the box
+and enable the `shortlist-scout` systemd timer (`deploy/shortlist-scout.timer`, or
+`deploy/install_opt_shortlist.sh`), with `.env` present (`SEC_IDENTITY` ±
+`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`; without the Telegram pair it journals to `scout/<date>/`
++ stdout and still records picks). Don't read `enabled: true` as "live" — verify the timer on the
+box. Until it runs nightly, no picks accumulate, so the selection-ledger forward-return analysis
+(item 1 of the next section) stays blocked.
+
+**Status:** config armed (#95); VPS deployment + first nightly run pending (operator action).
+
+---
+
 ## Activist 13D discovery + selection ledger — Phase 2 follow-ups (2026-06-29)
 
 Shipped (#93; CLAUDE.md "Activist 13D discovery + selection ledger", AUTONOMOUS_SCOUT §4):
