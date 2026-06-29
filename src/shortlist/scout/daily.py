@@ -23,7 +23,8 @@ from .state import ScoutState
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 
-_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype", "edgar_activist_13d"}
+_DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
+                           "edgar_activist_13d", "finra_short_interest"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -35,10 +36,14 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
             if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
-def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
-    """Build per-signal constructor kwargs from config + env for live (non-demo) runs."""
+def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None) -> dict[str, dict]:
+    """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
+
+    `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
+    newer FINRA cycle (the bi-monthly cadence guard)."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
+    si = scout_cfg.get("short_interest", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -52,6 +57,15 @@ def _signal_kwargs(scout_cfg: dict) -> dict[str, dict]:
                                "drop_spacs": act.get("drop_spacs", True),
                                "drop_affiliates": act.get("drop_affiliates", True),
                                "marquee_boost": act.get("marquee_boost", 0.2)},
+        "finra_short_interest": {"last_settlement": last_finra_settlement,
+                                 "min_jump_pct": si.get("min_jump_pct", 0.25),
+                                 "min_dtc": si.get("min_dtc", 3.0),
+                                 "max_dtc": si.get("max_dtc", 10.0),
+                                 "max_prior_dtc": si.get("max_prior_dtc", 10.0),
+                                 "min_avg_daily_volume": si.get("min_avg_daily_volume", 100_000.0),
+                                 "min_prev_short_shares": si.get("min_prev_short_shares", 50_000.0),
+                                 "deny_list": si.get("deny_list", []),
+                                 "top_n": si.get("top_n", 10)},
     }
 
 
@@ -152,7 +166,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         boosters = []
     else:
         all_names = _enabled_signal_names(scout_cfg)
-        kwargs_by_name = _signal_kwargs(scout_cfg)
+        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -178,6 +192,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # re-discovered next run (one extra single-request bail, never a spam loop).
             if getattr(s, "waf_blocked", False) and not demo:
                 state.mark_yahoo_blocked(session)
+            # Record the FINRA cycle just processed so the same bi-monthly cohort isn't
+            # re-surfaced daily until a newer settlement publishes (the cadence guard).
+            if s.name == "finra_short_interest" and not demo and getattr(s, "settlement", None):
+                state.set_finra_cycle(s.settlement)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are

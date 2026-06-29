@@ -72,6 +72,18 @@ class ScoutState:
         self._data["yahoo_blocked_until"] = through.isoformat()
         self._save()
 
+    # --- FINRA settlement cycle (short-interest originator emits once per new cycle) ---
+    def finra_last_settlement(self) -> str | None:
+        """The last FINRA settlement cycle the short-interest signal emitted on. Absent
+        key (old state files) reads as None — back-compatible, no migration."""
+        return self._data.get("finra_last_settlement")
+
+    def set_finra_cycle(self, settlement: str) -> None:
+        """Record that the short-interest signal has emitted on this settlement cycle, so
+        the same bi-monthly cohort isn't re-surfaced daily until a newer cycle publishes."""
+        self._data["finra_last_settlement"] = settlement
+        self._save()
+
     # --- held list ---
     def set_held(self, tickers: list[str]) -> None:
         self._data["held"] = [t.upper() for t in tickers]
