@@ -6,6 +6,28 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## DEF 14A proxy — Phase 2 follow-ups (2026-06-28)
+
+The DEF 14A proxy reader shipped as a research-only context line (#90; CLAUDE.md
+"Proxy statement (DEF 14A) …", ASSESSMENT_GAPS §3.1). Deferred, in priority order:
+
+1. **`pay_for_performance_alignment` backtest axis.** Unlike the other narrative research
+   inputs, the proxy's Pay-vs-Performance table is *structured XBRL* (Item 402(v),
+   `ProxyStatement.pay_vs_performance`), so it could clear the rank-IC bar and become a
+   scored leg. Caveat: 402(v) uses ECD-taxonomy tags (`ecd:PeoActuallyPaidCompAmt` …) from
+   the proxy's own XBRL — **confirm these are reachable from the companyfacts/XBRL backtest
+   path** (they may not be; the fallback is the snapshot-replay path once accumulation
+   captures proxy facts). Then measure rank IC + collinearity vs `quality`/`insider` before
+   wiring or rejecting, like the PREDICTIVE_SIGNALS legs. Unfitted until measured.
+2. **Narrative sections (related-party / CD&A).** Highest-value-but-unextractable in v1 (no
+   edgartools section splitter; ~350K-char raw text) — needs custom section extraction to
+   surface as quote-verifiable haystack text. Heavier build.
+
+**Status:** not started — both deferred at ship; item 1 gated on confirming 402(v) ECD-tag
+reachability (or on accumulated proxy-fact snapshots).
+
+---
+
 ## negative_fcf excuse — measurement path (scope B, follow-up to #83) (2026-06-26)
 
 #83 populated `fcf_positive` on the XBRL panel (`_xbrl_facts.panel_to_metrics`, with a
