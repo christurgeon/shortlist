@@ -244,6 +244,57 @@ def residual_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _norm(m.residual_momentum, *t["residual_momentum"])
 
 
+def pct_to_52w_high_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone nearness-to-52-week-high axis (George-Hwang 2004): the `pct_to_52w_high`
+    band -> 0..100 (nearer the high scores higher; NOT inverted). Backtest-only measurement
+    axis (like residual_momentum_score) — NO production leg reads it; exists so the backtest
+    can measure its rank IC + the load-bearing collinearity vs price_vs_200dma (both are
+    close/(trailing reference); corr >= 0.5 => duplicate). None when band or metric absent."""
+    if "pct_to_52w_high" not in t or m.pct_to_52w_high is None:
+        return None
+    return _norm(m.pct_to_52w_high, *t["pct_to_52w_high"])
+
+
+def max_daily_return_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone MAX-effect axis (Bali-Cakici-Whitelaw 2011): the INVERTED `max_daily_return`
+    band -> 0..100 (a big lottery-like daily spike scores LOW — it is a negative predictor).
+    Inversion is expressed by the band ordering [high, low] (like accruals_score), so a flipped
+    band would silently score high-MAX high; a monotonicity test pins the direction. Backtest-
+    only. None when band or metric absent."""
+    if "max_daily_return" not in t or m.max_daily_return is None:
+        return None
+    return _norm(m.max_daily_return, *t["max_daily_return"])
+
+
+def vol_scaled_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone risk-managed-momentum axis (Barroso-Santa-Clara 2015): the `vol_scaled_
+    momentum` band -> 0..100 (NOT inverted). Backtest-only; exists so the backtest can measure
+    its rank IC + the load-bearing collinearity vs residual_momentum (the expected cousin).
+    None when band or metric absent."""
+    if "vol_scaled_momentum" not in t or m.vol_scaled_momentum is None:
+        return None
+    return _norm(m.vol_scaled_momentum, *t["vol_scaled_momentum"])
+
+
+def price_vs_200dma_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone price-vs-200dma LEG axis: the production momentum leg `price_vs_200dma`
+    exposed on its own (reusing its existing band) so the leg-level `pct_to_52w_high ~
+    price_vs_200dma` collinearity can be measured (the duplication hides at the leg, not the
+    momentum sub-score). Backtest-only. None when band or metric absent."""
+    if "price_vs_200dma" not in t or m.price_vs_200dma is None:
+        return None
+    return _norm(m.price_vs_200dma, *t["price_vs_200dma"])
+
+
+def rel_strength_6m_score(m: StockMetrics, t: dict) -> Optional[float]:
+    """Standalone rel-strength-6m LEG axis (reuses the production band) — the companion leg-
+    level collinearity reference for pct_to_52w_high / vol_scaled_momentum. Backtest-only.
+    None when band or metric absent."""
+    if "rel_strength_6m" not in t or m.rel_strength_6m is None:
+        return None
+    return _norm(m.rel_strength_6m, *t["rel_strength_6m"])
+
+
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone leverage axis for the backtest: inverted net-debt/EBITDA band ->
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,

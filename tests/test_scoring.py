@@ -1307,3 +1307,44 @@ def test_residmom_backtest_axis():
     assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=-1.0), t) == 0.0
     assert residual_momentum_score(metrics_all_50(), t) is None              # signal absent on all_50
     assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=0.5), {}) is None  # no band
+
+
+# --- §2 price-refinement backtest axes (Task 3) --------------------------
+
+def test_price_refinement_axes_none_when_band_or_metric_absent():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="AAA")
+    m.pct_to_52w_high = 0.9
+    assert scoring.pct_to_52w_high_score(m, {}) is None                       # band absent
+    assert scoring.pct_to_52w_high_score(StockMetrics(ticker="AAA"),
+                                         {"pct_to_52w_high": [0.70, 1.00]}) is None  # metric absent
+
+
+def test_max_daily_return_score_is_monotonically_decreasing():
+    # Inverted band: a BIGGER lottery spike must score LOWER (catches a flipped band).
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    t = {"max_daily_return": [0.15, 0.02]}
+    hi = StockMetrics(ticker="A"); hi.max_daily_return = 0.20
+    lo = StockMetrics(ticker="B"); lo.max_daily_return = 0.02
+    assert scoring.max_daily_return_score(hi, t) < scoring.max_daily_return_score(lo, t)
+
+
+def test_pct_to_52w_high_score_is_monotonically_increasing():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    t = {"pct_to_52w_high": [0.70, 1.00]}
+    near = StockMetrics(ticker="A"); near.pct_to_52w_high = 0.99
+    far = StockMetrics(ticker="B"); far.pct_to_52w_high = 0.72
+    assert scoring.pct_to_52w_high_score(near, t) > scoring.pct_to_52w_high_score(far, t)
+
+
+def test_leg_reference_axes_map_through_existing_bands():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="A"); m.price_vs_200dma = 0.10; m.rel_strength_6m = 0.05
+    t = {"price_vs_200dma": [-0.10, 0.30], "rel_strength_6m": [-0.15, 0.25]}
+    assert 0.0 <= scoring.price_vs_200dma_score(m, t) <= 100.0
+    assert 0.0 <= scoring.rel_strength_6m_score(m, t) <= 100.0
+    assert scoring.price_vs_200dma_score(StockMetrics(ticker="A"), t) is None
