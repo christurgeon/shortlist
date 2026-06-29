@@ -18,6 +18,7 @@ from ..env import redact_secrets
 from ..providers._fmp_insider import is_buy, tx_value
 from ..stats import avg_roic, median_pe
 from ..stats import residual_momentum as _stats_residual_momentum
+from . import finra as _finra
 from .diskcache import read_json_cache, write_json_cache
 from .models import (
     Analyst,
@@ -30,7 +31,6 @@ from .models import (
     NewsFlow,
     Price,
     Profile,
-    ShortInterest,
     SocialSentiment,
     SourceResult,
     Statements,
@@ -763,9 +763,9 @@ class FinraSource(Source):
     by SETTLEMENT DATE so the cache survives the ~2 weeks until the next cycle."""
 
     name = "finra"
-    DATA = "https://api.finra.org/data/group/otcMarket/name/ConsolidatedShortInterest"
-    PARTS = "https://api.finra.org/partitions/group/otcMarket/name/ConsolidatedShortInterest"
-    PAGE = 5000   # FINRA record-max-limit
+    DATA = _finra.FINRA_DATA_URL
+    PARTS = _finra.FINRA_PARTS_URL
+    PAGE = _finra.FINRA_PAGE   # FINRA record-max-limit
 
     def __init__(self, timeout: float = 30.0, cache_dir: str = ".cache/finra"):
         import httpx  # lazy: only needed for live runs
@@ -913,44 +913,15 @@ def _year(d: Any) -> Optional[int]:
 
 
 # --- FINRA short interest (pure helpers) ----------------------------------
-
-def _finra_latest_partition(payload: Any) -> Optional[str]:
-    parts = (payload or {}).get("availablePartitions") or []
-    dates = [p["partitions"][0] for p in parts if p.get("partitions")]
-    return max(dates) if dates else None
-
-
-def _finra_norm_symbol(sym: str) -> str:
-    """Collapse separators so BRK.B / BRK-B / BRKB all match one key."""
-    return (sym or "").upper().replace("-", "").replace(".", "")
-
-
-def _finra_num(row: dict, key: str) -> Optional[float]:
-    v = row.get(key)
-    try:
-        return float(v) if v not in (None, "", "N/A") else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _finra_flag(row: dict, key: str) -> bool:
-    return str(row.get(key, "")).strip().upper() in ("Y", "YES", "TRUE", "1")
-
-
-def _finra_row_to_si(row: dict) -> ShortInterest:
-    return ShortInterest(
-        settlement_date=row.get("settlementDate"),
-        short_shares=_finra_num(row, "currentShortPositionQuantity"),
-        prev_short_shares=_finra_num(row, "previousShortPositionQuantity"),
-        avg_daily_volume=_finra_num(row, "averageDailyVolumeQuantity"),
-        days_to_cover=_finra_num(row, "daysToCoverQuantity"),
-        split_flag=_finra_flag(row, "stockSplitFlag"),
-        revised=_finra_flag(row, "revisionFlag"),
-    )
-
-
-def _finra_index(rows: list) -> dict:
-    return {_finra_norm_symbol(r["symbolCode"]): r for r in rows if r.get("symbolCode")}
+# Single-sourced in data/finra.py so the sync scout fetcher shares one row-shape
+# definition (CLAUDE.md "edit … not in two places"). Re-exported under the historical
+# _finra_* names so call sites + tests that import them from here keep working.
+_finra_latest_partition = _finra.latest_partition
+_finra_norm_symbol = _finra.norm_symbol
+_finra_num = _finra.num
+_finra_flag = _finra.flag
+_finra_row_to_si = _finra.row_to_si
+_finra_index = _finra.index_rows
 
 
 def _match(rows: Any, income_row: dict) -> Optional[dict]:

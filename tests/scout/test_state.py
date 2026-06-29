@@ -38,6 +38,15 @@ def test_yahoo_cooldown_absent_key_is_backward_compatible(tmp_path):
     assert st.yahoo_blocked_until() is None
 
 
+def test_finra_cycle_persists_and_is_backward_compatible(tmp_path):
+    path = tmp_path / "state.json"
+    st = ScoutState(path)
+    assert st.finra_last_settlement() is None       # fresh/old ledger: absent key
+    st.set_finra_cycle("2026-06-15")
+    fresh = ScoutState(path)                          # persists across instances
+    assert fresh.finra_last_settlement() == "2026-06-15"
+
+
 def test_held_list_filters(tmp_path):
     st = ScoutState(tmp_path / "state.json")
     st.set_held(["TSLA"])

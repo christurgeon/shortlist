@@ -26,10 +26,21 @@ order:
    consume one of the ~10/day FMP deep-screen slots before exclusion. A keyless pre-screen floor
    would protect the budget, but there's no clean keyless market-cap source (needs shares×price),
    so it was deferred (spec §14). Revisit only if budget pressure bites at 13D volume (~4-12/day).
-3. **8-K + FINRA short-interest discovery originators.** Deferred from v1 (scoped to 13D). The
-   natural next VPS-safe originators to widen the funnel: curated 8-K item classes (1.01/8.01/5.02)
-   and FINRA short-interest jumps (`FinraSource` already bulk-pulls the data). Each is a one-file
-   `SignalSource` against the existing interface (+ `daily.py` registry wiring).
+3. **8-K + FINRA short-interest discovery originators.** Two VPS-safe originators to widen the funnel.
+   - ✅ **FINRA short-interest jumps — SHIPPED** (`FinraShortInterestSignal`, default OFF; CLAUDE.md
+     "Short-interest discovery (scout)"). Ships as a **CONTESTED prior** (adversarial PnL review:
+     the jump is the *negative* signal — Cohen-Diether-Malloy; DTC a *stronger* negative predictor —
+     Hong et al), so it's a middle-band attention signal at weight 0.5, default-disabled, and the
+     selection ledger earns it a weight via a pre-registered promotion/kill rule (≥30 picks, 6m
+     median excess-over-SPY ≥ 0). Remaining follow-ups: (a) **promotion/kill measurement** — gated
+     on accumulated picks (arm `daily_push` + enable the signal, like item 1); (b) a cleaner
+     **fund/ETF universe filter** than the seed `deny_list` (scorer abstention is today's backstop;
+     the 5th-letter `*F/*Y/*W/*U/*R/*Q` drop catches OTC/derivatives but not 4-letter ETFs/CEFs);
+     (c) **from-zero ramps** (brand-new short positions, currently dropped by `min_prev_short_shares`)
+     as a separate absolute-share variant.
+   - ⏳ **8-K originator — still deferred.** Curated 8-K item classes (1.01/8.01/5.02) from the SEC
+     daily index — a one-file `SignalSource` against the existing interface (+ `daily.py` wiring),
+     the `EdgarActivist13DSignal` precedent.
 4. **SCHEDULE 13D/A amendment signal.** `scout.activist_13d.include_amendments` exists (off —
    amendments run ~20-46/day and are spammy), but a stake-*increase* amendment is a real
    escalation. A future version could surface only amendments that raise the stake materially.

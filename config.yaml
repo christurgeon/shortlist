@@ -495,6 +495,22 @@ scout:
     min_mention_delta_pct: 0.5  # +50% mention velocity vs 24h ago
     top_n: 15                # cap emissions to the highest-velocity names
     deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA]   # index ETFs / non-actionable
+  short_interest:            # FinraShortInterestSignal — short-interest JUMP discovery.
+                             # CONTESTED prior (heavy/rising SI has a NEGATIVE base rate for a
+                             # long book), so it ships OFF (signals below) at low weight and the
+                             # forward-return ledger earns it a weight. MIDDLE BAND: a fresh jump
+                             # off a non-extreme base, NOT the most-crowded names. UNFITTED priors.
+    min_jump_pct: 0.25       # >= +25% rise in short shares vs the prior cycle
+    min_dtc: 3.0             # at least mildly crowded (squeeze relevance)
+    max_dtc: 10.0            # EXCLUDE the extreme-DTC falling-knife tail (Hong et al 2016)
+    max_prior_dtc: 10.0      # the jump must start off a non-extreme base (Cohen-Diether-Malloy)
+    min_avg_daily_volume: 100000   # liquidity floor / OTC-junk filter
+    min_prev_short_shares: 50000   # real prior baseline (a from-near-zero ramp is an absurd %)
+    # ETFs/CEFs also report short interest; the scorer abstains on funds (they never reach the
+    # shortlist) but they waste a deep-screen slot — deny the common offenders. Long tail is
+    # handled by scorer abstention; extend as persistent fund/ETF tickers appear.
+    deny_list: [SPY, QQQ, IWM, DIA, VTI, VOO, VXUS, VEA, VWO, EEM, EFA, HYG, LQD, TLT, GLD, RQI]
+    top_n: 10                # cap emissions to bound the deep-screen budget
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -509,6 +525,7 @@ scout:
     quiver:         {enabled: false, weight: 1.0}
     wsb_hype:       {enabled: true,  weight: 0.5}
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
+    finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

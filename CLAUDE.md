@@ -305,7 +305,39 @@ is a **partition key** — discover the latest cycle via the `/partitions/` endp
 cannot sort it in the data query. The `record-max-limit` is **5000**, so paginate.
 `days_to_cover` is FINRA-supplied; its `999.99` zero-volume sentinel is dropped to `None`
 in the bridge. One bulk fetch per run, cached by settlement date, indexed in memory — **no
-per-ticker request load**.
+per-ticker request load**. The FINRA row shape + pure helpers are single-sourced in
+`data/finra.py` (the `_form4.py`/`_edgar_facts.py` shared-leaf pattern) so the async
+`FinraSource` and the sync scout fetcher (below) agree on one definition + cache contract.
+
+## Short-interest discovery (scout)
+
+`FinraShortInterestSignal` (`scout/signals.py`, keyless, **VPS-safe** — FINRA needs no
+browser headers, unlike the Yahoo screener) is the **discovery analogue** of the per-ticker
+`crowded_short` flag: it scans the same `ConsolidatedShortInterest` bulk dataset and surfaces
+tickers whose short interest **jumped vs the prior settlement cycle**. Pure aggregator
+(`short_interest_jumps_from_rows`) + a **sync** fetcher (`fetch_short_interest_rows`) that
+**shares the harness `FinraSource` disk cache** (`.cache/finra/<settlement>.json`) — the
+fetcher writes the **complete, UNFILTERED** rows so the async source still sees every symbol
+(filtering happens in the aggregator, never before the cache write).
+
+**It is a CONTESTED prior, NOT a defensible one** — heavy/rising short interest has a
+*negative* base rate for a long book (Asquith-Pathak-Ritter 2005; Cohen-Diether-Malloy 2007 —
+**the jump itself is the sharpest negative component**; Hong et al 2016 — DTC is a *stronger*
+negative predictor than the level). So, unlike the 13D/Form-4 originators (established-positive
+sign, shipped enabled), it **ships disabled at weight 0.5** and supplies **attention, not
+direction**: the downstream quality/value/growth scorer + gates decide the sign (the positive
+slice = *a good business the shorts are wrong about*), and the **selection ledger** measures
+forward returns to earn it a weight (pre-registered promotion/kill rule in the spec). It uses a
+**middle band** (a jump ≥ `min_jump_pct` off a **non-extreme base** — `prior_dtc ≤ max_prior_dtc`,
+prior shares ≥ `min_prev_short_shares` — with current DTC in `[min_dtc, max_dtc]`, the
+extreme-DTC falling-knife tail *excluded*), **not** the floors the advisory flag uses; an ADV
+liquidity floor + a 5th-letter security-suffix drop (`*F`/`*Y`/`*W`/`*U`/`*R`/`*Q`) + a
+`deny_list` filter the OTC/foreign/ETF junk the FINRA universe contains (scorer abstention is
+the long-tail backstop). The split-flag + `999.99` sentinel drops mirror the bridge. Emits
+**once per new settlement cycle** (the data updates only ~bi-monthly; `ScoutState.finra_last_settlement`
+gates daily re-emission — the 7-day `cooldown_days` is too short). Tune via
+`config.yaml: scout.short_interest` (+ `scout.signals.finra_short_interest`). Spec:
+`docs/superpowers/specs/2026-06-29-finra-short-interest-originator-design.md`.
 
 ## Activist 13D discovery + selection ledger (scout)
 

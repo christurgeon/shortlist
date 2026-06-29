@@ -412,6 +412,64 @@ class EdgarActivist13DSignal:
 register("edgar_activist_13d", EdgarActivist13DSignal)
 
 
+class FinraShortInterestSignal:
+    """FINRA short-interest jump discovery (the crowded_short flag's discovery analogue).
+
+    Surfaces tickers whose short interest jumped vs the prior FINRA settlement cycle,
+    filtered to a moderate (non-extreme) crowding band. A CONTESTED prior — heavy/rising
+    short interest has a NEGATIVE base rate for a long book — so it ships disabled at low
+    weight and supplies attention, not direction: the downstream scorer + gates judge the
+    sign, the selection ledger measures it. Keyless + VPS-safe (no Yahoo WAF). Emits once
+    per NEW settlement cycle (the data updates only ~bi-monthly), gated on `last_settlement`
+    from ScoutState. See scout/short_interest.py and the design spec.
+    """
+    name = "finra_short_interest"
+    is_discovery = True
+
+    def __init__(self, *, cache_dir: str = ".cache/finra", timeout: float = 30.0,
+                 last_settlement: str | None = None, min_jump_pct: float = 0.25,
+                 min_dtc: float = 3.0, max_dtc: float = 10.0, max_prior_dtc: float = 10.0,
+                 min_avg_daily_volume: float = 100_000.0,
+                 min_prev_short_shares: float = 50_000.0,
+                 deny_list: list[str] | None = None, top_n: int = 10) -> None:
+        self.cache_dir = cache_dir
+        self.timeout = timeout
+        self.last_settlement = last_settlement
+        self._params = dict(min_jump_pct=min_jump_pct, min_dtc=min_dtc, max_dtc=max_dtc,
+                            max_prior_dtc=max_prior_dtc,
+                            min_avg_daily_volume=min_avg_daily_volume,
+                            min_prev_short_shares=min_prev_short_shares,
+                            deny_list=list(deny_list or []), top_n=top_n)
+        self.settlement: str | None = None   # discovered cycle (daily.py persists it)
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from .short_interest import (fetch_short_interest_rows,
+                                     short_interest_jumps_from_rows)
+        try:
+            rows, settlement = fetch_short_interest_rows(self.cache_dir, self.timeout)
+        except Exception as e:  # noqa: BLE001 — degrade, never crash the run
+            self._status = (False, redact_secrets(str(e)))
+            return []
+        self.settlement = settlement
+        if settlement is None:
+            self._status = (False, "no FINRA partition found")
+            return []
+        if settlement == self.last_settlement:
+            self._status = (True, f"cycle {settlement} already processed")
+            return []
+        ems = short_interest_jumps_from_rows(rows, settlement, **self._params)
+        self._status = (True, f"{len(ems)} short-interest jumps from {len(rows)} symbols"
+                              f" (cycle {settlement})")
+        return ems
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("finra_short_interest", FinraShortInterestSignal)
+
+
 class WsbHypeSignal:
     """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
     rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""
