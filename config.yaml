@@ -463,7 +463,9 @@ edgar_events:
 scout:
   daily_x: 10
   daily_push:
-    enabled: false        # autonomous daily report; flip to true to re-arm (spec 2026-06-06)
+    enabled: true         # autonomous daily report ARMED (2026-06-29); runs the lean digest
+                          # (research:false) — discover→screen→gate→rank→Telegram + /deep block,
+                          # and records picks so the selection-ledger scoreboard accumulates.
     research: false       # screen+gate+rank only; skip the Claude auto-research phase
                           # (the digest surfaces names to pass to /deep; default True = legacy push)
   bot:
