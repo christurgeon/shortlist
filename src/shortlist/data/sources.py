@@ -1046,9 +1046,11 @@ _VOL_FLOOR = 1e-4                 # annualized-vol floor: at/below this, vol_sca
 
 def pct_to_52w_high(closes: list[float]) -> Optional[float]:
     """Nearness to the trailing 52-week high (George-Hwang 2004): closes[-1] / max(last 252),
-    in (0, 1]; nearer the high scores higher. Abstains (None) below
-    _PCT_52W_HIGH_MIN_HISTORY closes — so an IPO-recent name does not silently report an
-    all-time high as a 52-week high — or on a non-positive window max."""
+    in (0, 1]; nearer the high scores higher. Abstains (None) below _PCT_52W_HIGH_MIN_HISTORY
+    (~200) closes — so a freshly-listed name isn't ranked on a few months of data — and on a
+    non-positive window max. NOTE: the 200 floor is below the 252-day window, so for a name
+    with 200-251 closes the 'high' is taken over the full available history (marginally under
+    a true 52 weeks); the floor reduces but does not fully eliminate that for very recent IPOs."""
     if len(closes) < _PCT_52W_HIGH_MIN_HISTORY:
         return None
     hi = max(closes[-_PCT_52W_HIGH_WINDOW:])

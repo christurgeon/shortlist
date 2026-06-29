@@ -283,14 +283,21 @@ def test_momentum_source_emits_price_refinement_axes():
 
 
 def test_momentum_subscore_unchanged_by_price_refinement_axes():
-    hist = _ramp_hist("AAA", n=300)
-    spy = _ramp_hist("SPY", n=300)
+    # Use _wobble_hist (real stock-vs-SPY divergence), NOT _ramp_hist: with a flat ramp
+    # momentum_score coincidentally equals rel_strength_6m_score (~37.5), so an emission-loop
+    # bug that overwrote sig["momentum"] with an axis value would slip past the equality
+    # assertion. Wobble breaks that tie (asserted below) so the guard is real.
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
     T = hist.dates[290]
     with_axes = MomentumSignalSource({"AAA": hist}, spy, THRESH | _PRICE_AXIS_BANDS,
                                      min_history=200).observe("AAA", T)
     plain = MomentumSignalSource({"AAA": hist}, spy, THRESH,
                                  min_history=200).observe("AAA", T)
     assert with_axes.signals["momentum"] == plain.signals["momentum"]
+    # Non-degeneracy: momentum must NOT coincide with an emitted axis, else an overwrite
+    # would slip past the equality above (the bug _ramp_hist hid).
+    assert with_axes.signals["momentum"] != with_axes.signals["rel_strength_6m"]
 
 
 def test_price_refinement_axes_are_point_in_time():

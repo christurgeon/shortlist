@@ -331,6 +331,18 @@ def test_earnings_quality_per_leg_toggle():
     assert {"accruals", "asset_growth"} <= names_both
 
 
+def test_shipped_config_price_axis_band_directions():
+    # The §2 price-axis SIGNAL DIRECTION lives in the shipped config.yaml bands, not in the
+    # hardcoded-band unit tests — so a flip of the REAL band (e.g. max_daily_return to
+    # [0.02, 0.15], silently turning the MAX-effect from a negative into a positive predictor)
+    # must be caught HERE. max_daily_return is inverted (hi-first); the other two are positive.
+    t = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())["thresholds"]
+    assert t["max_daily_return"][0] > t["max_daily_return"][1], \
+        "max_daily_return band must be INVERTED [high, low] (a lottery spike must score LOW)"
+    assert t["pct_to_52w_high"][0] < t["pct_to_52w_high"][1]        # positive: nearer the high scores higher
+    assert t["vol_scaled_momentum"][0] < t["vol_scaled_momentum"][1]   # positive: higher risk-adj momentum scores higher
+
+
 def test_shipped_config_enables_accruals_only():
     # The shipped default config.yaml must enable the accruals leg (measurably moving
     # quality/composite vs the block-absent run) while leaving asset_growth OFF.
