@@ -603,6 +603,20 @@ applicable. That backtest is now **done** (see the enablement rationale above): 
 `momentum.residual` leg is **enabled and wired into live screens**. The band/window remain
 **unfitted priors**.
 
+The three **§2 price-refinement axes** (`pct_to_52w_high` George-Hwang, `max_daily_return`
+Bali MAX-effect, `vol_scaled_momentum` Barroso-Santa-Clara) ride the same live-price
+`MomentumSignalSource` as **backtest-only measurement axes** (pure `closes` fns in
+`data/sources.py`, carried on `Price`/`StockMetrics`, surfaced in `--json`, **excluded from
+coverage** via `_NON_SIGNAL_FIELDS`; `momentum_score` byte-identical). The collinearity
+diagnostic now runs on the **momentum** path too (was xbrl-only). **All three were measured
+on both universes and NONE earned production wiring** (`docs/superpowers/specs/2026-06-28-
+price-signal-bundle-results.md`): `pct_to_52w_high` duplicates `price_vs_200dma`
+(corr ~0.70–0.74), `vol_scaled_momentum` duplicates raw scored momentum (~0.52–0.54; it is
+*not* a `residual_momentum` twin), and `max_daily_return` is orthogonal but its sign **flips
+across universes** (the MAX/lottery effect reverses in mega-caps). Measured-and-parked, like
+`share_count`/`asset_growth` — no production sub-score/flag/gate reads them; their unfitted-
+prior bands stay only so the axes remain measurable.
+
 ## Yahoo screener WAF gotcha (scout discovery)
 
 The scout's `YahooScreenerSignal` (`scout/signals.py`) hits the **unofficial**

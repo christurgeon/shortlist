@@ -6,6 +6,37 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## §2 price-refinement axes — measured, NONE wired (2026-06-28)
+
+Built three OHLCV-only price signals as **backtest-only measurement axes** on the live-price
+`MomentumSignalSource` (the residual_momentum precedent): `pct_to_52w_high` (George-Hwang),
+`max_daily_return` (Bali MAX-effect), `vol_scaled_momentum` (Barroso-Santa-Clara). Pre-registered
+measurement on **both** bundled universes (largecap-79 + smallmid-152), full 1/3/6/12m grid, with
+collinearity kills (≥0.5) and Phase-2 homes fixed in advance. Evidence of record:
+`docs/superpowers/specs/2026-06-28-price-signal-bundle-results.md`.
+
+**No config flip earned — all three parked** (the share_count/asset_growth precedent):
+- **`pct_to_52w_high`: REJECT** — corr **+0.70/+0.74** vs the scored `price_vs_200dma` leg on both
+  universes (a monotone re-skin of trend; EV/EBIT duplication trap); weak/negative IC anyway.
+- **`vol_scaled_momentum`: REJECT** — corr **+0.52–0.54** vs scored momentum (duplicates *raw*
+  momentum, which is XS-insignificant here); never |t|≥2. NOT a `residual_momentum` twin (+0.21–0.23),
+  confirming the de-beta — not the vol-scaling — is residual momentum's edge. A null doesn't refute
+  Barroso-Santa-Clara (their result is time-series vol-targeting, not XS alpha).
+- **`max_daily_return`: PARK** — the only one orthogonal to existing signals (corr −0.07/−0.10), but
+  the inverted-score IC **sign flips across universes** (NEG/significant in largecap — the MAX/lottery
+  effect *reverses* in mega-caps; weakly POS in smallmid). Fails "≥1 universe without the other
+  contradicting," so even the pre-registered defensive-flag home is unjustified. Revisit only via a
+  small-cap-restricted or through-cycle test.
+
+**In-scope fix shipped:** the collinearity diagnostic was gated to `--source xbrl`; now runs on the
+`--source momentum` path too (so the residual~momentum + price-axis pairs are actually measured).
+
+**Side benefit:** `residual_momentum` (the live leg) re-confirmed as the only short-horizon XS winner
+on both universes (LC +0.023 t2.63, SM +0.025 t3.71). **Status:** done — axes are measurement-only,
+no production wiring; Phase-2 deferred (nothing earned it).
+
+---
+
 ## negative_fcf excuse — measurement path (scope B, follow-up to #83) (2026-06-26)
 
 #83 populated `fcf_positive` on the XBRL panel (`_xbrl_facts.panel_to_metrics`, with a
