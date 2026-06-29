@@ -228,8 +228,11 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
                 tkr = resolve_ticker_fn(cik)
                 if not tkr:
                     continue  # unresolved (foreign issuer absent from company_tickers.json)
-                filers = getattr(hdr, "filers", None)
-                activist = (filers[0].company_information.name if filers else "") or ""
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    activist = (filers[0].company_information.name if filers else "") or ""
+                except Exception:  # noqa: BLE001 — a bad FILER name must not drop a valid subject
+                    activist = ""
                 acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
                 records.append({
                     "ticker": tkr, "cik": f"{int(cik):010d}",
