@@ -21,7 +21,9 @@ def test_is_spac_or_shell():
 def test_is_affiliate_filing_detects_name_overlap():
     # Hawkeye HoldCo LLC filing on Hawkeye Systems = affiliate (shared distinctive token).
     assert is_affiliate_filing("Hawkeye HoldCo LLC", "Hawkeye Systems, Inc.")
-    # Generic corporate tokens alone must NOT trigger (both have 'Capital'/'LP').
+    # Generic corporate tokens alone must NOT trigger: both names literally share
+    # "Capital"/"LP"/"LLC", but those are stripped, so no distinctive overlap remains.
+    assert not is_affiliate_filing("Acme Capital LP", "Beta Capital LLC")
     assert not is_affiliate_filing("Starboard Value LP", "Acme Industries Inc")
     # A real outside activist does not overlap its target.
     assert not is_affiliate_filing("Elliott Investment Management L.P.", "Phillips 66")

@@ -12,15 +12,18 @@ import re
 _INITIAL_FORMS = {"SCHEDULE 13D", "SC 13D"}
 _SPAC_MARKERS = ("acquisition corp", "acquisition company", "acquisition holdings",
                  "blank check", "spac")
-# stripped before affiliate overlap so funds don't collide on generic words
-_GENERIC_TOKENS = {"llc", "lp", "l.p.", "inc", "inc.", "corp", "corp.", "co", "company",
+# stripped before affiliate overlap so funds don't collide on generic words. _norm() has
+# already converted punctuation to spaces, so entries are bare tokens (no "l.p."/"inc.").
+_GENERIC_TOKENS = {"llc", "lp", "inc", "corp", "co", "company",
                    "capital", "management", "mgmt", "partners", "holdings", "holding",
                    "group", "fund", "funds", "trust", "ltd", "plc", "the", "and", "advisors",
                    "associates", "investment", "investments", "value", "global", "master"}
 
 # normalized-substring alias map: canonical -> distinctive fragments that identify the filer.
 # Activists file under many entity variants/SPVs, so match on a distinctive fragment, not the
-# full legal name (spec §14 #11). Curated prior, extensible — not exhaustive.
+# full legal name (spec §14 #11). Curated prior, extensible — not exhaustive. NOTE: matching is
+# substring-anywhere, so short bare fragments ("jana", "pershing") could in principle match an
+# unrelated name; acceptable in the narrow 13D filer-name space (and only BOOSTS strength).
 _MARQUEE: dict[str, tuple[str, ...]] = {
     "Elliott":         ("elliott",),
     "Icahn":           ("icahn",),
