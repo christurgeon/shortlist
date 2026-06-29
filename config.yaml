@@ -35,6 +35,11 @@ thresholds:
   # LIVE-price) and the opt-in momentum.residual leg below. UNFITTED prior — backtest the
   # standalone rank IC + its collinearity vs raw momentum before trusting.
   residual_momentum:   [-1.0, 1.0]   # vol-scaled iMOM -1 -> 0 ; +1 -> 100
+  # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes — UNFITTED PRIORS, backtest-only
+  # (no production leg reads these). pct_to_52w_high NOT inverted; max_daily_return INVERTED.
+  pct_to_52w_high:     [0.70, 1.00]  # 70% of 52wk-high -> 0 ; at the high -> 100 (George-Hwang)
+  max_daily_return:    [0.15, 0.02]  # INVERTED: 15% lottery spike -> 0 ; calm 2% -> 100 (Bali MAX)
+  vol_scaled_momentum: [0.0, 2.0]    # risk-adjusted 12-1 momentum 0 -> 0 ; 2.0 -> 100 (Barroso-Santa-Clara)
 
   # Value
   upside_to_target:    [0.00, 0.40]

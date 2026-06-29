@@ -3,6 +3,7 @@ import asyncio
 from shortlist.data.sources import (
     YahooSource, _closes_from_chart, _normalize_yahoo,
     _yh_annualized_vol, _yh_max_drawdown, _yh_ret_over, _yh_sma,
+    pct_to_52w_high, max_daily_return, vol_scaled_momentum,
 )
 
 
@@ -35,6 +36,43 @@ def test_max_drawdown_simple():
 
 def test_max_drawdown_monotonic_up_is_zero():
     assert _yh_max_drawdown([100, 110, 120]) == 0.0
+
+
+def test_pct_to_52w_high_at_the_high_is_one():
+    closes = [100.0 + i for i in range(200)]   # monotonic ramp, last == max
+    assert pct_to_52w_high(closes) == 1.0
+
+
+def test_pct_to_52w_high_below_high_ratio():
+    closes = [100.0 + i for i in range(199)] + [150.0]  # 200 closes; max 298, last 150
+    r = pct_to_52w_high(closes)
+    assert r is not None and abs(r - 150.0 / 298.0) < 1e-9
+
+
+def test_pct_to_52w_high_none_when_too_short():
+    assert pct_to_52w_high([100.0 + i for i in range(199)]) is None   # < 200
+
+
+def test_max_daily_return_picks_largest_spike():
+    closes = [100.0] * 30
+    closes[-1] = 130.0          # a single +30% day inside the trailing 21d window
+    r = max_daily_return(closes)
+    assert r is not None and abs(r - 0.30) < 1e-9
+
+
+def test_max_daily_return_none_when_too_short():
+    assert max_daily_return([100.0, 101.0]) is None   # < window+1 (default 21)
+
+
+def test_vol_scaled_momentum_none_on_flat_window():
+    # vol ~ 0 (<= floor) must abstain, never mom/~0 garbage.
+    assert vol_scaled_momentum([100.0] * 300) is None
+
+
+def test_vol_scaled_momentum_finite_and_positive_on_rising_wobble():
+    closes = [100.0 * (1.0 + 0.0008 * i) + (2.0 if i % 2 else -2.0) for i in range(300)]
+    v = vol_scaled_momentum(closes)
+    assert v is not None and v > 0.0
 
 
 def test_normalize_builds_price_with_rel_strength():
@@ -211,3 +249,13 @@ def test_yahoo_live_path_residual_none_when_dateless(tmp_path, monkeypatch):
     assert res.partial.price is not None
     assert res.partial.price.residual_momentum is None
     asyncio.run(src.aclose())
+
+
+def test_normalize_populates_price_refinement_axes():
+    from shortlist.data.sources import _normalize_yahoo
+    closes = [100.0 * (1.0 + 0.0008 * i) + (1.5 if i % 2 else -1.5) for i in range(300)]
+    snap = _normalize_yahoo("AAA", closes, closes)   # spy == stock is fine for these single-series axes
+    p = snap.price
+    assert p.pct_to_52w_high is not None
+    assert p.max_daily_return is not None
+    assert p.vol_scaled_momentum is not None

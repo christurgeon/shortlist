@@ -1031,6 +1031,64 @@ def _yh_max_drawdown(xs: list[float], window: int = _YH_VOL_WINDOW) -> Optional[
     return mdd
 
 
+# --- PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (backtest-only) ---------
+# Pure single-series functions over a daily ADJUSTED-close list, oldest -> newest. They
+# read only trailing windows, so they are point-in-time when the caller passes closes
+# truncated to as_of. NO production leg reads them (momentum sub-score is byte-identical);
+# they exist so the live-price backtest can measure rank IC + collinearity before wiring.
+_PCT_52W_HIGH_WINDOW = 252        # ~trading days in 52 weeks
+_PCT_52W_HIGH_MIN_HISTORY = 200   # require ~a full year before calling it a "52-week" high
+_MAX_RET_WINDOW = 21              # ~trading days in 1 month (MAX-effect formation)
+_VOL_SCALE_VOL_WINDOW = 126       # 6-month realized-vol scaler (Barroso-Santa-Clara) — NOT the
+                                  # 252-day risk default; do not "simplify" to realized_vol
+_VOL_FLOOR = 1e-4                 # annualized-vol floor: at/below this, vol_scaled abstains
+
+
+def pct_to_52w_high(closes: list[float]) -> Optional[float]:
+    """Nearness to the trailing 52-week high (George-Hwang 2004): closes[-1] / max(last 252),
+    in (0, 1]; nearer the high scores higher. Abstains (None) below _PCT_52W_HIGH_MIN_HISTORY
+    (~200) closes — so a freshly-listed name isn't ranked on a few months of data — and on a
+    non-positive window max. NOTE: the 200 floor is below the 252-day window, so for a name
+    with 200-251 closes the 'high' is taken over the full available history (marginally under
+    a true 52 weeks); the floor reduces but does not fully eliminate that for very recent IPOs."""
+    if len(closes) < _PCT_52W_HIGH_MIN_HISTORY:
+        return None
+    hi = max(closes[-_PCT_52W_HIGH_WINDOW:])
+    if hi <= 0:
+        return None
+    return closes[-1] / hi
+
+
+def max_daily_return(closes: list[float], window: int = _MAX_RET_WINDOW) -> Optional[float]:
+    """Largest single-day simple return over the trailing `window` days (Bali-Cakici-Whitelaw
+    2011, the "MAX effect" — a lottery-demand proxy and a NEGATIVE return predictor, so its
+    scoring band is inverted). A non-positive prior close contributes a 0.0 return (a halt/
+    placeholder, not a real move), matching _yh_annualized_vol's convention. Abstains (None)
+    on fewer than `window` usable returns."""
+    if len(closes) < window + 1:
+        return None
+    seg = closes[-(window + 1):]
+    rets = [seg[i] / seg[i - 1] - 1.0 if seg[i - 1] > 0 else 0.0 for i in range(1, len(seg))]
+    return max(rets)
+
+
+def vol_scaled_momentum(closes: list[float]) -> Optional[float]:
+    """Risk-managed momentum (Barroso-Santa-Clara 2015): 12-1 momentum / trailing 6-month
+    annualized realized vol. Reuses mom_12_1 (needs 274 closes) and _yh_annualized_vol(126).
+    Abstains (None) when mom_12_1 is unavailable or the vol is None / <= _VOL_FLOOR (a near-flat
+    window would otherwise make mom/~0 a huge FINITE garbage value that silently pollutes the
+    rank IC). NOTE: cross-sectionally this is just risk-adjusted RAW momentum — B-S-C's Sharpe
+    gain is a time-series vol-targeting result, so a null rank IC here does NOT refute the
+    paper; the collinearity vs residual_momentum settles whether it adds anything."""
+    mom = mom_12_1(closes)
+    if mom is None:
+        return None
+    vol = _yh_annualized_vol(closes, _VOL_SCALE_VOL_WINDOW)
+    if vol is None or vol <= _VOL_FLOOR:
+        return None
+    return mom / vol
+
+
 def _closes_from_chart(raw: Any) -> list[float]:
     try:
         result = raw["chart"]["result"][0]
@@ -1104,6 +1162,9 @@ def _normalize_yahoo(ticker: str, closes: list[float], spy_closes: list[float],
         realized_vol=_yh_annualized_vol(closes),
         max_drawdown=_yh_max_drawdown(closes),
         residual_momentum=resid,
+        pct_to_52w_high=pct_to_52w_high(closes),
+        max_daily_return=max_daily_return(closes),
+        vol_scaled_momentum=vol_scaled_momentum(closes),
     )
     return snap
 

@@ -331,6 +331,18 @@ def test_earnings_quality_per_leg_toggle():
     assert {"accruals", "asset_growth"} <= names_both
 
 
+def test_shipped_config_price_axis_band_directions():
+    # The §2 price-axis SIGNAL DIRECTION lives in the shipped config.yaml bands, not in the
+    # hardcoded-band unit tests — so a flip of the REAL band (e.g. max_daily_return to
+    # [0.02, 0.15], silently turning the MAX-effect from a negative into a positive predictor)
+    # must be caught HERE. max_daily_return is inverted (hi-first); the other two are positive.
+    t = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())["thresholds"]
+    assert t["max_daily_return"][0] > t["max_daily_return"][1], \
+        "max_daily_return band must be INVERTED [high, low] (a lottery spike must score LOW)"
+    assert t["pct_to_52w_high"][0] < t["pct_to_52w_high"][1]        # positive: nearer the high scores higher
+    assert t["vol_scaled_momentum"][0] < t["vol_scaled_momentum"][1]   # positive: higher risk-adj momentum scores higher
+
+
 def test_shipped_config_enables_accruals_only():
     # The shipped default config.yaml must enable the accruals leg (measurably moving
     # quality/composite vs the block-absent run) while leaving asset_growth OFF.
@@ -938,6 +950,36 @@ def test_gate_untouched_by_10b5_1_when_conviction_off():
     assert a.passed == b.passed and a.gates == b.gates
 
 
+# --- FIX M3: MAX-effect monotonicity with interpolation (not clamping) -------
+
+def test_max_daily_return_score_interpolates_within_band():
+    from shortlist import scoring
+    t = {"max_daily_return": [0.15, 0.02]}            # inverted band
+    hi = StockMetrics(ticker="A"); hi.max_daily_return = 0.10   # mid-band
+    lo = StockMetrics(ticker="B"); lo.max_daily_return = 0.05   # mid-band
+    s_hi = scoring.max_daily_return_score(hi, t)
+    s_lo = scoring.max_daily_return_score(lo, t)
+    assert s_hi < s_lo                                  # bigger MAX still scores lower
+    assert 0.0 < s_hi < 100.0 and 0.0 < s_lo < 100.0    # genuinely interpolated, not clamped
+
+
+# --- FIX M4: None-branch coverage for all three price-axis scorers -----------
+
+def test_price_axis_scorers_none_safe_all_branches():
+    from shortlist import scoring
+    bands = {"max_daily_return": [0.15, 0.02], "vol_scaled_momentum": [0.0, 2.0],
+             "rel_strength_6m": [-0.15, 0.25]}
+    empty = StockMetrics(ticker="X")                    # metric absent -> None
+    assert scoring.max_daily_return_score(empty, bands) is None
+    assert scoring.vol_scaled_momentum_score(empty, bands) is None
+    assert scoring.rel_strength_6m_score(empty, bands) is None
+    m = StockMetrics(ticker="X")                        # band absent -> None
+    m.max_daily_return = 0.05; m.vol_scaled_momentum = 1.0; m.rel_strength_6m = 0.1
+    assert scoring.max_daily_return_score(m, {}) is None
+    assert scoring.vol_scaled_momentum_score(m, {}) is None
+    assert scoring.rel_strength_6m_score(m, {}) is None
+
+
 # --- piotroski_score + value_trap refinement (Task 6) ---------------------
 
 # value_trap refinement config: existing thresholds + the piotroski sub-block.
@@ -1307,3 +1349,44 @@ def test_residmom_backtest_axis():
     assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=-1.0), t) == 0.0
     assert residual_momentum_score(metrics_all_50(), t) is None              # signal absent on all_50
     assert residual_momentum_score(dataclasses.replace(metrics_all_50(), residual_momentum=0.5), {}) is None  # no band
+
+
+# --- §2 price-refinement backtest axes (Task 3) --------------------------
+
+def test_price_refinement_axes_none_when_band_or_metric_absent():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="AAA")
+    m.pct_to_52w_high = 0.9
+    assert scoring.pct_to_52w_high_score(m, {}) is None                       # band absent
+    assert scoring.pct_to_52w_high_score(StockMetrics(ticker="AAA"),
+                                         {"pct_to_52w_high": [0.70, 1.00]}) is None  # metric absent
+
+
+def test_max_daily_return_score_is_monotonically_decreasing():
+    # Inverted band: a BIGGER lottery spike must score LOWER (catches a flipped band).
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    t = {"max_daily_return": [0.15, 0.02]}
+    hi = StockMetrics(ticker="A"); hi.max_daily_return = 0.20
+    lo = StockMetrics(ticker="B"); lo.max_daily_return = 0.02
+    assert scoring.max_daily_return_score(hi, t) < scoring.max_daily_return_score(lo, t)
+
+
+def test_pct_to_52w_high_score_is_monotonically_increasing():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    t = {"pct_to_52w_high": [0.70, 1.00]}
+    near = StockMetrics(ticker="A"); near.pct_to_52w_high = 0.99
+    far = StockMetrics(ticker="B"); far.pct_to_52w_high = 0.72
+    assert scoring.pct_to_52w_high_score(near, t) > scoring.pct_to_52w_high_score(far, t)
+
+
+def test_leg_reference_axes_map_through_existing_bands():
+    from shortlist import scoring
+    from shortlist.models import StockMetrics
+    m = StockMetrics(ticker="A"); m.price_vs_200dma = 0.10; m.rel_strength_6m = 0.05
+    t = {"price_vs_200dma": [-0.10, 0.30], "rel_strength_6m": [-0.15, 0.25]}
+    assert 0.0 <= scoring.price_vs_200dma_score(m, t) <= 100.0
+    assert 0.0 <= scoring.rel_strength_6m_score(m, t) <= 100.0
+    assert scoring.price_vs_200dma_score(StockMetrics(ticker="A"), t) is None

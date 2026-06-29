@@ -80,6 +80,10 @@ class StockMetrics:
     eps_revision: Optional[float] = None     # trailing estimate revision trend
     realized_vol: Optional[float] = None     # annualized stdev of daily returns (risk, unscored)
     max_drawdown: Optional[float] = None     # trailing ~1y peak-to-trough, negative (risk, unscored)
+    # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (backtest-only; no production leg).
+    pct_to_52w_high: Optional[float] = None      # closes[-1]/max(last 252) in (0,1] (George-Hwang)
+    max_daily_return: Optional[float] = None     # largest daily return, last ~21d (Bali MAX; negative pred.)
+    vol_scaled_momentum: Optional[float] = None  # mom_12_1 / 6m realized vol (Barroso-Santa-Clara)
 
     # Analyst sentiment
     rating_buy: Optional[int] = None

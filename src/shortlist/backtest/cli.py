@@ -36,6 +36,15 @@ _COLLINEARITY_PAIRS = [
     ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution (§5)
     ("sue", "momentum"),                       # earnings-surprise drift vs price momentum (§1) — SNAPSHOT-REPLAY only
     ("residual_momentum", "momentum"),         # idiosyncratic vs raw 12-1 momentum (§2) — WILL correlate; the point is it dominates on rank IC
+    # PREDICTIVE_SIGNALS §2 price-refinement measurement axes — the load-bearing duplication
+    # checks (|corr| >= 0.5 => reject regardless of IC; EV/EBIT precedent).
+    ("pct_to_52w_high", "price_vs_200dma"),    # both are close/(trailing ref) — the key 52wk-high dup check
+    ("pct_to_52w_high", "rel_strength_6m"),
+    ("pct_to_52w_high", "momentum"),
+    ("max_daily_return", "momentum"),          # defensive/lottery vs trend (expect low corr)
+    ("vol_scaled_momentum", "residual_momentum"),  # cousins — the key vol-scaled dup check
+    ("vol_scaled_momentum", "price_vs_200dma"),
+    ("vol_scaled_momentum", "momentum"),
 ]
 _COLLINEARITY_REDUNDANT = 0.5   # |corr| at/above this => the candidate is redundant
 
@@ -308,10 +317,15 @@ def main(argv=None) -> int:
     # Collinearity diagnostics: does a candidate standalone axis duplicate an
     # already-scored one? A high cross-sectional rank corr (>~0.5) means the candidate
     # adds a CORRELATED bet, not new signal, and would dilute the composite rather than
-    # improve it (the EV/EBIT-vs-fcf_yield precedent: corr 0.72 -> don't-ship). Only
-    # meaningful for the XBRL fundamental source. Printed to stderr so --json stays clean.
+    # improve it (the EV/EBIT-vs-fcf_yield precedent: corr 0.72 -> don't-ship). Runs on
+    # both the XBRL and momentum paths: the momentum source's candidate axes
+    # (residual_momentum and the §2 price-refinement axes pct_to_52w_high /
+    # max_daily_return / vol_scaled_momentum) are duplication-checked against the scored
+    # momentum sub-score and its legs (price_vs_200dma / rel_strength_6m) on the
+    # live-price path, exactly as ebit_ev_yield was checked on the XBRL path.
+    # Printed to stderr so --json stays clean.
     collinearity: dict[str, float] = {}
-    if args.source == "xbrl":
+    if args.source in ("xbrl", "momentum"):
         diag_grid = observation_grid(start, end, args.step_months or horizons[0])
         diag_obs = collect_observations(src, sorted(hists.keys()), diag_grid)
         collinearity = _collinearity(diag_obs)

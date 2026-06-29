@@ -261,6 +261,61 @@ def _price_history(ticker="TST"):
     return PriceHistory(ticker, dates, closes)
 
 
+_PRICE_AXIS_BANDS = {
+    "pct_to_52w_high": [0.70, 1.00],
+    "max_daily_return": [0.15, 0.02],
+    "vol_scaled_momentum": [0.0, 2.0],
+    "residual_momentum": [-1.0, 1.0],
+}
+
+
+def test_momentum_source_emits_price_refinement_axes():
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
+    t = THRESH | _PRICE_AXIS_BANDS
+    src = MomentumSignalSource({"AAA": hist}, spy, t, min_history=200)
+    obs = src.observe("AAA", hist.dates[290])
+    assert obs is not None
+    for axis in ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
+                 "price_vs_200dma", "rel_strength_6m"):
+        assert axis in obs.signals
+        assert 0.0 <= obs.signals[axis] <= 100.0
+
+
+def test_momentum_subscore_unchanged_by_price_refinement_axes():
+    # Use _wobble_hist (real stock-vs-SPY divergence), NOT _ramp_hist: with a flat ramp
+    # momentum_score coincidentally equals rel_strength_6m_score (~37.5), so an emission-loop
+    # bug that overwrote sig["momentum"] with an axis value would slip past the equality
+    # assertion. Wobble breaks that tie (asserted below) so the guard is real.
+    hist, _, _ = _wobble_hist("AAA", n=300)
+    spy = _mkt_hist("SPY", n=300)
+    T = hist.dates[290]
+    with_axes = MomentumSignalSource({"AAA": hist}, spy, THRESH | _PRICE_AXIS_BANDS,
+                                     min_history=200).observe("AAA", T)
+    plain = MomentumSignalSource({"AAA": hist}, spy, THRESH,
+                                 min_history=200).observe("AAA", T)
+    assert with_axes.signals["momentum"] == plain.signals["momentum"]
+    # Non-degeneracy: momentum must NOT coincide with an emitted axis, else an overwrite
+    # would slip past the equality above (the bug _ramp_hist hid).
+    assert with_axes.signals["momentum"] != with_axes.signals["rel_strength_6m"]
+
+
+def test_price_refinement_axes_are_point_in_time():
+    hist, _, _ = _wobble_hist("AAA", n=320)
+    spy = _mkt_hist("SPY", n=320)
+    t = THRESH | _PRICE_AXIS_BANDS
+    T = hist.dates[290]
+    base = MomentumSignalSource({"AAA": hist}, spy, t, min_history=200).observe("AAA", T)
+    idx = hist.dates.index(T)
+    tampered_closes = list(hist.closes)
+    for j in range(idx + 1, len(tampered_closes)):
+        tampered_closes[j] = tampered_closes[j] * 3.0 + 1.0
+    tampered = PriceHistory("AAA", hist.dates, tampered_closes)
+    after = MomentumSignalSource({"AAA": tampered}, spy, t, min_history=200).observe("AAA", T)
+    for axis in ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum"):
+        assert after.signals[axis] == base.signals[axis]
+
+
 def test_xbrl_source_emits_ev_ebit_axes():
     # For a name with EBIT + market cap + net_debt + fcf_yield + a PE history,
     # all four absolute-valuation / per-leg attribution axes appear in signals.
