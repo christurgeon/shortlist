@@ -350,9 +350,12 @@ research:
                                # NOTE: tracks the latest 4.6 snapshot, not a frozen date-pinned
                                # build; brief reproducibility is anchored by accession-keyed caching
                                # (research/), not the model string.
-  timeout_s: 600               # generous ceiling; a real NVDA assessment measured ~246s on the
-                               # VPS, so 300 was too tight (intermittent timeouts). Headroom for
-                               # the larger sections + richer output below.
+  timeout_s: 900               # generous ceiling; NVDA ~246s, CVX ~400s on the VPS, but a HEAVY
+                               # filer (WDC: 178K-char prompt) measured ~490s and intermittently
+                               # spilled past the old 600s ceiling (all 3 attempts timed out
+                               # 2026-06-29) -> "research unavailable". 900s gives headroom over
+                               # the worst observed brief. Keep max_attempts x timeout_s below
+                               # scout.research_phase_budget_s.
   max_attempts: 3              # total assess() tries (transient CLI timeouts + reparse retries).
                                # A single claude call still intermittently exceeds timeout_s; that
                                # failure is transient, so retry instead of dropping the brief.
@@ -474,7 +477,7 @@ scout:
     max_screen: 10         # soft cap for /screen (truncate + warn, not reject)
     max_deep: 3            # soft cap for /deep (research is slow + quota-heavy)
   research_top_n: 3
-  research_phase_budget_s: 2000   # >= max_deep(3) x research.timeout_s(600) is 1800; +slack for serial EDGAR fetches
+  research_phase_budget_s: 2800   # >= max_deep(3) x research.timeout_s(900) is 2700; +slack for serial EDGAR fetches
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
