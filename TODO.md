@@ -6,6 +6,23 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## FMP-free daily digest shipped + deployed — verify first run / paid-plan flip (2026-06-30)
+
+`scout.daily_push.include_fmp: false` (#100) makes the unattended digest screen on free
+sources (EDGAR/Finnhub/Yahoo/FINRA), reserving FMP's 250/day free quota for interactive
+`/deep` (the bot's `/screen`+`/deep` keep the full FMP chain). Merged + deployed to
+`/opt/shortlist` and the bot restarted (#99 also raised `research.timeout_s` 600→900 for
+heavy filers like WDC). Two follow-ups:
+- **Verify the first FMP-free digest run** (`shortlist-scout.timer`, ~22:30 UTC 2026-06-30):
+  confirm it spends **0 FMP calls**, still ranks all 7 axes, and the "Free-source screen —
+  /deep for PEG + analyst targets" caveat renders. A zero-FMP `AAPL` screen was validated
+  pre-ship (all axes scored; only `peg` + `upside_to_target` drop).
+- **Paid-FMP flip (deferred decision):** if subscribing to FMP Starter (~$22/mo, 300
+  calls/min, no daily cap), set `scout.daily_push.include_fmp: true` (or delete the key) →
+  digest uses the identical full chain as the bot, no code change.
+
+**Status:** Done + live. Only the first-run verification and the conditional paid-plan flip remain.
+
 ## Daily scout push armed in config — VPS deploy + first run pending (2026-06-29)
 
 `scout.daily_push.enabled` is now `true` (#95; lean digest, `research: false`) — but the flag
