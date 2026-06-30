@@ -255,8 +255,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # 2. Deep-screen via the harness scorer (mock source offline in --demo)
     from ..screen import run_harness
     from ..data.macro import fetch_macro
-    sources = ["mock"] if demo else scout_cfg.get(
-        "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+    base_sources = scout_cfg.get("deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+    include_fmp = scout_cfg.get("daily_push", {}).get("include_fmp", True)  # default True = back-compat
+    sources = ["mock"] if demo else digest_sources(base_sources, include_fmp)
     macro = None if demo else fetch_macro(config)  # --demo is offline: no FRED call
     cards = run_harness([c.ticker for c in chosen], sources, config, macro=macro)
 
@@ -267,6 +268,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     assessments: dict[str, dict] = {}
     researched: list[str] = []
     notes: list[str] = []
+    # Caveat only when FMP was actually rationed from a chain that had it — never a
+    # misleading note on a run that used FMP (or never had it).
+    if not demo and not include_fmp and "fmp" in base_sources:
+        notes.append(FMP_RATIONED_NOTE)
     research_enabled = scout_cfg.get("daily_push", {}).get("research", True)
     if not demo and research_enabled:
         briefs, assessments, researched, note, skipped = _research_phase(
