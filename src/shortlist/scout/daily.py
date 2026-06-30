@@ -22,6 +22,18 @@ from .state import ScoutState
 
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
+FMP_RATIONED_NOTE = "Free-source screen — /deep for PEG + analyst targets."
+
+
+def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
+    """The daily-digest source chain. Rations FMP when ``include_fmp`` is False by
+    dropping 'fmp' from the canonical ``deep_screen_sources``; otherwise returns a
+    copy of ``base`` unchanged. Order-preserving; a no-op when 'fmp' is already
+    absent. The bot's /screen and /deep do NOT use this — they keep the full chain."""
+    if include_fmp:
+        return list(base)
+    return [s for s in base if s != "fmp"]
+
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
                            "edgar_activist_13d", "finra_short_interest"}
@@ -243,8 +255,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # 2. Deep-screen via the harness scorer (mock source offline in --demo)
     from ..screen import run_harness
     from ..data.macro import fetch_macro
-    sources = ["mock"] if demo else scout_cfg.get(
-        "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+    base_sources = scout_cfg.get("deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
+    include_fmp = scout_cfg.get("daily_push", {}).get("include_fmp", True)  # default True = back-compat
+    sources = ["mock"] if demo else digest_sources(base_sources, include_fmp)
     macro = None if demo else fetch_macro(config)  # --demo is offline: no FRED call
     cards = run_harness([c.ticker for c in chosen], sources, config, macro=macro)
 
@@ -255,6 +268,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     assessments: dict[str, dict] = {}
     researched: list[str] = []
     notes: list[str] = []
+    # Caveat only when FMP was actually rationed from a chain that had it — never a
+    # misleading note on a run that used FMP (or never had it).
+    if not demo and not include_fmp and "fmp" in base_sources:
+        notes.append(FMP_RATIONED_NOTE)
     research_enabled = scout_cfg.get("daily_push", {}).get("research", True)
     if not demo and research_enabled:
         briefs, assessments, researched, note, skipped = _research_phase(
