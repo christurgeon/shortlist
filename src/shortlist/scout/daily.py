@@ -22,6 +22,18 @@ from .state import ScoutState
 
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
+FMP_RATIONED_NOTE = "Free-source screen — /deep for PEG + analyst targets."
+
+
+def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
+    """The daily-digest source chain. Rations FMP when ``include_fmp`` is False by
+    dropping 'fmp' from the canonical ``deep_screen_sources``; otherwise returns a
+    copy of ``base`` unchanged. Order-preserving; a no-op when 'fmp' is already
+    absent. The bot's /screen and /deep do NOT use this — they keep the full chain."""
+    if include_fmp:
+        return list(base)
+    return [s for s in base if s != "fmp"]
+
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
                            "edgar_activist_13d", "finra_short_interest"}
