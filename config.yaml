@@ -468,6 +468,10 @@ scout:
                           # and records picks so the selection-ledger scoreboard accumulates.
     research: false       # screen+gate+rank only; skip the Claude auto-research phase
                           # (the digest surfaces names to pass to /deep; default True = legacy push)
+    include_fmp: false    # digest rations FMP -> free-source triage (loses only peg +
+                          # analyst upside_to_target; all 7 axes still score). Flip true on a
+                          # paid FMP plan to use FMP everywhere. Default true = byte-identical
+                          # back-compat; bot /screen + /deep always keep the full chain.
   bot:
     poll_timeout_s: 25     # getUpdates long-poll hold (client read timeout = this + 10;
                            # deploy/shortlist-bot.service TimeoutStopSec must exceed this + slack)
