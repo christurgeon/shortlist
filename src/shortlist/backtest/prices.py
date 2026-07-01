@@ -2,7 +2,10 @@
 
 Uses period1=0 epoch params for full daily history. NEVER range=max (it silently
 degrades to quarterly bars). Parses timestamp PAIRED with adjclose so a null close
-never desynchronizes dates from closes.
+never desynchronizes dates from closes; also parses the UNADJUSTED quote[0].close
+into an aligned `nominal_closes` series, so point-in-time market_cap/PE score off the
+nominal price a live observer saw (not a retro split-adjusted one), while returns and
+momentum keep using the adjusted `closes`.
 """
 from __future__ import annotations
 

@@ -146,7 +146,7 @@ def _log_firehose(state, emissions, session, scout_cfg) -> None:
         return
     try:
         events = cohort_events_from_emissions(emissions, session)
-        cap = fh_cfg.get("max_events_per_run", 200)
+        cap = fh_cfg.get("max_events_per_run", 200)  # 0/None => no cap (use enabled:false to disable)
         if cap and len(events) > cap:
             events = events[:cap]
         state.record_firehose(events, session)
