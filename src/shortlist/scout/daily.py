@@ -15,6 +15,7 @@ from ..env import load_env, redact_secrets
 from ._caption import _caption
 from .budget import select
 from .calendar import last_session
+from .firehose import cohort_events_from_emissions
 from .funnel import aggregate, prefilter
 from .models import RunManifest, SignalStatus
 from .signals import build_signals
@@ -136,6 +137,24 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
     return rows
 
 
+def _log_firehose(state, emissions, session, scout_cfg) -> None:
+    """Best-effort: record the pre-scorer discovery emissions to the raw-signal firehose.
+    Config-gated by scout.firehose.enabled; a failure NEVER aborts the run (mirrors the
+    mark_yahoo_blocked best-effort convention)."""
+    fh_cfg = (scout_cfg or {}).get("firehose", {})
+    if not fh_cfg.get("enabled"):
+        return
+    try:
+        events = cohort_events_from_emissions(emissions, session)
+        cap = fh_cfg.get("max_events_per_run", 200)  # 0/None => no cap (use enabled:false to disable)
+        if cap and len(events) > cap:
+            events = events[:cap]
+        state.record_firehose(events, session)
+    except Exception as exc:  # noqa: BLE001 — best-effort, never abort the scout run
+        import warnings
+        warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
+
+
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
 
@@ -222,6 +241,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             continue
 
     raw = len(emissions)
+    _log_firehose(state, emissions, session, scout_cfg)
     cands = aggregate(emissions, weights_by_signal)
     after_dedup = len(cands)
 

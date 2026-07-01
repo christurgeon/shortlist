@@ -198,8 +198,8 @@ class XbrlSignalSource:
         if cf is None:
             return None
         hist = self.histories.get(ticker.upper())
-        price = hist.close_asof(as_of) if hist else None
-        price_at = (lambda d: hist.price_on(d)) if hist else (lambda d: None)
+        price = hist.nominal_close_asof(as_of) if hist else None
+        price_at = (lambda d: hist.nominal_price_on(d)) if hist else (lambda d: None)
         panel = extract_panel(cf, as_of)
         if not panel.revenue:                 # nothing knowable yet -> drop, never zero
             return None
