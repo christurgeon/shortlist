@@ -496,6 +496,10 @@ scout:
     enabled: true
     scoreboard_max: 10      # prior picks shown in the digest scoreboard
     scoreboard_lookback_days: 120
+  firehose:                  # raw-signal firehose: log every PRE-SCORER discovery event so a
+                             # signal's forward-return quality can be measured (validation harness P0)
+    enabled: true            # best-effort logging; never aborts a run. Absent block => no logging, no state key.
+    max_events_per_run: 200  # safety cap on events persisted per session
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery
