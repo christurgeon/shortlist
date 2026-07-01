@@ -144,16 +144,18 @@ beats any single API.
 | **FMP** (primary) | ratios, key metrics, price-target consensus, recommendations, insider tx | broadest coverage in the fewest calls — the backbone |
 | **Finnhub** (complement) | insider **sentiment** (MSPR), recommendation-trend **deltas**, free real-time quote | clean revision direction + a normalized insider signal FMP doesn't expose as cleanly |
 | **SEC EDGAR** via `edgartools` (authoritative) | Form 4 insider buys/sells + **10-K financials (revenue/FCF/EPS)**, 10-K risk/material-weakness text | the *source of record* the paid APIs are derived from; free, no rate limits — best for your "minimal insider selling" criterion; the 10-K financials recover FCF yield and P/E-vs-history when FMP gates a symbol |
-| **Quiver Quantitative** (optional edge) | congressional trades, **government-contract awards**, lobbying | gov-contract flow is a real, uncorrelated signal for defense/industrial names (LMT, GEV) that no fundamentals feed captures |
+| **Quiver Quantitative** (largely superseded) | congressional trades, government-contract awards, lobbying | gov contracts + lobbying now ship keyless (USAspending / Senate LDA); congressional copy-trading shows no post-STOCK-Act aggregate alpha — see `docs/PREDICTIVE_SIGNALS_RESEARCH.md` |
 | **FRED** (optional macro) | 10y yield, fed funds, 2s10s curve | overlay to tilt the whole run when rates move against rate-sensitive names — not per-stock |
 | **Yahoo** chart (wired) | keyless price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown | momentum/risk we compute & audit ourselves; immune to FMP's per-symbol gating; leads the harness price merge |
 
 FMP, Finnhub, EDGAR, **Yahoo**, **FINRA**, and **WSB** are all wired as harness
 sources (`data/sources.py`). **FRED is now wired** as a run-level macro overlay
 (`data/macro.py` — risk-off regime, display + advisory only, needs a free
-`FRED_API_KEY`), not as a per-ticker source. **Quiver** (congressional trades,
-gov-contract awards) remains scaffolded in `providers/extensions.py` — the
-highest-leverage next addition (awaiting a harness-side `Source`).
+`FRED_API_KEY`), not as a per-ticker source. **Quiver** remains scaffolded in
+`providers/extensions.py` but is largely superseded — gov contracts and lobbying
+now ship keyless (USAspending / Senate LDA), and its remaining feed, congressional
+trades, is a contested prior with no post-STOCK-Act aggregate alpha (verdict in
+`docs/PREDICTIVE_SIGNALS_RESEARCH.md` → deferred/rejected).
 
 ## How scoring works (`scoring.py`)
 

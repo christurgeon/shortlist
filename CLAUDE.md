@@ -684,8 +684,12 @@ FCF-yield / leverage for a bank) explicitly instead of silently dropping-then-av
 
 `providers/extensions.py` has `QuiverProvider` + `FredProvider` stubs. **FRED has shipped**
 as a run-level macro overlay (`data/macro.py:fetch_macro` — risk-off regime, display +
-advisory only; the `FredProvider` stub now raises). **Quiver** (congressional trades,
-gov-contract awards) is the remaining highest-leverage addition. **The stubs predate the
+advisory only; the `FredProvider` stub now raises). **Quiver is largely superseded** — gov
+contracts, lobbying, and WSB shipped keyless (USAspending / Senate LDA / ApeWisdom); its one
+net-new feed, **congressional trades, is a contested prior** (no post-STOCK-Act aggregate
+alpha; verdict in `docs/PREDICTIVE_SIGNALS_RESEARCH.md` → deferred/rejected): if ever wired,
+a disabled-by-default scout discovery originator on the FINRA short-interest pattern, never
+a scored leg or auto-copy. **The stubs predate the
 harness (retired `Provider` interface)** — to wire Quiver, reimplement it as an async
 `Source` in `data/sources.py` and register it in that module's `_REGISTRY` (the
 `--provider`/`harness_sources` chain resolves against the harness Source registry, **not**
