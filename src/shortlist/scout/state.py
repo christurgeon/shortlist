@@ -116,3 +116,28 @@ class ScoutState:
                 continue
             out.extend(self._data["picks"][sess].values())
         return out
+
+    # --- raw-signal firehose (pre-scorer discovery events; Phase-0 validation harness) ---
+    def record_firehose(self, events, session: date) -> None:
+        """Keyed upsert of the session's PRE-SCORER discovery events. `.setdefault` keeps
+        old state files (which predate the "firehose" key) forward-compatible and makes a
+        re-run of a session idempotent. `events` is a list of objects with .ticker, .signal
+        and .to_dict()."""
+        bucket = self._data.setdefault("firehose", {}).setdefault(session.isoformat(), {})
+        for e in events:
+            bucket[f"{e.signal}|{e.ticker.upper()}"] = e.to_dict()
+        self._save()
+
+    def firehose_events(self, on: date, lookback_days: int) -> list[dict]:
+        """All recorded firehose events within the trailing window (flattened, newest
+        sessions first). Tolerates malformed session keys (skips them)."""
+        cutoff = on - timedelta(days=lookback_days)
+        out: list[dict] = []
+        for sess in sorted(self._data.get("firehose", {}), reverse=True):
+            try:
+                if date.fromisoformat(sess) < cutoff:
+                    continue
+            except ValueError:
+                continue
+            out.extend(self._data["firehose"][sess].values())
+        return out
