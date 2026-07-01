@@ -6,6 +6,32 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Signal-validation harness — Phase 0 shipped (PR #104); P1 + P2 next (2026-07-01)
+
+The **highest-impact** build (design: `docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md`,
+local/gitignored; session memory `signal-validation-harness-project`). Turns the ~10 parked
+discovery priors into a measurement flywheel. **Phase 0 = PR #104** (`feat/scout-firehose-h1`):
+raw-signal firehose logging (`scout/firehose.py`, `ScoutState.firehose`, config-gated
+`scout.firehose.enabled`, best-effort) + fixed a pre-existing XBRL look-ahead (H1: scored
+`market_cap`/`PE` off *adjusted* close at past `as_of`; now uses unadjusted `quote[0].close`).
+Built TDD via subagent-driven dev, whole-branch review READY TO MERGE, 1448 tests pass.
+
+Remaining, in order:
+1. **Merge PR #104 + deploy** to `/opt/shortlist` (`git pull` → `install_opt_shortlist.sh` →
+   restart `shortlist-bot`/timer) so the nightly run starts banking firehose events. Until it
+   runs, no raw-cohort data accrues.
+2. **Phase 1 — the evaluator** (`scout/validate.py`): calendar-time portfolio, **FF3**-risk-
+   adjusted (not beta-only — event names load SMB/HML), block bootstrap **block ≥ K**, effective-n
+   in *independent blocks*, survivorship *accounted* (measurable-frac gate — can't be fixed, no free
+   PiT ticker map), Shumway partial delisting returns + sensitivity band, git-blob-hash pre-reg.
+   **v1 emits KILL/HOLD/INSUFFICIENT + IR rank — NOT promote.** Write its own plan once #104 merges
+   (the `CohortEvent` schema is now concrete).
+3. **Phase 2 — 13D backfill** (deferred, gated on §14 spikes): PiT symbology/survivorship,
+   delisting-reason depth, `quote[0].close` cache presence, companyfacts pre-warm cost. Form-4
+   backfill is OUT (~500k–850k fetches). WSB/Yahoo not backfillable.
+
+**Status:** Phase 0 in review (PR #104). P1 plan + P2 spikes not started.
+
 ## Scout delivery-confirmation log — commit/PR + deploy (2026-07-01)
 
 Branch `feat/scout-delivery-log` (off `origin/main`) adds a positive Telegram-delivery log
