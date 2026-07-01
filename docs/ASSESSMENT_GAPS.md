@@ -538,7 +538,7 @@ composite entirely). Assume yours will too. Before writing any code you MUST:
 | Beneish M / accruals (earnings quality) | `DATA_SOURCES.md` D3; §2.5 accruals half (still open) |
 | Estimate-revision / earnings-surprise momentum | `DATA_SOURCES.md` §2 + Tier B — needs an estimates feed (the cleaner momentum signal; Zacks' whole edge) |
 | 13F institutional / smart-money flow | `DATA_SOURCES.md` C3 (free via EDGAR) |
-| Congressional / gov-contract trades | `DATA_SOURCES.md` C2 (Quiver scaffold; the highest-leverage *alt-data* add) |
+| Congressional / gov-contract trades | gov-contracts + lobbying **SHIPPED keyless** (USAspending / Senate LDA — see `CLAUDE.md`); congressional copy-trading **rejected as a scored signal** (post-STOCK-Act evidence null) — contested-prior discovery only (`PREDICTIVE_SIGNALS_RESEARCH.md` deferred/rejected; `DATA_SOURCES.md` C2) |
 | Sector-relative / peer-percentile scoring | §2.3 — highest-leverage **scoring** fix; subsumes the cross-sector band misfire most absolute metrics inherit |
 | Earnings-call transcripts + DEF 14A proxy | §3.1 (deferred) — **highest-leverage research-layer next step** per the reverse-DCF red-team |
 | News / event tone | `DATA_SOURCES.md` A5 (GDELT); EDGAR 8-K/13D/13G/144 events already SHIPPED |

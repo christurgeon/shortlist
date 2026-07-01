@@ -356,6 +356,29 @@ have, worth a backtest before the bigger builds:
   free via EDGAR 13F, genuinely additive smart-money confirmation alongside
   insider Form-4, **but** quarterly and lagged 45 days, and 13F parsing is a
   non-trivial new source. Strong Phase-2 candidate; heavier lift than the 5 above.
+- **Congressional-trade following** (Quiver / CapitolTrades / Autopilot-style
+  copy-trading; evaluated 2026-07-01) — **rejected as a scored signal**. The oft-cited
+  alpha is pre-STOCK-Act (Ziobrowski 2004/2011: abnormal returns on Senate/House
+  trades, 1990s data); on *disclosed* post-2012 trades — the only data any tracker
+  has — the aggregate evidence is null-to-negative (Eggers-Hainmueller 2013 "Capitol
+  Losses"; Belmont-Sacerdote-Sehgal-Van Hoek 2020 NBER WP 26975, publ. *J. Public
+  Econ.* 2022, find senators' post-STOCK-Act purchases slightly *underperform*
+  industry/size-matched stocks at 1/3/6m, with no committee-assignment stock-picking
+  ability), and the marquee outliers are a few concentrated spouse-account
+  options bets (survivorship, not signal). Structural defects compound the weak base
+  rate: the 30/45-day disclosure lag outlives any policy-information half-life;
+  amounts are wide ranges ($1,001–$15k…) often on spouse/managed accounts, so
+  conviction is unknowable; tracker "politician returns" are reconstructions from
+  range midpoints and assumed fills; and the disclosure-day pop is partly *caused* by
+  copy-trading flow (reflexive — an auto-copier systematically buys its own pop). If
+  ever built: a scout **discovery originator** on the FINRA short-interest pattern
+  (contested prior, ships disabled, attention-not-direction — the scorer + gates
+  judge, the selection ledger measures), keyed on **cluster buys** (several members,
+  same name/window — the only slice the literature leaves plausible), sourced from
+  the free House Clerk PTR / Senate eFD disclosures (PDF/HTML-shaped; community JSON
+  mirrors are unmaintained — needs a feasibility pass), never Quiver's paid API.
+  **Never auto-execution, never a scored leg.** Not XBRL-backtestable (disclosures
+  aren't in companyfacts) — ledger-measured only.
 - **Google Trends attention** (Da-Engelberg-Gao 2011) — free but the endpoint is
   unofficial, rate-limited, and normalization is fiddly; weaker fit than the picks.
 - **Magic Formula / Acquirer's Multiple / EV-EBIT** — we already *measured* EV/EBIT
