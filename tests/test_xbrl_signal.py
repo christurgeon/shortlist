@@ -50,7 +50,8 @@ def _price_history():
         for mo in range(1, 13):
             dates.append(date(y, mo, 28))
             closes.append(40.0 + (y - 2020) * 10 + mo)
-    return PriceHistory("TST", dates, closes)
+    # No split in this fixture -> nominal (unadjusted) == adjusted close.
+    return PriceHistory("TST", dates, closes, nominal_closes=list(closes))
 
 def test_xbrl_signal_emits_fundamental_subscores():
     src = XbrlSignalSource({"TST": _facts_for()}, {"TST": _price_history()}, THRESH)

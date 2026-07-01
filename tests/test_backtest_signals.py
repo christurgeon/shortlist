@@ -258,7 +258,8 @@ def _price_history(ticker="TST"):
         for mo in range(1, 13):
             dates.append(date(y, mo, 28))
             closes.append(40.0 + (y - 2020) * 10 + mo)
-    return PriceHistory(ticker, dates, closes)
+    # No split in this fixture -> nominal (unadjusted) == adjusted close.
+    return PriceHistory(ticker, dates, closes, nominal_closes=list(closes))
 
 
 _PRICE_AXIS_BANDS = {
@@ -331,3 +332,34 @@ def test_xbrl_source_emits_ev_ebit_axes():
     assert "value_pe_vs_history" in obs.signals
     assert "value_plus_evebit" in obs.signals
     assert all(0.0 <= v <= 100.0 for v in obs.signals.values())
+
+
+def test_observe_uses_nominal_close_for_market_cap(monkeypatch):
+    seen = {}
+
+    def fake_panel_to_metrics(panel, *, ticker, sic, price, price_at):
+        seen["price"] = price
+        seen["price_at"] = price_at(date(2020, 6, 30))
+        from shortlist.scoring import StockMetrics
+        return StockMetrics(ticker=ticker)
+
+    def fake_extract_panel(cf, as_of):
+        class _P:  # truthy .revenue so observe() doesn't early-return
+            revenue = {"2020-12-31": 1.0}
+        return _P()
+
+    import shortlist.backtest.signals as sig_mod
+    monkeypatch.setattr(sig_mod, "panel_to_metrics", fake_panel_to_metrics)
+    monkeypatch.setattr(sig_mod, "extract_panel", fake_extract_panel)
+
+    hist = PriceHistory("X", [date(2020, 6, 30), date(2021, 1, 4)],
+                        closes=[45.0, 50.0],          # adjusted (post-split)
+                        nominal_closes=[90.0, 100.0])  # unadjusted (what a live observer saw)
+    src = XbrlSignalSource(facts={"X": {"cik": "1"}}, histories={"X": hist}, thresholds={})
+    try:
+        src.observe("X", date(2021, 1, 5))
+    except KeyError:
+        pass  # empty thresholds{} trips the axis-scoring loop AFTER panel_to_metrics
+              # already captured price/price_at into `seen` -- that's all this test checks
+    assert seen["price"] == 100.0          # nominal at as_of, NOT the adjusted 50.0
+    assert seen["price_at"] == 90.0        # nominal at the historical PE-year date
