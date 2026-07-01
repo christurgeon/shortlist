@@ -12,7 +12,7 @@ def _chart(ts_closes):
 
 def test_parse_chart_pairs_and_drops_only_null_close():
     raw = _chart([(86400, 100.0), (172800, None), (259200, 102.0)])
-    dates, closes = parse_chart(raw)
+    dates, closes, _ = parse_chart(raw)
     assert closes == [100.0, 102.0]
     assert dates == [date(1970, 1, 2), date(1970, 1, 4)]   # dates stay ALIGNED
     assert len(dates) == len(closes)
@@ -21,7 +21,7 @@ def test_parse_chart_pairs_and_drops_only_null_close():
 def test_parse_chart_drops_nan_and_inf_keeps_alignment():
     raw = _chart([(86400, 100.0), (172800, float("nan")),
                   (259200, float("inf")), (345600, 105.0)])
-    dates, closes = parse_chart(raw)
+    dates, closes, _ = parse_chart(raw)
     assert closes == [100.0, 105.0]                        # NaN/Inf excluded
     assert dates == [date(1970, 1, 2), date(1970, 1, 5)]   # still aligned
 
@@ -58,3 +58,39 @@ def test_forward_return_calendar_month_excess_drop():
     r = h.forward_return(date(2020, 1, 1), horizon_months=3)
     assert r is not None and 0.8 < r < 1.0
     assert h.forward_return(date(2020, 8, 1), horizon_months=3) is None
+
+
+def _raw(ts, adj, nominal):
+    return {"chart": {"result": [{
+        "timestamp": ts,
+        "indicators": {
+            "adjclose": [{"adjclose": adj}],
+            "quote": [{"close": nominal}],
+        },
+    }]}}
+
+
+def test_parse_chart_returns_aligned_nominal_closes():
+    # 2021-01-04, 2021-01-05 (UTC midnight epochs)
+    ts = [1609722000, 1609808400]
+    dates, closes, nominal = parse_chart(_raw(ts, adj=[90.0, 91.0], nominal=[100.0, 101.0]))
+    assert len(dates) == len(closes) == len(nominal) == 2
+    assert closes == [90.0, 91.0]          # adjusted, unchanged
+    assert nominal == [100.0, 101.0]        # unadjusted, new
+
+
+def test_parse_chart_nominal_none_when_quote_absent():
+    ts = [1609722000]
+    raw = {"chart": {"result": [{"timestamp": ts,
+            "indicators": {"adjclose": [{"adjclose": [90.0]}]}}]}}  # no quote array
+    dates, closes, nominal = parse_chart(raw)
+    assert closes == [90.0]
+    assert nominal == [None]                # aligned, but unknown
+
+
+def test_nominal_close_asof_uses_unadjusted_series():
+    h = PriceHistory("X", [date(2021, 1, 4), date(2021, 1, 5)],
+                      [90.0, 91.0], nominal_closes=[100.0, 101.0])
+    assert h.nominal_close_asof(date(2021, 1, 6)) == 101.0
+    assert h.close_asof(date(2021, 1, 6)) == 91.0   # adjusted path unchanged
+    assert h.nominal_price_on(date(2021, 1, 5)) == 101.0
