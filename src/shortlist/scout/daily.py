@@ -315,8 +315,15 @@ def run(config: dict, *, demo: bool, today: date) -> int:
                      session=session.isoformat())
     if not result.configured:
         print(artifacts.text)  # journal fallback
-    if result.configured and not result.all_ok:
+        print(f"scout: telegram not configured; journaled {session} report "
+              f"({len(cards)} names)", file=sys.stderr)
+    elif result.all_ok:
+        print(f"scout: delivered {session} report to telegram ({len(cards)} names)",
+              file=sys.stderr)
+    else:
         manifest.notes.append("telegram delivery failed (configured)")
+        print(f"scout: telegram delivery failed for {session} "
+              f"({', '.join(result.failures)})", file=sys.stderr)
     _persist(scout_cfg, manifest, artifacts)
     state.mark_run_completed(session)
     state.record_screened([c.ticker for c in cards], session)

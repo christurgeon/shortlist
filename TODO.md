@@ -6,6 +6,36 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Scout delivery-confirmation log — commit/PR + deploy (2026-07-01)
+
+Branch `feat/scout-delivery-log` (off `origin/main`) adds a positive Telegram-delivery log
+line in `daily.py` — a successful send now emits `scout: delivered <session> report to
+telegram (<n> names)` to stderr (previously **silent** on success; only failures surfaced via
+exit-code 2 + a manifest note). Also logs the not-configured journal path and names the failed
+transports on partial failure. Test added; 27 related scout tests pass. **Uncommitted.**
+Remaining: commit → PR (match #100/#101 flow) → merge → deploy to `/opt/shortlist` (`git pull`
+→ `install_opt_shortlist.sh` → restart) so the next 22:30 run logs delivery. Only a *future*-run
+fix — can't retroactively confirm the 06-30 push (eyeball Telegram for that).
+
+Also pending: delete the merged branch `docs/todo-fmp-digest-wrapup` (PR #101 MERGED; note is
+on `origin/main`) — local `git branch -D` + optional remote delete.
+
+**Status:** code + test done on `feat/scout-delivery-log`, uncommitted; PR/deploy + stale-branch
+cleanup pending operator action.
+
+## Verified: first FMP-free digest ran clean (2026-06-30) — item below resolved
+
+The `shortlist-scout` timer fired 2026-06-30 22:30 UTC on `/opt/shortlist` (the deployed repo;
+`/home/chris/shortlist` is a stale dev checkout — ignore its `state/`). Confirmed **0 FMP calls**
+(`PEG` + `Target upside` null on every name incl. AMD/NKE; all 7 axes still scored, `value`
+recovered from EDGAR/Yahoo), the "Free-source screen — /deep for PEG + analyst targets" caveat +
+`/deep` block + prior-picks-vs-SPY scoreboard all rendered, `research: false` honored (no Claude
+burn), picks recorded (`runs`/`picks` include 06-30), no delivery errors. **Delivery not
+positively logged** (the gap the new `feat/scout-delivery-log` branch fixes) — 06-30 push itself
+unconfirmed; check Telegram. Paid-FMP flip below remains a deferred decision.
+
+---
+
 ## FMP-free daily digest shipped + deployed — verify first run / paid-plan flip (2026-06-30)
 
 `scout.daily_push.include_fmp: false` (#100) makes the unattended digest screen on free
