@@ -32,6 +32,20 @@ Remaining, in order:
 
 **Status:** Phase 0 in review (PR #104). P1 plan + P2 spikes not started.
 
+## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
+
+Branch `docs/congressional-trades-verdict` (off `main`, doc-only) records the verdict:
+post-STOCK-Act evidence for copy-trading disclosed congressional trades is null-to-negative
+(Eggers-Hainmueller 2013; Belmont-Sacerdote et al. 2020), so it is **rejected as a scored
+leg / auto-copy** — contested-prior scout discovery originator at most (cluster buys, FINRA
+short-interest pattern), full entry in `PREDICTIVE_SIGNALS_RESEARCH.md` → deferred/rejected.
+Also corrects the now-stale "Quiver = highest-leverage add" framing in `DATA_SOURCES.md` C2 +
+§2 gap 5, `ASSESSMENT_GAPS.md`, `CLAUDE.md`, `README.md` (gov contracts / lobbying / WSB have
+since shipped keyless). If the originator is ever wanted: first a feasibility pass on the free
+House Clerk PTR / Senate eFD feeds (PDF/HTML-shaped; community JSON mirrors unmaintained).
+
+**Status:** committed on `docs/congressional-trades-verdict`; push → PR → merge pending.
+
 ## Scout delivery-confirmation log — commit/PR + deploy (2026-07-01)
 
 Branch `feat/scout-delivery-log` (off `origin/main`) adds a positive Telegram-delivery log

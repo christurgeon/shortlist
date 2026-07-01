@@ -58,9 +58,12 @@ These are the holes that matter, ranked by how much they distort an assessment:
    how you avoid value traps. We score profitability but never ask if the earnings are *real*.
 4. **No macro/risk regime.** A 9/10 cyclical in a widening-credit-spread regime is a
    different bet than in a calm one. We assess names in a vacuum.
-5. **No smart-money or alt-data confirmation.** 13F institutional flow, short interest,
-   congressional/gov-contract activity, and attention proxies are all absent — the
-   differentiated layer where edge actually lives.
+5. **Smart-money / alt-data confirmation is partly addressed.** ~~13F institutional flow,
+   short interest, congressional/gov-contract activity, and attention proxies are all
+   absent.~~ **Done (harness):** FINRA short interest (C1), gov-contract flow (USAspending),
+   lobbying (Senate LDA), and WSB attention (ApeWisdom) are wired. **Still open:** 13F
+   institutional flow (C3); congressional trades evaluated and **rejected as a scored
+   signal** (`PREDICTIVE_SIGNALS_RESEARCH.md` → deferred/rejected).
 6. **No news/event awareness.** ~~An 8-K, a 13D activist stake, or a tone collapse in the news
    can invalidate a fundamentals snapshot the day after we take it.~~ **Partially closed (harness):**
    8-K material events, SC 13D activist stakes, 13G passive stakes, and Form 144 planned insider
@@ -233,16 +236,25 @@ not a new sub-score or hard gate.
   — conservative vs. float. Feeds the `crowded_short` soft flag (advisory; never changes
   `composite` / `passed`).
 
-#### C2. Quiver Quant — congressional trades, gov contracts, lobbying  (already scaffolded)
-- **What:** `api.quiverquant.com/beta/` — congressional & senate trading, **government
-  contract awards**, lobbying, WSB mentions.
-- **Why:** The scaffold's rationale stands: **gov-contract flow is directly material to
-  defense/industrial names (LMT, GEV)** and is captured by no fundamentals feed — this is
-  genuine edge. Congressional-trade clustering is a softer but real sentiment signal.
+#### C2. Quiver Quant — congressional trades, gov contracts, lobbying  (largely superseded)
+- **Status (2026-07-01):** three of Quiver's four datasets have since shipped **keyless**:
+  gov contracts (`GovContractsSource` → USAspending `spending_by_transaction`), lobbying
+  (`LobbyingSource` → Senate LDA API), WSB mentions (`WsbSource` → ApeWisdom) — see
+  `CLAUDE.md` for each. Quiver's only remaining net-new feed is **congressional trades**,
+  and the copy-trade evidence is **contested, not positive**: the cited alpha is
+  pre-STOCK-Act (Ziobrowski 2004/2011); on disclosed post-2012 trades the aggregate result
+  is null-to-negative (Eggers-Hainmueller 2013; Belmont-Sacerdote et al. 2020). Full
+  verdict: `PREDICTIVE_SIGNALS_RESEARCH.md` → "Deferred / rejected".
+- **What:** `api.quiverquant.com/beta/` — congressional & senate trading, government
+  contract awards, lobbying, WSB mentions.
 - **Access:** **paid**, with a limited free tier for some endpoints; `QUIVER_API_KEY` already
-  in `.env.example`. (Flagged honestly: the richest endpoints are paid.)
-- **Wire-in:** the scaffold already specifies `gov_contract_momentum` and `congress_net_buy`
-  → a new low-weight sub-score in `scoring.py`, registered via `--provider quiver`.
+  in `.env.example`. The raw congressional disclosures are free (House Clerk PTR / Senate
+  eFD) but PDF/HTML-shaped — free-source feasibility unverified.
+- **Wire-in (revised):** ~~`gov_contract_momentum` and `congress_net_buy` → a new low-weight
+  sub-score in `scoring.py`~~ — off the table on the evidence above. If congressional trades
+  are ever wired: a scout **discovery originator** on the FINRA short-interest pattern
+  (contested prior, ships disabled, cluster-buys only, selection-ledger-measured), never a
+  scored leg and never auto-execution.
 
 #### C3. SEC 13F — institutional / smart-money ownership
 - **What:** 13F-HR filings (from the same EDGAR pipeline as A1) aggregated per security:
