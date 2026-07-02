@@ -1,0 +1,14 @@
+# Pre-registered validation parameters for the edgar:activist_13d signal.
+# Committed BEFORE any backfill/eval run; the evaluator verifies this file's git commit
+# time against the run as_of and flags the verdict non-preregistered if edited after.
+# Fixing ALL of these here (not in config.yaml) is the anti-p-hacking guard (spec §7/F7).
+signal: edgar:activist_13d
+as_of: 2026-07-01
+k_months: 12                 # single primary horizon (13D drift is multi-quarter)
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90
+min_independent_blocks: 2    # >=2*K months of matured data before ANY verdict (kill/rank)
+min_bucket_events: 5         # R-A4: vintage buckets below this count aren't checked against the floor
+delisting_return: -0.55      # Shumway partial (Nasdaq-listed default); band tested in eval
+regime_down_rule: spy_trailing_3m_negative

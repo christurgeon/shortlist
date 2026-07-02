@@ -500,6 +500,13 @@ scout:
                              # signal's forward-return quality can be measured (validation harness P0)
     enabled: true            # best-effort logging; never aborts a run. Absent block => no logging, no state key.
     max_events_per_run: 200  # safety cap on events persisted per session
+  validate:                  # signal-validation evaluator (Phase 1). Absent => no CLI/section change.
+                             # Inference params (min_measurable_frac, min_independent_blocks, K,
+                             # delisting_return, …) live ONLY in src/shortlist/scout/preregister/
+                             # <signal>.yaml — the git-hashed anti-p-hacking pre-reg. Only the two
+                             # operational knobs below are read from config.
+    lookback_days: 365
+    factor_cache_dir: .cache/famafrench
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery

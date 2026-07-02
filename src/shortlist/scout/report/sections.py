@@ -624,8 +624,45 @@ class _PriorPicks:
                [f"  {self._line(p)}" for p in picks]
 
 
+# ---- signal-validation scoreboard (display-only; shortlist-scout validate, Phase 1) ----
+class _ValidationScoreboard:
+    """Display-only per-signal KILL/HOLD/INSUFFICIENT verdicts from the offline
+    `shortlist-scout validate` evaluator (scout/validate.py). Purely informational —
+    never wired into scoring, gating, or ranking. NEVER renders a PROMOTE verdict (the
+    evaluator itself never emits one). `vm.validation` is None on every ordinary daily
+    run, so this section is absent and the report stays byte-identical."""
+    id, title = "validation", "Signal validation (provisional)"
+
+    _DISCLAIMER = ("Display / provisional / survivorship-accounted — "
+                   "not evidence, not advice.")
+
+    def applies(self, vm) -> bool:
+        return bool(getattr(vm, "validation", None))
+
+    @staticmethod
+    def _line(v: dict) -> str:
+        ir = v.get("ir")
+        ir_s = f"{ir:.2f}" if isinstance(ir, (int, float)) else "—"
+        return (f"{v.get('signal', '?')}: {v.get('verdict', '?')} "
+                f"(IR {ir_s}, n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)})")
+
+    def render_html(self, vm, h) -> str:
+        rows = "".join(h.tag("div", self._line(v), _class="verdict")
+                       for v in getattr(vm, "validation", []) or [])
+        note = h.tag("div", self._DISCLAIMER, _class="muted")
+        return h.raw("div", rows + note, _class="validation")
+
+    def render_text(self, vm, detail=None) -> str:
+        rows = list(getattr(vm, "validation", []) or [])
+        lines = ["Signal validation (provisional):"]
+        lines += [f"  {self._line(v)}" for v in rows]
+        lines.append(self._DISCLAIMER)
+        return "\n".join(lines)
+
+
 SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
-                            _DeepBlock(), _PriorPicks(), _Portfolio(), _Glossary(), _Footer()]
+                            _DeepBlock(), _PriorPicks(), _ValidationScoreboard(), _Portfolio(),
+                            _Glossary(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:
@@ -642,5 +679,8 @@ def render_text(vm: ReportVM, detail: Detail) -> str:
     lines = [f"📊 Scout shortlist — session {vm.session.isoformat()}", ""]
     for s in SECTIONS:
         if s.applies(vm):
-            lines += s.render_text(vm, detail)
+            out = s.render_text(vm, detail)
+            # Most sections return list[str]; _ValidationScoreboard returns a joined
+            # str (its own unit test asserts a str result) — accept either shape.
+            lines += out if isinstance(out, list) else ["", *out.splitlines()]
     return "\n".join(lines)

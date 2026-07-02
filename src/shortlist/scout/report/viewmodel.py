@@ -113,6 +113,12 @@ class ReportVM:
     portfolio: "object | None" = None   # shortlist.portfolio.PortfolioSummary | None
     deep_block: list[str] = field(default_factory=list)   # non-gated tickers for the /deep handoff
     prior_picks: list[dict] = field(default_factory=list)  # scoreboard rows (pick_performance dicts)
+    validation: "list[dict] | None" = None   # SignalVerdict dicts (shortlist-scout validate);
+                                             # None => the display-only scoreboard section is absent.
+                                             # NOTE: dormant today (nothing populates it on the live
+                                             # daily path). When the future digest-wiring task feeds
+                                             # verdicts in, pass dataclasses.asdict(v) — the section
+                                             # reads dict keys, not SignalVerdict attributes.
 
 
 def _claim(x) -> str:
@@ -211,7 +217,7 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
 
 def build_view_model(cards, manifest: RunManifest, *,
                      assessments: dict[str, dict], macro=None, portfolio=None,
-                     prior_picks=None) -> ReportVM:
+                     prior_picks=None, validation=None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
     leaders = [_leader_vm(c, assessments) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
@@ -229,4 +235,5 @@ def build_view_model(cards, manifest: RunManifest, *,
         macro=macro,
         portfolio=portfolio,
         deep_block=deep_block,
-        prior_picks=list(prior_picks or []))
+        prior_picks=list(prior_picks or []),
+        validation=validation)

@@ -6,6 +6,7 @@ import concurrent.futures
 import json
 import os
 import sys
+from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -486,12 +487,188 @@ def _persist(scout_cfg, manifest, artifacts) -> None:
         (out_dir / "dashboard.png").write_bytes(artifacts.png)
 
 
-def main(argv: list[str] | None = None) -> int:
+# --- Phase-1 signal-validation evaluator (`shortlist-scout validate`) ---
+# Offline, read-only diagnostic: measures each firehose signal's forward-return quality
+# and emits a KILL/HOLD/INSUFFICIENT verdict (never PROMOTE). See scout/validate.py,
+# scout/preregister.py, scout/factors.py, docs/superpowers/specs/
+# 2026-07-01-signal-validation-harness-backfill-design.md.
+
+_DELISTING_BAND = (None, -0.30, -0.55, -1.00)
+
+
+async def _fetch_validate_data(tickers: list[str], cache_dir: str, today_iso: str):
+    """Fetch the FF3 monthly factors + per-ticker price history needed by the evaluator.
+    Both fetches are day-cached; per-ticker failures are isolated (a bad symbol doesn't
+    sink the whole eval — it simply has no history, so its events stay non-measurable)."""
+    import httpx
+
+    from ..backtest.prices import _UA, fetch_history
+    from .factors import fetch_ff3_monthly
+
+    async with httpx.AsyncClient(headers={"User-Agent": _UA}, timeout=30.0) as client:
+        try:
+            ff3 = await fetch_ff3_monthly(client, cache_dir=cache_dir, today=today_iso)
+        except Exception as exc:  # noqa: BLE001
+            print(f"scout validate: FF3 factor fetch failed ({redact_secrets(str(exc))})",
+                  file=sys.stderr)
+            ff3 = {}
+        hists = {}
+        for tk in tickers:
+            try:
+                hists[tk] = await fetch_history(tk, client, cache_dir=cache_dir, today=today_iso)
+            except Exception as exc:  # noqa: BLE001
+                print(f"scout validate: price fetch failed for {tk} "
+                     f"({redact_secrets(str(exc))})", file=sys.stderr)
+    return ff3, hists
+
+
+def _slug_for_signal(signal: str) -> str:
+    """Firehose events carry colon-separated signal names (e.g. 'edgar:activist_13d');
+    pre-registration files are named with underscores (edgar_activist_13d.yaml)."""
+    return signal.replace(":", "_")
+
+
+def _delisting_band_flip(evs, signal, k_months, hists, ff3, as_of, weighting="equal") -> bool:
+    """Re-measure the cohort across the delisting-return sensitivity band (spec §6.6) and
+    flag a flip when the FF3 alpha sign disagrees across band members that produce a
+    computable alpha. A flip means the verdict is an artifact of the delisting assumption,
+    not a robust conclusion -- decide() downgrades any HOLD to INSUFFICIENT on a flip."""
+    from .validate import calendar_time_portfolio, ff3_alpha, measure_cohort
+
+    signs: set[int] = set()
+    for dr in _DELISTING_BAND:
+        m = measure_cohort(evs, signal, k_months, hists, dr, as_of=as_of)
+        ctp = calendar_time_portfolio(m.events, k_months, weighting=weighting)
+        alpha, _betas = ff3_alpha(ctp, ff3)
+        if alpha is not None and alpha != 0:
+            signs.add(1 if alpha > 0 else -1)
+    return len(signs) > 1
+
+
+def run_validate(config: dict, *, today: date, lookback_days: int) -> list:
+    """The `validate` eval flow: load the firehose cohort, group by signal, fetch FF3 +
+    price history, measure/decide per signal (gated by pre-registration tamper-checks).
+    Returns a list of `validate.SignalVerdict`. Read-only -- never writes config.yaml or
+    scores/gates/ranks a live screen."""
+    import asyncio
+
+    from .preregister import load_prereg, verify_untampered
+    from .validate import SignalVerdict, calendar_time_portfolio, decide, measure_cohort
+
+    scout_cfg = config.get("scout", {})
+    val_cfg = scout_cfg.get("validate", {})
+    state = ScoutState(Path(scout_cfg.get("state_path", "state/scout_state.json")))
+    events = state.firehose_events(today, lookback_days)
+
+    by_signal: dict[str, list[dict]] = {}
+    for e in events:
+        sig = e.get("signal")
+        if sig:
+            by_signal.setdefault(sig, []).append(e)
+
+    if not by_signal:
+        return []
+
+    tickers = sorted({(e.get("ticker") or "").upper() for e in events if e.get("ticker")})
+    cache_dir = val_cfg.get("factor_cache_dir", ".cache/famafrench")
+    ff3, hists = asyncio.run(_fetch_validate_data(tickers, cache_dir, today.isoformat()))
+
+    repo_root = str(_DEFAULT_CONFIG.parent)
+    verdicts: list[SignalVerdict] = []
+    for signal in sorted(by_signal):
+        evs = by_signal[signal]
+        slug = _slug_for_signal(signal)
+        try:
+            # yaml.YAMLError is neither OSError nor ValueError, so a MALFORMED committed
+            # pre-reg (not just a missing one) must be caught here too — otherwise one bad
+            # YAML would abort the whole eval loop and starve every other signal of a
+            # verdict. Keep the guard PER-SIGNAL (never around the loop) so a bad file
+            # degrades only its own signal to INSUFFICIENT and the loop continues.
+            prereg = load_prereg(slug, repo_root=repo_root)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            verdicts.append(SignalVerdict(
+                signal=signal, verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
+                alpha_ci=None, effective_blocks=0, n_selected=len(evs), n_measurable=0,
+                measurable_fraction=0.0, sensitivity_flip=False,
+                notes=[f"pre-registration for slug '{slug}' missing or unparsable — "
+                      f"cannot evaluate ({redact_secrets(str(exc))})"]))
+            continue
+
+        k_months = int(prereg.get("k_months", 12))
+        weighting = prereg.get("weighting", "equal")
+        primary_delisting_return = prereg.get("delisting_return")
+        measurement = measure_cohort(evs, signal, k_months, hists,
+                                     primary_delisting_return, as_of=today)
+        ctp_rows = calendar_time_portfolio(measurement.events, k_months, weighting=weighting)
+        flip = _delisting_band_flip(evs, signal, k_months, hists, ff3, today, weighting)
+        verdict = decide(measurement, ctp_rows, ff3, k_months, prereg,
+                         sensitivity_flip=flip, cohort_type="raw")
+
+        ok, reason = verify_untampered(slug, repo_root=repo_root, run_as_of=today)
+        if not ok:
+            verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
+        verdicts.append(verdict)
+    return verdicts
+
+
+def _print_validate_table(verdicts: list) -> None:
+    if not verdicts:
+        print("scout validate: no firehose events in the lookback window")
+        return
+    header = (f"{'SIGNAL':<28}{'VERDICT':<14}{'IR':>8}{'ALPHA/mo':>10}"
+             f"{'BLOCKS':>8}{'N_SEL':>7}{'N_MEAS':>8}{'FRAC':>7}{'FLIP':>6}")
+    print(header)
+    print("-" * len(header))
+    for v in verdicts:
+        ir = f"{v.ir:.2f}" if v.ir is not None else "-"
+        alpha = f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-"
+        print(f"{v.signal:<28}{v.verdict:<14}{ir:>8}{alpha:>10}{v.effective_blocks:>8}"
+             f"{v.n_selected:>7}{v.n_measurable:>8}{v.measurable_fraction:>7.2f}"
+             f"{'Y' if v.sensitivity_flip else 'N':>6}")
+        for note in v.notes:
+            print(f"    - {note}")
+    print()
+    print("Display / provisional / survivorship-accounted — not evidence, not advice. "
+         "NEVER a PROMOTE signal.")
+
+
+def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
+                      as_json: bool) -> int:
+    scout_cfg = config.get("scout", {})
+    val_cfg = scout_cfg.get("validate", {})
+    lb = lookback_days if lookback_days is not None else val_cfg.get("lookback_days", 365)
+    verdicts = run_validate(config, today=today, lookback_days=lb)
+    if as_json:
+        print(json.dumps([asdict(v) for v in verdicts], default=str, indent=2))
+    else:
+        _print_validate_table(verdicts)
+    return 0
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Top-level parser with an optional `validate` subcommand (`dest="subcommand"`, NOT
+    required). The bare (no-subcommand) invocation keeps its historical flat flags
+    (--demo/--config/--no-research) so `shortlist-scout` / `shortlist-scout --demo` parse
+    and run the daily flow exactly as before the subparser refactor."""
     ap = argparse.ArgumentParser(prog="shortlist-scout",
                                  description="Autonomous candidate discovery + daily report.")
     ap.add_argument("--demo", action="store_true", help="offline run; print report to stdout")
     ap.add_argument("--config", default=str(_DEFAULT_CONFIG))
     ap.add_argument("--no-research", action="store_true", help="skip the Claude research phase")
+
+    sub = ap.add_subparsers(dest="subcommand")
+    vp = sub.add_parser(
+        "validate",
+        help="evaluate discovery-signal forward-return quality (Phase 1, offline/read-only)")
+    vp.add_argument("--json", action="store_true", help="dump verdicts as JSON")
+    vp.add_argument("--lookback-days", type=int, default=None,
+                    help="firehose lookback window in days "
+                         "(default: config scout.validate.lookback_days, else 365)")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = build_arg_parser()
     args = ap.parse_args(argv)
 
     load_env()
@@ -499,6 +676,15 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["SCOUT_NO_RESEARCH"] = "1"
     config = yaml.safe_load(Path(args.config).read_text())
     today = datetime.now(timezone.utc).date()
+
+    if getattr(args, "subcommand", None) == "validate":
+        try:
+            return _run_validate_cli(config, today=today, lookback_days=args.lookback_days,
+                                     as_json=args.json)
+        except Exception as e:  # noqa: BLE001
+            print(f"scout: validate failed: {redact_secrets(str(e))}", file=sys.stderr)
+            return 1
+
     try:
         return run(config, demo=args.demo, today=today)
     except Exception as e:  # noqa: BLE001
