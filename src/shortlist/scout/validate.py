@@ -8,6 +8,7 @@ Proposal-only: never writes config.yaml.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -174,3 +175,139 @@ def _series_terminated(hist: PriceHistory, entry: date, horizon_months: int,
     if target > as_of:
         return False                      # horizon not yet elapsed -> immature, not delisted
     return hist.dates[-1] < target        # past target with an early terminus -> delisting
+
+
+def ols(y: list[float], X: list[list[float]]) -> list[float]:
+    """Ordinary least squares via normal equations (X'X b = X'y) solved by Gaussian
+    elimination. An intercept column of 1s is prepended internally. Stdlib only.
+    Returns [intercept, *coeffs]. Raises ValueError on a singular system.
+
+    NO regularization: the pivot check (abs(pivot) < 1e-12 -> raise) is load-bearing for
+    the abstention contract. A materially-collinear / near-singular design must RAISE so
+    the caller (ff3_alpha / information_ratio) catches it and returns None, rather than a
+    ridge silently returning a garbage alpha for an ill-conditioned regression."""
+    n = len(y)
+    if n == 0 or n != len(X):
+        raise ValueError("ols: empty or mismatched input")
+    k = len(X[0]) + 1
+    A = [[1.0] + list(row) for row in X]                 # design matrix with intercept
+    # Normal equations
+    XtX = [[sum(A[r][i] * A[r][j] for r in range(n)) for j in range(k)] for i in range(k)]
+    Xty = [sum(A[r][i] * y[r] for r in range(n)) for i in range(k)]
+    # Gaussian elimination with partial pivoting
+    M = [XtX[i] + [Xty[i]] for i in range(k)]
+    for col in range(k):
+        piv = max(range(col, k), key=lambda r: abs(M[r][col]))
+        if abs(M[piv][col]) < 1e-12:
+            raise ValueError("ols: singular normal-equations matrix")
+        M[col], M[piv] = M[piv], M[col]
+        pivval = M[col][col]
+        M[col] = [v / pivval for v in M[col]]
+        for r in range(k):
+            if r != col and abs(M[r][col]) > 0:
+                factor = M[r][col]
+                M[r] = [a - factor * b for a, b in zip(M[r], M[col])]
+    return [M[i][k] for i in range(k)]
+
+
+def _aligned(ctp_rows, ff3):
+    """Join CTP months to FF3 months -> (excess_returns, factor_rows) aligned."""
+    y, X = [], []
+    for mo, r, _n in ctp_rows:
+        f = ff3.get(mo)
+        if f is None:
+            continue
+        mkt, smb, hml, rf = f
+        y.append(r - rf)
+        X.append([mkt, smb, hml])
+    return y, X
+
+
+def ff3_alpha(ctp_rows, ff3, min_obs: int = 6):
+    y, X = _aligned(ctp_rows, ff3)
+    if len(y) < min_obs:
+        return (None, [])
+    try:
+        b = ols(y, X)
+    except ValueError:
+        return (None, [])
+    return (b[0], b[1:])
+
+
+def effective_blocks(n_months: int, k_months: int) -> int:
+    """Independent blocks ~= T/K (spec §6.3/F2). NOT raw months — K-month holdings make
+    adjacent monthly CTP returns autocorrelated out to lag K."""
+    if k_months <= 0:
+        return 0
+    return n_months // k_months
+
+
+def _residuals(y, X, b):
+    out = []
+    for i in range(len(y)):
+        pred = b[0] + sum(b[1 + j] * X[i][j] for j in range(len(X[i])))
+        out.append(y[i] - pred)
+    return out
+
+
+def information_ratio(ctp_rows, ff3, min_obs: int = 6):
+    """Annualised FF3 alpha / annualised tracking error (residual std). One horizon-agnostic,
+    risk-normalised number so signals at different K are comparable (spec §6.3/F4)."""
+    y, X = _aligned(ctp_rows, ff3)
+    if len(y) < min_obs:
+        return None
+    try:
+        b = ols(y, X)
+    except ValueError:
+        return None
+    resid = _residuals(y, X, b)
+    n = len(resid)
+    k = len(X[0]) + 1                                     # intercept + factors (regressors)
+    if n <= k:
+        return None                                      # no residual d.o.f.
+    mean = sum(resid) / n
+    var = sum((e - mean) ** 2 for e in resid) / (n - k)  # regression d.o.f. (n-k, not n-1)
+    te = math.sqrt(var)
+    if te <= 0:
+        return None
+    return (b[0] * 12.0) / (te * math.sqrt(12.0))
+
+
+def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
+                                     n_boot: int = 2000, min_obs: int = 6, seed: int = 12345):
+    """Block-bootstrap CI (5th/95th pct) of the FF3 alpha with mean block length = k_months
+    (block >= K, spec §6.3/F1). Beta is re-estimated inside each replicate (F13). Uses a
+    deterministic stdlib LCG (no Math.random) so the CI is reproducible across runs."""
+    y, X = _aligned(ctp_rows, ff3)
+    n = len(y)
+    if n < min_obs or k_months <= 0:
+        return None
+    state = seed & 0xFFFFFFFF
+
+    def _rand():
+        nonlocal state
+        state = (1103515245 * state + 12345) & 0x7FFFFFFF
+        return state / 0x7FFFFFFF
+
+    p = 1.0 / k_months                                   # geometric block-length param
+    alphas = []
+    for _ in range(n_boot):
+        by, bX = [], []
+        while len(by) < n:
+            start = int(_rand() * n) % n
+            i = start
+            by.append(y[i]); bX.append(X[i])
+            while _rand() > p and len(by) < n:           # extend the block
+                i = (i + 1) % n
+                by.append(y[i]); bX.append(X[i])
+        try:
+            b = ols(by, bX)
+            alphas.append(b[0])
+        except ValueError:
+            continue
+    if len(alphas) < n_boot // 2:
+        return None
+    alphas.sort()
+    lo = alphas[int(0.05 * len(alphas))]
+    hi = alphas[int(0.95 * len(alphas))]
+    return (lo, hi)
