@@ -126,3 +126,39 @@ def test_kill_note_omits_raw_caveat_for_scored_gated_cohort():
     assert v.cohort_type == "scored_gated"
     joined = " ".join(v.notes).lower()
     assert "confirmatory" not in joined
+
+
+# --- verdict honesty: alpha uncomputable is INSUFFICIENT, not HOLD ----------------------
+
+def test_insufficient_when_alpha_uncomputable_despite_passing_sample_gates():
+    # 48 CTP months (>=2 blocks at K=12) and full measurable fraction pass the sample gates,
+    # but an EMPTY ff3 (e.g. a failed factor fetch) means ff3_alpha -> (None, []) and the
+    # bootstrap -> None. That must read as "could not compute alpha" -> INSUFFICIENT, never
+    # the "no negative evidence; HOLD" fall-through.
+    ctp = [(f"{y}-{m:02d}", 0.01, 1) for y in (2022, 2023, 2024, 2025) for m in range(1, 13)]
+    v = decide(_measurement(1.0, 60), ctp, ff3={}, k_months=12, prereg=_PREREG)
+    assert v.verdict == "INSUFFICIENT"
+    assert v.verdict != "HOLD"
+    assert "alpha" in " ".join(v.notes).lower()
+
+
+# --- enforce the pre-registered factor model --------------------------------------------
+
+def test_insufficient_when_prereg_factor_model_unsupported():
+    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
+    ctp = [(mo, rf + 0.02, 1) for mo, (mkt, smb, hml, rf) in ff3.items()]
+    prereg = dict(_PREREG, factor_model="ff5")
+    v = decide(_measurement(1.0, 60), ctp, ff3, k_months=12, prereg=prereg)
+    assert v.verdict == "INSUFFICIENT"
+    joined = " ".join(v.notes).lower()
+    assert "factor_model" in joined and "ff5" in joined
+
+
+def test_default_factor_model_ff3_still_runs():
+    # No factor_model key -> defaults to ff3, so the guard is a no-op (regression guard).
+    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
+    ctp = [(mo, rf + 0.05, 1) for mo, (mkt, smb, hml, rf) in ff3.items()]
+    prereg = {"k_months": 12, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+    v = decide(_measurement(1.0, 60), ctp, ff3, k_months=12, prereg=prereg)
+    assert v.verdict in {"KILL", "HOLD"}     # ran the real FF3 path, not the guard
+    assert "factor_model" not in " ".join(v.notes).lower()

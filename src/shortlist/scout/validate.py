@@ -314,6 +314,17 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     alpha, _betas = ff3_alpha(ctp_rows, ff3)
     ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
 
+    # Enforce the pre-registered factor model. v1 only implements FF3; a CAPM/FF5 prereg must
+    # fail loudly (INSUFFICIENT) rather than silently run FF3 and mislabel the result.
+    factor_model = prereg.get("factor_model", "ff3")
+    if factor_model != "ff3":
+        return SignalVerdict(
+            signal=measurement.signal, verdict="INSUFFICIENT", ir=ir, alpha_monthly=alpha,
+            alpha_ci=ci, effective_blocks=eff, n_selected=measurement.n_selected,
+            n_measurable=measurement.n_measurable, measurable_fraction=frac,
+            sensitivity_flip=sensitivity_flip, cohort_type=cohort_type,
+            notes=[f"factor_model '{factor_model}' not supported in v1 (only ff3)"])
+
     verdict = "HOLD"
     if frac < floor:
         verdict = "INSUFFICIENT"; notes.append(f"measurable fraction {frac:.2f} < floor")
@@ -331,6 +342,12 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         verdict = "INSUFFICIENT"; notes.append(f"{eff} independent blocks < min")
     elif verdict == "HOLD" and sensitivity_flip:
         verdict = "INSUFFICIENT"; notes.append("delisting-return sensitivity band flips the sign")
+    # "Could not compute a risk-adjusted alpha" is NOT "non-negative alpha" -- a missing alpha
+    # (empty/misaligned FF3, e.g. a failed factor fetch) or missing bootstrap CI must read as
+    # INSUFFICIENT, never fall through to the HOLD "no negative evidence" branch (verdict honesty).
+    elif verdict == "HOLD" and (alpha is None or ci is None):
+        verdict = "INSUFFICIENT"
+        notes.append("could not compute FF3 alpha (insufficient factor overlap / alignment)")
     elif verdict == "HOLD" and ci is not None and ci[1] < 0:
         verdict = "KILL"; notes.append(f"alpha 90% CI entirely negative {ci}")
     elif verdict == "HOLD" and alpha is not None and alpha <= 0:
