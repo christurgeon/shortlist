@@ -1,0 +1,98 @@
+from datetime import date
+
+from shortlist.backtest.prices import PriceHistory
+from shortlist.scout.validate import measure_cohort
+
+
+def _hist(ticker, pairs):
+    dates = [d for d, _ in pairs]
+    closes = [c for _, c in pairs]
+    return PriceHistory(ticker, dates, closes, nominal_closes=list(closes))
+
+
+def _ev(ticker, d, **kw):
+    base = dict(signal="edgar:activist_13d", ticker=ticker, cik=None,
+                event_date=d, as_of_price=None, strength=0.9, gated=False,
+                composite=60.0, origin="live", meta={})
+    base.update(kw)
+    return base
+
+
+_AS_OF = date(2026, 7, 2)
+
+
+def test_fixed_horizon_return_measured_at_event_plus_horizon():
+    # entry 2025-01-31 @100, +3m ~2025-04-30 @110 -> +10% (target well before as_of)
+    h = _hist("ABC", [(date(2025, 1, 31), 100.0), (date(2025, 4, 30), 110.0)])
+    m = measure_cohort([_ev("ABC", "2025-01-31")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={"ABC": h}, delisting_return=-0.30,
+                       as_of=_AS_OF)
+    assert m.n_selected == 1 and m.n_measurable == 1
+    assert abs(m.events[0].ret - 0.10) < 1e-9
+    assert m.events[0].measurable is True
+
+
+def test_immature_event_excluded_not_measured_early():
+    # event 2026-06-01, +3m target ~2026-09-01 is AFTER as_of 2026-06-15 -> the horizon has
+    # not elapsed, so the outcome is unknown -> non-measurable (calendar rule, no price peek)
+    h = _hist("ABC", [(date(2026, 6, 1), 100.0), (date(2026, 6, 13), 105.0)])
+    m = measure_cohort([_ev("ABC", "2026-06-01")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={"ABC": h}, delisting_return=-0.30,
+                       as_of=date(2026, 6, 15))
+    assert m.events[0].ret is None
+    assert m.events[0].measurable is False
+    assert m.n_measurable == 0
+
+
+def test_delisting_gets_partial_return_not_dropped():
+    # target ~2025-04-30 is <= as_of 2026-07-02 (in the past) yet the series ends 2025-02-10
+    # -> a still-listed stock would have traded through the target -> delisting return applied
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 10), 40.0)])
+    m = measure_cohort([_ev("DEAD", "2025-01-31")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={"DEAD": h}, delisting_return=-0.55,
+                       as_of=_AS_OF)
+    assert m.events[0].measurable is True
+    assert abs(m.events[0].ret - (-0.55)) < 1e-9
+
+
+def test_no_series_is_non_measurable():
+    m = measure_cohort([_ev("GONE", "2025-01-31")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={}, delisting_return=-0.55,
+                       as_of=_AS_OF)
+    assert m.n_selected == 1 and m.n_measurable == 0
+    assert m.events[0].ret is None and m.events[0].measurable is False
+
+
+def test_measurable_fraction():
+    h_ok = _hist("A", [(date(2025, 1, 31), 100.0), (date(2025, 4, 30), 120.0)])
+    evs = [_ev("A", "2025-01-31"), _ev("GONE", "2025-01-31")]
+    m = measure_cohort(evs, "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"A": h_ok}, delisting_return=None, as_of=_AS_OF)
+    assert m.n_selected == 2 and m.n_measurable == 1
+    assert abs(m.measurable_fraction() - 0.5) < 1e-9
+
+
+def test_measurable_fraction_by_vintage():
+    # 2020 vintage: both events measurable. 2024 vintage: mostly non-measurable
+    # (one measurable, three not -> a real recent-vintage attrition, not fixture noise).
+    h_2020a = _hist("A20", [(date(2020, 1, 31), 100.0), (date(2020, 4, 30), 110.0)])
+    h_2020b = _hist("B20", [(date(2020, 6, 30), 50.0), (date(2020, 9, 30), 55.0)])
+    h_2024a = _hist("A24", [(date(2024, 1, 31), 100.0), (date(2024, 4, 30), 90.0)])
+    # the other three 2024 events have no series at all -> non-measurable
+    evs = [
+        _ev("A20", "2020-01-31"),
+        _ev("B20", "2020-06-30"),
+        _ev("A24", "2024-01-31"),
+        _ev("GONE1", "2024-02-28"),
+        _ev("GONE2", "2024-03-31"),
+        _ev("GONE3", "2024-04-30"),
+    ]
+    m = measure_cohort(evs, "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"A20": h_2020a, "B20": h_2020b, "A24": h_2024a},
+                       delisting_return=None, as_of=_AS_OF)
+    by_vintage = m.measurable_fraction_by_vintage()
+    assert by_vintage[2020] == (2, 2, 1.0)
+    n_meas_2024, n_sel_2024, frac_2024 = by_vintage[2024]
+    assert n_sel_2024 == 4
+    assert n_meas_2024 == 1
+    assert abs(frac_2024 - 0.25) < 1e-9
