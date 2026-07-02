@@ -270,3 +270,28 @@ class Symbology:
                 or cik10 in self._snapshot_multi_for(as_of)):
             self.low_confidence.append((cik10, as_of_tkr))
         return as_of_tkr
+
+    def _reverse_map_for(self, as_of: date) -> dict[str, int]:
+        ts = nearest_snapshot_before(self._snapshots, as_of)
+        if ts is None:
+            return {}
+        if ts not in self._rev_cache:
+            self._rev_cache[ts] = snapshot_reverse(ts, cache_dir=self._cache_dir, client=self._client)
+        return self._rev_cache[ts]
+
+    def resolve_cik(self, ticker: str, as_of: date) -> Optional[int]:
+        return self._reverse_map_for(as_of).get((ticker or "").upper())
+
+    def resolve_ciks(self, tickers: list[str], as_of: date) -> tuple[dict[str, int], float]:
+        resolved: dict[str, int] = {}
+        for t in tickers:
+            c = self.resolve_cik(t, as_of)
+            if c is not None:
+                resolved[t.upper()] = c
+        rate = 1.0 - (len(resolved) / len(tickers)) if tickers else 0.0
+        if tickers:
+            import warnings
+            warnings.warn(f"symbology: reverse abstention {rate:.1%} "
+                          f"({len(tickers) - len(resolved)}/{len(tickers)} tickers unresolved)",
+                          stacklevel=2)
+        return resolved, rate
