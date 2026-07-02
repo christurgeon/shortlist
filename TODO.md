@@ -6,31 +6,37 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## Signal-validation harness — Phase 0 shipped (PR #104); P1 + P2 next (2026-07-01)
+## Signal-validation harness — Phase 0 + Phase 1 shipped; Phase 2 next (2026-07-02)
 
-The **highest-impact** build (design: `docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md`,
-local/gitignored; session memory `signal-validation-harness-project`). Turns the ~10 parked
-discovery priors into a measurement flywheel. **Phase 0 = PR #104** (`feat/scout-firehose-h1`):
-raw-signal firehose logging (`scout/firehose.py`, `ScoutState.firehose`, config-gated
-`scout.firehose.enabled`, best-effort) + fixed a pre-existing XBRL look-ahead (H1: scored
-`market_cap`/`PE` off *adjusted* close at past `as_of`; now uses unadjusted `quote[0].close`).
-Built TDD via subagent-driven dev, whole-branch review READY TO MERGE, 1448 tests pass.
+The **highest-impact** build (design v3.1: `docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md`,
+local/gitignored; session memory `signal-validation-harness-project`). Turns the ~10 parked discovery
+priors into a measurement flywheel.
+- **Phase 0 = PR #104 (MERGED + deployed).** Raw-signal firehose (`scout/firehose.py`,
+  `ScoutState.firehose`, config-gated, best-effort) + fixed the XBRL look-ahead H1 (nominal
+  `quote[0].close` for `market_cap`/`PE`). Firehose logs from the 2026-07-02 nightly run onward.
+- **Phase 1 = the evaluator (`feat/scout-validate-evaluator`, PR pending).** `scout/validate.py` +
+  `scout/factors.py` (Ken French FF3) + `scout/preregister.py` (git-blob-hash tamper gate, YAML under
+  `src/shortlist/scout/preregister/`) + `shortlist-scout validate` CLI + display-only report section.
+  CTP → FF3 alpha (manual stdlib OLS) → block bootstrap (block≥K, effective-n = independent blocks) →
+  KILL/HOLD/INSUFFICIENT + IR rank, **never PROMOTE**; alpha-uncomputable → INSUFFICIENT. Built TDD via
+  subagent-driven dev, whole-branch review READY TO MERGE, 1496 tests pass.
 
-Remaining, in order:
-1. **Merge PR #104 + deploy** to `/opt/shortlist` (`git pull` → `install_opt_shortlist.sh` →
-   restart `shortlist-bot`/timer) so the nightly run starts banking firehose events. Until it
-   runs, no raw-cohort data accrues.
-2. **Phase 1 — the evaluator** (`scout/validate.py`): calendar-time portfolio, **FF3**-risk-
-   adjusted (not beta-only — event names load SMB/HML), block bootstrap **block ≥ K**, effective-n
-   in *independent blocks*, survivorship *accounted* (measurable-frac gate — can't be fixed, no free
-   PiT ticker map), Shumway partial delisting returns + sensitivity band, git-blob-hash pre-reg.
-   **v1 emits KILL/HOLD/INSUFFICIENT + IR rank — NOT promote.** Write its own plan once #104 merges
-   (the `CohortEvent` schema is now concrete).
-3. **Phase 2 — 13D backfill** (deferred, gated on §14 spikes): PiT symbology/survivorship,
-   delisting-reason depth, `quote[0].close` cache presence, companyfacts pre-warm cost. Form-4
-   backfill is OUT (~500k–850k fetches). WSB/Yahoo not backfillable.
+**§14 spikes DONE (2026-07-02, all GO) → Phase 2 GO and improved.** Key reversals: survivorship is
+**correctable** via a Wayback CDX resolver of `company_tickers.json` (+ the filing's own
+`dei:TradingSymbol` 2019+ as primary); delisting sign **classifiable** (8-K Item 1.03=bankruptcy /
+2.01+5.01=M&A); FINRA archive to 2017. Landmines: CIK-reuse (BBBY→Overstock — key on subject CIK,
+resolve ticker via as-of snapshot, never ticker→CIK; guard extends to the ticker-keyed Yahoo price
+fetch); FINRA rows have NO CIK (need reverse lookup) + go-dark-heavy → **FINRA gated on a measurable-
+fraction audit; 13D is the clean first backfill target.**
 
-**Status:** Phase 0 in review (PR #104). P1 plan + P2 spikes not started.
+**Phase 2 build order (spec §16, 5 plans):** (1) `scout/symbology.py` (dei:TradingSymbol+Wayback, fwd
++reverse, reuse `cik_tickers.build_cik_to_ticker`, rate-limited) → (2) `scout/delisting.py` (Form 25/15
++ 8-K classifier, bankruptcy-overrides-M&A precedence, BBBY/ATVI/TWTR fixtures) → (3) `backtest/
+edgar_history.py` + 13D backfill leg → (4) FINRA audit spike → (if pass) FINRA leg → (5) wire verdicts
+into the daily digest (**at wiring: `dataclasses.asdict()` the SignalVerdicts + normalize the section's
+render_text to list[str]** — documented landmine in `report/viewmodel.py`).
+
+**Status:** P0 merged+deployed; P1 complete, PR pending. P2 not started (spikes done; plans in spec §16).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
