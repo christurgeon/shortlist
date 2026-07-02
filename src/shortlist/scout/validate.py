@@ -107,6 +107,59 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
                              n_measurable=n_meas, events=measured)
 
 
+def _month_iso(d: date) -> str:
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def _months_between(a: date, b: date) -> int:
+    """Whole calendar months from a to b (b >= a)."""
+    return (b.year - a.year) * 12 + (b.month - a.month)
+
+
+def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
+                            weighting: str = "equal") -> list[tuple[str, float, int]]:
+    """Monthly calendar-time portfolio: each month, hold every name whose event fired in the
+    trailing k_months; the month's return is the (equal- or value-) weighted mean of held
+    names' monthly-equivalent returns. Collapsing contemporaneous events into one monthly
+    return is what neutralises cross-sectional event clustering (spec §6.3).
+
+    K-vs-cycle dedup: if the same ticker has more than one qualifying event inside a single
+    month's trailing-K window, it is counted ONCE that month (the most-recent qualifying
+    event) -- otherwise the independent-block accounting double-weights a repeat firer.
+    """
+    live = [m for m in measured if m.measurable and m.event_date is not None and m.ret is not None]
+    if not live:
+        return []
+    lo = min(m.event_date for m in live)
+    hi = max(m.event_date for m in live)
+    n_months = _months_between(lo, hi) + k_months          # cover the last cohort's holding tail
+    rows: list[tuple[str, float, int]] = []
+    for i in range(n_months):
+        y = lo.year + (lo.month - 1 + i) // 12
+        mo = (lo.month - 1 + i) % 12 + 1
+        month_start = date(y, mo, 1)
+        qualifying = [m for m in live
+                      if 0 <= _months_between(m.event_date, month_start) < k_months]
+        if not qualifying:
+            continue
+        # dedup by ticker: keep one contribution per ticker (the most-recent qualifying event)
+        by_ticker: dict[str, MeasuredEvent] = {}
+        for m in qualifying:
+            cur = by_ticker.get(m.ticker)
+            if cur is None or m.event_date > cur.event_date:
+                by_ticker[m.ticker] = m
+        held = list(by_ticker.values())
+        contribs = [(1.0 + m.ret) ** (1.0 / k_months) - 1.0 for m in held]
+        if weighting == "value":
+            ws = [float(m.composite or 0.0) for m in held]     # placeholder weight source
+            tot = sum(ws)
+            r = sum(c * w for c, w in zip(contribs, ws)) / tot if tot > 0 else sum(contribs) / len(contribs)
+        else:
+            r = sum(contribs) / len(contribs)
+        rows.append((_month_iso(month_start), r, len(held)))
+    return rows
+
+
 def _series_terminated(hist: PriceHistory, entry: date, horizon_months: int,
                        as_of: date) -> bool:
     """True when the series has an entry price and the horizon target is in the PAST
