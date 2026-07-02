@@ -273,6 +273,84 @@ def information_ratio(ctp_rows, ff3, min_obs: int = 6):
     return (b[0] * 12.0) / (te * math.sqrt(12.0))
 
 
+@dataclass
+class SignalVerdict:
+    signal: str
+    verdict: str                       # "KILL" | "HOLD" | "INSUFFICIENT" — never PROMOTE
+    ir: float | None
+    alpha_monthly: float | None
+    alpha_ci: tuple[float, float] | None
+    effective_blocks: int
+    n_selected: int
+    n_measurable: int
+    measurable_fraction: float
+    sensitivity_flip: bool
+    cohort_type: str = "raw"           # "raw" | "scored_gated" (spec R-B5)
+    notes: list[str] = field(default_factory=list)
+
+
+def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
+           sensitivity_flip: bool = False, cohort_type: str = "raw") -> SignalVerdict:
+    """KILL / HOLD / INSUFFICIENT (never PROMOTE) per spec §6.4. Kill is cheap; promote is
+    out of scope for v1 (needs live corroboration + regime span + a factor model verdict).
+
+    R-A4: beyond the pooled measurable-fraction floor, INSUFFICIENT also fires if ANY
+    vintage bucket (`CohortMeasurement.measurable_fraction_by_vintage()`) with at least
+    `min_bucket_events` events falls below the floor -- a pooled pass can hide a recent
+    vintage (e.g. still-immature 2024 events) that is nowhere near measurable, which would
+    silently bias the measured cohort toward older, more-measured events.
+
+    R-B5: a KILL on a "raw" (undifferentiated firehose) cohort is framed as confirmatory,
+    not fresh evidence -- the scored/double-sort cohort (post quality/gate filtering) is
+    the decision-relevant one; a raw-cohort kill corroborates but doesn't by itself settle it.
+    """
+    notes: list[str] = []
+    floor = prereg.get("min_measurable_frac", 0.90)
+    min_bucket_events = prereg.get("min_bucket_events", 5)
+    frac = measurement.measurable_fraction()
+    n_months = len(ctp_rows)
+    eff = effective_blocks(n_months, k_months)
+    ir = information_ratio(ctp_rows, ff3)
+    alpha, _betas = ff3_alpha(ctp_rows, ff3)
+    ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
+
+    verdict = "HOLD"
+    if frac < floor:
+        verdict = "INSUFFICIENT"; notes.append(f"measurable fraction {frac:.2f} < floor")
+    else:
+        by_vintage = measurement.measurable_fraction_by_vintage()
+        bad_vintages = [(yr, n_meas, n_sel, vfrac)
+                        for yr, (n_meas, n_sel, vfrac) in sorted(by_vintage.items())
+                        if n_sel >= min_bucket_events and vfrac < floor]
+        if bad_vintages:
+            verdict = "INSUFFICIENT"
+            detail = ", ".join(f"{yr}: {vfrac:.2f} ({n_meas}/{n_sel})" for yr, n_meas, n_sel, vfrac in bad_vintages)
+            notes.append(f"vintage-stratified measurable fraction below floor for {detail}")
+
+    if verdict == "HOLD" and eff < prereg.get("min_independent_blocks", 2):
+        verdict = "INSUFFICIENT"; notes.append(f"{eff} independent blocks < min")
+    elif verdict == "HOLD" and sensitivity_flip:
+        verdict = "INSUFFICIENT"; notes.append("delisting-return sensitivity band flips the sign")
+    elif verdict == "HOLD" and ci is not None and ci[1] < 0:
+        verdict = "KILL"; notes.append(f"alpha 90% CI entirely negative {ci}")
+    elif verdict == "HOLD" and alpha is not None and alpha <= 0:
+        verdict = "KILL"; notes.append(f"point alpha {alpha:.4f}/mo <= 0 past min sample")
+    elif verdict == "HOLD":
+        notes.append("no negative evidence; HOLD (promote requires live corroboration + factor verdict)")
+
+    if verdict == "KILL" and cohort_type == "raw":
+        notes.append(
+            "raw-cohort KILL is confirmatory, not new evidence — the scored/double-sort "
+            "cohort (post quality/gate filtering) is decision-relevant"
+        )
+
+    return SignalVerdict(
+        signal=measurement.signal, verdict=verdict, ir=ir, alpha_monthly=alpha, alpha_ci=ci,
+        effective_blocks=eff, n_selected=measurement.n_selected,
+        n_measurable=measurement.n_measurable, measurable_fraction=frac,
+        sensitivity_flip=sensitivity_flip, cohort_type=cohort_type, notes=notes)
+
+
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
                                      n_boot: int = 2000, min_obs: int = 6, seed: int = 12345):
     """Block-bootstrap CI (5th/95th pct) of the FF3 alpha with mean block length = k_months
