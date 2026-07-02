@@ -3,7 +3,7 @@
 Forward (CIK->ticker, 13D): active CIK -> live company_tickers.json; delisted CIK -> nearest
 Wayback snapshot <= the event date. Reverse (ticker->CIK, FINRA): archive-only, None for the
 ~82% of FINRA's OTC universe absent from company_tickers.json (reported as an abstention rate).
-See docs/superpowers/specs/2026-07-01-...-design.md §8/§16/§17. Free/keyless; caches forever;
+See docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md §8/§16/§17. Free/keyless; caches forever;
 polite to archive.org (~1 req/s). Never raises to the caller.
 
 SERIAL-ONLY (L1): the module-level request throttle is not thread-safe. The backfill coordinator
@@ -280,16 +280,18 @@ class Symbology:
         return self._rev_cache[ts]
 
     def resolve_cik(self, ticker: str, as_of: date) -> Optional[int]:
-        return self._reverse_map_for(as_of).get((ticker or "").upper())
+        # str() guards a truthy non-str ticker (honors the module's never-raises contract,
+        # symmetric with the forward path's _norm_cik try/except).
+        return self._reverse_map_for(as_of).get(str(ticker or "").upper())
 
     def resolve_ciks(self, tickers: list[str], as_of: date) -> tuple[dict[str, int], float]:
         resolved: dict[str, int] = {}
         for t in tickers:
             c = self.resolve_cik(t, as_of)
             if c is not None:
-                resolved[t.upper()] = c
+                resolved[str(t or "").upper()] = c
         rate = 1.0 - (len(resolved) / len(tickers)) if tickers else 0.0
-        if tickers:
+        if rate > 0:                          # only warn on a real abstention, not at 0%
             import warnings
             warnings.warn(f"symbology: reverse abstention {rate:.1%} "
                           f"({len(tickers) - len(resolved)}/{len(tickers)} tickers unresolved)",

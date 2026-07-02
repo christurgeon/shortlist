@@ -1,3 +1,4 @@
+import warnings
 from datetime import date
 
 from shortlist.scout.symbology import Symbology
@@ -28,3 +29,25 @@ def test_reverse_unresolvable_returns_none_and_counts_abstention():
     resolved, rate = s.resolve_ciks(["AAPL", "OTCJUNKF", "FOREIGNY"], date(2022, 11, 15))
     assert resolved == {"AAPL": 320193}
     assert abs(rate - (2 / 3)) < 1e-9    # 2 of 3 unresolvable (the FINRA OTC gap)
+
+
+def test_reverse_non_str_ticker_returns_none_never_raises():
+    # M-1: a truthy non-str ticker (an int) must not AttributeError — honors the never-raises
+    # contract, symmetric with the forward path. Not in the map -> None (no crash).
+    s = _sym([("20221003133031", date(2022, 10, 3))],
+             {"20221003133031": {"AAPL": 320193}})
+    assert s.resolve_cik(12345, date(2022, 11, 15)) is None
+    resolved, rate = s.resolve_ciks([12345, "AAPL"], date(2022, 11, 15))
+    assert resolved == {"AAPL": 320193}
+
+
+def test_reverse_no_abstention_does_not_warn():
+    # M-2: a fully-resolved batch (0% abstention) must NOT emit the abstention warning.
+    s = _sym([("20221003133031", date(2022, 10, 3))],
+             {"20221003133031": {"AAPL": 320193, "MSFT": 789019}})
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        resolved, rate = s.resolve_ciks(["AAPL", "MSFT"], date(2022, 11, 15))
+    assert resolved == {"AAPL": 320193, "MSFT": 789019}
+    assert rate == 0.0
+    assert not any("abstention" in str(w.message) for w in rec)
