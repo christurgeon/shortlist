@@ -115,3 +115,64 @@ def cdx_snapshots(*, cache_dir: str, client: Optional[httpx.Client] = None,
         import warnings
         warnings.warn(f"symbology: CDX fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
+
+
+def _raw_snapshot(timestamp: str, *, cache_dir: str, client: Optional[httpx.Client]) -> Optional[dict]:
+    """Fetch (or read from the forever cache) one snapshot's raw company_tickers.json.
+    None (never raises) if unavailable and no client to fetch with."""
+    cp = Path(cache_dir) / "wayback_tickers" / f"{timestamp}.json"
+    if cp.exists():
+        try:
+            return json.loads(cp.read_text())
+        except (ValueError, OSError):
+            pass
+    if client is None:
+        return None
+    url = _WB_RAW.format(ts=timestamp)
+    for attempt in range(3):
+        try:
+            _throttle()
+            resp = client.get(url, follow_redirects=True,
+                              headers={"Accept-Encoding": "gzip"})
+            if resp.status_code == 200:
+                raw = resp.json()
+                cp.parent.mkdir(parents=True, exist_ok=True)
+                cp.write_text(json.dumps(raw))
+                return raw
+        except Exception:  # noqa: BLE001
+            pass
+        if attempt < 2:                     # no dead sleep after the final failed attempt
+            time.sleep(2 ** attempt)        # fixed backoff 1s/2s (no random)
+    import warnings                          # L2: a give-up is NOT silent (distinguish from "no snapshot")
+    warnings.warn(f"symbology: snapshot fetch failed after retries for {timestamp}", stacklevel=2)
+    return None
+
+
+def snapshot_map(timestamp: str, *, cache_dir: str, client: Optional[httpx.Client] = None) -> dict[str, str]:
+    raw = _raw_snapshot(timestamp, cache_dir=cache_dir, client=client)
+    if not raw:
+        return {}
+    try:
+        return build_cik_to_ticker(raw)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def snapshot_reverse(timestamp: str, *, cache_dir: str, client: Optional[httpx.Client] = None) -> dict[str, int]:
+    raw = _raw_snapshot(timestamp, cache_dir=cache_dir, client=client)
+    if not raw:
+        return {}
+    out: dict[str, int] = {}
+    try:
+        rows = raw.values()                 # guard: a non-dict truthy JSON must not raise
+    except AttributeError:
+        return {}
+    for row in rows:
+        try:
+            tk = row.get("ticker")
+            if not tk:                      # skip missing/None/empty tickers (no "NONE" keys)
+                continue
+            out[str(tk).upper()] = int(row["cik_str"])
+        except (AttributeError, KeyError, TypeError, ValueError):
+            continue
+    return out
