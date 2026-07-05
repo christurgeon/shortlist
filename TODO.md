@@ -171,8 +171,29 @@ has a non-None composite. **Live-verified on the VPS** (same Aug 2022 one-week w
 Plan 3): 6 selected / 3 scored (composites 8.2–63.0); `validate --backfill` correctly
 produced a `scored_gated` INSUFFICIENT verdict (n=1 after the gated-False filter, 0
 measurable — too thin to be anything else, the honest verdict at this n); RSS 410 MB. Full
-suite 1620. **Then: FINRA audit→leg, then digest wiring** (needs `asdict()` + render_text
-normalization).
+suite 1620.
+**P2 Plan 4 (FINRA audit spike) COMPLETE — VERDICT: DEFER (2026-07-05).** Ran the v2
+protocol (`docs/superpowers/specs/2026-07-05-finra-audit-spike-design.md`, local) on
+oracle-prod: 16 sampled settlement cycles (2018–2024, 2017 excluded) × production
+`config.yaml: scout.short_interest` jump cohort (`top_n=10`, exact prod kwargs) = 160
+tickers; measurability = Yahoo price existence at event date + event+1mo
+(`backtest.prices.fetch_history`, confirmed reachable from this VPS — the screener-only
+IP-block premise didn't apply). **Pooled measurable fraction 129/160 = 0.806 (90% CI
+±0.051)** — clearly below the pre-registered 0.90 bar (shortfall 0.094 > CI half-width),
+so DEFER is mechanical, not borderline. Vintage split: 2018–2020 worse (43/60 = 0.717 ±
+0.096) than 2021–2024 (86/100 = 0.860 ± 0.057, itself within-CI of 0.90 but moot given the
+pooled failure). K-scoped delisting arm never fired (0 cases — all non-measurability was
+plain Yahoo 404/no-entry-price, not classifiable corporate events). Separate diagnostic:
+reverse ticker→CIK resolution (one shared `Symbology`, norm_symbol-normalized both sides)
+= **101/160 = 0.631 pooled** — flat across vintages, no disagreements/low-confidence flags
+— caveat recorded that even a passing raw leg would have capped a future FINRA *scored*
+cohort well below the raw fraction. Full numbers, per-cycle table, rule walk, and request
+accounting: `docs/superpowers/specs/2026-07-05-finra-audit-results.md` (local). **FINRA
+leg (Plan 4b) is NOT built** — the discovery-only `FinraShortInterestSignal` stays as-is
+(disabled at weight 0.5, ledger-measured); no `edgar_history`-style FINRA plumbing.
+**Next: digest wiring** (Phase-2 build-order item 5 — needs `asdict()` + render_text
+normalization) is now the only remaining item on this critical path, gated only on the
+13D backfill production run (item above) rather than on anything from this spike.
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
