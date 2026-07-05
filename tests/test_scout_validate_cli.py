@@ -1,12 +1,14 @@
 import json
 from dataclasses import asdict
 from datetime import date, timedelta
+from pathlib import Path
 
 import yaml
 
 from shortlist.backtest.prices import PriceHistory
 from shortlist.scout import daily
-from shortlist.scout.daily import build_arg_parser, run_validate   # thin helpers for testability
+from shortlist.scout.daily import (VALIDATE_LATEST_PATH, _run_validate_cli,
+                                   build_arg_parser, run_validate)   # thin helpers for testability
 from shortlist.scout.validate import SignalVerdict
 
 
@@ -297,3 +299,113 @@ def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
     out = capsys.readouterr().out
     assert "insufficient blocks or bucket size" in out
     assert "double-sort: spread" not in out
+
+
+# --- Task 1 (digest-verdicts plan): persist boundary -- scout/validate-latest.json ---
+
+def _sample_verdicts() -> list[SignalVerdict]:
+    raw = SignalVerdict(signal="test:sig", verdict="HOLD", ir=0.4, alpha_monthly=0.01,
+                        alpha_ci=(0.001, 0.02), effective_blocks=3, n_selected=10,
+                        n_measurable=8, measurable_fraction=0.8, sensitivity_flip=False,
+                        cohort_type="raw")
+    scored = SignalVerdict(
+        signal="test:sig", verdict="KILL", ir=-0.2, alpha_monthly=-0.005, alpha_ci=None,
+        effective_blocks=3, n_selected=6, n_measurable=6, measurable_fraction=1.0,
+        sensitivity_flip=True, cohort_type="scored_gated",
+        double_sort={"n_high": 3, "n_low": 3, "months": 3, "effective_blocks": 3,
+                     "spread_alpha_monthly": 0.02, "spread_ci": (0.001, 0.03),
+                     "high_ir": 1.1, "low_ir": -0.3})
+    return [raw, scored]
+
+
+def test_run_validate_cli_live_path_persists_latest_json(tmp_path, monkeypatch, capsys):
+    """The live (no --backfill) validate path writes scout/validate-latest.json with
+    source "live" after computing verdicts."""
+    monkeypatch.chdir(tmp_path)
+    verdicts = _sample_verdicts()
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: verdicts)
+
+    today = date(2026, 7, 5)
+    rc = _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                           as_json=False)
+    assert rc == 0
+
+    out_path = tmp_path / VALIDATE_LATEST_PATH
+    assert out_path.exists()
+    payload = json.loads(out_path.read_text())
+    assert payload["as_of"] == "2026-07-05"
+    assert payload["source"] == "live"
+    assert len(payload["verdicts"]) == 2
+    # Verdicts still printed to the table on the normal (never-blocked) path.
+    out = capsys.readouterr().out
+    assert "test:sig" in out
+
+
+def test_run_validate_cli_backfill_path_persists_latest_json_with_basename_label(
+        tmp_path, monkeypatch):
+    """The `validate --backfill PATH` path labels the source as "backfill:<basename>" --
+    the basename only, not the full (possibly absolute) path."""
+    monkeypatch.chdir(tmp_path)
+    verdicts = _sample_verdicts()
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: verdicts)
+
+    backfill_dir = tmp_path / "some" / "nested" / "dir"
+    backfill_dir.mkdir(parents=True)
+    backfill_file = backfill_dir / "13d-2024-01-01-2024-06-30.jsonl"
+    backfill_file.write_text("")
+    monkeypatch.setattr("shortlist.scout.backfill.load_backfill_events", lambda path: [])
+
+    today = date(2026, 7, 5)
+    rc = _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                           as_json=True, backfill_path=str(backfill_file))
+    assert rc == 0
+
+    payload = json.loads((tmp_path / VALIDATE_LATEST_PATH).read_text())
+    assert payload["source"] == "backfill:13d-2024-01-01-2024-06-30.jsonl"
+
+
+def test_run_validate_cli_persist_write_failure_warns_but_exit_code_and_output_unchanged(
+        tmp_path, monkeypatch, capsys):
+    """A write failure (e.g. read-only filesystem, disk full) must warn to stderr and
+    never change the CLI's exit code -- persistence is best-effort telemetry, not the
+    CLI's job. Verdicts must still print."""
+    monkeypatch.chdir(tmp_path)
+    verdicts = _sample_verdicts()
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: verdicts)
+
+    def _boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(Path, "write_text", _boom)
+
+    today = date(2026, 7, 5)
+    rc = _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                           as_json=False)
+    assert rc == 0
+    err = capsys.readouterr()
+    assert "failed to persist" in err.err
+    assert "disk full" in err.err
+    # Verdicts still printed on stdout despite the persist failure.
+    assert "test:sig" in err.out
+    assert not (tmp_path / VALIDATE_LATEST_PATH).exists()
+
+
+def test_validate_latest_json_round_trips_verdict_keys(tmp_path, monkeypatch):
+    """json.dumps(asdict(v)) round-trips through json.loads with every verdict key intact,
+    including the tuple fields (alpha_ci, double_sort.spread_ci) which land as JSON arrays."""
+    monkeypatch.chdir(tmp_path)
+    verdicts = _sample_verdicts()
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: verdicts)
+
+    today = date(2026, 7, 5)
+    _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                      as_json=False)
+
+    payload = json.loads((tmp_path / VALIDATE_LATEST_PATH).read_text())
+    raw, scored = payload["verdicts"]
+    assert raw["signal"] == "test:sig"
+    assert raw["verdict"] == "HOLD"
+    assert raw["cohort_type"] == "raw"
+    assert raw["alpha_ci"] == [0.001, 0.02]          # tuple -> list, values preserved
+    assert scored["cohort_type"] == "scored_gated"
+    assert scored["double_sort"]["n_high"] == 3
+    assert scored["double_sort"]["spread_ci"] == [0.001, 0.03]

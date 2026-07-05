@@ -26,6 +26,11 @@ _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
 FMP_RATIONED_NOTE = "Free-source screen — /deep for PEG + analyst targets."
 
+# Persist boundary for the `validate` CLI (both the live and `--backfill` paths) so the
+# digest SECTION can read provisional verdicts with NO network at digest time (design:
+# docs/superpowers/plans/2026-07-05-digest-verdicts.md). Gitignored via `/scout/`.
+VALIDATE_LATEST_PATH = "scout/validate-latest.json"
+
 
 def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
     """The daily-digest source chain. Rations FMP when ``include_fmp`` is False by
@@ -720,17 +725,49 @@ def _print_validate_table(verdicts: list) -> None:
          "NEVER a PROMOTE signal.")
 
 
+def _persist_validate_latest(verdicts: list, *, today: date, source: str,
+                             path: str = VALIDATE_LATEST_PATH) -> None:
+    """Write `verdicts` to `path` for the digest SECTION to read later (no network at
+    digest time -- see docs/superpowers/plans/2026-07-05-digest-verdicts.md). Shape:
+    `{"as_of": iso, "source": "live"|"backfill:<basename>", "verdicts": [asdict(v), ...]}`.
+
+    `dataclasses.asdict(v)` turns `SignalVerdict.alpha_ci` (a tuple) into a list and
+    `double_sort` (already a plain dict, itself sometimes carrying a tuple `spread_ci`)
+    into nested plain containers -- `json.dumps` serializes tuples as JSON arrays natively,
+    so the round-trip through `json.loads` is lossless except tuple-vs-list identity, which
+    the reading side (a plain Section, never a dataclass) never cares about.
+
+    Never raises: a write failure (missing perms, disk full, an unexpected non-serializable
+    value) warns to stderr and must never change the CLI's exit code -- persistence is
+    best-effort telemetry, not the CLI's job."""
+    try:
+        payload = {
+            "as_of": today.isoformat(),
+            "source": source,
+            "verdicts": [asdict(v) for v in verdicts],
+        }
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, default=str, indent=2))
+    except Exception as exc:  # noqa: BLE001 — best-effort persistence, never blocks the CLI
+        print(f"scout validate: failed to persist {path} ({redact_secrets(str(exc))})",
+             file=sys.stderr)
+
+
 def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
                       as_json: bool, backfill_path: str | None = None) -> int:
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
     lb = lookback_days if lookback_days is not None else val_cfg.get("lookback_days", 365)
     events_override = None
+    source = "live"
     if backfill_path:
         from .backfill import load_backfill_events
         events_override = load_backfill_events(backfill_path)
+        source = f"backfill:{Path(backfill_path).name}"
     verdicts = run_validate(config, today=today, lookback_days=lb,
                             events_override=events_override)
+    _persist_validate_latest(verdicts, today=today, source=source)
     if as_json:
         print(json.dumps([asdict(v) for v in verdicts], default=str, indent=2))
     else:
