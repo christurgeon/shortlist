@@ -276,23 +276,41 @@ def test_run_backfill_end_to_end_with_injected_seams(tmp_path):
     h = _hist("TGT", date(2022, 7, 1), 400)
     cfg = {"scout": {"backfill": {"out_dir": str(tmp_path), "sec_throttle_s": 0.0,
                                   "yahoo_throttle_s": 0.0}}}
+
+    hist_calls: list = []
+    delist_calls: list = []
+
+    def fetch_history_recording(tkr):
+        hist_calls.append(tkr)
+        return h if tkr == "TGT" else None
+
+    def fetch_delisting_recording(cik):
+        delist_calls.append(cik)
+        return []
+
     summary = run_backfill_13d(cfg, start=date(2022, 8, 1), end=date(2022, 9, 15),
                                identity="t@example.com", today=TODAY, out_path=out,
                                _fetch_window=fake_window, _symbology=FakeSym(),
-                               _fetch_history=lambda tkr: h if tkr == "TGT" else None,
-                               _fetch_delisting=lambda cik: [])
+                               _fetch_history=fetch_history_recording,
+                               _fetch_delisting=fetch_delisting_recording)
     assert (date(2022, 8, 1), date(2022, 8, 31)) in windows   # month chunking
     assert (date(2022, 9, 1), date(2022, 9, 15)) in windows
     assert summary["n_selected"] == 2                          # TGT + unresolved sentinel
     assert summary["n_measurable"] == 1
     assert summary["written"] == 2
-    # resume: second run writes nothing new
+    assert hist_calls == ["TGT"]                                # first run fetched exactly once
+
+    # resume: second run must skip existing keys BEFORE any fetch — zero calls
+    hist_calls.clear()
+    delist_calls.clear()
     summary2 = run_backfill_13d(cfg, start=date(2022, 8, 1), end=date(2022, 9, 15),
                                 identity="t@example.com", today=TODAY, out_path=out,
                                 _fetch_window=fake_window, _symbology=FakeSym(),
-                                _fetch_history=lambda tkr: h if tkr == "TGT" else None,
-                                _fetch_delisting=lambda cik: [])
+                                _fetch_history=fetch_history_recording,
+                                _fetch_delisting=fetch_delisting_recording)
     assert summary2["written"] == 0
+    assert hist_calls == []
+    assert delist_calls == []
     rows = load_backfill_events(out)
     assert len(rows) == 2 and all(r["origin"] == "backfill" for r in rows)
 
@@ -314,3 +332,20 @@ def test_run_backfill_never_touches_scout_state(tmp_path, monkeypatch):
                      _fetch_window=lambda *a, **k: [], _symbology=fake_sym,
                      _fetch_history=lambda tkr: None, _fetch_delisting=lambda cik: [])
     assert called == []
+
+
+def test_default_fetch_history_seam_returns_real_pricehistory(tmp_path):
+    import httpx
+
+    def handler(request):
+        # minimal valid Yahoo chart payload: 3 daily bars
+        ts = [1659312000, 1659398400, 1659484800]
+        return httpx.Response(200, json={"chart": {"result": [{
+            "timestamp": ts,
+            "indicators": {"adjclose": [{"adjclose": [10.0, 10.5, 11.0]}],
+                           "quote": [{"close": [10.0, 10.5, 11.0]}]}}]}})
+
+    from shortlist.scout.backfill import fetch_history_sync
+    h = fetch_history_sync("TGT", identity="t@example.com", today=date(2022, 8, 5),
+                           cache_dir=str(tmp_path), _transport=httpx.MockTransport(handler))
+    assert h is not None and len(h.dates) == 3 and h.closes[-1] == 11.0

@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import calendar as _cal
 import json
+import time
 import warnings
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Optional
 
+from ..env import redact_secrets
 from .calendar import is_trading_day
 from .delisting import classify_delisting, terminal_price
 from .edgar_index import _is_real_ticker, activist_stakes_from_records
@@ -29,6 +32,30 @@ from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
 
 SIGNAL = "edgar:activist_13d"
+
+
+def fetch_history_sync(ticker: str, *, identity: str, today: date,
+                       cache_dir: str = ".cache/yahoo", _transport=None):
+    """Sync bridge over the async backtest.prices.fetch_history (it needs an AsyncClient).
+    One asyncio.run + one short-lived AsyncClient per call — serial by design (VPS).
+    Never raises -> None on failure (warned, redacted)."""
+    import asyncio
+
+    import httpx
+
+    from ..backtest.prices import fetch_history
+
+    async def _one():
+        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": identity},
+                                     transport=_transport) as ac:
+            return await fetch_history(ticker, ac, cache_dir=cache_dir,
+                                       today=today.isoformat())
+    try:
+        return asyncio.run(_one())
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"backfill: price fetch failed for {ticker}: "
+                      f"{redact_secrets(str(exc))}", stacklevel=2)
+        return None
 
 
 def next_trading_day(d: date) -> date:
@@ -76,10 +103,11 @@ def assemble_events(records_by_day: dict, resolve_ticker, *, drop_spacs: bool = 
             # numeric-only) routes to sentinel path instead of silently vanishing inside
             # activist_stakes_from_records. Reliance on Task-1's _dedup_by_accession ensures
             # sentinel CIK uniqueness even when the same header generates multiple bad tickers.
-            if not _is_real_ticker(tkr):
+            norm = _is_real_ticker(tkr)
+            if not norm:
                 sentinel_ciks.setdefault(cik, r)
                 continue
-            resolved_rows.append({**r, "ticker": tkr})
+            resolved_rows.append({**r, "ticker": norm})
         for cik, r in sentinel_ciks.items():
             events.append(CohortEvent(
                 signal=SIGNAL, ticker=f"CIK:{cik}", cik=cik, event_date=entry,
@@ -222,11 +250,6 @@ def summarize(rows: list[dict]) -> dict:
             "delisting_by_reason": delist}
 
 
-import time
-import warnings
-from typing import Optional
-
-
 def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:
     chunks = []
     d = start
@@ -243,8 +266,6 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
                      _fetch_delisting=None) -> dict:
     """Batch 13D raw-cohort backfill: walk -> assemble -> measure -> idempotent JSONL.
     Serial + rate-limited by design (runs on the production VPS). Returns the run summary."""
-    from ..env import redact_secrets
-
     bf = (config.get("scout") or {}).get("backfill") or {}
     sec_throttle = float(bf.get("sec_throttle_s", 0.2))
     yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
@@ -258,29 +279,13 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     repo_root = str(Path(__file__).parent.parent.parent.parent)
     k_months = int(load_prereg("edgar_activist_13d", repo_root=repo_root).get("k_months", 12))
 
-    owns_sym = _symbology is None
-    client = None
     if _fetch_window is None:
         from ..backtest.edgar_history import fetch_activist_window
         _fetch_window = fetch_activist_window
-    if _symbology is None:
-        from .symbology import Symbology
-        _symbology = Symbology(identity,
-                               cache_dir=bf.get("symbology_cache_dir", ".cache/symbology"))
     if _fetch_history is None:
-        import httpx
-        from ..backtest.prices import fetch_history
-        client = httpx.Client(timeout=30.0, headers={"User-Agent": identity})
-
-        def _fetch_history(tkr, _c=client):
+        def _fetch_history(tkr):
             time.sleep(yh_throttle)               # polite even with the day cache
-            try:
-                return fetch_history(tkr, _c, cache_dir=".cache/yahoo",
-                                     today=today.isoformat())
-            except Exception as exc:  # noqa: BLE001
-                warnings.warn(f"backfill: price fetch failed for {tkr}: "
-                              f"{redact_secrets(str(exc))}", stacklevel=2)
-                return None
+            return fetch_history_sync(tkr, identity=identity, today=today)
     if _fetch_delisting is None:
         from .delisting import fetch_filing_records
 
@@ -288,9 +293,19 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
             time.sleep(sec_throttle)
             return fetch_filing_records(cik, identity)
 
+    # Anything that can raise (file I/O) happens BEFORE the owned resource below is
+    # acquired, so a failure here can never leak an un-closed Symbology.
     existing_keys = {r.get("meta", {}).get("key") for r in load_backfill_events(out_path)}
     failed_chunks: list[str] = []
     written_total = 0
+
+    # Symbology acquisition is the LAST setup step before try/finally — nothing risky
+    # may sit between it and the try (leak-window guard).
+    owns_sym = _symbology is None
+    if _symbology is None:
+        from .symbology import Symbology
+        _symbology = Symbology(identity,
+                               cache_dir=bf.get("symbology_cache_dir", ".cache/symbology"))
     try:
         for c_start, c_end in _month_chunks(start, end):
             recs = _fetch_window(c_start, c_end, identity, throttle_s=sec_throttle,
@@ -316,8 +331,6 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     finally:
         if owns_sym and _symbology is not None:
             _symbology.close()
-        if client is not None:
-            client.close()
 
     summary = summarize(load_backfill_events(out_path))
     summary["out_path"] = out_path
