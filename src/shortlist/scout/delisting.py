@@ -109,7 +109,10 @@ class DelistingVerdict:
 
 def classify_delisting(records: list, *, window_days: int = 365) -> Optional[DelistingVerdict]:
     """Detect + classify a delisting from the subject CIK's filings. None = not delisted
-    (no Form 25/15 family present). Never raises on well-typed FilingRecords."""
+    (no Form 25/15 family present). Reason from structured 8-K item codes in the
+    [delisting_date - window_days, delisting_date] window; Item 1.03 anywhere in the window
+    overrides a later 2.01+5.01 (R-B3 — post-Ch.11 asset sales are bankruptcy artifacts).
+    Never raises on well-typed FilingRecords."""
     if not records:
         return None
     f25 = [r for r in records if _base_form(r.form).startswith("25")]
@@ -123,10 +126,21 @@ def classify_delisting(records: list, *, window_days: int = 365) -> Optional[Del
         venue = venue_from_filer(r.filer)
         if venue is not None:
             break
-    return DelistingVerdict(
-        reason=UNCLASSIFIED,
-        terminal_return=None,
-        delisting_date=delisting_date,
-        venue=venue,
-        evidence=(),
-    )
+
+    window_start = delisting_date - timedelta(days=window_days)
+    eightks = sorted(
+        (r for r in records
+         if _base_form(r.form) == "8-K" and window_start <= r.filing_date <= delisting_date),
+        key=lambda r: r.filing_date)
+
+    def _ev(r) -> str:
+        return f"{_base_form(r.form)} {r.filing_date.isoformat()} items={','.join(r.items)}"
+
+    bankrupt = [r for r in eightks if "1.03" in r.items]
+    if bankrupt:                                  # R-B3: 1.03 overrides any later 2.01+5.01
+        return DelistingVerdict(BANKRUPTCY, shumway_partial(venue), delisting_date, venue,
+                                tuple(_ev(r) for r in bankrupt))
+    mna = [r for r in eightks if "2.01" in r.items and "5.01" in r.items]  # SAME filing only
+    if mna:
+        return DelistingVerdict(MNA, 0.0, delisting_date, venue, (_ev(mna[0]),))
+    return DelistingVerdict(UNCLASSIFIED, None, delisting_date, venue, ())
