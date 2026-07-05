@@ -109,6 +109,67 @@ def test_live_shaped_event_without_classified_meta_is_inert():
     assert abs(m.events[0].ret - (-0.55)) < 1e-9
 
 
+def test_delisting_band_flip_uses_band_values_not_classified_override():
+    """Regression pin for daily.py:_delisting_band_flip's internal `measure_cohort(...,
+    use_event_delisting=False)` kwarg (spec §6.6). The sensitivity band's whole point is to
+    vary the delisting-return assumption; a per-event CLASSIFIED terminal return (13D
+    backfill) must NOT override the band's fixed values, or the band collapses to a single
+    (classified) return for every member and can never show a sign disagreement -- silently
+    masking the guard `decide()` relies on to downgrade a HOLD to INSUFFICIENT.
+
+    Fixture: one TERMINATED-series event carrying meta={"delisting_event_return": -0.10} (a
+    mild classified loss). Built so that, with the band's real -0.30/-0.55/-1.00 values, the
+    FF3 alpha sign genuinely disagrees across band members (flip=True); if the classified
+    -0.10 override wins instead (the regression this pins), every band member -- including
+    the None entry -- collapses to the SAME alpha sign (flip=False)."""
+    from shortlist.scout.daily import _DELISTING_BAND, _delisting_band_flip
+    from shortlist.scout.validate import calendar_time_portfolio, ff3_alpha
+
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 10), 40.0)])
+    ev = _ev("DEAD", "2025-01-31", meta={"delisting_event_return": -0.10})
+    k_months = 12
+    # rf pinned negative (-0.05) so the band's moderate loss (-0.30) clears it (positive
+    # alpha) while the deeper losses (-0.55, -1.00) don't (negative alpha) -- a genuine
+    # sign disagreement across band members, distinct from the classified -0.10's sign.
+    ff3 = {
+        f"2025-{m:02d}": (0.01 * ((m % 3) - 1), 0.001 * ((m % 2) - 1),
+                          0.002 * ((m % 4) - 1.5), -0.05)
+        for m in range(1, 13)
+    }
+
+    # Sanity check: the classified override and the blanket band value are genuinely
+    # different measured returns at a fixed dr -- the two code paths are distinguishable.
+    m_classified = measure_cohort([ev], "edgar:activist_13d", k_months, {"DEAD": h},
+                                  delisting_return=-0.55, as_of=_AS_OF,
+                                  use_event_delisting=True)
+    m_blanket = measure_cohort([ev], "edgar:activist_13d", k_months, {"DEAD": h},
+                               delisting_return=-0.55, as_of=_AS_OF,
+                               use_event_delisting=False)
+    assert abs(m_classified.events[0].ret - (-0.10)) < 1e-9
+    assert abs(m_blanket.events[0].ret - (-0.55)) < 1e-9
+    assert m_classified.events[0].ret != m_blanket.events[0].ret
+
+    # Documentation of the masking mechanism: replaying the band loop with
+    # use_event_delisting=True (the regression) collapses every member -- including the
+    # None entry, since the classified value overrides regardless of the blanket dr -- to
+    # the SAME alpha sign.
+    signs_if_masked: set[int] = set()
+    for dr in _DELISTING_BAND:
+        m = measure_cohort([ev], "edgar:activist_13d", k_months, {"DEAD": h}, dr,
+                           as_of=_AS_OF, use_event_delisting=True)
+        ctp = calendar_time_portfolio(m.events, k_months, weighting="equal")
+        alpha, _betas = ff3_alpha(ctp, ff3)
+        if alpha is not None and alpha != 0:
+            signs_if_masked.add(1 if alpha > 0 else -1)
+    assert len(signs_if_masked) == 1, "fixture sanity: masked path must collapse to one sign"
+
+    # The real pin: as wired (use_event_delisting=False inside the band call), the band's
+    # fixed values genuinely disagree in sign -> flip=True. If daily.py's band call ever
+    # drops/flips that kwarg to True, this assertion fails (flip becomes False).
+    flip = _delisting_band_flip([ev], "edgar:activist_13d", k_months, {"DEAD": h}, ff3, _AS_OF)
+    assert flip is True
+
+
 def test_measurable_fraction_by_vintage():
     # 2020 vintage: both events measurable. 2024 vintage: mostly non-measurable
     # (one measurable, three not -> a real recent-vintage attrition, not fixture noise).
