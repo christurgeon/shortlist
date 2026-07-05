@@ -80,9 +80,17 @@ mechanics (found the ≲2019 `build_cik_to_ticker` convention bug → live-for-a
 OTC ~82% unresolvable → reverse abstention reported); opus plan-review hardened it (owns-client C1,
 low_confidence C2, never-raises); **live smoke on real archive.org PASSED** (BBBY recovered, reverse
 avoids the Overstock reused-ticker CIK). Whole-branch review READY TO MERGE; suite 1520.
-**Next: P2 Plan 2 `scout/delisting.py`** (8-K Item 1.03=bankruptcy / 2.01+5.01=M&A classifier, bankruptcy-
-overrides-M&A precedence, BBBY/ATVI/TWTR fixtures — §16 R-B3), then `edgar_history.py`+13D coordinator,
-then FINRA audit→leg, then digest wiring (needs `asdict()` + render_text normalization).
+**P2 Plan 2 `scout/delisting.py` COMPLETE** (`feat/scout-delisting`, PR pending): Form 25/25-NSE/15
+detect + 8-K item-code classifier (1.03=bankruptcy → Shumway venue partial NYSE −30%/Nasdaq −55%;
+2.01+5.01 same-filing=M&A → last-close, no penalty; else unclassified → non-measurable), R-B3
+bankruptcy-overrides-M&A precedence, BBBY/ATVI/TWTR fixtures + live EDGAR smoke PASSED (BBBY→
+bankruptcy/nasdaq, ATVI→mna), `last_traded_close`/`terminal_price` single-sourced for the Plan-3
+coordinator (R-A1: never read a close past the delisting date). CIK-keyed fetcher with a static
+guard test (never a ticker-keyed Company lookup). Whole-branch review READY TO MERGE; suite 1543.
+**Next: P2 Plan 3 `backtest/edgar_history.py` + 13D backfill leg** (coordinator consumes
+symbology + delisting; note: `fetch_filing_records` None=fetch-fail vs []=no-filings — the
+coordinator must branch on that BEFORE classify, which collapses both to None), then FINRA
+audit→leg, then digest wiring (needs `asdict()` + render_text normalization).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
