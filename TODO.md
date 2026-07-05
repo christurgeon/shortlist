@@ -36,7 +36,16 @@ edgar_history.py` + 13D backfill leg → (4) FINRA audit spike → (if pass) FIN
 into the daily digest (**at wiring: `dataclasses.asdict()` the SignalVerdicts + normalize the section's
 render_text to list[str]** — documented landmine in `report/viewmodel.py`).
 
-**Status:** P0 merged+deployed; P1 complete, PR pending. P2 not started (spikes done; plans in spec §16).
+**Status:** P0 (#104) + P1 (#105) merged+deployed. **P2 Plan 1 `scout/symbology.py` COMPLETE**
+(`feat/scout-symbology`, PR pending): Wayback PiT CIK↔ticker resolver — live-for-active / archive-for-
+delisted (forward), archive-only (reverse), cached-forever, ~1 req/s. Deep-dive spike validated the
+mechanics (found the ≲2019 `build_cik_to_ticker` convention bug → live-for-active sidesteps it; FINRA
+OTC ~82% unresolvable → reverse abstention reported); opus plan-review hardened it (owns-client C1,
+low_confidence C2, never-raises); **live smoke on real archive.org PASSED** (BBBY recovered, reverse
+avoids the Overstock reused-ticker CIK). Whole-branch review READY TO MERGE; suite 1520.
+**Next: P2 Plan 2 `scout/delisting.py`** (8-K Item 1.03=bankruptcy / 2.01+5.01=M&A classifier, bankruptcy-
+overrides-M&A precedence, BBBY/ATVI/TWTR fixtures — §16 R-B3), then `edgar_history.py`+13D coordinator,
+then FINRA audit→leg, then digest wiring (needs `asdict()` + render_text normalization).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
