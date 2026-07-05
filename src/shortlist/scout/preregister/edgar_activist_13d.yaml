@@ -3,7 +3,9 @@
 # time against the run as_of and flags the verdict non-preregistered if edited after.
 # Fixing ALL of these here (not in config.yaml) is the anti-p-hacking guard (spec §7/F7).
 signal: edgar:activist_13d
-as_of: 2026-07-01
+as_of: 2026-07-05
+window_start: 2022-01-01
+window_end: 2025-12-31
 k_months: 12                 # single primary horizon (13D drift is multi-quarter)
 factor_model: ff3
 weighting: equal

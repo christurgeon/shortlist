@@ -567,7 +567,13 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
     import asyncio
 
     from .preregister import load_prereg, verify_untampered
-    from .validate import SignalVerdict, calendar_time_portfolio, decide, measure_cohort
+    from .validate import (
+        SignalVerdict,
+        calendar_time_portfolio,
+        decide,
+        double_sort,
+        measure_cohort,
+    )
 
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
@@ -631,6 +637,49 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
         if not ok:
             verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
         verdicts.append(verdict)
+
+        # --- Scored-cohort verdict (design B2 + v2 §6/§8): does the scorer's composite +
+        # gate improve on the raw/undifferentiated cohort? Gated on `scored_evs` being
+        # non-empty so events with NO `composite` field at all (old-shaped JSONLs, or the
+        # live firehose before backfill reconstruction) never manufacture a phantom second
+        # verdict — back-compat.
+        scored_evs = [e for e in evs
+                     if e.get("composite") is not None and e.get("gated") is False]
+        if scored_evs:
+            scored_measurement = measure_cohort(scored_evs, signal, k_months, hists,
+                                               primary_delisting_return, as_of=today)
+            scored_ctp_rows = calendar_time_portfolio(scored_measurement.events, k_months,
+                                                      weighting=weighting)
+            scored_flip = _delisting_band_flip(scored_evs, signal, k_months, hists, ff3,
+                                              today, weighting)
+            scored_verdict = decide(scored_measurement, scored_ctp_rows, ff3, k_months,
+                                   prereg, sensitivity_flip=scored_flip,
+                                   cohort_type="scored_gated")
+            scored_verdict.notes.append(
+                "scored cohort reconstructed keylessly (no analyst/insider fields; SIC "
+                "best-effort) — composites not comparable to live")
+
+            # Double-sort over the GATE-AGNOSTIC composite-defined set (design B1 + v2 §2):
+            # it tests the composite's ORDERING power, not the gate — a strict superset of
+            # `scored_evs` whenever a composite-defined event was itself gated.
+            ds_evs = [e for e in evs if e.get("composite") is not None]
+            ds_measurement = measure_cohort(ds_evs, signal, k_months, hists,
+                                           primary_delisting_return, as_of=today)
+            ds_result = double_sort(
+                ds_measurement.events, k_months, ff3,
+                min_bucket_events=prereg.get("min_bucket_events", 5),
+                min_independent_blocks=prereg.get("min_independent_blocks", 2),
+                weighting=weighting)
+            scored_verdict.double_sort = ds_result
+            if ds_result is None:
+                # v2 §2's "insufficient_blocks marker in the run log" — a coarse WHY so a
+                # None double-sort never reads as "not attempted" vs "attempted and thin".
+                scored_verdict.notes.append(
+                    "double-sort: insufficient blocks or bucket size")
+
+            if not ok:
+                scored_verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
+            verdicts.append(scored_verdict)
     if events_override is not None:
         for v in verdicts:
             v.notes.append("SYNTHETIC backfill cohort — rank/KILL only (M1)")
@@ -641,18 +690,31 @@ def _print_validate_table(verdicts: list) -> None:
     if not verdicts:
         print("scout validate: no firehose events in the lookback window")
         return
-    header = (f"{'SIGNAL':<28}{'VERDICT':<14}{'IR':>8}{'ALPHA/mo':>10}"
+    header = (f"{'SIGNAL':<28}{'COHORT':<14}{'VERDICT':<14}{'IR':>8}{'ALPHA/mo':>10}"
              f"{'BLOCKS':>8}{'N_SEL':>7}{'N_MEAS':>8}{'FRAC':>7}{'FLIP':>6}")
     print(header)
     print("-" * len(header))
     for v in verdicts:
         ir = f"{v.ir:.2f}" if v.ir is not None else "-"
         alpha = f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-"
-        print(f"{v.signal:<28}{v.verdict:<14}{ir:>8}{alpha:>10}{v.effective_blocks:>8}"
-             f"{v.n_selected:>7}{v.n_measurable:>8}{v.measurable_fraction:>7.2f}"
-             f"{'Y' if v.sensitivity_flip else 'N':>6}")
+        print(f"{v.signal:<28}{v.cohort_type:<14}{v.verdict:<14}{ir:>8}{alpha:>10}"
+             f"{v.effective_blocks:>8}{v.n_selected:>7}{v.n_measurable:>8}"
+             f"{v.measurable_fraction:>7.2f}{'Y' if v.sensitivity_flip else 'N':>6}")
         for note in v.notes:
             print(f"    - {note}")
+        # Compact double-sort line (design v2 §8): high-vs-low composite spread stats.
+        # Absence-when-attempted-but-thin is already covered by the "insufficient blocks
+        # or bucket size" note above (v.notes), so this line only fires when double_sort
+        # actually returned a result.
+        if v.double_sort is not None:
+            ds = v.double_sort
+            ds_alpha = (f"{ds['spread_alpha_monthly']:.4f}"
+                       if ds.get("spread_alpha_monthly") is not None else "-")
+            ci = ds.get("spread_ci")
+            ds_ci = f"[{ci[0]:.4f}, {ci[1]:.4f}]" if ci is not None else "-"
+            print(f"    double-sort: spread α/mo={ds_alpha}, CI={ds_ci}, "
+                 f"blocks={ds.get('effective_blocks')}, "
+                 f"n={ds.get('n_high')}/{ds.get('n_low')}")
     print()
     print("Display / provisional / survivorship-accounted — not evidence, not advice. "
          "NEVER a PROMOTE signal.")

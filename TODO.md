@@ -12,20 +12,26 @@ The raw-cohort 13D backfill machinery is **merged and live-verified** (#109 — 
 smoke, one-week e2e, `validate --backfill` returns the honest INSUFFICIENT at tiny n). The
 production run itself was deliberately **paused** (hours of rate-limited fetching on the VPS)
 — it is the last step before the harness's first real historical verdict on
-`edgar:activist_13d`. When ready:
+`edgar:activist_13d`. **Update (Plan 3b, 2026-07-05):** `score_events` defaults to true, so
+the production run below now reconstructs BOTH cohorts (raw + scored/gated) in the SAME
+pass — no separate re-run needed to get the `scored_gated` verdict once it's fired. When
+ready:
 
 ```bash
 # serial + resumable (re-run the same command to resume); ~hours at ≤5 req/s SEC.
 # Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout 22:30 timers).
-uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout backfill --signal 13d --start 2022-01-01 --end 2025-12-31
 uv run --extra edgar shortlist-scout validate \
-    --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl --json
+    --backfill scout/backfill/13d-2022-01-01-2025-12-31.jsonl --json
 ```
 
-- Window is a starting suggestion — Wayback symbology coverage is dense 2018–2023, monthly
-  2024+, so a longer `--start 2022-01-01` (or earlier) run is legitimate too; more months =
-  more independent blocks toward the `min_independent_blocks` gate (K=12m → expect
-  INSUFFICIENT until the window is long enough; that is the design, not a failure).
+- **The window above IS the pre-registered window** (`preregister/edgar_activist_13d.yaml`
+  `window_start`/`window_end`, registered 2026-07-05) — the coordinator exact-matches it; any
+  other window (including a subset) runs fine but is loudly + permanently labeled
+  `window_not_preregistered` (deliberate: a different window is a different analysis).
+  K=12m → expect INSUFFICIENT until enough independent blocks accrue; that is the design.
+- Disk check before firing: companyfacts cache ≈ 2.5 MB × unique CIKs (up to ~8–13 GB at
+  2600 CIKs) under `.cache/sec_xbrl` — `df -h` first (38 GB box shared with the live bot).
 - Before a long run, optionally seed `symbology._OVERRIDES` for known rename-near-event
   cases (documented example: CIK 1823575, L&F Acquisition → ZeroFox de-SPAC 2022-08 — resolves
   the stale pre-rename ticker → honest non-measurable + `low_confidence` flag).
@@ -33,6 +39,12 @@ uv run --extra edgar shortlist-scout validate \
   blocks before trusting the fraction; `failed_chunks` → just re-run (resume skips done work).
 - After the run: the verdict feeds the digest-wiring step (Phase-2 plan 5) and sets the
   precedent for the FINRA audit→leg.
+- **Discrepancy to adjudicate before trusting a verdict:** the parent spec (§7) says the
+  independent-block gate should require **≥8** blocks; the committed
+  `preregister/edgar_activist_13d.yaml` pins `min_independent_blocks: 2`. Left UNCHANGED
+  here (Plan 3b Task 6 — silently tightening an inference parameter after the fact is
+  exactly what the tamper guard exists to prevent) — needs a human call on which value
+  governs the real run.
 
 **Status:** machinery complete + merged (#109); the run itself is deliberately deferred —
 operator action (or ask Claude to run it supervised).
@@ -132,13 +144,22 @@ per-record guard). Known case: CIK 1823575 (L&F→ZeroFox de-SPAC 2022-08) resol
 pre-rename ticker → honest non-measurable + `low_confidence` flag; seed `symbology._OVERRIDES`
 before the production run if it matters.
 **Operator next: the production backfill run** — e.g.
-`uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31`
+`uv run --extra edgar shortlist-scout backfill --signal 13d --start 2022-01-01 --end 2025-12-31`
 (serial, resumable — re-run to resume; ~hours at 5 req/s; run OUTSIDE 21:15–23:00 UTC), then
-`shortlist-scout validate --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl`.
-**Then: Plan 3b** — scored/gated reconstruction (companyfacts → `extract_panel` →
-`panel_to_metrics` + dated closes → score; fills `gated`/`composite` on the same JSONL —
-additive, `run_validate` is raw-only today), then FINRA audit→leg, then digest wiring
-(needs `asdict()` + render_text normalization).
+`shortlist-scout validate --backfill scout/backfill/13d-2022-01-01-2025-12-31.jsonl`.
+**P2 Plan 3b (scored/gated cohort) COMPLETE** (`feat/scout-backfill-scored`, PR pending): the
+same backfill coordinator now OPTIONALLY reconstructs a PiT `score()` per event
+(`scout.backfill.score_events`, default true) — companyfacts → `extract_panel` →
+`panel_to_metrics` + dated closes → `scoring.score()` — filling `gated`/`composite` on the
+same JSONL row (additive; `score_events: false` reproduces the byte-identical pre-3b
+raw-only file). `validate --backfill` gained a second `cohort_type: "scored_gated"` verdict
+(gate-agnostic double-sort over the composite-defined set) that appears only when ≥1 event
+has a non-None composite. **Live-verified on the VPS** (same Aug 2022 one-week window as
+Plan 3): 6 selected / 3 scored (composites 8.2–63.0); `validate --backfill` correctly
+produced a `scored_gated` INSUFFICIENT verdict (n=1 after the gated-False filter, 0
+measurable — too thin to be anything else, the honest verdict at this n); RSS 410 MB. Full
+suite 1620. **Then: FINRA audit→leg, then digest wiring** (needs `asdict()` + render_text
+normalization).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 

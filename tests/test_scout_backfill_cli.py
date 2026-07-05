@@ -95,8 +95,12 @@ def test_run_validate_events_override_never_instantiates_scout_state(monkeypatch
 
     verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
                             lookback_days=365, events_override=events)
-    assert len(verdicts) == 1
-    assert any("SYNTHETIC" in n for n in verdicts[0].notes)
+    # The one event is composite-defined + non-gated, so it also produces a second
+    # (scored_gated) verdict alongside the raw one (Task 6, design B2) — both must still
+    # carry the SYNTHETIC label.
+    assert len(verdicts) == 2
+    assert {v.cohort_type for v in verdicts} == {"raw", "scored_gated"}
+    assert all(any("SYNTHETIC" in n for n in v.notes) for v in verdicts)
 
 
 def test_validate_cli_backfill_path_loads_jsonl_never_touches_state(tmp_path, monkeypatch, capsys):

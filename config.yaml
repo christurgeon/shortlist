@@ -514,6 +514,8 @@ scout:
   #   yahoo_throttle_s: 0.5      # sleep before every price-history fetch
   #   max_records: 20000         # per-chunk safety cap (warns + truncates)
   #   symbology_cache_dir: .cache/symbology
+  #   score_events: true         # Plan 3b: reconstruct a PiT gated/composite per event
+  #   xbrl_cache_dir: .cache/sec_xbrl   # shared with the XBRL backtest's companyfacts cache
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery

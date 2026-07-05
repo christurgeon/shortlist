@@ -1,6 +1,6 @@
-"""Live verification of the 13D backfill (Task 7, validation-harness P2 Plan 3).
+"""Live verification of the 13D backfill (Task 7, validation-harness P2 Plan 3 / Plan 3b).
 
-Two @pytest.mark.live smoke tests hitting REAL EDGAR/Yahoo/archive.org, run manually
+Three @pytest.mark.live smoke tests hitting REAL EDGAR/Yahoo/archive.org, run manually
 (`-m live`) — never in the default `uv run pytest` suite. VPS-budgeted (spec §7-brief):
 small windows, small `max_records` caps, so total live request volume stays well under the
 hard per-run budgets (~60 SEC / ~10 Yahoo / ~5 archive.org). Follows the skipif-on-
@@ -9,8 +9,10 @@ SEC_IDENTITY convention in tests/test_scout_delisting_fetch.py.
 import json
 import os
 from datetime import date
+from pathlib import Path
 
 import pytest
+import yaml
 
 from shortlist.backtest.edgar_history import fetch_activist_window
 from shortlist.scout.backfill import load_backfill_events, run_backfill_13d
@@ -18,8 +20,12 @@ from shortlist.scout.backfill import load_backfill_events, run_backfill_13d
 pytestmark_live = pytest.mark.skipif(
     not os.getenv("SEC_IDENTITY"), reason="needs SEC_IDENTITY + edgar extra")
 
+_REPO_ROOT = Path(__file__).parent.parent
 _SCRATCH_JSONL = ("/tmp/claude-1000/-home-chris-shortlist/"
                   "6b9248e8-594d-4d3c-a1ac-d4a635d5a4bc/scratchpad/task7-e2e-13d.jsonl")
+_SCRATCH_SCORED_JSONL = ("/tmp/claude-1000/-home-chris-shortlist/"
+                         "6b9248e8-594d-4d3c-a1ac-d4a635d5a4bc/scratchpad/"
+                         "task7-3b-scored.jsonl")
 
 
 @pytest.mark.live
@@ -87,3 +93,50 @@ def test_live_end_to_end_one_week_backfill():
     sample = measurable_with_price[0]
     print(f"[live] sample measurable row: ticker={sample['ticker']} "
           f"as_of_price={sample['as_of_price']} event_date={sample['event_date']}")
+
+
+@pytest.mark.live
+@pytestmark_live
+def test_live_end_to_end_one_week_backfill_scored():
+    """run_backfill_13d over the SAME mature week as the raw-cohort smoke above, but with
+    `score_events` ON (the default) and the REAL config.yaml as the scoring config (weights/
+    gates/sector masks must be the production ones, not a test stub) — Task 7 / Plan 3b.
+    max_records stays capped small (8) for the same request-budget reasons as above."""
+    identity = os.environ["SEC_IDENTITY"]
+    config = yaml.safe_load((_REPO_ROOT / "config.yaml").read_text())
+    config.setdefault("scout", {})["backfill"] = {
+        "max_records": 8, "sec_throttle_s": 0.2, "yahoo_throttle_s": 0.3,
+        "symbology_cache_dir": ".cache/symbology",
+        "xbrl_cache_dir": ".cache/sec_xbrl",
+        # score_events omitted -> default True (this test exists to exercise that default)
+    }
+    out_path = _SCRATCH_SCORED_JSONL
+    if os.path.exists(out_path):
+        os.remove(out_path)               # fresh run each time (idempotent-append semantics
+                                            # would otherwise skip everything as "existing")
+
+    summary = run_backfill_13d(config, start=date(2022, 8, 8), end=date(2022, 8, 12),
+                               identity=identity, out_path=out_path)
+    print("\n[live] one-week SCORED backfill summary:")
+    print(json.dumps(summary, default=str, indent=2))
+
+    assert summary["n_selected"] > 0
+    assert summary["n_scored"] >= 1, "no event reconstructed a composite -- scoring path is dead"
+
+    rows = load_backfill_events(out_path)
+    assert len(rows) == summary["n_selected"]
+
+    scored_rows = [r for r in rows if r.get("composite") is not None]
+    assert len(scored_rows) >= 1
+    for r in scored_rows:                 # round-trip shape: a scored row carries BOTH fields
+        assert r.get("gated") in (True, False), f"scored row has non-bool gated: {r.get('gated')}"
+        assert isinstance(r["composite"], float)
+
+    sentinel_rows = [r for r in rows if str(r.get("ticker", "")).startswith("CIK:")]
+    for r in sentinel_rows:               # sentinels never reach score_event (no price history)
+        assert r.get("gated") is None
+        assert r.get("composite") is None
+
+    sample = scored_rows[0]
+    print(f"[live] sample scored row: ticker={sample['ticker']} gated={sample['gated']} "
+          f"composite={sample['composite']}")
