@@ -1,9 +1,11 @@
-"""13D backfill coordinator (raw cohort) — spec §6.5/§8, P2 Plan 3.
+"""13D backfill coordinator (raw + scored cohort) — spec §6.5/§8, P2 Plan 3 / Plan 3b.
 
 Walk history (backtest.edgar_history) -> resolve PiT ticker (symbology, CIK-keyed) -> assemble
-CohortEvents (origin="backfill") -> measure survivorship-accounted returns with per-event
-CLASSIFIED delisting terminals (delisting.py) -> append to an idempotent gitignored JSONL under
-scout/backfill/ (NEVER ScoutState — synthetic and live must not pool, M1).
+CohortEvents (origin="backfill") -> OPTIONALLY reconstruct a PiT score() (scout.backfill
+`score_event`/`merge_metrics`, gated by `scout.backfill.score_events`, default true) -> measure
+survivorship-accounted returns with per-event CLASSIFIED delisting terminals (delisting.py) ->
+append to an idempotent gitignored JSONL under scout/backfill/ (NEVER ScoutState — synthetic and
+live must not pool, M1).
 
 Entry timing (F12): event_date = first trading day STRICTLY AFTER the filing date (13Ds land
 after close; the filing-day close would capture the announcement pop, not the drift).
@@ -11,7 +13,9 @@ Filter ordering (the measurable-fraction denominator): signal-definition filters
 SPAC, affiliate) EXCLUDE records entirely; everything after them is selected, and resolution/
 price/delisting failures only mark events non-measurable (counted, never dropped).
 Serial by design: one Symbology (archive.org throttle), one PriceHistory in memory at a time
-(VPS: ~1.9 GB RAM shared with a live trading bot).
+(VPS: ~1.9 GB RAM shared with a live trading bot). Score reconstruction reuses that single
+PriceHistory + one shared SPY PriceHistory fetched once per run, plus one companyfacts payload
+in memory at a time (sec-throttled, month-cached — shared with the XBRL backtest).
 """
 from __future__ import annotations
 
@@ -328,10 +332,13 @@ def summarize(rows: list[dict]) -> dict:
     by_vintage: dict = {}
     delist: dict = {}
     n_meas = 0
+    n_scored = 0
     for r in rows:
         meta = r.get("meta") or {}
         measurable = bool(meta.get("measurable"))
         n_meas += measurable
+        if r.get("composite") is not None:
+            n_scored += 1
         try:
             year = int(str(r.get("event_date", ""))[:4])
         except ValueError:
@@ -348,6 +355,8 @@ def summarize(rows: list[dict]) -> dict:
     n = len(rows)
     return {"n_selected": n, "n_measurable": n_meas,
             "fraction": (n_meas / n) if n else 0.0,
+            "n_scored": n_scored,
+            "scored_fraction": (n_scored / n) if n else 0.0,
             "by_reason": by_reason, "by_vintage": by_vintage,
             "delisting_by_reason": delist}
 
@@ -362,24 +371,52 @@ def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:
     return chunks
 
 
+def _parse_prereg_date(x) -> date:
+    return x if isinstance(x, date) else date.fromisoformat(str(x))
+
+
 def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
                      today: Optional[date] = None, out_path: Optional[str] = None,
                      _fetch_window=None, _symbology=None, _fetch_history=None,
-                     _fetch_delisting=None) -> dict:
-    """Batch 13D raw-cohort backfill: walk -> assemble -> measure -> idempotent JSONL.
-    Serial + rate-limited by design (runs on the production VPS). Returns the run summary."""
+                     _fetch_delisting=None, _fetch_facts=None, _fetch_sic=None,
+                     _prereg=None) -> dict:
+    """Batch 13D backfill: walk -> assemble -> OPTIONALLY score (PiT reconstruction) ->
+    measure -> idempotent JSONL. Serial + rate-limited by design (runs on the production VPS).
+    Returns the run summary.
+
+    `scout.backfill.score_events` (default true) gates the scored-cohort reconstruction
+    (design A4): false reproduces the byte-identical pre-3b raw-only JSONL (gated/composite
+    stay None, nothing else about a written row changes)."""
     bf = (config.get("scout") or {}).get("backfill") or {}
     sec_throttle = float(bf.get("sec_throttle_s", 0.2))
     yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
     max_records = int(bf.get("max_records", 20000))
     out_dir = bf.get("out_dir", "scout/backfill")
+    score_events = bool(bf.get("score_events", True))
+    xbrl_cache_dir = bf.get("xbrl_cache_dir", ".cache/sec_xbrl")
     today = today or date.today()
     out_path = out_path or str(Path(out_dir) /
                                f"13d-{start.isoformat()}-{end.isoformat()}.jsonl")
+    fetch_month = today.strftime("%Y-%m")          # v2 §1: FETCH-time month, never as_of's
 
-    from .preregister import load_prereg
-    repo_root = str(Path(__file__).parent.parent.parent.parent)
-    k_months = int(load_prereg("edgar_activist_13d", repo_root=repo_root).get("k_months", 12))
+    if _prereg is None:
+        from .preregister import load_prereg
+        repo_root = str(Path(__file__).parent.parent.parent.parent)
+        _prereg = load_prereg("edgar_activist_13d", repo_root=repo_root)
+    k_months = int(_prereg.get("k_months", 12))
+
+    # v2 §6: prereg window check — absent window_start/window_end (pre-Task-6 yaml) is a
+    # silent back-compat no-op; a present-but-mismatched window warns + labels the run.
+    window_not_preregistered = False
+    w_start_raw, w_end_raw = _prereg.get("window_start"), _prereg.get("window_end")
+    if w_start_raw is not None and w_end_raw is not None:
+        prereg_start, prereg_end = _parse_prereg_date(w_start_raw), _parse_prereg_date(w_end_raw)
+        if prereg_start != start or prereg_end != end:
+            warnings.warn(
+                f"backfill: run window {start.isoformat()}:{end.isoformat()} does not match "
+                f"the pre-registered window {prereg_start.isoformat()}:{prereg_end.isoformat()} "
+                f"— this run is NOT pre-registered", stacklevel=2)
+            window_not_preregistered = True
 
     if _fetch_window is None:
         from ..backtest.edgar_history import fetch_activist_window
@@ -394,12 +431,27 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
         def _fetch_delisting(cik):
             time.sleep(sec_throttle)
             return fetch_filing_records(cik, identity)
+    if _fetch_facts is None:
+        def _fetch_facts(cik):
+            time.sleep(sec_throttle)
+            return fetch_companyfacts_sync(cik, identity=identity, cache_dir=xbrl_cache_dir,
+                                           month=fetch_month)
+    if _fetch_sic is None:
+        def _fetch_sic(cik):
+            time.sleep(sec_throttle)
+            return fetch_sic_sync(cik, identity=identity, cache_dir=xbrl_cache_dir,
+                                  month=fetch_month)
+
+    # SPY fetched ONCE for the whole run (design A4) — every scored event's price leg shares
+    # it; only needed when scoring is on.
+    spy_hist = _fetch_history("SPY") if score_events else None
 
     # Anything that can raise (file I/O) happens BEFORE the owned resource below is
     # acquired, so a failure here can never leak an un-closed Symbology.
     existing_keys = {r.get("meta", {}).get("key") for r in load_backfill_events(out_path)}
     failed_chunks: list[str] = []
     written_total = 0
+    n_sic_missing = 0
 
     # Symbology acquisition is the LAST setup step before try/finally — nothing risky
     # may sit between it and the try (leak-window guard).
@@ -421,9 +473,18 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
             fresh = [e for e in events if e.meta.get("key") not in existing_keys]
             measured = []
             for ev in fresh:
+                if window_not_preregistered:
+                    ev = replace(ev, meta={**ev.meta, "window_not_preregistered": True})
                 hist = None
                 if not ev.ticker.startswith("CIK:"):
                     hist = _fetch_history(ev.ticker)
+                if score_events and hist is not None:
+                    facts = _fetch_facts(ev.cik) if ev.cik else None
+                    sic = _fetch_sic(ev.cik) if ev.cik else None
+                    if ev.cik and sic is None:
+                        n_sic_missing += 1
+                    gated, composite = score_event(ev, hist, facts, spy_hist, sic, config)
+                    ev = replace(ev, gated=gated, composite=composite)
                 measured.append(measure_event(ev, hist, k_months, today=today,
                                               fetch_delisting_records=_fetch_delisting))
                 del hist                          # one PriceHistory at a time (VPS RAM budget)
@@ -437,6 +498,9 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     summary = summarize(load_backfill_events(out_path))
     summary["out_path"] = out_path
     summary["written"] = written_total
+    summary["n_sic_missing"] = n_sic_missing
+    if window_not_preregistered:
+        summary["window_not_preregistered"] = True
     if failed_chunks:
         summary["failed_chunks"] = failed_chunks
         warnings.warn(f"backfill: {len(failed_chunks)} chunk(s) failed — re-run to resume: "

@@ -274,8 +274,10 @@ def test_run_backfill_end_to_end_with_injected_seams(tmp_path):
             pass
 
     h = _hist("TGT", date(2022, 7, 1), 400)
+    # score_events off here — this test exercises the RAW coordinator wiring (walk / assemble /
+    # measure / idempotent append); Task-4 scoring integration has its own dedicated tests below.
     cfg = {"scout": {"backfill": {"out_dir": str(tmp_path), "sec_throttle_s": 0.0,
-                                  "yahoo_throttle_s": 0.0}}}
+                                  "yahoo_throttle_s": 0.0, "score_events": False}}}
 
     hist_calls: list = []
     delist_calls: list = []
@@ -754,3 +756,188 @@ def test_score_event_pins_price_at_clamp(monkeypatch):
 
     # At as_of must return a real close (not None)
     assert price_at(AS_OF) is not None, "price_at must return close at/before as_of"
+
+
+# --- Task 4: run_backfill_13d integration — score_events flag, SPY-once, prereg window -----
+
+class _FakeSym4:
+    """Minimal injectable Symbology: resolves cik7 -> TST, cik99 -> OTHR, else None."""
+    low_confidence: list = []
+    disagreements: list = []
+
+    def resolve_ticker(self, cik, as_of):
+        return {"0000000007": "TST", "0000000099": "OTHR"}.get(cik)
+
+    def close(self):
+        pass
+
+
+def _t4_window_3(start, end, identity, **kw):
+    """One scoreable event (cik7/TST), one facts-less resolved event (cik99/OTHR), one
+    unresolved sentinel (cik123) — all filed on AS_OF (2023-06-01), the Task-3 fixture date."""
+    if start != date(2023, 6, 1):
+        return []
+    return [_rec("0000000007", acc="a-1", fdate=AS_OF),
+           _rec("0000000099", acc="a-2", fdate=AS_OF),
+           _rec("0000000123", acc="a-3", fdate=AS_OF)]
+
+
+def test_run_backfill_scores_events_when_flag_on(tmp_path):
+    """score_events on (default): the scoreable event (hist + facts + sic) gains a real
+    gated/composite pair; the facts-less resolved event stays None despite having hist
+    (n_sic_missing counts its failed sic fetch); the sentinel never even attempts a fetch."""
+    out = str(tmp_path / "13d.jsonl")
+    hist_calls: list = []
+    facts_calls: list = []
+    sic_calls: list = []
+
+    def fake_hist(tkr):
+        hist_calls.append(tkr)
+        if tkr == "SPY":
+            return _se_hist("SPY", base=300.0)
+        if tkr == "TST":
+            return _se_hist()
+        if tkr == "OTHR":
+            return _hist("OTHR", date(2020, 1, 1), 1000, base=50.0)
+        return None
+
+    def fake_facts(cik):
+        facts_calls.append(cik)
+        return _se_facts() if cik == "0000000007" else None
+
+    def fake_sic(cik):
+        sic_calls.append(cik)
+        return "3711" if cik == "0000000007" else None
+
+    import copy
+    cfg = copy.deepcopy(_SE_CONFIG)                             # score_event scores through
+    cfg.setdefault("scout", {})["backfill"] = {
+        "out_dir": str(tmp_path), "sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0,
+        "score_events": True}
+    summary = run_backfill_13d(cfg, start=date(2023, 6, 1), end=date(2023, 6, 30),
+                               identity="t@example.com", today=TODAY, out_path=out,
+                               _fetch_window=_t4_window_3, _symbology=_FakeSym4(),
+                               _fetch_history=fake_hist, _fetch_delisting=lambda cik: [],
+                               _fetch_facts=fake_facts, _fetch_sic=fake_sic)
+
+    # SPY fetched exactly once for the whole run, ahead of any per-event fetch.
+    assert hist_calls[0] == "SPY"
+    assert hist_calls.count("SPY") == 1
+    assert set(hist_calls) == {"SPY", "TST", "OTHR"}          # sentinel never fetched
+
+    # facts/sic only attempted for the two non-sentinel events with hist.
+    assert sorted(facts_calls) == ["0000000007", "0000000099"]
+    assert sorted(sic_calls) == ["0000000007", "0000000099"]
+
+    rows = load_backfill_events(out)
+    by_ticker = {r["ticker"]: r for r in rows}
+    assert set(by_ticker) == {"TST", "OTHR", "CIK:0000000123"}
+
+    tst = by_ticker["TST"]
+    assert tst["gated"] in (True, False)
+    assert isinstance(tst["composite"], float)
+    exp_gated, exp_composite = _se_reconstruct(_se_ev(ticker="TST"), _se_hist(), _se_facts(),
+                                               _se_hist("SPY", base=300.0), "3711", _SE_CONFIG)
+    assert tst["gated"] == exp_gated
+    assert tst["composite"] == exp_composite
+
+    othr = by_ticker["OTHR"]                                   # facts-less: hist present, no facts
+    assert othr["gated"] is None and othr["composite"] is None
+
+    sentinel = by_ticker["CIK:0000000123"]
+    assert sentinel["gated"] is None and sentinel["composite"] is None
+
+    assert summary["n_scored"] == 1                            # only TST
+    assert summary["n_sic_missing"] == 1                       # only OTHR's sic fetch failed
+
+
+def test_run_backfill_score_events_off_is_byte_identical_except_scored_fields(tmp_path):
+    """score_events: false regression pin — every field on every written row is identical
+    to the score_events: true run, except gated/composite (which stay None off)."""
+    def fake_hist(tkr):
+        if tkr == "SPY":
+            return _se_hist("SPY", base=300.0)
+        if tkr == "TST":
+            return _se_hist()
+        if tkr == "OTHR":
+            return _hist("OTHR", date(2020, 1, 1), 1000, base=50.0)
+        return None
+
+    def fake_facts(cik):
+        return _se_facts() if cik == "0000000007" else None
+
+    def fake_sic(cik):
+        return "3711" if cik == "0000000007" else None
+
+    out_on = str(tmp_path / "on.jsonl")
+    out_off = str(tmp_path / "off.jsonl")
+    base_kw = dict(start=date(2023, 6, 1), end=date(2023, 6, 30), identity="t@example.com",
+                  today=TODAY, _fetch_window=_t4_window_3, _fetch_delisting=lambda cik: [])
+
+    import copy
+    cfg_on = copy.deepcopy(_SE_CONFIG)                          # full config -> real scores
+    cfg_on.setdefault("scout", {})["backfill"] = {
+        "sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0, "score_events": True}
+    cfg_off = copy.deepcopy(_SE_CONFIG)
+    cfg_off.setdefault("scout", {})["backfill"] = {
+        "sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0, "score_events": False}
+
+    run_backfill_13d(cfg_on, out_path=out_on, _symbology=_FakeSym4(),
+                     _fetch_history=fake_hist, _fetch_facts=fake_facts, _fetch_sic=fake_sic,
+                     **base_kw)
+    run_backfill_13d(cfg_off, out_path=out_off, _symbology=_FakeSym4(),
+                     _fetch_history=fake_hist, **base_kw)
+
+    rows_on = load_backfill_events(out_on)
+    rows_off = load_backfill_events(out_off)
+    assert len(rows_on) == len(rows_off) == 3
+    by_key_on = {r["meta"]["key"]: r for r in rows_on}
+    by_key_off = {r["meta"]["key"]: r for r in rows_off}
+    assert set(by_key_on) == set(by_key_off)
+    for k, on_row in by_key_on.items():
+        off_row = by_key_off[k]
+        assert off_row["gated"] is None and off_row["composite"] is None
+        assert {**on_row, "gated": None, "composite": None} == off_row
+
+
+def test_run_backfill_prereg_window_mismatch_warns_and_flags(tmp_path):
+    import pytest
+
+    def window_one(start, end, identity, **kw):
+        if start != date(2023, 6, 1):
+            return []
+        return [_rec("0000000007", acc="a-1", fdate=date(2023, 6, 1))]
+
+    out = str(tmp_path / "13d.jsonl")
+    prereg = {"k_months": 12, "window_start": "2020-01-01", "window_end": "2020-12-31"}
+    with pytest.warns(UserWarning, match="pre-registered"):
+        summary = run_backfill_13d(
+            {"scout": {"backfill": {"sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0,
+                                    "score_events": False}}},
+            start=date(2023, 6, 1), end=date(2023, 6, 30), identity="t@example.com",
+            today=TODAY, out_path=out, _fetch_window=window_one, _symbology=_FakeSym4(),
+            _fetch_history=lambda tkr: None, _fetch_delisting=lambda cik: [], _prereg=prereg)
+    assert summary["window_not_preregistered"] is True
+    rows = load_backfill_events(out)
+    assert rows and all(r["meta"].get("window_not_preregistered") is True for r in rows)
+
+
+def test_run_backfill_prereg_window_keys_absent_is_back_compat_noop(tmp_path):
+    """Pre-Task-6 prereg yaml (no window_start/window_end) -> no warning, no summary flag,
+    no meta stamp — the CLI window is never compared against a window that isn't registered."""
+    def window_one(start, end, identity, **kw):
+        if start != date(2023, 6, 1):
+            return []
+        return [_rec("0000000007", acc="a-1", fdate=date(2023, 6, 1))]
+
+    out = str(tmp_path / "13d.jsonl")
+    prereg = {"k_months": 12}                                   # no window keys at all
+    summary = run_backfill_13d(
+        {"scout": {"backfill": {"sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0,
+                                "score_events": False}}},
+        start=date(2023, 6, 1), end=date(2023, 6, 30), identity="t@example.com",
+        today=TODAY, out_path=out, _fetch_window=window_one, _symbology=_FakeSym4(),
+        _fetch_history=lambda tkr: None, _fetch_delisting=lambda cik: [], _prereg=prereg)
+    assert "window_not_preregistered" not in summary
+    rows = load_backfill_events(out)
+    assert rows and all("window_not_preregistered" not in r["meta"] for r in rows)
