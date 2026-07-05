@@ -85,6 +85,12 @@ signal-validation harness Phase 2** (entry below — #106 symbology merged; deli
    look. New machinery → ranks below item 1.
 5. **DEF 14A pay-vs-performance axis** (entry 2026-06-28 item 1): quick ECD-tag
    reachability spike before committing anything.
+   **SPIKE RESOLVED (2026-07-05): NO-GO on the XBRL path.** Live-verified that SEC's XBRL
+   APIs serve only `dei`/`us-gaap` namespaces: the `ecd` PvP tags
+   (`PeoActuallyPaidCompAmt` etc.) are absent from companyfacts for AAPL and MSFT, and a
+   `companyconcept/.../ecd/...` probe 404s (NoSuchKey). The axis can therefore only be
+   built via the snapshot-replay path (accumulate `research/proxy.py`'s edgartools
+   `ProxyStatement` PvP extraction point-in-time). Deferred accordingly; no code needed.
 6. **8-K discovery originator** (entry 2026-06-29 item 3): one-file `SignalSource` on
    the 13D pattern — more attractive now that the validation harness can measure it.
 7. **Paid-FMP Starter flip** (entry 2026-06-30): a money decision + one config key,
