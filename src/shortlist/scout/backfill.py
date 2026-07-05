@@ -449,3 +449,17 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
 def group_by_day_records(recs: list[dict]) -> dict:
     from ..backtest.edgar_history import group_by_day
     return group_by_day(recs)
+
+
+def merge_metrics(primary, secondary):
+    """None-overlay merge of two partial StockMetrics (fundamentals leg primary, price leg
+    secondary). The two legs populate disjoint fields today; primary-wins is belt-and-braces
+    (the _merge_flat precedent, data/models.py)."""
+    from dataclasses import fields, replace
+    updates = {}
+    for f in fields(primary):
+        if getattr(primary, f.name) is None:
+            v = getattr(secondary, f.name)
+            if v is not None:
+                updates[f.name] = v
+    return replace(primary, **updates) if updates else primary

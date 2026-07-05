@@ -490,3 +490,39 @@ def test_sic_none_or_malformed_cik_returns_none_never_raises(tmp_path):
         with pytest.warns(UserWarning, match="backfill.*malformed"):
             result = fetch_sic_sync(bad_cik, **kw)
         assert result is None
+
+
+# --- Task 2: merge_metrics — reflective None-overlay (fundamentals + price legs) --------
+
+from shortlist.models import StockMetrics
+from shortlist.scout.backfill import merge_metrics
+
+
+def test_merge_metrics_disjoint_overlay():
+    """Fundamentals-only + price-only → merged has all three fields."""
+    fundamentals = StockMetrics(ticker="T", revenue_cagr=0.1)
+    price = StockMetrics(ticker="T", price=10.0, realized_vol=0.2)
+    merged = merge_metrics(fundamentals, price)
+    assert merged.ticker == "T"
+    assert merged.revenue_cagr == 0.1
+    assert merged.price == 10.0
+    assert merged.realized_vol == 0.2
+
+
+def test_merge_metrics_primary_wins_on_overlap():
+    """Both set price → primary's survives."""
+    primary = StockMetrics(ticker="T", price=15.0)
+    secondary = StockMetrics(ticker="T", price=10.0)
+    merged = merge_metrics(primary, secondary)
+    assert merged.price == 15.0
+
+
+def test_merge_metrics_all_none_secondary_returns_primary_unchanged():
+    """All-None secondary → primary returned unchanged (identity ok)."""
+    primary = StockMetrics(ticker="T", revenue_cagr=0.1)
+    secondary = StockMetrics(ticker="T")
+    merged = merge_metrics(primary, secondary)
+    assert merged.ticker == "T"
+    assert merged.revenue_cagr == 0.1
+    # Identity check: the function should return primary itself when secondary is all-None
+    assert merged is primary
