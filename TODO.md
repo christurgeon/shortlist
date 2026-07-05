@@ -6,6 +6,43 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Prioritization pass — ranked backlog + one net-new item (2026-07-05)
+
+A "highest impact next" review re-affirmed the 2026-07-01 verdict: **finish the
+signal-validation harness Phase 2** (entry below — #106 symbology merged; delisting →
+13D backfill → FINRA audit → digest wiring is the critical path). Ranked follow-ups
+*around* it, mostly pointers to existing entries:
+
+1. **Leverage residualized-IC test (`net_debt_to_ebitda`) — NET-NEW, best independent
+   parallel build.** The strongest signal ever measured here (largecap XS-IC +0.127 @12m,
+   positive at every horizon in both IC and quantile spread — session memory
+   `xbrl-backtest-first-largecap-ic`, 2026-06-15 runs) but **0.54-collinear with the
+   scored `growth` axis**, so the standalone IC partly re-encodes growth. The decisive,
+   pre-agreed test before any wiring: regress the leverage score on growth+quality
+   cross-sectionally, rank-IC the **residual** (a contained backtest diagnostic, the
+   `_COLLINEARITY_PAIRS` / EV-EBIT decision pattern). Survives → first evidence-backed
+   composite change since accruals/residual-momentum; fails → clean kill. Caveats to
+   carry: single-run evidence, survivorship-biased largecap, breadth 27.6 (< the 30
+   floor) at h12, smallmid re-run was NULL — so run on both universes.
+2. **Verify daily accumulation is actually accruing** (entry 2026-06-21 item 1): the VPS
+   timer must pass `--max-tickers 42`; ≥24 snapshots unblock SUE + Lazy-Prices
+   measurement. Minutes of operator checking guarding two finished features.
+3. **Selection-ledger forward-return analysis** (entry 2026-06-29 item 1): picks accrue
+   since 2026-06-30 → first 1m-horizon read ~**early Aug 2026**; calendar-gated, not
+   effort-gated.
+4. **Gate-impact measurement** (entry 2026-06-26, scope B): gates are entirely
+   unmeasured; excused-vs-gated negative-FCF cohort comparison is the first empirical
+   look. New machinery → ranks below item 1.
+5. **DEF 14A pay-vs-performance axis** (entry 2026-06-28 item 1): quick ECD-tag
+   reachability spike before committing anything.
+6. **8-K discovery originator** (entry 2026-06-29 item 3): one-file `SignalSource` on
+   the 13D pattern — more attractive now that the validation harness can measure it.
+7. **Paid-FMP Starter flip** (entry 2026-06-30): a money decision + one config key,
+   not a build.
+
+**Status:** logged; item 1 is the only net-new build and the recommended next pick once
+harness P2 lands (or in parallel — it touches only backtest diagnostics).
+
 ## Signal-validation harness — Phase 0 + Phase 1 shipped; Phase 2 next (2026-07-02)
 
 The **highest-impact** build (design v3.1: `docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md`,
@@ -36,8 +73,8 @@ edgar_history.py` + 13D backfill leg → (4) FINRA audit spike → (if pass) FIN
 into the daily digest (**at wiring: `dataclasses.asdict()` the SignalVerdicts + normalize the section's
 render_text to list[str]** — documented landmine in `report/viewmodel.py`).
 
-**Status:** P0 (#104) + P1 (#105) merged+deployed. **P2 Plan 1 `scout/symbology.py` COMPLETE**
-(`feat/scout-symbology`, PR pending): Wayback PiT CIK↔ticker resolver — live-for-active / archive-for-
+**Status:** P0 (#104) + P1 (#105) merged+deployed. **P2 Plan 1 `scout/symbology.py` MERGED (#106,
+2026-07-05)**: Wayback PiT CIK↔ticker resolver — live-for-active / archive-for-
 delisted (forward), archive-only (reverse), cached-forever, ~1 req/s. Deep-dive spike validated the
 mechanics (found the ≲2019 `build_cik_to_ticker` convention bug → live-for-active sidesteps it; FINRA
 OTC ~82% unresolvable → reverse abstention reported); opus plan-review hardened it (owns-client C1,
