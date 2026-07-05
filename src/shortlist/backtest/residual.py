@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 from statistics import pstdev
-from typing import Optional
 
 from ..scout.validate import _residuals, ols
 from .metrics import rank
@@ -104,6 +103,9 @@ def residual_rows(
         mean_y = sum(y) / len(y)
         ss_tot = sum((v - mean_y) ** 2 for v in y)
         ss_res = sum(r * r for r in resid)
+        # ss_tot == 0 (all-equal y, only possible in method="level" with a degenerate
+        # column) -> r2 defined as 0.0 by convention (no variance to explain), never a
+        # ZeroDivisionError.
         r2s.append((1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0)
 
         for c, coef in zip(controls, b[1:], strict=True):

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -13,13 +14,23 @@ import httpx
 import yaml
 
 from ..env import load_env
-from .engine import collect_observations, observation_grid, run_backtest
-from .metrics import cross_signal_xs_corr
+from .engine import (
+    _TRUST_MIN_BREADTH,
+    _signal_report,
+    collect_observations,
+    fwd_return,
+    observation_grid,
+    run_backtest,
+)
+from .metrics import aggregate_ic, cross_signal_xs_corr, spearman_ic
 from .prices import _UA, PriceHistory, _add_months, fetch_history
-from .report import render_table, report_to_dict
+from .report import _ic_dict, render_table, report_to_dict
+from .residual import residual_rows
 from .signals import MomentumSignalSource, XbrlSignalSource
 from .universe import load_universe
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
+
+_RESIDUALIZE_MIN_NAMES = 10   # hardcoded per design §Implementation 3 -- no flag
 
 # Collinearity diagnostic pairs (candidate axis, already-scored axis). Each is checked
 # for cross-sectional rank correlation; >~_COLLINEARITY_REDUNDANT means the candidate
@@ -79,6 +90,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="disk cache for companyfacts + the SEC ticker map")
     ap.add_argument("--step-months", dest="step_months", type=int, default=0,
                     help="grid spacing; 0 = non-overlapping (= max horizon)")
+    ap.add_argument("--residualize", dest="residualize",
+                    help="TARGET~CTRL1,CTRL2 -- measure TARGET's partial rank IC after "
+                         "removing linear exposure to CTRL1,CTRL2 (design spec "
+                         "2026-07-05-leverage-residualized-ic). Incompatible with an "
+                         "explicit --step-months override (the residual grid must track "
+                         "each horizon's own non-overlapping step).")
     ap.add_argument("--start", help="grid start YYYY-MM-DD (default ~ earliest usable)")
     ap.add_argument("--end", help="grid end YYYY-MM-DD (default today)")
     ap.add_argument("--config", default=str(Path(__file__).parents[3] / "config.yaml"))
@@ -234,9 +251,156 @@ def _run_fit(args, src, hists, spy, start, end, config) -> int:
     return 0
 
 
+def _parse_residualize(spec: str) -> tuple[str, list[str]]:
+    """Parse `TARGET~CTRL1,CTRL2`. Raises ValueError on a malformed spec; main()
+    turns that into an argparse `ap.error` (exit code 2), never a raw traceback."""
+    parts = spec.split("~")
+    if len(parts) != 2:
+        raise ValueError(
+            f"--residualize must have exactly one '~' (TARGET~CTRL1,CTRL2); got {spec!r}")
+    target, ctrl_str = parts
+    target = target.strip()
+    controls = [c.strip() for c in ctrl_str.split(",") if c.strip()]
+    if not target:
+        raise ValueError(f"--residualize target is empty in {spec!r}")
+    if not controls:
+        raise ValueError(f"--residualize needs at least one control in {spec!r}")
+    return target, controls
+
+
+def _raw_target_intersection(observations, target, controls):
+    """Raw `target` values restricted to the SAME co-presence set `residual_rows`
+    uses (target AND every control present) — the paired `_rawx` baseline (design
+    review B2). Independent of `residual_rows`' regression floor/singular skips,
+    which only gate the residual computation, not this raw baseline (design
+    §Method 3)."""
+    out: dict = defaultdict(dict)
+    for obs in observations:
+        sigs = obs.signals
+        if sigs.get(target) is None:
+            continue
+        if any(sigs.get(c) is None for c in controls):
+            continue
+        out[obs.as_of][obs.ticker] = sigs[target]
+    return dict(out)
+
+
+def _overlap_fraction(observations, target, raw_intersection):
+    """Co-present names / names-with-target-present, averaged over dates where the
+    target is present at all (design §Implementation 3)."""
+    target_present: dict = defaultdict(int)
+    for obs in observations:
+        if obs.signals.get(target) is not None:
+            target_present[obs.as_of] += 1
+    fracs = []
+    for d, n_present in target_present.items():
+        if n_present <= 0:
+            continue
+        fracs.append(len(raw_intersection.get(d, {})) / n_present)
+    return (sum(fracs) / len(fracs)) if fracs else None
+
+
+def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode):
+    """Join a `{date: {ticker: value}}` map to a horizon's OWN step=h grid dates +
+    forward returns, via the same `fwd_return` the engine uses — the per-horizon
+    join that keeps each horizon's aggregation confined to its own non-overlapping
+    grid (design review B1: never the finer union grid)."""
+    out = []
+    for t in grid:
+        vals = rows_by_date.get(t)
+        if not vals:
+            continue
+        for tk, sv in vals.items():
+            hist = hists.get(tk)
+            if hist is None:
+                continue
+            fr = fwd_return(hist, spy, t, horizon, return_mode)
+            if fr is None:
+                continue
+            out.append((t, tk, sv, fr))
+    return out
+
+
+def _per_date_ic(rows):
+    """Per-date Spearman IC with NO breadth floor (unlike `_signal_report`'s xs_ic,
+    which suppresses below `xs_min_breadth`) — used only for the paired per-date
+    IC-difference diagnostic, which pairs on whatever dates both series share."""
+    by_date: dict = defaultdict(list)
+    for t, _tk, sv, fr in rows:
+        by_date[t].append((sv, fr))
+    out = {}
+    for t, pairs in by_date.items():
+        ic = spearman_ic([p[0] for p in pairs], [p[1] for p in pairs])
+        if ic is not None:
+            out[t] = ic
+    return out
+
+
+def run_residualize(src, hists, spy, *, start, end, horizons, target, controls,
+                    return_mode="excess", n_buckets=5):
+    """Compute the residualized-IC measurement (design spec 2026-07-05-leverage-
+    residualized-ic, §Implementation 3): residuals computed ONCE from a union-grid
+    observation pass, then per horizon joined to THAT horizon's own step=h grid +
+    forward returns and emitted as three extra SignalReports (`<target>_resid`
+    rank/primary, `<target>_resid_level` secondary, `<target>_rawx` the paired raw
+    baseline). Returns `(extra_reports, residualized_json)` — callers append
+    `extra_reports` onto `BacktestReport.reports` and stash `residualized_json`
+    under a top-level `residualized` --json key.
+
+    Pure given its inputs (no argv/config coupling) — unit-testable against a
+    planted SignalSource + PriceHistory dict without touching main()'s
+    network/CLI plumbing."""
+    union_dates = sorted(set().union(*(observation_grid(start, end, h) for h in horizons)))
+    union_obs = collect_observations(src, sorted(hists.keys()), union_dates)
+
+    rows_rank, diag_rank = residual_rows(
+        union_obs, target, controls, min_names=_RESIDUALIZE_MIN_NAMES, method="rank")
+    rows_level, diag_level = residual_rows(
+        union_obs, target, controls, min_names=_RESIDUALIZE_MIN_NAMES, method="level")
+    raw_intersection = _raw_target_intersection(union_obs, target, controls)
+    overlap_fraction = _overlap_fraction(union_obs, target, raw_intersection)
+
+    extra_reports = []
+    paired_ic_diff: dict = {}
+    for h in horizons:
+        grid_h = observation_grid(start, end, h)
+        resid_rows_h = _grid_join(grid_h, rows_rank, hists, spy, h, return_mode)
+        level_rows_h = _grid_join(grid_h, rows_level, hists, spy, h, return_mode)
+        rawx_rows_h = _grid_join(grid_h, raw_intersection, hists, spy, h, return_mode)
+
+        extra_reports.append(_signal_report(
+            f"{target}_resid", h, resid_rows_h,
+            xs_min_breadth=_TRUST_MIN_BREADTH, n_buckets=n_buckets))
+        extra_reports.append(_signal_report(
+            f"{target}_resid_level", h, level_rows_h,
+            xs_min_breadth=_TRUST_MIN_BREADTH, n_buckets=n_buckets))
+        extra_reports.append(_signal_report(
+            f"{target}_rawx", h, rawx_rows_h,
+            xs_min_breadth=_TRUST_MIN_BREADTH, n_buckets=n_buckets))
+
+        # Paired per-date IC difference (design review B2): over dates where BOTH the
+        # rawx and residual per-date IC exist on THIS horizon's grid — never two
+        # independently-sampled numbers.
+        resid_ic_by_date = _per_date_ic(resid_rows_h)
+        rawx_ic_by_date = _per_date_ic(rawx_rows_h)
+        common = sorted(set(resid_ic_by_date) & set(rawx_ic_by_date))
+        diffs = [rawx_ic_by_date[t] - resid_ic_by_date[t] for t in common]
+        paired_ic_diff[str(h)] = _ic_dict(aggregate_ic(diffs)) if diffs else None
+
+    residualized_json = {
+        "target": target,
+        "controls": controls,
+        "overlap_fraction": overlap_fraction,
+        "diagnostics": {"rank": diag_rank, "level": diag_level},
+        "paired_ic_diff": paired_ic_diff,
+    }
+    return extra_reports, residualized_json
+
+
 def main(argv=None) -> int:
     load_env()  # pick up SEC_IDENTITY / API keys from a .env file if present
-    args = build_arg_parser().parse_args(argv)
+    ap = build_arg_parser()
+    args = ap.parse_args(argv)
     # Flag-combination validation first — must NOT depend on SEC_IDENTITY, or the SEC
     # guard below could return 2 first and a --fit-horizon test would pass for the wrong reason.
     if args.fit and args.source != "xbrl":
@@ -252,6 +416,30 @@ def main(argv=None) -> int:
               "exists yet (needs >= 24 daily captures). Use --source momentum.",
               file=sys.stderr)
         return 2
+
+    residualize: tuple[str, list[str]] | None = None
+    if args.residualize:
+        # An explicit --step-months override would put the residual computation on a
+        # different grid than the per-horizon non-overlapping step it must track (design
+        # review N9/B1 — the collinearity diag_grid t-inflation bug this design is
+        # named for). --step-months defaults to 0 (falsy); any nonzero value is an
+        # explicit override.
+        if args.step_months:
+            ap.error("--residualize cannot be combined with an explicit --step-months "
+                     "override (the residual grid must track each horizon's own "
+                     "non-overlapping step)")
+        try:
+            target, controls = _parse_residualize(args.residualize)
+        except ValueError as e:
+            ap.error(str(e))
+        else:
+            if args.source == "xbrl":
+                known = set(XbrlSignalSource._AXES)
+                bad = [a for a in (target, *controls) if a not in known]
+                if bad:
+                    ap.error(f"--residualize names must be known --source xbrl axes "
+                             f"(unknown: {bad}; known: {sorted(known)})")
+            residualize = (target, controls)
 
     if args.source == "xbrl" and not os.environ.get("SEC_IDENTITY"):
         print("SEC_IDENTITY (a contact email) is required for --source xbrl — "
@@ -314,6 +502,15 @@ def main(argv=None) -> int:
                           n_buckets=args.buckets, return_mode=args.return_mode,
                           price_asof=date.fromisoformat(today))
 
+    residualized_json = None
+    if residualize:
+        res_target, res_controls = residualize
+        extra_reports, residualized_json = run_residualize(
+            src, hists, spy, start=start, end=end, horizons=horizons,
+            target=res_target, controls=res_controls,
+            return_mode=args.return_mode, n_buckets=args.buckets)
+        report.reports.extend(extra_reports)
+
     # Collinearity diagnostics: does a candidate standalone axis duplicate an
     # already-scored one? A high cross-sectional rank corr (>~0.5) means the candidate
     # adds a CORRELATED bet, not new signal, and would dilute the composite rather than
@@ -339,6 +536,8 @@ def main(argv=None) -> int:
         d = report_to_dict(report)
         if collinearity:
             d["collinearity"] = collinearity
+        if residualized_json is not None:
+            d["residualized"] = residualized_json
         print(json.dumps(d, indent=2))
     else:
         print(render_table(report))
