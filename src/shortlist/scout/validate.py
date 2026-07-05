@@ -289,6 +289,73 @@ def information_ratio(ctp_rows, ff3, min_obs: int = 6):
     return (b[0] * 12.0) / (te * math.sqrt(12.0))
 
 
+def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
+                min_bucket_events: int, min_independent_blocks: int,
+                weighting: str = "equal", n_boot: int = 2000,
+                seed: int = 12345) -> dict | None:
+    """High-vs-low composite double-sort (design B1 + v2 resolution 2): does the scorer's
+    composite sort winners INSIDE a cohort? Gate-agnostic (tests the composite's ORDERING
+    power, not `gated`) — split events with a non-None composite at the median (ties -> the
+    high side), build a calendar-time portfolio per side, and measure the FF3 alpha of the
+    high-minus-low spread.
+
+    Returns None when:
+      - no events have both a non-None composite and a measurable return,
+      - either side has fewer than `min_bucket_events` events after the median split, or
+      - the spread's INDEPENDENT-BLOCK count (`effective_blocks`, not raw months — K-month
+        holdings autocorrelate adjacent monthly returns) is below `min_independent_blocks`
+        (the load-bearing block gate: a thin, autocorrelated spread must never be misread as
+        evidence).
+
+    Never raises on well-typed input; pure and deterministic (the bootstrap CI is seeded).
+    """
+    eligible = [m for m in measured
+                if m.composite is not None and m.measurable and m.ret is not None]
+    if not eligible:
+        return None
+
+    composites = sorted(m.composite for m in eligible)
+    n = len(composites)
+    if n % 2 == 1:
+        median = composites[n // 2]
+    else:
+        median = (composites[n // 2 - 1] + composites[n // 2]) / 2.0
+    high = [m for m in eligible if m.composite >= median]     # ties -> high side
+    low = [m for m in eligible if m.composite < median]
+    if len(high) < min_bucket_events or len(low) < min_bucket_events:
+        return None
+
+    ctp_high = calendar_time_portfolio(high, k_months, weighting=weighting)
+    ctp_low = calendar_time_portfolio(low, k_months, weighting=weighting)
+    hi_by_month = {mo: (r, held) for mo, r, held in ctp_high}
+    lo_by_month = {mo: (r, held) for mo, r, held in ctp_low}
+    common_months = sorted(set(hi_by_month) & set(lo_by_month))
+    spread_rows = [
+        (mo, hi_by_month[mo][0] - lo_by_month[mo][0], min(hi_by_month[mo][1], lo_by_month[mo][1]))
+        for mo in common_months
+    ]
+
+    eff = effective_blocks(len(spread_rows), k_months)
+    if eff < min_independent_blocks:
+        return None
+
+    alpha, _betas = ff3_alpha(spread_rows, ff3)
+    ci = stationary_block_bootstrap_alpha(spread_rows, ff3, k_months, n_boot=n_boot, seed=seed)
+    high_ir = information_ratio(ctp_high, ff3)
+    low_ir = information_ratio(ctp_low, ff3)
+
+    return {
+        "n_high": len(high),
+        "n_low": len(low),
+        "months": len(spread_rows),
+        "effective_blocks": eff,
+        "spread_alpha_monthly": alpha,
+        "spread_ci": ci,
+        "high_ir": high_ir,
+        "low_ir": low_ir,
+    }
+
+
 @dataclass
 class SignalVerdict:
     signal: str
@@ -303,6 +370,7 @@ class SignalVerdict:
     sensitivity_flip: bool
     cohort_type: str = "raw"           # "raw" | "scored_gated" (spec R-B5)
     notes: list[str] = field(default_factory=list)
+    double_sort: dict | None = None    # high-vs-low composite spread (design B1; additive)
 
 
 def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
