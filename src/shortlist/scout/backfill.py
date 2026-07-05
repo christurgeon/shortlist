@@ -454,12 +454,50 @@ def group_by_day_records(recs: list[dict]) -> dict:
 def merge_metrics(primary, secondary):
     """None-overlay merge of two partial StockMetrics (fundamentals leg primary, price leg
     secondary). The two legs populate disjoint fields today; primary-wins is belt-and-braces
-    (the _merge_flat precedent, data/models.py)."""
+    (the _merge_flat precedent, data/models.py).
+
+    `sources` is handled separately: it defaults to `{}` (never None), so the None-overlay
+    loop above never fires for it and the secondary leg's provenance would otherwise be
+    silently dropped. Merged explicitly (primary wins per-key) whenever either side is
+    non-empty."""
     from dataclasses import fields, replace
     updates = {}
     for f in fields(primary):
+        if f.name == "sources":
+            continue
         if getattr(primary, f.name) is None:
             v = getattr(secondary, f.name)
             if v is not None:
                 updates[f.name] = v
+    sec_sources = getattr(secondary, "sources", {}) or {}
+    pri_sources = getattr(primary, "sources", {}) or {}
+    if sec_sources or pri_sources:
+        updates["sources"] = {**sec_sources, **pri_sources}
     return replace(primary, **updates) if updates else primary
+
+
+def score_event(ev, hist, facts, spy, sic, config):
+    """PiT score() reconstruction for one backfill event (design A3 + v2). as_of is the
+    FILING date (meta['filing_date']) — event_date is the F12-shifted ENTRY day and using it
+    would leak the announcement-pop session into the price legs. Never raises -> (None, None)."""
+    try:
+        if facts is None or hist is None or not getattr(hist, "dates", None):
+            return (None, None)
+        as_of = date.fromisoformat(ev.meta["filing_date"])
+        from ..providers._xbrl_facts import extract_panel, panel_to_metrics
+        panel = extract_panel(facts, as_of)
+        price = hist.nominal_close_asof(as_of)
+        # v2 §5: clamp — the callback's 5-day forward tolerance must never reach past as_of
+        price_at = lambda d: hist.nominal_price_on(d) if d <= as_of else None
+        m1 = panel_to_metrics(panel, ticker=ev.ticker, sic=sic, price=price, price_at=price_at)
+        dates, closes = hist.through(as_of)
+        spy_d, spy_c = spy.through(as_of) if spy is not None else ([], [])
+        from ..data.sources import snapshot_from_closes_dated
+        from ..data.bridge import snapshot_to_metrics
+        m2 = snapshot_to_metrics(snapshot_from_closes_dated(ev.ticker, dates, closes, spy_d, spy_c))
+        from .. import scoring
+        card = scoring.score(merge_metrics(m1, m2), config)
+        return (bool(card.gates), card.composite)
+    except Exception as exc:  # noqa: BLE001 — a single unscoreable event must not sink the batch
+        warnings.warn(f"backfill: score_event failed for {ev.ticker}: {exc}", stacklevel=2)
+        return (None, None)

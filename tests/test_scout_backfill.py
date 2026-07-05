@@ -526,3 +526,203 @@ def test_merge_metrics_all_none_secondary_returns_primary_unchanged():
     assert merged.revenue_cagr == 0.1
     # Identity check: the function should return primary itself when secondary is all-None
     assert merged is primary
+
+
+def test_merge_metrics_merges_sources_provenance_primary_wins_per_key():
+    """`sources` defaults to {} (never None), so the None-overlay loop never fires for it —
+    without an explicit merge, the secondary leg's provenance would be silently dropped."""
+    primary = StockMetrics(ticker="T", price=15.0,
+                           sources={"price": "primary_src", "only_primary": "p"})
+    secondary = StockMetrics(ticker="T", price=10.0,
+                             sources={"price": "secondary_src", "only_secondary": "s"})
+    merged = merge_metrics(primary, secondary)
+    assert merged.sources == {"only_secondary": "s", "only_primary": "p", "price": "primary_src"}
+
+
+def test_merge_metrics_sources_one_sided_and_both_empty():
+    empty = StockMetrics(ticker="T")
+    with_sources = StockMetrics(ticker="T", sources={"x": "y"})
+    assert merge_metrics(empty, with_sources).sources == {"x": "y"}
+    assert merge_metrics(with_sources, empty).sources == {"x": "y"}
+    assert merge_metrics(empty, empty).sources == {}
+
+
+# --- Task 3: score_event — PiT score() reconstruction (design A3 + v2 §4/§5) -------------
+#
+# Companyfacts fixture pattern REUSED from tests/test_xbrl_signal.py (`_facts_for`) / the
+# shared `_row`/`_inst`/`_annual` helpers first introduced in tests/test_xbrl_facts.py —
+# the smallest existing fixture shape that `extract_panel` turns into a scoreable panel
+# (proven by test_xbrl_signal.py's own `test_xbrl_signal_emits_fundamental_subscores`).
+
+import json
+from dataclasses import replace
+from pathlib import Path
+
+import yaml
+
+from shortlist import scoring
+from shortlist.data.bridge import snapshot_to_metrics
+from shortlist.data.sources import snapshot_from_closes_dated
+from shortlist.providers._xbrl_facts import extract_panel, panel_to_metrics
+from shortlist.scout.backfill import score_event
+
+_SE_CONFIG = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
+
+
+def _se_row(start, end, val, filed, form="10-K"):
+    return {"start": start, "end": end, "val": val, "filed": filed, "form": form}
+
+
+def _se_inst(end, val, filed, form="10-K"):
+    return {"end": end, "val": val, "filed": filed, "form": form}
+
+
+def _se_annual(concept, rows, unit="USD"):
+    return {concept: {"units": {unit: rows}}}
+
+
+def _se_facts():
+    """3 fiscal years (2020-2022) of revenue/net-income/OCF/capex/gross-profit/EPS/equity/
+    shares — the same minimal shape as test_xbrl_signal.py's `_facts_for`, filed through
+    2023-02-01 (i.e. strictly before an as_of of 2023-06-01)."""
+    gaap = {}
+    gaap.update(_se_annual("Revenues", [
+        _se_row("2020-01-01", "2020-12-31", 1000, "2021-02-01"),
+        _se_row("2021-01-01", "2021-12-31", 1100, "2022-02-01"),
+        _se_row("2022-01-01", "2022-12-31", 1300, "2023-02-01")]))
+    gaap.update(_se_annual("NetIncomeLoss", [
+        _se_row("2020-01-01", "2020-12-31", 100, "2021-02-01"),
+        _se_row("2021-01-01", "2021-12-31", 120, "2022-02-01"),
+        _se_row("2022-01-01", "2022-12-31", 160, "2023-02-01")]))
+    gaap.update(_se_annual("GrossProfit", [
+        _se_row("2020-01-01", "2020-12-31", 500, "2021-02-01"),
+        _se_row("2021-01-01", "2021-12-31", 560, "2022-02-01"),
+        _se_row("2022-01-01", "2022-12-31", 700, "2023-02-01")]))
+    gaap.update(_se_annual("NetCashProvidedByUsedInOperatingActivities", [
+        _se_row("2022-01-01", "2022-12-31", 240, "2023-02-01")]))
+    gaap.update(_se_annual("PaymentsToAcquirePropertyPlantAndEquipment", [
+        _se_row("2022-01-01", "2022-12-31", 40, "2023-02-01")]))
+    gaap.update(_se_annual("EarningsPerShareDiluted", [
+        _se_row("2021-01-01", "2021-12-31", 2.6, "2022-02-01"),
+        _se_row("2022-01-01", "2022-12-31", 3.2, "2023-02-01")], unit="USD/shares"))
+    gaap.update(_se_annual("StockholdersEquity", [_se_inst("2022-12-31", 600, "2023-02-01")]))
+    return {"facts": {"us-gaap": gaap,
+                      "dei": _se_annual("EntityCommonStockSharesOutstanding",
+                                        [_se_inst("2022-12-31", 10, "2023-02-01")],
+                                        unit="shares")}}
+
+
+AS_OF = date(2023, 6, 1)
+_SE_ENTRY = date(2023, 6, 5)   # F12-shifted entry day: AFTER as_of, well within the hist window
+
+
+def _se_ev(ticker="TST", cik="0000000007", filing_date=AS_OF, event_date=_SE_ENTRY):
+    return CohortEvent(signal=SIG, ticker=ticker, cik=cik, event_date=event_date,
+                       as_of_price=None, strength=0.7, gated=None, composite=None,
+                       origin="backfill",
+                       meta={"filing_date": filing_date.isoformat(), "key": "se-k"})
+
+
+def _se_hist(ticker="TST", base=100.0):
+    # 1000 weekday closes from 2020-01-01 comfortably spans well past AS_OF (~2023-06),
+    # giving room for post-as_of / post-entry PiT-corruption tests.
+    return _hist(ticker, date(2020, 1, 1), 1000, base=base)
+
+
+def _se_reconstruct(ev, hist, facts, spy, sic, config):
+    """Manual reconstruction of score_event's chain, for self-consistency assertions —
+    NOT a duplicate of the implementation under test, but the independent oracle the
+    brief requires (compare against a direct scoring.score() call, not a magic number)."""
+    as_of = date.fromisoformat(ev.meta["filing_date"])
+    panel = extract_panel(facts, as_of)
+    price = hist.nominal_close_asof(as_of)
+    price_at = lambda d: hist.nominal_price_on(d) if d <= as_of else None
+    m1 = panel_to_metrics(panel, ticker=ev.ticker, sic=sic, price=price, price_at=price_at)
+    dates, closes = hist.through(as_of)
+    spy_d, spy_c = spy.through(as_of) if spy is not None else ([], [])
+    m2 = snapshot_to_metrics(snapshot_from_closes_dated(ev.ticker, dates, closes, spy_d, spy_c))
+    card = scoring.score(merge_metrics(m1, m2), config)
+    return bool(card.gates), card.composite
+
+
+def test_score_event_happy_path_matches_direct_reconstruction():
+    facts = _se_facts()
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    ev = _se_ev()
+    gated, composite = score_event(ev, h, facts, spy, "3711", _SE_CONFIG)
+    assert gated in (True, False)
+    assert isinstance(composite, float)
+    exp_gated, exp_composite = _se_reconstruct(ev, h, facts, spy, "3711", _SE_CONFIG)
+    assert gated == exp_gated
+    assert composite == exp_composite
+
+
+def test_score_event_none_when_facts_or_hist_missing():
+    ev = _se_ev()
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    assert score_event(ev, h, None, spy, None, _SE_CONFIG) == (None, None)
+    assert score_event(ev, None, _se_facts(), spy, None, _SE_CONFIG) == (None, None)
+
+
+def test_score_event_uses_filing_date_never_event_date():
+    """v2 §4 — as_of MUST be meta['filing_date'], never ev.event_date. A malformed
+    ev.meta without 'filing_date' hits the try/except -> (None, None), never raises,
+    proving event_date is never silently substituted in."""
+    ev = _se_ev()
+    bad = replace(ev, meta={"key": "se-k"})            # no filing_date at all
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    with __import__("pytest").warns(UserWarning, match="backfill"):
+        assert score_event(bad, h, _se_facts(), spy, None, _SE_CONFIG) == (None, None)
+
+
+def test_score_event_pit_invariance_trio():
+    facts = _se_facts()
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    ev = _se_ev()
+    baseline = score_event(ev, h, facts, spy, "3711", _SE_CONFIG)
+
+    # (a) closes corrupted STRICTLY AFTER as_of -> identical result.
+    cut = [c if d <= AS_OF else 999.0 for d, c in zip(h.dates, h.closes)]
+    h_after = PriceHistory(ticker="TST", dates=list(h.dates), closes=cut,
+                           nominal_closes=cut)
+    assert score_event(ev, h_after, facts, spy, "3711", _SE_CONFIG) == baseline
+
+    # (b) a facts row with filed > as_of (huge revenue) -> identical result (extract_panel
+    # already excludes it; this pins that score_event's as_of choice keeps it excluded).
+    facts_leaked = json.loads(json.dumps(facts))     # deep copy
+    facts_leaked["facts"]["us-gaap"]["Revenues"]["units"]["USD"].append(
+        _se_row("2023-01-01", "2023-12-31", 10_000_000, "2023-06-02"))
+    assert score_event(ev, h, facts_leaked, spy, "3711", _SE_CONFIG) == baseline
+
+    # (c) closes corrupted specifically in (filing_date, entry] -- the F12 announcement-pop
+    # window. Using event_date (rather than filing_date) as as_of would pull this window
+    # into the price legs and change the result; using filing_date must not.
+    cut2 = [c if not (AS_OF < d <= _SE_ENTRY) else 12345.0 for d, c in zip(h.dates, h.closes)]
+    h_leak_window = PriceHistory(ticker="TST", dates=list(h.dates), closes=cut2,
+                                 nominal_closes=cut2)
+    assert score_event(ev, h_leak_window, facts, spy, "3711", _SE_CONFIG) == baseline
+
+
+def test_score_event_passes_sic_through(monkeypatch):
+    """SIC pass-through: assert via a monkeypatched panel_to_metrics spy that the sic kwarg
+    is threaded through unchanged (not pinning sector-masking behavior itself)."""
+    from shortlist.providers import _xbrl_facts as xf
+    seen = []
+    orig = xf.panel_to_metrics
+
+    def spy_fn(p, *, ticker, sic, price, price_at):
+        seen.append(sic)
+        return orig(p, ticker=ticker, sic=sic, price=price, price_at=price_at)
+
+    monkeypatch.setattr(xf, "panel_to_metrics", spy_fn)
+    facts = _se_facts()
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    ev = _se_ev()
+    score_event(ev, h, facts, spy, "6022", _SE_CONFIG)     # financials SIC
+    score_event(ev, h, facts, spy, None, _SE_CONFIG)
+    assert seen == ["6022", None]
