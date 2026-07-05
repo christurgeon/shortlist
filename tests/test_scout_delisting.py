@@ -1,6 +1,8 @@
 from datetime import date
 
 from shortlist.scout.delisting import (
+    _base_form,
+    last_traded_close,
     normalize_items,
     shumway_partial,
     venue_from_filer,
@@ -42,3 +44,26 @@ def test_shumway_partial_by_venue():
     assert shumway_partial("nyse") == -0.30
     assert shumway_partial("nasdaq") == -0.55
     assert shumway_partial(None) == -0.55     # unknown venue -> harsher partial (documented)
+
+
+def test_base_form_strips_amendment_suffix_and_normalizes():
+    assert _base_form("25-NSE/A") == "25-NSE"
+    assert _base_form(" 8-k ") == "8-K"
+    assert _base_form(None) == ""
+
+
+def test_last_traded_close_picks_last_non_null_on_or_before_cutoff():
+    dates = [date(2023, 4, 28), date(2023, 5, 1), date(2023, 5, 2), date(2023, 5, 3)]
+    closes = [0.30, 0.24, None, 0.10]
+    # cutoff between rows: 5/2 close is None -> falls back to 5/1
+    assert last_traded_close(dates, closes, date(2023, 5, 2)) == 0.24
+    # cutoff on the last row: takes it
+    assert last_traded_close(dates, closes, date(2023, 5, 3)) == 0.10
+    # cutoff before the series -> None
+    assert last_traded_close(dates, closes, date(2023, 4, 1)) is None
+
+
+def test_last_traded_close_degenerate_inputs():
+    assert last_traded_close([], [], date(2023, 1, 1)) is None
+    # misaligned lengths -> None (never guess a position pairing)
+    assert last_traded_close([date(2023, 1, 1)], [1.0, 2.0], date(2023, 1, 1)) is None

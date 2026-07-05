@@ -66,3 +66,20 @@ def venue_from_filer(name) -> Optional[str]:
 
 def shumway_partial(venue: Optional[str]) -> float:
     return _SHUMWAY.get(venue or "", -0.55)
+
+
+def last_traded_close(dates: list, closes: list, cutoff: date) -> Optional[float]:
+    """Last non-null close at a date <= cutoff ('last traded', spec §16 R-B3). Plan 3's
+    coordinator must use THIS definition — position-pairing or a post-cutoff close would
+    splice a reused ticker's successor prices in. None on misaligned/empty input.
+    Does not assume the series is sorted."""
+    if not dates or not closes or len(dates) != len(closes):
+        return None
+    best_d: Optional[date] = None
+    best_c: Optional[float] = None
+    for d, c in zip(dates, closes):
+        if d is None or c is None or d > cutoff:
+            continue
+        if best_d is None or d > best_d:
+            best_d, best_c = d, c
+    return best_c
