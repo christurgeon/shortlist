@@ -14,6 +14,13 @@ def test_validate_subcommand_parses_without_breaking_bare_run():
     ns2 = parser.parse_args(["validate", "--lookback-days", "365", "--json"])
     assert ns2.subcommand == "validate"
     assert ns2.lookback_days == 365 and ns2.json is True
+    # backfill subcommand also parses, and its presence must not disturb the bare-run route
+    # (subparser back-compat pin — see tests/test_scout_backfill_cli.py for the CLI mechanics).
+    ns3 = parser.parse_args(["backfill", "--signal", "13d", "--start", "2022-08-01",
+                             "--end", "2022-08-31"])
+    assert ns3.subcommand == "backfill"
+    ns4 = parser.parse_args([])
+    assert getattr(ns4, "subcommand", None) in (None, "run")
 
 
 class _FakeState:

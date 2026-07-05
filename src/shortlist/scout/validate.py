@@ -71,7 +71,8 @@ def _event_date(ev: dict) -> date | None:
 def measure_cohort(events: list[dict], signal: str, horizon_months: int,
                    hist_by_ticker: dict[str, PriceHistory],
                    delisting_return: float | None,
-                   as_of: date | None = None) -> CohortMeasurement:
+                   as_of: date | None = None,
+                   use_event_delisting: bool = True) -> CohortMeasurement:
     """Measure the fixed-horizon forward return of every event for `signal`.
 
     - Return measured at `event_date + horizon_months` via PriceHistory.forward_return
@@ -82,7 +83,15 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
           outcome is simply unknown -> non-measurable (never dropped, counted).
         * target <= `as_of` but the series ends before it -> DELISTING: a still-listed
           stock would have had data through the target, so an early terminus in the past
-          means it stopped trading -> apply `delisting_return` (None -> non-measurable).
+          means it stopped trading. `use_event_delisting` (default True) FIRST prefers the
+          per-event CLASSIFIED terminal return the 13D backfill computes
+          (`ev["meta"]["delisting_event_return"]`, spec §6.6) over the blanket
+          `delisting_return`; the blanket value is the fallback when no classified value is
+          present. Passing `use_event_delisting=False` ignores the classified value
+          entirely (the sensitivity band in daily.py:_delisting_band_flip relies on this so
+          the band's fixed variants actually vary the classified events too — "the
+          classifier shrinks the band's bite but does not remove the guard"). Both -> None
+          means non-measurable.
     - No usable series at all -> non-measurable.
     """
     ref = as_of or date.today()
@@ -96,8 +105,15 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
         ret: float | None = None
         if d is not None and hist is not None:
             ret = hist.forward_return(d, horizon_months)
-            if ret is None and delisting_return is not None and _series_terminated(hist, d, horizon_months, ref):
-                ret = delisting_return
+            if ret is None and _series_terminated(hist, d, horizon_months, ref):
+                per_ev = None
+                if use_event_delisting:
+                    md = ev.get("meta") or {}
+                    per_ev = md.get("delisting_event_return")
+                if per_ev is not None:
+                    ret = per_ev
+                elif delisting_return is not None:
+                    ret = delisting_return
         measured.append(MeasuredEvent(
             signal=signal, ticker=tk, event_date=d, ret=ret,
             measurable=ret is not None,

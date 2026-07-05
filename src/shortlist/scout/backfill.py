@@ -38,7 +38,13 @@ def fetch_history_sync(ticker: str, *, identity: str, today: date,
                        cache_dir: str = ".cache/yahoo", _transport=None):
     """Sync bridge over the async backtest.prices.fetch_history (it needs an AsyncClient).
     One asyncio.run + one short-lived AsyncClient per call — serial by design (VPS).
-    Never raises -> None on failure (warned, redacted)."""
+    Never raises -> None on failure (warned, redacted).
+
+    CAVEAT: `asyncio.run` raises RuntimeError if called from inside an already-running
+    event loop -- this degrades the same way as any other failure here (warn + None), it
+    does NOT propagate. CLI/batch backfill contexts are synchronous (no surrounding loop),
+    so this is a non-issue today; it would only bite a future caller that invokes this from
+    async code."""
     import asyncio
 
     import httpx

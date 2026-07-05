@@ -507,6 +507,13 @@ scout:
                              # operational knobs below are read from config.
     lookback_days: 365
     factor_cache_dir: .cache/famafrench
+  # --- scout.backfill (batch 13D backfill; OFF unless the CLI is invoked explicitly) ---
+  # backfill:
+  #   out_dir: scout/backfill
+  #   sec_throttle_s: 0.2        # sleep before every SEC header/delisting fetch (fair access)
+  #   yahoo_throttle_s: 0.5      # sleep before every price-history fetch
+  #   max_records: 20000         # per-chunk safety cap (warns + truncates)
+  #   symbology_cache_dir: .cache/symbology
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery

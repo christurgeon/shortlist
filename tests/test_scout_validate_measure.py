@@ -72,6 +72,43 @@ def test_measurable_fraction():
     assert abs(m.measurable_fraction() - 0.5) < 1e-9
 
 
+def test_classified_terminal_override_preferred_over_blanket():
+    # series terminated (same shape as test_delisting_gets_partial_return_not_dropped) but the
+    # event carries a per-event CLASSIFIED delisting return in meta -- the classifier's value
+    # (-0.62) must win over the blanket band value (-0.55) by default (use_event_delisting=True).
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 10), 40.0)])
+    ev = _ev("DEAD", "2025-01-31", meta={"delisting_event_return": -0.62})
+    m = measure_cohort([ev], "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"DEAD": h}, delisting_return=-0.55, as_of=_AS_OF)
+    assert m.events[0].measurable is True
+    assert abs(m.events[0].ret - (-0.62)) < 1e-9
+
+
+def test_use_event_delisting_false_ignores_classified_override():
+    # Same fixture, but use_event_delisting=False must IGNORE the per-event value and fall
+    # back to the blanket -- this is what the sensitivity band (_delisting_band_flip) relies
+    # on to keep varying the classified events, not just the unclassified ones (spec §6.6).
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 10), 40.0)])
+    ev = _ev("DEAD", "2025-01-31", meta={"delisting_event_return": -0.62})
+    m = measure_cohort([ev], "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"DEAD": h}, delisting_return=-0.55, as_of=_AS_OF,
+                       use_event_delisting=False)
+    assert m.events[0].measurable is True
+    assert abs(m.events[0].ret - (-0.55)) < 1e-9
+
+
+def test_live_shaped_event_without_classified_meta_is_inert():
+    # A live-shaped event (no delisting_event_return key at all, e.g. meta={} or a live-origin
+    # meta dict with other keys) behaves byte-identically to before the override was added --
+    # the blanket fallback still applies. This is the inertness pin.
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 10), 40.0)])
+    ev = _ev("DEAD", "2025-01-31", meta={"some_other_key": "x"})
+    m = measure_cohort([ev], "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"DEAD": h}, delisting_return=-0.55, as_of=_AS_OF)
+    assert m.events[0].measurable is True
+    assert abs(m.events[0].ret - (-0.55)) < 1e-9
+
+
 def test_measurable_fraction_by_vintage():
     # 2020 vintage: both events measurable. 2024 vintage: mostly non-measurable
     # (one measurable, three not -> a real recent-vintage attrition, not fixture noise).
