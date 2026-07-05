@@ -371,8 +371,12 @@ def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:
     return chunks
 
 
-def _parse_prereg_date(x) -> date:
-    return x if isinstance(x, date) else date.fromisoformat(str(x))
+def _parse_prereg_date(x) -> Optional[date]:
+    """Parse a date object or ISO string, returning None on malformed input."""
+    try:
+        return x if isinstance(x, date) else date.fromisoformat(str(x))
+    except (ValueError, TypeError):
+        return None
 
 
 def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
@@ -411,7 +415,12 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     w_start_raw, w_end_raw = _prereg.get("window_start"), _prereg.get("window_end")
     if w_start_raw is not None and w_end_raw is not None:
         prereg_start, prereg_end = _parse_prereg_date(w_start_raw), _parse_prereg_date(w_end_raw)
-        if prereg_start != start or prereg_end != end:
+        if prereg_start is None or prereg_end is None:
+            # Malformed window_start/window_end — treat as unregistered with a warning
+            warnings.warn(
+                "backfill: malformed prereg window value(s) — treating window as unregistered",
+                stacklevel=2)
+        elif prereg_start != start or prereg_end != end:
             warnings.warn(
                 f"backfill: run window {start.isoformat()}:{end.isoformat()} does not match "
                 f"the pre-registered window {prereg_start.isoformat()}:{prereg_end.isoformat()} "

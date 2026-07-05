@@ -941,3 +941,28 @@ def test_run_backfill_prereg_window_keys_absent_is_back_compat_noop(tmp_path):
     assert "window_not_preregistered" not in summary
     rows = load_backfill_events(out)
     assert rows and all("window_not_preregistered" not in r["meta"] for r in rows)
+
+
+def test_run_backfill_malformed_prereg_window_degrades_loudly(tmp_path):
+    """Malformed window_start/window_end (not-a-date) -> warns and continues, run completes,
+    no window_not_preregistered flag in summary (treated as unregistered, not mismatched)."""
+    import pytest
+
+    def window_one(start, end, identity, **kw):
+        if start != date(2023, 6, 1):
+            return []
+        return [_rec("0000000007", acc="a-1", fdate=date(2023, 6, 1))]
+
+    out = str(tmp_path / "13d.jsonl")
+    prereg = {"k_months": 12, "window_start": "not-a-date", "window_end": "2023-06-30"}
+    with pytest.warns(UserWarning, match="malformed prereg window"):
+        summary = run_backfill_13d(
+            {"scout": {"backfill": {"sec_throttle_s": 0.0, "yahoo_throttle_s": 0.0,
+                                    "score_events": False}}},
+            start=date(2023, 6, 1), end=date(2023, 6, 30), identity="t@example.com",
+            today=TODAY, out_path=out, _fetch_window=window_one, _symbology=_FakeSym4(),
+            _fetch_history=lambda tkr: None, _fetch_delisting=lambda cik: [], _prereg=prereg)
+    assert "window_not_preregistered" not in summary  # malformed = unregistered, not mismatched
+    rows = load_backfill_events(out)
+    assert rows  # run completed successfully
+    assert all("window_not_preregistered" not in r["meta"] for r in rows)
