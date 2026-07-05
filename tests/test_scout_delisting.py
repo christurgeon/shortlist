@@ -196,3 +196,46 @@ def test_unknown_venue_bankruptcy_uses_harsher_partial():
     v = classify_delisting(recs)
     assert v.reason == BANKRUPTCY
     assert v.terminal_return == -0.55
+
+
+# --- Controller tests (Task-5 review gaps) ---------------------------------------------------
+
+def test_last_traded_close_handles_unsorted_series():
+    dates = [date(2023, 5, 3), date(2023, 4, 28), date(2023, 5, 1)]
+    closes = [0.10, 0.30, 0.24]
+    # chronologically-last qualifying close wins, not the last list position
+    assert last_traded_close(dates, closes, date(2023, 5, 2)) == 0.24
+
+
+def test_8k_amendment_counts_toward_classification():
+    # an AMENDED 8-K carrying 1.03 still classifies (amendments repeat/add item codes)
+    recs = [
+        FilingRecord("8-K/A", date(2023, 4, 25), items=("1.03",)),
+        FilingRecord("25-NSE", date(2023, 5, 4), filer="The Nasdaq Stock Market LLC"),
+    ]
+    assert classify_delisting(recs).reason == BANKRUPTCY
+
+
+# --- terminal_price tests (Task 5) ---
+
+from shortlist.scout.delisting import terminal_price
+
+
+def test_terminal_price_bankruptcy_applies_partial_to_last_traded():
+    v = DelistingVerdict(BANKRUPTCY, -0.55, date(2023, 5, 4), "nasdaq", ())
+    dates = [date(2023, 5, 2), date(2023, 5, 3), date(2023, 5, 5)]
+    closes = [0.30, 0.20, 9.99]                  # 5/5 is PAST the delisting date -> excluded
+    assert terminal_price(v, dates, closes) == 0.20 * (1 + -0.55)
+
+
+def test_terminal_price_mna_is_last_close_unpenalized():
+    v = DelistingVerdict(MNA, 0.0, date(2023, 10, 13), "nasdaq", ())
+    assert terminal_price(v, [date(2023, 10, 12)], [94.42]) == 94.42
+
+
+def test_terminal_price_unclassified_or_missing_is_none():
+    v = DelistingVerdict(UNCLASSIFIED, None, date(2023, 5, 4), None, ())
+    assert terminal_price(v, [date(2023, 5, 1)], [1.0]) is None      # never a guessed sign
+    assert terminal_price(None, [date(2023, 5, 1)], [1.0]) is None
+    v2 = DelistingVerdict(BANKRUPTCY, -0.30, date(2023, 5, 4), "nyse", ())
+    assert terminal_price(v2, [], []) is None                        # no close to anchor on

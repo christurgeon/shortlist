@@ -144,3 +144,16 @@ def classify_delisting(records: list, *, window_days: int = 365) -> Optional[Del
     if mna:
         return DelistingVerdict(MNA, 0.0, delisting_date, venue, (_ev(mna[0]),))
     return DelistingVerdict(UNCLASSIFIED, None, delisting_date, venue, ())
+
+
+def terminal_price(verdict: Optional[DelistingVerdict], dates: list, closes: list) -> Optional[float]:
+    """Route the terminal price by classified reason (§6.6): last traded close <= the delisting
+    date, x(1 + terminal_return) — bankruptcy applies the Shumway partial, M&A is unpenalized,
+    unclassified -> None (non-measurable). The <= delisting_date bound doubles as the price-side
+    ticker-reuse guard (R-A1): never read a close past the delisting."""
+    if verdict is None or verdict.terminal_return is None:
+        return None
+    last = last_traded_close(dates, closes, verdict.delisting_date)
+    if last is None:
+        return None
+    return last * (1.0 + verdict.terminal_return)
