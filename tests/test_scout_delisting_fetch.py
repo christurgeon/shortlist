@@ -53,8 +53,12 @@ def test_fetch_failure_returns_none_with_warning(monkeypatch):
 
     fake_mod = SimpleNamespace(Company=_Boom, set_identity=lambda s: None)
     monkeypatch.setitem(__import__("sys").modules, "edgar", fake_mod)
-    with pytest.warns(UserWarning, match="delisting"):
+    with pytest.warns(UserWarning, match="delisting") as rec:
         assert dl.fetch_filing_records(886158, "test@example.com") is None
+    # the embedded key must be REDACTED by redact_secrets, never leaked into the warning
+    text = "".join(str(w.message) for w in rec)
+    assert "SECRET" not in text
+    assert "apikey" in text          # the redacted URL skeleton is still there (context kept)
 
 
 def test_fetch_malformed_cik_returns_none_never_raises(monkeypatch):
