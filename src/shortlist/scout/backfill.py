@@ -116,13 +116,15 @@ def measure_event(ev: CohortEvent, hist, k_months: int, *, today: date,
     horizon = _horizon_end(ev.event_date, k_months)
     if horizon > today:
         return _done(False, "immature")
-    if entry is None:
+    if entry is None or entry <= 0:
         return _done(False, "no_entry_price")
     if hist.forward_return(ev.event_date, k_months) is not None:
         return _done(True)                                    # priced path — the common case
     if hist.dates[-1] >= horizon:
         return _done(False, "trading_gap")                    # R-A1: hole, not a delisting
-    recs = fetch_delisting_records(ev.cik) if ev.cik else None
+    if not ev.cik:
+        return _done(False, "no_cik")
+    recs = fetch_delisting_records(ev.cik)
     if recs is None:
         return _done(False, "delisting_fetch_failed")
     verdict = classify_delisting(recs, window_days=window_days)

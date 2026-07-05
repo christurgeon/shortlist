@@ -173,3 +173,26 @@ def test_look_ahead_invariance_post_horizon_corruption():
     ev2 = measure_event(_ev(), h2, 12, today=TODAY, fetch_delisting_records=lambda cik: [])
     assert ev1.meta["measurable"] == ev2.meta["measurable"]
     assert ev1.as_of_price == ev2.as_of_price                 # entry untouched by post-horizon data
+
+
+def test_zero_entry_price_is_non_measurable_never_raises():
+    # a (synthetic/bad-data) zero close at entry must not divide-by-zero in the delisting arm
+    h = _hist("BAD", date(2022, 7, 1), 70)
+    # zero out every close at/before entry
+    closes = [0.0 if d <= date(2022, 8, 1) else c for d, c in zip(h.dates, h.closes)]
+    h2 = PriceHistory(ticker="BAD", dates=list(h.dates), closes=closes,
+                      nominal_closes=list(closes))
+    recs = [FilingRecord("8-K", date(2022, 9, 20), items=("1.03",)),
+            FilingRecord("25-NSE", date(2022, 10, 5), filer="The Nasdaq Stock Market LLC")]
+    ev = measure_event(_ev(ticker="BAD", edate=date(2022, 8, 1)), h2, 12, today=TODAY,
+                       fetch_delisting_records=lambda cik: recs)
+    assert ev.meta["measurable"] is False
+    assert ev.meta["non_measurable_reason"] == "no_entry_price"
+
+
+def test_missing_cik_reads_no_cik_not_fetch_failed():
+    h = _hist("GONE", date(2022, 7, 1), 70)
+    ev = measure_event(_ev(ticker="GONE", cik=None, edate=date(2022, 8, 1)), h, 12,
+                       today=TODAY, fetch_delisting_records=lambda cik: (_ for _ in ()).throw(
+                           AssertionError("fetcher must not be called without a cik")))
+    assert ev.meta["non_measurable_reason"] == "no_cik"
