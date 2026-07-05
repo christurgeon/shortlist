@@ -12,7 +12,10 @@ The raw-cohort 13D backfill machinery is **merged and live-verified** (#109 — 
 smoke, one-week e2e, `validate --backfill` returns the honest INSUFFICIENT at tiny n). The
 production run itself was deliberately **paused** (hours of rate-limited fetching on the VPS)
 — it is the last step before the harness's first real historical verdict on
-`edgar:activist_13d`. When ready:
+`edgar:activist_13d`. **Update (Plan 3b, 2026-07-05):** `score_events` defaults to true, so
+the production run below now reconstructs BOTH cohorts (raw + scored/gated) in the SAME
+pass — no separate re-run needed to get the `scored_gated` verdict once it's fired. When
+ready:
 
 ```bash
 # serial + resumable (re-run the same command to resume); ~hours at ≤5 req/s SEC.
@@ -141,10 +144,19 @@ before the production run if it matters.
 `uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31`
 (serial, resumable — re-run to resume; ~hours at 5 req/s; run OUTSIDE 21:15–23:00 UTC), then
 `shortlist-scout validate --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl`.
-**Then: Plan 3b** — scored/gated reconstruction (companyfacts → `extract_panel` →
-`panel_to_metrics` + dated closes → score; fills `gated`/`composite` on the same JSONL —
-additive, `run_validate` is raw-only today), then FINRA audit→leg, then digest wiring
-(needs `asdict()` + render_text normalization).
+**P2 Plan 3b (scored/gated cohort) COMPLETE** (`feat/scout-backfill-scored`, PR pending): the
+same backfill coordinator now OPTIONALLY reconstructs a PiT `score()` per event
+(`scout.backfill.score_events`, default true) — companyfacts → `extract_panel` →
+`panel_to_metrics` + dated closes → `scoring.score()` — filling `gated`/`composite` on the
+same JSONL row (additive; `score_events: false` reproduces the byte-identical pre-3b
+raw-only file). `validate --backfill` gained a second `cohort_type: "scored_gated"` verdict
+(gate-agnostic double-sort over the composite-defined set) that appears only when ≥1 event
+has a non-None composite. **Live-verified on the VPS** (same Aug 2022 one-week window as
+Plan 3): 6 selected / 3 scored (composites 8.2–63.0); `validate --backfill` correctly
+produced a `scored_gated` INSUFFICIENT verdict (n=1 after the gated-False filter, 0
+measurable — too thin to be anything else, the honest verdict at this n); RSS 410 MB. Full
+suite 1620. **Then: FINRA audit→leg, then digest wiring** (needs `asdict()` + render_text
+normalization).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
