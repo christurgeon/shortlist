@@ -83,3 +83,50 @@ def last_traded_close(dates: list, closes: list, cutoff: date) -> Optional[float
         if best_d is None or d > best_d:
             best_d, best_c = d, c
     return best_c
+
+
+@dataclass(frozen=True)
+class FilingRecord:
+    """One EDGAR filing, reduced to what classification needs. Built by fetch_filing_records
+    (live) or directly in tests/fixtures (offline)."""
+    form: str
+    filing_date: date
+    items: tuple[str, ...] = ()
+    filer: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DelistingVerdict:
+    """reason: bankruptcy|mna|unclassified. terminal_return is the return APPENDED to the last
+    traded close (Shumway convention): bankruptcy -> -0.30/-0.55 by venue; mna -> 0.0 (last close
+    ~= deal value, not a penalty); unclassified -> None (non-measurable, never a guessed sign)."""
+    reason: str
+    terminal_return: Optional[float]
+    delisting_date: date
+    venue: Optional[str]
+    evidence: tuple[str, ...] = ()
+
+
+def classify_delisting(records: list, *, window_days: int = 365) -> Optional[DelistingVerdict]:
+    """Detect + classify a delisting from the subject CIK's filings. None = not delisted
+    (no Form 25/15 family present). Never raises on well-typed FilingRecords."""
+    if not records:
+        return None
+    f25 = [r for r in records if _base_form(r.form).startswith("25")]
+    f15 = [r for r in records if _base_form(r.form).startswith("15")]
+    anchor_pool = f25 or f15
+    if not anchor_pool:
+        return None
+    delisting_date = min(r.filing_date for r in anchor_pool)
+    venue: Optional[str] = None
+    for r in sorted(f25, key=lambda r: r.filing_date):
+        venue = venue_from_filer(r.filer)
+        if venue is not None:
+            break
+    return DelistingVerdict(
+        reason=UNCLASSIFIED,
+        terminal_return=None,
+        delisting_date=delisting_date,
+        venue=venue,
+        evidence=(),
+    )
