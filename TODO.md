@@ -20,15 +20,18 @@ ready:
 ```bash
 # serial + resumable (re-run the same command to resume); ~hours at ≤5 req/s SEC.
 # Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout 22:30 timers).
-uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout backfill --signal 13d --start 2022-01-01 --end 2025-12-31
 uv run --extra edgar shortlist-scout validate \
-    --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl --json
+    --backfill scout/backfill/13d-2022-01-01-2025-12-31.jsonl --json
 ```
 
-- Window is a starting suggestion — Wayback symbology coverage is dense 2018–2023, monthly
-  2024+, so a longer `--start 2022-01-01` (or earlier) run is legitimate too; more months =
-  more independent blocks toward the `min_independent_blocks` gate (K=12m → expect
-  INSUFFICIENT until the window is long enough; that is the design, not a failure).
+- **The window above IS the pre-registered window** (`preregister/edgar_activist_13d.yaml`
+  `window_start`/`window_end`, registered 2026-07-05) — the coordinator exact-matches it; any
+  other window (including a subset) runs fine but is loudly + permanently labeled
+  `window_not_preregistered` (deliberate: a different window is a different analysis).
+  K=12m → expect INSUFFICIENT until enough independent blocks accrue; that is the design.
+- Disk check before firing: companyfacts cache ≈ 2.5 MB × unique CIKs (up to ~8–13 GB at
+  2600 CIKs) under `.cache/sec_xbrl` — `df -h` first (38 GB box shared with the live bot).
 - Before a long run, optionally seed `symbology._OVERRIDES` for known rename-near-event
   cases (documented example: CIK 1823575, L&F Acquisition → ZeroFox de-SPAC 2022-08 — resolves
   the stale pre-rename ticker → honest non-measurable + `low_confidence` flag).
@@ -141,9 +144,9 @@ per-record guard). Known case: CIK 1823575 (L&F→ZeroFox de-SPAC 2022-08) resol
 pre-rename ticker → honest non-measurable + `low_confidence` flag; seed `symbology._OVERRIDES`
 before the production run if it matters.
 **Operator next: the production backfill run** — e.g.
-`uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31`
+`uv run --extra edgar shortlist-scout backfill --signal 13d --start 2022-01-01 --end 2025-12-31`
 (serial, resumable — re-run to resume; ~hours at 5 req/s; run OUTSIDE 21:15–23:00 UTC), then
-`shortlist-scout validate --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl`.
+`shortlist-scout validate --backfill scout/backfill/13d-2022-01-01-2025-12-31.jsonl`.
 **P2 Plan 3b (scored/gated cohort) COMPLETE** (`feat/scout-backfill-scored`, PR pending): the
 same backfill coordinator now OPTIONALLY reconstructs a PiT `score()` per event
 (`scout.backfill.score_events`, default true) — companyfacts → `extract_panel` →
