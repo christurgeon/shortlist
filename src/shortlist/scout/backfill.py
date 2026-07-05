@@ -16,8 +16,11 @@ Serial by design: one Symbology (archive.org throttle), one PriceHistory in memo
 from __future__ import annotations
 
 import calendar as _cal
+import json
+import warnings
 from dataclasses import replace
 from datetime import date, timedelta
+from pathlib import Path
 
 from .calendar import is_trading_day
 from .delisting import classify_delisting, terminal_price
@@ -145,3 +148,68 @@ def measure_event(ev: CohortEvent, hist, k_months: int, *, today: date,
                  delisting_event_return=term / entry - 1.0,
                  delisting_reason=verdict.reason,
                  delisting_date=verdict.delisting_date.isoformat())
+
+
+def load_backfill_events(path: str) -> list[dict]:
+    """JSONL -> list of CohortEvent-shaped dicts. Missing file -> []; bad lines warned+skipped."""
+    p = Path(path)
+    if not p.exists():
+        return []
+    rows: list[dict] = []
+    bad = 0
+    for line in p.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            bad += 1
+    if bad:
+        warnings.warn(f"backfill: skipped {bad} malformed line(s) in {path}", stacklevel=2)
+    return rows
+
+
+def append_events(path: str, events: list) -> int:
+    """Append events whose meta['key'] is new (idempotent resume). Returns count written."""
+    existing = {r.get("meta", {}).get("key") for r in load_backfill_events(path)}
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    written = 0
+    with p.open("a") as fh:
+        for ev in events:
+            k = ev.meta.get("key")
+            if k in existing:
+                continue
+            fh.write(json.dumps(ev.to_dict()) + "\n")
+            existing.add(k)
+            written += 1
+    return written
+
+
+def summarize(rows: list[dict]) -> dict:
+    by_reason: dict = {}
+    by_vintage: dict = {}
+    delist: dict = {}
+    n_meas = 0
+    for r in rows:
+        meta = r.get("meta") or {}
+        measurable = bool(meta.get("measurable"))
+        n_meas += measurable
+        try:
+            year = int(str(r.get("event_date", ""))[:4])
+        except ValueError:
+            year = 0
+        b = by_vintage.setdefault(year, {"selected": 0, "measurable": 0})
+        b["selected"] += 1
+        b["measurable"] += measurable
+        reason = meta.get("non_measurable_reason")
+        if not measurable and reason:
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+        dr = meta.get("delisting_reason")
+        if dr:
+            delist[dr] = delist.get(dr, 0) + 1
+    n = len(rows)
+    return {"n_selected": n, "n_measurable": n_meas,
+            "fraction": (n_meas / n) if n else 0.0,
+            "by_reason": by_reason, "by_vintage": by_vintage,
+            "delisting_by_reason": delist}

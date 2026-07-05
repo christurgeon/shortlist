@@ -196,3 +196,46 @@ def test_missing_cik_reads_no_cik_not_fetch_failed():
                        today=TODAY, fetch_delisting_records=lambda cik: (_ for _ in ()).throw(
                            AssertionError("fetcher must not be called without a cik")))
     assert ev.meta["non_measurable_reason"] == "no_cik"
+
+
+from shortlist.scout.backfill import append_events, load_backfill_events, summarize
+
+
+def test_append_is_idempotent_and_resumable(tmp_path):
+    from dataclasses import replace
+    p = str(tmp_path / "13d-test.jsonl")
+    e1 = replace(_ev(), meta={**_ev().meta, "key": "k1", "measurable": True})
+    e2 = replace(_ev(ticker="OTHER"),
+                 meta={**_ev().meta, "key": "k2", "measurable": False,
+                       "non_measurable_reason": "no_price_series"})
+    assert append_events(p, [e1, e2]) == 2
+    assert append_events(p, [e1, e2]) == 0                    # resume: nothing re-written
+    rows = load_backfill_events(p)
+    assert len(rows) == 2 and rows[0]["origin"] == "backfill"
+    assert rows[0]["event_date"] == e1.event_date.isoformat()
+
+
+def test_load_skips_malformed_lines(tmp_path):
+    import pytest
+    p = tmp_path / "bad.jsonl"
+    p.write_text('{"signal": "edgar:activist_13d", "ticker": "A", "meta": {"key": "k"}}\nnot json\n')
+    with pytest.warns(UserWarning, match="backfill"):
+        rows = load_backfill_events(str(p))
+    assert len(rows) == 1
+
+
+def test_summarize_counts_and_vintages():
+    rows = [
+        {"event_date": "2022-08-01", "meta": {"measurable": True,
+                                              "delisting_reason": "bankruptcy"}},
+        {"event_date": "2022-09-01", "meta": {"measurable": False,
+                                              "non_measurable_reason": "unresolved_ticker"}},
+        {"event_date": "2023-02-01", "meta": {"measurable": True}},
+    ]
+    s = summarize(rows)
+    assert s["n_selected"] == 3 and s["n_measurable"] == 2
+    assert abs(s["fraction"] - 2 / 3) < 1e-9
+    assert s["by_reason"] == {"unresolved_ticker": 1}
+    assert s["by_vintage"][2022] == {"selected": 2, "measurable": 1}
+    assert s["by_vintage"][2023] == {"selected": 1, "measurable": 1}
+    assert s["delisting_by_reason"] == {"bankruptcy": 1}
