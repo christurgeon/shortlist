@@ -454,3 +454,39 @@ def test_sic_network_failure_not_cached_and_warns(tmp_path):
         sic2 = fetch_sic_sync("0000000055", _transport=httpx.MockTransport(handler), **kw)
     assert sic1 is None and sic2 is None
     assert len(calls) == 2                                    # never cached -> both hit network
+
+
+def test_companyfacts_none_or_malformed_cik_returns_none_never_raises(tmp_path):
+    """fetch_companyfacts_sync degrade gracefully on None/malformed CIK — warn, never raise."""
+    import httpx
+    import pytest
+
+    from shortlist.scout.backfill import fetch_companyfacts_sync
+
+    def poison(request):
+        raise AssertionError("must not touch the network on malformed cik")
+
+    kw = dict(identity="t@example.com", cache_dir=str(tmp_path), month="2026-07",
+              _transport=httpx.MockTransport(poison))
+    for bad_cik in (None, "not-a-cik", "xyz"):
+        with pytest.warns(UserWarning, match="backfill.*malformed"):
+            result = fetch_companyfacts_sync(bad_cik, **kw)
+        assert result is None
+
+
+def test_sic_none_or_malformed_cik_returns_none_never_raises(tmp_path):
+    """fetch_sic_sync degrade gracefully on None/malformed CIK — warn, never raise."""
+    import httpx
+    import pytest
+
+    from shortlist.scout.backfill import fetch_sic_sync
+
+    def poison(request):
+        raise AssertionError("must not touch the network on malformed cik")
+
+    kw = dict(identity="t@example.com", cache_dir=str(tmp_path), month="2026-07",
+              _transport=httpx.MockTransport(poison))
+    for bad_cik in (None, "not-a-cik", "xyz"):
+        with pytest.warns(UserWarning, match="backfill.*malformed"):
+            result = fetch_sic_sync(bad_cik, **kw)
+        assert result is None

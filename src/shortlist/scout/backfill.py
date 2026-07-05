@@ -64,10 +64,14 @@ def fetch_history_sync(ticker: str, *, identity: str, today: date,
         return None
 
 
-def _normalize_cik10(cik) -> str:
+def _normalize_cik10(cik) -> Optional[str]:
     """int or (zero-padded or not) str CIK -> the 10-digit zero-padded string
-    `backtest.xbrl.fetch_companyfacts`/`build_cik_index` expect."""
-    return f"{int(cik):010d}"
+    `backtest.xbrl.fetch_companyfacts`/`build_cik_index` expect.
+    Returns None (never raises) on a malformed/None cik."""
+    try:
+        return f"{int(cik):010d}"
+    except (TypeError, ValueError):
+        return None
 
 
 def fetch_companyfacts_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_xbrl",
@@ -86,6 +90,9 @@ def fetch_companyfacts_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_
     from ..backtest.xbrl import fetch_companyfacts, read_companyfacts_cache
 
     cik10 = _normalize_cik10(cik)
+    if cik10 is None:
+        warnings.warn(f"backfill: companyfacts — malformed CIK {cik!r}", stacklevel=2)
+        return None
     cached = read_companyfacts_cache(cik10, cache_dir=cache_dir, month=month)
     if cached is not None:
         return cached
@@ -121,6 +128,9 @@ def fetch_sic_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_xbrl",
     import httpx
 
     cik10 = _normalize_cik10(cik)
+    if cik10 is None:
+        warnings.warn(f"backfill: SIC — malformed CIK {cik!r}", stacklevel=2)
+        return None
     cp = Path(cache_dir) / f"SIC{cik10}-{month}.json"
     try:
         if cp.exists():
