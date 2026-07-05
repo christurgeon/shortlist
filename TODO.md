@@ -6,6 +6,37 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Production 13D backfill run — PAUSED, ready to fire (2026-07-05)
+
+The raw-cohort 13D backfill machinery is **merged and live-verified** (#109 — walker n=22/3d
+smoke, one-week e2e, `validate --backfill` returns the honest INSUFFICIENT at tiny n). The
+production run itself was deliberately **paused** (hours of rate-limited fetching on the VPS)
+— it is the last step before the harness's first real historical verdict on
+`edgar:activist_13d`. When ready:
+
+```bash
+# serial + resumable (re-run the same command to resume); ~hours at ≤5 req/s SEC.
+# Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout 22:30 timers).
+uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout validate \
+    --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl --json
+```
+
+- Window is a starting suggestion — Wayback symbology coverage is dense 2018–2023, monthly
+  2024+, so a longer `--start 2022-01-01` (or earlier) run is legitimate too; more months =
+  more independent blocks toward the `min_independent_blocks` gate (K=12m → expect
+  INSUFFICIENT until the window is long enough; that is the design, not a failure).
+- Before a long run, optionally seed `symbology._OVERRIDES` for known rename-near-event
+  cases (documented example: CIK 1823575, L&F Acquisition → ZeroFox de-SPAC 2022-08 — resolves
+  the stale pre-rename ticker → honest non-measurable + `low_confidence` flag).
+- Read the run summary's `by_reason` / `by_vintage` / `low_confidence` / `failed_chunks`
+  blocks before trusting the fraction; `failed_chunks` → just re-run (resume skips done work).
+- After the run: the verdict feeds the digest-wiring step (Phase-2 plan 5) and sets the
+  precedent for the FINRA audit→leg.
+
+**Status:** machinery complete + merged (#109); the run itself is deliberately deferred —
+operator action (or ask Claude to run it supervised).
+
 ## Prioritization pass — ranked backlog + one net-new item (2026-07-05)
 
 A "highest impact next" review re-affirmed the 2026-07-01 verdict: **finish the
