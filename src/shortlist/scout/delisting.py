@@ -157,3 +157,72 @@ def terminal_price(verdict: Optional[DelistingVerdict], dates: list, closes: lis
     if last is None:
         return None
     return last * (1.0 + verdict.terminal_return)
+
+
+_FETCH_FORMS = ("25", "25-NSE", "15-12B", "15-12G", "15-15D", "8-K")
+
+
+def _record_from_filing(f) -> Optional[FilingRecord]:
+    """One edgartools filing -> FilingRecord; None (never raises) on a malformed row."""
+    try:
+        form = str(getattr(f, "form", "") or "")
+        fd = getattr(f, "filing_date", None)
+        if isinstance(fd, str):
+            fd = date.fromisoformat(fd[:10])
+        if not form or not isinstance(fd, date):
+            return None
+        items = normalize_items(getattr(f, "items", None))
+        if not items and _base_form(form) == "8-K":
+            try:                                # spike-verified fallback: .obj().items
+                items = normalize_items(getattr(f.obj(), "items", None))
+            except Exception:  # noqa: BLE001 — a doc-fetch failure must not sink the record
+                items = ()
+        filer = getattr(f, "filer", None)
+        if filer is None and _base_form(form).startswith("25"):
+            # Form 25 is filed by the EXCHANGE; the submissions row has no filer name, so read
+            # the header (~1-2 Form 25s per delisted name — negligible). Failure -> None ->
+            # venue None -> the harsher -0.55 partial (safe degradation; live test pins venue).
+            try:
+                filer = f.header.filers[0].company_information.name
+            except Exception:  # noqa: BLE001
+                filer = None
+        return FilingRecord(form=form, filing_date=fd,
+                            items=items, filer=str(filer) if filer else None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def fetch_filing_records(cik, identity: str, *, forms=_FETCH_FORMS) -> Optional[list]:
+    """Fetch the subject CIK's Form 25/15/8-K filings as FilingRecords. CIK-KEYED — the edgar
+    Company lookup is always int-cast from the CIK, never a ticker (the BBBY->Overstock
+    ticker-reuse landmine, spec §8). None = fetch failed (warned); [] = fetched fine, nothing
+    matched. Items come from the submissions-JSON `items` attribute (free) with a guarded
+    .obj() fallback per 8-K."""
+    import warnings
+
+    from ..env import redact_secrets
+    try:
+        cik_int = int(str(cik).lstrip("0") or "0") if str(cik).strip().isdigit() else int(cik)
+    except (TypeError, ValueError):
+        warnings.warn(f"delisting: malformed CIK {cik!r}", stacklevel=2)
+        return None
+    try:
+        from edgar import Company, set_identity  # edgartools (optional dep, lazy)
+        set_identity(identity)
+        filings = Company(int(cik_int)).get_filings(form=list(forms))
+        seen: set = set()
+        out: list[FilingRecord] = []
+        for f in filings or []:
+            acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+            if acc is not None:
+                if acc in seen:                  # edgartools duplicate-row gotcha (edgar_index.py)
+                    continue
+                seen.add(acc)
+            rec = _record_from_filing(f)
+            if rec is not None:
+                out.append(rec)
+        return out
+    except Exception as exc:  # noqa: BLE001 — degrade, never crash the backfill
+        warnings.warn(f"delisting: filings fetch failed for CIK {cik!r}: "
+                      f"{redact_secrets(str(exc))}", stacklevel=2)
+        return None
