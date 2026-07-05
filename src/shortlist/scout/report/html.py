@@ -212,6 +212,9 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
          border:1px solid var(--line); border-radius:var(--radius); padding:4px 8px}
 .picks{display:flex; flex-direction:column; gap:3px}
 .pick{font:13px/1.5 var(--mono); color:var(--text-2)}
+.validation{display:flex; flex-direction:column; gap:3px}
+.verdict{font:13px/1.5 var(--mono); color:var(--text-2)}
+.verdict-ds{font:12px/1.5 var(--mono); color:var(--text-3); padding-left:14px}
 
 @media (min-width:560px){ body{padding-left:22px; padding-right:22px} }
 @media (prefers-reduced-motion:reduce){ *{animation:none !important} }

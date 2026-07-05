@@ -507,6 +507,9 @@ scout:
                              # operational knobs below are read from config.
     lookback_days: 365
     factor_cache_dir: .cache/famafrench
+    # latest_max_age_days: 14  # digest SECTION staleness gate for scout/validate-latest.json
+                               # (Task 2); absent -> default 14. Persisted by every `validate`
+                               # CLI run (live + --backfill), read-only for the digest.
   # --- scout.backfill (batch 13D backfill; OFF unless the CLI is invoked explicitly) ---
   # backfill:
   #   out_dir: scout/backfill
