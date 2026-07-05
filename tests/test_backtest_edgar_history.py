@@ -85,6 +85,42 @@ def test_walker_index_failure_returns_none_and_cap_warns():
     assert len(recs) == 2
 
 
+class _PoisonedFormFiling:
+    """A filing whose `.form` attribute access itself raises a non-AttributeError
+    (e.g. a broken edgartools property) -- distinct from a MISSING attribute, which
+    `getattr(f, "form", ...)` would already tolerate. Regression for the per-record
+    walker guard: one poisoned row must not wedge the whole window."""
+    filing_date = date(2023, 10, 12)
+    accession_no = "poison-1"
+
+    @property
+    def form(self):
+        raise RuntimeError("form boom")
+
+
+def test_walker_survives_poisoned_filing_row_and_warns():
+    import pytest
+
+    # Note: unlike `_fake_get_filings`, this fake keys rows by form up front rather than
+    # filtering `r.form == form` -- filtering would itself trigger the poisoned `.form`
+    # property during the (unrelated) index-fetch stage, before the per-record walker
+    # loop under test even runs.
+    good_a = _filing("SCHEDULE 13D", date(2023, 10, 10), "a-1")
+    poisoned = _PoisonedFormFiling()
+    good_b = _filing("SC 13D", date(2023, 10, 11), "a-3", cik=777, subject="Other Inc",
+                     activist="Icahn")
+    by_form = {"SCHEDULE 13D": [good_a, poisoned], "SC 13D": [good_b]}
+
+    def fake(form, filing_date):
+        return list(by_form.get(form, []))
+
+    with pytest.warns(UserWarning, match="edgar_history: skipped 1 unreadable filing row"):
+        recs = fetch_activist_window(date(2023, 10, 10), date(2023, 10, 12),
+                                     "t@example.com", throttle_s=0.0, _get_filings=fake)
+    # the poisoned row is skipped; both healthy records survive
+    assert [r["accession"] for r in recs] == ["a-1", "a-3"]
+
+
 def test_group_by_day():
     recs = [{"filing_date": date(2023, 1, 2), "accession": "a"},
             {"filing_date": date(2023, 1, 3), "accession": "b"},

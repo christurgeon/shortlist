@@ -51,39 +51,56 @@ def fetch_activist_window(start: date, end: date, identity: str, *,
                       f"{redact_secrets(str(exc))}", stacklevel=2)
         return None
     out: list[dict] = []
+    n_poisoned = 0
+    last_exc: Optional[str] = None
     for f in _dedup_by_accession(rows):
-        if not is_initial_13d(getattr(f, "form", "") or ""):
-            continue
-        if max_records is not None and len(out) >= max_records:
-            warnings.warn(f"edgar_history: max_records={max_records} hit for {rng} — "
-                          "window truncated, narrow the range", stacklevel=2)
-            break
-        fd = getattr(f, "filing_date", None)
-        if isinstance(fd, str):
-            try:
-                fd = date.fromisoformat(fd[:10])
-            except ValueError:
-                fd = None
-        if not isinstance(fd, date):
-            continue                              # unusable row (no date to key on)
-        acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
-        cik = subject = activist = None
+        # Everything below reads attributes off an untrusted edgartools filing object. A
+        # poisoned row (e.g. a property that raises something other than AttributeError)
+        # must not abort the whole window -- that's a deterministic wedge: a re-run over
+        # the same range hits the same poisoned row and dies again. This outer guard is
+        # last-resort: it wraps ONLY the basic attribute reads/loop control, never the
+        # header try/except below, whose own semantics (failure -> cik=None record, not a
+        # skip) are unchanged.
         try:
-            if throttle_s > 0:
-                time.sleep(throttle_s)            # SEC fair-access: bound the header-fetch rate
-            hdr = f.header
-            subs = getattr(hdr, "subject_companies", None)
-            if subs:
-                ci = subs[0].company_information
-                cik = _norm_cik10(getattr(ci, "cik", None))
-                subject = getattr(ci, "name", None)
-            filers = getattr(hdr, "filers", None)
-            if filers:
-                activist = getattr(filers[0].company_information, "name", None)
-        except Exception:  # noqa: BLE001 — keep the record; downstream counts it non-measurable
-            pass
-        out.append({"cik": cik, "subject_name": subject, "activist": activist,
-                    "form": str(getattr(f, "form", "")), "accession": acc, "filing_date": fd})
+            if not is_initial_13d(getattr(f, "form", "") or ""):
+                continue
+            if max_records is not None and len(out) >= max_records:
+                warnings.warn(f"edgar_history: max_records={max_records} hit for {rng} — "
+                              "window truncated, narrow the range", stacklevel=2)
+                break
+            fd = getattr(f, "filing_date", None)
+            if isinstance(fd, str):
+                try:
+                    fd = date.fromisoformat(fd[:10])
+                except ValueError:
+                    fd = None
+            if not isinstance(fd, date):
+                continue                              # unusable row (no date to key on)
+            acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+            cik = subject = activist = None
+            try:
+                if throttle_s > 0:
+                    time.sleep(throttle_s)        # SEC fair-access: bound the header-fetch rate
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if subs:
+                    ci = subs[0].company_information
+                    cik = _norm_cik10(getattr(ci, "cik", None))
+                    subject = getattr(ci, "name", None)
+                filers = getattr(hdr, "filers", None)
+                if filers:
+                    activist = getattr(filers[0].company_information, "name", None)
+            except Exception:  # noqa: BLE001 — keep the record; downstream counts it non-measurable
+                pass
+            out.append({"cik": cik, "subject_name": subject, "activist": activist,
+                        "form": str(getattr(f, "form", "")), "accession": acc, "filing_date": fd})
+        except Exception as exc:  # noqa: BLE001 — one poisoned row must not wedge the batch
+            n_poisoned += 1
+            last_exc = redact_secrets(str(exc))
+            continue
+    if n_poisoned:
+        warnings.warn(f"edgar_history: skipped {n_poisoned} unreadable filing row(s) for "
+                      f"{rng} (last error: {last_exc})", stacklevel=2)
     return out
 
 

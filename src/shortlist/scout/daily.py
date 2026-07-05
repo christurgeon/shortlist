@@ -586,7 +586,13 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
     if not by_signal:
         return []
 
-    tickers = sorted({(e.get("ticker") or "").upper() for e in events if e.get("ticker")})
+    # Backfill sentinel tickers ("CIK:0001823575", "CIK:unknown-<acc>" -- see
+    # scout/backfill.py) have no resolvable price history and would each fire a doomed
+    # Yahoo fetch_history request (VPS WAF protection). The live firehose never emits
+    # this convention, so skipping it here only affects synthetic backfill cohorts; the
+    # events themselves stay in the cohort and simply have no history -> non-measurable.
+    tickers = sorted({(e.get("ticker") or "").upper() for e in events
+                      if e.get("ticker") and not str(e.get("ticker")).startswith("CIK:")})
     cache_dir = val_cfg.get("factor_cache_dir", ".cache/famafrench")
     ff3, hists = asyncio.run(_fetch_validate_data(tickers, cache_dir, today.isoformat()))
 
