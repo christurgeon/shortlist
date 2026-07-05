@@ -161,6 +161,32 @@ def _log_firehose(state, emissions, session, scout_cfg) -> None:
         warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
 
 
+def _load_validation_digest(config: dict, *, today: date,
+                            path: str = VALIDATE_LATEST_PATH) -> dict | None:
+    """Read `scout/validate-latest.json` for the digest's display-only validation SECTION
+    -- NO network call at digest time (design: docs/superpowers/plans/2026-07-05-digest-
+    verdicts.md). Defensive: a missing file, malformed JSON/shape, an empty verdicts list,
+    or a stale `as_of` (older than `scout.validate.latest_max_age_days`, default 14) all
+    return None so the section is simply absent -- never a crash, and never a stale
+    scoreboard silently displayed as current. `today` is the run's calendar date (the same
+    `today` passed into `run()`), not the trading `session` -- staleness is a wall-clock
+    question."""
+    max_age = config.get("scout", {}).get("validate", {}).get("latest_max_age_days", 14)
+    try:
+        data = json.loads(Path(path).read_text())
+        if not isinstance(data, dict):
+            return None
+        verdicts = data.get("verdicts")
+        if not isinstance(verdicts, list) or not verdicts:
+            return None
+        as_of = date.fromisoformat(str(data.get("as_of")))
+        if (today - as_of).days > max_age:
+            return None
+        return data
+    except Exception:  # noqa: BLE001 — best-effort read, never blocks the digest
+        return None
+
+
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
 
@@ -329,8 +355,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     picks_cfg = scout_cfg.get("picks", {})
     prior_picks = (_build_scoreboard(state, session, picks_cfg)
                    if picks_cfg.get("enabled", True) else [])
+    validation = _load_validation_digest(config, today=today)
     artifacts = build_report(cards, manifest, assessments=assessments, macro=macro,
-                             prior_picks=prior_picks)
+                             prior_picks=prior_picks, validation=validation)
     caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
 
     notifier = TelegramNotifier()

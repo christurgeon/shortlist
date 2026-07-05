@@ -113,12 +113,13 @@ class ReportVM:
     portfolio: "object | None" = None   # shortlist.portfolio.PortfolioSummary | None
     deep_block: list[str] = field(default_factory=list)   # non-gated tickers for the /deep handoff
     prior_picks: list[dict] = field(default_factory=list)  # scoreboard rows (pick_performance dicts)
-    validation: "list[dict] | None" = None   # SignalVerdict dicts (shortlist-scout validate);
-                                             # None => the display-only scoreboard section is absent.
-                                             # NOTE: dormant today (nothing populates it on the live
-                                             # daily path). When the future digest-wiring task feeds
-                                             # verdicts in, pass dataclasses.asdict(v) — the section
-                                             # reads dict keys, not SignalVerdict attributes.
+    validation: "dict | None" = None   # {"as_of": iso, "source": "live"|"backfill:<name>",
+                                       # "verdicts": [asdict(SignalVerdict), ...]} parsed from
+                                       # scout/validate-latest.json (daily.py:VALIDATE_LATEST_PATH)
+                                       # by the builder, which ALREADY applies the staleness gate
+                                       # (scout.validate.latest_max_age_days) -- None here means
+                                       # absent/stale/malformed, and the display-only scoreboard
+                                       # section is omitted (byte-identical report).
 
 
 def _claim(x) -> str:

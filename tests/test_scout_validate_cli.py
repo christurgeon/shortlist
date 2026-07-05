@@ -7,8 +7,8 @@ import yaml
 
 from shortlist.backtest.prices import PriceHistory
 from shortlist.scout import daily
-from shortlist.scout.daily import (VALIDATE_LATEST_PATH, _run_validate_cli,
-                                   build_arg_parser, run_validate)   # thin helpers for testability
+from shortlist.scout.daily import (VALIDATE_LATEST_PATH, _load_validation_digest,
+                                   _run_validate_cli, build_arg_parser, run_validate)
 from shortlist.scout.validate import SignalVerdict
 
 
@@ -409,3 +409,99 @@ def test_validate_latest_json_round_trips_verdict_keys(tmp_path, monkeypatch):
     assert scored["cohort_type"] == "scored_gated"
     assert scored["double_sort"]["n_high"] == 3
     assert scored["double_sort"]["spread_ci"] == [0.001, 0.03]
+
+
+# ---- _load_validation_digest: the digest's read side of the persist boundary (Task 2) ----
+
+def test_load_validation_digest_missing_file_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_malformed_json_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    p.write_text("not valid json {{{")
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_not_a_dict_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps([{"signal": "x"}]))
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_empty_verdicts_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"as_of": "2026-07-05", "source": "live", "verdicts": []}))
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_missing_as_of_returns_none(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"source": "live", "verdicts": [{"signal": "x"}]}))
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_stale_as_of_returns_none_default_14_days(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({"as_of": "2026-06-01", "source": "live",
+                             "verdicts": [{"signal": "x"}]}))
+    # 2026-07-05 - 2026-06-01 = 34 days > default 14 -> stale
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_fresh_within_default_returns_envelope(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    payload = {"as_of": "2026-07-01", "source": "live", "verdicts": [{"signal": "x"}]}
+    p.write_text(json.dumps(payload))
+    # 2026-07-05 - 2026-07-01 = 4 days <= default 14 -> fresh
+    result = _load_validation_digest({}, today=date(2026, 7, 5))
+    assert result == payload
+
+
+def test_load_validation_digest_respects_config_max_age_override(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    payload = {"as_of": "2026-07-01", "source": "live", "verdicts": [{"signal": "x"}]}
+    p.write_text(json.dumps(payload))
+    cfg = {"scout": {"validate": {"latest_max_age_days": 2}}}
+    # 4 days old > configured max of 2 -> stale under the tighter knob
+    assert _load_validation_digest(cfg, today=date(2026, 7, 5)) is None
+
+
+def test_load_validation_digest_exact_boundary_is_fresh(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    payload = {"as_of": "2026-06-21", "source": "live", "verdicts": [{"signal": "x"}]}
+    p.write_text(json.dumps(payload))
+    # exactly 14 days old with default max_age=14 -> boundary counts as fresh (<=)
+    assert _load_validation_digest({}, today=date(2026, 7, 5)) == payload
+
+
+def test_load_validation_digest_integrates_with_persisted_cli_output(tmp_path, monkeypatch):
+    """End-to-end: `_run_validate_cli` persists, `_load_validation_digest` reads it back."""
+    monkeypatch.chdir(tmp_path)
+    verdicts = _sample_verdicts()
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: verdicts)
+    today = date(2026, 7, 5)
+    _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                      as_json=False)
+
+    data = _load_validation_digest({}, today=today)
+    assert data is not None
+    assert data["source"] == "live"
+    assert len(data["verdicts"]) == 2

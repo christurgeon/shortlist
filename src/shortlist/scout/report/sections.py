@@ -624,40 +624,80 @@ class _PriorPicks:
                [f"  {self._line(p)}" for p in picks]
 
 
-# ---- signal-validation scoreboard (display-only; shortlist-scout validate, Phase 1) ----
+# ---- signal-validation verdicts (display-only; shortlist-scout validate + digest wiring) ----
 class _ValidationScoreboard:
-    """Display-only per-signal KILL/HOLD/INSUFFICIENT verdicts from the offline
-    `shortlist-scout validate` evaluator (scout/validate.py). Purely informational —
-    never wired into scoring, gating, or ranking. NEVER renders a PROMOTE verdict (the
-    evaluator itself never emits one). `vm.validation` is None on every ordinary daily
-    run, so this section is absent and the report stays byte-identical."""
+    """Display-only per-signal KILL/HOLD/INSUFFICIENT verdicts, read (with NO network at
+    digest time) from `scout/validate-latest.json` — see daily.py:VALIDATE_LATEST_PATH and
+    docs/superpowers/plans/2026-07-05-digest-verdicts.md. Purely informational — never wired
+    into scoring, gating, or ranking. NEVER renders a PROMOTE verdict (the evaluator itself
+    never emits one). `vm.validation` is the parsed `{"as_of", "source", "verdicts": [...]}`
+    envelope, already staleness-filtered by the builder (`scout.validate.latest_max_age_days`,
+    default 14) — None on every run where the file is absent/stale/malformed, so this
+    section is absent and the report stays byte-identical."""
     id, title = "validation", "Signal validation (provisional)"
 
-    _DISCLAIMER = ("Display / provisional / survivorship-accounted — "
-                   "not evidence, not advice.")
+    _DISCLAIMER = "display / provisional / survivorship-biased — not evidence, not advice."
 
     def applies(self, vm) -> bool:
-        return bool(getattr(vm, "validation", None))
+        data = getattr(vm, "validation", None)
+        if not isinstance(data, dict):
+            return False
+        verdicts = data.get("verdicts")
+        return isinstance(verdicts, list) and len(verdicts) > 0
 
     @staticmethod
-    def _line(v: dict) -> str:
+    def _verdict_line(v: dict) -> str:
         ir = v.get("ir")
         ir_s = f"{ir:.2f}" if isinstance(ir, (int, float)) else "—"
-        return (f"{v.get('signal', '?')}: {v.get('verdict', '?')} "
-                f"(IR {ir_s}, n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)})")
+        ci = v.get("alpha_ci")   # asdict() turns the SignalVerdict tuple into a list
+        if isinstance(ci, (list, tuple)) and len(ci) == 2:
+            ir_s += f" ±[{ci[0]:.4f}, {ci[1]:.4f}]"
+        notes = v.get("notes") or []
+        synthetic = " [SYNTHETIC]" if any("SYNTHETIC" in str(n) for n in notes) else ""
+        return (f"{v.get('signal', '?')} [{v.get('cohort_type', 'raw')}]: "
+                f"{v.get('verdict', '?')} (IR {ir_s}, blocks={v.get('effective_blocks', '—')}, "
+                f"n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)}){synthetic}")
+
+    @staticmethod
+    def _double_sort_line(ds: dict) -> str:
+        alpha = ds.get("spread_alpha_monthly")
+        alpha_s = f"{alpha:.4f}" if isinstance(alpha, (int, float)) else "—"
+        ci = ds.get("spread_ci")   # asdict() turns the tuple into a list
+        ci_s = (f"[{ci[0]:.4f}, {ci[1]:.4f}]"
+                if isinstance(ci, (list, tuple)) and len(ci) == 2 else "—")
+        return (f"double-sort: spread α/mo={alpha_s}, CI={ci_s}, "
+                f"blocks={ds.get('effective_blocks', '—')}, "
+                f"n={ds.get('n_high', '—')}/{ds.get('n_low', '—')}")
+
+    def _meta_line(self, vm) -> str:
+        data = getattr(vm, "validation", {}) or {}
+        return f"as of {data.get('as_of', '?')} ({data.get('source', '?')})"
 
     def render_html(self, vm, h) -> str:
-        rows = "".join(h.tag("div", self._line(v), _class="verdict")
-                       for v in getattr(vm, "validation", []) or [])
+        data = getattr(vm, "validation", None) or {}
+        rows = []
+        for v in data.get("verdicts") or []:
+            rows.append(h.tag("div", self._verdict_line(v), _class="verdict"))
+            ds = v.get("double_sort")
+            if ds:
+                rows.append(h.tag("div", self._double_sort_line(ds), _class="verdict-ds"))
+        meta = h.tag("div", self._meta_line(vm), _class="muted")
         note = h.tag("div", self._DISCLAIMER, _class="muted")
-        return h.raw("div", rows + note, _class="validation")
+        return h.raw("div", meta + "".join(rows) + note, _class="validation")
 
-    def render_text(self, vm, detail=None) -> str:
-        rows = list(getattr(vm, "validation", []) or [])
-        lines = ["Signal validation (provisional):"]
-        lines += [f"  {self._line(v)}" for v in rows]
-        lines.append(self._DISCLAIMER)
-        return "\n".join(lines)
+    def render_text(self, vm, detail) -> list[str]:
+        data = getattr(vm, "validation", None) or {}
+        verdicts = data.get("verdicts") or []
+        if not verdicts:
+            return []
+        lines = ["", "Signal validation (provisional):", self._DISCLAIMER,
+                 f"  {self._meta_line(vm)}"]
+        for v in verdicts:
+            lines.append(f"  {self._verdict_line(v)}")
+            ds = v.get("double_sort")
+            if ds:
+                lines.append(f"    {self._double_sort_line(ds)}")
+        return lines
 
 
 SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
@@ -679,8 +719,5 @@ def render_text(vm: ReportVM, detail: Detail) -> str:
     lines = [f"📊 Scout shortlist — session {vm.session.isoformat()}", ""]
     for s in SECTIONS:
         if s.applies(vm):
-            out = s.render_text(vm, detail)
-            # Most sections return list[str]; _ValidationScoreboard returns a joined
-            # str (its own unit test asserts a str result) — accept either shape.
-            lines += out if isinstance(out, list) else ["", *out.splitlines()]
+            lines += s.render_text(vm, detail)   # every Section.render_text -> list[str]
     return "\n".join(lines)
