@@ -24,7 +24,7 @@ from pathlib import Path
 
 from .calendar import is_trading_day
 from .delisting import classify_delisting, terminal_price
-from .edgar_index import activist_stakes_from_records
+from .edgar_index import _is_real_ticker, activist_stakes_from_records
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
 
@@ -70,6 +70,13 @@ def assemble_events(records_by_day: dict, resolve_ticker, *, drop_spacs: bool = 
                 continue
             tkr = resolve_ticker(cik, fday)       # PiT at FILING date (pre-entry information)
             if tkr is None:                       # selected but unresolvable: sentinel
+                sentinel_ciks.setdefault(cik, r)
+                continue
+            # Defensive guard: resolved-returned ticker that fails _is_real_ticker (e.g. "N/A",
+            # numeric-only) routes to sentinel path instead of silently vanishing inside
+            # activist_stakes_from_records. Reliance on Task-1's _dedup_by_accession ensures
+            # sentinel CIK uniqueness even when the same header generates multiple bad tickers.
+            if not _is_real_ticker(tkr):
                 sentinel_ciks.setdefault(cik, r)
                 continue
             resolved_rows.append({**r, "ticker": tkr})
@@ -213,3 +220,117 @@ def summarize(rows: list[dict]) -> dict:
             "fraction": (n_meas / n) if n else 0.0,
             "by_reason": by_reason, "by_vintage": by_vintage,
             "delisting_by_reason": delist}
+
+
+import time
+import warnings
+from typing import Optional
+
+
+def _month_chunks(start: date, end: date) -> list[tuple[date, date]]:
+    chunks = []
+    d = start
+    while d <= end:
+        last = date(d.year, d.month, _cal.monthrange(d.year, d.month)[1])
+        chunks.append((d, min(last, end)))
+        d = last + timedelta(days=1)
+    return chunks
+
+
+def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
+                     today: Optional[date] = None, out_path: Optional[str] = None,
+                     _fetch_window=None, _symbology=None, _fetch_history=None,
+                     _fetch_delisting=None) -> dict:
+    """Batch 13D raw-cohort backfill: walk -> assemble -> measure -> idempotent JSONL.
+    Serial + rate-limited by design (runs on the production VPS). Returns the run summary."""
+    from ..env import redact_secrets
+
+    bf = (config.get("scout") or {}).get("backfill") or {}
+    sec_throttle = float(bf.get("sec_throttle_s", 0.2))
+    yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
+    max_records = int(bf.get("max_records", 20000))
+    out_dir = bf.get("out_dir", "scout/backfill")
+    today = today or date.today()
+    out_path = out_path or str(Path(out_dir) /
+                               f"13d-{start.isoformat()}-{end.isoformat()}.jsonl")
+
+    from .preregister import load_prereg
+    repo_root = str(Path(__file__).parent.parent.parent.parent)
+    k_months = int(load_prereg("edgar_activist_13d", repo_root=repo_root).get("k_months", 12))
+
+    owns_sym = _symbology is None
+    client = None
+    if _fetch_window is None:
+        from ..backtest.edgar_history import fetch_activist_window
+        _fetch_window = fetch_activist_window
+    if _symbology is None:
+        from .symbology import Symbology
+        _symbology = Symbology(identity,
+                               cache_dir=bf.get("symbology_cache_dir", ".cache/symbology"))
+    if _fetch_history is None:
+        import httpx
+        from ..backtest.prices import fetch_history
+        client = httpx.Client(timeout=30.0, headers={"User-Agent": identity})
+
+        def _fetch_history(tkr, _c=client):
+            time.sleep(yh_throttle)               # polite even with the day cache
+            try:
+                return fetch_history(tkr, _c, cache_dir=".cache/yahoo",
+                                     today=today.isoformat())
+            except Exception as exc:  # noqa: BLE001
+                warnings.warn(f"backfill: price fetch failed for {tkr}: "
+                              f"{redact_secrets(str(exc))}", stacklevel=2)
+                return None
+    if _fetch_delisting is None:
+        from .delisting import fetch_filing_records
+
+        def _fetch_delisting(cik):
+            time.sleep(sec_throttle)
+            return fetch_filing_records(cik, identity)
+
+    existing_keys = {r.get("meta", {}).get("key") for r in load_backfill_events(out_path)}
+    failed_chunks: list[str] = []
+    written_total = 0
+    try:
+        for c_start, c_end in _month_chunks(start, end):
+            recs = _fetch_window(c_start, c_end, identity, throttle_s=sec_throttle,
+                                 max_records=max_records)
+            if recs is None:
+                failed_chunks.append(f"{c_start}:{c_end}")
+                continue
+            events = assemble_events(group_by_day_records(recs),
+                                     _symbology.resolve_ticker if _symbology else
+                                     (lambda cik, as_of: None))
+            fresh = [e for e in events if e.meta.get("key") not in existing_keys]
+            measured = []
+            for ev in fresh:
+                hist = None
+                if not ev.ticker.startswith("CIK:"):
+                    hist = _fetch_history(ev.ticker)
+                measured.append(measure_event(ev, hist, k_months, today=today,
+                                              fetch_delisting_records=_fetch_delisting))
+                del hist                          # one PriceHistory at a time (VPS RAM budget)
+            written_total += append_events(out_path, measured)
+            for ev in measured:
+                existing_keys.add(ev.meta.get("key"))
+    finally:
+        if owns_sym and _symbology is not None:
+            _symbology.close()
+        if client is not None:
+            client.close()
+
+    summary = summarize(load_backfill_events(out_path))
+    summary["out_path"] = out_path
+    summary["written"] = written_total
+    if failed_chunks:
+        summary["failed_chunks"] = failed_chunks
+        warnings.warn(f"backfill: {len(failed_chunks)} chunk(s) failed — re-run to resume: "
+                      f"{failed_chunks}", stacklevel=2)
+    if _symbology is not None and getattr(_symbology, "low_confidence", None):
+        summary["low_confidence"] = list(_symbology.low_confidence)
+    return summary
+
+
+def group_by_day_records(recs: list[dict]) -> dict:
+    from ..backtest.edgar_history import group_by_day
+    return group_by_day(recs)

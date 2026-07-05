@@ -239,3 +239,78 @@ def test_summarize_counts_and_vintages():
     assert s["by_vintage"][2022] == {"selected": 2, "measurable": 1}
     assert s["by_vintage"][2023] == {"selected": 1, "measurable": 1}
     assert s["delisting_by_reason"] == {"bankruptcy": 1}
+
+
+def test_unreal_resolved_ticker_becomes_sentinel_not_silently_dropped():
+    day = {date(2023, 10, 13): [_rec("0000000042", acc="a-1")]}
+    evs = assemble_events(day, lambda cik, as_of: "N/A")   # 'unreal' ticker shape
+    assert len(evs) == 1 and evs[0].ticker == "CIK:0000000042"
+
+
+from shortlist.scout.backfill import run_backfill_13d
+
+
+def test_run_backfill_end_to_end_with_injected_seams(tmp_path):
+    out = str(tmp_path / "13d.jsonl")
+    windows = []
+
+    def fake_window(start, end, identity, **kw):
+        windows.append((start, end))
+        if start != date(2022, 8, 1):
+            return []
+        return [{"cik": "0000000007", "subject_name": "Target Corp", "activist": "Fund LP",
+                 "form": "SCHEDULE 13D", "accession": "a-1", "filing_date": date(2022, 8, 10)},
+                {"cik": "0000000042", "subject_name": "Ghost Inc", "activist": "Other LP",
+                 "form": "SCHEDULE 13D", "accession": "a-2", "filing_date": date(2022, 8, 10)}]
+
+    class FakeSym:
+        low_confidence = []
+        disagreements = []
+
+        def resolve_ticker(self, cik, as_of):
+            return "TGT" if cik == "0000000007" else None
+
+        def close(self):
+            pass
+
+    h = _hist("TGT", date(2022, 7, 1), 400)
+    cfg = {"scout": {"backfill": {"out_dir": str(tmp_path), "sec_throttle_s": 0.0,
+                                  "yahoo_throttle_s": 0.0}}}
+    summary = run_backfill_13d(cfg, start=date(2022, 8, 1), end=date(2022, 9, 15),
+                               identity="t@example.com", today=TODAY, out_path=out,
+                               _fetch_window=fake_window, _symbology=FakeSym(),
+                               _fetch_history=lambda tkr: h if tkr == "TGT" else None,
+                               _fetch_delisting=lambda cik: [])
+    assert (date(2022, 8, 1), date(2022, 8, 31)) in windows   # month chunking
+    assert (date(2022, 9, 1), date(2022, 9, 15)) in windows
+    assert summary["n_selected"] == 2                          # TGT + unresolved sentinel
+    assert summary["n_measurable"] == 1
+    assert summary["written"] == 2
+    # resume: second run writes nothing new
+    summary2 = run_backfill_13d(cfg, start=date(2022, 8, 1), end=date(2022, 9, 15),
+                                identity="t@example.com", today=TODAY, out_path=out,
+                                _fetch_window=fake_window, _symbology=FakeSym(),
+                                _fetch_history=lambda tkr: h if tkr == "TGT" else None,
+                                _fetch_delisting=lambda cik: [])
+    assert summary2["written"] == 0
+    rows = load_backfill_events(out)
+    assert len(rows) == 2 and all(r["origin"] == "backfill" for r in rows)
+
+
+def test_run_backfill_never_touches_scout_state(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import shortlist.scout.state as state_mod
+    called = []
+    monkeypatch.setattr(state_mod.ScoutState, "record_firehose",
+                        lambda self, *a, **k: called.append(1), raising=True)
+    out = str(tmp_path / "13d.jsonl")
+    # NB: pass a FAKE symbology — _symbology=None makes the coordinator construct a real
+    # network-touching Symbology (that is prod behavior, not test behavior).
+    fake_sym = SimpleNamespace(resolve_ticker=lambda cik, as_of: None,
+                               close=lambda: None, low_confidence=[], disagreements=[])
+    run_backfill_13d({"scout": {"backfill": {"sec_throttle_s": 0.0}}},
+                     start=date(2022, 8, 1), end=date(2022, 8, 31),
+                     identity="t@example.com", today=TODAY, out_path=out,
+                     _fetch_window=lambda *a, **k: [], _symbology=fake_sym,
+                     _fetch_history=lambda tkr: None, _fetch_delisting=lambda cik: [])
+    assert called == []
