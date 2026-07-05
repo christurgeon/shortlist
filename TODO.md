@@ -87,10 +87,27 @@ bankruptcy-overrides-M&A precedence, BBBY/ATVI/TWTR fixtures + live EDGAR smoke 
 bankruptcy/nasdaq, ATVI→mna), `last_traded_close`/`terminal_price` single-sourced for the Plan-3
 coordinator (R-A1: never read a close past the delisting date). CIK-keyed fetcher with a static
 guard test (never a ticker-keyed Company lookup). Whole-branch review READY TO MERGE; suite 1543.
-**Next: P2 Plan 3 `backtest/edgar_history.py` + 13D backfill leg** (coordinator consumes
-symbology + delisting; note: `fetch_filing_records` None=fetch-fail vs []=no-filings — the
-coordinator must branch on that BEFORE classify, which collapses both to None), then FINRA
-audit→leg, then digest wiring (needs `asdict()` + render_text normalization).
+**P2 Plan 3 (RAW-cohort 13D backfill) COMPLETE** (`feat/scout-backfill-13d`, PR pending):
+`backtest/edgar_history.py` ranged walker + `scout/backfill.py` coordinator (F12 next-session
+entry, selected/excluded/sentinel accounting, R-A1 trading-gap guard, per-event classified
+delisting terminals, idempotent `scout/backfill/*.jsonl`, month-chunked serial,
+`fetch_history_sync` asyncio bridge) + `shortlist-scout backfill --signal 13d --start --end`
++ `validate --backfill PATH` (state-free SYNTHETIC path; `measure_cohort` per-event override
+with `use_event_delisting=False` in the sensitivity band — red-green-pinned). **Live-verified
+on the VPS**: walker n=22/3d; one-week e2e 6 selected / 2 measurable; `validate --backfill` →
+INSUFFICIENT (SYNTHETIC, tiny-n — the honest verdict); RSS 409 MB. Suite 1582. Review loops
+caught 2 real bugs (dead async seam, entry÷0) + VPS hardening (sentinel-fetch skip, walker
+per-record guard). Known case: CIK 1823575 (L&F→ZeroFox de-SPAC 2022-08) resolves the stale
+pre-rename ticker → honest non-measurable + `low_confidence` flag; seed `symbology._OVERRIDES`
+before the production run if it matters.
+**Operator next: the production backfill run** — e.g.
+`uv run --extra edgar shortlist-scout backfill --signal 13d --start 2024-01-01 --end 2025-12-31`
+(serial, resumable — re-run to resume; ~hours at 5 req/s; run OUTSIDE 21:15–23:00 UTC), then
+`shortlist-scout validate --backfill scout/backfill/13d-2024-01-01-2025-12-31.jsonl`.
+**Then: Plan 3b** — scored/gated reconstruction (companyfacts → `extract_panel` →
+`panel_to_metrics` + dated closes → score; fills `gated`/`composite` on the same JSONL —
+additive, `run_validate` is raw-only today), then FINRA audit→leg, then digest wiring
+(needs `asdict()` + render_text normalization).
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 

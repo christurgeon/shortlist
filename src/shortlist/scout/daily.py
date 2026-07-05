@@ -532,12 +532,18 @@ def _delisting_band_flip(evs, signal, k_months, hists, ff3, as_of, weighting="eq
     """Re-measure the cohort across the delisting-return sensitivity band (spec §6.6) and
     flag a flip when the FF3 alpha sign disagrees across band members that produce a
     computable alpha. A flip means the verdict is an artifact of the delisting assumption,
-    not a robust conclusion -- decide() downgrades any HOLD to INSUFFICIENT on a flip."""
+    not a robust conclusion -- decide() downgrades any HOLD to INSUFFICIENT on a flip.
+
+    `use_event_delisting=False`: the band's whole point is to vary the delisting-return
+    assumption and see if the verdict's sign holds up. A per-event CLASSIFIED terminal
+    return (from the 13D backfill) would override the blanket band value and mask that
+    variation -- the classifier shrinks the guard's bite but must not remove it (spec §6.6)."""
     from .validate import calendar_time_portfolio, ff3_alpha, measure_cohort
 
     signs: set[int] = set()
     for dr in _DELISTING_BAND:
-        m = measure_cohort(evs, signal, k_months, hists, dr, as_of=as_of)
+        m = measure_cohort(evs, signal, k_months, hists, dr, as_of=as_of,
+                           use_event_delisting=False)
         ctp = calendar_time_portfolio(m.events, k_months, weighting=weighting)
         alpha, _betas = ff3_alpha(ctp, ff3)
         if alpha is not None and alpha != 0:
@@ -545,11 +551,19 @@ def _delisting_band_flip(evs, signal, k_months, hists, ff3, as_of, weighting="eq
     return len(signs) > 1
 
 
-def run_validate(config: dict, *, today: date, lookback_days: int) -> list:
+def run_validate(config: dict, *, today: date, lookback_days: int,
+                 events_override: list[dict] | None = None) -> list:
     """The `validate` eval flow: load the firehose cohort, group by signal, fetch FF3 +
     price history, measure/decide per signal (gated by pre-registration tamper-checks).
     Returns a list of `validate.SignalVerdict`. Read-only -- never writes config.yaml or
-    scores/gates/ranks a live screen."""
+    scores/gates/ranks a live screen.
+
+    `events_override`: when given (the `validate --backfill PATH` CLI path), these
+    JSONL-loaded synthetic-cohort dicts are used INSTEAD of `ScoutState.firehose_events` --
+    `ScoutState` is never constructed or read at all (live and synthetic events must never
+    pool, M1). Every resulting verdict is labeled SYNTHETIC (below) so it reads as
+    rank/KILL-only, not a live signal-quality verdict.
+    """
     import asyncio
 
     from .preregister import load_prereg, verify_untampered
@@ -557,8 +571,11 @@ def run_validate(config: dict, *, today: date, lookback_days: int) -> list:
 
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
-    state = ScoutState(Path(scout_cfg.get("state_path", "state/scout_state.json")))
-    events = state.firehose_events(today, lookback_days)
+    if events_override is not None:
+        events = events_override
+    else:
+        state = ScoutState(Path(scout_cfg.get("state_path", "state/scout_state.json")))
+        events = state.firehose_events(today, lookback_days)
 
     by_signal: dict[str, list[dict]] = {}
     for e in events:
@@ -569,7 +586,13 @@ def run_validate(config: dict, *, today: date, lookback_days: int) -> list:
     if not by_signal:
         return []
 
-    tickers = sorted({(e.get("ticker") or "").upper() for e in events if e.get("ticker")})
+    # Backfill sentinel tickers ("CIK:0001823575", "CIK:unknown-<acc>" -- see
+    # scout/backfill.py) have no resolvable price history and would each fire a doomed
+    # Yahoo fetch_history request (VPS WAF protection). The live firehose never emits
+    # this convention, so skipping it here only affects synthetic backfill cohorts; the
+    # events themselves stay in the cohort and simply have no history -> non-measurable.
+    tickers = sorted({(e.get("ticker") or "").upper() for e in events
+                      if e.get("ticker") and not str(e.get("ticker")).startswith("CIK:")})
     cache_dir = val_cfg.get("factor_cache_dir", ".cache/famafrench")
     ff3, hists = asyncio.run(_fetch_validate_data(tickers, cache_dir, today.isoformat()))
 
@@ -608,6 +631,9 @@ def run_validate(config: dict, *, today: date, lookback_days: int) -> list:
         if not ok:
             verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
         verdicts.append(verdict)
+    if events_override is not None:
+        for v in verdicts:
+            v.notes.append("SYNTHETIC backfill cohort — rank/KILL only (M1)")
     return verdicts
 
 
@@ -633,11 +659,16 @@ def _print_validate_table(verdicts: list) -> None:
 
 
 def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
-                      as_json: bool) -> int:
+                      as_json: bool, backfill_path: str | None = None) -> int:
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
     lb = lookback_days if lookback_days is not None else val_cfg.get("lookback_days", 365)
-    verdicts = run_validate(config, today=today, lookback_days=lb)
+    events_override = None
+    if backfill_path:
+        from .backfill import load_backfill_events
+        events_override = load_backfill_events(backfill_path)
+    verdicts = run_validate(config, today=today, lookback_days=lb,
+                            events_override=events_override)
     if as_json:
         print(json.dumps([asdict(v) for v in verdicts], default=str, indent=2))
     else:
@@ -645,9 +676,58 @@ def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
     return 0
 
 
+def _print_backfill_summary(summary: dict) -> None:
+    print(f"scout backfill: {summary.get('out_path', '?')}")
+    print(f"  selected={summary.get('n_selected', 0)} "
+         f"measurable={summary.get('n_measurable', 0)} "
+         f"fraction={summary.get('fraction', 0.0):.2f} "
+         f"written_this_run={summary.get('written', 0)}")
+    by_reason = summary.get("by_reason") or {}
+    if by_reason:
+        print("  non-measurable reasons: " +
+             ", ".join(f"{k}={v}" for k, v in sorted(by_reason.items())))
+    delist = summary.get("delisting_by_reason") or {}
+    if delist:
+        print("  delisting classifications: " +
+             ", ".join(f"{k}={v}" for k, v in sorted(delist.items())))
+    failed = summary.get("failed_chunks")
+    if failed:
+        print(f"  FAILED chunks (re-run to resume): {failed}")
+    low_conf = summary.get("low_confidence")
+    if low_conf:
+        print(f"  low-confidence symbology resolutions: {low_conf}")
+    print()
+    print("Batch backfill (raw cohort) — synthetic, rank/KILL only. Not evidence, not advice.")
+
+
+def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
+                      out_path: str | None, as_json: bool) -> int:
+    """Run the 13D batch backfill and print its summary. Never raises: a missing SEC_IDENTITY
+    or an unsupported --signal is a clear, immediate error (exit 2), not a traceback."""
+    if signal != "13d":
+        print(f"scout backfill: unsupported --signal '{signal}' (only '13d' in v1)",
+             file=sys.stderr)
+        return 2
+    identity = os.environ.get("SEC_IDENTITY")
+    if not identity:
+        print("scout backfill: SEC_IDENTITY environment variable is required "
+             "(SEC fair-access identification, e.g. 'name@example.com') — set it and retry",
+             file=sys.stderr)
+        return 2
+
+    from .backfill import run_backfill_13d
+    summary = run_backfill_13d(config, start=start, end=end, identity=identity,
+                               out_path=out_path)
+    if as_json:
+        print(json.dumps(summary, default=str, indent=2))
+    else:
+        _print_backfill_summary(summary)
+    return 0
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
-    """Top-level parser with an optional `validate` subcommand (`dest="subcommand"`, NOT
-    required). The bare (no-subcommand) invocation keeps its historical flat flags
+    """Top-level parser with optional `validate`/`backfill` subcommands (`dest="subcommand"`,
+    NOT required). The bare (no-subcommand) invocation keeps its historical flat flags
     (--demo/--config/--no-research) so `shortlist-scout` / `shortlist-scout --demo` parse
     and run the daily flow exactly as before the subparser refactor."""
     ap = argparse.ArgumentParser(prog="shortlist-scout",
@@ -664,6 +744,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     vp.add_argument("--lookback-days", type=int, default=None,
                     help="firehose lookback window in days "
                          "(default: config scout.validate.lookback_days, else 365)")
+    vp.add_argument("--backfill", default=None, metavar="PATH",
+                    help="evaluate a batch-backfill JSONL cohort (scout.backfill.run_backfill_13d "
+                         "output) INSTEAD of the live ScoutState firehose; verdicts are labeled "
+                         "SYNTHETIC (rank/KILL only, M1)")
+
+    bp = sub.add_parser(
+        "backfill",
+        help="batch-backfill a discovery signal's historical cohort (offline, writes JSONL)")
+    bp.add_argument("--signal", choices=["13d"], required=True,
+                    help="which signal to backfill (v1: '13d' = edgar:activist_13d)")
+    bp.add_argument("--start", required=True, type=date.fromisoformat,
+                    help="ISO start date, e.g. 2022-08-01")
+    bp.add_argument("--end", required=True, type=date.fromisoformat,
+                    help="ISO end date, e.g. 2022-08-31")
+    bp.add_argument("--out", default=None, metavar="PATH",
+                    help="output JSONL path (default: scout.backfill.out_dir/<signal>-<start>-<end>.jsonl)")
+    bp.add_argument("--json", action="store_true", help="dump the run summary as JSON")
     return ap
 
 
@@ -677,12 +774,21 @@ def main(argv: list[str] | None = None) -> int:
     config = yaml.safe_load(Path(args.config).read_text())
     today = datetime.now(timezone.utc).date()
 
-    if getattr(args, "subcommand", None) == "validate":
+    subcommand = getattr(args, "subcommand", None)
+    if subcommand == "validate":
         try:
             return _run_validate_cli(config, today=today, lookback_days=args.lookback_days,
-                                     as_json=args.json)
+                                     as_json=args.json, backfill_path=args.backfill)
         except Exception as e:  # noqa: BLE001
             print(f"scout: validate failed: {redact_secrets(str(e))}", file=sys.stderr)
+            return 1
+
+    if subcommand == "backfill":
+        try:
+            return _run_backfill_cli(config, signal=args.signal, start=args.start,
+                                     end=args.end, out_path=args.out, as_json=args.json)
+        except Exception as e:  # noqa: BLE001
+            print(f"scout: backfill failed: {redact_secrets(str(e))}", file=sys.stderr)
             return 1
 
     try:

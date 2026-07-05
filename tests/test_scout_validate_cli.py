@@ -14,6 +14,13 @@ def test_validate_subcommand_parses_without_breaking_bare_run():
     ns2 = parser.parse_args(["validate", "--lookback-days", "365", "--json"])
     assert ns2.subcommand == "validate"
     assert ns2.lookback_days == 365 and ns2.json is True
+    # backfill subcommand also parses, and its presence must not disturb the bare-run route
+    # (subparser back-compat pin — see tests/test_scout_backfill_cli.py for the CLI mechanics).
+    ns3 = parser.parse_args(["backfill", "--signal", "13d", "--start", "2022-08-01",
+                             "--end", "2022-08-31"])
+    assert ns3.subcommand == "backfill"
+    ns4 = parser.parse_args([])
+    assert getattr(ns4, "subcommand", None) in (None, "run")
 
 
 class _FakeState:
@@ -63,3 +70,40 @@ def test_malformed_prereg_isolates_to_one_signal(monkeypatch):
     assert "unparsable" in " ".join(by_sig["bad:signal"].notes).lower()
     # The good signal produced its own verdict (INSUFFICIENT here — no measurable data).
     assert by_sig["good:signal"].verdict == "INSUFFICIENT"
+
+
+def test_backfill_sentinel_tickers_skip_yahoo_fetch_but_stay_in_cohort(monkeypatch):
+    """Backfill sentinel tickers ("CIK:0001823575", "CIK:unknown-<acc>") have no resolvable
+    price history and would each fire a doomed Yahoo fetch_history request (VPS WAF
+    protection). run_validate must exclude them from the fetch list while keeping their
+    events in the cohort (they count non-measurable, never silently dropped)."""
+    events = [
+        {"signal": "edgar:activist_13d", "ticker": "AAPL", "event_date": "2024-01-15",
+         "strength": 0.5, "gated": False, "composite": 60.0},
+        {"signal": "edgar:activist_13d", "ticker": "CIK:0001823575", "event_date": "2024-02-15",
+         "strength": 0.5, "gated": False, "composite": 60.0},
+    ]
+
+    fetched_tickers: list[str] = []
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        fetched_tickers.extend(tickers)
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+
+    def _fake_load_prereg(slug, *, repo_root):
+        return {"k_months": 12, "weighting": "equal", "delisting_return": -0.55,
+                "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg", _fake_load_prereg)
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+
+    # Only the real ticker reaches the Yahoo-fetch seam — the CIK: sentinel is excluded.
+    assert fetched_tickers == ["AAPL"]
+    # Both events still make up the cohort (n_selected == 2); the sentinel is
+    # non-measurable, not dropped.
+    assert len(verdicts) == 1
+    assert verdicts[0].n_selected == 2
