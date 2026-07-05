@@ -505,3 +505,29 @@ def test_load_validation_digest_integrates_with_persisted_cli_output(tmp_path, m
     assert data is not None
     assert data["source"] == "live"
     assert len(data["verdicts"]) == 2
+
+
+def test_load_validation_digest_null_safe_scout_none(tmp_path, monkeypatch):
+    """Config with scout=null (e.g., scout: in YAML) must not crash; use default 14-day max_age."""
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    payload = {"as_of": "2026-07-01", "source": "live", "verdicts": [{"signal": "x"}]}
+    p.write_text(json.dumps(payload))
+    cfg = {"scout": None}
+    # 4 days old <= default 14 -> fresh
+    result = _load_validation_digest(cfg, today=date(2026, 7, 5))
+    assert result == payload
+
+
+def test_load_validation_digest_null_safe_validate_none(tmp_path, monkeypatch):
+    """Config with scout.validate=null must not crash; use default 14-day max_age."""
+    monkeypatch.chdir(tmp_path)
+    p = tmp_path / VALIDATE_LATEST_PATH
+    p.parent.mkdir(parents=True)
+    payload = {"as_of": "2026-07-01", "source": "live", "verdicts": [{"signal": "x"}]}
+    p.write_text(json.dumps(payload))
+    cfg = {"scout": {"validate": None}}
+    # 4 days old <= default 14 -> fresh
+    result = _load_validation_digest(cfg, today=date(2026, 7, 5))
+    assert result == payload

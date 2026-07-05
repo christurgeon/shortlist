@@ -171,8 +171,8 @@ def _load_validation_digest(config: dict, *, today: date,
     scoreboard silently displayed as current. `today` is the run's calendar date (the same
     `today` passed into `run()`), not the trading `session` -- staleness is a wall-clock
     question."""
-    max_age = config.get("scout", {}).get("validate", {}).get("latest_max_age_days", 14)
     try:
+        max_age = ((config.get("scout") or {}).get("validate") or {}).get("latest_max_age_days", 14)
         data = json.loads(Path(path).read_text())
         if not isinstance(data, dict):
             return None
