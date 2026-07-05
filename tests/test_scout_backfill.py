@@ -726,3 +726,31 @@ def test_score_event_passes_sic_through(monkeypatch):
     score_event(ev, h, facts, spy, "6022", _SE_CONFIG)     # financials SIC
     score_event(ev, h, facts, spy, None, _SE_CONFIG)
     assert seen == ["6022", None]
+
+
+def test_score_event_pins_price_at_clamp(monkeypatch):
+    """price_at clamp — callback must not reach past as_of (forward tolerance guard).
+    Removing the clamp in backfill.py line 491 would fail this test."""
+    from shortlist.providers import _xbrl_facts as xf
+    captured = {}
+    orig = xf.panel_to_metrics
+
+    def spy_fn(p, *, ticker, sic, price, price_at):
+        captured["price_at"] = price_at
+        return orig(p, ticker=ticker, sic=sic, price=price, price_at=price_at)
+
+    monkeypatch.setattr(xf, "panel_to_metrics", spy_fn)
+    facts = _se_facts()
+    h = _se_hist()
+    spy = _se_hist("SPY", base=300.0)
+    ev = _se_ev()
+    score_event(ev, h, facts, spy, "3711", _SE_CONFIG)
+
+    # Extract the captured price_at callback
+    price_at = captured["price_at"]
+
+    # Past as_of must be clamped to None
+    assert price_at(AS_OF + timedelta(days=1)) is None, "price_at must clamp future dates"
+
+    # At as_of must return a real close (not None)
+    assert price_at(AS_OF) is not None, "price_at must return close at/before as_of"
