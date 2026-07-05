@@ -191,9 +191,17 @@ cohort well below the raw fraction. Full numbers, per-cycle table, rule walk, an
 accounting: `docs/superpowers/specs/2026-07-05-finra-audit-results.md` (local). **FINRA
 leg (Plan 4b) is NOT built** — the discovery-only `FinraShortInterestSignal` stays as-is
 (disabled at weight 0.5, ledger-measured); no `edgar_history`-style FINRA plumbing.
-**Next: digest wiring** (Phase-2 build-order item 5 — needs `asdict()` + render_text
-normalization) is now the only remaining item on this critical path, gated only on the
-13D backfill production run (item above) rather than on anything from this spike.
+**P2 Plan 5 (digest wiring) COMPLETE (2026-07-05, PR pending):** `validate` (live +
+`--backfill`) persists `scout/validate-latest.json` (asdict at the boundary, never-raises,
+exit-code-safe); the report's `validation` section renders it applies()-gated (render_text
+returns list[str] — the documented landmine closed branch-wide; SYNTHETIC markers;
+double-sort line; the mandated "display / provisional / survivorship-biased — not
+evidence, not advice" label; stale/malformed/null-config all degrade). Byte-identical when
+the file is absent. **Signal-validation harness Phase 2 is now COMPLETE end-to-end** —
+every build-order item shipped or resolved (Plan 4 FINRA leg deferred at its
+pre-registered gate). The only remaining step is the OPERATOR one: fire the paused
+production backfill run (entry at top), then `validate --backfill` for the first real
+verdict, which will now also flow into the nightly digest automatically.
 
 ## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
 
