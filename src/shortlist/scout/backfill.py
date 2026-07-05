@@ -15,9 +15,12 @@ Serial by design: one Symbology (archive.org throttle), one PriceHistory in memo
 """
 from __future__ import annotations
 
+import calendar as _cal
+from dataclasses import replace
 from datetime import date, timedelta
 
 from .calendar import is_trading_day
+from .delisting import classify_delisting, terminal_price
 from .edgar_index import activist_stakes_from_records
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
@@ -85,3 +88,58 @@ def assemble_events(records_by_day: dict, resolve_ticker, *, drop_spacs: bool = 
                     meta={"filing_date": fday.isoformat(),
                           "key": _key(em.cik or em.ticker, fday)}))
     return events
+
+
+def _horizon_end(d: date, months: int) -> date:
+    y, m = d.year + (d.month - 1 + months) // 12, (d.month - 1 + months) % 12 + 1
+    return date(y, m, min(d.day, _cal.monthrange(y, m)[1]))
+
+
+def measure_event(ev: CohortEvent, hist, k_months: int, *, today: date,
+                  fetch_delisting_records, window_days: int = 365) -> CohortEvent:
+    """Survivorship-accounted measurability + per-event CLASSIFIED delisting terminal (§6.1/§6.6).
+    Enriches ev.meta in place semantics via dataclasses.replace; never raises."""
+    meta = dict(ev.meta)
+
+    def _done(measurable: bool, reason=None, **extra) -> CohortEvent:
+        meta["measurable"] = measurable
+        meta["non_measurable_reason"] = reason
+        meta.update(extra)
+        return replace(ev, meta=meta)
+
+    if ev.ticker.startswith("CIK:"):
+        return _done(False, meta.get("non_measurable_hint") or "unresolved_ticker")
+    if hist is None or not getattr(hist, "dates", None):
+        return _done(False, "no_price_series")
+    entry = hist.close_asof(ev.event_date)
+    ev = replace(ev, as_of_price=entry)
+    horizon = _horizon_end(ev.event_date, k_months)
+    if horizon > today:
+        return _done(False, "immature")
+    if entry is None:
+        return _done(False, "no_entry_price")
+    if hist.forward_return(ev.event_date, k_months) is not None:
+        return _done(True)                                    # priced path — the common case
+    if hist.dates[-1] >= horizon:
+        return _done(False, "trading_gap")                    # R-A1: hole, not a delisting
+    recs = fetch_delisting_records(ev.cik) if ev.cik else None
+    if recs is None:
+        return _done(False, "delisting_fetch_failed")
+    verdict = classify_delisting(recs, window_days=window_days)
+    if verdict is None:
+        return _done(False, "series_ends_no_form25")
+    if verdict.terminal_return is None:
+        return _done(False, "delisting_unclassified",
+                     delisting_reason=verdict.reason,
+                     delisting_date=verdict.delisting_date.isoformat())
+    if verdict.delisting_date < ev.event_date:
+        return _done(False, "delisted_before_event",
+                     delisting_reason=verdict.reason,
+                     delisting_date=verdict.delisting_date.isoformat())
+    term = terminal_price(verdict, hist.dates, hist.closes)
+    if term is None:
+        return _done(False, "no_terminal_price", delisting_reason=verdict.reason)
+    return _done(True, None,
+                 delisting_event_return=term / entry - 1.0,
+                 delisting_reason=verdict.reason,
+                 delisting_date=verdict.delisting_date.isoformat())
