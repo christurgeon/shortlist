@@ -1,9 +1,13 @@
-from datetime import date
+import json
+from dataclasses import asdict
+from datetime import date, timedelta
 
 import yaml
 
+from shortlist.backtest.prices import PriceHistory
 from shortlist.scout import daily
 from shortlist.scout.daily import build_arg_parser, run_validate   # thin helpers for testability
+from shortlist.scout.validate import SignalVerdict
 
 
 def test_validate_subcommand_parses_without_breaking_bare_run():
@@ -104,6 +108,192 @@ def test_backfill_sentinel_tickers_skip_yahoo_fetch_but_stay_in_cohort(monkeypat
     # Only the real ticker reaches the Yahoo-fetch seam — the CIK: sentinel is excluded.
     assert fetched_tickers == ["AAPL"]
     # Both events still make up the cohort (n_selected == 2); the sentinel is
-    # non-measurable, not dropped.
-    assert len(verdicts) == 1
+    # non-measurable, not dropped. Both events are composite-defined + non-gated, so a
+    # second (scored_gated) verdict is now also emitted (Task 6, design B2) alongside the
+    # raw one.
+    assert len(verdicts) == 2
+    assert verdicts[0].cohort_type == "raw"
     assert verdicts[0].n_selected == 2
+    assert verdicts[1].cohort_type == "scored_gated"
+    assert verdicts[1].n_selected == 2
+
+
+# --- Task 6: scored_gated cohort verdict + double-sort surfacing (design B2 + v2 §6/§8) ---
+
+def _hist(ticker: str) -> PriceHistory:
+    """A synthetic daily price series long enough (2023-12-01..~mid-2024) that
+    forward_return(t, horizon_months=1) resolves for any event dated Jan-Mar 2024."""
+    start = date(2023, 12, 1)
+    days = 200
+    dates = [start + timedelta(days=i) for i in range(days)]
+    closes = [100.0 * (1.001 ** i) for i in range(days)]
+    return PriceHistory(ticker=ticker, dates=dates, closes=closes)
+
+
+def _fake_prereg_factory(**overrides):
+    base = {"k_months": 1, "weighting": "equal", "delisting_return": None,
+           "min_measurable_frac": 0.0, "min_bucket_events": 1,
+           "min_independent_blocks": 1, "factor_model": "ff3"}
+    base.update(overrides)
+
+    def _fake_load_prereg(slug, *, repo_root):
+        return base
+    return _fake_load_prereg
+
+
+def test_mixed_cohort_produces_scored_gated_verdict_with_double_sort(monkeypatch):
+    """A cohort with composite-defined + non-gated events (scored), a no-composite event
+    (raw-only), and a composite-defined but GATED event (ds-only, per the gate-agnostic
+    double-sort set) must produce exactly two verdicts: the raw one (all 4 events) and a
+    second scored_gated verdict (only the 2 non-gated composite events) carrying the
+    reconstruction caveat note + a real double_sort dict."""
+    events = [
+        {"signal": "test:mixed", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 80.0},
+        {"signal": "test:mixed", "ticker": "BBB", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 20.0},
+        {"signal": "test:mixed", "ticker": "CCC", "event_date": "2024-02-15",
+         "strength": 0.9, "gated": None, "composite": None},
+        {"signal": "test:mixed", "ticker": "DDD", "event_date": "2024-03-15",
+         "strength": 0.9, "gated": True, "composite": 90.0},
+    ]
+    hists = {"AAA": _hist("AAA"), "BBB": _hist("BBB"), "DDD": _hist("DDD")}
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, hists
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg", _fake_prereg_factory())
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+
+    assert len(verdicts) == 2
+    raw, scored = verdicts
+    assert raw.cohort_type == "raw"
+    assert raw.n_selected == 4          # AAA, BBB, CCC, DDD all in the raw cohort
+    assert scored.cohort_type == "scored_gated"
+    assert scored.n_selected == 2       # only AAA, BBB (composite-defined + non-gated)
+    assert any("composites not comparable to live" in n for n in scored.notes)
+    # Double-sort runs over the GATE-AGNOSTIC composite-defined set (AAA, BBB, DDD) --
+    # a strict superset of the scored cohort (AAA, BBB) since DDD is gated but composite-defined.
+    assert scored.double_sort is not None
+    assert scored.double_sort["n_high"] + scored.double_sort["n_low"] == 3
+    assert scored.double_sort["n_low"] >= 1 and scored.double_sort["n_high"] >= 1
+
+
+def test_no_composite_cohort_produces_only_raw_verdict(monkeypatch):
+    """Old-shaped events (no `composite` field at all -- pre-reconstruction JSONLs, or the
+    live firehose) must never manufacture a phantom scored_gated verdict (back-compat)."""
+    events = [
+        {"signal": "test:nocomposite", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg", _fake_prereg_factory())
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    assert verdicts[0].cohort_type == "raw"
+
+
+def test_scored_cohort_exists_but_double_sort_gate_fails(monkeypatch):
+    """A scored cohort exists (composite-defined, non-gated events) but no price history
+    means the gate-agnostic double-sort set has no measurable events -> double_sort returns
+    None. The scored_gated verdict must still be emitted, carrying an explicit
+    'insufficient blocks or bucket size' note (v2 §2's run-log marker)."""
+    events = [
+        {"signal": "test:thin", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 80.0},
+        {"signal": "test:thin", "ticker": "BBB", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 20.0},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}          # no price history for either ticker -> non-measurable
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(min_bucket_events=5, min_independent_blocks=2))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 2
+    scored = verdicts[1]
+    assert scored.cohort_type == "scored_gated"
+    assert scored.double_sort is None
+    assert any("insufficient blocks or bucket size" in n for n in scored.notes)
+
+
+def test_json_asdict_structure_includes_cohort_type_and_double_sort(monkeypatch):
+    """--json serialization (json.dumps([asdict(v) for v in verdicts])) must expose
+    cohort_type on every verdict and a real double_sort dict on the scored one, and the
+    whole structure must be JSON-serializable."""
+    events = [
+        {"signal": "test:json", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 80.0},
+        {"signal": "test:json", "ticker": "BBB", "event_date": "2024-01-15",
+         "strength": 0.9, "gated": False, "composite": 20.0},
+    ]
+    hists = {"AAA": _hist("AAA"), "BBB": _hist("BBB")}
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, hists
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg", _fake_prereg_factory())
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    dicts = [asdict(v) for v in verdicts]
+    assert all("cohort_type" in d for d in dicts)
+    assert dicts[0]["cohort_type"] == "raw"
+    assert dicts[1]["cohort_type"] == "scored_gated"
+    assert dicts[1]["double_sort"] is not None
+    assert "n_high" in dicts[1]["double_sort"]
+    json.dumps(dicts, default=str)          # must not raise -- serializable end to end
+
+
+def test_print_validate_table_shows_cohort_type_and_double_sort_line(capsys):
+    """The text-table renderer must label every verdict row with its cohort_type and print
+    a compact double-sort line when a double_sort dict is present."""
+    raw = SignalVerdict(signal="s", verdict="HOLD", ir=None, alpha_monthly=None,
+                        alpha_ci=None, effective_blocks=1, n_selected=4, n_measurable=4,
+                        measurable_fraction=1.0, sensitivity_flip=False, cohort_type="raw")
+    scored = SignalVerdict(
+        signal="s", verdict="HOLD", ir=None, alpha_monthly=None, alpha_ci=None,
+        effective_blocks=1, n_selected=2, n_measurable=2, measurable_fraction=1.0,
+        sensitivity_flip=False, cohort_type="scored_gated",
+        double_sort={"n_high": 2, "n_low": 2, "months": 3, "effective_blocks": 3,
+                     "spread_alpha_monthly": 0.01, "spread_ci": (0.001, 0.02),
+                     "high_ir": 1.2, "low_ir": 0.3})
+    daily._print_validate_table([raw, scored])
+    out = capsys.readouterr().out
+    assert "COHORT" in out
+    assert "raw" in out and "scored_gated" in out
+    assert "double-sort:" in out
+    assert "blocks=3" in out
+    assert "n=2/2" in out
+
+
+def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
+    """When double_sort is None (gate failed), no compact double-sort line is printed --
+    the explanatory note (already in .notes) is the only surfacing."""
+    scored = SignalVerdict(
+        signal="s", verdict="INSUFFICIENT", ir=None, alpha_monthly=None, alpha_ci=None,
+        effective_blocks=0, n_selected=2, n_measurable=0, measurable_fraction=0.0,
+        sensitivity_flip=False, cohort_type="scored_gated", double_sort=None,
+        notes=["double-sort: insufficient blocks or bucket size"])
+    daily._print_validate_table([scored])
+    out = capsys.readouterr().out
+    assert "insufficient blocks or bucket size" in out
+    assert "double-sort: spread" not in out

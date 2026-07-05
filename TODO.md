@@ -33,6 +33,12 @@ uv run --extra edgar shortlist-scout validate \
   blocks before trusting the fraction; `failed_chunks` → just re-run (resume skips done work).
 - After the run: the verdict feeds the digest-wiring step (Phase-2 plan 5) and sets the
   precedent for the FINRA audit→leg.
+- **Discrepancy to adjudicate before trusting a verdict:** the parent spec (§7) says the
+  independent-block gate should require **≥8** blocks; the committed
+  `preregister/edgar_activist_13d.yaml` pins `min_independent_blocks: 2`. Left UNCHANGED
+  here (Plan 3b Task 6 — silently tightening an inference parameter after the fact is
+  exactly what the tamper guard exists to prevent) — needs a human call on which value
+  governs the real run.
 
 **Status:** machinery complete + merged (#109); the run itself is deliberately deferred —
 operator action (or ask Claude to run it supervised).
