@@ -67,6 +67,13 @@ signal-validation harness Phase 2** (entry below — #106 symbology merged; deli
    composite change since accruals/residual-momentum; fails → clean kill. Caveats to
    carry: single-run evidence, survivorship-biased largecap, breadth 27.6 (< the 30
    floor) at h12, smallmid re-run was NULL — so run on both universes.
+   **VERDICT (2026-07-05, pre-registered run complete): INCONCLUSIVE — no wiring.**
+   Largecap residual IC real + sign-consistent (+0.079 t=2.26 @3m, +0.126 t=2.02 @12m;
+   clauses a–e pass) but smallmid residual point estimates near-zero (+0.005 t=0.25 @3m,
+   +0.009 t=0.33 @12m) → clause (f) fails; no KILL trigger fires. Axis stays
+   measurement-only; re-test deferred (delisting-corrected universe / more h12 breadth).
+   Evidence of record: `docs/superpowers/specs/2026-07-05-leverage-residualized-ic-results.md`
+   (local/gitignored, raw JSON artifacts alongside).
 2. **Verify daily accumulation is actually accruing** (entry 2026-06-21 item 1): the VPS
    timer must pass `--max-tickers 42`; ≥24 snapshots unblock SUE + Lazy-Prices
    measurement. Minutes of operator checking guarding two finished features.
@@ -78,6 +85,12 @@ signal-validation harness Phase 2** (entry below — #106 symbology merged; deli
    look. New machinery → ranks below item 1.
 5. **DEF 14A pay-vs-performance axis** (entry 2026-06-28 item 1): quick ECD-tag
    reachability spike before committing anything.
+   **SPIKE RESOLVED (2026-07-05): NO-GO on the XBRL path.** Live-verified that SEC's XBRL
+   APIs serve only `dei`/`us-gaap` namespaces: the `ecd` PvP tags
+   (`PeoActuallyPaidCompAmt` etc.) are absent from companyfacts for AAPL and MSFT, and a
+   `companyconcept/.../ecd/...` probe 404s (NoSuchKey). The axis can therefore only be
+   built via the snapshot-replay path (accumulate `research/proxy.py`'s edgartools
+   `ProxyStatement` PvP extraction point-in-time). Deferred accordingly; no code needed.
 6. **8-K discovery originator** (entry 2026-06-29 item 3): one-file `SignalSource` on
    the 13D pattern — more attractive now that the validation harness can measure it.
 7. **Paid-FMP Starter flip** (entry 2026-06-30): a money decision + one config key,
