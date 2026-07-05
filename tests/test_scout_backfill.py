@@ -349,3 +349,108 @@ def test_default_fetch_history_seam_returns_real_pricehistory(tmp_path):
     h = fetch_history_sync("TGT", identity="t@example.com", today=date(2022, 8, 5),
                            cache_dir=str(tmp_path), _transport=httpx.MockTransport(handler))
     assert h is not None and len(h.dates) == 3 and h.closes[-1] == 11.0
+
+
+# --- Task 1: fetch_companyfacts_sync + fetch_sic_sync (sync bridges, month-cached) --------
+
+def test_companyfacts_warm_cache_returns_without_client(tmp_path):
+    """A pre-populated month cache short-circuits BEFORE any client/transport is touched —
+    the same guarantee fetch_history_sync gives for a warm price cache."""
+    import json
+
+    import httpx
+
+    from shortlist.backtest.xbrl import _facts_cache_path
+    from shortlist.scout.backfill import fetch_companyfacts_sync
+
+    cache_dir = str(tmp_path / "sec_xbrl")
+    month = "2026-07"
+    cik10 = "0000000007"
+    payload = {"facts": {"us-gaap": {"Assets": {"units": {"USD": [{"val": 1}]}}}}}
+    cp = _facts_cache_path(cache_dir, cik10, month)
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps(payload))
+
+    def poison(request):
+        raise AssertionError("must not touch the network on a warm cache")
+
+    result = fetch_companyfacts_sync(7, identity="t@example.com", cache_dir=cache_dir,
+                                     month=month, _transport=httpx.MockTransport(poison))
+    assert result == payload                                  # int cik normalized to cik10
+
+
+def test_companyfacts_cold_path_via_transport_returns_payload(tmp_path):
+    """No cache file -> the async bridge fetches via the injected _transport (no network)."""
+    import httpx
+
+    from shortlist.backtest.xbrl import _facts_cache_path
+    from shortlist.scout.backfill import fetch_companyfacts_sync
+
+    cache_dir = str(tmp_path / "sec_xbrl")
+    month = "2026-07"
+    payload = {"facts": {"us-gaap": {"Assets": {"units": {"USD": [{"val": 1}]}}}}}
+
+    def handler(request):
+        return httpx.Response(200, json=payload)
+
+    result = fetch_companyfacts_sync("0000000042", identity="t@example.com",
+                                     cache_dir=cache_dir, month=month,
+                                     _transport=httpx.MockTransport(handler))
+    assert result == payload
+    # written to the SAME path fetch_companyfacts itself would use (shared XBRL-backtest cache)
+    assert _facts_cache_path(cache_dir, "0000000042", month).exists()
+
+
+def test_sic_happy_path(tmp_path):
+    import httpx
+
+    from shortlist.scout.backfill import fetch_sic_sync
+
+    def handler(request):
+        return httpx.Response(200, json={"sic": "3841"})
+
+    sic = fetch_sic_sync("0000000007", identity="t@example.com",
+                         cache_dir=str(tmp_path), month="2026-07",
+                         _transport=httpx.MockTransport(handler))
+    assert sic == "3841"
+
+
+def test_sic_200_empty_returns_none_and_is_cached_null(tmp_path):
+    """A 200-with-no-sic caches a null so a real negative isn't refetched within the month."""
+    import httpx
+
+    from shortlist.scout.backfill import fetch_sic_sync
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(200, json={"sic": ""})
+
+    kw = dict(identity="t@example.com", cache_dir=str(tmp_path), month="2026-07")
+    sic1 = fetch_sic_sync("0000000099", _transport=httpx.MockTransport(handler), **kw)
+    sic2 = fetch_sic_sync("0000000099", _transport=httpx.MockTransport(handler), **kw)
+    assert sic1 is None and sic2 is None
+    assert len(calls) == 1                                    # second call served from cache
+
+
+def test_sic_network_failure_not_cached_and_warns(tmp_path):
+    """A network failure warns, returns None, and is NEVER cached (re-attempted next call)."""
+    import httpx
+    import pytest
+
+    from shortlist.scout.backfill import fetch_sic_sync
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        raise httpx.ConnectError("boom", request=request)
+
+    kw = dict(identity="t@example.com", cache_dir=str(tmp_path), month="2026-07")
+    with pytest.warns(UserWarning, match="backfill"):
+        sic1 = fetch_sic_sync("0000000055", _transport=httpx.MockTransport(handler), **kw)
+    with pytest.warns(UserWarning, match="backfill"):
+        sic2 = fetch_sic_sync("0000000055", _transport=httpx.MockTransport(handler), **kw)
+    assert sic1 is None and sic2 is None
+    assert len(calls) == 2                                    # never cached -> both hit network

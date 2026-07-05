@@ -64,6 +64,92 @@ def fetch_history_sync(ticker: str, *, identity: str, today: date,
         return None
 
 
+def _normalize_cik10(cik) -> str:
+    """int or (zero-padded or not) str CIK -> the 10-digit zero-padded string
+    `backtest.xbrl.fetch_companyfacts`/`build_cik_index` expect."""
+    return f"{int(cik):010d}"
+
+
+def fetch_companyfacts_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_xbrl",
+                           month: str, _transport=None) -> Optional[dict]:
+    """Sync bridge over the async backtest.xbrl.fetch_companyfacts (needs an AsyncClient) —
+    the fetch_history_sync pattern: read the disk cache FIRST (sync, disk-only — a warm
+    cache never spawns an event loop); on miss, one asyncio.run + short-lived AsyncClient.
+
+    Cache `month` is the FETCH-time month (caller passes `today.strftime("%Y-%m")`), NEVER
+    the event's as_of month (spec v2 §1) — the companyfacts payload is latest-always (PiT
+    truncation is extract_panel's job), so a fetch-month key SHARES the cache with the XBRL
+    backtest and lets a stale `_NO_US_GAAP` negative marker refresh monthly.
+
+    Never raises -> None on a genuine no-us-gaap payload (not warned — an expected miss,
+    like an IFRS/20-F issuer) or on any fetch failure (warned, redacted)."""
+    from ..backtest.xbrl import fetch_companyfacts, read_companyfacts_cache
+
+    cik10 = _normalize_cik10(cik)
+    cached = read_companyfacts_cache(cik10, cache_dir=cache_dir, month=month)
+    if cached is not None:
+        return cached
+
+    import asyncio
+
+    import httpx
+
+    async def _one():
+        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": identity},
+                                     transport=_transport) as ac:
+            return await fetch_companyfacts(cik10, ac, cache_dir=cache_dir, month=month)
+    try:
+        return asyncio.run(_one())
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"backfill: companyfacts fetch failed for CIK{cik10}: "
+                      f"{redact_secrets(str(exc))}", stacklevel=2)
+        return None
+
+
+_SIC_URL = "https://data.sec.gov/submissions/CIK{cik10}.json"
+
+
+def fetch_sic_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_xbrl",
+                   month: str, _transport=None) -> Optional[str]:
+    """SEC submissions endpoint -> SIC code for a CIK (spec v2 §3 — SIC is fetched, not
+    skipped, so `score()`'s normal sector masking applies to a reconstructed event; an
+    unknown-bucket approximation would over-gate financials whose leverage/FCF gates are
+    structurally undefined). Month-cached to `{cache_dir}/SIC{cik10}-{month}.json`,
+    INCLUDING a cached null for a 200-with-no-sic (so a real negative isn't refetched
+    within the month) — but a NETWORK failure is warned and NOT cached (re-attempted on
+    the next call). Never raises -> None on failure."""
+    import httpx
+
+    cik10 = _normalize_cik10(cik)
+    cp = Path(cache_dir) / f"SIC{cik10}-{month}.json"
+    try:
+        if cp.exists():
+            cached = json.loads(cp.read_text())
+            if isinstance(cached, dict) and "sic" in cached:
+                return cached["sic"]
+    except (ValueError, OSError):
+        pass  # corrupt cache -> refetch
+
+    try:
+        with httpx.Client(timeout=30.0, headers={"User-Agent": identity},
+                          transport=_transport) as client:
+            resp = client.get(_SIC_URL.format(cik10=cik10))
+            resp.raise_for_status()
+            raw = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"backfill: SIC fetch failed for CIK{cik10}: "
+                      f"{redact_secrets(str(exc))}", stacklevel=2)
+        return None  # network failure -> NOT cached, re-attempted next call
+
+    sic = raw.get("sic") or None  # empty string ("") -> None
+    try:
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps({"sic": sic}))
+    except Exception:
+        pass  # cache write failure is non-fatal
+    return sic
+
+
 def next_trading_day(d: date) -> date:
     """First trading day STRICTLY after d (F12 entry shift)."""
     nxt = d + timedelta(days=1)
