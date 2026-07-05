@@ -123,6 +123,64 @@ def test_double_sort_excludes_composite_none_and_non_measurable_events():
     assert result["n_high"] + result["n_low"] == 8
 
 
+def test_double_sort_excludes_months_where_only_one_side_holds():
+    # HIGH fires every month Jan..Jul (i=0..6); LOW fires only Feb..Jul (i=1..6) -> Jan is a
+    # high-only month with no LOW counterpart. common_months = set(hi) & set(lo) must drop
+    # Jan, leaving 6 (not 7) spread rows. K=1 so holdings never smear across months.
+    #
+    # Stronger control: rebuild the cohort with the Jan HIGH event simply absent. Because
+    # k_months=1 means each month's CTP row depends only on events dated THAT month (no
+    # cross-month bleed), and because the median split lands on the same HIGH/LOW membership
+    # for the surviving Feb..Jul events in both cohorts (checked below via n_high/n_low), the
+    # Feb..Jul spread rows must be byte-identical whether or not the Jan event exists -> the
+    # excluded month contributed nothing to the spread stats.
+    def _hi(i, composite):
+        y, m = _month(i)
+        d = date(y, m, 15)
+        ret = 0.05 + 0.002 * ((i % 3) - 1)
+        return MeasuredEvent("s", f"H{i}", d, ret, True, 0.9, False, composite)
+
+    def _lo(i, composite):
+        y, m = _month(i)
+        d = date(y, m, 15)
+        ret = -0.02 + 0.001 * ((i % 4) - 1.5)
+        return MeasuredEvent("s", f"L{i}", d, ret, True, 0.9, False, composite)
+
+    ff3 = _ff3_for_months(7)
+
+    # Full cohort: HIGH months 0..6 (composites 50..56), LOW months 1..6 (composites 10..15).
+    hi_full = [_hi(i, 50 + i) for i in range(7)]
+    lo_full = [_lo(i, 10 + (i - 1)) for i in range(1, 7)]
+    full_result = double_sort(hi_full + lo_full, k_months=1, ff3=ff3, min_bucket_events=1,
+                              min_independent_blocks=1, n_boot=200)
+
+    # Control cohort: identical except the Jan (i=0) HIGH event is simply absent.
+    hi_ctrl = [_hi(i, 50 + i) for i in range(1, 7)]
+    lo_ctrl = [_lo(i, 10 + (i - 1)) for i in range(1, 7)]
+    control_result = double_sort(hi_ctrl + lo_ctrl, k_months=1, ff3=ff3, min_bucket_events=1,
+                                 min_independent_blocks=1, n_boot=200)
+
+    assert full_result is not None and control_result is not None
+
+    # Median split sanity: full cohort keeps all 7 HIGH events (composite >= median 50) and
+    # all 6 LOW events; control cohort has 6 HIGH events (the Jan one is gone) and 6 LOW.
+    assert full_result["n_high"] == 7
+    assert full_result["n_low"] == 6
+    assert control_result["n_high"] == 6
+    assert control_result["n_low"] == 6
+
+    # The intersection excludes Jan: 6 common months, strictly fewer than HIGH's own 7 months.
+    assert full_result["months"] == 6
+    assert full_result["months"] < full_result["n_high"]
+
+    # The excluded high-only month contributed NOTHING to the spread: with it entirely absent
+    # from the cohort, every spread statistic is unchanged.
+    assert full_result["months"] == control_result["months"]
+    assert full_result["effective_blocks"] == control_result["effective_blocks"]
+    assert full_result["spread_alpha_monthly"] == control_result["spread_alpha_monthly"]
+    assert full_result["spread_ci"] == control_result["spread_ci"]
+
+
 def test_double_sort_none_when_no_eligible_events():
     ff3 = _ff3_for_months(1)
     result = double_sort([], k_months=1, ff3=ff3, min_bucket_events=1, min_independent_blocks=1)
