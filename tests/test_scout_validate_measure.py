@@ -34,14 +34,24 @@ def test_fixed_horizon_return_measured_at_event_plus_horizon():
 
 def test_immature_event_excluded_not_measured_early():
     # event 2026-06-01, +3m target ~2026-09-01 is AFTER as_of 2026-06-15 -> the horizon has
-    # not elapsed, so the outcome is unknown -> non-measurable (calendar rule, no price peek)
+    # not elapsed, so the outcome is unknown -> non-measurable (calendar rule, no price peek).
+    # STRENGTHENED (H2 fix, design 2026-07-06): the event is now also flagged `immature` and
+    # EXCLUDED from n_selected/measurable_fraction (the denominator), while staying present
+    # in `events` and counted in the new `n_immature`/`n_events` (raw) fields -- nothing is
+    # silently dropped, just kept out of the H2 denominator per the registered spec text.
     h = _hist("ABC", [(date(2026, 6, 1), 100.0), (date(2026, 6, 13), 105.0)])
     m = measure_cohort([_ev("ABC", "2026-06-01")], "edgar:activist_13d",
                        horizon_months=3, hist_by_ticker={"ABC": h}, delisting_return=-0.30,
                        as_of=date(2026, 6, 15))
     assert m.events[0].ret is None
     assert m.events[0].measurable is False
+    assert m.events[0].immature is True
+    assert len(m.events) == 1
+    assert m.n_events == 1
+    assert m.n_immature == 1
+    assert m.n_selected == 0            # mature-only denominator excludes the immature event
     assert m.n_measurable == 0
+    assert m.measurable_fraction() == 0.0
 
 
 def test_delisting_gets_partial_return_not_dropped():
@@ -53,6 +63,7 @@ def test_delisting_gets_partial_return_not_dropped():
                        as_of=_AS_OF)
     assert m.events[0].measurable is True
     assert abs(m.events[0].ret - (-0.55)) < 1e-9
+    assert m.events[0].immature is False
 
 
 def test_no_series_is_non_measurable():
@@ -61,6 +72,43 @@ def test_no_series_is_non_measurable():
                        as_of=_AS_OF)
     assert m.n_selected == 1 and m.n_measurable == 0
     assert m.events[0].ret is None and m.events[0].measurable is False
+    assert m.events[0].immature is False
+    assert m.n_immature == 0 and m.n_events == 1
+
+
+# --- B1 leak-proof predicate: "recent" alone must never imply immature ------------------
+
+def test_b1_recent_event_no_series_is_non_measurable_not_immature():
+    # A RECENT event (target well after as_of, same shape as the immature pin above) but with
+    # NO price series at all. Per the B1 review resolution, immaturity requires a real series
+    # AND a usable entry price -- absent those, a recent unresolvable name must stay
+    # NON-MEASURABLE AND COUNTED (survivorship), never escape the floor by being relabeled
+    # immature just because its event_date happens to be recent.
+    m = measure_cohort([_ev("GONE", "2026-06-01")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={}, delisting_return=-0.55,
+                       as_of=date(2026, 6, 15))
+    assert m.events[0].ret is None
+    assert m.events[0].measurable is False
+    assert m.events[0].immature is False
+    assert m.n_immature == 0
+    assert m.n_events == 1
+    assert m.n_selected == 1            # counted, not excluded
+
+
+def test_b1_recent_event_hist_present_but_no_entry_price_is_non_measurable_not_immature():
+    # A RECENT event whose ticker DOES have a price history, but the history only starts
+    # AFTER the event date (no usable entry/close_asof at event_date -- e.g. a late-arriving
+    # or misaligned series). Still must be non-measurable-and-counted, not immature.
+    h = _hist("LATE", [(date(2026, 6, 10), 50.0), (date(2026, 6, 13), 52.0)])
+    m = measure_cohort([_ev("LATE", "2026-06-01")], "edgar:activist_13d",
+                       horizon_months=3, hist_by_ticker={"LATE": h}, delisting_return=-0.55,
+                       as_of=date(2026, 6, 15))
+    assert m.events[0].ret is None
+    assert m.events[0].measurable is False
+    assert m.events[0].immature is False
+    assert m.n_immature == 0
+    assert m.n_events == 1
+    assert m.n_selected == 1            # counted, not excluded
 
 
 def test_measurable_fraction():
@@ -70,6 +118,93 @@ def test_measurable_fraction():
                        hist_by_ticker={"A": h_ok}, delisting_return=None, as_of=_AS_OF)
     assert m.n_selected == 2 and m.n_measurable == 1
     assert abs(m.measurable_fraction() - 0.5) < 1e-9
+
+
+def test_back_compat_zero_immature_cohort_n_selected_equals_raw_events():
+    # No immature events in this cohort (a mature measured event + a genuine no-series
+    # loss, both with past targets) -> n_selected (mature-only) must equal n_events (raw)
+    # exactly, and the fraction is byte-identical to the pre-fix pooled fraction.
+    h_ok = _hist("A", [(date(2025, 1, 31), 100.0), (date(2025, 4, 30), 120.0)])
+    evs = [_ev("A", "2025-01-31"), _ev("GONE", "2025-01-31")]
+    m = measure_cohort(evs, "edgar:activist_13d", horizon_months=3,
+                       hist_by_ticker={"A": h_ok}, delisting_return=None, as_of=_AS_OF)
+    assert m.n_immature == 0
+    assert m.n_selected == m.n_events == 2
+    assert m.n_measurable == 1
+    assert abs(m.measurable_fraction() - 0.5) < 1e-9
+
+
+def test_recency_penalty_pin_perfect_cohort_fraction_is_one_not_penalized():
+    # A "perfect data" cohort split OLD (mature, fully measurable real returns) / RECENT
+    # (within the last K=12 months, immature -- entry price only, horizon still pending).
+    # Before the H2 fix, immature events were counted as non-measurable in the denominator,
+    # so an actively-collecting cohort could NEVER reach the 0.90 floor even with perfect
+    # capture (design rationale #1 -- the structural recency penalty). After the fix the
+    # mature-only denominator reads a clean 1.0.
+    k = 12
+    as_of = date(2026, 7, 2)
+    evs, hists = [], {}
+    for i, yr in enumerate((2022, 2023, 2024)):
+        tk = f"OLD{i}"
+        hists[tk] = _hist(tk, [(date(yr, 1, 31), 100.0), (date(yr + 1, 1, 31), 110.0)])
+        evs.append(_ev(tk, f"{yr}-01-31"))
+    for i, mo in enumerate((1, 3, 5)):
+        tk = f"NEW{i}"
+        hists[tk] = _hist(tk, [(date(2026, mo, 15), 50.0)])   # entry only, still pending
+        evs.append(_ev(tk, f"2026-{mo:02d}-15"))
+    m = measure_cohort(evs, "edgar:activist_13d", horizon_months=k,
+                       hist_by_ticker=hists, delisting_return=-0.30, as_of=as_of)
+    assert m.n_immature == 3
+    assert m.n_events == 6
+    assert m.n_selected == 3
+    assert m.n_measurable == 3
+    assert m.measurable_fraction() == 1.0
+
+
+def test_n1_immature_to_delisted_transition_across_as_of():
+    # Same event, two `as_of` values: while the target is still pending it's `immature`
+    # (excluded -- the outcome is genuinely unknown yet, R-A4 deferred-not-bypassed); once
+    # `as_of` passes the target and the series has already terminated (delisted, with no
+    # blanket/classified return available), it transitions to non-measurable-AND-COUNTED.
+    # The calendar rule advances the SAME event through both states as time passes -- never
+    # a silent reclassification.
+    h = _hist("DEAD", [(date(2025, 1, 31), 100.0), (date(2025, 2, 15), 90.0)])
+    ev = _ev("DEAD", "2025-01-31")
+
+    m1 = measure_cohort([ev], "edgar:activist_13d", horizon_months=12,
+                        hist_by_ticker={"DEAD": h}, delisting_return=None,
+                        as_of=date(2025, 6, 1))             # target 2026-01-31 still pending
+    assert m1.events[0].immature is True
+    assert m1.events[0].measurable is False
+    assert m1.n_selected == 0
+    assert m1.n_immature == 1
+
+    m2 = measure_cohort([ev], "edgar:activist_13d", horizon_months=12,
+                        hist_by_ticker={"DEAD": h}, delisting_return=None,
+                        as_of=_AS_OF)                        # 2026-07-02, past the target
+    assert m2.events[0].immature is False
+    assert m2.events[0].measurable is False
+    assert m2.n_selected == 1
+    assert m2.n_immature == 0
+
+
+def test_vintage_knife_edge_all_lost_emits_zero_all_immature_emits_none():
+    # 2021 vintage: 2 events, BOTH genuine no-series losses (mature target, no hist at all)
+    #   -> must still emit a (0, 2, 0.0) bucket (a real all-lost vintage trips the floor).
+    # 2026 vintage: 2 events, BOTH immature (recent, entry price present, horizon pending)
+    #   -> must emit NO bucket at all (nothing to measure yet, not a floor failure -- the
+    #   N2 knife-edge: skip iff n_MATURE == 0, not n_measurable == 0).
+    evs = [_ev("LOST1", "2021-01-31"), _ev("LOST2", "2021-02-28")]
+    hists = {}
+    for i, mo in enumerate((6, 5)):
+        tk = f"NEW{i}"
+        hists[tk] = _hist(tk, [(date(2026, mo, 1), 50.0)])
+        evs.append(_ev(tk, f"2026-{mo:02d}-01"))
+    m = measure_cohort(evs, "edgar:activist_13d", horizon_months=12,
+                       hist_by_ticker=hists, delisting_return=None, as_of=_AS_OF)
+    by_vintage = m.measurable_fraction_by_vintage()
+    assert by_vintage[2021] == (0, 2, 0.0)
+    assert 2026 not in by_vintage
 
 
 def test_classified_terminal_override_preferred_over_blanket():

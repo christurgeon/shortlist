@@ -1,8 +1,22 @@
 from datetime import date
 
-from shortlist.scout.validate import CohortMeasurement, MeasuredEvent, decide
+from shortlist.backtest.prices import PriceHistory
+from shortlist.scout.validate import CohortMeasurement, MeasuredEvent, decide, measure_cohort
 
 _PREREG = {"k_months": 12, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+
+
+def _hist(ticker, pairs):
+    dates = [d for d, _ in pairs]
+    closes = [c for _, c in pairs]
+    return PriceHistory(ticker, dates, closes, nominal_closes=list(closes))
+
+
+def _ev(ticker, d, **kw):
+    base = dict(signal="s", ticker=ticker, cik=None, event_date=d, as_of_price=None,
+                strength=0.9, gated=False, composite=60.0, origin="live", meta={})
+    base.update(kw)
+    return base
 
 
 def _measurement(frac_meas=1.0, n=30, vintage_years=None):
@@ -76,7 +90,11 @@ def test_insufficient_when_a_vintage_bucket_below_floor_despite_pooled_pass():
     for i in range(90):
         evs.append(MeasuredEvent("s", f"NEW{i}", date(2025, 1, 1), 0.0, i < 88, 0.5, False, 60.0))
     measurement = CohortMeasurement("s", n, n_meas, evs)
-    assert measurement.measurable_fraction() >= 0.90     # sanity: pooled floor passes
+    # sanity: measurable_fraction() divides the STORED n_selected/n_measurable ints as
+    # given (this CohortMeasurement is hand-built, not run through measure_cohort's H2
+    # mature-only factory, and has zero immature events among its MeasuredEvents) -- so
+    # this hand-built fraction passes the floor regardless of the H2 fix.
+    assert measurement.measurable_fraction() >= 0.90
 
     ff3 = {f"{y}-{m:02d}": (0.0, 0.0, 0.0, 0.0) for y in (2022, 2023, 2024, 2025) for m in range(1, 13)}
     ctp = [(mo, 0.01, 1) for mo in ff3]
@@ -162,3 +180,77 @@ def test_default_factor_model_ff3_still_runs():
     v = decide(_measurement(1.0, 60), ctp, ff3, k_months=12, prereg=prereg)
     assert v.verdict in {"KILL", "HOLD"}     # ran the real FF3 path, not the guard
     assert "factor_model" not in " ".join(v.notes).lower()
+
+
+# --- I2: the immature-exclusion asymmetry (design v2 resolution 4) ----------------------
+
+def test_i2_synthetic_asymmetry_immature_exclusion_lifts_one_cohort_not_the_other():
+    """Deterministic regression for the I2 asymmetry -- replaces the earlier
+    manual-production-rerun acceptance item. Two cohorts of the same raw size:
+
+    Cohort A: 80 mature events, ALL genuinely measurable (real entry+exit price data),
+    plus 20 immature (recent, entry price only, horizon still pending). The RAW/pooled
+    fraction (denominator = every event, the pre-fix behaviour) is 80/100 = 0.80 < floor;
+    the corrected mature-only fraction is 80/80 = 1.0 -- the fix rescues it.
+
+    Cohort B: 100 events, ZERO immature (every target is already in the past), but 30 are
+    genuine no-series losses -- real survivorship attrition. Mature-only == raw here
+    (nothing to rescue), and it stays 0.70 < floor -- the fix must NOT rescue this one.
+    """
+    k = 12
+    as_of = date(2026, 7, 2)
+
+    evs_a, hists_a = [], {}
+    for i in range(80):
+        tk = f"MA{i}"
+        hists_a[tk] = _hist(tk, [(date(2023, 1, 31), 100.0), (date(2024, 1, 31), 110.0)])
+        evs_a.append(_ev(tk, "2023-01-31"))
+    for i in range(20):
+        tk = f"IMM{i}"
+        hists_a[tk] = _hist(tk, [(date(2026, 6, 1), 50.0)])     # entry only, still pending
+        evs_a.append(_ev(tk, "2026-06-01"))
+    cohort_a = measure_cohort(evs_a, "s", horizon_months=k, hist_by_ticker=hists_a,
+                              delisting_return=-0.30, as_of=as_of)
+    assert cohort_a.n_immature == 20
+    assert cohort_a.n_events == 100
+    raw_fraction_a = cohort_a.n_measurable / cohort_a.n_events
+    assert raw_fraction_a < 0.90                       # pre-fix pooled fraction fails
+    assert cohort_a.measurable_fraction() == 1.0       # corrected mature-only fraction clears
+
+    evs_b, hists_b = [], {}
+    for i in range(70):
+        tk = f"MB{i}"
+        hists_b[tk] = _hist(tk, [(date(2023, 1, 31), 100.0), (date(2024, 1, 31), 110.0)])
+        evs_b.append(_ev(tk, "2023-01-31"))
+    for i in range(30):
+        evs_b.append(_ev(f"GONE{i}", "2023-01-31"))     # no hist at all -> genuine loss
+    cohort_b = measure_cohort(evs_b, "s", horizon_months=k, hist_by_ticker=hists_b,
+                              delisting_return=None, as_of=as_of)
+    assert cohort_b.n_immature == 0
+    assert cohort_b.measurable_fraction() < 0.90        # genuine losses -- correction can't help
+
+    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
+    ctp_a = [(mo, rf + 0.05, 1) for mo, (mkt, smb, hml, rf) in ff3.items()]
+    v_a = decide(cohort_a, ctp_a, ff3, k_months=k, prereg=_PREREG)
+    v_b = decide(cohort_b, [], {}, k_months=k, prereg=_PREREG)
+    assert v_a.verdict != "INSUFFICIENT"                # cleared the floor; never PROMOTE
+    assert v_b.verdict == "INSUFFICIENT"
+    assert "measurable" in " ".join(v_b.notes).lower()
+
+
+# --- I4: all-immature cohort must not crash the fraction --------------------------------
+
+def test_i4_all_immature_cohort_fraction_zero_no_crash_insufficient():
+    hists = {}
+    events = []
+    for i, mo in enumerate((1, 2, 3)):
+        tk = f"NEW{i}"
+        hists[tk] = _hist(tk, [(date(2026, mo, 1), 50.0)])
+        events.append(_ev(tk, f"2026-{mo:02d}-01"))
+    m = measure_cohort(events, "s", horizon_months=12, hist_by_ticker=hists,
+                       delisting_return=None, as_of=date(2026, 7, 2))
+    assert m.n_selected == 0
+    assert m.n_immature == 3
+    assert m.measurable_fraction() == 0.0               # no ZeroDivisionError
+    v = decide(m, ctp_rows=[], ff3={}, k_months=12, prereg=_PREREG)
+    assert v.verdict == "INSUFFICIENT"

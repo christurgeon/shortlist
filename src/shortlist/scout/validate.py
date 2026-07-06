@@ -25,6 +25,11 @@ class MeasuredEvent:
     strength: float | None
     gated: bool | None
     composite: float | None
+    immature: bool = False     # LAST field, defaulted (positional back-compat, design I3):
+                                # target not yet elapsed AND a real price series/entry price
+                                # exists AND the series is not already known-terminated (B1).
+                                # A recent event with NO series / no entry price is NEVER
+                                # immature -- it is non-measurable-and-counted (survivorship).
 
 
 @dataclass
@@ -33,12 +38,22 @@ class CohortMeasurement:
     n_selected: int
     n_measurable: int
     events: list[MeasuredEvent] = field(default_factory=list)
+    # New fields appended at the END (positional back-compat, design I3) --
+    # `measurable_fraction()` keeps dividing these STORED ints as given (hand-built
+    # CohortMeasurements in tests are trusted, not re-derived from `events`).
+    n_immature: int = 0        # events excluded from n_selected/measurable_fraction (H2)
+    n_events: int = 0          # RAW count incl. immature -- full transparency
 
     def measurable_fraction(self) -> float:
         return (self.n_measurable / self.n_selected) if self.n_selected else 0.0
 
     def measurable_fraction_by_vintage(self) -> dict[int, tuple[int, int, float]]:
-        """Measurable fraction stratified by vintage (calendar YEAR of event_date).
+        """Measurable fraction stratified by vintage (calendar YEAR of event_date),
+        MATURE-ONLY (H2 fix): immature events are excluded from both the bucket's n_sel
+        and n_meas -- a vintage that is ENTIRELY immature contributes no bucket at all
+        (the N2 knife-edge: a bucket is skipped iff it has zero MATURE events, not zero
+        measurable ones -- an all-matured-but-all-lost vintage still emits a 0.0 bucket,
+        which correctly trips the vintage floor).
 
         Returns {year: (n_measurable, n_selected, fraction)}. An event with no event_date
         is excluded from every bucket (it can't be assigned a vintage) — it still counts
@@ -48,12 +63,14 @@ class CohortMeasurement:
         for ev in self.events:
             if ev.event_date is None:
                 continue
+            if ev.immature:
+                continue
             by_year.setdefault(ev.event_date.year, []).append(ev)
         out: dict[int, tuple[int, int, float]] = {}
         for year, evs in by_year.items():
-            n_sel = len(evs)
+            n_sel = len(evs)                      # always > 0 (only populated years appear)
             n_meas = sum(1 for e in evs if e.measurable)
-            frac = (n_meas / n_sel) if n_sel else 0.0
+            frac = n_meas / n_sel
             out[year] = (n_meas, n_sel, frac)
         return out
 
@@ -80,7 +97,12 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
     - When no data exists at the horizon target, a **calendar-time** rule (never a price
       heuristic) separates the two cases the spec (§6.1/H2) requires kept apart:
         * target > `as_of` (default today)  -> IMMATURE: not enough time has elapsed, the
-          outcome is simply unknown -> non-measurable (never dropped, counted).
+          outcome is simply unknown -> flagged `immature` and EXCLUDED from `n_selected`/
+          `measurable_fraction()` (H2 fix; design 2026-07-06) -- never dropped from
+          `events`, just out of the denominator. **B1 leak-proof guard:** an event is only
+          ever `immature` when a real price series AND a usable entry price exist -- a
+          recent event with NO series / no entry price is NON-MEASURABLE AND COUNTED (the
+          survivorship case below), never relabeled immature just because it's recent.
         * target <= `as_of` but the series ends before it -> DELISTING: a still-listed
           stock would have had data through the target, so an early terminus in the past
           means it stopped trading. `use_event_delisting` (default True) FIRST prefers the
@@ -91,8 +113,8 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
           entirely (the sensitivity band in daily.py:_delisting_band_flip relies on this so
           the band's fixed variants actually vary the classified events too — "the
           classifier shrinks the band's bite but does not remove the guard"). Both -> None
-          means non-measurable.
-    - No usable series at all -> non-measurable.
+          means non-measurable (and, since target <= as_of here, NOT immature -- counted).
+    - No usable series at all -> non-measurable, counted, never immature.
     """
     ref = as_of or date.today()
     measured: list[MeasuredEvent] = []
@@ -103,6 +125,7 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
         tk = (ev.get("ticker") or "").upper()
         hist = hist_by_ticker.get(tk)
         ret: float | None = None
+        immature = False
         if d is not None and hist is not None:
             ret = hist.forward_return(d, horizon_months)
             if ret is None and _series_terminated(hist, d, horizon_months, ref):
@@ -114,14 +137,29 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
                     ret = per_ev
                 elif delisting_return is not None:
                     ret = delisting_return
+            if ret is None:
+                # B1: immature only when a usable entry price exists AND the horizon
+                # hasn't elapsed AND the series isn't already known-terminated (the last
+                # clause is the belt-and-suspenders form of the same calendar guard
+                # _series_terminated already applies -- it returns False whenever the
+                # target is still in the future, so this never mislabels a genuinely
+                # terminated-but-not-yet-mature series as immature).
+                immature = (
+                    hist.close_asof(d) is not None
+                    and _add_months(d, horizon_months) > ref
+                    and not _series_terminated(hist, d, horizon_months, ref)
+                )
         measured.append(MeasuredEvent(
             signal=signal, ticker=tk, event_date=d, ret=ret,
             measurable=ret is not None,
             strength=ev.get("strength"), gated=ev.get("gated"), composite=ev.get("composite"),
+            immature=immature,
         ))
+    n_immature = sum(1 for m in measured if m.immature)
     n_meas = sum(1 for m in measured if m.measurable)
-    return CohortMeasurement(signal=signal, n_selected=len(measured),
-                             n_measurable=n_meas, events=measured)
+    return CohortMeasurement(signal=signal, n_selected=len(measured) - n_immature,
+                             n_measurable=n_meas, events=measured,
+                             n_immature=n_immature, n_events=len(measured))
 
 
 def _month_iso(d: date) -> str:
