@@ -115,6 +115,9 @@ def test_run_validate_events_override_never_instantiates_scout_state(monkeypatch
 
 
 def test_validate_cli_backfill_path_loads_jsonl_never_touches_state(tmp_path, monkeypatch, capsys):
+    # _run_validate_cli persists scout/validate-latest.json relative to CWD — isolate it,
+    # or this test clobbers the real repo artifact (it did, on 2026-07-06).
+    monkeypatch.chdir(tmp_path)
     ev = CohortEvent(signal="edgar:activist_13d", ticker="AAA", cik=None,
                      event_date=date(2024, 1, 15), as_of_price=None, strength=0.9,
                      gated=None, composite=None, origin="backfill", meta={})
