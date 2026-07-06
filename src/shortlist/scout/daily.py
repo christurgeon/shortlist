@@ -782,13 +782,13 @@ def _print_validate_table(verdicts: list) -> None:
                  f"blocks={ds.get('effective_blocks')}, "
                  f"n={ds.get('n_high')}/{ds.get('n_low')}")
     print()
-    # M1: only note the (mature-only, H2) framing when it's actually load-bearing for this
-    # run (some verdict carries a real immature count) -- otherwise it's noise on every
-    # fully-matured cohort.
-    if any(getattr(v, "n_immature", 0) for v in verdicts):
-        print("N_SEL/N_MEAS/FRAC above are mature-only (H2, not the raw backfill's pooled "
-             "count) -- see scout backfill's own summary for the (all events, incl. "
-             "immature) fraction.")
+    # M1: the (mature-only, H2) framing documents the table's PERMANENT denominator
+    # convention -- unconditional (not gated on this run happening to carry immature
+    # events), so a reader of any single run never has to infer the convention from
+    # whether it happened to be load-bearing this time.
+    print("N_SEL/N_MEAS/FRAC above are mature-only (H2, not the raw backfill's pooled "
+         "count) -- see scout backfill's own summary for the (all events, incl. "
+         "immature) fraction.")
     print("Display / provisional / survivorship-accounted — not evidence, not advice. "
          "NEVER a PROMOTE signal.")
 

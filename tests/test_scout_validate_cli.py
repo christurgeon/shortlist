@@ -272,6 +272,54 @@ def test_interim_label_absent_when_run_date_on_or_after_verdict_as_of(monkeypatc
     assert not any("INTERIM" in n for n in verdicts[0].notes)
 
 
+def test_malformed_verdict_as_of_no_interim_label_no_crash(monkeypatch):
+    """`_parse_prereg_date` defensively returns None on an unparsable `verdict_as_of` --
+    a malformed value in a committed prereg must degrade to "no INTERIM label" (same as a
+    missing key), never raise through run_validate."""
+    events = [
+        {"signal": "test:malformed_date", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="not-a-date"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    assert not any("INTERIM" in n for n in verdicts[0].notes)
+
+
+def test_tamper_check_failed_and_interim_both_present(monkeypatch):
+    """Minor (review): when a signal is BOTH un-pre-registered (tamper-check failed) AND
+    the run predates the registered `verdict_as_of`, both notes must appear -- neither
+    guard should suppress the other."""
+    events = [
+        {"signal": "test:tampered_and_interim", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="2026-12-31"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (False, "prereg hash mismatch"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    joined = " ".join(verdicts[0].notes)
+    assert "NOT PRE-REGISTERED: prereg hash mismatch" in joined
+    assert "INTERIM — before registered verdict_as_of 2026-12-31" in joined
+
+
 def test_scored_cohort_exists_but_double_sort_gate_fails(monkeypatch):
     """A scored cohort exists (composite-defined, non-gated events) but no price history
     means the gate-agnostic double-sort set has no measurable events -> double_sort returns
@@ -374,7 +422,12 @@ def test_print_validate_table_omits_immature_suffix_when_zero(capsys):
                       measurable_fraction=1.0, sensitivity_flip=False, cohort_type="raw")
     daily._print_validate_table([v])
     out = capsys.readouterr().out
-    assert "immature)" not in out
+    # Per-row "(+N immature)" suffix is display-only and must be omitted when zero -- but
+    # the mature-only-denominator footer (below) is now unconditional (review follow-up)
+    # and its fixed boilerplate text legitimately contains the word "immature", so assert
+    # on the row-level suffix shape specifically, not a blanket substring-absence.
+    assert "(+0 immature)" not in out
+    assert "(+4 immature)" not in out
 
 
 def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
