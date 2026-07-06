@@ -6,6 +6,21 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## H2 correction — pre-registration anchor (verbatim spec text) (2026-07-06)
+
+The immature-denominator correction's legitimacy rests on the 2026-07-01 registered spec
+(local/gitignored per convention); the two load-bearing clauses are excerpted VERBATIM here
+so the argument survives in the committed repo alone:
+> §6.1: "Include an event in the cohort only when ≥ K forward data exists (H2)."
+> §12: "fixed-horizon (H2): a 95-day-old event is excluded from the K=12m cohort (not measured early)."
+> §6.1 (measurable, enumerated): "Non-measurable = no usable price series at all, or an
+> unresolvable/ambiguous delisting." — calendar immaturity is neither.
+Adversarially reviewed before implementation (SOUND-WITH-FIXES; B1 leak-proof predicate,
+INTERIM labeling vs registered `verdict_as_of`, both-fractions transparency all mandated by
+that review). **On lifting 2025 coverage before verdict_as_of: adjudicated WAIT** — a
+targeted coverage push aimed at one vintage's floor is outcome-directed curation, the exact
+pattern pre-registration exists to prevent; the vintage matures on its own by 2026-12-31.
+
 ## Production 13D backfill run — PAUSED, ready to fire (2026-07-05)
 
 The raw-cohort 13D backfill machinery is **merged and live-verified** (#109 — walker n=22/3d
@@ -100,7 +115,7 @@ than before:**
   this fix) **R-A4 vintage-stratified guard** trips on the newest mature vintage: 2025
   alone reads 0.89 (85/96) < floor. Concretely: **the scored 13D cohort's aggregate data
   coverage is finally good enough for a real verdict, but the most recent full vintage
-  isn't quite there yet** — a genuine, narrow (1 point) coverage gap in 2025, not an
+  isn't quite there yet** — a genuine, narrow (1.5pp — needs 2 more measurable 2025 events, 87/96) coverage gap in 2025, not an
   artifact of the immaturity bug. This is a materially different outcome than the
   design's own framing ("clears floor → a REAL verdict, likely KILL given the negative
   alpha CI") — flagging plainly rather than rounding it up to a clean HOLD/KILL: **no
