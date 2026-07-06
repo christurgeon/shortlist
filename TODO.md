@@ -165,6 +165,13 @@ signal-validation harness Phase 2** (entry below — #106 symbology merged; deli
 2. **Verify daily accumulation is actually accruing** (entry 2026-06-21 item 1): the VPS
    timer must pass `--max-tickers 42`; ≥24 snapshots unblock SUE + Lazy-Prices
    measurement. Minutes of operator checking guarding two finished features.
+   **VERIFIED (2026-07-06):** timer runs nightly with `--max-tickers 42`; 10 daily
+   snapshots accrued per ticker (2026-06-26→07-05) → threshold ~July 20. **Caveat found:**
+   only ~25/42 names save per night (FMP-gated names read THIN <50% coverage and are
+   skipped) — the snapshot-replay trust floor needs ≥30 names/date, so per-date breadth may
+   fall short even once ≥24 days accrue. Re-check the per-date saved count around July 20;
+   if <30, options: raise the keyless coverage of the watchlist mix or lower the coverage
+   skip-floor for accumulation only (measure, don't guess).
 3. **Selection-ledger forward-return analysis** (entry 2026-06-29 item 1): picks accrue
    since 2026-06-30 → first 1m-horizon read ~**early Aug 2026**; calendar-gated, not
    effort-gated.
