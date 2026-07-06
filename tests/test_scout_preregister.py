@@ -10,6 +10,9 @@ def test_load_prereg_reads_committed_yaml():
     assert p["k_months"] == 12
     assert p["factor_model"] == "ff3"
     assert 0.0 < p["min_measurable_frac"] <= 1.0
+    # I1 (v2 design): the canonical run-date field, re-registered alongside the as_of bump
+    # in the same commit -- window_end (2025-12-31) + K=12m.
+    assert str(p["verdict_as_of"]) == "2026-12-31"
 
 
 def _init_repo_with_prereg(tmp_path, slug="fake_signal", commit_date="2026-01-01T12:00:00+00:00"):

@@ -409,6 +409,11 @@ class SignalVerdict:
     cohort_type: str = "raw"           # "raw" | "scored_gated" (spec R-B5)
     notes: list[str] = field(default_factory=list)
     double_sort: dict | None = None    # high-vs-low composite spread (design B1; additive)
+    # v2 design B2 -- appended at the very end (positional back-compat): the pooled
+    # old-style (pre-H2-fix) fraction is permanently reconstructable as
+    # n_measurable / (n_selected + n_immature) == n_measurable / n_events.
+    n_immature: int = 0                 # events excluded from n_selected/measurable_fraction (H2)
+    n_events: int = 0                   # RAW count incl. immature -- full transparency
 
 
 def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
@@ -427,6 +432,12 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     the decision-relevant one; a raw-cohort kill corroborates but doesn't by itself settle it.
     """
     notes: list[str] = []
+    n_immature = measurement.n_immature
+    n_events = measurement.n_events
+    if n_immature > 0:
+        # v2 design B2/H2-note: every verdict surface must show the exclusion explicitly,
+        # so a reader can reconstruct the old pooled fraction (n_measurable/n_events).
+        notes.append(f"n_immature={n_immature} excluded from the denominator (H2)")
     floor = prereg.get("min_measurable_frac", 0.90)
     min_bucket_events = prereg.get("min_bucket_events", 5)
     frac = measurement.measurable_fraction()
@@ -445,7 +456,8 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
             alpha_ci=ci, effective_blocks=eff, n_selected=measurement.n_selected,
             n_measurable=measurement.n_measurable, measurable_fraction=frac,
             sensitivity_flip=sensitivity_flip, cohort_type=cohort_type,
-            notes=[f"factor_model '{factor_model}' not supported in v1 (only ff3)"])
+            notes=notes + [f"factor_model '{factor_model}' not supported in v1 (only ff3)"],
+            n_immature=n_immature, n_events=n_events)
 
     verdict = "HOLD"
     if frac < floor:
@@ -487,7 +499,8 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         signal=measurement.signal, verdict=verdict, ir=ir, alpha_monthly=alpha, alpha_ci=ci,
         effective_blocks=eff, n_selected=measurement.n_selected,
         n_measurable=measurement.n_measurable, measurable_fraction=frac,
-        sensitivity_flip=sensitivity_flip, cohort_type=cohort_type, notes=notes)
+        sensitivity_flip=sensitivity_flip, cohort_type=cohort_type, notes=notes,
+        n_immature=n_immature, n_events=n_events)
 
 
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,

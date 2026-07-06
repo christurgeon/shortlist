@@ -355,6 +355,11 @@ def summarize(rows: list[dict]) -> dict:
     n = len(rows)
     return {"n_selected": n, "n_measurable": n_meas,
             "fraction": (n_meas / n) if n else 0.0,
+            # M1 (v2 design): this fraction pools EVERY row in the raw batch JSONL,
+            # immature events included -- distinct from validate.py's mature-only H2
+            # denominator (measurable_fraction()), so the two surfaces can't be misread as
+            # contradicting. No math change, annotation only.
+            "fraction_note": "(all events, incl. immature)",
             "n_scored": n_scored,
             "scored_fraction": (n_scored / n) if n else 0.0,
             "by_reason": by_reason, "by_vintage": by_vintage,

@@ -199,9 +199,12 @@ def test_double_sort_deterministic_ci_same_seed():
     assert r1["spread_ci"] == r2["spread_ci"]
 
 
-def test_signal_verdict_double_sort_field_is_last_and_optional():
+def test_signal_verdict_double_sort_field_is_optional_and_positionally_stable():
     # additive: constructing a verdict without double_sort still works, and asdict() carries
-    # the new key with a None default so existing consumers tolerate it.
+    # the new key with a None default so existing consumers tolerate it. `double_sort` is no
+    # longer the LAST field -- v2 design B2 appends `n_immature`/`n_events` after it (both
+    # defaulted, back-compat) -- so this pins double_sort's continued presence + default,
+    # not its position.
     from dataclasses import asdict, fields
 
     v = SignalVerdict(
@@ -212,4 +215,6 @@ def test_signal_verdict_double_sort_field_is_last_and_optional():
     assert v.double_sort is None
     d = asdict(v)
     assert d["double_sort"] is None
-    assert fields(SignalVerdict)[-1].name == "double_sort"
+    names = [f.name for f in fields(SignalVerdict)]
+    assert names.index("double_sort") == names.index("n_immature") - 1
+    assert names[-2:] == ["n_immature", "n_events"]

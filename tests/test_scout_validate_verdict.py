@@ -254,3 +254,59 @@ def test_i4_all_immature_cohort_fraction_zero_no_crash_insufficient():
     assert m.measurable_fraction() == 0.0               # no ZeroDivisionError
     v = decide(m, ctp_rows=[], ff3={}, k_months=12, prereg=_PREREG)
     assert v.verdict == "INSUFFICIENT"
+    # B2: the verdict itself must carry the raw counts so the pooled old-style fraction is
+    # reconstructable (n_measurable / (n_selected + n_immature) == n_measurable / n_events).
+    assert v.n_immature == 3
+    assert v.n_events == 3
+    assert v.n_selected == 0
+
+
+# --- Task 2 (B2 + H2 note): SignalVerdict.n_immature/n_events + the H2 exclusion note ----
+
+def test_decide_populates_n_immature_and_n_events_from_measurement():
+    hists = {}
+    events = []
+    # 2 mature measurable events + 1 immature event -> n_selected=2, n_immature=1, n_events=3
+    for i in range(2):
+        tk = f"MAT{i}"
+        hists[tk] = _hist(tk, [(date(2023, 1, 31), 100.0), (date(2024, 1, 31), 110.0)])
+        events.append(_ev(tk, "2023-01-31"))
+    hists["IMM0"] = _hist("IMM0", [(date(2026, 6, 1), 50.0)])
+    events.append(_ev("IMM0", "2026-06-01"))
+    m = measure_cohort(events, "s", horizon_months=12, hist_by_ticker=hists,
+                       delisting_return=None, as_of=date(2026, 7, 2))
+    assert (m.n_selected, m.n_immature, m.n_events) == (2, 1, 3)
+    v = decide(m, ctp_rows=[], ff3={}, k_months=12, prereg=_PREREG)
+    assert v.n_selected == 2
+    assert v.n_immature == 1
+    assert v.n_events == 3
+    # pooled old-style fraction reconstructable
+    assert v.n_measurable / v.n_events == m.n_measurable / (v.n_selected + v.n_immature)
+
+
+def test_h2_note_present_iff_n_immature_positive():
+    with_immature = _measurement(1.0, n=5)
+    with_immature.events.append(
+        MeasuredEvent("s", "IMM", date(2026, 6, 1), None, False, 0.5, False, 60.0, immature=True))
+    cm = CohortMeasurement("s", with_immature.n_selected, with_immature.n_measurable,
+                           with_immature.events, n_immature=1,
+                           n_events=with_immature.n_selected + 1)
+    v = decide(cm, ctp_rows=[], ff3={}, k_months=12, prereg=_PREREG)
+    joined = " ".join(v.notes)
+    assert "n_immature=1 excluded from the denominator (H2)" in joined
+
+    no_immature = _measurement(1.0, n=5)
+    v2 = decide(no_immature, ctp_rows=[], ff3={}, k_months=12, prereg=_PREREG)
+    assert "excluded from the denominator (H2)" not in " ".join(v2.notes)
+    assert v2.n_immature == 0
+    assert v2.n_events == 0
+
+
+def test_h2_note_present_on_unsupported_factor_model_path_too():
+    cm = CohortMeasurement("s", 5, 5, [], n_immature=2, n_events=7)
+    prereg = dict(_PREREG, factor_model="ff5")
+    v = decide(cm, ctp_rows=[], ff3={}, k_months=12, prereg=prereg)
+    assert v.verdict == "INSUFFICIENT"
+    joined = " ".join(v.notes)
+    assert "n_immature=2 excluded from the denominator (H2)" in joined
+    assert v.n_immature == 2 and v.n_events == 7

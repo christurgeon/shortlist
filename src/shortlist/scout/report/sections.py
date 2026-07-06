@@ -633,7 +633,15 @@ class _ValidationScoreboard:
     never emits one). `vm.validation` is the parsed `{"as_of", "source", "verdicts": [...]}`
     envelope, already staleness-filtered by the builder (`scout.validate.latest_max_age_days`,
     default 14) — None on every run where the file is absent/stale/malformed, so this
-    section is absent and the report stays byte-identical."""
+    section is absent and the report stays byte-identical.
+
+    M2 (H2 immature-denominator fix, 2026-07): N_SEL/N_MEAS/the pooled fraction are now
+    MATURE-ONLY (immature events excluded from the denominator per spec §6.1/H2) rather
+    than pooling every event ever seen. That makes the fraction MORE time-sensitive than
+    before the fix — a young signal's mature cohort can be tiny (or empty) even with a
+    healthy, growing raw firehose, and will visibly change run-to-run as more events
+    mature. The existing 14-day staleness bound (`latest_max_age_days`) stays purely a
+    display-freshness guard, unrelated to (and not a fix for) this new time-sensitivity."""
     id, title = "validation", "Signal validation (provisional)"
 
     _DISCLAIMER = "display / provisional / survivorship-biased — not evidence, not advice."
@@ -654,9 +662,12 @@ class _ValidationScoreboard:
             ir_s += f" ±[{ci[0]:.4f}, {ci[1]:.4f}]"
         notes = v.get("notes") or []
         synthetic = " [SYNTHETIC]" if any("SYNTHETIC" in str(n) for n in notes) else ""
+        # B2/I4: a young live cohort must read "0/0 (+350 immature)", never a bare "0/0".
+        n_immature = v.get("n_immature") or 0
+        immature_s = f" (+{n_immature} immature)" if n_immature else ""
         return (f"{v.get('signal', '?')} [{v.get('cohort_type', 'raw')}]: "
                 f"{v.get('verdict', '?')} (IR {ir_s}, blocks={v.get('effective_blocks', '—')}, "
-                f"n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)}){synthetic}")
+                f"n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)}{immature_s}){synthetic}")
 
     @staticmethod
     def _double_sort_line(ds: dict) -> str:
