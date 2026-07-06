@@ -560,6 +560,18 @@ def _slug_for_signal(signal: str) -> str:
     return signal.replace(":", "_")
 
 
+def _parse_prereg_date(x) -> date | None:
+    """Defensively parse a pre-reg date field (a `date` object or ISO string). Returns None
+    on a missing/malformed value -- back-compat with pre-reg files that predate a field
+    (e.g. `verdict_as_of`, I1) rather than raising."""
+    if x is None:
+        return None
+    try:
+        return x if isinstance(x, date) else date.fromisoformat(str(x))
+    except (ValueError, TypeError):
+        return None
+
+
 def _delisting_band_flip(evs, signal, k_months, hists, ff3, as_of, weighting="equal") -> bool:
     """Re-measure the cohort across the delisting-return sensitivity band (spec §6.6) and
     flag a flip when the FF3 alpha sign disagrees across band members that produce a
@@ -647,17 +659,27 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
             # degrades only its own signal to INSUFFICIENT and the loop continues.
             prereg = load_prereg(slug, repo_root=repo_root)
         except (OSError, ValueError, yaml.YAMLError) as exc:
+            # Hard-error display path (M2 reviewer note): no measurement was ever run, so
+            # honestly there's no immature/mature split to report -- every event in the
+            # cohort is uncounted (n_events=len(evs), n_immature=0, n_selected=len(evs)),
+            # never fabricated as measured.
             verdicts.append(SignalVerdict(
                 signal=signal, verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
                 alpha_ci=None, effective_blocks=0, n_selected=len(evs), n_measurable=0,
                 measurable_fraction=0.0, sensitivity_flip=False,
                 notes=[f"pre-registration for slug '{slug}' missing or unparsable — "
-                      f"cannot evaluate ({redact_secrets(str(exc))})"]))
+                      f"cannot evaluate ({redact_secrets(str(exc))})"],
+                n_immature=0, n_events=len(evs)))
             continue
 
         k_months = int(prereg.get("k_months", 12))
         weighting = prereg.get("weighting", "equal")
         primary_delisting_return = prereg.get("delisting_return")
+        # I1 (v2 design): a run before the pre-registered canonical `verdict_as_of` is
+        # permanently labeled INTERIM -- absent key -> None -> no label (back-compat with
+        # prereg files that predate this field).
+        verdict_as_of = _parse_prereg_date(prereg.get("verdict_as_of"))
+        interim = verdict_as_of is not None and today < verdict_as_of
         measurement = measure_cohort(evs, signal, k_months, hists,
                                      primary_delisting_return, as_of=today)
         ctp_rows = calendar_time_portfolio(measurement.events, k_months, weighting=weighting)
@@ -668,6 +690,9 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
         ok, reason = verify_untampered(slug, repo_root=repo_root, run_as_of=today)
         if not ok:
             verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
+        if interim:
+            verdict.notes.append(
+                f"INTERIM — before registered verdict_as_of {verdict_as_of.isoformat()}")
         verdicts.append(verdict)
 
         # --- Scored-cohort verdict (design B2 + v2 §6/§8): does the scorer's composite +
@@ -709,6 +734,9 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
                 scored_verdict.notes.append(
                     "double-sort: insufficient blocks or bucket size")
 
+            if interim:
+                scored_verdict.notes.append(
+                    f"INTERIM — before registered verdict_as_of {verdict_as_of.isoformat()}")
             if not ok:
                 scored_verdict.notes.append(f"NOT PRE-REGISTERED: {reason}")
             verdicts.append(scored_verdict)
@@ -729,9 +757,15 @@ def _print_validate_table(verdicts: list) -> None:
     for v in verdicts:
         ir = f"{v.ir:.2f}" if v.ir is not None else "-"
         alpha = f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-"
-        print(f"{v.signal:<28}{v.cohort_type:<14}{v.verdict:<14}{ir:>8}{alpha:>10}"
-             f"{v.effective_blocks:>8}{v.n_selected:>7}{v.n_measurable:>8}"
-             f"{v.measurable_fraction:>7.2f}{'Y' if v.sensitivity_flip else 'N':>6}")
+        row = (f"{v.signal:<28}{v.cohort_type:<14}{v.verdict:<14}{ir:>8}{alpha:>10}"
+              f"{v.effective_blocks:>8}{v.n_selected:>7}{v.n_measurable:>8}"
+              f"{v.measurable_fraction:>7.2f}{'Y' if v.sensitivity_flip else 'N':>6}")
+        # B2/I4: a young live cohort must read "0/0 (+350 immature)", never a bare "0/0" --
+        # the immature count is display-only, appended past the fixed-width columns.
+        n_immature = getattr(v, "n_immature", 0)
+        if n_immature:
+            row += f"  (+{n_immature} immature)"
+        print(row)
         for note in v.notes:
             print(f"    - {note}")
         # Compact double-sort line (design v2 §8): high-vs-low composite spread stats.
@@ -748,6 +782,13 @@ def _print_validate_table(verdicts: list) -> None:
                  f"blocks={ds.get('effective_blocks')}, "
                  f"n={ds.get('n_high')}/{ds.get('n_low')}")
     print()
+    # M1: the (mature-only, H2) framing documents the table's PERMANENT denominator
+    # convention -- unconditional (not gated on this run happening to carry immature
+    # events), so a reader of any single run never has to infer the convention from
+    # whether it happened to be load-bearing this time.
+    print("N_SEL/N_MEAS/FRAC above are mature-only (H2, not the raw backfill's pooled "
+         "count) -- see scout backfill's own summary for the (all events, incl. "
+         "immature) fraction.")
     print("Display / provisional / survivorship-accounted — not evidence, not advice. "
          "NEVER a PROMOTE signal.")
 
@@ -804,9 +845,10 @@ def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
 
 def _print_backfill_summary(summary: dict) -> None:
     print(f"scout backfill: {summary.get('out_path', '?')}")
+    fraction_note = summary.get("fraction_note", "")
     print(f"  selected={summary.get('n_selected', 0)} "
          f"measurable={summary.get('n_measurable', 0)} "
-         f"fraction={summary.get('fraction', 0.0):.2f} "
+         f"fraction={summary.get('fraction', 0.0):.2f} {fraction_note} "
          f"written_this_run={summary.get('written', 0)}")
     by_reason = summary.get("by_reason") or {}
     if by_reason:

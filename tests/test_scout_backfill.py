@@ -241,6 +241,20 @@ def test_summarize_counts_and_vintages():
     assert s["delisting_by_reason"] == {"bankruptcy": 1}
 
 
+def test_summarize_annotates_fraction_as_all_events_incl_immature():
+    """M1 (v2 design): the batch backfill summary pools EVERY row (immature included, no
+    mature/immature split at this layer) -- the fraction must be self-describing so it can
+    never be misread against validate.py's mature-only H2 fraction. Annotation only, no
+    math change."""
+    rows = [
+        {"event_date": "2022-08-01", "meta": {"measurable": True}},
+        {"event_date": "2022-09-01", "meta": {"measurable": False}},
+    ]
+    s = summarize(rows)
+    assert s["fraction_note"] == "(all events, incl. immature)"
+    assert s["fraction"] == 0.5          # annotation only -- the number itself is unchanged
+
+
 def test_unreal_resolved_ticker_becomes_sentinel_not_silently_dropped():
     day = {date(2023, 10, 13): [_rec("0000000042", acc="a-1")]}
     evs = assemble_events(day, lambda cik, as_of: "N/A")   # 'unreal' ticker shape

@@ -7,7 +7,7 @@ def _verdict(**over):
         "alpha_monthly": None, "alpha_ci": None, "effective_blocks": 3,
         "n_selected": 5, "n_measurable": 3, "measurable_fraction": 0.6,
         "sensitivity_flip": False, "cohort_type": "raw", "notes": [],
-        "double_sort": None,
+        "double_sort": None, "n_immature": 0, "n_events": 5,
     }
     base.update(over)
     return base
@@ -129,6 +129,31 @@ def test_render_text_no_double_sort_line_when_none():
     data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
     joined = "\n".join(_ValidationScoreboard().render_text(_vm(data), Detail.FULL))
     assert "double-sort" not in joined
+
+
+# --- Task 2 (B2/I4): the immature count must stay legible on a young live cohort --------
+
+def test_render_text_shows_immature_count_when_present():
+    v = _verdict(n_selected=0, n_measurable=0, measurable_fraction=0.0,
+                 n_immature=350, n_events=350)
+    data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
+    joined = "\n".join(_ValidationScoreboard().render_text(_vm(data), Detail.FULL))
+    assert "n=0/0 (+350 immature)" in joined
+
+
+def test_render_text_omits_immature_suffix_when_zero():
+    v = _verdict(n_immature=0)
+    data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
+    joined = "\n".join(_ValidationScoreboard().render_text(_vm(data), Detail.FULL))
+    assert "immature)" not in joined
+
+
+def test_render_html_shows_immature_count_when_present():
+    from shortlist.scout.report.html import HtmlBuilder
+    v = _verdict(n_selected=0, n_measurable=0, n_immature=350, n_events=350)
+    data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
+    html = _ValidationScoreboard().render_html(_vm(data), HtmlBuilder())
+    assert "(+350 immature)" in html
 
 
 def test_render_html_has_disclaimer_and_verdict_signal():

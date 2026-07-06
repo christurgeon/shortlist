@@ -61,6 +61,17 @@ def test_backfill_cli_success_prints_json_summary(monkeypatch, capsys):
     assert out["n_selected"] == 3 and out["written"] == 3
 
 
+def test_print_backfill_summary_shows_fraction_note(capsys):
+    """M1: the printed backfill summary carries the '(all events, incl. immature)'
+    annotation so it can't be misread against validate.py's mature-only H2 fraction."""
+    daily._print_backfill_summary({
+        "out_path": "x.jsonl", "n_selected": 10, "n_measurable": 8, "fraction": 0.8,
+        "fraction_note": "(all events, incl. immature)", "written": 10,
+        "by_reason": {}, "by_vintage": {}, "delisting_by_reason": {}})
+    out = capsys.readouterr().out
+    assert "(all events, incl. immature)" in out
+
+
 def test_backfill_cli_unsupported_signal_returns_2(monkeypatch, capsys):
     monkeypatch.setenv("SEC_IDENTITY", "t@example.com")
     rc = daily._run_backfill_cli({"scout": {}}, signal="other", start=date(2022, 8, 1),

@@ -206,6 +206,120 @@ def test_no_composite_cohort_produces_only_raw_verdict(monkeypatch):
     assert verdicts[0].cohort_type == "raw"
 
 
+def test_interim_label_appears_when_run_before_verdict_as_of(monkeypatch):
+    """I1: a run date strictly before the prereg's `verdict_as_of` gets a permanent INTERIM
+    label on every verdict for that signal (the canonical verdict is the on/after-date one)."""
+    events = [
+        {"signal": "test:interim", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="2026-12-31"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    joined = " ".join(verdicts[0].notes)
+    assert "INTERIM — before registered verdict_as_of 2026-12-31" in joined
+
+
+def test_interim_label_absent_when_verdict_as_of_key_missing(monkeypatch):
+    """Back-compat: a prereg file without `verdict_as_of` (predates I1) must never label
+    a verdict INTERIM."""
+    events = [
+        {"signal": "test:nointerim", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg", _fake_prereg_factory())
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    assert not any("INTERIM" in n for n in verdicts[0].notes)
+
+
+def test_interim_label_absent_when_run_date_on_or_after_verdict_as_of(monkeypatch):
+    """A run ON or AFTER the registered verdict_as_of is the canonical verdict — no INTERIM
+    label."""
+    events = [
+        {"signal": "test:canonical", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="2026-12-31"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 12, 31),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    assert not any("INTERIM" in n for n in verdicts[0].notes)
+
+
+def test_malformed_verdict_as_of_no_interim_label_no_crash(monkeypatch):
+    """`_parse_prereg_date` defensively returns None on an unparsable `verdict_as_of` --
+    a malformed value in a committed prereg must degrade to "no INTERIM label" (same as a
+    missing key), never raise through run_validate."""
+    events = [
+        {"signal": "test:malformed_date", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="not-a-date"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (True, "ok"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    assert not any("INTERIM" in n for n in verdicts[0].notes)
+
+
+def test_tamper_check_failed_and_interim_both_present(monkeypatch):
+    """Minor (review): when a signal is BOTH un-pre-registered (tamper-check failed) AND
+    the run predates the registered `verdict_as_of`, both notes must appear -- neither
+    guard should suppress the other."""
+    events = [
+        {"signal": "test:tampered_and_interim", "ticker": "AAA", "event_date": "2024-01-15",
+         "strength": 0.9},
+    ]
+
+    async def _fake_fetch(tickers, cache_dir, today_iso):
+        return {}, {}
+    monkeypatch.setattr(daily, "_fetch_validate_data", _fake_fetch)
+    monkeypatch.setattr("shortlist.scout.preregister.load_prereg",
+                        _fake_prereg_factory(verdict_as_of="2026-12-31"))
+    monkeypatch.setattr("shortlist.scout.preregister.verify_untampered",
+                        lambda slug, *, repo_root, run_as_of: (False, "prereg hash mismatch"))
+
+    verdicts = run_validate({"scout": {"validate": {}}}, today=date(2026, 7, 2),
+                            lookback_days=900, events_override=events)
+    assert len(verdicts) == 1
+    joined = " ".join(verdicts[0].notes)
+    assert "NOT PRE-REGISTERED: prereg hash mismatch" in joined
+    assert "INTERIM — before registered verdict_as_of 2026-12-31" in joined
+
+
 def test_scored_cohort_exists_but_double_sort_gate_fails(monkeypatch):
     """A scored cohort exists (composite-defined, non-gated events) but no price history
     means the gate-agnostic double-sort set has no measurable events -> double_sort returns
@@ -262,6 +376,9 @@ def test_json_asdict_structure_includes_cohort_type_and_double_sort(monkeypatch)
     assert dicts[1]["cohort_type"] == "scored_gated"
     assert dicts[1]["double_sort"] is not None
     assert "n_high" in dicts[1]["double_sort"]
+    # B2: every verdict's --json shape carries n_immature/n_events (both 0 here -- no
+    # price history means every event is non-measurable-and-counted, never immature).
+    assert all("n_immature" in d and "n_events" in d for d in dicts)
     json.dumps(dicts, default=str)          # must not raise -- serializable end to end
 
 
@@ -287,6 +404,32 @@ def test_print_validate_table_shows_cohort_type_and_double_sort_line(capsys):
     assert "n=2/2" in out
 
 
+def test_print_validate_table_shows_immature_count_when_present(capsys):
+    """B2/I4: a young live cohort must read '0/0 (+350 immature)', never a bare '0/0'."""
+    v = SignalVerdict(signal="s", verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
+                      alpha_ci=None, effective_blocks=0, n_selected=0, n_measurable=0,
+                      measurable_fraction=0.0, sensitivity_flip=False, cohort_type="raw",
+                      n_immature=350, n_events=350)
+    daily._print_validate_table([v])
+    out = capsys.readouterr().out
+    assert "(+350 immature)" in out
+    assert "mature-only (H2" in out
+
+
+def test_print_validate_table_omits_immature_suffix_when_zero(capsys):
+    v = SignalVerdict(signal="s", verdict="HOLD", ir=None, alpha_monthly=None,
+                      alpha_ci=None, effective_blocks=1, n_selected=4, n_measurable=4,
+                      measurable_fraction=1.0, sensitivity_flip=False, cohort_type="raw")
+    daily._print_validate_table([v])
+    out = capsys.readouterr().out
+    # Per-row "(+N immature)" suffix is display-only and must be omitted when zero -- but
+    # the mature-only-denominator footer (below) is now unconditional (review follow-up)
+    # and its fixed boilerplate text legitimately contains the word "immature", so assert
+    # on the row-level suffix shape specifically, not a blanket substring-absence.
+    assert "(+0 immature)" not in out
+    assert "(+4 immature)" not in out
+
+
 def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
     """When double_sort is None (gate failed), no compact double-sort line is printed --
     the explanatory note (already in .notes) is the only surfacing."""
@@ -307,7 +450,7 @@ def _sample_verdicts() -> list[SignalVerdict]:
     raw = SignalVerdict(signal="test:sig", verdict="HOLD", ir=0.4, alpha_monthly=0.01,
                         alpha_ci=(0.001, 0.02), effective_blocks=3, n_selected=10,
                         n_measurable=8, measurable_fraction=0.8, sensitivity_flip=False,
-                        cohort_type="raw")
+                        cohort_type="raw", n_immature=2, n_events=12)
     scored = SignalVerdict(
         signal="test:sig", verdict="KILL", ir=-0.2, alpha_monthly=-0.005, alpha_ci=None,
         effective_blocks=3, n_selected=6, n_measurable=6, measurable_fraction=1.0,
@@ -406,7 +549,13 @@ def test_validate_latest_json_round_trips_verdict_keys(tmp_path, monkeypatch):
     assert raw["verdict"] == "HOLD"
     assert raw["cohort_type"] == "raw"
     assert raw["alpha_ci"] == [0.001, 0.02]          # tuple -> list, values preserved
+    # B2: n_immature/n_events round-trip -- the pooled old-style fraction stays
+    # reconstructable from the persisted JSON alone.
+    assert raw["n_immature"] == 2
+    assert raw["n_events"] == 12
     assert scored["cohort_type"] == "scored_gated"
+    assert scored["n_immature"] == 0
+    assert scored["n_events"] == 0
     assert scored["double_sort"]["n_high"] == 3
     assert scored["double_sort"]["spread_ci"] == [0.001, 0.03]
 

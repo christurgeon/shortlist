@@ -6,6 +6,21 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## H2 correction — pre-registration anchor (verbatim spec text) (2026-07-06)
+
+The immature-denominator correction's legitimacy rests on the 2026-07-01 registered spec
+(local/gitignored per convention); the two load-bearing clauses are excerpted VERBATIM here
+so the argument survives in the committed repo alone:
+> §6.1: "Include an event in the cohort only when ≥ K forward data exists (H2)."
+> §12: "fixed-horizon (H2): a 95-day-old event is excluded from the K=12m cohort (not measured early)."
+> §6.1 (measurable, enumerated): "Non-measurable = no usable price series at all, or an
+> unresolvable/ambiguous delisting." — calendar immaturity is neither.
+Adversarially reviewed before implementation (SOUND-WITH-FIXES; B1 leak-proof predicate,
+INTERIM labeling vs registered `verdict_as_of`, both-fractions transparency all mandated by
+that review). **On lifting 2025 coverage before verdict_as_of: adjudicated WAIT** — a
+targeted coverage push aimed at one vintage's floor is outcome-directed curation, the exact
+pattern pre-registration exists to prevent; the vintage matures on its own by 2026-12-31.
+
 ## Production 13D backfill run — PAUSED, ready to fire (2026-07-05)
 
 The raw-cohort 13D backfill machinery is **merged and live-verified** (#109 — walker n=22/3d
@@ -62,6 +77,65 @@ rank/KILL-only + provisional per M1. Verdict artifacts: `scout/backfill/verdict-
 adjudicate the blocks-gate discrepancy (spec-8 vs prereg-2) and whether a
 measurability-improved re-run (symbology._OVERRIDES seeding, delisting-classified tail)
 can lift the fraction toward the floor.
+
+**Update — H2 immature-denominator correction + re-verdict (2026-07-06, adversarially
+reviewed, INTERIM).** The above first verdict used the wrong H2 denominator: the parent
+spec (§6.1/§12) says an event only enters the K=12m cohort once it has ≥K forward data —
+"a 95-day-old event is excluded, not measured early" — but `measure_cohort` was instead
+counting immature (not-yet-matured) events as non-measurable *survivorship* losses,
+applying the "never silently drop" rule written for delisting/no-series failures to a
+calendar fact instead. Design:
+`docs/superpowers/specs/2026-07-06-immature-denominator-fix-design.md` (adversarial
+review verdict: SOUND-WITH-FIXES — legitimacy affirmed on the spec text; B1 tightened
+"immature" to require a real entry price + unelapsed horizon, so a recent no-series name
+can never be relabeled immature to dodge the floor; I1 added a pre-registered
+`verdict_as_of: 2026-12-31` with a permanent INTERIM label on every verdict issued before
+that date). Both fractions, reconstructable from the persisted verdict JSON
+(`n_measurable/n_events` = old pooled; `n_measurable/n_selected` = new mature-only):
+
+| cohort | old pooled (n_meas/n_sel) | new mature-only (n_meas/n_sel, +immature) | floor |
+|---|---|---|---|
+| raw | 0.624 (2275/3645) | **0.697** (2275/3262, +383 immature) | 0.90 |
+| scored_gated | 0.835 (675/808) | **0.938** (675/720, +88 immature) | 0.90 |
+
+Both numbers land close to the design's pre-registered prediction (raw ~0.70 still fails;
+scored ~0.94 clears the aggregate floor) — the fix behaves as designed, and the
+raw-vs-scored **asymmetry holds**: immaturity-exclusion alone cannot rescue the raw
+cohort (its shortfall is real survivorship loss, correctly still counted), only the
+already-cleaner scored cohort.
+
+**New verdicts (both INTERIM — before registered `verdict_as_of` 2026-12-31), both still
+INSUFFICIENT, but the scored cohort now fails for a DIFFERENT and more specific reason
+than before:**
+- **raw**: INSUFFICIENT — `measurable fraction 0.70 < floor` (unchanged reason; the
+  correction narrows the gap but does not close it).
+- **scored_gated**: the pooled/aggregate mature-only fraction (0.938) now *clears* the
+  0.90 floor — this is the harness's first cohort whose top-line fraction is no longer
+  the blocker. It is still INSUFFICIENT, though, because the pre-existing (untouched by
+  this fix) **R-A4 vintage-stratified guard** trips on the newest mature vintage: 2025
+  alone reads 0.89 (85/96) < floor. Concretely: **the scored 13D cohort's aggregate data
+  coverage is finally good enough for a real verdict, but the most recent full vintage
+  isn't quite there yet** — a genuine, narrow (1.5pp — needs 2 more measurable 2025 events, 87/96) coverage gap in 2025, not an
+  artifact of the immaturity bug. This is a materially different outcome than the
+  design's own framing ("clears floor → a REAL verdict, likely KILL given the negative
+  alpha CI") — flagging plainly rather than rounding it up to a clean HOLD/KILL: **no
+  cohort-level verdict has actually been earned yet**, pending either more 2025 vintage
+  coverage or a later re-run once 2025 has more months to mature/resolve.
+- The §6.2 double-sort spread is **unchanged and still positive**: +2.97%/mo, CI
+  [+2.73,+3.17], 4 blocks, n=996/996 — the scorer still orders winners within the cohort
+  even though neither cohort clears to a scoreable verdict. This remains the standing
+  counterpoint to the raw cohort's negative alpha, and is the strongest evidence in either
+  direction so far.
+
+Artifacts: `scout/backfill/verdict-13d-2022-2025-v2.json` (new, both fractions
+reconstructable) alongside the untouched original `verdict-13d-2022-2025.json` (old
+pooled numbers, kept for the side-by-side); `scout/validate-latest.json` refreshed and
+now carries `n_immature`/`n_events` on both verdicts (confirmed post-run). Design +
+review: `docs/superpowers/specs/2026-07-06-immature-denominator-fix-design.md`.
+Branch `fix/h2-immature-denominator`. Next reads: is a 2025-coverage push (delisting
+classification / symbology overrides for that vintage specifically) worth it before the
+canonical `verdict_as_of` date, or does the harness simply wait for 2025 to mature
+naturally.
 
 ## Prioritization pass — ranked backlog + one net-new item (2026-07-05)
 
