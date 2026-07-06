@@ -46,8 +46,22 @@ uv run --extra edgar shortlist-scout validate \
   exactly what the tamper guard exists to prevent) — needs a human call on which value
   governs the real run.
 
-**Status:** machinery complete + merged (#109); the run itself is deliberately deferred —
-operator action (or ask Claude to run it supervised).
+**Status: RUN COMPLETE (2026-07-06 05:50 UTC, supervised).** 3,645 events over the full
+registered window; one kernel-OOM incident mid-run (box had no swap; 2GB swapfile +
+swappiness=10 added and shortlist-bot restarted to reclaim RAM — both operator-applied;
+runner hardened: zombie detection, RSS cap, memory gate). **First verdict
+(`validate --backfill`, 2026-07-06): INSUFFICIENT on BOTH cohorts** — raw measurable
+fraction 0.624 and scored_gated 0.835, both below the pre-registered 0.90 floor, so the
+evaluator refuses an alpha verdict (the survivorship gate working as designed; the
+non-measurable tail is SPAC-era junk with no Yahoo history). **Notable non-evidence
+observation:** the §6.2 double-sort's high-minus-low composite spread is POSITIVE
+(+2.97%/mo, CI [+2.73,+3.17], 4 blocks, n=996/996) — inside the 13D cohort the scorer
+ORDERS winners even though the cohort itself carried negative drift; labeled
+rank/KILL-only + provisional per M1. Verdict artifacts: `scout/backfill/verdict-13d-2022-2025.json`
++ `scout/validate-latest.json` (flows into tonight's digest automatically). Next reads:
+adjudicate the blocks-gate discrepancy (spec-8 vs prereg-2) and whether a
+measurability-improved re-run (symbology._OVERRIDES seeding, delisting-classified tail)
+can lift the fraction toward the floor.
 
 ## Prioritization pass — ranked backlog + one net-new item (2026-07-05)
 
