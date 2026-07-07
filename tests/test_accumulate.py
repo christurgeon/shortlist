@@ -56,8 +56,8 @@ def test_save_is_atomic_no_tmp_left(tmp_path):
 
 def test_save_crash_before_replace_keeps_prior_file(tmp_path, monkeypatch):
     save(_snap("AAA", "2026-01-01"), tmp_path)           # good v1
-    target = tmp_path / "AAA" / "2026-01-01.json"
-    before = target.read_text()
+    target = tmp_path / "AAA" / "2026-01-01.json.gz"
+    before = target.read_bytes()
 
     def boom(src, dst):
         raise OSError("disk full")
@@ -65,7 +65,7 @@ def test_save_crash_before_replace_keeps_prior_file(tmp_path, monkeypatch):
     monkeypatch.setattr("shortlist.data.store.os.replace", boom)
     with pytest.raises(OSError):
         save(_snap("AAA", "2026-01-01"), tmp_path)        # crash mid-write
-    assert target.read_text() == before                  # prior file intact, not truncated
+    assert target.read_bytes() == before                  # prior file intact, not truncated
 
 
 # --- accumulate: idempotency, isolation, integrity ------------------------
