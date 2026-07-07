@@ -17,6 +17,9 @@ class Emission:
     is_discovery: bool     # True = can originate an unknown ticker; False = confluence-only
     cik: str | None = None  # optional EDGAR CIK (carried by filing-based signals so the
                             # selection ledger can re-resolve a renamed ticker; None elsewhere)
+    meta: dict = field(default_factory=dict)  # optional per-emission facts (e.g. the 8-K
+                            # accession + matched items) — passed through to the firehose
+                            # CohortEvent.meta; {} for signals that carry none (back-compat)
 
 
 @dataclass
@@ -58,6 +61,8 @@ class RunManifest:
     dropped_for_budget: int
     researched: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    vetoed: int = 0        # names dropped by the negative-8-K veto this run (LAST field —
+                            # every existing keyword/positional constructor stays valid)
 
     def to_dict(self) -> dict:
         return {
@@ -66,7 +71,8 @@ class RunManifest:
                         for s in self.signals],
             "funnel": {"raw": self.raw, "after_dedup": self.after_dedup,
                        "after_prefilter": self.after_prefilter, "screened": self.screened,
-                       "dropped_for_budget": self.dropped_for_budget},
+                       "dropped_for_budget": self.dropped_for_budget,
+                       "vetoed": self.vetoed},
             "researched": self.researched,
             "notes": self.notes,
         }

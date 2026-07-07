@@ -24,7 +24,13 @@ def _prereg_path(signal_slug: str, repo_root: str) -> Path:
 
 
 def load_prereg(signal_slug: str, *, repo_root: str) -> dict:
-    return yaml.safe_load(_prereg_path(signal_slug, repo_root).read_text())
+    path = _prereg_path(signal_slug, repo_root)
+    try:
+        text = path.read_text()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"pre-registration missing for '{signal_slug}' (expected {path})") from exc
+    return yaml.safe_load(text)
 
 
 def verify_untampered(signal_slug: str, *, repo_root: str, run_as_of: date) -> tuple[bool, str]:

@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -17,8 +17,8 @@ from ._caption import _caption
 from .budget import select
 from .calendar import last_session
 from .firehose import cohort_events_from_emissions
-from .funnel import aggregate, prefilter
-from .models import RunManifest, SignalStatus
+from .funnel import aggregate, apply_veto, prefilter
+from .models import Emission, RunManifest, SignalStatus
 from .signals import build_signals
 from .state import ScoutState
 
@@ -43,7 +43,7 @@ def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
 
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
-                           "edgar_activist_13d", "finra_short_interest"}
+                           "edgar_activist_13d", "finra_short_interest", "edgar_8k"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -55,14 +55,17 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
             if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
-def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None) -> dict[str, dict]:
+def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
+                   eightk_seen: list[str] | None = None) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
 
     `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
-    newer FINRA cycle (the bi-monthly cadence guard)."""
+    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` (from ScoutState) is
+    the 8-K originator's rolling accession dedup across the walk-back overlap."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
     si = scout_cfg.get("short_interest", {})
+    ek = scout_cfg.get("eightk", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -85,6 +88,12 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None) ->
                                  "min_prev_short_shares": si.get("min_prev_short_shares", 50_000.0),
                                  "deny_list": si.get("deny_list", []),
                                  "top_n": si.get("top_n", 10)},
+        "edgar_8k": {"identity": os.environ.get("SEC_IDENTITY"),
+                     "item_sets": ek.get("item_sets", [["1.01", "3.03"]]),
+                     "deny_list": ek.get("deny_list", []),
+                     "drop_spacs": ek.get("drop_spacs", True),
+                     "daily_cap": ek.get("daily_cap", 6),
+                     "seen_accessions": eightk_seen or []},
     }
 
 
@@ -143,22 +152,123 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
     return rows
 
 
-def _log_firehose(state, emissions, session, scout_cfg) -> None:
+def _log_firehose(state, emissions, session, scout_cfg) -> list:
     """Best-effort: record the pre-scorer discovery emissions to the raw-signal firehose.
     Config-gated by scout.firehose.enabled; a failure NEVER aborts the run (mirrors the
-    mark_yahoo_blocked best-effort convention)."""
+    mark_yahoo_blocked best-effort convention).
+
+    Returns the CohortEvents actually persisted this call (post-cap truncation; `[]` when
+    disabled or the write raised) — so a caller that marks downstream state as "logged"
+    (the 8-K negative-veto sweep's `eightk_neg_logged`) can mark ONLY what was actually
+    recorded, never a capped-out or failed-write event (FIX: exactly-once under
+    truncation/failure)."""
     fh_cfg = (scout_cfg or {}).get("firehose", {})
     if not fh_cfg.get("enabled"):
-        return
+        return []
     try:
         events = cohort_events_from_emissions(emissions, session)
         cap = fh_cfg.get("max_events_per_run", 200)  # 0/None => no cap (use enabled:false to disable)
         if cap and len(events) > cap:
             events = events[:cap]
         state.record_firehose(events, session)
+        return events
     except Exception as exc:  # noqa: BLE001 — best-effort, never abort the scout run
         import warnings
         warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
+        return []
+
+
+def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, list[str]]:
+    """The negative-item 8-K veto sweep (spec 2026-07-07 §4): fetch the EFTS window the
+    state hasn't finalized yet (bounded cold-start: at most `lookback_days`; the day cache
+    is shared with the originator, so the two halves cost ONE fetch), extract negative-item
+    matches (eightk.negative_events_from_rows — broad by design), log NEW matches to the
+    firehose as their own signal (edgar:8k_negative, accession-deduped across the re-swept
+    lag window), and update the pruned ScoutState veto map + swept-through cursor.
+
+    Returns (veto_map, notes). Gated by scout.eightk.negative_veto.enabled — absent or
+    disabled returns ({}, []) with ZERO fetches (byte-identical funnel). Never raises: a
+    failed sweep returns the STALE map plus a loud note (screening unprotected must not be
+    silent). The cursor lags EFTS_LAG_DAYS so late-indexed filings still veto."""
+    nv = (scout_cfg.get("eightk") or {}).get("negative_veto") or {}
+    if not nv.get("enabled"):
+        return {}, []
+    lookback = int(nv.get("lookback_days", 30))
+
+    def _active(m: dict) -> dict:
+        out = {}
+        for t, rec in m.items():
+            try:
+                if (session - date.fromisoformat(str(rec.get("last_date")))).days < lookback:
+                    out[t] = rec
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    cursor = state.eightk_negative_swept_through()
+    earliest = session - timedelta(days=lookback - 1)
+    start = earliest
+    if cursor:
+        try:
+            start = max(earliest, date.fromisoformat(str(cursor)) + timedelta(days=1))
+        except ValueError:
+            pass
+    try:
+        from ..data import efts
+        from .cik_tickers import load_cik_to_ticker, resolve_ticker
+        from .eightk import NEGATIVE_SIGNAL, STRENGTH, negative_events_from_rows
+        identity = os.environ.get("SEC_IDENTITY") or "shortlist-scout turgechr@duck.com"
+        rows = (efts.fetch_eightk_window(start, session, identity=identity)
+                if start <= session else [])
+        if rows is None:
+            raise RuntimeError(f"EFTS sweep failed for {start.isoformat()}:{session.isoformat()}")
+        index = load_cik_to_ticker(identity)
+        recs = negative_events_from_rows(
+            rows, resolve_ticker_fn=lambda cik: resolve_ticker(cik, index))
+        logged = set(state.eightk_neg_logged())
+        fresh = [r for r in recs if r["adsh"] not in logged]
+        if fresh and (scout_cfg.get("firehose") or {}).get("enabled"):
+            ems = [Emission(r["ticker"], NEGATIVE_SIGNAL, STRENGTH,
+                            f"8-K items {'+'.join(r['items'])} filed {r['file_date']}",
+                            is_discovery=False, cik=r["cik"],
+                            meta={"adsh": r["adsh"], "items": r["items"],
+                                  "file_date": r["file_date"]})
+                   for r in fresh]
+            # Mark ONLY the accessions the firehose layer actually persisted (post-cap
+            # truncation, or NONE if the write raised) — the rest stay "fresh" and simply
+            # retry on the next sweep. Safe: this ledger gates ONLY the firehose
+            # re-logging dedup, never the veto map itself (state.update_eightk_negative
+            # below runs unconditionally off `recs`, not `fresh`).
+            recorded = _log_firehose(state, ems, session, scout_cfg)
+            recorded_adshes = [e.meta.get("adsh") for e in recorded if e.meta.get("adsh")]
+            if recorded_adshes:
+                state.add_eightk_neg_logged(recorded_adshes)
+        swept = (session - timedelta(days=efts.EFTS_LAG_DAYS)).isoformat()
+        state.update_eightk_negative(recs, swept_through=swept, on=session,
+                                     lookback_days=lookback)
+        return _active(state.eightk_negative_map()), []
+    except Exception as exc:  # noqa: BLE001 — degrade LOUDLY: stale protection, never a crash
+        note = (f"8-K veto sweep FAILED — screening with STALE negative-8-K state "
+                f"(swept through {cursor or 'never'}): {redact_secrets(str(exc))}")
+        return _active(state.eightk_negative_map()), [note]
+
+
+def _veto_notes(state, vetoed, veto_map: dict) -> list[str]:
+    """Named manifest notes for this run's vetoed candidates, deduped by
+    (ticker, accession) via the ScoutState ledger — a vetoed name never enters
+    screened-cooldown, so without the ledger the same note would re-fire daily for up to
+    lookback_days. A NEWER accession for the same ticker notes afresh."""
+    notes: list[str] = []
+    for c in vetoed:
+        rec = veto_map.get(c.ticker.upper()) or {}
+        adsh = str(rec.get("adsh") or "")
+        if state.eightk_veto_note_seen(c.ticker, adsh):
+            continue
+        items = "+".join(rec.get("items") or []) or "?"
+        notes.append(f"VETOED: {c.ticker} — 8-K item {items} "
+                     f"filed {rec.get('last_date', '?')}")
+        state.mark_eightk_veto_noted(c.ticker, adsh)
+    return notes
 
 
 def _load_validation_digest(config: dict, *, today: date,
@@ -229,7 +339,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         boosters = []
     else:
         all_names = _enabled_signal_names(scout_cfg)
-        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement())
+        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
+                                        state.eightk_seen_accessions())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -259,6 +370,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # re-surfaced daily until a newer settlement publishes (the cadence guard).
             if s.name == "finra_short_interest" and not demo and getattr(s, "settlement", None):
                 state.set_finra_cycle(s.settlement)
+            # Persist the 8-K accessions surfaced this run so the walk-back overlap
+            # (session-2..session) doesn't re-emit them on the next runs.
+            if s.name == "edgar_8k" and not demo and getattr(s, "new_accessions", None):
+                state.add_eightk_accessions(s.new_accessions)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are
@@ -283,6 +398,14 @@ def run(config: dict, *, demo: bool, today: date) -> int:
                                                 cooldown_days=scout_cfg.get("cooldown_days", 7)),
         is_held=state.is_held)
     after_prefilter = len(kept)
+
+    # 1a. Negative-item 8-K veto (scout.eightk.negative_veto, ships ON): drop names with a
+    # fresh negative-item 8-K LOUDLY, between prefilter and select, before they burn one of
+    # the ~10 FMP deep-screen slots. Demo is offline (no sweep); an absent/disabled block
+    # returns ({}, []) so the funnel below is byte-identical to the pre-feature path.
+    veto_map, veto_notes = ({}, []) if demo else _negative_veto_sweep(state, scout_cfg, session)
+    kept, vetoed_cands = apply_veto(kept, veto_map)
+    veto_notes.extend(_veto_notes(state, vetoed_cands, veto_map))
 
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
     # Boosters only raise interest for tickers already in `kept`; they never originate.
@@ -319,7 +442,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     briefs: dict[str, str] = {}
     assessments: dict[str, dict] = {}
     researched: list[str] = []
-    notes: list[str] = []
+    notes: list[str] = list(veto_notes)
     # Caveat only when FMP was actually rationed from a chain that had it — never a
     # misleading note on a run that used FMP (or never had it).
     if not demo and not include_fmp and "fmp" in base_sources:
@@ -338,7 +461,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     manifest = RunManifest(
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
-        researched=researched, notes=notes)
+        researched=researched, notes=notes, vetoed=len(vetoed_cands))
 
     # 4a. Demo: print the GLANCE text and stop — never touches Pillow / network.
     if demo:
@@ -870,11 +993,16 @@ def _print_backfill_summary(summary: dict) -> None:
 
 def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
                       out_path: str | None, as_json: bool) -> int:
-    """Run the 13D batch backfill and print its summary. Never raises: a missing SEC_IDENTITY
-    or an unsupported --signal is a clear, immediate error (exit 2), not a traceback."""
-    if signal != "13d":
-        print(f"scout backfill: unsupported --signal '{signal}' (only '13d' in v1)",
-             file=sys.stderr)
+    """Run a signal's batch backfill and print its summary. Never raises here: a missing
+    SEC_IDENTITY or an unsupported --signal is a clear, immediate error (exit 2), not a
+    traceback. Dispatch is by name through the backfill module attribute so tests can
+    monkeypatch `shortlist.scout.backfill.run_backfill_13d` etc."""
+    runners = {"13d": "run_backfill_13d", "8k": "run_backfill_8k",
+               "8k-neg": "run_backfill_8k_neg"}
+    runner_name = runners.get(signal)
+    if runner_name is None:
+        print(f"scout backfill: unsupported --signal '{signal}' "
+              f"(supported: {', '.join(runners)})", file=sys.stderr)
         return 2
     identity = os.environ.get("SEC_IDENTITY")
     if not identity:
@@ -883,9 +1011,9 @@ def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
              file=sys.stderr)
         return 2
 
-    from .backfill import run_backfill_13d
-    summary = run_backfill_13d(config, start=start, end=end, identity=identity,
-                               out_path=out_path)
+    from . import backfill
+    summary = getattr(backfill, runner_name)(config, start=start, end=end,
+                                             identity=identity, out_path=out_path)
     if as_json:
         print(json.dumps(summary, default=str, indent=2))
     else:
@@ -913,15 +1041,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="firehose lookback window in days "
                          "(default: config scout.validate.lookback_days, else 365)")
     vp.add_argument("--backfill", default=None, metavar="PATH",
-                    help="evaluate a batch-backfill JSONL cohort (scout.backfill.run_backfill_13d "
+                    help="evaluate a batch-backfill JSONL cohort (shortlist-scout backfill "
                          "output) INSTEAD of the live ScoutState firehose; verdicts are labeled "
                          "SYNTHETIC (rank/KILL only, M1)")
 
     bp = sub.add_parser(
         "backfill",
         help="batch-backfill a discovery signal's historical cohort (offline, writes JSONL)")
-    bp.add_argument("--signal", choices=["13d"], required=True,
-                    help="which signal to backfill (v1: '13d' = edgar:activist_13d)")
+    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg"], required=True,
+                    help="which signal to backfill ('13d' = edgar:activist_13d, "
+                         "'8k' = edgar:8k positive pocket, '8k-neg' = edgar:8k_negative "
+                         "veto cohort)")
     bp.add_argument("--start", required=True, type=date.fromisoformat,
                     help="ISO start date, e.g. 2022-08-01")
     bp.add_argument("--end", required=True, type=date.fromisoformat,

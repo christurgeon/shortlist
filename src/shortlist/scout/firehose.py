@@ -36,7 +36,10 @@ class CohortEvent:
 def cohort_events_from_emissions(emissions: list[Emission], session: date,
                                  origin: str = "live") -> list[CohortEvent]:
     """Map every fired Emission (pre-scorer) to a CohortEvent. Pure. `as_of_price`,
-    `gated`, `composite` are left None — derived downstream, never fabricated here."""
+    `gated`, `composite` are left None — derived downstream, never fabricated here.
+    `meta` is copied from the emission when present, `{}` otherwise — identical
+    `to_dict()` output for meta-less emissions, since `CohortEvent.meta` already
+    defaulted to `{}`."""
     return [
         CohortEvent(
             signal=e.signal,
@@ -48,6 +51,7 @@ def cohort_events_from_emissions(emissions: list[Emission], session: date,
             gated=None,
             composite=None,
             origin=origin,
+            meta=dict(getattr(e, "meta", None) or {}),
         )
         for e in emissions
     ]

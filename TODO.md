@@ -6,6 +6,65 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Production 8-K backfill runs — blocked on the smoke/audit entry below (2026-07-07)
+
+Both 4-year legs are cheap on requests (~55–65 EFTS pages/month ≈ 3k requests ≈ 20 min at
+≤3 req/s); the per-event measurement (Yahoo history + delisting classification) is the
+long pole (hours, 13D-run scale). Serial + resumable — re-run the same command to resume a
+failed chunk. Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout
+22:30 timers), and check disk first (the runner also aborts below 8 GB free —
+`scout.backfill.min_free_disk_gb`):
+
+```bash
+df -BG --output=avail . | tail -1
+uv run --extra edgar shortlist-scout backfill --signal 8k --start 2022-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout backfill --signal 8k-neg --start 2022-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-2022-01-01-2025-12-31.jsonl --json
+uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-neg-2022-01-01-2025-12-31.jsonl --json
+```
+
+Expectation-setting (design §5): the 13D sibling's raw fraction was 0.70 < 0.90 and this
+population is plausibly MORE small-cap-skewed — **raw = INSUFFICIENT is closer to the base
+case than a tail risk**; decision weight rides on the scored_gated cohort + double-sort,
+and the R-A4 vintage-stratified guard applies with more vintage buckets at K=3m. For
+`8k-neg` the EXPECTED sign is negative: a KILL-shaped verdict CONFIRMS the ON-default veto;
+HOLD/positive falsifies it. Either way the machinery, veto, and firehose stand on their own.
+
+**Status:** open — blocked on the smoke + composition-audit entry (2026-07-07, below).
+
+## 8-K originator/veto — operator smoke + composition audit (pre-production) (2026-07-07)
+
+Live checks gated on an operator (never pytest — repo tests stay offline). Run from the
+repo root on the VPS, OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 +
+shortlist-scout 22:30 timers). All three must be done and recorded HERE before the 4-year
+production runs.
+
+1. **One-week live smoke** (bounded: ~7 days x 3–6 EFTS pages, day-cached):
+
+   ```bash
+   df -BG --output=avail . | tail -1     # preflight; the runner itself aborts below 8 GB
+   uv run --extra edgar shortlist-scout backfill --signal 8k --start 2026-06-22 --end 2026-06-28
+   uv run --extra edgar shortlist-scout backfill --signal 8k-neg --start 2026-06-22 --end 2026-06-28
+   ```
+
+   Expect: n_selected in the probed daily-rate band (8k ~3–5/day → ~15–25; 8k-neg ~8/day →
+   ~40–60), `.cache/efts/2026-06-*.json` day files written (complete rows, 8-K/A included),
+   an immediate re-run reports `written_this_run=0` (idempotent resume).
+2. **Items-vs-submissions fidelity spot-check**: for ~20 accessions sampled from the smoke
+   JSONLs, fetch `https://data.sec.gov/submissions/CIK##########.json` (SEC_IDENTITY as
+   User-Agent), locate the accession in `filings.recent` and compare its `items` string
+   against the event's `meta.items`. Expect ≥19/20 exact containment matches; any mismatch
+   is a feed-fidelity bug — STOP and investigate before trusting a 4-year cohort.
+3. **~50-filing composition audit (pre-registered — BEFORE the production run, spec §5)**:
+   hand-classify ~50 matched 1.01∧3.03 filings (merger / credit-facility / rights-plan /
+   reverse-split, by SIC + market cap) and record the tallies in this entry. 3.03 in 2026
+   also fires on covenanted credit agreements, NOL poison pills, and reverse splits
+   (negative-prior listing-compliance junk). NO pre-filtering on 5.03 co-occurrence (that
+   would be fitting) — audit first, let the ledger decide.
+
+**Status:** open — blocks the 8-K production backfill runs (entry added in the same
+feature's Task 7).
+
 ## Snapshot-replay composite suppression rate is unmeasured (guard residual) (2026-07-07)
 
 The new replay guard (`backtest/signals.py:SnapshotSignalSource.observe`, #`712e6e5`)

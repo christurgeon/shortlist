@@ -33,3 +33,23 @@ def prefilter(candidates: list[Candidate],
             continue
         kept.append(c)
     return kept
+
+
+def apply_veto(candidates: list[Candidate],
+               veto_map: dict[str, dict]) -> tuple[list[Candidate], list[Candidate]]:
+    """Drop candidates carrying a fresh negative-item 8-K (spec 2026-07-07 §4). Runs
+    BETWEEN prefilter and select so a vetoed name never consumes a deep-screen slot —
+    the next-ranked candidate backfills it in select().
+
+    `veto_map` is UPPER ticker -> {"last_date","items","adsh"} (built by
+    daily._negative_veto_sweep from ScoutState.eightk_negative). An empty map is the
+    identity — the byte-identical pre-feature funnel. Returns (kept, vetoed); the CALLER
+    names each vetoed ticker in manifest.notes (this stage stays pure — no state, no I/O).
+    """
+    if not veto_map:
+        return list(candidates), []
+    kept: list[Candidate] = []
+    vetoed: list[Candidate] = []
+    for c in candidates:
+        (vetoed if c.ticker.upper() in veto_map else kept).append(c)
+    return kept, vetoed

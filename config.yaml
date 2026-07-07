@@ -499,7 +499,9 @@ scout:
   firehose:                  # raw-signal firehose: log every PRE-SCORER discovery event so a
                              # signal's forward-return quality can be measured (validation harness P0)
     enabled: true            # best-effort logging; never aborts a run. Absent block => no logging, no state key.
-    max_events_per_run: 200  # safety cap on events persisted per session
+    max_events_per_run: 400  # safety cap on events persisted per session; sized so the 8-K
+                             # veto sweep's 30-day cold start (~8 neg/day = ~240) lands intact
+                             # (capped-out events behind the cursor are never retried)
   validate:                  # signal-validation evaluator (Phase 1). Absent => no CLI/section change.
                              # Inference params (min_measurable_frac, min_independent_blocks, K,
                              # delisting_return, …) live ONLY in src/shortlist/scout/preregister/
@@ -510,7 +512,10 @@ scout:
     # latest_max_age_days: 14  # digest SECTION staleness gate for scout/validate-latest.json
                                # (Task 2); absent -> default 14. Persisted by every `validate`
                                # CLI run (live + --backfill), read-only for the digest.
-  # --- scout.backfill (batch 13D backfill; OFF unless the CLI is invoked explicitly) ---
+  # --- scout.backfill (batch signal backfill: --signal 13d | 8k | 8k-neg; OFF unless the
+  #     CLI is invoked explicitly. 8-K legs: ~3k EFTS requests over 48 months (~20 min at
+  #     <=3 req/s) — per-event price/delisting measurement is the long pole. Run outside
+  #     21:15-23:00 UTC; the runner aborts below min_free_disk_gb.) ---
   # backfill:
   #   out_dir: scout/backfill
   #   sec_throttle_s: 0.2        # sleep before every SEC header/delisting fetch (fair access)
@@ -519,6 +524,9 @@ scout:
   #   symbology_cache_dir: .cache/symbology
   #   score_events: true         # Plan 3b: reconstruct a PiT gated/composite per event
   #   xbrl_cache_dir: .cache/sec_xbrl   # shared with the XBRL backtest's companyfacts cache
+  #   min_free_disk_gb: 8        # preflight: abort when the cache filesystem has less free
+  #                              # (.cache/sec_xbrl is month-keyed — a new month reuses nothing)
+  #   efts_cache_dir: .cache/efts  # 8k/8k-neg legs; shared with the live originator + veto day cache
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery
@@ -541,6 +549,30 @@ scout:
     # handled by scorer abstention; extend as persistent fund/ETF tickers appear.
     deny_list: [SPY, QQQ, IWM, DIA, VTI, VOO, VXUS, VEA, VWO, EEM, EFA, HYG, LQD, TLT, GLD, RQI]
     top_n: 10                # cap emissions to bound the deep-screen budget
+  eightk:                    # EdgarEightKSignal + the 8-K negative-item veto (EFTS feed,
+                             # data/efts.py). TWO halves, ONE fetch (shared day cache):
+                             # ORIGINATOR = CONTESTED prior (Lerman-Livnat 2010's one
+                             # positive pocket, 1.01∧3.03; Zhao 2017's unconditional 8-K
+                             # sign is NEGATIVE; filing-day moves reverse) — ships OFF
+                             # (signals below) at weight 0.5, attention-not-direction;
+                             # the pre-registered backfill cohort (preregister/edgar_8k.yaml)
+                             # earns or kills it. UNFITTED priors.
+    item_sets: [["1.01", "3.03"]]  # AND-sets (ORed across the list); 2.01 is expressible
+                                   # here but deliberately NOT in the default set
+    daily_cap: 6             # max emissions/session, applied after the state accession dedup
+    drop_spacs: true         # SPAC/shell display-NAME drop (SIC-6770 blank checks are
+                             # always dropped; display_names are NEVER a ticker source)
+    deny_list: []
+    negative_veto:           # VETO half: negative-item 8-Ks ({1.03,2.04,2.05,2.06,3.01,
+                             # 4.02,5.01} — reliably negative 30-90d drift) DROP a funnel
+                             # candidate LOUDLY (named manifest note) before it burns one
+                             # of the ~10 FMP deep-screen slots. Ships ON, but measured,
+                             # not assumed: every match logs to the firehose as its own
+                             # signal (edgar:8k_negative) with its own pre-registered
+                             # backfill cohort. Remove this sub-block for the
+                             # byte-identical pre-feature funnel.
+      enabled: true
+      lookback_days: 30      # veto horizon + state prune window (matches the drift window)
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -556,6 +588,7 @@ scout:
     wsb_hype:       {enabled: true,  weight: 0.5}
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
     finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
+    edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 _EMPTY: dict = {"screened": {}, "runs": [], "held": [], "picks": {}}
+_EIGHTK_SEEN_CAP = 500
 
 
 class ScoutState:
@@ -83,6 +84,100 @@ class ScoutState:
         the same bi-monthly cohort isn't re-surfaced daily until a newer cycle publishes."""
         self._data["finra_last_settlement"] = settlement
         self._save()
+
+    # --- 8-K originator + negative veto (shared capped-append helper) ---
+    def _append_capped(self, key: str, items: list[str], cap: int) -> None:
+        """Append new items to a rolling list under `key`, keeping insertion order and
+        evicting the OLDEST past `cap`. One save."""
+        lst = self._data.setdefault(key, [])
+        for a in items:
+            if a not in lst:
+                lst.append(a)
+        if len(lst) > cap:
+            del lst[:len(lst) - cap]
+        self._save()
+
+    # --- 8-K originator: capped rolling accession-seen set (walk-back dedup) ---
+    def eightk_seen_accessions(self) -> list[str]:
+        """Accessions the 8-K originator has already surfaced (the today-2..today walk-back
+        would otherwise re-emit a filing on 3 consecutive runs). Absent key (old state
+        files) reads as [] — back-compatible, no migration."""
+        return list(self._data.get("eightk_seen", []))
+
+    def add_eightk_accessions(self, accessions: list[str],
+                              cap: int = _EIGHTK_SEEN_CAP) -> None:
+        """Append newly-surfaced accessions (rolling window ~83 days at the default
+        daily_cap of 6 — far beyond the 3-day scan window it guards)."""
+        self._append_capped("eightk_seen", accessions, cap)
+
+    # --- 8-K negative-item veto: map + swept-through cursor + note ledger + log set ---
+    def eightk_negative_map(self) -> dict[str, dict]:
+        """UPPER ticker -> {"last_date","items","adsh"} for names with a fresh negative-item
+        8-K. Absent key reads as {} — back-compatible, no migration."""
+        return dict(self._data.get("eightk_negative", {}))
+
+    def eightk_negative_swept_through(self) -> str | None:
+        """ISO date of the last day the veto sweep considers FINAL (it deliberately lags
+        EFTS_LAG_DAYS behind the session — younger days are re-swept until EFTS catches
+        up). None on old state files."""
+        return self._data.get("eightk_negative_swept_through")
+
+    def update_eightk_negative(self, records: list[dict], *, swept_through: str,
+                               on: date, lookback_days: int = 30) -> None:
+        """Merge negative-8-K records (`{"ticker","adsh","file_date","items",...}` — the
+        eightk.negative_events_from_rows shape) into the veto map (newest filing per ticker
+        wins), prune entries older than `lookback_days` (the veto horizon), advance the
+        swept-through cursor (NEVER backwards), and prune the note-dedup ledger to
+        (ticker, accession) pairs still in the map. One save."""
+        m = self._data.setdefault("eightk_negative", {})
+        for r in records:
+            t = str(r.get("ticker", "")).upper()
+            fd = str(r.get("file_date") or "")
+            if not t or not fd:
+                continue
+            cur = m.get(t)
+            if cur is None or str(cur.get("last_date") or "") <= fd:
+                m[t] = {"last_date": fd, "items": list(r.get("items") or []),
+                        "adsh": r.get("adsh")}
+        for t in list(m):
+            try:
+                stale = (on - date.fromisoformat(str(m[t].get("last_date")))).days \
+                    >= lookback_days
+            except (TypeError, ValueError):
+                stale = True                       # malformed entry: drop, never wedge
+            if stale:
+                del m[t]
+        prev = self._data.get("eightk_negative_swept_through")
+        if prev is None or str(prev) < swept_through:
+            self._data["eightk_negative_swept_through"] = swept_through
+        live = {f"{t}|{rec.get('adsh')}" for t, rec in m.items()}
+        noted = self._data.get("eightk_veto_noted")
+        if noted:
+            self._data["eightk_veto_noted"] = [p for p in noted if p in live]
+        self._save()
+
+    def eightk_veto_note_seen(self, ticker: str, adsh: str) -> bool:
+        """True when this (ticker, accession) veto has already been named in a manifest
+        note — a vetoed name re-vetoes daily for up to lookback_days but is noted ONCE."""
+        return f"{ticker.upper()}|{adsh}" in self._data.get("eightk_veto_noted", [])
+
+    def mark_eightk_veto_noted(self, ticker: str, adsh: str) -> None:
+        lst = self._data.setdefault("eightk_veto_noted", [])
+        key = f"{ticker.upper()}|{adsh}"
+        if key not in lst:
+            lst.append(key)
+            self._save()
+
+    def eightk_neg_logged(self) -> list[str]:
+        """Accessions already logged to the firehose as edgar:8k_negative (the lag-window
+        days are re-swept every run and must not re-log). Absent key reads as []."""
+        return list(self._data.get("eightk_neg_logged", []))
+
+    def add_eightk_neg_logged(self, accessions: list[str],
+                              cap: int = _EIGHTK_SEEN_CAP) -> None:
+        """~8 negative 8-Ks/day observed -> a 500 cap is a ~60-day window, far beyond the
+        2-3 re-swept lag days it guards."""
+        self._append_capped("eightk_neg_logged", accessions, cap)
 
     # --- held list ---
     def set_held(self, tickers: list[str]) -> None:
