@@ -182,6 +182,8 @@ def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
     # Insider data pushes confidence (quality+momentum alone = 0.28) over the
     # 0.34 min_scored_weight floor the replay guard now enforces below -- this is
     # the "healthy name" regression fixture for that guard, not just a roundtrip.
+    # LOAD-BEARING: remove this Insider() line and confidence drops back to ~0.28,
+    # under the floor -- see test_snapshot_source_suppresses_composite_but_keeps_axes_below_floor.
     snap.insider = Insider(sentiment_mspr=0.2)
     save(snap, str(tmp_path))
 
@@ -191,6 +193,31 @@ def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
     assert "composite" in obs.signals
     assert obs.signals["composite"] > 0        # quality + momentum + insider present
     assert obs.ticker == "AAA"
+
+
+def test_snapshot_source_suppresses_composite_but_keeps_axes_below_floor(tmp_path):
+    """Pins the replay guard's deliberate residual (backtest/signals.py): a snapshot that
+    is healthy-looking -- quality + momentum components both present, real fundamentals,
+    real price -- but has NO insider data and NO SIC (unknown bucket -> scored=True
+    unconditionally) lands confidence ~0.28, under the 0.34 default min_scored_weight
+    floor. The guard must suppress the fabricated `composite` while the present sub-axes
+    (quality, momentum) still emit -- sub-floor composites are suppressed, but their
+    sub-axes stay measurable. This is exactly test_snapshot_source_roundtrips_store_and_scores's
+    fixture minus the load-bearing Insider() line."""
+    snap = TickerSnapshot(ticker="AAA", as_of="2026-01-15T00:00:00+00:00")
+    snap.profile = Profile(name="A", sector="Tech", market_cap=50e9)
+    snap.fundamentals = Fundamentals(roe=0.30, net_margin=0.25,
+                                     interest_coverage=10.0, debt_to_equity=0.5)
+    snap.price = Price(price=120.0, ma200=100.0, rel_strength_6m=0.1)
+    # No snap.insider, no SIC -> unknown bucket, scored=True, confidence ~0.28 < 0.34.
+    save(snap, str(tmp_path))
+
+    src = SnapshotSignalSource(str(tmp_path), _SNAPSHOT_CONFIG)
+    obs = src.observe("AAA", date(2026, 1, 15))
+    assert obs is not None
+    assert "composite" not in obs.signals      # suppressed: below the confidence floor
+    assert "quality" in obs.signals            # present sub-axes still emit
+    assert "momentum" in obs.signals
 
 
 def test_snapshot_source_missing_day_none(tmp_path):
