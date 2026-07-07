@@ -109,7 +109,16 @@ class SnapshotSignalSource:
         snap = TickerSnapshot.from_dict(raw)
         m = snapshot_to_metrics(snap)
         card = scoring.score(m, self.config)
-        sig: dict[str, float] = {"composite": card.composite}
+        # Composite only for cards production would rank with confidence: `scored`
+        # alone is toothless here (always True for the unknown bucket, and thin
+        # accumulated snapshots usually lack a SIC), so pair it with the validity
+        # floor. Sub-axes stay per-axis None-safe below. Residual (documented in
+        # the spec): a Finnhub-only name can read confidence ~0.32 and still pass
+        # a 0.25 floor — a measurement-policy line to revisit WITH data, not here.
+        sig: dict[str, float] = {}
+        floor = scoring._validity(self.config or {})["min_scored_weight"]
+        if card.scored and (card.confidence or 0.0) >= floor:
+            sig["composite"] = card.composite
         for axis in ("quality", "moat", "growth", "value", "momentum", "insider"):
             v = getattr(card, axis, None)
             if v is not None:
@@ -123,6 +132,8 @@ class SnapshotSignalSource:
         sue = scoring.sue_score(m, (self.config or {}).get("thresholds") or {})
         if sue is not None:
             sig["sue"] = sue
+        if not sig:
+            return None
         return Observation(as_of, ticker.upper(), sig)
 
 

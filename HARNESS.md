@@ -359,7 +359,7 @@ history — an **idempotent, per-ticker-isolated, point-in-time** daily capture 
 
 ```bash
 uv run shortlist-accumulate run     --root snapshots            # capture today (idempotent)
-uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed -> READY|NOT READY"
+uv run shortlist-accumulate status  --root snapshots            # both floors + SUE breadth + store size
 ```
 
 - **Point-in-time integrity:** captures **only the current UTC day** (`as_of` =
@@ -367,18 +367,32 @@ uv run shortlist-accumulate status  --root snapshots            # "N / 24 needed
   backfilled/restated data would reintroduce look-ahead into the backtest.
 - **Idempotent + frugal:** an already-captured ticker is skipped *before* any API
   call. Errors are isolated per ticker and routed through `redact_secrets`.
-- **Thin-gate:** snapshots below `--min-coverage` (default 0.5) are flagged THIN and
-  **not saved**, so a gated/empty symbol (FMP per-symbol 402) can't pollute the
-  backtest as if it were real signal. (Use `--min-coverage 0` for price-only runs.)
+- **Gzipped store:** snapshots are written as compressed `<day>.json.gz`
+  (`store.py:save`, atomic temp-file + `os.replace`, ~8.5:1 measured); legacy
+  uncompressed `<day>.json` files from before the migration are still readable
+  (a `.json`/`.json.gz` same-day twin resolves to the `.gz`), just never rewritten.
+- **Thin snapshots are saved by default, not skipped.** `--min-coverage` is now an
+  explicit opt-in save-gate (**default 0.0** = save everything actually fetched);
+  only a *coverage < min-coverage* snapshot is dropped, and a total-outage snapshot
+  (nothing fetched from any source) is always skipped regardless. A FMP-quota-gated
+  symbol still saves its keyless sections (Yahoo price/momentum/risk, EDGAR
+  financials/insider, Finnhub earnings) as a **THIN** snapshot — those keyless
+  fields are exactly what the SUE / snapshot-replay axes need, so thin is useful
+  signal, not noise to gate away. Raise `--min-coverage` to restore the old
+  gate-out-partial behavior.
 - **Breadth vs. the free tier:** the snapshot-replay path needs **≥ 30 names/date**
   to clear the trust floor, so the bundled watchlist holds **42** sector-spanning
   large-caps. But `--max-tickers` **defaults to 15** (≈195 < FMP's 250/day) and
   captures `tickers[:max_tickers]` — so a default run truncates to 15 and stays
   *below* the floor. To reach breadth, run `--max-tickers 42` (the `deploy/` sample
-  does): FMP 429s past ~19 names, but `coverage()` is field-based so the overflow
-  still saves on keyless coverage (Yahoo/EDGAR/Finnhub/FINRA) — only the FMP-only
-  legs (PEG, analyst upside) go thin. Paid FMP Starter lifts the gating; the
-  watchlist still avoids the documented 402-gated symbols.
+  does): FMP's free tier serves ~19-20 symbols/day (a quota, not per-symbol gating),
+  so the rest land at 27-47% keyless-only coverage and save as THIN. That breadth is
+  a function of the FMP quota, not the watchlist — a paid FMP Starter tier removes
+  the gating entirely.
+- **`status` reports both trust-floor dimensions**, not just one: distinct capture
+  dates (≥ 24 needed) **and** dates meeting the 30-name breadth floor, plus today's
+  earnings-bearing (SUE) breadth and the on-disk store size — READY requires both
+  floors to clear, not just the date count.
 - **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;
   enabling a daily timer is an explicit opt-in (`deploy/README.md`).
 

@@ -6,6 +6,21 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Snapshot-replay composite suppression rate is unmeasured (guard residual) (2026-07-07)
+
+The new replay guard (`backtest/signals.py:SnapshotSignalSource.observe`, #`712e6e5`)
+suppresses the emitted `composite` axis for any card scoring below
+`validity.min_scored_weight` (0.25 prod / 0.34 default). Real accumulated `fmp`/`finnhub`
+snapshots systematically lack price/insider legs, so a plausibly-healthy name (e.g.
+quality+momentum only, confidence ~0.28) is suppressed by design — but the actual
+**suppression rate on the live store has never been measured**. Follow-up: once ≥24
+dates accrue, count suppressed-vs-emitted composites over the store before trusting any
+composite-axis replay ICs; if the rate is high, the floor-vs-provenance-gating decision
+(spec §5, `docs/superpowers/specs/2026-07-07-accumulation-breadth-fix-design.md` —
+gitignored/local) should be revisited WITH that data.
+
+Status: open — measure after ~2026-07-31 (24-date threshold).
+
 ## H2 correction — pre-registration anchor (verbatim spec text) (2026-07-06)
 
 The immature-denominator correction's legitimacy rests on the 2026-07-01 registered spec

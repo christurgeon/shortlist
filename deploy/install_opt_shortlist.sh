@@ -149,8 +149,12 @@ Environment=HOME=$RUN_HOME
 Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Nice=10
 # --max-tickers 42 = whole watchlist, so breadth can clear the backtest's 30-name
-# trust floor (FMP 429s past ~19 names; overflow saves on keyless coverage).
-ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42
+# trust floor (FMP 429s past ~19 names; overflow saves as THIN keyless-only snapshots).
+# --sources adds edgar: keyless + VPS-reachable, supplies statements/insider/SIC for
+# FMP-quota-gated names; needs the edgartools extra (present in the /opt venv -- the
+# scout uses it) and SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
+# default that degrades without the optional extra is a footgun).
+ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
 TimeoutStartSec=1800
 UNIT
   cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
