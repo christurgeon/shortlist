@@ -1,4 +1,4 @@
-"""13D backfill coordinator (raw + scored cohort) — spec §6.5/§8, P2 Plan 3 / Plan 3b.
+"""Batch backfill coordinator (13d / 8k / 8k-neg; raw + scored cohort) — spec §6.5/§8, P2 Plan 3 / Plan 3b.
 
 Walk history (backtest.edgar_history) -> resolve PiT ticker (symbology, CIK-keyed) -> assemble
 CohortEvents (origin="backfill") -> OPTIONALLY reconstruct a PiT score() (scout.backfill
@@ -30,7 +30,10 @@ from typing import Optional
 
 from ..env import redact_secrets
 from .calendar import is_trading_day
-from .delisting import classify_delisting, terminal_price
+from .delisting import classify_delisting, normalize_items, terminal_price
+from .eightk import (DEFAULT_ITEM_SETS as _EIGHTK_ITEM_SETS, NEGATIVE_SIGNAL as SIGNAL_8K_NEG,
+                     SIGNAL as SIGNAL_8K, STRENGTH as _EIGHTK_STRENGTH, _junk_suffix,
+                     match_item_sets, match_negative)
 from .edgar_index import _is_real_ticker, activist_stakes_from_records
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
@@ -164,6 +167,16 @@ def fetch_sic_sync(cik, *, identity: str, cache_dir: str = ".cache/sec_xbrl",
     return sic
 
 
+def free_disk_gb(path: str = ".") -> float:
+    """Free disk (GB) on the filesystem holding `path`, walking up to the nearest EXISTING
+    ancestor (the cache dir may not exist yet on a first run)."""
+    import shutil
+    p = Path(path).resolve()
+    while not p.exists() and p.parent != p:
+        p = p.parent
+    return shutil.disk_usage(p).free / 1e9
+
+
 def next_trading_day(d: date) -> date:
     """First trading day STRICTLY after d (F12 entry shift)."""
     nxt = d + timedelta(days=1)
@@ -231,6 +244,78 @@ def assemble_events(records_by_day: dict, resolve_ticker, *, drop_spacs: bool = 
                     origin="backfill",
                     meta={"filing_date": fday.isoformat(),
                           "key": _key(em.cik or em.ticker, fday)}))
+    return events
+
+
+def assemble_eightk_events(rows: list[dict], resolve_ticker, *, signal: str,
+                           negative: bool = False, item_sets=None,
+                           drop_spacs: bool = True) -> list[CohortEvent]:
+    """Normalized EFTS rows (data/efts.py shape) -> selected CohortEvents for the 8-K legs.
+
+    Mirrors the LIVE aggregators' signal definition (scout/eightk.py) with the backfill's
+    denominator discipline layered on (the 13D assemble_events pattern): signal-definition
+    filters EXCLUDE records entirely (file_type != "8-K" — the 8-K/A root_forms leak —
+    then item mismatch; positive leg only: SIC-6770 blank check, SPAC/shell display-NAME,
+    5th-letter junk suffix), while RESOLUTION failures become selected `CIK:<cik>`
+    sentinels the evaluator counts non-measurable — never silently dropped.
+
+    The 8-K FILER IS the subject (no header fetch — the row's cik is the target, unlike
+    13Ds). `resolve_ticker(cik, filing_date)` is PiT at the FILING date; entry is
+    next_trading_day(filing_date) (F12 — strictly-after-filing neutralizes the
+    announcement-day move). The negative leg applies NO quality drops (broad by design —
+    a SPAC bankruptcy still belongs in the veto cohort). The EFTS row's first SIC rides
+    into meta["sic"] so the score loop skips a submissions fetch. One event per filer per
+    day; a row with an unparseable file_date is skipped (never raises)."""
+    sets_ = [tuple(s) for s in (item_sets or _EIGHTK_ITEM_SETS)]
+    events: list[CohortEvent] = []
+    seen_acc: set[str] = set()
+    seen_cik_day: set[tuple[str, str]] = set()
+    for r in rows:
+        if (r.get("file_type") or "") != "8-K":
+            continue                          # amendment leak — excluded, FIRST
+        adsh = r.get("adsh") or ""
+        if not adsh or adsh in seen_acc:
+            continue
+        seen_acc.add(adsh)
+        items = normalize_items(r.get("items"))
+        matched = match_negative(items) if negative else match_item_sets(items, sets_)
+        if matched is None:
+            continue
+        if not negative:
+            if "6770" in (r.get("sics") or []):
+                continue                      # blank-check SIC — signal definition
+            names = r.get("display_names") or []
+            if drop_spacs and names and is_spac_or_shell(str(names[0])):
+                continue                      # name check ONLY — never a ticker source
+        cik = r.get("cik")
+        try:
+            fday = date.fromisoformat(str(r.get("file_date")))
+        except (TypeError, ValueError):
+            continue                          # unusable row (no date to key on)
+        if (cik, fday.isoformat()) in seen_cik_day:
+            continue                          # one event per filer per day
+        seen_cik_day.add((cik, fday.isoformat()))
+        sic = (r.get("sics") or [None])[0]
+        meta = {"filing_date": fday.isoformat(), "adsh": adsh, "items": matched,
+                "key": f"{signal}|{cik}|{fday.isoformat()}"}
+        if sic:
+            meta["sic"] = str(sic)
+        entry = next_trading_day(fday)
+        tkr = resolve_ticker(cik, fday)       # PiT at FILING date
+        norm = _is_real_ticker(tkr) if tkr else None
+        if not norm:                          # selected but unresolvable: sentinel
+            events.append(CohortEvent(
+                signal=signal, ticker=f"CIK:{cik}", cik=cik, event_date=entry,
+                as_of_price=None, strength=_EIGHTK_STRENGTH, gated=None, composite=None,
+                origin="backfill",
+                meta={**meta, "non_measurable_hint": "unresolved_ticker"}))
+            continue
+        if not negative and _junk_suffix(norm):
+            continue                          # security-class suffix — signal definition
+        events.append(CohortEvent(
+            signal=signal, ticker=norm, cik=cik, event_date=entry, as_of_price=None,
+            strength=_EIGHTK_STRENGTH, gated=None, composite=None, origin="backfill",
+            meta=meta))
     return events
 
 
@@ -384,18 +469,70 @@ def _parse_prereg_date(x) -> Optional[date]:
         return None
 
 
-def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
-                     today: Optional[date] = None, out_path: Optional[str] = None,
-                     _fetch_window=None, _symbology=None, _fetch_history=None,
-                     _fetch_delisting=None, _fetch_facts=None, _fetch_sic=None,
-                     _prereg=None) -> dict:
-    """Batch 13D backfill: walk -> assemble -> OPTIONALLY score (PiT reconstruction) ->
-    measure -> idempotent JSONL. Serial + rate-limited by design (runs on the production VPS).
-    Returns the run summary.
+def _activist_fetch_factory(bf: dict, today: date):
+    from ..backtest.edgar_history import fetch_activist_window
+    return fetch_activist_window
+
+
+def _efts_fetch_factory(bf: dict, today: date):
+    """Window fetcher for the 8-K legs, with the SAME call shape as
+    fetch_activist_window (so the injected-`_fetch_window` seam is signal-agnostic)."""
+    cache_dir = bf.get("efts_cache_dir", ".cache/efts")
+
+    def _fetch(c_start, c_end, identity, *, throttle_s, max_records):
+        from ..data.efts import fetch_eightk_window
+        rows = fetch_eightk_window(c_start, c_end, identity=identity,
+                                   cache_dir=cache_dir, today=today,
+                                   throttle_s=throttle_s)
+        if rows is not None and max_records is not None and len(rows) > max_records:
+            warnings.warn(f"backfill: EFTS window {c_start}:{c_end} truncated at "
+                          f"max_records={max_records} — narrow the range", stacklevel=2)
+            rows = rows[:max_records]
+        return rows
+    return _fetch
+
+
+def _assemble_13d(recs: list[dict], resolve_ticker) -> list[CohortEvent]:
+    return assemble_events(group_by_day_records(recs), resolve_ticker)
+
+
+def _assemble_8k(rows: list[dict], resolve_ticker) -> list[CohortEvent]:
+    return assemble_eightk_events(rows, resolve_ticker, signal=SIGNAL_8K)
+
+
+def _assemble_8k_neg(rows: list[dict], resolve_ticker) -> list[CohortEvent]:
+    return assemble_eightk_events(rows, resolve_ticker, signal=SIGNAL_8K_NEG,
+                                  negative=True)
+
+
+# Per-signal backfill specs (spec 2026-07-07 §5): CLI name -> {firehose signal string,
+# prereg slug (Task 6 YAML filenames), default window fetcher factory, assembler}.
+# The "13d" row reproduces the pre-generalization coordinator byte-for-byte.
+_BACKFILL_SPECS: dict[str, dict] = {
+    "13d": {"signal": SIGNAL, "slug": "edgar_activist_13d",
+            "fetch_factory": _activist_fetch_factory, "assemble": _assemble_13d},
+    "8k": {"signal": SIGNAL_8K, "slug": "edgar_8k",
+           "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k},
+    "8k-neg": {"signal": SIGNAL_8K_NEG, "slug": "edgar_8k_negative",
+               "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k_neg},
+}
+
+
+def run_backfill(config: dict, *, signal_key: str, start: date, end: date, identity: str,
+                 today: Optional[date] = None, out_path: Optional[str] = None,
+                 _fetch_window=None, _symbology=None, _fetch_history=None,
+                 _fetch_delisting=None, _fetch_facts=None, _fetch_sic=None,
+                 _prereg=None, _free_gb=None) -> dict:
+    """Generic batch backfill: walk -> assemble -> OPTIONALLY score (PiT reconstruction) ->
+    measure -> idempotent JSONL. Serial + rate-limited by design (runs on the production
+    VPS). `signal_key` selects a _BACKFILL_SPECS row ("13d" | "8k" | "8k-neg"); the 13d row
+    is byte-identical to the pre-generalization coordinator (pinned by
+    tests/test_scout_backfill.py passing unchanged). Returns the run summary.
 
     `scout.backfill.score_events` (default true) gates the scored-cohort reconstruction
-    (design A4): false reproduces the byte-identical pre-3b raw-only JSONL (gated/composite
+    (design A4): false reproduces the byte-identical raw-only JSONL (gated/composite
     stay None, nothing else about a written row changes)."""
+    spec = _BACKFILL_SPECS[signal_key]
     bf = (config.get("scout") or {}).get("backfill") or {}
     sec_throttle = float(bf.get("sec_throttle_s", 0.2))
     yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
@@ -405,13 +542,23 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     xbrl_cache_dir = bf.get("xbrl_cache_dir", ".cache/sec_xbrl")
     today = today or date.today()
     out_path = out_path or str(Path(out_dir) /
-                               f"13d-{start.isoformat()}-{end.isoformat()}.jsonl")
+                               f"{signal_key}-{start.isoformat()}-{end.isoformat()}.jsonl")
     fetch_month = today.strftime("%Y-%m")          # v2 §1: FETCH-time month, never as_of's
+
+    # Free-disk preflight (design 2026-07-07 §5): the month-keyed companyfacts cache means
+    # a different-month run reuses nothing (.cache/sec_xbrl is multi-GB) — abort BEFORE any
+    # fetch rather than wedge the VPS mid-cohort. `_free_gb` is the test seam.
+    min_free = float(bf.get("min_free_disk_gb", 8.0))
+    free = (_free_gb or free_disk_gb)(xbrl_cache_dir)
+    if free < min_free:
+        raise RuntimeError(
+            f"backfill: only {free:.1f} GB free on the cache filesystem (floor "
+            f"{min_free:.0f} GB) — prune old .cache/sec_xbrl months and retry")
 
     if _prereg is None:
         from .preregister import load_prereg
         repo_root = str(Path(__file__).parent.parent.parent.parent)
-        _prereg = load_prereg("edgar_activist_13d", repo_root=repo_root)
+        _prereg = load_prereg(spec["slug"], repo_root=repo_root)
     k_months = int(_prereg.get("k_months", 12))
 
     # v2 §6: prereg window check — absent window_start/window_end (pre-Task-6 yaml) is a
@@ -421,7 +568,6 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     if w_start_raw is not None and w_end_raw is not None:
         prereg_start, prereg_end = _parse_prereg_date(w_start_raw), _parse_prereg_date(w_end_raw)
         if prereg_start is None or prereg_end is None:
-            # Malformed window_start/window_end — treat as unregistered with a warning
             warnings.warn(
                 "backfill: malformed prereg window value(s) — treating window as unregistered",
                 stacklevel=2)
@@ -433,8 +579,7 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
             window_not_preregistered = True
 
     if _fetch_window is None:
-        from ..backtest.edgar_history import fetch_activist_window
-        _fetch_window = fetch_activist_window
+        _fetch_window = spec["fetch_factory"](bf, today)
     if _fetch_history is None:
         def _fetch_history(tkr):
             time.sleep(yh_throttle)               # polite even with the day cache
@@ -481,9 +626,9 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
             if recs is None:
                 failed_chunks.append(f"{c_start}:{c_end}")
                 continue
-            events = assemble_events(group_by_day_records(recs),
-                                     _symbology.resolve_ticker if _symbology else
-                                     (lambda cik, as_of: None))
+            events = spec["assemble"](recs,
+                                      _symbology.resolve_ticker if _symbology else
+                                      (lambda cik, as_of: None))
             fresh = [e for e in events if e.meta.get("key") not in existing_keys]
             measured = []
             for ev in fresh:
@@ -494,7 +639,9 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
                     hist = _fetch_history(ev.ticker)
                 if score_events and hist is not None:
                     facts = _fetch_facts(ev.cik) if ev.cik else None
-                    sic = _fetch_sic(ev.cik) if ev.cik else None
+                    sic = ev.meta.get("sic")      # EFTS rows carry sics inline — free
+                    if sic is None and ev.cik:
+                        sic = _fetch_sic(ev.cik)
                     if ev.cik and sic is None:
                         n_sic_missing += 1
                     gated, composite = score_event(ev, hist, facts, spy_hist, sic, config)
@@ -522,6 +669,32 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     if _symbology is not None and getattr(_symbology, "low_confidence", None):
         summary["low_confidence"] = list(_symbology.low_confidence)
     return summary
+
+
+def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
+                     today: Optional[date] = None, out_path: Optional[str] = None,
+                     **seams) -> dict:
+    """13D leg — byte-identical to the pre-generalization coordinator (pinned by
+    tests/test_scout_backfill.py + tests/test_scout_backfill_cli.py passing unchanged)."""
+    return run_backfill(config, signal_key="13d", start=start, end=end, identity=identity,
+                        today=today, out_path=out_path, **seams)
+
+
+def run_backfill_8k(config: dict, *, start: date, end: date, identity: str,
+                    today: Optional[date] = None, out_path: Optional[str] = None,
+                    **seams) -> dict:
+    """Positive-pocket 8-K leg (edgar:8k, 1.01∧3.03; prereg edgar_8k.yaml, K=3m)."""
+    return run_backfill(config, signal_key="8k", start=start, end=end, identity=identity,
+                        today=today, out_path=out_path, **seams)
+
+
+def run_backfill_8k_neg(config: dict, *, start: date, end: date, identity: str,
+                        today: Optional[date] = None, out_path: Optional[str] = None,
+                        **seams) -> dict:
+    """Negative-item veto cohort (edgar:8k_negative; prereg edgar_8k_negative.yaml, K=3m).
+    Expected sign: NEGATIVE — a KILL-shaped verdict CONFIRMS the veto shipping ON."""
+    return run_backfill(config, signal_key="8k-neg", start=start, end=end,
+                        identity=identity, today=today, out_path=out_path, **seams)
 
 
 def group_by_day_records(recs: list[dict]) -> dict:

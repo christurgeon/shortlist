@@ -978,11 +978,16 @@ def _print_backfill_summary(summary: dict) -> None:
 
 def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
                       out_path: str | None, as_json: bool) -> int:
-    """Run the 13D batch backfill and print its summary. Never raises: a missing SEC_IDENTITY
-    or an unsupported --signal is a clear, immediate error (exit 2), not a traceback."""
-    if signal != "13d":
-        print(f"scout backfill: unsupported --signal '{signal}' (only '13d' in v1)",
-             file=sys.stderr)
+    """Run a signal's batch backfill and print its summary. Never raises here: a missing
+    SEC_IDENTITY or an unsupported --signal is a clear, immediate error (exit 2), not a
+    traceback. Dispatch is by name through the backfill module attribute so tests can
+    monkeypatch `shortlist.scout.backfill.run_backfill_13d` etc."""
+    runners = {"13d": "run_backfill_13d", "8k": "run_backfill_8k",
+               "8k-neg": "run_backfill_8k_neg"}
+    runner_name = runners.get(signal)
+    if runner_name is None:
+        print(f"scout backfill: unsupported --signal '{signal}' "
+              f"(supported: {', '.join(runners)})", file=sys.stderr)
         return 2
     identity = os.environ.get("SEC_IDENTITY")
     if not identity:
@@ -991,9 +996,9 @@ def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
              file=sys.stderr)
         return 2
 
-    from .backfill import run_backfill_13d
-    summary = run_backfill_13d(config, start=start, end=end, identity=identity,
-                               out_path=out_path)
+    from . import backfill
+    summary = getattr(backfill, runner_name)(config, start=start, end=end,
+                                             identity=identity, out_path=out_path)
     if as_json:
         print(json.dumps(summary, default=str, indent=2))
     else:
@@ -1021,15 +1026,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="firehose lookback window in days "
                          "(default: config scout.validate.lookback_days, else 365)")
     vp.add_argument("--backfill", default=None, metavar="PATH",
-                    help="evaluate a batch-backfill JSONL cohort (scout.backfill.run_backfill_13d "
+                    help="evaluate a batch-backfill JSONL cohort (shortlist-scout backfill "
                          "output) INSTEAD of the live ScoutState firehose; verdicts are labeled "
                          "SYNTHETIC (rank/KILL only, M1)")
 
     bp = sub.add_parser(
         "backfill",
         help="batch-backfill a discovery signal's historical cohort (offline, writes JSONL)")
-    bp.add_argument("--signal", choices=["13d"], required=True,
-                    help="which signal to backfill (v1: '13d' = edgar:activist_13d)")
+    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg"], required=True,
+                    help="which signal to backfill ('13d' = edgar:activist_13d, "
+                         "'8k' = edgar:8k positive pocket, '8k-neg' = edgar:8k_negative "
+                         "veto cohort)")
     bp.add_argument("--start", required=True, type=date.fromisoformat,
                     help="ISO start date, e.g. 2022-08-01")
     bp.add_argument("--end", required=True, type=date.fromisoformat,

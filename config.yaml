@@ -510,7 +510,7 @@ scout:
     # latest_max_age_days: 14  # digest SECTION staleness gate for scout/validate-latest.json
                                # (Task 2); absent -> default 14. Persisted by every `validate`
                                # CLI run (live + --backfill), read-only for the digest.
-  # --- scout.backfill (batch 13D backfill; OFF unless the CLI is invoked explicitly) ---
+  # --- scout.backfill (batch signal backfill: 13d/8k/8k-neg; OFF unless the CLI is invoked explicitly) ---
   # backfill:
   #   out_dir: scout/backfill
   #   sec_throttle_s: 0.2        # sleep before every SEC header/delisting fetch (fair access)
@@ -519,6 +519,9 @@ scout:
   #   symbology_cache_dir: .cache/symbology
   #   score_events: true         # Plan 3b: reconstruct a PiT gated/composite per event
   #   xbrl_cache_dir: .cache/sec_xbrl   # shared with the XBRL backtest's companyfacts cache
+  #   min_free_disk_gb: 8        # preflight: abort when the cache filesystem has less free
+  #                              # (.cache/sec_xbrl is month-keyed — a new month reuses nothing)
+  #   efts_cache_dir: .cache/efts  # 8k/8k-neg legs; shared with the live originator + veto day cache
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery
