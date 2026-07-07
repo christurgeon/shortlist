@@ -11,7 +11,7 @@ from shortlist.backtest.signals import (
 )
 from shortlist.data.sources import snapshot_from_closes
 from shortlist.data.bridge import snapshot_to_metrics
-from shortlist.data.models import TickerSnapshot, Profile, Fundamentals, Price
+from shortlist.data.models import TickerSnapshot, Profile, Fundamentals, Price, Insider
 from shortlist.data.store import save
 from shortlist import scoring
 
@@ -140,6 +140,38 @@ def test_residual_momentum_axis_dropped_on_flat_window():
     assert obs is None or "residual_momentum" not in obs.signals
 
 
+_SNAPSHOT_CONFIG = {
+    "thresholds": THRESH | {"roe": [0.10, 0.35], "net_margin": [0.0, 0.30],
+                            "interest_coverage": [2.0, 15.0], "debt_to_equity": [3.0, 0.0],
+                            "gross_margin": [0.20, 0.70], "gross_margin_stability": [0.5, 1.0],
+                            "roic": [0.05, 0.30], "revenue_cagr": [0.0, 0.20],
+                            "fcf_cagr": [0.0, 0.20], "eps_cagr": [0.0, 0.20],
+                            "revenue_growth_persistence": [0.5, 1.0],
+                            "upside_to_target": [0.0, 0.40], "fcf_yield": [0.02, 0.08],
+                            "pe_vs_history": [-0.20, 0.30], "peg": [3.0, 0.5],
+                            "insider_sentiment": [-0.30, 0.30],
+                            "insider_net_ratio": [-0.0005, 0.0005]},
+    "weights": {"quality": 0.2, "moat": 0.2, "growth": 0.15,
+                "value": 0.22, "momentum": 0.08, "insider": 0.15},
+    "gates": {"min_market_cap": 2e9, "max_debt_to_equity": 5.0,
+              "min_insider_sentiment": -0.60},
+}
+
+
+def test_snapshot_source_suppresses_composite_for_thin_snapshot(tmp_path, monkeypatch):
+    """A near-empty snapshot must not emit a fabricated composite (scoring.score
+    never returns None -- all-abstained redistributes to a literal 0.0). scored is
+    always True for the unknown bucket (no SIC on a bare snapshot), so the guard
+    pairs it with the validity confidence floor -- here confidence is 0.0 (nothing
+    present), well under the 0.34 default min_scored_weight."""
+    snap = TickerSnapshot(ticker="THIN", as_of="2026-07-07T00:00:00+00:00")
+    src = SnapshotSignalSource(str(tmp_path), _SNAPSHOT_CONFIG)
+    monkeypatch.setattr("shortlist.backtest.signals.load",
+                        lambda t, r, day=None: snap.to_dict())
+    obs = src.observe("THIN", date(2026, 7, 7))
+    assert obs is None or "composite" not in obs.signals
+
+
 def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
     # Build a real snapshot, persist it, then re-score via the snapshot source.
     snap = TickerSnapshot(ticker="AAA", as_of="2026-01-15T00:00:00+00:00")
@@ -147,29 +179,17 @@ def test_snapshot_source_roundtrips_store_and_scores(tmp_path):
     snap.fundamentals = Fundamentals(roe=0.30, net_margin=0.25,
                                      interest_coverage=10.0, debt_to_equity=0.5)
     snap.price = Price(price=120.0, ma200=100.0, rel_strength_6m=0.1)
+    # Insider data pushes confidence (quality+momentum alone = 0.28) over the
+    # 0.34 min_scored_weight floor the replay guard now enforces below -- this is
+    # the "healthy name" regression fixture for that guard, not just a roundtrip.
+    snap.insider = Insider(sentiment_mspr=0.2)
     save(snap, str(tmp_path))
 
-    config = {
-        "thresholds": THRESH | {"roe": [0.10, 0.35], "net_margin": [0.0, 0.30],
-                                "interest_coverage": [2.0, 15.0], "debt_to_equity": [3.0, 0.0],
-                                "gross_margin": [0.20, 0.70], "gross_margin_stability": [0.5, 1.0],
-                                "roic": [0.05, 0.30], "revenue_cagr": [0.0, 0.20],
-                                "fcf_cagr": [0.0, 0.20], "eps_cagr": [0.0, 0.20],
-                                "revenue_growth_persistence": [0.5, 1.0],
-                                "upside_to_target": [0.0, 0.40], "fcf_yield": [0.02, 0.08],
-                                "pe_vs_history": [-0.20, 0.30], "peg": [3.0, 0.5],
-                                "insider_sentiment": [-0.30, 0.30],
-                                "insider_net_ratio": [-0.0005, 0.0005]},
-        "weights": {"quality": 0.2, "moat": 0.2, "growth": 0.15,
-                    "value": 0.22, "momentum": 0.08, "insider": 0.15},
-        "gates": {"min_market_cap": 2e9, "max_debt_to_equity": 5.0,
-                  "min_insider_sentiment": -0.60},
-    }
-    src = SnapshotSignalSource(str(tmp_path), config)
+    src = SnapshotSignalSource(str(tmp_path), _SNAPSHOT_CONFIG)
     obs = src.observe("AAA", date(2026, 1, 15))
     assert obs is not None
     assert "composite" in obs.signals
-    assert obs.signals["composite"] > 0              # quality + momentum present
+    assert obs.signals["composite"] > 0        # quality + momentum + insider present
     assert obs.ticker == "AAA"
 
 
