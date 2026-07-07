@@ -12,6 +12,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 _EMPTY: dict = {"screened": {}, "runs": [], "held": [], "picks": {}}
+_EIGHTK_SEEN_CAP = 500
 
 
 class ScoutState:
@@ -82,6 +83,26 @@ class ScoutState:
         """Record that the short-interest signal has emitted on this settlement cycle, so
         the same bi-monthly cohort isn't re-surfaced daily until a newer cycle publishes."""
         self._data["finra_last_settlement"] = settlement
+        self._save()
+
+    # --- 8-K originator: capped rolling accession-seen set (walk-back dedup) ---
+    def eightk_seen_accessions(self) -> list[str]:
+        """Accessions the 8-K originator has already surfaced (the today-2..today walk-back
+        would otherwise re-emit a filing on 3 consecutive runs). Absent key (old state
+        files) reads as [] — back-compatible, no migration."""
+        return list(self._data.get("eightk_seen", []))
+
+    def add_eightk_accessions(self, accessions: list[str],
+                              cap: int = _EIGHTK_SEEN_CAP) -> None:
+        """Append newly-surfaced accessions, keeping insertion order and evicting the
+        OLDEST past `cap` (a rolling window ~83 days at the default daily_cap of 6 —
+        far beyond the 3-day scan window it guards)."""
+        lst = self._data.setdefault("eightk_seen", [])
+        for a in accessions:
+            if a not in lst:
+                lst.append(a)
+        if len(lst) > cap:
+            del lst[:len(lst) - cap]
         self._save()
 
     # --- held list ---

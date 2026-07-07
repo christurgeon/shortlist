@@ -43,7 +43,7 @@ def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
 
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
-                           "edgar_activist_13d", "finra_short_interest"}
+                           "edgar_activist_13d", "finra_short_interest", "edgar_8k"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -55,14 +55,17 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
             if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
-def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None) -> dict[str, dict]:
+def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
+                   eightk_seen: list[str] | None = None) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
 
     `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
-    newer FINRA cycle (the bi-monthly cadence guard)."""
+    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` (from ScoutState) is
+    the 8-K originator's rolling accession dedup across the walk-back overlap."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
     si = scout_cfg.get("short_interest", {})
+    ek = scout_cfg.get("eightk", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -85,6 +88,12 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None) ->
                                  "min_prev_short_shares": si.get("min_prev_short_shares", 50_000.0),
                                  "deny_list": si.get("deny_list", []),
                                  "top_n": si.get("top_n", 10)},
+        "edgar_8k": {"identity": os.environ.get("SEC_IDENTITY"),
+                     "item_sets": ek.get("item_sets", [["1.01", "3.03"]]),
+                     "deny_list": ek.get("deny_list", []),
+                     "drop_spacs": ek.get("drop_spacs", True),
+                     "daily_cap": ek.get("daily_cap", 6),
+                     "seen_accessions": eightk_seen or []},
     }
 
 
@@ -229,7 +238,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         boosters = []
     else:
         all_names = _enabled_signal_names(scout_cfg)
-        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement())
+        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
+                                        state.eightk_seen_accessions())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -259,6 +269,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # re-surfaced daily until a newer settlement publishes (the cadence guard).
             if s.name == "finra_short_interest" and not demo and getattr(s, "settlement", None):
                 state.set_finra_cycle(s.settlement)
+            # Persist the 8-K accessions surfaced this run so the walk-back overlap
+            # (session-2..session) doesn't re-emit them on the next runs.
+            if s.name == "edgar_8k" and not demo and getattr(s, "new_accessions", None):
+                state.add_eightk_accessions(s.new_accessions)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are

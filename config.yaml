@@ -541,6 +541,30 @@ scout:
     # handled by scorer abstention; extend as persistent fund/ETF tickers appear.
     deny_list: [SPY, QQQ, IWM, DIA, VTI, VOO, VXUS, VEA, VWO, EEM, EFA, HYG, LQD, TLT, GLD, RQI]
     top_n: 10                # cap emissions to bound the deep-screen budget
+  eightk:                    # EdgarEightKSignal + the 8-K negative-item veto (EFTS feed,
+                             # data/efts.py). TWO halves, ONE fetch (shared day cache):
+                             # ORIGINATOR = CONTESTED prior (Lerman-Livnat 2010's one
+                             # positive pocket, 1.01∧3.03; Zhao 2017's unconditional 8-K
+                             # sign is NEGATIVE; filing-day moves reverse) — ships OFF
+                             # (signals below) at weight 0.5, attention-not-direction;
+                             # the pre-registered backfill cohort (preregister/edgar_8k.yaml)
+                             # earns or kills it. UNFITTED priors.
+    item_sets: [["1.01", "3.03"]]  # AND-sets (ORed across the list); 2.01 is expressible
+                                   # here but deliberately NOT in the default set
+    daily_cap: 6             # max emissions/session, applied after the state accession dedup
+    drop_spacs: true         # SPAC/shell display-NAME drop (SIC-6770 blank checks are
+                             # always dropped; display_names are NEVER a ticker source)
+    deny_list: []
+    negative_veto:           # VETO half: negative-item 8-Ks ({1.03,2.04,2.05,2.06,3.01,
+                             # 4.02,5.01} — reliably negative 30-90d drift) DROP a funnel
+                             # candidate LOUDLY (named manifest note) before it burns one
+                             # of the ~10 FMP deep-screen slots. Ships ON, but measured,
+                             # not assumed: every match logs to the firehose as its own
+                             # signal (edgar:8k_negative) with its own pre-registered
+                             # backfill cohort. Remove this sub-block for the
+                             # byte-identical pre-feature funnel.
+      enabled: true
+      lookback_days: 30      # veto horizon + state prune window (matches the drift window)
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -556,6 +580,7 @@ scout:
     wsb_hype:       {enabled: true,  weight: 0.5}
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
     finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
+    edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

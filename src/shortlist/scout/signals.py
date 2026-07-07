@@ -470,6 +470,83 @@ class FinraShortInterestSignal:
 register("finra_short_interest", FinraShortInterestSignal)
 
 
+class EdgarEightKSignal:
+    """8-K positive-pocket discovery from EDGAR full-text search (EFTS; data/efts.py).
+
+    Surfaces filings whose items contain a configured AND-set (default 1.01∧3.03 — the
+    only positive-drift pocket in Lerman-Livnat 2010). A CONTESTED prior, the FINRA
+    pattern: the unconditional 8-K sign is NEGATIVE (Zhao 2017) and filing-day moves
+    reverse, so it ships DISABLED at weight 0.5 and supplies attention, not direction —
+    the scorer + gates judge the sign, the pre-registered backfill cohort (edgar_8k.yaml)
+    earns or kills it. Keyless + VPS-safe (SEC-hosted, no Yahoo WAF). EFTS lags a day or
+    two, so scan() walks session-2..session and dedups via a capped accession-seen set in
+    ScoutState (daily.py persists `new_accessions` after each scan).
+    """
+    name = "edgar_8k"
+    is_discovery = True
+
+    def __init__(self, identity: str | None = None, *, item_sets=None, deny_list=None,
+                 drop_spacs: bool = True, daily_cap: int = 6, lookback_days: int = 2,
+                 seen_accessions: list[str] | None = None,
+                 cache_dir: str = ".cache/efts",
+                 resolver_cache_dir: str = ".cache/sec_tickers") -> None:
+        self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self.item_sets = [list(s) for s in (item_sets or [["1.01", "3.03"]])]
+        self.deny_list = list(deny_list or [])
+        self.drop_spacs = drop_spacs
+        self.daily_cap = daily_cap
+        self.lookback_days = lookback_days
+        self.seen_accessions = set(seen_accessions or [])
+        self.cache_dir = cache_dir
+        self.resolver_cache_dir = resolver_cache_dir
+        self._resolver: dict[str, str] | None = None
+        self.new_accessions: list[str] = []   # daily.py persists these into ScoutState
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from ..data import efts
+        from .cik_tickers import load_cik_to_ticker, resolve_ticker
+        from .eightk import eightk_events_from_rows
+        try:
+            if self._resolver is None:
+                self._resolver = load_cik_to_ticker(self.identity,
+                                                    cache_dir=self.resolver_cache_dir)
+            resolver = self._resolver
+            rows: list[dict] = []
+            failed: list[str] = []
+            # EFTS lags (today often total: 0) — walk back session-2..session; the
+            # accession-seen state below stops the overlap re-emitting across runs.
+            for back in range(self.lookback_days, -1, -1):
+                day = session - timedelta(days=back)
+                got = efts.fetch_eightk_day(day, identity=self.identity,
+                                            cache_dir=self.cache_dir)
+                if got is None:
+                    failed.append(day.isoformat())
+                else:
+                    rows.extend(got)
+        except Exception as e:  # noqa: BLE001 — degrade, never crash the run
+            self._status = (False, redact_secrets(str(e)))
+            return []
+        ems = eightk_events_from_rows(
+            rows, resolve_ticker_fn=lambda cik: resolve_ticker(cik, resolver),
+            item_sets=self.item_sets, deny_list=self.deny_list,
+            drop_spacs=self.drop_spacs)
+        fresh = [e for e in ems if e.meta.get("adsh") not in self.seen_accessions]
+        fresh = fresh[:self.daily_cap]
+        self.new_accessions = [e.meta["adsh"] for e in fresh]
+        tail = f"; failed days: {', '.join(failed)}" if failed else ""
+        self._status = (not failed,
+                        f"{len(fresh)} 8-K matches from {len(rows)} filings "
+                        f"(cap {self.daily_cap}){tail}")
+        return fresh
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("edgar_8k", EdgarEightKSignal)
+
+
 class WsbHypeSignal:
     """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
     rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""
