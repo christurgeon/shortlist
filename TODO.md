@@ -6,6 +6,41 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Session follow-ups — breadth fix (#119) + 8-K stack (#120) shipped (2026-07-07)
+
+Both features merged and deployed (editable install picks the code up; effect from tonight's
+timers). Loose ends, roughly by urgency:
+
+1. **Operator (sudo) step pending:** `sudo bash deploy/install_opt_shortlist.sh` — rewrites the
+   accumulate unit with `--sources fmp,finnhub,edgar` (EDGAR statements/SIC/Form-4 for the
+   FMP-quota-gated names) and restarts services. Until then the breadth fix still works
+   (thin snapshots save; breadth ~16 → ~40) but without EDGAR enrichment, and shortlist-bot
+   runs pre-#119/#120 code.
+2. **Watch the first 22:30 UTC scout run:** the veto's 30-day cold-start self-heal sweeps
+   ~100–180 EFTS pages (~30–60 s) and firehose-logs the initial `edgar:8k_negative` cohort
+   (cap raised to 400 so it lands intact). One journal check.
+3. **Breadth re-check ~July 20:** per-date saved counts should now be ~40 (vs the 30 floor);
+   confirm via `shortlist-accumulate status` (it now reports both floors + SUE breadth) once
+   ≥24 post-fix dates accrue. The pre-fix thin dates (≤23 names) are permanently thin.
+4. **Weekend finality-vs-cursor watch item (8-K veto):** the EFTS day-cache freezes a day as
+   FINAL by *calendar* fetch-age while the sweep cursor lags by session days — if EFTS
+   indexing lags in *business* days over a weekend, a late-indexed Friday filing could be
+   permanently missed. Look at real weekend data after a few weeks before trusting the
+   lookback edge.
+5. **Lazy-Prices axis is a no-op regardless of the breadth fix** — `filing_text_similarity`
+   is never populated by the daily collector (research-layer only); measuring it needs a
+   collector change to compute EDGAR text similarity into the snapshot. Separate feature.
+6. **SUE decay runs systematically fast (pre-existing, now feeding real measurement):**
+   `_earnings`' calendar request spans today→today+90, so a PAST announcement date is almost
+   never available and `days_since_last_report` falls back to quarter-end (~30–45d stale).
+   Worth fixing before trusting SUE-axis ICs off the accumulated store.
+7. **Test isolation nit:** the run()-level veto regression test reads the repo-relative
+   `scout/validate-latest.json` (same class as the PR #117 cwd leak; benign today since both
+   runs read the same file). Cheap tmp-dir isolation when next touched.
+
+**Status:** open — item 1 is a one-command operator step; 2–4 are observation gates; 5–7 are
+future work.
+
 ## Production 8-K backfill runs — blocked on the smoke/audit entry below (2026-07-07)
 
 Both 4-year legs are cheap on requests (~55–65 EFTS pages/month ≈ 3k requests ≈ 20 min at
