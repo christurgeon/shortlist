@@ -4,7 +4,7 @@ Captures one `TickerSnapshot` per ticker per UTC day into the store so the backt
 snapshot-replay path accumulates real history. Idempotent (skips already-captured
 days before spending any API call), per-ticker isolated (one bad name can't abort a
 run), and observable (per-run log + a status verdict against the backtest's
-24-date threshold).
+24-date **and** 30-name-breadth thresholds).
 
 Point-in-time integrity: capture is ALWAYS the current UTC day. There is no path to
 write a snapshot dated to a past day — `as_of` comes from `utcnow` via collect, and
@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
+from dataclasses import fields as _dc_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -27,6 +28,8 @@ from .store import captured_days, save
 
 DEFAULT_MAX_TICKERS = 15          # ~13 FMP calls/ticker -> <= ~195/day < 250 free cap
 MIN_SNAPSHOT_DATES = 24           # mirrors the backtest snapshot/fit guard
+THIN_MARK = 0.5                   # classification only: saved-but-thin (< 50% key-field coverage)
+MIN_SNAPSHOT_BREADTH = 30         # mirrors backtest/engine.py _TRUST_MIN_BREADTH
 
 
 def _today_iso() -> str:
@@ -50,15 +53,29 @@ def load_watchlist(spec: str) -> list[str]:
 class AccumulationRun:
     day: str
     attempted: int
-    captured: list[tuple[str, float]] = field(default_factory=list)   # (ticker, coverage)
+    captured: list[tuple[str, float]] = field(default_factory=list)   # saved, coverage >= THIN_MARK
     skipped: list[str] = field(default_factory=list)
     failed: list[tuple[str, str]] = field(default_factory=list)       # (ticker, redacted err)
-    thin: list[tuple[str, float]] = field(default_factory=list)       # (ticker, coverage) — gated, NOT saved
+    thin: list[tuple[str, float]] = field(default_factory=list)       # SAVED, coverage < THIN_MARK
+    gated: list[tuple[str, float]] = field(default_factory=list)      # NOT saved (< min_coverage)
 
     @property
     def mean_coverage(self) -> Optional[float]:
-        covs = [c for _, c in self.captured]
+        covs = [c for _, c in self.captured + self.thin]
         return round(sum(covs) / len(covs), 3) if covs else None
+
+
+_BOOKKEEPING = ("ticker", "as_of", "raw", "provenance", "errors")
+
+
+def _is_empty(snap) -> bool:
+    """Nothing fetched at all: zero key-field coverage AND every section object
+    (key + aux) absent. A Finnhub-earnings-only snapshot has coverage()==0.0
+    (aux is excluded from coverage) but is NOT empty — it is the SUE payload."""
+    if snap.coverage() > 0.0:
+        return False
+    return all(getattr(snap, f.name) is None
+               for f in _dc_fields(type(snap)) if f.name not in _BOOKKEEPING)
 
 
 def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
@@ -67,11 +84,16 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
                collect_fn: Optional[Callable] = None) -> AccumulationRun:
     """Capture today's snapshot for each ticker. Idempotent and per-ticker isolated.
 
-    min_coverage: snapshots below this coverage fraction are treated as THIN — not
-    saved and not counted toward readiness — so a fully/partly gated symbol (e.g.
-    FMP's per-symbol 402) can't silently pollute the backtest as if it were real
-    signal. The library default is 0.0 (no gate); the CLI applies an operational
-    default. collect_fn is injectable for testing; defaults to the real collector.
+    min_coverage: an explicit save-gate — snapshots below this coverage fraction
+    are GATED (not saved, not counted toward readiness) so a caller can still
+    exclude fully/partly gated symbols (e.g. FMP's per-symbol 402) on demand. The
+    default is 0.0 (gate off): everything actually fetched is saved. A snapshot
+    that clears the gate but still has < THIN_MARK (50%) key-field coverage is
+    SAVED and classified THIN, not dropped — it still carries whatever
+    keyless/aux sections (price, earnings) landed, which is exactly what the
+    replay/SUE axes need. A snapshot with genuinely nothing fetched from any
+    source (total outage) FAILS instead of being saved as an empty husk.
+    collect_fn is injectable for testing; defaults to the real collector.
     """
     cf = collect_fn or collect                        # resolved at call time (testable via monkeypatch)
     day = _today_iso()
@@ -93,11 +115,14 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
                 run.failed.append((tk, f"stale as_of {snap.as_of[:10]} < {day}"))
                 continue
             cov = snap.coverage()
-            if cov < min_coverage:                    # thin: don't pollute the store/backtest
-                run.thin.append((tk, cov))
+            if cov < min_coverage:                    # explicit gate (CLI default 0.0 = off)
+                run.gated.append((tk, cov))
+                continue
+            if _is_empty(snap):                       # total outage: nothing to store
+                run.failed.append((tk, "no data from any source"))
                 continue
             save(snap, root)
-            run.captured.append((tk, cov))
+            (run.captured if cov >= THIN_MARK else run.thin).append((tk, cov))
         except Exception as e:                        # one bad ticker can't abort the run
             run.failed.append((tk, redact_secrets(e)))
     _append_run_log(root, run)
@@ -111,8 +136,9 @@ def _append_run_log(root: str | Path, run: AccumulationRun) -> None:
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "day": run.day, "attempted": run.attempted,
         "captured": len(run.captured), "skipped": len(run.skipped),
-        "failed": len(run.failed), "thin": len(run.thin),
+        "failed": len(run.failed), "thin": len(run.thin), "gated": len(run.gated),
         "mean_coverage": run.mean_coverage,
+        "coverage": {tk: cov for tk, cov in run.captured + run.thin},
     }
     with open(Path(root) / "_runs.jsonl", "a") as f:
         f.write(json.dumps(rec) + "\n")
@@ -164,10 +190,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     run.add_argument("--root", default="snapshots", help="store root directory")
     run.add_argument("--max-tickers", dest="max_tickers", type=int,
                      default=DEFAULT_MAX_TICKERS)
-    run.add_argument("--min-coverage", dest="min_coverage", type=float, default=0.5,
-                     help="skip (don't save) snapshots below this coverage fraction "
-                          "so gated/thin symbols don't pollute the backtest "
-                          "(default 0.5; use 0 for price-only runs)")
+    run.add_argument("--min-coverage", dest="min_coverage", type=float, default=0.0,
+                     help="explicit save-gate: snapshots below this coverage fraction are "
+                          "NOT saved (default 0.0 = save everything fetched; thin snapshots "
+                          "carry the keyless earnings/price sections the replay axes need)")
     run.add_argument("--force", action="store_true",
                      help="re-capture even if today's snapshot already exists")
 
@@ -191,14 +217,17 @@ def main(argv=None) -> int:
         for tk, cov in run.captured:
             print(f"{tk:<6} captured  coverage={cov:>5.0%}")
         for tk, cov in run.thin:
-            print(f"{tk:<6} THIN      coverage={cov:>5.0%} (< {args.min_coverage:.0%}, not saved)")
+            print(f"{tk:<6} thin      coverage={cov:>5.0%} (saved; FMP-gated or partial)")
+        for tk, cov in run.gated:
+            print(f"{tk:<6} GATED     coverage={cov:>5.0%} (< {args.min_coverage:.0%}, not saved)")
         for tk in run.skipped:
             print(f"{tk:<6} skipped   (already captured {run.day})")
         for tk, err in run.failed:
             print(f"{tk:<6} FAILED    {err}")
         mc = f"{run.mean_coverage:.0%}" if run.mean_coverage is not None else "-"
         print(f"\n{run.day}: captured={len(run.captured)} thin={len(run.thin)} "
-              f"skipped={len(run.skipped)} failed={len(run.failed)} mean_coverage={mc}")
+              f"gated={len(run.gated)} skipped={len(run.skipped)} failed={len(run.failed)} "
+              f"mean_coverage={mc}")
         print(_DISABLED_BANNER, file=sys.stderr)
         return 0 if not run.failed else 1
 
