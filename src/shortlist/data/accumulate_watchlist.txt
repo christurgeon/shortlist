@@ -9,13 +9,14 @@
 # library default, FMP-free-quota-safe) — which silently truncates this list to 15
 # and keeps breadth below 30. To actually reach the floor you MUST run with
 # `--max-tickers 42` (the deploy sample sets this). That exceeds FMP's free 250/day
-# (~13 calls/ticker), so FMP 429s after ~19 names — but that's fine: coverage() is
-# FIELD-based, not source-based, so the FMP-gated overflow still clears the 0.5
-# save-gate on keyless coverage (Yahoo price/momentum/risk + EDGAR financials/insider
-# + Finnhub mktcap/earnings/news + FINRA short interest). Only the FMP-only legs
-# (PEG, analyst upside) go thin on the overflow — and the snapshot backtest's target
-# axes (momentum, SUE, fundamentals) are keyless anyway. A paid FMP Starter tier
-# removes the gating if you want full value coverage on all 42.
+# (~13 calls/ticker), so FMP 429s after ~19 names.
+#
+# Coverage reality (measured 2026-07-07): FMP's free tier serves ~19-20 symbols/day
+# (a QUOTA, not per-symbol gating) — the rest land at 27-47% keyless-only coverage
+# and are saved as THIN snapshots by design (the keyless earnings/price sections are
+# what the snapshot-replay axes need). Which names get full coverage is decided by
+# the quota, not this list; swapping names cannot raise breadth. A paid FMP Starter
+# tier removes the gating entirely.
 #
 # Deliberately AVOIDS the documented per-symbol 402-gated names (GEV, AXON, MELI,
 # ISRG, SCHW, TMO) so the high-coverage core stays clean on the free tier.

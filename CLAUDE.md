@@ -59,7 +59,9 @@ no new scoring):
 - **Accumulation** (`shortlist.data.accumulate`, `shortlist-accumulate`): idempotent
   point-in-time daily capture of `TickerSnapshot`s into `store.py` so the guarded
   backtest paths can activate (≥24 daily snapshots). **Scheduling ships OFF** (disabled
-  systemd sample in `deploy/`). See `HARNESS.md` → "Feeding the snapshot path".
+  systemd sample in `deploy/`). See `HARNESS.md` → "Feeding the snapshot path". Thin
+  snapshots (FMP-quota-gated, keyless-only coverage) are persisted by default — the
+  keyless SUE inputs ride them — and the store is gzipped.
 - **Scout** (`shortlist.scout.*`, `shortlist-scout`): autonomously discovers tickers
   from free signal feeds, deep-screens via `screen.run_harness`, runs the Claude
   research layer on leaders, ships a daily Telegram report. Discovery + delivery only;

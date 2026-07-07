@@ -24,7 +24,7 @@ from typing import Callable, Optional
 
 from ..env import load_env, redact_secrets
 from .collector import collect
-from .store import captured_days, save
+from .store import captured_days, load, save
 
 DEFAULT_MAX_TICKERS = 15          # ~13 FMP calls/ticker -> <= ~195/day < 250 free cap
 MIN_SNAPSHOT_DATES = 24           # mirrors the backtest snapshot/fit guard
@@ -163,7 +163,6 @@ def store_status(root: str | Path, tickers: list[str], *,
                  min_dates: int = MIN_SNAPSHOT_DATES) -> StatusReport:
     """How close the store is to BOTH backtest snapshot-replay floors:
     >=min_dates distinct dates AND >=MIN_SNAPSHOT_BREADTH names per date."""
-    from .store import load as _load                     # local import: avoids cycle at module import
     per: dict[str, int] = {}
     per_date: dict[str, int] = {}
     per_date_earn: dict[str, int] = {}
@@ -175,7 +174,7 @@ def store_status(root: str | Path, tickers: list[str], *,
         for d in days:
             per_date[d] = per_date.get(d, 0) + 1
             try:
-                raw = _load(t, root, day=d)
+                raw = load(t, root, day=d)
                 if raw.get("earnings"):
                     per_date_earn[d] = per_date_earn.get(d, 0) + 1
             except (FileNotFoundError, OSError, ValueError):
