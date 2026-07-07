@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -17,8 +17,8 @@ from ._caption import _caption
 from .budget import select
 from .calendar import last_session
 from .firehose import cohort_events_from_emissions
-from .funnel import aggregate, prefilter
-from .models import RunManifest, SignalStatus
+from .funnel import aggregate, apply_veto, prefilter
+from .models import Emission, RunManifest, SignalStatus
 from .signals import build_signals
 from .state import ScoutState
 
@@ -170,6 +170,92 @@ def _log_firehose(state, emissions, session, scout_cfg) -> None:
         warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
 
 
+def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, list[str]]:
+    """The negative-item 8-K veto sweep (spec 2026-07-07 §4): fetch the EFTS window the
+    state hasn't finalized yet (bounded cold-start: at most `lookback_days`; the day cache
+    is shared with the originator, so the two halves cost ONE fetch), extract negative-item
+    matches (eightk.negative_events_from_rows — broad by design), log NEW matches to the
+    firehose as their own signal (edgar:8k_negative, accession-deduped across the re-swept
+    lag window), and update the pruned ScoutState veto map + swept-through cursor.
+
+    Returns (veto_map, notes). Gated by scout.eightk.negative_veto.enabled — absent or
+    disabled returns ({}, []) with ZERO fetches (byte-identical funnel). Never raises: a
+    failed sweep returns the STALE map plus a loud note (screening unprotected must not be
+    silent). The cursor lags EFTS_LAG_DAYS so late-indexed filings still veto."""
+    nv = (scout_cfg.get("eightk") or {}).get("negative_veto") or {}
+    if not nv.get("enabled"):
+        return {}, []
+    lookback = int(nv.get("lookback_days", 30))
+
+    def _active(m: dict) -> dict:
+        out = {}
+        for t, rec in m.items():
+            try:
+                if (session - date.fromisoformat(str(rec.get("last_date")))).days < lookback:
+                    out[t] = rec
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    cursor = state.eightk_negative_swept_through()
+    earliest = session - timedelta(days=lookback - 1)
+    start = earliest
+    if cursor:
+        try:
+            start = max(earliest, date.fromisoformat(str(cursor)) + timedelta(days=1))
+        except ValueError:
+            pass
+    try:
+        from ..data import efts
+        from .cik_tickers import load_cik_to_ticker, resolve_ticker
+        from .eightk import NEGATIVE_SIGNAL, STRENGTH, negative_events_from_rows
+        identity = os.environ.get("SEC_IDENTITY") or "shortlist-scout turgechr@duck.com"
+        rows = (efts.fetch_eightk_window(start, session, identity=identity)
+                if start <= session else [])
+        if rows is None:
+            raise RuntimeError(f"EFTS sweep failed for {start.isoformat()}:{session.isoformat()}")
+        index = load_cik_to_ticker(identity)
+        recs = negative_events_from_rows(
+            rows, resolve_ticker_fn=lambda cik: resolve_ticker(cik, index))
+        logged = set(state.eightk_neg_logged())
+        fresh = [r for r in recs if r["adsh"] not in logged]
+        if fresh and (scout_cfg.get("firehose") or {}).get("enabled"):
+            ems = [Emission(r["ticker"], NEGATIVE_SIGNAL, STRENGTH,
+                            f"8-K items {'+'.join(r['items'])} filed {r['file_date']}",
+                            is_discovery=False, cik=r["cik"],
+                            meta={"adsh": r["adsh"], "items": r["items"],
+                                  "file_date": r["file_date"]})
+                   for r in fresh]
+            _log_firehose(state, ems, session, scout_cfg)
+            state.add_eightk_neg_logged([r["adsh"] for r in fresh])
+        swept = (session - timedelta(days=efts.EFTS_LAG_DAYS)).isoformat()
+        state.update_eightk_negative(recs, swept_through=swept, on=session,
+                                     lookback_days=lookback)
+        return _active(state.eightk_negative_map()), []
+    except Exception as exc:  # noqa: BLE001 — degrade LOUDLY: stale protection, never a crash
+        note = (f"8-K veto sweep FAILED — screening with STALE negative-8-K state "
+                f"(swept through {cursor or 'never'}): {redact_secrets(str(exc))}")
+        return _active(state.eightk_negative_map()), [note]
+
+
+def _veto_notes(state, vetoed, veto_map: dict) -> list[str]:
+    """Named manifest notes for this run's vetoed candidates, deduped by
+    (ticker, accession) via the ScoutState ledger — a vetoed name never enters
+    screened-cooldown, so without the ledger the same note would re-fire daily for up to
+    lookback_days. A NEWER accession for the same ticker notes afresh."""
+    notes: list[str] = []
+    for c in vetoed:
+        rec = veto_map.get(c.ticker.upper()) or {}
+        adsh = str(rec.get("adsh") or "")
+        if state.eightk_veto_note_seen(c.ticker, adsh):
+            continue
+        items = "+".join(rec.get("items") or []) or "?"
+        notes.append(f"VETOED: {c.ticker} — 8-K item {items} "
+                     f"filed {rec.get('last_date', '?')}")
+        state.mark_eightk_veto_noted(c.ticker, adsh)
+    return notes
+
+
 def _load_validation_digest(config: dict, *, today: date,
                             path: str = VALIDATE_LATEST_PATH) -> dict | None:
     """Read `scout/validate-latest.json` for the digest's display-only validation SECTION
@@ -298,6 +384,14 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         is_held=state.is_held)
     after_prefilter = len(kept)
 
+    # 1a. Negative-item 8-K veto (scout.eightk.negative_veto, ships ON): drop names with a
+    # fresh negative-item 8-K LOUDLY, between prefilter and select, before they burn one of
+    # the ~10 FMP deep-screen slots. Demo is offline (no sweep); an absent/disabled block
+    # returns ({}, []) so the funnel below is byte-identical to the pre-feature path.
+    veto_map, veto_notes = ({}, []) if demo else _negative_veto_sweep(state, scout_cfg, session)
+    kept, vetoed_cands = apply_veto(kept, veto_map)
+    veto_notes.extend(_veto_notes(state, vetoed_cands, veto_map))
+
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
     # Boosters only raise interest for tickers already in `kept`; they never originate.
     if boosters:
@@ -333,7 +427,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     briefs: dict[str, str] = {}
     assessments: dict[str, dict] = {}
     researched: list[str] = []
-    notes: list[str] = []
+    notes: list[str] = list(veto_notes)
     # Caveat only when FMP was actually rationed from a chain that had it — never a
     # misleading note on a run that used FMP (or never had it).
     if not demo and not include_fmp and "fmp" in base_sources:
@@ -352,7 +446,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     manifest = RunManifest(
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
-        researched=researched, notes=notes)
+        researched=researched, notes=notes, vetoed=len(vetoed_cands))
 
     # 4a. Demo: print the GLANCE text and stop — never touches Pillow / network.
     if demo:

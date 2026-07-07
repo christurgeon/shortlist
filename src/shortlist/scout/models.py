@@ -61,6 +61,8 @@ class RunManifest:
     dropped_for_budget: int
     researched: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    vetoed: int = 0        # names dropped by the negative-8-K veto this run (LAST field —
+                            # every existing keyword/positional constructor stays valid)
 
     def to_dict(self) -> dict:
         return {
@@ -69,7 +71,8 @@ class RunManifest:
                         for s in self.signals],
             "funnel": {"raw": self.raw, "after_dedup": self.after_dedup,
                        "after_prefilter": self.after_prefilter, "screened": self.screened,
-                       "dropped_for_budget": self.dropped_for_budget},
+                       "dropped_for_budget": self.dropped_for_budget,
+                       "vetoed": self.vetoed},
             "researched": self.researched,
             "notes": self.notes,
         }
