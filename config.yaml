@@ -510,7 +510,10 @@ scout:
     # latest_max_age_days: 14  # digest SECTION staleness gate for scout/validate-latest.json
                                # (Task 2); absent -> default 14. Persisted by every `validate`
                                # CLI run (live + --backfill), read-only for the digest.
-  # --- scout.backfill (batch signal backfill: 13d/8k/8k-neg; OFF unless the CLI is invoked explicitly) ---
+  # --- scout.backfill (batch signal backfill: --signal 13d | 8k | 8k-neg; OFF unless the
+  #     CLI is invoked explicitly. 8-K legs: ~3k EFTS requests over 48 months (~20 min at
+  #     <=3 req/s) — per-event price/delisting measurement is the long pole. Run outside
+  #     21:15-23:00 UTC; the runner aborts below min_free_disk_gb.) ---
   # backfill:
   #   out_dir: scout/backfill
   #   sec_throttle_s: 0.2        # sleep before every SEC header/delisting fetch (fair access)

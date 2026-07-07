@@ -387,6 +387,55 @@ report sections (`report/sections.py`). The autonomous push still ships **OFF**
 pass to `/deep`** (we enter after-close, so the edge is post-filing drift —
 Bebchuk-Brav-Jiang 2015 — not the filing-day pop), screening triage, not advice.
 
+## 8-K discovery + negative-item veto (scout)
+
+`EdgarEightKSignal` (`scout/signals.py`, keyless, **VPS-safe** — SEC-hosted, no Yahoo WAF)
+discovers 8-Ks whose items contain a configured AND-set (default **1.01∧3.03** —
+Lerman-Livnat 2010's only positive-drift pocket) from **EFTS** (EDGAR full-text search;
+shared leaf `data/efts.py` — the daily index carries NO item codes, EFTS returns them
+inline, so a full day costs 3–6 requests). **A CONTESTED prior, NOT a defensible one**
+(the FINRA short-interest pattern): the unconditional 8-K sign is NEGATIVE (Zhao 2017) and
+filing-day moves reverse (Ben-Rephael et al 2021), so it ships **disabled at weight 0.5**
+(`scout.signals.edgar_8k`) and supplies attention, not direction. Upgrading on the FINRA
+precedent, BOTH halves carry **pre-registered backfill cohorts**
+(`preregister/edgar_8k.yaml` / `edgar_8k_negative.yaml`: K=3m, window 2022–2025, blocks≥8,
+frac≥0.90) via the generalized per-signal backfill (`shortlist-scout backfill --signal
+8k|8k-neg`, spec table in `scout/backfill.py`; the 8-K **filer IS the subject** — no header
+fetch; PiT `Symbology` at the FILING date; EFTS `sics` reused so scoring skips a
+submissions fetch; **free-disk preflight aborts below 8 GB**). Walk-back scan
+session−2..session with a capped accession-seen set in `ScoutState`; tune `scout.eightk`.
+
+The **negative-item veto** (`scout.eightk.negative_veto`, ships **ON**) is the defensible
+half: items {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01} are reliably negative over the
+funnel's 30–90d horizon, so a fresh match **DROPS the candidate LOUDLY** between prefilter
+and select (`funnel.apply_veto`) before it burns one of the ~10 FMP deep-screen slots —
+named "VETOED: <tk> — 8-K item <item> filed <date>" manifest note (deduped by
+ticker+accession in state; the name re-vetoes daily but is noted once),
+`RunManifest.vetoed` count, and a loud STALE-state note when the sweep fails. **Measured,
+not assumed**: every match logs once to the firehose as its own signal
+**`edgar:8k_negative`** (accession-deduped; the 30-day pruned `eightk_negative` state map
+loses history — the firehose is the permanent record) with its own prereg cohort whose
+EXPECTED sign is negative (KILL-shaped CONFIRMS the veto). The swept-through cursor lags
+`EFTS_LAG_DAYS` so late-indexed filings still veto; cold-start walk-back is bounded at
+`lookback_days`. Removing the `negative_veto` block gives the byte-identical pre-feature
+funnel. `scoring.score()` is untouched by all of this.
+
+**EFTS gotchas (live-probed 2026-07-07, twice — do not "fix" back):** needs **browser-ish
+UA + Accept headers** (bot-shaped requests are rejected — the Yahoo-WAF lesson, and keep
+`Accept-Encoding` httpx-decodable); **intermittent 500s are normal** → bounded
+retry-on-5xx ONLY (never retry 4xx), backoff capped at 8 s, ≤3 req/s throttle; **EFTS
+lags** — today's date returns `total: 0`, so the walk-back window and the day-cache
+finality rule (`day <= fetched_on − EFTS_LAG_DAYS`) are load-bearing; **`forms=8-K`
+filters `root_forms` and RETURNS `8-K/A` rows** — the `file_type != "8-K"` drop is
+mandatory everywhere (an amendment would double-fire the originator, re-trigger the veto,
+and double-count backfill events); the ES pagination window is **`from+size ≤ 10k`** — any
+range whose `total ≥ 9,900` splits recursively at the date midpoint (earnings-heavy months
+approach the cap). `.cache/efts/<day>.json` always stores the COMPLETE unfiltered day
+(filtering is the aggregators' job, never before the cache write). **No `display_names`
+ticker fallback anywhere** — CIK→ticker only via `cik_tickers` (live) / `Symbology` (PiT
+backfill); names feed only the SPAC check. Spec:
+`docs/superpowers/specs/2026-07-07-eightk-originator-design.md`.
+
 ## WSB social hype (harness + scout)
 
 `WsbSource` (keyless) and the scout `WsbHypeSignal` both read **ApeWisdom**

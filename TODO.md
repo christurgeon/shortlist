@@ -6,6 +6,32 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Production 8-K backfill runs — blocked on the smoke/audit entry below (2026-07-07)
+
+Both 4-year legs are cheap on requests (~55–65 EFTS pages/month ≈ 3k requests ≈ 20 min at
+≤3 req/s); the per-event measurement (Yahoo history + delisting classification) is the
+long pole (hours, 13D-run scale). Serial + resumable — re-run the same command to resume a
+failed chunk. Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout
+22:30 timers), and check disk first (the runner also aborts below 8 GB free —
+`scout.backfill.min_free_disk_gb`):
+
+```bash
+df -BG --output=avail . | tail -1
+uv run --extra edgar shortlist-scout backfill --signal 8k --start 2022-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout backfill --signal 8k-neg --start 2022-01-01 --end 2025-12-31
+uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-2022-01-01-2025-12-31.jsonl --json
+uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-neg-2022-01-01-2025-12-31.jsonl --json
+```
+
+Expectation-setting (design §5): the 13D sibling's raw fraction was 0.70 < 0.90 and this
+population is plausibly MORE small-cap-skewed — **raw = INSUFFICIENT is closer to the base
+case than a tail risk**; decision weight rides on the scored_gated cohort + double-sort,
+and the R-A4 vintage-stratified guard applies with more vintage buckets at K=3m. For
+`8k-neg` the EXPECTED sign is negative: a KILL-shaped verdict CONFIRMS the ON-default veto;
+HOLD/positive falsifies it. Either way the machinery, veto, and firehose stand on their own.
+
+**Status:** open — blocked on the smoke + composition-audit entry (2026-07-07, below).
+
 ## 8-K originator/veto — operator smoke + composition audit (pre-production) (2026-07-07)
 
 Live checks gated on an operator (never pytest — repo tests stay offline). Run from the
