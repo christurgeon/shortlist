@@ -2,9 +2,14 @@
 daily._negative_veto_sweep run step (mirrors test_scout_daily_firehose.py's tmp-state
 idiom; EFTS + resolver are monkeypatched at module level — no network)."""
 from datetime import date
+from pathlib import Path
 
 import shortlist.data.efts as efts_mod
 import shortlist.scout.cik_tickers as ct_mod
+import shortlist.scout.daily as daily_mod
+import shortlist.scout.notify as notify_mod
+import shortlist.screen as screen_mod
+from shortlist.models import ScoreCard
 from shortlist.scout.daily import _negative_veto_sweep, _veto_notes
 from shortlist.scout.models import Candidate, Emission
 from shortlist.scout.state import ScoutState
@@ -173,3 +178,100 @@ def test_veto_notes_named_and_deduped_by_ticker_accession(tmp_path):
     veto_map["RBI"] = {"last_date": "2026-07-05", "items": ["1.03"], "adsh": "n-2"}
     assert _veto_notes(st, [c], veto_map) == \
         ["VETOED: RBI — 8-K item 1.03 filed 2026-07-05"]  # new accession notes afresh
+
+
+# --- run()-level byte-identical proof (absent block vs explicitly-disabled block) ---
+
+class _StubDiscoverySignal:
+    """Minimal discovery signal (mirrors test_orchestrator_integration.py's stub)."""
+    name = "stub_discovery"
+    is_discovery = True
+
+    def scan(self, session: date) -> list[Emission]:
+        return [Emission("AAPL", "stub:discovery", 0.8, "test emission", is_discovery=True)]
+
+    def available(self) -> tuple[bool, str]:
+        return (True, "1 hit")
+
+
+class _FakeNotifier:
+    def configured(self): return False
+    def send_photo(self, *a): return True
+    def send_document(self, *a): return True
+    def send_message(self, *a): return True
+
+
+def _make_card(ticker: str) -> ScoreCard:
+    return ScoreCard(
+        ticker=ticker, composite=75.0, quality=70.0, moat=65.0, growth=80.0,
+        momentum=60.0, value=55.0, opportunity=60.0, insider=50.0, gates=[])
+
+
+def _minimal_run_config(tag: str, tmp_path, eightk_block: dict | None) -> dict:
+    cfg = {
+        "scout": {
+            "state_path": str(tmp_path / tag / "state.json"),
+            "artifact_dir": str(tmp_path / tag / "scout"),
+            "daily_x": 15,
+            "cooldown_days": 7,
+            "deep_screen_sources": ["mock"],
+            "research_top_n": 0,
+            "research_phase_budget_s": 1,
+            "daily_push": {"enabled": True, "research": False},
+            "signals": {"stub_discovery": {"enabled": True, "weight": 1.0}},
+        },
+        "scoring": {},
+        "gates": {},
+    }
+    if eightk_block is not None:
+        cfg["scout"]["eightk"] = eightk_block
+    return cfg
+
+
+def _run_and_read_artifacts(tag: str, tmp_path, monkeypatch, eightk_block: dict | None) -> tuple[int, dict]:
+    cfg = _minimal_run_config(tag, tmp_path, eightk_block)
+    rc = daily_mod.run(cfg, demo=False, today=date(2026, 5, 29))  # a Friday (trading day)
+    out_dirs = list((tmp_path / tag / "scout").iterdir())
+    assert len(out_dirs) == 1, "exactly one session artifact dir expected"
+    out_dir = out_dirs[0]
+    artifacts = {
+        "manifest.json": (out_dir / "manifest.json").read_text(),
+        "report.txt": (out_dir / "report.txt").read_text(),
+        "report.html": (out_dir / "report.html").read_text(),
+    }
+    return rc, artifacts
+
+
+def test_run_explicitly_disabled_byte_identical_to_absent_zero_fetches(tmp_path, monkeypatch):
+    """The reviewer-requested gap-close: prove the byte-identical guarantee at the FULL
+    daily.run() level, not just at the _negative_veto_sweep unit layer. An explicitly
+    disabled `scout.eightk.negative_veto.enabled: false` must produce the exact same
+    manifest/report artifacts as an absent `eightk` block -- and neither run may touch
+    EFTS or the CIK resolver even once (mirrors test_orchestrator_integration.py's
+    stub-signal run() harness)."""
+    monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
+
+    def boom(*a, **k):
+        raise AssertionError("run() must not fetch EFTS/resolver when the veto is off")
+    monkeypatch.setattr(efts_mod, "fetch_eightk_window", boom)
+    monkeypatch.setattr(ct_mod, "load_cik_to_ticker", boom)
+
+    def fake_build_signals(names, kwargs_by_name=None):
+        return [_StubDiscoverySignal()]
+    monkeypatch.setattr(daily_mod, "build_signals", fake_build_signals)
+
+    def fake_run_harness(tickers, sources, config, macro=None):
+        return [_make_card(t) for t in tickers]
+    monkeypatch.setattr(screen_mod, "run_harness", fake_run_harness)
+
+    monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier())
+
+    rc_absent, artifacts_absent = _run_and_read_artifacts("absent", tmp_path, monkeypatch, None)
+    rc_disabled, artifacts_disabled = _run_and_read_artifacts(
+        "disabled", tmp_path, monkeypatch, {"negative_veto": {"enabled": False}})
+
+    assert rc_absent == 0 and rc_disabled == 0
+    assert artifacts_absent == artifacts_disabled
+    # Sanity: the veto actually ran the funnel with an empty map both times (0 vetoed),
+    # so this isn't vacuously true because nothing reached the veto stage.
+    assert '"vetoed": 0' in artifacts_absent["manifest.json"]
