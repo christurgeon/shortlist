@@ -152,22 +152,30 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
     return rows
 
 
-def _log_firehose(state, emissions, session, scout_cfg) -> None:
+def _log_firehose(state, emissions, session, scout_cfg) -> list:
     """Best-effort: record the pre-scorer discovery emissions to the raw-signal firehose.
     Config-gated by scout.firehose.enabled; a failure NEVER aborts the run (mirrors the
-    mark_yahoo_blocked best-effort convention)."""
+    mark_yahoo_blocked best-effort convention).
+
+    Returns the CohortEvents actually persisted this call (post-cap truncation; `[]` when
+    disabled or the write raised) — so a caller that marks downstream state as "logged"
+    (the 8-K negative-veto sweep's `eightk_neg_logged`) can mark ONLY what was actually
+    recorded, never a capped-out or failed-write event (FIX: exactly-once under
+    truncation/failure)."""
     fh_cfg = (scout_cfg or {}).get("firehose", {})
     if not fh_cfg.get("enabled"):
-        return
+        return []
     try:
         events = cohort_events_from_emissions(emissions, session)
         cap = fh_cfg.get("max_events_per_run", 200)  # 0/None => no cap (use enabled:false to disable)
         if cap and len(events) > cap:
             events = events[:cap]
         state.record_firehose(events, session)
+        return events
     except Exception as exc:  # noqa: BLE001 — best-effort, never abort the scout run
         import warnings
         warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
+        return []
 
 
 def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, list[str]]:
@@ -226,8 +234,15 @@ def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, l
                             meta={"adsh": r["adsh"], "items": r["items"],
                                   "file_date": r["file_date"]})
                    for r in fresh]
-            _log_firehose(state, ems, session, scout_cfg)
-            state.add_eightk_neg_logged([r["adsh"] for r in fresh])
+            # Mark ONLY the accessions the firehose layer actually persisted (post-cap
+            # truncation, or NONE if the write raised) — the rest stay "fresh" and simply
+            # retry on the next sweep. Safe: this ledger gates ONLY the firehose
+            # re-logging dedup, never the veto map itself (state.update_eightk_negative
+            # below runs unconditionally off `recs`, not `fresh`).
+            recorded = _log_firehose(state, ems, session, scout_cfg)
+            recorded_adshes = [e.meta.get("adsh") for e in recorded if e.meta.get("adsh")]
+            if recorded_adshes:
+                state.add_eightk_neg_logged(recorded_adshes)
         swept = (session - timedelta(days=efts.EFTS_LAG_DAYS)).isoformat()
         state.update_eightk_negative(recs, swept_through=swept, on=session,
                                      lookback_days=lookback)

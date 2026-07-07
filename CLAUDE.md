@@ -404,6 +404,10 @@ frac≥0.90) via the generalized per-signal backfill (`shortlist-scout backfill 
 fetch; PiT `Symbology` at the FILING date; EFTS `sics` reused so scoring skips a
 submissions fetch; **free-disk preflight aborts below 8 GB**). Walk-back scan
 session−2..session with a capped accession-seen set in `ScoutState`; tune `scout.eightk`.
+Two knobs are **live-only** (the backfill cohort measures neither): `daily_cap` (default 6/day
+— a live truncation the uncapped backfill cohort never applied) and a populated `deny_list` —
+either can make the live signal diverge from what the cohort measured, so keep `deny_list`
+empty and `daily_cap` generous unless re-measuring.
 
 The **negative-item veto** (`scout.eightk.negative_veto`, ships **ON**) is the defensible
 half: items {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01} are reliably negative over the

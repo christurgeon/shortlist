@@ -167,6 +167,59 @@ def test_sweep_firehose_logs_edgar_8k_negative_once_across_runs(tmp_path, monkey
     assert neg[0]["meta"]["adsh"] == "n-1"                # Emission.meta rode through (Task 2)
 
 
+def test_sweep_cap_truncation_marks_only_recorded_logged(tmp_path, monkeypatch):
+    """FIX: a firehose max_events_per_run cap must not silently mark ALL fresh matches as
+    logged — only the ones the firehose layer actually persisted. The N-K events cut by
+    the cap must stay OUT of eightk_neg_logged so they remain "fresh" and are retried
+    (re-attempt firehose logging) on the next sweep, instead of being permanently and
+    wrongly written off as already-recorded."""
+    st = ScoutState(tmp_path / "s.json")
+    cfg = {"eightk": {"negative_veto": {"enabled": True, "lookback_days": 30}},
+           "firehose": {"enabled": True, "max_events_per_run": 1}}
+    rows = [_row("n-1", cik="0000000001", items=("1.03",)),
+            _row("n-2", cik="0000000002", items=("2.06",)),
+            _row("n-3", cik="0000000003", items=("4.02",))]
+    _patch_window(monkeypatch, lambda start, end, **kw: rows)
+    _patch_resolver(monkeypatch, {"0000000001": "AAA", "0000000002": "BBB", "0000000003": "CCC"})
+
+    _negative_veto_sweep(st, cfg, date(2026, 7, 6))
+    logged = st.eightk_neg_logged()
+    assert len(logged) == 1                                # only the capped-in event marked
+    evs = st.firehose_events(on=date(2026, 7, 6), lookback_days=30)
+    neg = [e for e in evs if e["signal"] == "edgar:8k_negative"]
+    assert len(neg) == 1
+    assert neg[0]["meta"]["adsh"] == logged[0]              # the marked one IS the recorded one
+
+    # The two events cut by the cap are still "fresh" on later sweeps (re-inject the same
+    # rows to simulate the lag-window re-sweep overlap) -> at cap=1/sweep it takes two more
+    # sweeps for the remaining two to each get their turn recorded+marked.
+    _negative_veto_sweep(st, cfg, date(2026, 7, 7))
+    _negative_veto_sweep(st, cfg, date(2026, 7, 8))
+    assert set(st.eightk_neg_logged()) == {"n-1", "n-2", "n-3"}
+
+
+def test_sweep_firehose_write_failure_marks_nothing_logged(tmp_path, monkeypatch):
+    """FIX: if the firehose write itself raises (e.g. a corrupt state file), NONE of this
+    sweep's fresh matches may be marked logged — an unrecorded event must retry next
+    sweep, never be silently and permanently marked as recorded. The sweep itself must
+    still never crash and the veto map/protection must be unaffected."""
+    st = ScoutState(tmp_path / "s.json")
+    cfg = {"eightk": {"negative_veto": {"enabled": True, "lookback_days": 30}},
+           "firehose": {"enabled": True}}
+    _patch_window(monkeypatch, lambda start, end, **kw: [_row("n-1", items=("1.03",))])
+    _patch_resolver(monkeypatch, {"0000000007": "RBI"})
+
+    def boom(*a, **k):
+        raise RuntimeError("state file corrupt")
+    monkeypatch.setattr(daily_mod, "cohort_events_from_emissions", boom)
+
+    veto_map, notes = _negative_veto_sweep(st, cfg, date(2026, 7, 6))
+    assert st.eightk_neg_logged() == []                     # nothing recorded -> nothing marked
+    assert st.firehose_events(on=date(2026, 7, 6), lookback_days=30) == []
+    assert "RBI" in veto_map                                # veto protection is unaffected
+    assert notes == []                                      # sweep itself doesn't crash/loudly fail
+
+
 def test_veto_notes_named_and_deduped_by_ticker_accession(tmp_path):
     st = ScoutState(tmp_path / "s.json")
     veto_map = {"RBI": {"last_date": "2026-07-03", "items": ["2.06"], "adsh": "n-1"}}
@@ -249,7 +302,6 @@ def test_run_explicitly_disabled_byte_identical_to_absent_zero_fetches(tmp_path,
     manifest/report artifacts as an absent `eightk` block -- and neither run may touch
     EFTS or the CIK resolver even once (mirrors test_orchestrator_integration.py's
     stub-signal run() harness)."""
-    monkeypatch.setenv("SCOUT_NO_RESEARCH", "1")
 
     def boom(*a, **k):
         raise AssertionError("run() must not fetch EFTS/resolver when the veto is off")
