@@ -1,0 +1,22 @@
+# Pre-registered validation parameters for the edgar:8k_negative signal — the VETO cohort
+# (items {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01}; ships ON in the live funnel).
+# EXPECTED SIGN: NEGATIVE — a KILL-shaped verdict CONFIRMS the veto; HOLD/positive
+# FALSIFIES it. Either way the ON default becomes evidence-backed. Committed BEFORE any
+# backfill/eval run (git-commit-time tamper check vs run as_of; parent spec §7/F7).
+signal: edgar:8k_negative
+as_of: 2026-07-07
+window_start: 2022-01-01
+window_end: 2025-12-31
+# window_end + K = 2026-03-31 < as_of: the FIRST verdict is canonical, never INTERIM.
+verdict_as_of: 2026-07-07
+k_months: 3                  # the documented negative-drift horizon (30-90d) — the same
+                             # horizon the live veto's 30d lookback protects
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90    # unchanged from the 13D prereg (see edgar_8k.yaml)
+min_independent_blocks: 8
+min_bucket_events: 5
+delisting_return: -0.55      # Shumway partial; deliberately conservative for a cohort
+                             # where bankruptcies (1.03) are IN the signal definition —
+                             # the per-event CLASSIFIED terminal overrides where available
+regime_down_rule: spy_trailing_3m_negative

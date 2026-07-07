@@ -1,0 +1,26 @@
+# Pre-registered validation parameters for the edgar:8k signal (the 1.01∧3.03 positive
+# pocket — Lerman-Livnat 2010's only positive-drift 8-K class; a CONTESTED prior, shipped
+# disabled at weight 0.5). Committed BEFORE any backfill/eval run; the evaluator verifies
+# this file's git commit time against the run as_of and flags the verdict
+# non-preregistered if edited after. Fixing ALL of these here (not in config.yaml) is the
+# anti-p-hacking guard (parent spec §7/F7).
+signal: edgar:8k
+as_of: 2026-07-07
+window_start: 2022-01-01
+window_end: 2025-12-31
+# window_end + K = 2026-03-31 < as_of: every window event has fully matured, so the FIRST
+# verdict is canonical — never immaturity-INTERIM (unlike the 13D sibling's K=12m wait).
+verdict_as_of: 2026-07-07
+k_months: 3                  # the documented 8-K drift horizon (30-90d); ~16 independent
+                             # blocks over the window — comfortably above the floor below
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90    # UNCHANGED from the 13D prereg — loosening it knowing 13D
+                             # read 0.70 would be the exact p-hack this guard exists to
+                             # stop; raw=INSUFFICIENT is the expected base case, decision
+                             # weight rides on the scored_gated cohort + double-sort
+min_independent_blocks: 8    # adjudicated: parent-spec-§7's 8 (not the 13D file's 2) —
+                             # satisfiable at K=3m without being toothless
+min_bucket_events: 5         # R-A4: vintage buckets below this aren't checked vs the floor
+delisting_return: -0.55      # Shumway partial (Nasdaq-listed default); band tested in eval
+regime_down_rule: spy_trailing_3m_negative
