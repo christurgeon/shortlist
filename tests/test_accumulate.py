@@ -168,6 +168,22 @@ def test_status_empty_store(tmp_path):
     assert rep.n_dates == 0 and rep.threshold_met is False
 
 
+def test_status_reports_breadth_and_earnings_counts(tmp_path):
+    from shortlist.data.models import Earnings
+    # 2 dates x 3 tickers, one ticker earnings-bearing
+    for day in ("2026-07-06", "2026-07-07"):
+        for tk in ("AAA", "BBB", "CCC"):
+            snap = TickerSnapshot(ticker=tk, as_of=f"{day}T00:00:00+00:00",
+                                  fundamentals=Fundamentals(pe_ttm=10.0),
+                                  earnings=Earnings(quarters=4, beats=2) if tk == "AAA" else None)
+            save(snap, tmp_path)
+    rep = store_status(tmp_path, ["AAA", "BBB", "CCC"], min_dates=24)
+    assert rep.per_date == {"2026-07-06": 3, "2026-07-07": 3}
+    assert rep.per_date_earnings == {"2026-07-06": 1, "2026-07-07": 1}
+    assert rep.min_breadth == 30 and rep.breadth_dates == 0 and rep.breadth_met is False
+    assert rep.store_bytes > 0
+
+
 # --- watchlist + CLI -------------------------------------------------------
 
 def test_load_watchlist_default_and_csv():

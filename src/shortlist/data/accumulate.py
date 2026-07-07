@@ -151,21 +151,46 @@ class StatusReport:
     per_ticker: dict[str, int]
     min_dates: int
     threshold_met: bool
+    per_date: dict[str, int] = field(default_factory=dict)            # saved names/date
+    per_date_earnings: dict[str, int] = field(default_factory=dict)   # SUE-bearing names/date
+    min_breadth: int = MIN_SNAPSHOT_BREADTH
+    breadth_dates: int = 0            # dates meeting min_breadth
+    breadth_met: bool = False
+    store_bytes: int = 0
 
 
 def store_status(root: str | Path, tickers: list[str], *,
                  min_dates: int = MIN_SNAPSHOT_DATES) -> StatusReport:
-    """How close the store is to the backtest's snapshot-replay threshold."""
+    """How close the store is to BOTH backtest snapshot-replay floors:
+    >=min_dates distinct dates AND >=MIN_SNAPSHOT_BREADTH names per date."""
+    from .store import load as _load                     # local import: avoids cycle at module import
     per: dict[str, int] = {}
-    all_dates: set[str] = set()
+    per_date: dict[str, int] = {}
+    per_date_earn: dict[str, int] = {}
+    size = 0
     for tk in tickers:
-        days = captured_days(tk, root)
-        per[tk.upper()] = len(days)
-        all_dates.update(days)
-    distinct = sorted(all_dates)
-    return StatusReport(n_dates=len(distinct), distinct_dates=distinct,
-                        per_ticker=per, min_dates=min_dates,
-                        threshold_met=len(distinct) >= min_dates)
+        t = tk.upper()
+        days = captured_days(t, root)
+        per[t] = len(days)
+        for d in days:
+            per_date[d] = per_date.get(d, 0) + 1
+            try:
+                raw = _load(t, root, day=d)
+                if raw.get("earnings"):
+                    per_date_earn[d] = per_date_earn.get(d, 0) + 1
+            except (FileNotFoundError, OSError, ValueError):
+                pass
+        tdir = Path(root) / t
+        if tdir.is_dir():
+            size += sum(p.stat().st_size for p in tdir.iterdir() if p.is_file())
+    distinct = sorted(per_date)
+    breadth_dates = sum(1 for d in distinct if per_date[d] >= MIN_SNAPSHOT_BREADTH)
+    return StatusReport(
+        n_dates=len(distinct), distinct_dates=distinct, per_ticker=per,
+        min_dates=min_dates, threshold_met=len(distinct) >= min_dates,
+        per_date=per_date, per_date_earnings=per_date_earn,
+        min_breadth=MIN_SNAPSHOT_BREADTH, breadth_dates=breadth_dates,
+        breadth_met=breadth_dates >= min_dates, store_bytes=size)
 
 
 # --- CLI ------------------------------------------------------------------
@@ -234,8 +259,19 @@ def main(argv=None) -> int:
     # status
     rep = store_status(args.root, tickers, min_dates=args.min_dates)
     print(f"store: {args.root}")
-    print(f"distinct capture dates: {rep.n_dates} / {rep.min_dates} needed "
-          f"-> snapshot backtest {'READY' if rep.threshold_met else 'NOT READY'}")
+    ready = rep.threshold_met and rep.breadth_met
+    print(f"distinct capture dates: {rep.n_dates} / {rep.min_dates} needed")
+    print(f"dates with breadth >= {rep.min_breadth}: {rep.breadth_dates} / {rep.min_dates} needed")
+    if not rep.breadth_met and rep.per_date:
+        worst = min(rep.per_date.values())
+        best = max(rep.per_date.values())
+        print(f"NOT READY: breadth < {rep.min_breadth} on "
+              f"{len(rep.per_date) - rep.breadth_dates}/{len(rep.per_date)} dates "
+              f"(per-date saved names range {worst}-{best})")
+    print(f"earnings-bearing (SUE) breadth today: "
+          f"{rep.per_date_earnings.get(rep.distinct_dates[-1], 0) if rep.distinct_dates else 0}")
+    print(f"store size: {rep.store_bytes / 1e6:.1f} MB")
+    print(f"-> snapshot backtest {'READY' if ready else 'NOT READY'}")
     for tk, n in sorted(rep.per_ticker.items()):
         print(f"  {tk:<6} {n} day(s)")
     return 0
