@@ -11,14 +11,21 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 Both features merged and deployed (editable install picks the code up; effect from tonight's
 timers). Loose ends, roughly by urgency:
 
-1. **Operator (sudo) step pending:** `sudo bash deploy/install_opt_shortlist.sh` — rewrites the
-   accumulate unit with `--sources fmp,finnhub,edgar` (EDGAR statements/SIC/Form-4 for the
-   FMP-quota-gated names) and restarts services. Until then the breadth fix still works
-   (thin snapshots save; breadth ~16 → ~40) but without EDGAR enrichment, and shortlist-bot
-   runs pre-#119/#120 code.
+1. **Operator (sudo) step pending:** `sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh`
+   — rewrites the accumulate unit with `--sources fmp,finnhub,edgar` (EDGAR statements/SIC/
+   Form-4 for the FMP-quota-gated names). **The accumulate block is gated on
+   `SHORTLIST_ACCUMULATE=1`** — a bare installer run (done 2026-07-08, which did restart the
+   bot onto current code) skips it, verified: the unit's ExecStart still lacks `--sources`.
+   Until then the breadth fix still works (2026-07-07 run saved all 42: captured=16 thin=26,
+   verified) but without EDGAR enrichment.
 2. **Watch the first 22:30 UTC scout run:** the veto's 30-day cold-start self-heal sweeps
    ~100–180 EFTS pages (~30–60 s) and firehose-logs the initial `edgar:8k_negative` cohort
    (cap raised to 400 so it lands intact). One journal check.
+   **Update 2026-07-08:** the first cold start FAILED loudly-but-safely (stale-state note in
+   the report, run delivered) — root-caused to bursty EFTS 500s outlasting the ~3 s retry
+   window on 40+-page crawls; fixed by #122 (retry budget 2→5, rides out ~23 s bursts) and
+   live-verified on the exact failed window (4,981 rows; day cache pre-warmed on the VPS),
+   so tonight's sweep should complete. Still worth the one journal check.
 3. **Breadth re-check ~July 20:** per-date saved counts should now be ~40 (vs the 30 floor);
    confirm via `shortlist-accumulate status` (it now reports both floors + SUE breadth) once
    ≥24 post-fix dates accrue. The pre-fix thin dates (≤23 names) are permanently thin.
