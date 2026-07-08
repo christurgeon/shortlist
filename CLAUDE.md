@@ -80,7 +80,11 @@ no new scoring):
     holdings → report with an applies()-gated `_Portfolio` section: exposure, sector
     concentration by `sic_bucket`, per-holding deterioration alerts; **never silently
     truncates** — overflow past `portfolio.max_holdings` is warned, naming dropped
-    tickers; pure leaf in `shortlist/portfolio.py`). Allowlists `TELEGRAM_CHAT_ID`,
+    tickers; pure leaf in `shortlist/portfolio.py`), `/explain <term>` (static
+    financial glossary — `scout/glossary.py`, a pure semantics-only leaf, no config
+    values quoted; scoring's declarative `KNOWN_GATES`/`KNOWN_FLAGS` + an AST-scan
+    test bind emitted gate/flag literals to glossary + `theme.py` legend entries, so
+    adding a flag fails CI until documented). Allowlists `TELEGRAM_CHAT_ID`,
     handlers on a single worker thread (poll loop never blocks), reuses
     `run_harness`/`build_report`/`deliver`. **Run ONE instance** (two concurrent
     `getUpdates` pollers 409). The daily push is **OFF by default**
