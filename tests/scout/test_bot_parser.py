@@ -40,3 +40,20 @@ def test_allowed_message_rejects_group_and_nontext_and_edited():
     assert allowed_message({"message": {"chat": {"id": 42, "type": "private"}}}, "42") is None  # no text
     assert allowed_message({"edited_message": {"text": "/x", "chat": {"id": 42, "type": "private"}}}, "42") is None
     assert allowed_message({"message": {"text": "/x", "chat": {"id": 42, "type": "private"}}}, None) is None
+
+
+def test_parse_explain_recognized():
+    assert parse_command("/explain 13d").name == "explain"
+    assert parse_command("/explain").name == "explain"
+
+
+def test_parse_explain_strips_botname():
+    assert parse_command("/explain@MyBot 13d").name == "explain"
+
+
+def test_explain_term_preserves_multiword_and_case():
+    from shortlist.scout.bot import explain_term
+    assert explain_term("/explain days to cover") == "days to cover"
+    assert explain_term("/explain@MyBot SC 13-D") == "SC 13-D"
+    assert explain_term("/explain") == ""
+    assert explain_term("/explain   ") == ""

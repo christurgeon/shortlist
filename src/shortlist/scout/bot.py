@@ -24,13 +24,13 @@ from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests im
 from ..validation import no_data, partition_format
 from .models import RunManifest
 
-_KNOWN = {"screen", "deep", "portfolio", "help", "start"}
+_KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain"}
 _SPLIT = re.compile(r"[,\s]+")
 
 
 @dataclass(frozen=True)
 class Command:
-    name: str                  # "screen" | "deep" | "portfolio" | "help" | "start" | "unknown"
+    name: str                  # "screen" | "deep" | "portfolio" | "help" | "start" | "explain" | "unknown"
     tickers: tuple[str, ...]
     raw: str
 
@@ -52,6 +52,13 @@ def parse_command(text: str) -> Command:
     name = head if head in _KNOWN else "unknown"
     rest = parts[1] if len(parts) > 1 else ""
     return Command(name, _tickers(rest), text)
+
+
+def explain_term(raw: str) -> str:
+    """The /explain argument, verbatim (terms are case- and space-bearing;
+    Command.tickers uppercases + dedups, so re-derive from raw)."""
+    parts = raw.strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
 
 
 def allowed_message(update: dict, chat_id: str | None) -> str | None:
@@ -79,6 +86,7 @@ _HELP = (
     "/screen NVDA, LMT, MSFT — score tickers (seconds), reply with the dashboard\n"
     "/deep TSLA — score + Claude 10-K research brief (slower)\n"
     "/portfolio — screen your holdings (portfolio.csv): exposure + deterioration alerts\n"
+    "/explain 13d — what a term in these reports means (no arg: full list)\n"
     "/help — this message"
 )
 
@@ -175,6 +183,8 @@ class TelegramBot:
             self._do_deep(cmd.tickers)
         elif cmd.name == "portfolio":
             self._do_portfolio()
+        elif cmd.name == "explain":
+            self._do_explain(explain_term(cmd.raw))
         elif cmd.name in ("help", "start"):
             self.notifier.send_message(_HELP)
         else:
@@ -296,6 +306,20 @@ class TelegramBot:
             self.notifier.send_message(
                 f"⚠️ {len(dropped_tickers)} holdings NOT screened (cap {cap}): {', '.join(dropped_tickers)}. "
                 "Alerts for these are INCOMPLETE — raise portfolio.max_holdings or warm the cache.")
+
+    def _do_explain(self, term: str) -> None:
+        from .glossary import entry_text, index_text, lookup, suggest
+        if not term:
+            self.notifier.send_message(index_text())
+            return
+        entry = lookup(term)
+        if entry is not None:
+            self.notifier.send_message(entry_text(entry))
+            return
+        hints = suggest(term)
+        hint = f" Did you mean: {', '.join(hints)}?" if hints else ""
+        self.notifier.send_message(
+            f"No entry for “{term}”.{hint} Send /explain for the full list.")
 
     # --- loop machinery ---
     def _handle_safely(self, cmd: Command) -> None:
