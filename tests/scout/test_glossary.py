@@ -37,6 +37,37 @@ def test_entry_text_has_name_and_body():
     assert t.startswith("13D") and e.text in t
 
 
+def test_underscore_normalization_hits_flag_literals():
+    assert lookup("recent_8k") is not None
+    assert lookup("recent_8k") is lookup("Recent 8K")
+
+
+def test_every_entry_within_length_budget():
+    for e in glossary.GLOSSARY:
+        assert len(e.text) <= 600, e.name
+        assert len(entry_text(e)) <= 4096, e.name
+
+
+def test_index_within_single_message():
+    assert len(index_text()) <= 4096
+
+
+def test_every_category_used_and_valid():
+    used = {e.category for e in glossary.GLOSSARY}
+    assert used == set(glossary.CATEGORIES)
+
+
+def test_key_financial_terms_present():
+    for term in ("cagr", "13d", "13g", "8k", "form 4", "144", "10-K",
+                 "def 14a", "10b5-1", "20-f", "days to cover", "peg",
+                 "roic", "accruals", "piotroski", "sue", "pead",
+                 "residual momentum", "drawdown", "fcf yield",
+                 "net debt to ebitda", "short interest",
+                 "confidence", "scored", "thin", "gated", "coverage",
+                 "screening call", "opportunity", "composite"):
+        assert lookup(term) is not None, term
+
+
 def test_no_alias_collisions_and_all_entries_reachable():
     # the module-load assertion guards collisions; verify every entry is
     # reachable through its own name
