@@ -68,6 +68,12 @@ def test_key_financial_terms_present():
         assert lookup(term) is not None, term
 
 
+def test_every_scoring_gate_and_flag_documented():
+    import shortlist.scoring as scoring
+    for name in sorted(scoring.KNOWN_GATES | scoring.KNOWN_FLAGS):
+        assert lookup(name) is not None, f"no /explain entry for {name}"
+
+
 def test_no_alias_collisions_and_all_entries_reachable():
     # the module-load assertion guards collisions; verify every entry is
     # reachable through its own name

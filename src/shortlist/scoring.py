@@ -8,6 +8,22 @@ from .models import ScoreCard, StockMetrics
 from .sectors import gate_applicable, leg_applicable, resolve_bucket
 from .stats import sue as _stats_sue
 
+# Names check_gates/check_flags/score can emit, DECLARATIVE ONLY: the append
+# sites keep their string literals (the byte-identical guarantee on score()),
+# tests/test_scoring_names.py AST-scans the emitters and asserts every
+# appended literal is declared here, and tests/scout/test_glossary.py asserts
+# each name has an /explain glossary entry. Add a gate/flag -> declare it
+# here AND document it in scout/glossary.py, or CI fails.
+_FILING_STREAM_FLAGS = ("activist_13d", "recent_8k", "passive_13g",
+                        "planned_insider_sale_144")
+KNOWN_GATES = frozenset({
+    "negative_fcf", "below_min_mktcap", "over_leveraged",
+    "heavy_insider_selling"})
+KNOWN_FLAGS = frozenset({
+    "crowded_short", "insider_cluster_buy", "planned_sale", "dilution",
+    "cash_burn", "social_hype", "news_spike", "filing_text_change",
+    "value_trap", "risk_off_regime", *_FILING_STREAM_FLAGS})
+
 # SUE leg defaults (PREDICTIVE_SIGNALS §1). Used by the backtest-only sue_score and as
 # the momentum.sue config fallbacks: decay over ~60 trading days, abstain when the
 # firm's own surprise dispersion is below 1 percentage point (the σ≈0 guard).
@@ -641,7 +657,7 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
             out.append("crowded_short")
     # Filing-stream event advisories (set by the harness bridge; None on the screener
     # path, so this is a no-op there). Presence-based — no config thresholds.
-    for attr in ("activist_13d", "recent_8k", "passive_13g", "planned_insider_sale_144"):
+    for attr in _FILING_STREAM_FLAGS:
         if getattr(m, attr, None):
             out.append(attr)
     cb = f.get("insider_cluster_buy") if f else None
