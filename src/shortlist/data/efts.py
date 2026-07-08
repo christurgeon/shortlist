@@ -34,7 +34,12 @@ EFTS_LAG_DAYS = 2       # EFTS indexes with a lag: today's query returns total 0
 THROTTLE_S = 0.35       # sleep before EVERY request (~3 req/s SEC fair access)
 _PAGE = 100
 _SPLIT_TOTAL = 9_900    # ES from+size window is 10k; split any range at/above this
-_MAX_RETRIES = 2
+# EFTS 500s arrive in BURSTS, not as isolated blips (live-diagnosed 2026-07-08: the veto's
+# 30-day cold-start sweep failed twice on ~43-page crawls while every short smoke passed;
+# an instrumented run absorbed two 500s mid-crawl). max_retries=2 rides out only ~3s of
+# burst (waits 1+2s); 5 rides out ~23s (1+2+4+8+8) — the whole-range fetch is all-or-nothing
+# per chunk, so one exhausted page throws away the other ~40 pages' work.
+_MAX_RETRIES = 5
 _RETRY_BASE_S = 1.0
 _RETRY_MAX_S = 8.0
 

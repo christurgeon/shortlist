@@ -77,9 +77,23 @@ def test_range_retries_on_500_then_succeeds():
 def test_range_gives_up_after_bounded_retries():
     get = _ScriptedGet([(500, None), (500, None), (500, None)])
     rows = fetch_eightk_range(date(2026, 6, 3), date(2026, 6, 3),
-                              identity="t@example.com", throttle_s=0, _get=get)
+                              identity="t@example.com", throttle_s=0, max_retries=2,
+                              _get=get)
     assert rows is None
     assert len(get.calls) == 3          # max_retries=2 -> exactly 3 attempts, never more
+
+
+def test_range_default_retry_budget_rides_out_a_500_burst(monkeypatch):
+    """The default budget must survive an EFTS 500 burst longer than the old ~3s window
+    (live-diagnosed 2026-07-08: bursty 500s killed 40+-page crawls at max_retries=2)."""
+    from shortlist.data import efts as efts_mod
+    monkeypatch.setattr(efts_mod, "_RETRY_BASE_S", 0.0)   # don't really sleep ~23s
+    monkeypatch.setattr(efts_mod, "_RETRY_MAX_S", 0.0)
+    get = _ScriptedGet([(500, None)] * 5 + [(200, _payload([_hit("a-1")]))])
+    rows = fetch_eightk_range(date(2026, 6, 3), date(2026, 6, 3),
+                              identity="t@example.com", throttle_s=0, _get=get)
+    assert rows is not None and len(rows) == 1
+    assert len(get.calls) == 6          # default max_retries=5 -> up to 6 attempts
 
 
 def test_range_does_not_retry_non_5xx():
