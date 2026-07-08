@@ -6,6 +6,19 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## /explain glossary command shipped — deploy pending (2026-07-08)
+
+PR #128 merged: `/explain [term]` bot command (static 60-entry financial glossary in
+`scout/glossary.py`; scoring gains declarative `KNOWN_GATES`/`KNOWN_FLAGS` bound by an
+AST-scan test — new gates/flags now fail CI until documented in glossary + theme legend).
+The live bot at `/opt/shortlist` doesn't have it until the usual deploy flow runs
+(`git pull` → `install_opt_shortlist.sh` → restart `shortlist-bot`). Content note: entries
+are semantics-only (no config thresholds quoted) so config tuning never stales them.
+
+**Status:** merged; VPS deploy + a quick live `/explain` smoke on Telegram pending.
+
+---
+
 ## Session follow-ups — breadth fix (#119) + 8-K stack (#120) shipped (2026-07-07)
 
 Both features merged and deployed (editable install picks the code up; effect from tonight's
