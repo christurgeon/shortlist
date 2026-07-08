@@ -72,7 +72,7 @@ and the R-A4 vintage-stratified guard applies with more vintage buckets at K=3m.
 `8k-neg` the EXPECTED sign is negative: a KILL-shaped verdict CONFIRMS the ON-default veto;
 HOLD/positive falsifies it. Either way the machinery, veto, and firehose stand on their own.
 
-**Status:** open — blocked on the smoke + composition-audit entry (2026-07-07, below).
+**Status:** UNBLOCKED (2026-07-08) — all three gates of the entry below are complete and recorded (`docs/audits/2026-07-08-eightk-composition-audit.md`). Ready to fire (operator run, off-hours, df preflight).
 
 ## 8-K originator/veto — operator smoke + composition audit (pre-production) (2026-07-07)
 
@@ -104,8 +104,24 @@ production runs.
    (negative-prior listing-compliance junk). NO pre-filtering on 5.03 co-occurrence (that
    would be fitting) — audit first, let the ledger decide.
 
-**Status:** open — blocks the 8-K production backfill runs (entry added in the same
-feature's Task 7).
+**Results (2026-07-08 — full detail + 50-row table committed in
+`docs/audits/2026-07-08-eightk-composition-audit.md`):**
+1. **Smoke: PASS** — 8k n=4 / 8k-neg n=31, both `window_not_preregistered` (expected),
+   100% immature (K=3m), idempotent re-runs `written: 0`. The 8k band miss vs "~15-25" was
+   investigated (fetch-bug-only rule): raw cached rows contain exactly 4 matches that week
+   — the registered band was a miscalibrated pooled estimate, the selection is faithful.
+2. **Fidelity: PASS** — 20/20 exact containment, zero mismatches.
+3. **Composition audit tallies** (n=50, stratified 13/13/12/12 over a 1,864-event frame;
+   volume-weighted by exact per-year frame counts; blind double-classification κ≈0.90):
+   **merger_agreement 0.299 · rights_plan 0.184 · reverse_split 0.021 · credit_facility
+   0.093 · other 0.404** (other = mostly preferred issuances 10/20 + warrant amendments
+   5/20). Merger bucket clean: de-SPAC 1/15, acquirer-side 1/15. 5.03 co-occurs 31/50
+   (observation only). Cap: 42% unknown (delisting proxy), 34% micro. Per the FROZEN
+   interpretive frame: **neither merger- nor junk-dominated ⇒ "mixed"** — at ~30% merger
+   share a cohort-level verdict cannot cleanly indict or confirm the Lerman-Livnat merger
+   pocket; any merger-conditioned sub-analysis needs a NEW pre-registration.
+
+**Status:** DONE (2026-07-08) — production backfill runs unblocked (entry above).
 
 ## Snapshot-replay composite suppression rate is unmeasured (guard residual) (2026-07-07)
 
