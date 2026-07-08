@@ -1,0 +1,537 @@
+[
+ {
+  "adsh": "0001193125-22-073994",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the Board of Directors of WisdomTree Investments, Inc. adopted a stockholder rights plan, as set forth in the Stockholder Rights Agreement",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001287032-22-000334",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "reclassifying and designating 20,000,000 shares of the Company's authorized and unissued shares of Common Stock into shares of Preferred Stock designated as Convertible Preferred Stock, Series AA2",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-22-120846",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "warrant_registration_rights_amendment",
+  "evidence": "the Company and the Placement Agent entered into an agreement to amend the Placement Agent Warrant",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001552781-22-000302",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "to extend the term of the Rights Agreement to May 31, 2022",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-22-256805",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "were cancelled and converted into the right to receive $104.00 in cash, without interest",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-22-189511",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "was converted into the right to receive $6.25 in cash, without interest, and 0.5774 shares of Chord Common Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-22-299495",
+  "primary": "credit_facility",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The Senior Secured Notes Indenture contains covenants that limit, among other things, the Issuer's ability to pay dividends on its capital stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001214659-22-000423",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "ceased to have any rights as shareholders of 1st Constitution other than the right to receive Merger Consideration in accordance with the Merger Agreement",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-22-093107",
+  "primary": "credit_facility",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "amends the Indenture to increase the general basket for Restricted Payments from $100 million to $175 million",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-22-192011",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "reverse_split"
+  ],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Company filed a certificate of designation designating the rights, preferences, privileges and restrictions of Series F Non-Convertible Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-22-096552",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "reverse_split",
+   "merger_agreement"
+  ],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Company filed a certificate of designation designating the rights, preferences, privileges and restrictions of the share of Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001213900-22-073874",
+  "primary": "merger_agreement",
+  "de_spac": "yes",
+  "side": "unclear",
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The shareholders of AGBA approved the Fifth Amended and Restated Memorandum and Articles of Association at the Special Meeting",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001493152-22-030139",
+  "primary": "credit_facility",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The Amended Note Purchase Agreement also contains restrictions against incurrence of additional debt, payment of dividend or other distribution on any of our equity interest",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-23-277530",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "spinoff_charter",
+  "evidence": "The Memorandum and Articles of Association of Mural (the Constitution) was amended and restated, effective November 15, 2023",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001140361-23-033342",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "libor_transition",
+  "evidence": "The benchmark rate used to calculate interest payable in respect of the Affected Notes has been modified as described in Item 1.01",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001477932-23-009242",
+  "primary": "reverse_split",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the Company filed a Certificate of Change Amendment to its Articles of Incorporation to effect a 1-for-26 reverse stock split of the Common Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-23-156582",
+  "primary": "credit_facility",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the Company is subject to certain restrictions on its ability to declare or pay any dividend or make any other payments",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001095315-23-000044",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The Amendment extends the expiration date of the Rights Agreement to the close of business on the 30th day after the Company's 2024 Annual Meeting",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0000950170-23-058840",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The Amendment extends the definition of Final Expiration Date and certain related language in the Rights Agreement to November 4, 2024",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001493152-23-009008",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_stock_elimination",
+  "evidence": "On March 24, 2023, the Company filed a Certificate of Elimination for the Series A Preferred Stock with the Secretary of State of the State of Delaware",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001095315-23-000045",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "rights_plan"
+  ],
+  "sub_label": null,
+  "evidence": "Merger Sub will then be merged with and into the Company, with the Company surviving as a wholly-owned subsidiary of Parent",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-23-135947",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the holders of common shares of Enbridge Inc. voted to amend, reconfirm and approve the Corporation's shareholder rights plan",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001553350-23-000210",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "Purchasers purchased an aggregate of 4,000 shares of a newly-authorized Series E Convertible Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001213900-23-075471",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "unclear",
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the Company shall merge with and into NFT, with NFT continuing as the surviving entity",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-23-110660",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "each share of Company Class A Common Stock (except as described in Item 2.01 above) was canceled and automatically converted into the right to receive the Merger Consideration.",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001140361-23-051496",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "Parent completed its previously announced acquisition of the Company, (ii) the Company became a wholly owned subsidiary of Parent",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-24-078355",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "unclear",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "In connection with the Combination, on July 5, 2024, each Smurfit Kappa Share was exchanged for a Smurfit WestRock Share",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001437749-24-005900",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "warrant_amendment_ownership_cap_removal",
+  "evidence": "the parties eliminated a limitation in the Pre-Funded Warrant restricting any exercise that would otherwise result in the Holder's beneficial ownership exceeding 9.99%",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001683168-24-000677",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": "warrant_expiration_extension",
+  "evidence": "the Board of Directors of Wytec authorized an extension from January 31, 2024 to December 31, 2024 of the expiration date of 85,784 common stock purchase warrants",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001495320-24-000073",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "the Board of Directors of Vera Bradley, Inc., an Indiana corporation, adopted a shareholder rights plan",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001749723-24-000022",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "acquirer",
+  "secondary": [
+   "other"
+  ],
+  "sub_label": null,
+  "evidence": "the Company issued to Ceiba Energy 96,746 shares of its Series A Convertible Preferred Stock, and assumed certain of Portocem's existing indebtedness in exchange for all outstanding equity interests",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-24-047061",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "merger_agreement"
+  ],
+  "sub_label": null,
+  "evidence": "the board of directors of the Company adopted a stockholder rights agreement and declared a dividend of one right",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-24-211220",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Company filed a certificate of designation... designating the rights, preferences, privileges and restrictions of the shares of Series X Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-24-269937",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "At the Closing, Former TechTarget became a wholly owned subsidiary of New TechTarget",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-24-050573",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "warrant_amendment",
+  "evidence": "such holders agreed to amend the alternative cashless exercise provision in Section 2(c) of the April 19 Warrants",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-24-015576",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "warrant_amendment",
+  "evidence": "The Company entered into Amendments to Common Stock Purchase Warrants with certain institutional investors and accredited investors",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-24-130779",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "approved the Company's entry into a stockholder rights agreement and declared a dividend of one right for each outstanding share",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001065059-24-000033",
+  "primary": "rights_plan",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "Centrus Energy Corp. entered into a Sixth Amendment to the Section 382 Rights Agreement",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-25-243136",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "At the Effective Time, the separate corporate existence of MergerCo ceased, and the Company survived the Merger as a wholly owned subsidiary of Parent",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001193125-25-082841",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "As a result of the consummation of the Merger, a change of control of the Company occurred and the Company became a wholly owned subsidiary of Parent",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001104659-25-003782",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "completed its previously announced merger of equals transaction with CONSOL Energy Inc.",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001402829-25-000065",
+  "primary": "credit_facility",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": null,
+  "evidence": "The Credit Agreement consists of a $60.0 million revolving loan, a $20.0 million equipment term loan, and a $40.0 million acquisition term loan.",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001849820-25-000296",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Company will designate 100,000 shares of the Company's authorized and unissued preferred stock as Series C Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001140361-25-035929",
+  "primary": "merger_agreement",
+  "de_spac": "no",
+  "side": "target",
+  "secondary": [
+   "credit_facility"
+  ],
+  "sub_label": null,
+  "evidence": "Merger Sub merged with and into Couchbase, with Couchbase surviving the Merger as a wholly owned subsidiary of Parent.",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001641172-25-027052",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "merger_agreement"
+  ],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Company filed the Certificate of Designations of Series I Preferred Stock with the Secretary of State of the State of Delaware, thereby creating the Series I Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001654954-25-011611",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "warrant_exercise_inducement",
+  "evidence": "entered into warrant exercise inducement offer letter with the holder of its existing common stock warrants exercisable for an aggregate of 2,162,162 shares",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001663577-25-000222",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "exchanged an aggregate of $3,546,136 in outstanding debt...for a total of 37,110 shares of the Company's newly amended Series D Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001171843-25-000796",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "the Preferred Shares...rank, with respect to redemption payments, rights upon liquidation, dissolution or winding-up...senior in preference and priority to the Common Shares",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0001140361-25-013659",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [],
+  "sub_label": "preferred_issuance",
+  "evidence": "Momentus issued an aggregate of 477,455 shares of Class A common stock and 673,408 shares of non-voting Series A Convertible Preferred Stock",
+  "unreadable_evidence": null
+ },
+ {
+  "adsh": "0000950170-25-005647",
+  "primary": "other",
+  "de_spac": null,
+  "side": null,
+  "secondary": [
+   "reverse_split"
+  ],
+  "sub_label": "ch11_emergence",
+  "evidence": "Upon the effectiveness of the Plan on the Effective Date, all previously issued and outstanding equity interests in the Company were cancelled and extinguished",
+  "unreadable_evidence": null
+ }
+]

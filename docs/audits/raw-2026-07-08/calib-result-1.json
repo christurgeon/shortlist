@@ -1,0 +1,13 @@
+{"classifications": [
+ {"adsh": "0001104659-26-073803", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": ["credit_facility"], "sub_label": null, "evidence": "the Buyer will purchase from Comtech the ownership interests of certain Comtech subsidiaries engaged in Comtech's satellite and space communications business for a base purchase price in cash of $157,500,000", "unreadable_evidence": null, "calib_note": "v2 reclass: carve-out -> other/asset_sale"},
+ {"adsh": "0001213900-26-068945", "primary": "rights_plan", "de_spac": null, "side": null, "secondary": [], "sub_label": null, "evidence": "entry into an amendment to the Tax Benefits Preservation Plan to extend the expiration time from July 1, 2026 to July 1, 2029", "unreadable_evidence": null},
+ {"adsh": "0001193125-26-286851", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": [], "sub_label": null, "evidence": "in exchange for 907,376,073.663 newly issued New OP Class A LP Units ... representing approximately 67.5% economic and voting ownership of the combined company", "unreadable_evidence": null, "calib_note": "internalization/roll-up; v2 side rule -> unclear"},
+ {"adsh": "0001104659-26-076652", "primary": "other", "de_spac": null, "side": null, "secondary": ["credit_facility"], "sub_label": "Chapter 11 plan-of-reorganization emergence: old shares/notes cancelled, new secured notes + reorganized equity to creditors", "evidence": "pursuant to the Plan, all Old Common Shares were cancelled, released, discharged, and extinguished and are of no further force or effect", "unreadable_evidence": null},
+ {"adsh": "0001104659-26-075150", "primary": "merger_agreement", "de_spac": "yes", "side": "unclear", "secondary": [], "sub_label": null, "evidence": "On June 11, 2026 (the Closing Date), Pubco consummated its previously announced business combination", "unreadable_evidence": null}
+],
+"definition_feedback": [
+ "073803: carve-out/segment sale doesn't fit whole-company target/acquirer framing.",
+ "076652: no category for Chapter 11 plan-of-reorganization emergence (common, structurally distinct).",
+ "075150: de-SPAC pubco is neither target nor acquirer in its own capacity.",
+ "286851: internalization/roll-up breaks conventional two-party side framing."
+]}

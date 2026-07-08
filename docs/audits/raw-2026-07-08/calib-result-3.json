@@ -1,0 +1,14 @@
+{
+  "classifications": [
+    {"adsh": "0001193125-26-270430", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "preferred stock issuance (Mandatory Convertible Preferred via CoD restricting common dividends/repurchases)", "evidence": "no dividend or distribution will be declared or paid on shares of the Company's common stock ... unless all accumulated and unpaid dividends ... have been declared and paid", "unreadable_evidence": null},
+    {"adsh": "0001104659-26-074619", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": [], "sub_label": null, "evidence": "the holders of such Shares ceased to have any rights as stockholders of the Company, other than the right to receive the Merger Consideration", "unreadable_evidence": null},
+    {"adsh": "0001104659-26-078916", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "preferred stock issuance (Cumulative Convertible Perpetual Preferred, Series A, senior to common)", "evidence": "the Company filed Articles Supplementary ... ranks senior to the Common Stock with respect to all liquidation, winding up, dissolution, dividend and distribution rights", "unreadable_evidence": null},
+    {"adsh": "0001193125-26-269880", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "IPO-related amended charter/bylaws establishing Up-C dual-class structure", "evidence": "In connection with the IPO, the Company amended and restated its Certificate of Incorporation ... and amended and restated its Bylaws", "unreadable_evidence": null},
+    {"adsh": "0001140361-26-025340", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": ["credit_facility"], "sub_label": null, "evidence": "the holders of such shares of Company Common Stock ceased to have any rights as stockholders of the Company, other than the right to receive the Merger Consideration", "unreadable_evidence": null}
+  ],
+  "definition_feedback": [
+    {"adsh": "0001193125-26-270430", "note": "Preferred stock issuance restricting common dividends doesn't map to labels 2-4; a standardized sub-label would reduce 'other' catch-all volume."},
+    {"adsh": "0001193125-26-269880", "note": "IPO-driven charter restatement (dual-class Up-C) — unclear whether routine IPO charter mechanics deserve separate flagging inside 'other'."},
+    {"adsh": "0001140361-26-025340", "note": "Merger + concurrent notes issuance: unclear whether secondary labels require the class to have itself modified holder rights."}
+  ]
+}

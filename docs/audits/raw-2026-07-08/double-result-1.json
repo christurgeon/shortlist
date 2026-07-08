@@ -1,0 +1,7 @@
+{"classifications": [
+ {"adsh": "0001193125-25-243136", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": ["credit_facility"], "sub_label": null},
+ {"adsh": "0001493152-23-009008", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "preferred_stock_elimination"},
+ {"adsh": "0001095315-23-000045", "primary": "rights_plan", "de_spac": null, "side": null, "secondary": ["merger_agreement"], "sub_label": null},
+ {"adsh": "0001104659-23-110660", "primary": "merger_agreement", "de_spac": "no", "side": "target", "secondary": [], "sub_label": null},
+ {"adsh": "0001065059-24-000033", "primary": "rights_plan", "de_spac": null, "side": null, "secondary": [], "sub_label": null}
+]}

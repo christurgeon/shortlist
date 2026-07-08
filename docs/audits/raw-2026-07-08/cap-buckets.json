@@ -1,0 +1,302 @@
+{
+ "0001193125-22-073994": {
+  "ticker": "WT",
+  "cap_musd": 2824.83,
+  "bucket": "mid",
+  "source": "current_survivor"
+ },
+ "0001287032-22-000334": {
+  "ticker": "PSEC",
+  "cap_musd": 1107.2269527090907,
+  "bucket": "small",
+  "source": "current_survivor"
+ },
+ "0001104659-22-120846": {
+  "ticker": "DVLT",
+  "cap_musd": 304.7939777176889,
+  "bucket": "small",
+  "source": "current_survivor"
+ },
+ "0001552781-22-000302": {
+  "ticker": "SWKHL",
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-22-256805": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-22-189511": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-22-299495": {
+  "ticker": "SABR",
+  "cap_musd": 804.462595117371,
+  "bucket": "small",
+  "source": "current_survivor"
+ },
+ "0001214659-22-000423": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-22-093107": {
+  "ticker": "VAL",
+  "cap_musd": 5128.094049779682,
+  "bucket": "mid",
+  "source": "current_survivor"
+ },
+ "0001193125-22-192011": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-22-096552": {
+  "ticker": "DBGI",
+  "cap_musd": 17.925427303631324,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001213900-22-073874": {
+  "ticker": "ILLR",
+  "cap_musd": 47.550923163981054,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001493152-22-030139": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-23-277530": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001140361-23-033342": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001477932-23-009242": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-23-156582": {
+  "ticker": "TTMI",
+  "cap_musd": 15008.410539246539,
+  "bucket": "large",
+  "source": "current_survivor"
+ },
+ "0001095315-23-000044": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0000950170-23-058840": {
+  "ticker": "APVO",
+  "cap_musd": 5.570089,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001493152-23-009008": {
+  "ticker": "VISL",
+  "cap_musd": 6.69,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001095315-23-000045": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-23-135947": {
+  "ticker": "ENB",
+  "cap_musd": 165764.411832,
+  "bucket": "large",
+  "source": "current_survivor"
+ },
+ "0001553350-23-000210": {
+  "ticker": "DUOT",
+  "cap_musd": 295.5981522393747,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001213900-23-075471": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-23-110660": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001140361-23-051496": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-24-078355": {
+  "ticker": "SW",
+  "cap_musd": 23430.379163743222,
+  "bucket": "large",
+  "source": "current_survivor"
+ },
+ "0001437749-24-005900": {
+  "ticker": "CRVO",
+  "cap_musd": 46.66550500000001,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001683168-24-000677": {
+  "ticker": "WYTC",
+  "cap_musd": 18.21,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001495320-24-000073": {
+  "ticker": "VRA",
+  "cap_musd": 102.09,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001749723-24-000022": {
+  "ticker": "NFE",
+  "cap_musd": 105.227804899233,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001193125-24-047061": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-24-211220": {
+  "ticker": "CLSK",
+  "cap_musd": 3212.7398777320504,
+  "bucket": "mid",
+  "source": "current_survivor"
+ },
+ "0001193125-24-269937": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-24-050573": {
+  "ticker": "DVLT",
+  "cap_musd": 304.7939777176889,
+  "bucket": "small",
+  "source": "current_survivor"
+ },
+ "0001193125-24-015576": {
+  "ticker": "AWHL",
+  "cap_musd": 21.58,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001193125-24-130779": {
+  "ticker": "GRTX",
+  "cap_musd": 18.52471053348468,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001065059-24-000033": {
+  "ticker": "LEU",
+  "cap_musd": 3271.093776904236,
+  "bucket": "mid",
+  "source": "current_survivor"
+ },
+ "0001193125-25-243136": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001193125-25-082841": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001104659-25-003782": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001402829-25-000065": {
+  "ticker": "ORN",
+  "cap_musd": 569.9482555916723,
+  "bucket": "small",
+  "source": "current_survivor"
+ },
+ "0001849820-25-000296": {
+  "ticker": "KITT",
+  "cap_musd": 7.4215883954545445,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001140361-25-035929": {
+  "ticker": null,
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ },
+ "0001641172-25-027052": {
+  "ticker": "QCLS",
+  "cap_musd": 28.90061905454545,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001654954-25-011611": {
+  "ticker": "AISP",
+  "cap_musd": 73.66622948571428,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001663577-25-000222": {
+  "ticker": "IQST",
+  "cap_musd": 7.140102,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001171843-25-000796": {
+  "ticker": "EDSA",
+  "cap_musd": 71.09318284327324,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0001140361-25-013659": {
+  "ticker": "MNTS",
+  "cap_musd": 118.28890798784194,
+  "bucket": "micro",
+  "source": "current_survivor"
+ },
+ "0000950170-25-005647": {
+  "ticker": "VRM",
+  "cap_musd": null,
+  "bucket": "unknown",
+  "source": "unknown"
+ }
+}
