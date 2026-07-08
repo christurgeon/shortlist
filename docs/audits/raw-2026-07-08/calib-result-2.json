@@ -1,0 +1,11 @@
+{"classifications": [
+ {"adsh": "0001829126-26-006400", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "Series A Convertible Preferred private placement / new CoD", "evidence": "the Company amended its Certificate of Incorporation by filing the Certificate of Designations, Preferences and Rights of the Series A Preferred Stock", "unreadable_evidence": null},
+ {"adsh": "0001829126-26-006250", "primary": "merger_agreement", "de_spac": "yes", "side": "target", "secondary": [], "sub_label": null, "evidence": "As a result of the consummation of the Business Combination, a change in control of Legato occurred.", "unreadable_evidence": null},
+ {"adsh": "0001193125-26-283064", "primary": "merger_agreement", "de_spac": "yes", "side": "acquirer", "secondary": [], "sub_label": null, "evidence": "Merger Sub merging with and into Legacy Teamshares, with Legacy Teamshares continuing as the surviving corporation", "unreadable_evidence": null},
+ {"adsh": "0001213900-26-066829", "primary": "rights_plan", "de_spac": null, "side": null, "secondary": [], "sub_label": null, "evidence": "The Amendment accelerates the expiration date of the Rights Agreement to the earlier of June 8, 2026, and the Redemption Date", "unreadable_evidence": null},
+ {"adsh": "0001493152-26-031675", "primary": "other", "de_spac": null, "side": null, "secondary": [], "sub_label": "Series B Convertible Preferred related-party private placement / new CoD", "evidence": "the Company plans to file the Certificate of Designation ... designating 1,350,000 shares ... as Series B Preferred Stock", "unreadable_evidence": null}
+],
+"definition_feedback": [
+ "0001829126-26-006250: 'side' undefined when the filer legally terminates in the combination (change-of-control language read as target; unstated whether side tracks pre-merger filer or surviving registrant).",
+ "0001193125-26-283064: 'side' undefined re legal vs accounting acquirer in de-SPAC reverse recapitalizations — flips the intuitive answer."
+]}
