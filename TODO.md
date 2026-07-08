@@ -72,7 +72,31 @@ and the R-A4 vintage-stratified guard applies with more vintage buckets at K=3m.
 `8k-neg` the EXPECTED sign is negative: a KILL-shaped verdict CONFIRMS the ON-default veto;
 HOLD/positive falsifies it. Either way the machinery, veto, and firehose stand on their own.
 
-**Status:** UNBLOCKED (2026-07-08) — all three gates of the entry below are complete and recorded (`docs/audits/2026-07-08-eightk-composition-audit.md`). Ready to fire (operator run, off-hours, df preflight).
+**RUNS COMPLETE + FIRST CANONICAL VERDICTS (2026-07-08, supervised, nice/ionice, no
+incidents).** 8k: 1,843 events (~30 min — warm caches); 8k-neg: 11,612 events (~3 h).
+Artifacts: `scout/backfill/verdict-8k-2022-2025.json` + `verdict-8kneg-2022-2025.json`;
+merged into `/opt/shortlist/scout/validate-latest.json` for the digest.
+- **`edgar:8k` scored_gated: KILL** (canonical — fraction 0.941 clears the floor, zero
+  immature at K=3m; FF3 alpha −8.6%/mo, CI [−9.9, −7.4], IR −8.1). Raw: INSUFFICIENT
+  (fraction 0.715 — the pre-registered base case). Per the frozen audit frame
+  (`docs/audits/2026-07-08-eightk-composition-audit.md`: cohort "mixed", merger 0.30/other
+  0.40/junk 0.30): the KILL settles the SIGNAL AS SHIPPED — the originator stays disabled,
+  now by evidence — but does NOT cleanly indict the Lerman-Livnat merger pocket (70% of the
+  cohort is micro-cap financing/defensive junk). A merger-conditioned sub-cohort analysis
+  would need a NEW pre-registration; at −8.6%/mo on the blend, low priority.
+- **`edgar:8k_negative`: INSUFFICIENT on both cohorts** (raw fraction 0.625; scored 0.883 —
+  1.7pp under the 0.90 floor, the honest refusal). Labeled non-verdict observation: alpha
+  is decisively negative on both (raw −5.5%/mo CI [−6.7, −4.5]; scored −5.8%/mo CI
+  [−6.7, −4.8]) — the pre-registered "KILL-shaped result CONFIRMS the veto" reading is met
+  directionally; the ON-default veto stands with strong (formally unverdicted) support.
+  The non-measurable tail is no-price-series micro/OTC junk whose exclusion, if anything,
+  flatters the estimate.
+- Cross-observation (non-evidence): the "positive pocket" measured WORSE (−8.6%/mo) than
+  the documented-negative item set (−5.8%/mo) — consistent with the audit's composition
+  finding (the pocket is dominated by dilutive micro-cap financing events).
+
+**Status:** DONE (2026-07-08) — first canonical KILL delivered; veto confirmed
+directionally; originator remains disabled (now evidence-backed, not just prudence).
 
 ## 8-K originator/veto — operator smoke + composition audit (pre-production) (2026-07-07)
 
