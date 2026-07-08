@@ -371,3 +371,28 @@ def test_portfolio_all_no_data_still_delivers(tmp_path):
     assert calls["delivered"] is True
     assert calls["portfolio"] is not None
     assert "INCOMPLETE" not in " ".join(bot.notifier.messages)   # nothing dropped
+
+
+def test_explain_no_arg_sends_index():
+    bot = _bot()
+    bot._handle(Command("explain", (), "/explain"))
+    assert len(bot.notifier.messages) == 1
+    assert "Known terms" in bot.notifier.messages[0]
+
+
+def test_explain_known_term_sends_entry():
+    bot = _bot()
+    bot._handle(Command("explain", ("13D",), "/explain 13d"))
+    assert bot.notifier.messages[0].startswith("13D")
+
+
+def test_explain_unknown_term_suggests():
+    bot = _bot()
+    bot._handle(Command("explain", ("13X",), "/explain 13x"))
+    msg = bot.notifier.messages[0]
+    assert "No entry" in msg and "/explain" in msg
+
+
+def test_help_mentions_explain():
+    from shortlist.scout.bot import _HELP
+    assert "/explain" in _HELP
