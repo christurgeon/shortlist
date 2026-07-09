@@ -253,6 +253,11 @@ class Earnings:
     last_surprise_pct: Optional[float] = None  # newest quarter's surprise %
     next_date: Optional[str] = None       # next earnings date (ISO) or None
     last_report_date: Optional[str] = None  # APPROX last-announcement date (ISO); see _earnings
+    # True when last_report_date is the quarter-END proxy (not a real print date) — lets
+    # the bridge refine the SUE decay anchor with the EDGAR 10-Q/10-K filed date. Defaults
+    # True so legacy persisted snapshots (free-tier era: calendar never had past entries)
+    # also get the refinement on replay.
+    last_report_date_estimated: bool = True
 
 
 @dataclass
@@ -271,6 +276,10 @@ class Events:
     activist_13d: bool = False         # SC 13D / SCHEDULE 13D (and /A) in window
     passive_13g: bool = False          # SC 13G / SCHEDULE 13G (and /A) in window
     planned_insider_sale_144: bool = False  # Form 144 (and /A) in window
+    # Latest exact-form 10-Q/10-K filed date (ISO) — the bridge's SUE decay-anchor
+    # refinement (a ~0-5d announcement proxy). NOT an advisory: kept out of `recent`
+    # so the research filing-events line and the presence flags are untouched.
+    last_report_filed: Optional[str] = None
 
 
 # --- Snapshot -------------------------------------------------------------

@@ -457,7 +457,9 @@ edgar_events:
   index_limit: 40
   # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
   # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
-  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"]
+  # 10-Q/10-K feed only the SUE decay anchor (events.last_report_filed) — they never
+  # join the advisory `recent` list, and their /A amendments are dropped in the builder.
+  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G", "10-Q", "10-K"]
   soft_notes:        # reserved; all OFF in v1 (pure enrichment)
     stale_after_8k: false
     activist_13d_note: false

@@ -573,13 +573,19 @@ when absent. `SUE = last_surprise_pct / dispersion`, **decayed** linearly to 0 o
 earnings — no new feed. Two prerequisite bridge derivations:
 - **`earnings_surprise_dispersion`** — population std-dev of the firm's own recent surprise
   %s (`stats.surprise_dispersion`, ≥3 quarters), the SUE denominator.
-- **`earnings_days_since_last_report`** — the decay anchor. **APPROXIMATION:** Finnhub
-  `stock/earnings` rows carry only the fiscal `period` (quarter-END), not the announcement
-  date; `_earnings` prefers the most recent PAST `calendar/earnings` entry with an
-  `epsActual` (a true announcement date), else **falls back to the quarter-end** — a weaker
-  proxy that *over-states* staleness (the print lands ~30-45d after quarter-end), so the leg
-  decays a touch fast. Keyed off the PAST report — **never** `days_to_next` (unannounced →
-  look-ahead).
+- **`earnings_days_since_last_report`** — the decay anchor, a three-tier APPROXIMATION
+  (best available first): (1) the most recent PAST `calendar/earnings` entry with an
+  `epsActual` — a true announcement date, but **Finnhub's FREE tier returns no historical
+  calendar entries at all** (live-probed 2026-07-09; the request still reaches back ~120d
+  so a paid key activates this tier); (2) the **EDGAR 10-Q/10-K filed date**
+  (`Events.last_report_filed`, exact forms only — /A amendments would wrongly freshen it;
+  needs `edgar` in the source chain), a ~0-5d proxy applied in the bridge as
+  `max(quarter_end, filed)` and only when `Earnings.last_report_date_estimated` (never
+  degrades a true date; truth is bracketed quarter_end ≤ announcement ≤ filed); (3) the
+  fiscal quarter-END `period` — over-states staleness ~30-45d, so the leg decays a touch
+  fast. Old persisted snapshots lack the `estimated` flag → `from_dict` defaults it True,
+  so snapshot-replay gets tier 2 retroactively. Keyed off the PAST report — **never**
+  `days_to_next` (unannounced → look-ahead).
 
 **Mandatory σ-guard** (`stats.sue` + `scoring._sue_value`): abstain (None) when dispersion
 is None / below `sigma_floor` (the all-equal / common 4-equal case has σ≈0) **or** fewer

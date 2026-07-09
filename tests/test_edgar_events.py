@@ -65,13 +65,54 @@ def test_build_filters_by_lookback_and_sets_flags():
     assert ev.activist_13d is True
     assert ev.planned_insider_sale_144 is False     # the only 144 was out of window
     assert [e.form for e in ev.recent] == ["8-K", "SC 13D"]   # newest-first, in-window only
+    assert ev.last_report_filed == "2026-05-15"     # the 10-K anchors, never joins recent
 
 
 def test_build_returns_none_when_no_inwindow_events():
     today = date(2026, 6, 1)
     assert build_events_section([], 90, today) is None
     assert build_events_section([_rec("8-K", "2020-01-01")], 90, today) is None
-    assert build_events_section([_rec("10-K", "2026-05-30")], 90, today) is None
+
+
+def test_build_last_report_filed_exact_forms_only():
+    # 10-Q/10-K only — a 10-Q/A can land months after the print and an 8-K is any
+    # event; either would wrongly FRESHEN the SUE decay anchor.
+    today = date(2026, 7, 9)
+    recs = [_rec("10-Q/A", "2026-06-25"), _rec("8-K", "2026-07-01"),
+            _rec("10-Q", "2026-05-05"), _rec("10-K", "2025-11-01")]
+    ev = build_events_section(recs, lookback_days=90, today=today)
+    assert ev.last_report_filed == "2026-05-05"     # latest exact 10-Q/10-K
+    # advisory list untouched: 10-Q/A is not an advisory form (and the exact-match
+    # fetch never retrieves it live); report forms never join `recent`.
+    assert [e.form for e in ev.recent] == ["8-K"]
+
+
+def test_build_events_from_lone_10q_carries_anchor_only():
+    # A quiet name whose only recent filing is the 10-Q still gets the anchor — an
+    # Events with a real last_report_filed is NOT the all-falsy case the None-return
+    # guards against (_has_data sees the date).
+    today = date(2026, 6, 1)
+    ev = build_events_section([_rec("10-K", "2026-05-30")], 90, today)
+    assert ev is not None
+    assert ev.last_report_filed == "2026-05-30"
+    assert ev.recent == []
+    assert not any([ev.recent_8k, ev.activist_13d, ev.passive_13g,
+                    ev.planned_insider_sale_144])
+
+
+def test_last_report_filed_roundtrips():
+    snap = TickerSnapshot(ticker="AAPL")
+    snap.events = Events(last_report_filed="2026-05-05")
+    rebuilt = TickerSnapshot.from_dict(snap.to_dict())
+    assert rebuilt.events.last_report_filed == "2026-05-05"
+
+
+def test_default_event_forms_include_10q_10k(monkeypatch):
+    # The fetch filter is exact-match — without these forms the anchor never fires.
+    monkeypatch.setenv("SEC_IDENTITY", "test@example.com")
+    monkeypatch.setattr("edgar.set_identity", lambda *_a, **_k: None)
+    edgar = [s for s in build_sources(["edgar"]) if s.name == "edgar"][0]
+    assert "10-Q" in edgar._event_forms and "10-K" in edgar._event_forms
 
 
 def test_build_never_returns_all_falsy_events():
