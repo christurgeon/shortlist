@@ -6,6 +6,27 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Deploy to /opt/shortlist done (code side) — bot restart + Telegram smoke pending (2026-07-09)
+
+The pending deploy carrying #128 (/explain), #130 (VFLEX non-registrant skip), and #132
+(SUE decay anchor) is synced: `/opt/shortlist` rsynced to `9e34ee5` (installer excludes
+replicated exactly; `deploy/` units unchanged in the jump, no deletions/renames so no
+`rm -rf src` needed), `uv sync --extra scout --extra edgar` audited clean, offline
+`shortlist-scout --demo` smoke OK, and the deployed venv resolves the new
+`scout/glossary.py` (`lookup("sue")` returns the SUE entry). The 21:30/22:30 timers pick
+the code up automatically (editable install). Also verified: the accumulate unit's
+ExecStart **already carries `--sources fmp,finnhub,edgar`** — the 2026-07-07 item-1
+`SHORTLIST_ACCUMULATE=1` installer re-run is DONE (marked below).
+
+Remaining (operator — needs root, session couldn't sudo):
+1. `sudo systemctl restart shortlist-bot.service` — the long-running bot still has the
+   OLD modules loaded until bounced; /explain and the VFLEX skip are NOT live in the bot
+   until then.
+2. After the restart, live Telegram smoke: `/explain sue` (glossary) and `/deep VFLEX`
+   (expect the friendly non-registrant skip, not the raw edgartools error).
+
+**Status:** code deployed 2026-07-09 ~04:05 UTC; bot restart + 2 smoke checks pending.
+
 ## SUE decay anchor fixed — EDGAR 10-Q filed date; free-tier calendar is empty (2026-07-09)
 
 The systematically-fast SUE decay (2026-07-07 item 6) is fixed, but NOT by the planned
@@ -39,7 +60,8 @@ are semantics-only (no config thresholds quoted) so config tuning never stales t
 **Status:** merged; VPS deploy + a quick live `/explain` smoke on Telegram pending. Same
 deploy also picks up #130 (friendly `/deep` skip for non-SEC-registrant tickers like
 VFLEX — was leaking the raw edgartools "Company not found / Tip:" error); re-run
-`/deep VFLEX` after deploy to confirm the new copy.
+`/deep VFLEX` after deploy to confirm the new copy. **Update 2026-07-09:** code deployed
+(top entry) — only the bot restart + the two smokes remain.
 
 ---
 
@@ -48,7 +70,9 @@ VFLEX — was leaking the raw edgartools "Company not found / Tip:" error); re-r
 Both features merged and deployed (editable install picks the code up; effect from tonight's
 timers). Loose ends, roughly by urgency:
 
-1. **Operator (sudo) step pending:** `sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh`
+1. ~~**Operator (sudo) step pending:**~~ — **DONE (verified 2026-07-09):** the live
+   `shortlist-accumulate.service` ExecStart now carries `--sources fmp,finnhub,edgar`
+   (EDGAR enrichment active). Original item: `sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh`
    — rewrites the accumulate unit with `--sources fmp,finnhub,edgar` (EDGAR statements/SIC/
    Form-4 for the FMP-quota-gated names). **The accumulate block is gated on
    `SHORTLIST_ACCUMULATE=1`** — a bare installer run (done 2026-07-08, which did restart the
