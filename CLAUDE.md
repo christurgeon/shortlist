@@ -444,6 +444,59 @@ ticker fallback anywhere** — CIK→ticker only via `cik_tickers` (live) / `Sym
 backfill); names feed only the SPAC check. Spec:
 `docs/superpowers/specs/2026-07-07-eightk-originator-design.md`.
 
+## 13F marquee-fund cloning (scout)
+
+`EdgarThirteenFSignal` (`scout/signals.py`, keyless, **VPS-safe** — pure SEC, no Yahoo
+WAF) is a **discovery originator** that clones **new positions** in a curated set of
+marquee funds' latest **13F-HR**. Per fund CIK (config `scout.thirteenf.funds`): pick the
+latest EXACT `13F-HR` (`13F-HR/A` amendments **excluded** — a restatement diff would
+double-fire), diff its holdings against the immediately-prior 13F-HR, and surface each
+**new** position (a 9-char CUSIP present now, absent before) whose within-book weight
+clears `min_position_pct` (0.005). Unlike the FINRA/8-K **contested** originators, this is
+a **DEFENSIBLE, established-positive prior** (Martin-Puthenpurackal 2008 — cloning at
+disclosure earned abnormal returns; Cohen-Polk-Silli 2010 — managers' "best ideas"
+outperform), so it ships **ENABLED at weight 1.0** (the 13D shipping bar) — but *below*
+the 13D/Form-4 tier because the info is up to **45 days stale**: the clone return is
+measured from the **FILING date**, the disclosure lag priced into the literature (we're
+not front-running the trade).
+
+**Math/ingestion:** `scout/thirteenf.py` (pure `parse_infotable` / `aggregate_positions` /
+`new_position_diff` / `thirteenf_emissions` + throttled fetch) and `scout/cusip_map.py`
+(the CUSIP→ticker resolver). **Verified facts (live-checked 2026-07-09; do not "fix"
+back):** a single holding legitimately spans **multiple `<infoTable>` rows** (sole/shared/
+none voting split, combined-manager filings) — **aggregate by CUSIP, sum `value`** (within-
+filing weights normalize away the 2023 $-vs-$1000s reporting change); **drop rows with a
+`putCall`** (options) and **`sshPrnamtType != "SH"`** (PRN convertible debt); the
+information table is the filing directory's `.xml` that is **neither `primary_doc.xml` nor
+`xslForm13F...`** (arbitrary numeric name → an `index.json` fetch is required). The 7 seed
+CIKs are **live-verified active filers** (stale /ADV shells like Baupost 1054420 / Appaloosa
+1006438 are the trap — the config comment names them).
+
+**CUSIP→ticker resolver** (`scout/cusip_map.py`, layered, abstains rather than guesses):
+(1) **SEC fails-to-deliver files** (`cnsfails{YYYYMM}{a|b}.zip`, `SETTLEMENT|CUSIP|SYMBOL`
+rows, ~58k/file) — the 2 most recent published, walk-back-bounded at 6 attempts for the
+publication lag, cached **forever** by filename (immutable once posted), **most-recent-
+settlement wins** on symbol churn; (2) **exact-normalized-issuer-name** fallback against the
+`company_tickers.json` titles (uppercase, strip punctuation + INC/CORP/CO/LTD/PLC-style
+suffixes, EXACT equality only — ambiguous names abstain); (3) **None** (abstain, counted in
+`available()` detail). Every sec.gov request (submissions, index, infotable, FTD zips) goes
+through the signal's own **~3 req/s min-interval throttle** (`SecThrottle`) — there is NO
+shared sec.gov throttle to reuse.
+
+**Seen-accession semantics** (`ScoutState.thirteenf_seen_accessions`, `_append_capped`,
+forward-compatible): a fund's latest 13F-HR is marked **processed even when the diff yields
+zero new positions** (else an empty-diff fund re-downloads both infotables daily forever) —
+so the state exposes **`processed_accessions`**, NOT emissions, for the `daily.py` persist
+hook. `max_filings_per_day` (default 3) caps processing (13F is quarterly-bursty: all funds
+file mid-Feb/May/Aug/Nov); unprocessed filings stay **unseen and carry over** to later
+sessions (never dropped). **Known limit (stated up front):** the CUSIP resolver yields a
+ticker but no CIK, so 13F emissions carry **`cik=None`** — firehose events can't use
+CIK-based delisting classification, and a **backfill cohort is deferred** (a PiT
+CUSIP→symbology replay would leak post-event symbols; the picks ledger + firehose measure
+the live signal from day one). `scoring.score()` is untouched. Tune `scout.thirteenf` +
+`scout.signals.edgar_13f`. Spec:
+`docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md`.
+
 ## WSB social hype (harness + scout)
 
 `WsbSource` (keyless) and the scout `WsbHypeSignal` both read **ApeWisdom**

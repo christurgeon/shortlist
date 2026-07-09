@@ -575,6 +575,32 @@ scout:
                              # byte-identical pre-feature funnel.
       enabled: true
       lookback_days: 30      # veto horizon + state prune window (matches the drift window)
+  thirteenf:                 # EdgarThirteenFSignal — marquee-fund new-position cloning from
+                             # SEC 13F information tables. A DEFENSIBLE, established-positive
+                             # prior (Martin-Puthenpurackal 2008; Cohen-Polk-Silli 2010 "best
+                             # ideas"), so it ships ON (signals below) — but at weight 1.0,
+                             # below the 13D/Form-4 tier: the clone return is measured from the
+                             # FILING date and the info is up to 45 days stale (the disclosure
+                             # lag is priced into the literature). Backfill DEFERRED (a PiT
+                             # CUSIP->symbology replay is future work; today's FTD files would
+                             # leak post-event symbols). UNFITTED priors.
+    funds:                   # curated concentrated, long-horizon, fundamentals-driven managers
+                             # (a 300-name quant book has no "new position" meaning). CIKs
+                             # LIVE-VERIFIED 2026-07-09 (every latest 13F-HR filed 2026-05-14/15).
+      - {cik: 1067983, name: Berkshire Hathaway Inc}
+      - {cik: 1336528, name: Pershing Square Capital Management}
+      - {cik: 1061768, name: Baupost Group}        # NOT 1054420 (stale /ADV shell, last 13F 2002)
+      - {cik: 1418814, name: ValueAct Holdings}     # NOT 1351069/1395267 (stale since 2008/2012)
+      - {cik: 1040273, name: Third Point}
+      - {cik: 1656456, name: Appaloosa}             # NOT 1006438 (stale since 2016)
+      - {cik: 1647251, name: TCI Fund Management}
+    min_position_pct: 0.005  # a new position must be >= 0.5% of the latest book to surface
+    full_strength_pct: 0.05  # a 5%-of-book new position is a full-conviction bet (strength cap)
+    max_filings_per_day: 3   # 13F volume is quarterly-bursty (all funds file mid-Feb/May/Aug/
+                             # Nov); cap processing/session — unprocessed filings carry over
+                             # (never dropped), spreading the burst across sessions
+    top_n: 10                # cap emissions per filing by within-book weight
+    deny_list: []
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -591,6 +617,9 @@ scout:
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
     finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
     edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
+    edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
+                                              # Cohen-Polk-Silli 2010) — DEFENSIBLE prior, ON; weight below the
+                                              # 13D/Form-4 tier (info up to 45 days stale; return from FILING date)
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

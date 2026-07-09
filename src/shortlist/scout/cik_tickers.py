@@ -51,15 +51,18 @@ def resolve_ticker(cik: str | int, index: dict[str, str]) -> str | None:
         return None
 
 
-def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
-                       _today: date | None = None, _client: httpx.Client | None = None) -> dict[str, str]:
-    """Day-cached company_tickers.json -> resolver index. SEC blocks UA-less GETs, so a
-    contact-email User-Agent is mandatory. Never raises: returns {} on any failure."""
+def load_raw_company_tickers(identity: str, *, cache_dir: str = ".cache/sec_tickers",
+                             _today: date | None = None,
+                             _client: httpx.Client | None = None) -> dict:
+    """Day-cached raw company_tickers.json payload. SEC blocks UA-less GETs, so a
+    contact-email User-Agent is mandatory. Never raises: returns {} on any failure. The
+    raw payload carries the issuer `title` the CUSIP name-fallback resolver needs, which
+    the CIK->ticker index throws away."""
     day = (_today or date.today()).isoformat()
     cp = Path(cache_dir) / f"company_tickers-{day}.json"
     try:
         if cp.exists():
-            return build_cik_to_ticker(json.loads(cp.read_text()))
+            return json.loads(cp.read_text())
         client = _client or httpx.Client(timeout=30.0, headers={"User-Agent": identity})
         try:
             resp = client.get(_TICKERS_URL)
@@ -70,6 +73,14 @@ def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
                 client.close()
         cp.parent.mkdir(parents=True, exist_ok=True)
         cp.write_text(json.dumps(raw))
-        return build_cik_to_ticker(raw)
-    except Exception:  # noqa: BLE001 — degrade: empty index -> signal abstains, never crashes
+        return raw
+    except Exception:  # noqa: BLE001 — degrade: empty payload -> signal abstains, never crashes
         return {}
+
+
+def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
+                       _today: date | None = None, _client: httpx.Client | None = None) -> dict[str, str]:
+    """Day-cached company_tickers.json -> resolver index. SEC blocks UA-less GETs, so a
+    contact-email User-Agent is mandatory. Never raises: returns {} on any failure."""
+    raw = load_raw_company_tickers(identity, cache_dir=cache_dir, _today=_today, _client=_client)
+    return build_cik_to_ticker(raw) if raw else {}
