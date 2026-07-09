@@ -118,3 +118,32 @@ def test_enrich_isolates_assess_exception_without_aborting_batch(tmp_path):
     assert "sk-ant-SECRET999" not in results[0].skipped       # redacted
     assert results[1].brief_path                              # B still produced
     assert results[0].brief_path is None
+
+
+def test_enrich_classifies_unregistered_ticker(tmp_path):
+    # A ticker with no SEC CIK mapping (fund/ETF share class, e.g. VFLEX) makes
+    # edgartools' Company() raise CompanyNotFoundError before the no-10-K path
+    # can classify it. The skip reason must be human-readable, not the raw
+    # library message with its Python-REPL "Tip:" line.
+    class CompanyNotFoundError(Exception):  # matched by type NAME (edgar is optional)
+        pass
+    def fake_fetch(ticker, **kw):
+        raise CompanyNotFoundError(
+            f"Company not found: '{ticker}'\n  Tip: Search by name with "
+            'find_company("...") or pass a CIK directly.')
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich([_Card("VFLEX", 90)], cfg, top_n=1,
+                     fetch=fake_fetch, assess_fn=lambda *a, **k: None)
+    assert results[0].skipped is not None
+    assert "no SEC registrant" in results[0].skipped
+    assert "Tip:" not in results[0].skipped
+    assert results[0].brief_path is None
+
+
+def test_enrich_other_fetch_errors_keep_filing_error_prefix(tmp_path):
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    def fake_fetch(ticker, **kw):
+        raise RuntimeError("boom")
+    results = enrich([_Card("A", 90)], cfg, top_n=1,
+                     fetch=fake_fetch, assess_fn=lambda *a, **k: None)
+    assert results[0].skipped == "filing error: boom"

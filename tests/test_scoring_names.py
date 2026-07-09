@@ -30,7 +30,11 @@ def _appended_literals() -> set[str]:
 
 
 def test_emitted_literals_are_declared():
-    assert _appended_literals() <= scoring.KNOWN_GATES | scoring.KNOWN_FLAGS
+    lits = _appended_literals()
+    # floor guards vacuity: if the emitters were renamed/refactored the scan
+    # would return {} and the subset assert would pass while checking nothing
+    assert len(lits) >= 14
+    assert lits <= scoring.KNOWN_GATES | scoring.KNOWN_FLAGS
 
 
 def test_declared_sets_are_complete_and_disjoint():

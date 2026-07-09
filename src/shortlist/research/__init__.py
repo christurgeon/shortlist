@@ -42,6 +42,13 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     try:
         bundle = fetch(card.ticker, config=config)
     except Exception as e:  # network/edgartools/identity errors
+        # A ticker with no SEC CIK mapping (fund/ETF share class, non-SEC-listed
+        # security) raises before the no-10-K classification path can run.
+        # Matched by type NAME: edgar is an optional extra we can't import here.
+        if type(e).__name__ == "CompanyNotFoundError":
+            return ResearchResult(card.ticker, skipped=(
+                f"no SEC registrant for '{card.ticker}' — likely a fund/ETF "
+                "share class or non-SEC-listed security; no filings to research"))
         return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
     if bundle is None:
         return ResearchResult(card.ticker, skipped=reason_fn(card.ticker))
