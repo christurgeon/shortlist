@@ -547,6 +547,135 @@ class EdgarEightKSignal:
 register("edgar_8k", EdgarEightKSignal)
 
 
+class EdgarThirteenFSignal:
+    """Marquee-fund new-position cloning from SEC 13F information tables (discovery).
+
+    Per curated fund CIK, once per session: pick the latest EXACT 13F-HR (amendments
+    excluded), diff its holdings against the immediately-prior 13F-HR, and surface each NEW
+    position (CUSIP present now, absent before) that clears a within-book weight floor. An
+    established-positive academic prior (Martin-Puthenpurackal 2008; Cohen-Polk-Silli 2010
+    "best ideas"), so it ships ENABLED — but at weight 1.0, below the 13D/Form-4 tier because
+    the information is up to 45 days stale (the clone return is measured from the FILING date,
+    the lag priced into the literature). Keyless + VPS-safe (pure SEC, no Yahoo WAF).
+
+    Seen-accession semantics differ from the 8-K originator deliberately: a fund's latest
+    13F-HR is marked processed ONCE the diff runs, even when it yields zero new positions —
+    otherwise an empty-diff fund re-downloads both infotables every day forever. `max_filings
+    _per_day` caps processing (13F volume is quarterly-bursty); unprocessed filings stay
+    UNSEEN and are picked up on later sessions (carry-over, never dropped). daily.py persists
+    `processed_accessions` (NOT emissions) into ScoutState.thirteenf_seen_accessions.
+    """
+    name = "edgar_13f"
+    is_discovery = True
+
+    def __init__(self, identity: str | None = None, *, funds=None,
+                 min_position_pct: float = 0.005, full_strength_pct: float = 0.05,
+                 max_filings_per_day: int = 3, top_n: int = 10,
+                 deny_list: list[str] | None = None,
+                 seen_accessions: list[str] | None = None, timeout: float = 30.0,
+                 resolver_cache_dir: str = ".cache/sec_tickers",
+                 ftd_cache_dir: str = ".cache/sec_ftd") -> None:
+        self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self.funds = [dict(f) for f in (funds or [])]
+        self.min_position_pct = min_position_pct
+        self.full_strength_pct = full_strength_pct
+        self.max_filings_per_day = max_filings_per_day
+        self.top_n = top_n
+        self.deny_list = list(deny_list or [])
+        self.seen_accessions = set(seen_accessions or [])
+        self.timeout = timeout
+        self.resolver_cache_dir = resolver_cache_dir
+        self.ftd_cache_dir = ftd_cache_dir
+        self._resolver = None
+        self._throttle = None
+        self.processed_accessions: list[str] = []   # daily.py persists these into ScoutState
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from . import thirteenf as tf
+        from .cusip_map import load_cusip_resolver
+        if self._throttle is None:
+            self._throttle = tf.SecThrottle()
+        try:
+            if self._resolver is None:
+                self._resolver = load_cusip_resolver(
+                    self.identity, resolver_cache_dir=self.resolver_cache_dir,
+                    ftd_cache_dir=self.ftd_cache_dir, timeout=self.timeout,
+                    today=session, throttle=self._throttle)
+        except Exception as e:  # noqa: BLE001 — resolver build never crashes the scan
+            self._status = (False, redact_secrets(str(e)))
+            return []
+
+        out: list[Emission] = []
+        processed = 0
+        abstained = 0
+        errors = 0
+        capped = False
+        for fund in self.funds:
+            if processed >= self.max_filings_per_day:
+                capped = True
+                break                                 # carry-over: leave the rest unseen
+            cik = fund.get("cik")
+            fund_name = fund.get("name") or str(cik)
+            if cik is None:
+                continue
+            try:
+                subm = tf.fetch_submissions(cik, self.identity, timeout=self.timeout,
+                                            throttle=self._throttle)
+                filings = tf.parse_submissions_13fhr(subm)
+                if not filings:
+                    continue
+                latest = filings[0]
+                if latest["accession"] in self.seen_accessions:
+                    continue                           # already processed a prior session
+                if len(filings) < 2:
+                    # No prior 13F-HR to diff against — mark processed so we don't refetch
+                    # daily, emit nothing (first-ever filer; never for the marquee seed).
+                    self._mark_processed(latest["accession"])
+                    processed += 1
+                    continue
+                prior = filings[1]
+                latest_rows = tf.fetch_infotable_rows(cik, latest["accession"], self.identity,
+                                                      timeout=self.timeout, throttle=self._throttle)
+                prior_rows = tf.fetch_infotable_rows(cik, prior["accession"], self.identity,
+                                                     timeout=self.timeout, throttle=self._throttle)
+                new_pos = tf.new_position_diff(
+                    tf.aggregate_positions(latest_rows), tf.aggregate_positions(prior_rows),
+                    min_position_pct=self.min_position_pct,
+                    full_strength_pct=self.full_strength_pct)
+                ems, abst = tf.thirteenf_emissions(
+                    new_pos, resolve_fn=self._resolver.resolve, fund_name=fund_name,
+                    period=latest["period"], filing_date=latest["filing_date"],
+                    deny_list=self.deny_list, top_n=self.top_n)
+                out.extend(ems)
+                abstained += abst
+                self._mark_processed(latest["accession"])   # processed even on empty diff
+                processed += 1
+            except Exception as e:  # noqa: BLE001 — isolate one bad fund; keep the rest
+                errors += 1
+                self._last_error = redact_secrets(str(e))
+                continue
+
+        tail = f", {abstained} unresolved CUSIPs" if abstained else ""
+        tail += f", {errors} fund errors" if errors else ""
+        tail += "; filings-cap hit (carry-over)" if capped else ""
+        self._status = (errors == 0,
+                        f"{len(out)} new 13F positions from {processed} filings"
+                        f" ({len(self.funds)} funds){tail}")
+        return out
+
+    def _mark_processed(self, accession: str) -> None:
+        if accession and accession not in self.seen_accessions:
+            self.seen_accessions.add(accession)
+            self.processed_accessions.append(accession)
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("edgar_13f", EdgarThirteenFSignal)
+
+
 class WsbHypeSignal:
     """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
     rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""

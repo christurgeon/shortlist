@@ -43,7 +43,8 @@ def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
 
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
-                           "edgar_activist_13d", "finra_short_interest", "edgar_8k"}
+                           "edgar_activist_13d", "finra_short_interest", "edgar_8k",
+                           "edgar_13f"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -56,16 +57,20 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
 
 
 def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
-                   eightk_seen: list[str] | None = None) -> dict[str, dict]:
+                   eightk_seen: list[str] | None = None,
+                   thirteenf_seen: list[str] | None = None) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
 
     `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
-    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` (from ScoutState) is
-    the 8-K originator's rolling accession dedup across the walk-back overlap."""
+    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` / `thirteenf_seen` (from
+    ScoutState) are the 8-K originator's walk-back accession dedup and the 13F originator's
+    processed-filing dedup respectively — passed as keyword args (the positional list is
+    already unwieldy)."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
     si = scout_cfg.get("short_interest", {})
     ek = scout_cfg.get("eightk", {})
+    tf = scout_cfg.get("thirteenf", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -94,6 +99,14 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                      "drop_spacs": ek.get("drop_spacs", True),
                      "daily_cap": ek.get("daily_cap", 6),
                      "seen_accessions": eightk_seen or []},
+        "edgar_13f": {"identity": os.environ.get("SEC_IDENTITY"),
+                      "funds": tf.get("funds", []),
+                      "min_position_pct": tf.get("min_position_pct", 0.005),
+                      "full_strength_pct": tf.get("full_strength_pct", 0.05),
+                      "max_filings_per_day": tf.get("max_filings_per_day", 3),
+                      "top_n": tf.get("top_n", 10),
+                      "deny_list": tf.get("deny_list", []),
+                      "seen_accessions": thirteenf_seen or []},
     }
 
 
@@ -340,7 +353,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     else:
         all_names = _enabled_signal_names(scout_cfg)
         kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
-                                        state.eightk_seen_accessions())
+                                        state.eightk_seen_accessions(),
+                                        thirteenf_seen=state.thirteenf_seen_accessions())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -374,6 +388,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # (session-2..session) doesn't re-emit them on the next runs.
             if s.name == "edgar_8k" and not demo and getattr(s, "new_accessions", None):
                 state.add_eightk_accessions(s.new_accessions)
+            # Persist the 13F filings PROCESSED this run (even empty-diff ones) so a fund's
+            # already-diffed latest 13F-HR isn't re-downloaded daily; carry-over filings stay
+            # unseen and surface on a later session.
+            if s.name == "edgar_13f" and not demo and getattr(s, "processed_accessions", None):
+                state.add_thirteenf_accessions(s.processed_accessions)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are

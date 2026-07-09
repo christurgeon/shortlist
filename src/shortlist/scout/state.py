@@ -179,6 +179,19 @@ class ScoutState:
         2-3 re-swept lag days it guards."""
         self._append_capped("eightk_neg_logged", accessions, cap)
 
+    # --- 13F originator: capped rolling PROCESSED-accession set ---
+    def thirteenf_seen_accessions(self) -> list[str]:
+        """A fund's latest 13F-HR accessions the 13F originator has already PROCESSED (marked
+        even when the diff yielded zero new positions — otherwise an empty-diff fund would
+        re-download both infotables every day). Absent key (old state files) reads as [] —
+        back-compatible, no migration."""
+        return list(self._data.get("thirteenf_seen", []))
+
+    def add_thirteenf_accessions(self, accessions: list[str], cap: int = 200) -> None:
+        """Append newly-processed 13F-HR accessions (N_funds x 4 quarters is tiny; a 200 cap
+        is ample headroom)."""
+        self._append_capped("thirteenf_seen", accessions, cap)
+
     # --- held list ---
     def set_held(self, tickers: list[str]) -> None:
         self._data["held"] = [t.upper() for t in tickers]
