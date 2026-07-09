@@ -58,10 +58,15 @@ def buyback_events_from_rows(rows: list[dict], *, resolve_ticker_fn: Callable,
     day dedup (mirrors eightk.py — two same-day accessions for one issuer would otherwise
     double-emit and burn two daily_cap slots; the FIRST wins). Never raises on a bad row.
     Emission carries cik + meta={adsh, items, file_date, phrase} (the 8-K shape — the
-    firehose + backfill join key need the CIK)."""
+    firehose + backfill join key need the CIK).
+
+    A SUPPRESSED same-(ticker, file_date) sibling accession is attached to the winner's
+    `meta["sibling_adsh"]` (present ONLY when a sibling was suppressed). The signal persists
+    those alongside the winner's own adsh, so the losing sibling can never win a later run
+    (EFTS relevance order is unstable) and double-emit the same authorization."""
     deny = {str(d).upper() for d in (deny_list or [])}
     seen_acc: set[str] = set()
-    seen_ticker_day: set[tuple[str, str]] = set()
+    winner_by_ticker_day: dict[tuple[str, str], Emission] = {}
     out: list[Emission] = []
     for r in rows:
         if (r.get("file_type") or "") != "8-K":
@@ -82,13 +87,19 @@ def buyback_events_from_rows(rows: list[dict], *, resolve_ticker_fn: Callable,
         if tkr in deny or _junk_suffix(tkr):
             continue
         fday = r.get("file_date") or ""
-        if (tkr, fday) in seen_ticker_day:
-            continue                     # one emission per ticker per day (mirrors eightk.py)
-        seen_ticker_day.add((tkr, fday))
+        key = (tkr, fday)
+        winner = winner_by_ticker_day.get(key)
+        if winner is not None:
+            # one emission per ticker per day (mirrors eightk.py); record the suppressed
+            # sibling on the winner so the SIGNAL persists it as seen (cross-run dedup).
+            winner.meta.setdefault("sibling_adsh", []).append(adsh)
+            continue
         phrase = str(r.get("phrase") or "")
         ev = f"8-K buyback authorization ('{phrase}') filed {fday}"
-        out.append(Emission(tkr, SIGNAL, STRENGTH, ev, is_discovery=True,
-                            cik=r.get("cik"),
-                            meta={"adsh": adsh, "items": [str(i) for i in (r.get("items") or [])],
-                                  "file_date": fday, "phrase": phrase}))
+        em = Emission(tkr, SIGNAL, STRENGTH, ev, is_discovery=True,
+                      cik=r.get("cik"),
+                      meta={"adsh": adsh, "items": [str(i) for i in (r.get("items") or [])],
+                            "file_date": fday, "phrase": phrase})
+        winner_by_ticker_day[key] = em
+        out.append(em)
     return out

@@ -306,17 +306,14 @@ def fetch_phrase_day(phrase: str, day: date, *, identity: str,
                      **fetch_kw) -> Optional[list[dict]]:
     """One day's COMPLETE normalized rows matching an exact phrase, day-cached under
     `<cache_dir>/<phrase-hash>/<day>.json` (same envelope + finality rule as the item-query
-    day cache). None = fetch failed (cache untouched — a failure is never frozen)."""
-    today = today or date.today()
-    sub = _phrase_subdir(cache_dir, phrase)
-    cached = _read_day_cache(day, sub, today)
-    if cached is not None:
-        return cached
-    rows = fetch_eightk_range(day, day, identity=identity, q=phrase, **fetch_kw)
-    if rows is None:
-        return None
-    _write_day_cache(day, rows, sub, today)   # complete + unfiltered, ALWAYS
-    return rows
+    day cache). None = fetch failed (cache untouched — a failure is never frozen).
+
+    A single-day `fetch_eightk_window(day, day, q=phrase)` — so the phrase day-cache contract
+    (phrase-hash subdir choice, envelope, finality rule) has exactly ONE implementation, the
+    one `fetch_phrase_window` also rides. The live buyback signal calls this; the signature is
+    stable."""
+    return fetch_eightk_window(day, day, identity=identity, cache_dir=cache_dir,
+                               today=today, q=phrase, **fetch_kw)
 
 
 def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,

@@ -606,16 +606,18 @@ class EdgarThirteenFSignal:
             self._status = (False, redact_secrets(str(e)))
             return []
 
-        # A fully-degraded resolver (FTD outage AND name-index failure -> zero entries) would
-        # abstain on EVERY CUSIP, yet still _mark_processed the quarter — permanently
-        # suppressing that quarter's candidates. Treat it as a signal error: skip the whole
-        # scan, mark nothing, retry next session. (Fakes injected in tests lack these attrs ->
-        # the `== {}` guard is False for them, so the real-resolver path alone is gated.)
+        # An empty FTD CUSIP index (the likely datacenter-IP-block / FTD-outage case) would
+        # abstain on nearly EVERY CUSIP — the exact-match name fallback alone is far too weak
+        # to justify burning quarters (_mark_processed permanently suppresses a quarter's
+        # candidates). So abort on an empty FTD index REGARDLESS of the name index: skip the
+        # whole scan, mark nothing, and drop the memoized resolver so "retry next session" is
+        # real even for a long-lived instance. (Fakes injected in tests lack cusip_to_symbol ->
+        # getattr -> None, and `None == {}` is False, so the real-resolver path alone is gated.)
         cusip_idx = getattr(self._resolver, "cusip_to_symbol", None)
-        name_idx = getattr(self._resolver, "name_to_ticker", None)
-        if cusip_idx == {} and name_idx == {}:
-            self._status = (False, "CUSIP resolver fully degraded (0 FTD + 0 name entries); "
-                                   "skipped — retry next session")
+        if cusip_idx == {}:
+            self._resolver = None       # force a rebuild next session (real retry)
+            self._status = (False, "CUSIP resolver FTD index empty (likely FTD outage / "
+                                   "datacenter-IP block); skipped — retry next session")
             return []
 
         out: list[Emission] = []
@@ -623,6 +625,7 @@ class EdgarThirteenFSignal:
         abstained = 0
         errors = 0
         capped = False
+        skipped: list[str] = []
         for fund in self.funds:
             if processed >= self.max_filings_per_day:
                 capped = True
@@ -646,19 +649,42 @@ class EdgarThirteenFSignal:
                     self._mark_processed(latest["accession"])
                     processed += 1
                     continue
-                prior = filings[1]
+                # An empty parsed row list is indistinguishable from a swallowed fetch/parse
+                # failure (unrecognized infotable member, ET.ParseError -> []), and a real
+                # 13F-HR ALWAYS carries an infotable. EDGAR is uncached, so a transient
+                # truncation heals on a second fetch -> retry ONCE in-scan before giving up.
+                # Trade-off: still-empty after the retry MARKS the accession processed and
+                # skips the quarter LOUDLY (a truly transient empty then loses one quarter —
+                # accepted) rather than the old never-mark policy, which wedged a fund into
+                # re-fetching daily for ~2 quarters with the signal status pinned to failed.
                 latest_rows = tf.fetch_infotable_rows(cik, latest["accession"], self.identity,
                                                       timeout=self.timeout, throttle=self._throttle)
+                if not latest_rows:                      # retry the LATEST once (halve requests:
+                    latest_rows = tf.fetch_infotable_rows(  # check before fetching the prior)
+                        cik, latest["accession"], self.identity,
+                        timeout=self.timeout, throttle=self._throttle)
+                if not latest_rows:
+                    errors += 1
+                    skipped.append(f"{fund_name} {latest['accession']}: empty infotable parse "
+                                   "— quarter skipped")
+                    self._mark_processed(latest["accession"])
+                    processed += 1
+                    continue
+                prior = filings[1]
                 prior_rows = tf.fetch_infotable_rows(cik, prior["accession"], self.identity,
                                                      timeout=self.timeout, throttle=self._throttle)
-                if not latest_rows or not prior_rows:
-                    # An empty parsed row list is indistinguishable from a swallowed fetch/
-                    # parse failure (unrecognized infotable member, ET.ParseError -> []), and a
-                    # real 13F-HR ALWAYS carries an infotable. If prior parses empty we'd emit
-                    # the whole current book as "new"; if latest parses empty we'd silently lose
-                    # the quarter — either way _mark_processed would freeze it. Count a fund
-                    # error, emit nothing, DO NOT mark processed (retry next session).
+                if not prior_rows:                       # retry the PRIOR once
+                    prior_rows = tf.fetch_infotable_rows(
+                        cik, prior["accession"], self.identity,
+                        timeout=self.timeout, throttle=self._throttle)
+                if not prior_rows:
+                    # If prior parses empty we'd emit the whole current book as "new" — skip
+                    # the quarter, but mark the LATEST processed so we don't refetch daily.
                     errors += 1
+                    skipped.append(f"{fund_name} {prior['accession']}: empty infotable parse "
+                                   "— quarter skipped")
+                    self._mark_processed(latest["accession"])
+                    processed += 1
                     continue
                 new_pos = tf.new_position_diff(
                     tf.aggregate_positions(latest_rows), tf.aggregate_positions(prior_rows),
@@ -681,6 +707,7 @@ class EdgarThirteenFSignal:
         tail = f", {abstained} unresolved CUSIPs" if abstained else ""
         tail += f", {errors} fund errors" if errors else ""
         tail += "; filings-cap hit (carry-over)" if capped else ""
+        tail += ("; " + "; ".join(skipped)) if skipped else ""   # loud, named skip notes
         self._status = (errors == 0,
                         f"{len(out)} new 13F positions from {processed} filings"
                         f" ({len(self.funds)} funds){tail}")
@@ -741,6 +768,15 @@ class EdgarBuybackSignal:
             if self._resolver is None:
                 self._resolver = load_cik_to_ticker(self.identity,
                                                     cache_dir=self.resolver_cache_dir)
+            if self._resolver == {}:
+                # An empty CIK->ticker resolver would abstain on EVERY row (no display_names
+                # fallback), yet a naive run would still record new_accessions and permanently
+                # suppress those authorizations. Mirror the 13F degraded guard: skip, record
+                # nothing, drop the memoized resolver so "retry next session" is real.
+                self._resolver = None
+                self.new_accessions = []
+                self._status = (False, "CIK→ticker resolver empty; skipped — retry next session")
+                return []
             resolver = self._resolver
             rows: list[dict] = []
             failed: list[str] = []
@@ -768,7 +804,13 @@ class EdgarBuybackSignal:
         fresh.sort(key=lambda e: e.meta.get("file_date") or "", reverse=True)
         capped = fresh[:self.daily_cap]
         overflow = [e.ticker for e in fresh[self.daily_cap:]]
-        self.new_accessions = [e.meta["adsh"] for e in capped]
+        # Persist each emitted winner's own accession AND any same-(ticker, day) siblings the
+        # leaf suppressed — so an unstable-relevance-order later run can't let the losing
+        # sibling win and double-emit the same authorization (capped emissions only).
+        self.new_accessions = []
+        for e in capped:
+            self.new_accessions.append(e.meta["adsh"])
+            self.new_accessions.extend(e.meta.get("sibling_adsh", []))
         # De-dup the failed-day list (phrases share the walk-back days).
         failed_days = sorted(set(failed))
         tail = f"; failed days: {', '.join(failed_days)}" if failed_days else ""

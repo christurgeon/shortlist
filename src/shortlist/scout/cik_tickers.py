@@ -28,11 +28,22 @@ def _norm_cik(cik: str | int) -> str:
 def build_cik_to_ticker(raw: dict) -> dict[str, str]:
     """{10-digit CIK -> best ticker}. First occurrence wins; a unit/warrant/right or
     hyphenated preferred that appears FIRST is replaced by its base ONLY when the base is
-    also a ticker of the same CIK (sibling-relative)."""
+    also a ticker of the same CIK (sibling-relative).
+
+    A malformed row (bad/absent cik_str or ticker shape) is skipped INDIVIDUALLY, keeping
+    every good row — one bad entry among ~12k must not discard the whole index (a loud
+    per-scan {} would silently zero buyback/8-K/13D). A wholly-unusable payload (e.g. a
+    list-shaped body with no `.values()`) still raises to the caller's never-raises wrap."""
     by_cik: dict[str, list[str]] = {}
     for row in raw.values():
-        cik = _norm_cik(row["cik_str"])
-        by_cik.setdefault(cik, []).append(str(row["ticker"]).upper())
+        try:
+            cik = _norm_cik(row["cik_str"])
+            tkr = str(row["ticker"]).upper()
+        except (TypeError, ValueError, KeyError, AttributeError):
+            continue                    # skip a single malformed row, keep the good ones
+        if not tkr:
+            continue
+        by_cik.setdefault(cik, []).append(tkr)
     out: dict[str, str] = {}
     for cik, tickers in by_cik.items():
         chosen = tickers[0]                       # first-occurrence authoritative

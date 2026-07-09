@@ -91,6 +91,45 @@ def test_scan_failed_day_degrades_with_honest_status(monkeypatch):
     assert ran is False and "2026-07-02" in detail
 
 
+def test_scan_persists_suppressed_sibling_accession(monkeypatch):
+    """Two same-ticker-same-day accessions -> ONE emission, but the persisted seen-set
+    (new_accessions) contains BOTH — so the losing sibling can never win a later (unstable
+    relevance-order) run and double-emit the same authorization."""
+    import shortlist.data.efts as efts
+    rows = [_row("a-1", cik="0000000007", file_date="2026-07-03"),
+            _row("a-2", cik="0000000007", file_date="2026-07-03")]   # same ticker + day
+
+    def fake(phrase, day, *, identity, **kw):
+        return rows if day == date(2026, 7, 3) else []
+
+    monkeypatch.setattr(efts, "fetch_phrase_day", fake)
+    sig = EdgarBuybackSignal(identity="x@y.z", phrases=["p1"], lookback_days=0)
+    sig._resolver = {"0000000007": "RBI"}
+    ems = sig.scan(date(2026, 7, 3))
+    assert [e.ticker for e in ems] == ["RBI"]            # one emission
+    assert sorted(sig.new_accessions) == ["a-1", "a-2"]  # BOTH persisted as seen
+
+
+def test_scan_empty_resolver_guard_skips_and_resets(monkeypatch):
+    """An empty CIK->ticker resolver must skip the scan LOUDLY: status False, no emissions,
+    NO recorded new_accessions, and the memoized resolver dropped so the retry is real."""
+    import shortlist.data.efts as efts
+    import shortlist.scout.cik_tickers as ct
+
+    monkeypatch.setattr(ct, "load_cik_to_ticker", lambda *a, **k: {})   # resolver loads empty
+
+    def boom(*a, **k):  # EFTS must never be reached once the guard fires
+        raise AssertionError("EFTS fetched despite an empty resolver")
+
+    monkeypatch.setattr(efts, "fetch_phrase_day", boom)
+    sig = EdgarBuybackSignal(identity="x@y.z", phrases=["p1"])
+    ems = sig.scan(date(2026, 7, 3))
+    assert ems == [] and sig.new_accessions == []
+    assert sig._resolver is None                          # dropped -> real retry next session
+    ran, detail = sig.available()
+    assert ran is False and "resolver empty" in detail
+
+
 def test_degrades_on_error_and_redacts(monkeypatch):
     import shortlist.data.efts as efts
 

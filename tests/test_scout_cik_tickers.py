@@ -43,6 +43,22 @@ def test_unmapped_cik_returns_none():
     assert resolve_ticker(424242, build_cik_to_ticker(_raw([(1, "AAA")]))) is None
 
 
+def test_malformed_row_skipped_individually_good_rows_survive():
+    """One malformed row among good ones must be skipped INDIVIDUALLY (not discard the whole
+    ~12k-row index) — the all-or-nothing try/except used to silently zero the resolver."""
+    raw = {
+        "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"},   # good
+        "1": {"cik_str": None, "ticker": "BAD", "title": "Null Cik"},       # bad: null cik
+        "2": {"cik_str": "nope", "ticker": "BAD2", "title": "Non-int Cik"}, # bad: non-int cik
+        "3": {"ticker": "BAD3", "title": "Missing Cik Key"},                # bad: no cik_str
+        "4": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft"},   # good
+    }
+    idx = build_cik_to_ticker(raw)
+    assert resolve_ticker(320193, idx) == "AAPL"         # good rows survive
+    assert resolve_ticker(789019, idx) == "MSFT"
+    assert len(idx) == 2                                 # only the 3 malformed rows dropped
+
+
 # --- load_cik_to_ticker (cache / fetch / never-raise) ---
 from datetime import date
 

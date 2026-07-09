@@ -81,6 +81,8 @@ def test_per_ticker_per_day_dedup_first_wins():
     ems = buyback_events_from_rows(rows, resolve_ticker_fn=_resolve({"0000000007": "RBI"}))
     assert [e.ticker for e in ems] == ["RBI"]           # deduped to one
     assert ems[0].meta["adsh"] == "a-1"                 # FIRST accession wins
+    # the SUPPRESSED sibling is attached to the winner so the signal can persist it as seen
+    assert ems[0].meta["sibling_adsh"] == ["a-2"]
     # a different DAY for the same ticker is NOT deduped (a genuine re-authorization)
     rows2 = [_row("a-1", cik="0000000007", file_date="2026-06-25"),
              _row("a-3", cik="0000000007", file_date="2026-07-10")]

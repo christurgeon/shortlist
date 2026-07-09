@@ -65,16 +65,18 @@ def build_name_to_ticker(raw: dict) -> dict[str, str]:
     for row in raw.values():
         key = normalize_issuer_name(row.get("title"))
         tkr = str(row.get("ticker") or "").upper()
-        cik = str(row.get("cik_str") or "")
+        cik = str(row.get("cik_str") or "")   # falsy/absent -> "" (an UNKNOWN cik, never "same")
         if not key or not tkr:
             continue
         prev = out.get(key)
         if prev is None:
             out[key] = tkr
             first_cik[key] = cik
-        elif cik != first_cik[key] and tkr != prev:
-            ambiguous.add(key)          # DIFFERENT issuer, same normalized name -> drop
-        # same CIK (dual-class share classes): keep the first-occurrence ticker
+        elif tkr != prev and not (cik and first_cik[key] and cik == first_cik[key]):
+            # Keep the first ticker ONLY on a genuine same-CIK dual-class collision (both ciks
+            # truthy AND equal). If EITHER row's cik is falsy/absent, two different issuers can
+            # collapse to cik "" == "" and the first ticker would be a wrong-ticker guess -> drop.
+            ambiguous.add(key)          # DIFFERENT (or unknown) issuer, same normalized name
     for key in ambiguous:
         out.pop(key, None)
     return out
@@ -163,22 +165,41 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
                     ) -> list[list[dict]]:
     """Download + parse the `want` most-recent published FTD files, walking back from the
     current half-month (bounded at `max_attempts` — the current period may not be posted
-    yet). NON-EMPTY parsed rows are cached FOREVER by filename (a published FTD file is
-    immutable); an EMPTY parse is treated as a fetch failure (never cached — a truncated
-    zip / HTML body must not freeze a poisoned half-month) and the walk-back continues.
-    Returns a list of per-file row lists (newest first). Never raises: a failure yields
+    yet). Returns a list of per-file row lists (newest first). Never raises: a failure yields
     fewer files (fewer resolutions), the resolver then leans on the name fallback / abstains.
-    `throttle` is invoked before each network GET (SEC fair-access)."""
+    `throttle` is invoked before each network GET (SEC fair-access).
+
+    Cache envelope distinguishes real rows from an empty-marker so neither a legacy poisoned
+    cache nor a persistently-empty parse can wedge the walk-back:
+    - NON-EMPTY parsed rows -> cached FOREVER by filename as a plain list (a published FTD
+      file is immutable). Read back and used unconditionally.
+    - EMPTY parse (200-status truncated zip / HTML error body — `parse_ftd_zip` swallows all)
+      -> write a marker `{"empty_on": "<today iso>"}` instead of rows. A fresh marker (< 7d)
+      SKIPS the file WITHOUT downloading (a bounded backoff — counts as a failed attempt, so
+      the walk-back continues); a stale marker (>= 7d) refetches (the file may have been
+      re-posted intact).
+    - A legacy `[]` cache (or any empty list) with NO marker is treated as a MISS -> refetch
+      once, which HEALS pre-fix poisoned files."""
     getter = _http_get or _http_get_bytes
+    today_d = today or date.today()
     out: list[list[dict]] = []
-    for url, key in _period_filenames(today or date.today(), max_attempts):
+    for url, key in _period_filenames(today_d, max_attempts):
         if len(out) >= want:
             break
         cp = Path(cache_dir) / f"{key}.json"
         cached = read_json_cache(cp)
-        if cached is not None:
-            out.append(cached)
+        if isinstance(cached, list) and cached:
+            out.append(cached)                        # immutable non-empty rows -> use
             continue
+        if isinstance(cached, dict) and cached.get("empty_on"):
+            try:
+                marked = date.fromisoformat(str(cached["empty_on"]))
+            except (TypeError, ValueError):
+                marked = None
+            if marked is not None and (today_d - marked).days < 7:
+                continue                              # fresh empty-marker -> skip, no download
+            # stale marker (>= 7d) -> fall through and refetch (file may be re-posted intact)
+        # else: absent OR legacy-[] (no marker) -> a MISS; refetch (heals poisoned caches)
         try:
             if throttle is not None:
                 throttle()
@@ -189,10 +210,10 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
             continue                                  # not published yet -> walk back
         rows = parse_ftd_zip(raw)
         if not rows:
-            # An empty parse (200-status truncated zip / HTML error body — parse_ftd_zip
-            # swallows all) must NOT be cached under the immutable filename key, or it would
-            # poison that half-month forever and burn a `want` slot. Treat it as a fetch
-            # failure: don't cache, don't count it, walk back to the next-older file.
+            # Empty parse: persist a dated marker (NOT the immutable rows key) so we don't
+            # re-download this multi-MB zip every run for 7 days, then retry. Counts as a
+            # failed attempt (no `out` append) -> the walk-back continues.
+            write_json_cache(cp, {"empty_on": today_d.isoformat()})
             continue
         write_json_cache(cp, rows)
         out.append(rows)

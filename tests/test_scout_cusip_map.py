@@ -89,6 +89,23 @@ def test_name_to_ticker_same_cik_dualclass_keeps_first_crosscik_drops():
     assert "DELTA" not in idx                            # cross-CIK collision abstains
 
 
+def test_name_to_ticker_absent_cik_is_never_same_cik():
+    """Two DIFFERENT issuers whose normalized names collide AND whose cik_str is falsy/absent
+    must be AMBIGUOUS (dropped) — a falsy cik must not compare equal to another falsy cik and
+    hand the first issuer's ticker to the second (a wrong-ticker guess)."""
+    raw = {
+        "0": {"cik_str": None, "ticker": "AAA", "title": "Omega Inc"},     # cik absent
+        "1": {"cik_str": 0, "ticker": "BBB", "title": "Omega Corp"},       # cik falsy (0)
+    }
+    assert "OMEGA" not in build_name_to_ticker(raw)      # ambiguous -> abstain, never guess
+    # a genuine same-CIK dual class (both truthy + equal) still keeps the first ticker
+    raw_ok = {
+        "0": {"cik_str": 5, "ticker": "AAA", "title": "Omega Inc"},
+        "1": {"cik_str": 5, "ticker": "AAB", "title": "Omega Corp"},
+    }
+    assert build_name_to_ticker(raw_ok)["OMEGA"] == "AAA"
+
+
 def test_resolver_layered_order_and_near_miss_abstention():
     cusip_idx = {"02005N100": "ALLY"}
     name_idx = build_name_to_ticker({"0": {"cik_str": 1, "ticker": "AAPL", "title": "Apple Inc"}})
@@ -124,10 +141,12 @@ def test_fetch_ftd_walks_back_until_two_files(tmp_path):
     assert calls[0].endswith("cnsfails202606b.zip")      # newest-first, 'b' before 'a'
 
 
-def test_fetch_ftd_empty_parse_not_cached_and_walk_back_continues(tmp_path):
+def test_fetch_ftd_empty_parse_writes_marker_and_walk_back_continues(tmp_path):
     """An empty parse (truncated zip / HTML body -> parse_ftd_zip returns []) is a fetch
-    failure: no cache file is written (no poisoning the immutable filename key) and it does
-    NOT count toward `want` — the walk-back continues to the next older file."""
+    failure: a dated empty-MARKER is written (NOT the immutable rows key, so it doesn't
+    poison the half-month forever) and it does NOT count toward `want` — the walk-back
+    continues to the next older file."""
+    import json
     empty_zip = _zip_bytes("SETTLEMENT DATE|CUSIP|SYMBOL\n")   # header only -> [] rows
     good_zip = _zip_bytes(_ftd("20260520|12345X678|OLD|1|X|1"))
     published = {
@@ -142,9 +161,57 @@ def test_fetch_ftd_empty_parse_not_cached_and_walk_back_continues(tmp_path):
                             want=1, _http_get=fake_get)
     assert len(files) == 1                               # the empty parse did not count
     assert build_cusip_to_symbol(files)["12345X678"] == "OLD"  # walked back to the good file
-    # the empty-parse period's cache file was NEVER written (would poison it forever)
-    assert not (tmp_path / "cnsfails202606a.json").exists()
-    assert (tmp_path / "cnsfails202605b.json").exists()  # the good one IS cached
+    # the empty-parse period's cache is a MARKER, not rows (not the immutable-rows key)
+    marker = json.loads((tmp_path / "cnsfails202606a.json").read_text())
+    assert marker == {"empty_on": "2026-06-20"}
+    assert (tmp_path / "cnsfails202605b.json").exists()  # the good one IS cached (as rows)
+
+
+def test_fetch_ftd_fresh_empty_marker_suppresses_download_then_retries(tmp_path):
+    """A fresh empty-marker (< 7d) SKIPS the file with NO download (bounded backoff, counts as
+    a failed attempt); a stale marker (>= 7d) refetches — the file may be re-posted intact."""
+    import json
+    # the walk-back's FIRST candidate for June is the second-half 'b' file.
+    url_b = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails202606b.zip"
+    cp = tmp_path / "cnsfails202606b.json"
+    cp.write_text(json.dumps({"empty_on": "2026-06-18"}))   # marker written 2 days ago
+    hits = []
+
+    def fake_get(url, identity, timeout):
+        hits.append(url)
+        return _zip_bytes(_ftd("20260601|02005N100|ALLY|9|X|1")) if url == url_b else None
+
+    # today 2026-06-20: marker is 2d old (< 7) -> 202606b is skipped WITHOUT a download.
+    fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 20),
+                    want=1, max_attempts=1, _http_get=fake_get)
+    assert url_b not in hits                              # fresh marker -> no download
+
+    # 8 days later the marker is stale (>= 7) -> 202606b IS refetched (now parses to rows).
+    files = fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 26),
+                            want=1, max_attempts=1, _http_get=fake_get)
+    assert url_b in hits
+    assert build_cusip_to_symbol(files)["02005N100"] == "ALLY"
+    assert json.loads(cp.read_text()) == [{"settlement": "20260601", "cusip": "02005N100",
+                                           "symbol": "ALLY"}]  # marker overwritten by rows
+
+
+def test_fetch_ftd_legacy_empty_list_cache_is_healed_by_refetch(tmp_path):
+    """A pre-fix poisoned cache (a bare `[]`, no marker) is treated as a MISS and refetched —
+    the legacy empty file can no longer freeze the half-month forever."""
+    import json
+    url_b = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails202606b.zip"
+    cp = tmp_path / "cnsfails202606b.json"
+    cp.write_text(json.dumps([]))                        # legacy poisoned empty-list cache
+    hits = []
+
+    def fake_get(url, identity, timeout):
+        hits.append(url)
+        return _zip_bytes(_ftd("20260601|02005N100|ALLY|9|X|1")) if url == url_b else None
+
+    files = fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 20),
+                            want=1, max_attempts=1, _http_get=fake_get)
+    assert url_b in hits                                 # legacy [] refetched (healed)
+    assert build_cusip_to_symbol(files)["02005N100"] == "ALLY"
 
 
 def test_fetch_ftd_caches_forever_by_filename(tmp_path):

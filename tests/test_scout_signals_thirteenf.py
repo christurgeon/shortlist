@@ -254,33 +254,73 @@ def test_scan_max_filings_carry_over(monkeypatch):
     assert sig2.processed_accessions == ["acc-3-latest"]
 
 
-def test_scan_empty_prior_parse_is_fund_error_not_new_book(monkeypatch):
-    """A prior infotable that parses EMPTY (swallowed parse/fetch failure) must NOT emit the
-    whole current book as 'new' and must NOT mark the accession processed — count a fund
-    error and retry next session."""
+def test_scan_empty_infotable_retry_heals_within_scan(monkeypatch):
+    """An empty infotable parse retries ONCE in-scan (EDGAR is uncached, so a transient
+    truncation heals) — a heal on the retry yields the normal diff, no lost quarter."""
     sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
     sig._resolver = _FakeResolver({"NEWCUS": "NEW", "OLDCUS": "OLD"})
-    _wire(sig, monkeypatch,
-          submissions={1067983: _submissions([
-              ("13F-HR", "acc-latest", "2026-05-15", "2026-03-31"),
-              ("13F-HR", "acc-prior", "2026-02-14", "2025-12-31")])},
-          infotables={
-              "acc-latest": _infotable([("New Co", "NEWCUS", 50, "SH", ""),
-                                        ("Old Co", "OLDCUS", 950, "SH", "")]),
-              "acc-prior": f'<informationTable xmlns="{_NS}"></informationTable>'})  # empty
+    import shortlist.scout.thirteenf as tf
+    sig._throttle = lambda: None
+    subs = _submissions([("13F-HR", "acc-latest", "2026-05-15", "2026-03-31"),
+                         ("13F-HR", "acc-prior", "2026-02-14", "2025-12-31")])
+    infos = {"acc-latest": _infotable([("New Co", "NEWCUS", 50, "SH", ""),
+                                       ("Old Co", "OLDCUS", 950, "SH", "")]),
+             "acc-prior": _infotable([("Old Co", "OLDCUS", 900, "SH", "")])}
+    calls: dict[str, int] = {}
+
+    def fake_info(cik, accession, identity, **kw):
+        calls[accession] = calls.get(accession, 0) + 1
+        if accession == "acc-prior" and calls[accession] == 1:
+            return []                                    # transient empty; heals on the retry
+        return parse_infotable(infos[accession])
+
+    monkeypatch.setattr(tf, "fetch_submissions", lambda cik, identity, **kw: subs)
+    monkeypatch.setattr(tf, "fetch_infotable_rows", fake_info)
+    ems = sig.scan(date(2026, 5, 20))
+    assert [e.ticker for e in ems] == ["NEW"]            # healed -> normal diff
+    assert calls["acc-prior"] == 2                       # retried exactly once
+    assert sig.processed_accessions == ["acc-latest"]
+    assert sig.available()[0] is True
+
+
+def test_scan_empty_infotable_after_retry_marks_processed_loudly(monkeypatch):
+    """A prior infotable that parses EMPTY on BOTH the initial fetch AND the retry must NOT
+    emit the whole current book as 'new'; it counts a fund error, emits nothing, but MARKS
+    the accession processed (no daily-refetch wedge) with a LOUD named note. Trade-off: a
+    truly-transient empty loses one quarter — accepted over the old retry-forever wedge."""
+    sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
+    sig._resolver = _FakeResolver({"NEWCUS": "NEW", "OLDCUS": "OLD"})
+    import shortlist.scout.thirteenf as tf
+    sig._throttle = lambda: None
+    subs = _submissions([("13F-HR", "acc-latest", "2026-05-15", "2026-03-31"),
+                         ("13F-HR", "acc-prior", "2026-02-14", "2025-12-31")])
+    calls: dict[str, int] = {}
+
+    def fake_info(cik, accession, identity, **kw):
+        calls[accession] = calls.get(accession, 0) + 1
+        if accession == "acc-latest":
+            return parse_infotable(_infotable([("New Co", "NEWCUS", 50, "SH", ""),
+                                               ("Old Co", "OLDCUS", 950, "SH", "")]))
+        return []                                         # prior ALWAYS empty (retry too)
+
+    monkeypatch.setattr(tf, "fetch_submissions", lambda cik, identity, **kw: subs)
+    monkeypatch.setattr(tf, "fetch_infotable_rows", fake_info)
     ems = sig.scan(date(2026, 5, 20))
     assert ems == []                                     # NOT the whole current book
-    assert sig.processed_accessions == []                # NOT frozen — retry next session
+    assert sig.processed_accessions == ["acc-latest"]    # MARKED — no daily-refetch wedge
+    assert calls["acc-prior"] == 2                        # retried once before giving up
     ran, detail = sig.available()
     assert ran is False and "1 fund errors" in detail
+    assert "empty infotable parse — quarter skipped" in detail and "acc-prior" in detail
 
 
-def test_scan_fully_degraded_resolver_skips_without_marking(monkeypatch):
-    """A resolver with zero FTD + zero name entries (FTD outage + name-index failure) must
-    abort the whole scan (signal error) rather than abstain-then-mark every quarter."""
+def test_scan_empty_ftd_index_skips_without_marking_and_resets(monkeypatch):
+    """An empty FTD CUSIP index (FTD outage / datacenter-IP block) must abort the whole scan
+    (the exact-name fallback alone is too weak to justify burning quarters) rather than
+    abstain-then-mark every quarter — AND drop the memoized resolver so the retry is real."""
     from shortlist.scout.cusip_map import CusipResolver
     sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
-    sig._resolver = CusipResolver({}, {})                # fully degraded
+    sig._resolver = CusipResolver({}, {})                # zero FTD + zero name entries
     calls = []
     import shortlist.scout.thirteenf as tf
     sig._throttle = lambda: None
@@ -290,8 +330,27 @@ def test_scan_fully_degraded_resolver_skips_without_marking(monkeypatch):
     assert ems == []
     assert sig.processed_accessions == []                # nothing marked
     assert calls == []                                   # bailed before any fund fetch
+    assert sig._resolver is None                         # memoized resolver dropped (real retry)
     ran, detail = sig.available()
-    assert ran is False and "degraded" in detail
+    assert ran is False and "FTD index empty" in detail
+
+
+def test_scan_ftd_only_outage_still_aborts(monkeypatch):
+    """An FTD-only outage (empty FTD index but a NON-empty name index — the likely
+    datacenter-IP-block case) must STILL abort: the exact-match name fallback alone can't
+    justify marking quarters processed."""
+    from shortlist.scout.cusip_map import CusipResolver
+    sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
+    sig._resolver = CusipResolver({}, {"BERKSHIRE HATHAWAY": "BRK-A"})   # FTD empty, name OK
+    calls = []
+    import shortlist.scout.thirteenf as tf
+    sig._throttle = lambda: None
+    monkeypatch.setattr(tf, "fetch_submissions",
+                        lambda *a, **k: calls.append(1) or _submissions([]))
+    ems = sig.scan(date(2026, 5, 20))
+    assert ems == [] and sig.processed_accessions == [] and calls == []
+    assert sig._resolver is None
+    assert sig.available()[0] is False
 
 
 def test_scan_degrades_on_error_and_redacts(monkeypatch):
