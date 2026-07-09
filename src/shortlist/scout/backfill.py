@@ -31,6 +31,7 @@ from typing import Optional
 from ..env import redact_secrets
 from .calendar import is_trading_day
 from .delisting import classify_delisting, normalize_items, terminal_price
+from .buyback import SIGNAL as SIGNAL_BUYBACK, STRENGTH as _BUYBACK_STRENGTH
 from .eightk import (DEFAULT_ITEM_SETS as _EIGHTK_ITEM_SETS, NEGATIVE_SIGNAL as SIGNAL_8K_NEG,
                      SIGNAL as SIGNAL_8K, STRENGTH as _EIGHTK_STRENGTH, _junk_suffix,
                      match_item_sets, match_negative)
@@ -319,6 +320,64 @@ def assemble_eightk_events(rows: list[dict], resolve_ticker, *, signal: str,
     return events
 
 
+def assemble_buyback_events(rows: list[dict], resolve_ticker, *, signal: str,
+                            drop_spacs: bool = True) -> list[CohortEvent]:
+    """Phrase-tagged EFTS rows (data/efts.fetch_phrase_window shape) -> selected CohortEvents
+    for the buyback authorization leg. Mirrors assemble_eightk_events MINUS the item-set match
+    (the phrase match already happened at fetch time; each row carries its `phrase`): file_type
+    != "8-K" drop (amendment leak) -> accession dedup -> SIC-6770/SPAC-name drops -> resolution
+    (unresolvable -> selected CIK: sentinel, never dropped) -> 5th-letter junk suffix. The
+    FILER IS the subject (no header fetch — the row's cik is the target); resolve_ticker is PiT
+    at the FILING date, entry is next_trading_day(filing) (F12). One event per filer per day."""
+    events: list[CohortEvent] = []
+    seen_acc: set[str] = set()
+    seen_cik_day: set[tuple[str, str]] = set()
+    for r in rows:
+        if (r.get("file_type") or "") != "8-K":
+            continue                          # amendment leak — excluded, FIRST
+        adsh = r.get("adsh") or ""
+        if not adsh or adsh in seen_acc:
+            continue                          # cross-phrase accession dedup
+        seen_acc.add(adsh)
+        if "6770" in (r.get("sics") or []):
+            continue                          # blank-check SIC — signal definition
+        names = r.get("display_names") or []
+        if drop_spacs and names and is_spac_or_shell(str(names[0])):
+            continue                          # name check ONLY — never a ticker source
+        cik = r.get("cik")
+        try:
+            fday = date.fromisoformat(str(r.get("file_date")))
+        except (TypeError, ValueError):
+            continue                          # unusable row (no date to key on)
+        if (cik, fday.isoformat()) in seen_cik_day:
+            continue                          # one event per filer per day
+        seen_cik_day.add((cik, fday.isoformat()))
+        sic = (r.get("sics") or [None])[0]
+        meta = {"filing_date": fday.isoformat(), "adsh": adsh,
+                "items": [str(i) for i in (r.get("items") or [])],
+                "phrase": str(r.get("phrase") or ""),
+                "key": f"{signal}|{cik}|{fday.isoformat()}"}
+        if sic:
+            meta["sic"] = str(sic)
+        entry = next_trading_day(fday)
+        tkr = resolve_ticker(cik, fday)       # PiT at FILING date
+        norm = _is_real_ticker(tkr) if tkr else None
+        if not norm:                          # selected but unresolvable: sentinel
+            events.append(CohortEvent(
+                signal=signal, ticker=f"CIK:{cik}", cik=cik, event_date=entry,
+                as_of_price=None, strength=_BUYBACK_STRENGTH, gated=None, composite=None,
+                origin="backfill",
+                meta={**meta, "non_measurable_hint": "unresolved_ticker"}))
+            continue
+        if _junk_suffix(norm):
+            continue                          # security-class suffix — signal definition
+        events.append(CohortEvent(
+            signal=signal, ticker=norm, cik=cik, event_date=entry, as_of_price=None,
+            strength=_BUYBACK_STRENGTH, gated=None, composite=None, origin="backfill",
+            meta=meta))
+    return events
+
+
 def _horizon_end(d: date, months: int) -> date:
     y, m = d.year + (d.month - 1 + months) // 12, (d.month - 1 + months) % 12 + 1
     return date(y, m, min(d.day, _cal.monthrange(y, m)[1]))
@@ -492,6 +551,27 @@ def _efts_fetch_factory(bf: dict, today: date):
     return _fetch
 
 
+def _buyback_fetch_factory(bf: dict, today: date):
+    """Window fetcher for the buyback leg — the phrase-query analogue of _efts_fetch_factory,
+    same call shape as fetch_activist_window (signal-agnostic injected-`_fetch_window` seam).
+    The cohort runs UNCAPPED/UNDENIED over the live phrase set (daily_cap/deny_list are
+    live-only knobs the backfill never applies — the 8-K precedent)."""
+    from .buyback import DEFAULT_PHRASES
+    cache_dir = bf.get("buyback_cache_dir", ".cache/efts_buyback")
+    phrases = bf.get("buyback_phrases") or list(DEFAULT_PHRASES)
+
+    def _fetch(c_start, c_end, identity, *, throttle_s, max_records):
+        from ..data.efts import fetch_phrase_window
+        rows = fetch_phrase_window(phrases, c_start, c_end, identity=identity,
+                                   cache_dir=cache_dir, today=today, throttle_s=throttle_s)
+        if rows is not None and max_records is not None and len(rows) > max_records:
+            warnings.warn(f"backfill: buyback window {c_start}:{c_end} truncated at "
+                          f"max_records={max_records} — narrow the range", stacklevel=2)
+            rows = rows[:max_records]
+        return rows
+    return _fetch
+
+
 def _assemble_13d(recs: list[dict], resolve_ticker) -> list[CohortEvent]:
     return assemble_events(group_by_day_records(recs), resolve_ticker)
 
@@ -505,6 +585,10 @@ def _assemble_8k_neg(rows: list[dict], resolve_ticker) -> list[CohortEvent]:
                                   negative=True)
 
 
+def _assemble_buyback(rows: list[dict], resolve_ticker) -> list[CohortEvent]:
+    return assemble_buyback_events(rows, resolve_ticker, signal=SIGNAL_BUYBACK)
+
+
 # Per-signal backfill specs (spec 2026-07-07 §5): CLI name -> {firehose signal string,
 # prereg slug (Task 6 YAML filenames), default window fetcher factory, assembler}.
 # The "13d" row reproduces the pre-generalization coordinator byte-for-byte.
@@ -515,6 +599,8 @@ _BACKFILL_SPECS: dict[str, dict] = {
            "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k},
     "8k-neg": {"signal": SIGNAL_8K_NEG, "slug": "edgar_8k_negative",
                "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k_neg},
+    "buyback": {"signal": SIGNAL_BUYBACK, "slug": "edgar_buyback",
+                "fetch_factory": _buyback_fetch_factory, "assemble": _assemble_buyback},
 }
 
 
@@ -694,6 +780,17 @@ def run_backfill_8k_neg(config: dict, *, start: date, end: date, identity: str,
     """Negative-item veto cohort (edgar:8k_negative; prereg edgar_8k_negative.yaml, K=3m).
     Expected sign: NEGATIVE — a KILL-shaped verdict CONFIRMS the veto shipping ON."""
     return run_backfill(config, signal_key="8k-neg", start=start, end=end,
+                        identity=identity, today=today, out_path=out_path, **seams)
+
+
+def run_backfill_buyback(config: dict, *, start: date, end: date, identity: str,
+                         today: Optional[date] = None, out_path: Optional[str] = None,
+                         **seams) -> dict:
+    """Buyback-authorization leg (edgar:buyback_auth; prereg edgar_buyback.yaml, K=3m).
+    Expected sign: POSITIVE (Ikenberry-Lakonishok-Vermaelen 1995 / Peyer-Vermaelen 2009).
+    The cohort runs uncapped/undenied over the live phrase set — daily_cap/deny_list are
+    live-only knobs the backfill never applies (the 8-K precedent)."""
+    return run_backfill(config, signal_key="buyback", start=start, end=end,
                         identity=identity, today=today, out_path=out_path, **seams)
 
 

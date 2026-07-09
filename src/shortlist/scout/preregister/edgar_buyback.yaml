@@ -1,0 +1,28 @@
+# Pre-registered validation parameters for the edgar:buyback_auth signal (new share/stock
+# repurchase authorizations discovered from 8-K full text — Ikenberry-Lakonishok-Vermaelen
+# 1995 / Peyer-Vermaelen 2009 positive post-announcement drift). A DEFENSIBLE academic prior,
+# but shipped DISABLED at weight 0.5 on the 8-K MEASURE-FIRST precedent: the sign in THIS
+# funnel's universe/horizon is exactly what this cohort measures. Committed BEFORE any
+# backfill/eval run; the evaluator verifies this file's git commit time against the run as_of
+# and flags the verdict non-preregistered if edited after. Fixing ALL of these here (not in
+# config.yaml) is the anti-p-hacking guard (parent spec §7/F7).
+signal: edgar:buyback_auth
+as_of: 2026-07-09
+window_start: 2022-01-01
+window_end: 2025-12-31
+# window_end + K = 2026-03-31 < as_of: every window event has fully matured, so the FIRST
+# verdict is canonical — never immaturity-INTERIM (the 8-K sibling's convention, not the
+# 13D K=12m wait).
+verdict_as_of: 2026-07-09
+k_months: 3                  # buyback-announcement drift is multi-quarter (ILV measured to 4y),
+                             # but the funnel's watch horizon is 30-90d — K=3m mirrors the 8-K
+                             # cohorts and keeps ~16 independent blocks over the window
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90    # UNCHANGED from the 8-K/13D prereg — loosening it knowing the
+                             # traded-issuer subset resolves cleanly would be the exact p-hack
+                             # this guard exists to stop
+min_independent_blocks: 8    # parent-spec §7's 8 — satisfiable at K=3m without being toothless
+min_bucket_events: 5         # vintage buckets below this aren't checked vs the floor
+delisting_return: -0.55      # Shumway partial (Nasdaq-listed default); band tested in eval
+regime_down_rule: spy_trailing_3m_negative

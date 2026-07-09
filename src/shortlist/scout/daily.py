@@ -43,7 +43,8 @@ def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
 
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
-                           "edgar_activist_13d", "finra_short_interest", "edgar_8k"}
+                           "edgar_activist_13d", "finra_short_interest", "edgar_8k",
+                           "edgar_buyback"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -56,16 +57,19 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
 
 
 def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
-                   eightk_seen: list[str] | None = None) -> dict[str, dict]:
+                   eightk_seen: list[str] | None = None, *,
+                   buyback_seen: list[str] | None = None) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
 
     `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
-    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` (from ScoutState) is
-    the 8-K originator's rolling accession dedup across the walk-back overlap."""
+    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` / `buyback_seen` (from
+    ScoutState) are the 8-K / buyback originators' rolling accession dedup across the
+    walk-back overlap (passed as keyword args — the positional list is already unwieldy)."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
     si = scout_cfg.get("short_interest", {})
     ek = scout_cfg.get("eightk", {})
+    bb = scout_cfg.get("buyback", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -94,6 +98,12 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                      "drop_spacs": ek.get("drop_spacs", True),
                      "daily_cap": ek.get("daily_cap", 6),
                      "seen_accessions": eightk_seen or []},
+        "edgar_buyback": {"identity": os.environ.get("SEC_IDENTITY"),
+                          "phrases": bb.get("phrases"),   # None => buyback.DEFAULT_PHRASES
+                          "deny_list": bb.get("deny_list", []),
+                          "drop_spacs": bb.get("drop_spacs", True),
+                          "daily_cap": bb.get("daily_cap", 6),
+                          "seen_accessions": buyback_seen or []},
     }
 
 
@@ -340,7 +350,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     else:
         all_names = _enabled_signal_names(scout_cfg)
         kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
-                                        state.eightk_seen_accessions())
+                                        state.eightk_seen_accessions(),
+                                        buyback_seen=state.buyback_seen_accessions())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -374,6 +385,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # (session-2..session) doesn't re-emit them on the next runs.
             if s.name == "edgar_8k" and not demo and getattr(s, "new_accessions", None):
                 state.add_eightk_accessions(s.new_accessions)
+            # Persist the buyback accessions surfaced this run so the walk-back overlap
+            # (session-2..session) doesn't re-emit them on the next runs.
+            if s.name == "edgar_buyback" and not demo and getattr(s, "new_accessions", None):
+                state.add_buyback_accessions(s.new_accessions)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are
@@ -998,7 +1013,7 @@ def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
     traceback. Dispatch is by name through the backfill module attribute so tests can
     monkeypatch `shortlist.scout.backfill.run_backfill_13d` etc."""
     runners = {"13d": "run_backfill_13d", "8k": "run_backfill_8k",
-               "8k-neg": "run_backfill_8k_neg"}
+               "8k-neg": "run_backfill_8k_neg", "buyback": "run_backfill_buyback"}
     runner_name = runners.get(signal)
     if runner_name is None:
         print(f"scout backfill: unsupported --signal '{signal}' "
@@ -1048,10 +1063,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     bp = sub.add_parser(
         "backfill",
         help="batch-backfill a discovery signal's historical cohort (offline, writes JSONL)")
-    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg"], required=True,
+    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg", "buyback"], required=True,
                     help="which signal to backfill ('13d' = edgar:activist_13d, "
                          "'8k' = edgar:8k positive pocket, '8k-neg' = edgar:8k_negative "
-                         "veto cohort)")
+                         "veto cohort, 'buyback' = edgar:buyback_auth authorizations)")
     bp.add_argument("--start", required=True, type=date.fromisoformat,
                     help="ISO start date, e.g. 2022-08-01")
     bp.add_argument("--end", required=True, type=date.fromisoformat,
