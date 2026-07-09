@@ -15,7 +15,10 @@ The live bot at `/opt/shortlist` doesn't have it until the usual deploy flow run
 (`git pull` → `install_opt_shortlist.sh` → restart `shortlist-bot`). Content note: entries
 are semantics-only (no config thresholds quoted) so config tuning never stales them.
 
-**Status:** merged; VPS deploy + a quick live `/explain` smoke on Telegram pending.
+**Status:** merged; VPS deploy + a quick live `/explain` smoke on Telegram pending. Same
+deploy also picks up #130 (friendly `/deep` skip for non-SEC-registrant tickers like
+VFLEX — was leaking the raw edgartools "Company not found / Tip:" error); re-run
+`/deep VFLEX` after deploy to confirm the new copy.
 
 ---
 
