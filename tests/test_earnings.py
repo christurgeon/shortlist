@@ -63,6 +63,7 @@ def test_earnings_last_report_date_prefers_calendar_past():
                ("2026-07-29", None))  # future -> ignored
     e = _earnings(_rows(1.0), cal, ref=REF)
     assert e.last_report_date == "2026-05-10"
+    assert e.last_report_date_estimated is False   # a true announcement date
 
 
 def test_earnings_last_report_date_falls_back_to_period():
@@ -71,6 +72,7 @@ def test_earnings_last_report_date_falls_back_to_period():
             {"surprisePercent": 2.0, "period": "2025-12-31"}]
     e = _earnings(rows, _cal(("2026-07-29", None)), ref=REF)
     assert e.last_report_date == "2026-03-31"
+    assert e.last_report_date_estimated is True    # quarter-end proxy, not a print date
 
 
 def test_earnings_last_report_date_none_when_no_data():
@@ -92,6 +94,39 @@ def test_normalize_finnhub_populates_earnings():
 
 def test_normalize_finnhub_no_earnings_key_leaves_none():
     assert _normalize_finnhub("AAPL", {"quote": {"c": 1.0}}).earnings is None
+
+
+def test_calendar_request_window_reaches_back_for_past_announcements(monkeypatch):
+    # SUE decay anchor: the calendar/earnings request must reach BACK past a full
+    # quarter (~91d between prints, plus margin) so the latest PAST announcement
+    # (epsActual set) is in the payload. A today-forward window starves the
+    # `past` branch in _earnings, forcing the quarter-end fallback and making the
+    # SUE leg decay systematically fast (TODO 2026-07-07 item 6).
+    import asyncio
+    from datetime import timedelta
+
+    from shortlist.data.sources import FinnhubSource
+
+    captured = {}
+
+    async def fake_get(self, path, **params):
+        if path == "calendar/earnings":
+            captured.update(params)
+        return {}
+
+    monkeypatch.setattr(FinnhubSource, "_get", fake_get)
+
+    async def go():
+        src = FinnhubSource(api_key="test")
+        try:
+            await src.fetch("AAPL")
+        finally:
+            await src.aclose()
+
+    asyncio.run(go())
+    today = date.today()
+    assert date.fromisoformat(captured["from"]) <= today - timedelta(days=100)
+    assert date.fromisoformat(captured["to"]) >= today + timedelta(days=90)
 
 
 def test_bridge_derives_earnings_metrics():
@@ -117,6 +152,63 @@ def test_bridge_derives_sue_inputs():
     from statistics import pstdev
     assert abs(m.earnings_surprise_dispersion - pstdev([2.0, 4.0, 0.0, -1.0])) < 1e-9
     assert m.earnings_days_since_last_report == 36   # 2026-05-10 -> 2026-06-15
+
+
+def _events_with_report(filed):
+    from shortlist.data.models import Events
+    return Events(last_report_filed=filed)
+
+
+def test_bridge_sue_anchor_prefers_10q_filing_over_quarter_end():
+    # Free-tier Finnhub serves NO past calendar entries (live-probed 2026-07-09), so
+    # last_report_date is in practice always the quarter-END proxy. The EDGAR filing
+    # stream has the latest 10-Q's filed date — a ~0-5d announcement proxy vs ~30-45d.
+    # Truth is bracketed: quarter_end <= announcement <= 10-Q filed -> take the max.
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
+    s.earnings = Earnings(as_of="2026-07-09", recent_surprise_pcts=[2.0, 4.0, 0.0],
+                          quarters=3, last_surprise_pct=2.0,
+                          last_report_date="2026-03-31", last_report_date_estimated=True)
+    s.events = _events_with_report("2026-05-05")
+    m = snapshot_to_metrics(s)
+    assert m.earnings_days_since_last_report == 65   # 2026-05-05 -> 2026-07-09, not 100
+
+
+def test_bridge_sue_anchor_keeps_true_announcement_date():
+    # A real calendar announcement date (estimated=False) is exact — never bumped to
+    # the (later) 10-Q filed date.
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
+    s.earnings = Earnings(as_of="2026-07-09", recent_surprise_pcts=[2.0, 4.0, 0.0],
+                          quarters=3, last_surprise_pct=2.0,
+                          last_report_date="2026-04-30", last_report_date_estimated=False)
+    s.events = _events_with_report("2026-05-05")
+    m = snapshot_to_metrics(s)
+    assert m.earnings_days_since_last_report == 70   # 2026-04-30 -> 2026-07-09
+
+
+def test_bridge_sue_anchor_max_keeps_later_quarter_end():
+    # Post-announce, pre-10-Q window: the latest filed 10-Q is the PRIOR quarter's and
+    # predates the newest quarter-end -> max() keeps the quarter-end (never worse than
+    # the pre-fix fallback).
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
+    s.earnings = Earnings(as_of="2026-07-09", recent_surprise_pcts=[2.0, 4.0, 0.0],
+                          quarters=3, last_surprise_pct=2.0,
+                          last_report_date="2026-06-30", last_report_date_estimated=True)
+    s.events = _events_with_report("2026-05-05")
+    m = snapshot_to_metrics(s)
+    assert m.earnings_days_since_last_report == 9    # 2026-06-30 -> 2026-07-09
+
+
+def test_earnings_estimated_flag_survives_roundtrip_and_defaults_true():
+    # Old persisted snapshots lack the flag -> from_dict defaults to True (the honest
+    # prior on the free tier), so replay of pre-fix accumulated data gets the anchor.
+    s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
+    s.earnings = Earnings(as_of="2026-07-09", last_report_date="2026-05-10",
+                          last_report_date_estimated=False)
+    back = TickerSnapshot.from_dict(s.to_dict())
+    assert back.earnings.last_report_date_estimated is False
+    legacy = s.to_dict()
+    del legacy["earnings"]["last_report_date_estimated"]
+    assert TickerSnapshot.from_dict(legacy).earnings.last_report_date_estimated is True
 
 
 def test_bridge_sue_dispersion_none_below_min_quarters():

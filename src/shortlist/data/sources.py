@@ -273,9 +273,16 @@ class FinnhubSource(_KeyedHttpSource):
                 "from": (today - timedelta(days=_NEWS_LOOKBACK_DAYS)).isoformat(),
                 "to": today.isoformat()}),
             "earnings": ("stock/earnings", {"symbol": ticker}),
+            # Window reaches BACK ~120d (one quarter + print lag) so a PAST
+            # announcement (epsActual) can land in the payload — _earnings' preferred
+            # SUE decay anchor. Live-probed 2026-07-09: the FREE tier returns no
+            # historical entries at all (even a full past year is empty), so on this
+            # plan the anchor comes from the EDGAR 10-Q/10-K filed date (bridge)
+            # instead; the reach-back costs nothing and activates on a paid key.
             "earnings_calendar": ("calendar/earnings", {
                 "symbol": ticker,
-                "from": today.isoformat(), "to": (today + timedelta(days=90)).isoformat()}),
+                "from": (today - timedelta(days=120)).isoformat(),
+                "to": (today + timedelta(days=90)).isoformat()}),
         }
         await _fetch_sections(res, self._get, calls)
         res.partial = _normalize_finnhub(ticker, res.raw)
@@ -343,23 +350,27 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
     # fiscal `period` (quarter-END), NOT the print date, so we prefer the `calendar/
     # earnings` entries that DO carry a true announcement `date` AND an `epsActual` (i.e.
     # a report that has already happened, date <= today). Pick the latest such date.
-    # Fallback (calendar missing past entries): the most recent `stock/earnings` period
-    # (quarter-end) — a WEAKER proxy, since the actual print lands ~30-45 days later, so
-    # this OVER-states staleness (the SUE leg decays a touch faster than reality). Both
-    # are approximations; documented in CLAUDE.md / HARNESS.md.
+    # Fallback (calendar missing past entries — ALWAYS the case on the free tier,
+    # live-probed 2026-07-09): the most recent `stock/earnings` period (quarter-end) — a
+    # WEAKER proxy, since the actual print lands ~30-45 days later, so this OVER-states
+    # staleness. `last_report_date_estimated` marks the fallback so the bridge can
+    # refine the anchor with the EDGAR 10-Q/10-K filed date (~0-5d proxy) without ever
+    # degrading a true announcement date. Documented in CLAUDE.md / HARNESS.md.
     last_report_date = None
+    estimated = True
     past = sorted(d["date"] for d in cal
                   if d.get("date") and d["date"] <= today.isoformat()
                   and d.get("epsActual") is not None)
     if past:
         last_report_date = past[-1]
+        estimated = False
     elif ordered:
         last_report_date = ordered[0].get("period") or None
     return Earnings(
         as_of=today.isoformat(), recent_surprise_pcts=surprises,
         quarters=len(surprises) or None, beats=beats,
         last_surprise_pct=surprises[0] if surprises else None, next_date=next_date,
-        last_report_date=last_report_date)
+        last_report_date=last_report_date, last_report_date_estimated=estimated)
 
 
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
@@ -457,27 +468,35 @@ def classify_event_form(form: str) -> Optional[str]:
 def build_events_section(records: list[dict], lookback_days: int,
                          today: date) -> Optional[Events]:
     """Pure: filter records to the lookback window, classify, and build an Events.
-    Returns None when there are no in-window event filings — NEVER an all-falsy
-    Events (load-bearing for the merge's _has_data check; spec §4)."""
+    Returns None when there is nothing at all — NEVER an all-falsy Events
+    (load-bearing for the merge's _has_data check; spec §4). Separately from the
+    advisory flags, the latest exact-form 10-Q/10-K filed date is carried as
+    `last_report_filed` (the bridge's SUE decay anchor) — exact forms only, since
+    a 10-Q/A can land months after the print and would wrongly freshen the anchor."""
     cutoff = today - timedelta(days=lookback_days)
     kept: list[tuple[str, FilingEvent]] = []
+    report_filed: Optional[str] = None
     for r in records:
-        attr = classify_event_form(r.get("form", ""))
-        if attr is None:
-            continue
+        form = r.get("form", "")
         filed = r.get("filed")
         try:
-            if date.fromisoformat(filed) < cutoff:
-                continue
+            in_window = date.fromisoformat(filed) >= cutoff
         except (TypeError, ValueError):
             continue
+        if form.strip().upper() in ("10-Q", "10-K"):
+            if report_filed is None or filed > report_filed:
+                report_filed = filed
+            continue
+        attr = classify_event_form(form)
+        if attr is None or not in_window:
+            continue
         kept.append((attr, FilingEvent(
-            form=r.get("form", ""), filed=filed,
+            form=form, filed=filed,
             accession=r.get("accession"), url=r.get("url"))))
-    if not kept:
+    if not kept and report_filed is None:
         return None
     kept.sort(key=lambda p: p[1].filed, reverse=True)   # newest-first
-    ev = Events(recent=[fe for _, fe in kept])
+    ev = Events(recent=[fe for _, fe in kept], last_report_filed=report_filed)
     for attr, _ in kept:
         setattr(ev, attr, True)
     return ev
@@ -499,8 +518,12 @@ class EdgarSource(Source):
             raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
         self.lookback_days = lookback_days
         ev = (config or {}).get("edgar_events", {})
+        # 10-Q/10-K are fetched for the SUE decay anchor — they never enter the
+        # advisory `recent` list. edgartools auto-includes /A amendments in the
+        # fetch; build_events_section's exact-form compare keeps them off the anchor.
         self._event_forms = ev.get(
-            "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G"])
+            "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G",
+                      "10-Q", "10-K"])
         self._event_lookback_days = ev.get("lookback_days", 90)
         self._index_limit = ev.get("index_limit", 40)
         self._conviction = ((config or {}).get("insider") or {}).get("conviction")

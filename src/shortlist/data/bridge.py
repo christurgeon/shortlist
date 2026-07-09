@@ -335,11 +335,18 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         # recent surprises (the SUE denominator); None below the min-quarters floor — its
         # presence also serves as the >=min-quarters guard for the scoring SUE leg.
         m.earnings_surprise_dispersion = surprise_dispersion(e.recent_surprise_pcts)
-        # days_since_last_report: as_of - last_report_date. APPROXIMATION (see _earnings):
-        # the last-announcement date is taken from the calendar where available, else the
-        # fiscal quarter-END (which over-states staleness). Keyed off the PAST report, so
-        # the SUE decay anchor never leaks the next (unannounced) report.
-        m.earnings_days_since_last_report = _age_days(snap.as_of, e.last_report_date)
+        # days_since_last_report: as_of - anchor. Keyed off the PAST report, so the SUE
+        # decay anchor never leaks the next (unannounced) report. When Finnhub's date is
+        # the quarter-END proxy (free tier serves no past calendar entries — live-probed
+        # 2026-07-09), refine with the EDGAR 10-Q/10-K filed date: truth is bracketed
+        # quarter_end <= announcement <= filed, so max() is never worse than either proxy.
+        # Exact forms only — a 10-Q/A or unrelated 8-K would wrongly FRESHEN the anchor.
+        anchor = e.last_report_date
+        if e.last_report_date_estimated and snap.events is not None:
+            filed = snap.events.last_report_filed
+            if filed and (anchor is None or filed > anchor):
+                anchor = filed
+        m.earnings_days_since_last_report = _age_days(snap.as_of, anchor)
 
     # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 

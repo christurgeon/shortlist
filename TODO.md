@@ -6,6 +6,27 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## SUE decay anchor fixed — EDGAR 10-Q filed date; free-tier calendar is empty (2026-07-09)
+
+The systematically-fast SUE decay (2026-07-07 item 6) is fixed, but NOT by the planned
+calendar-window widening alone — live probing showed **Finnhub's free tier returns zero
+historical `calendar/earnings` entries** (even a full past year is empty), so a past
+announcement date can never come from Finnhub on this plan. The shipped fix is a
+three-tier anchor (CLAUDE.md → SUE section): true calendar date (paid-tier only; the
+request now reaches back ~120d so it activates on a paid key) → **EDGAR 10-Q/10-K filed
+date** (new `Events.last_report_filed`, exact forms only, `max(quarter_end, filed)` and
+only when `Earnings.last_report_date_estimated`) → quarter-end fallback. Live-verified:
+AAPL anchor 100d → 69d (10-Q filed 2026-05-01, print 2026-04-30 — ~1d error); NVO (20-F,
+no 10-Qs) degrades cleanly to the fallback. `config.yaml: edgar_events.forms` gained
+`10-Q`/`10-K` (config overrides the code default — a bare-code fix silently no-ops).
+Replay note: old persisted snapshots default `last_report_date_estimated: true` on
+`from_dict`, so accumulated pre-fix dates get the tier-2 anchor retroactively **where
+the snapshot has EDGAR events** — one more reason the `SHORTLIST_ACCUMULATE=1` installer
+re-run (2026-07-07 item 1) matters.
+
+**Status:** merged pending PR; VPS picks it up on the next deploy (`git pull` →
+`install_opt_shortlist.sh` → restart) — same flow as the pending /explain deploy.
+
 ## /explain glossary command shipped — deploy pending (2026-07-08)
 
 PR #128 merged: `/explain [term]` bot command (static 60-entry financial glossary in
@@ -53,10 +74,9 @@ timers). Loose ends, roughly by urgency:
 5. **Lazy-Prices axis is a no-op regardless of the breadth fix** — `filing_text_similarity`
    is never populated by the daily collector (research-layer only); measuring it needs a
    collector change to compute EDGAR text similarity into the snapshot. Separate feature.
-6. **SUE decay runs systematically fast (pre-existing, now feeding real measurement):**
-   `_earnings`' calendar request spans today→today+90, so a PAST announcement date is almost
-   never available and `days_since_last_report` falls back to quarter-end (~30–45d stale).
-   Worth fixing before trusting SUE-axis ICs off the accumulated store.
+6. ~~**SUE decay runs systematically fast**~~ — **FIXED 2026-07-09** (entry at top): the
+   root cause turned out deeper (free-tier calendar has NO history at all); anchor now
+   rides the EDGAR 10-Q/10-K filed date.
 7. **Test isolation nit:** the run()-level veto regression test reads the repo-relative
    `scout/validate-latest.json` (same class as the PR #117 cwd leak; benign today since both
    runs read the same file). Cheap tmp-dir isolation when next touched.
