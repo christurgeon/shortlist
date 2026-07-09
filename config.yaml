@@ -529,6 +529,8 @@ scout:
   #   min_free_disk_gb: 8        # preflight: abort when the cache filesystem has less free
   #                              # (.cache/sec_xbrl is month-keyed — a new month reuses nothing)
   #   efts_cache_dir: .cache/efts  # 8k/8k-neg legs; shared with the live originator + veto day cache
+  #   buyback_cache_dir: .cache/efts_buyback  # buyback leg; shared with the live phrase day cache
+  #   buyback_phrases: []        # override the phrase set (default: scout/buyback.py:DEFAULT_PHRASES)
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
     min_mentions: 30         # absolute floor for discovery
@@ -601,6 +603,30 @@ scout:
                              # (never dropped), spreading the burst across sessions
     top_n: 10                # cap emissions per filing by within-book weight
     deny_list: []
+  buyback:                   # EdgarBuybackSignal — NEW repurchase-authorization discovery from
+                             # 8-K full text (EFTS phrase query, data/efts.py; own cache
+                             # namespace .cache/efts_buyback). A DEFENSIBLE academic prior
+                             # (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 —
+                             # positive post-announcement drift) but shipped OFF (signals
+                             # below) at weight 0.5 on the 8-K MEASURE-FIRST precedent: the
+                             # pre-registered backfill cohort (preregister/edgar_buyback.yaml)
+                             # earns or kills it, academic prior notwithstanding. UNFITTED priors.
+                             # Phrase PRECISION (live-probed 2026-07-09, 30 hits hand-classified
+                             # over a 10-week window 2026-04-21..07-02 — see scout/buyback.py):
+                             # 29/30 genuine new/expanded authorizations (~97%), 1 boilerplate
+                             # (a "previously authorized ... implement" restatement notice); the
+                             # verb-anchored phrases exclude "purchases under our existing program"
+                             # churn. Volume is lumpy (~4/wk). Default phrases live in
+                             # scout/buyback.py:DEFAULT_PHRASES; uncomment `phrases` to override.
+    # phrases:               # override the default verb-anchored authorization phrase set
+    #   - "authorized a new share repurchase program"
+    daily_cap: 6             # max emissions/session, applied after file_date-desc sort + the
+                             # state accession dedup. LIVE-ONLY knob — the backfill cohort runs
+                             # UNCAPPED (keep generous unless re-measuring; the 8-K precedent).
+    drop_spacs: true         # SPAC/shell display-NAME drop (SIC-6770 blank checks always
+                             # dropped; display_names are NEVER a ticker source)
+    deny_list: []            # LIVE-ONLY knob — the backfill cohort runs UNDENIED (keep empty
+                             # unless re-measuring; the 8-K precedent)
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
@@ -620,6 +646,7 @@ scout:
     edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
                                               # Cohen-Polk-Silli 2010) — DEFENSIBLE prior, ON; weight below the
                                               # 13D/Form-4 tier (info up to 45 days stale; return from FILING date)
+    edgar_buyback: {enabled: false, weight: 0.5}   # DEFENSIBLE prior (ILV 1995 / Peyer-Vermaelen 2009) but OFF on the 8-K MEASURE-FIRST precedent; backfill verdict earns/kills it
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

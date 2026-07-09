@@ -110,6 +110,19 @@ class ScoutState:
         daily_cap of 6 — far beyond the 3-day scan window it guards)."""
         self._append_capped("eightk_seen", accessions, cap)
 
+    # --- buyback originator: capped rolling accession-seen set (walk-back dedup) ---
+    def buyback_seen_accessions(self) -> list[str]:
+        """Accessions the buyback originator has already surfaced (the session-2..session
+        walk-back would otherwise re-emit a filing on 3 consecutive runs). Absent key (old
+        state files) reads as [] — back-compatible, no migration."""
+        return list(self._data.get("buyback_seen", []))
+
+    def add_buyback_accessions(self, accessions: list[str],
+                               cap: int = _EIGHTK_SEEN_CAP) -> None:
+        """Append newly-surfaced buyback accessions (rolling window far beyond the 3-day
+        scan window it guards; mirrors add_eightk_accessions)."""
+        self._append_capped("buyback_seen", accessions, cap)
+
     # --- 8-K negative-item veto: map + swept-through cursor + note ledger + log set ---
     def eightk_negative_map(self) -> dict[str, dict]:
         """UPPER ticker -> {"last_date","items","adsh"} for names with a fresh negative-item

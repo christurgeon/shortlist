@@ -496,6 +496,46 @@ CUSIP→symbology replay would leak post-event symbols; the picks ledger + fireh
 the live signal from day one). `scoring.score()` is untouched. Tune `scout.thirteenf` +
 `scout.signals.edgar_13f`. Spec:
 `docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md`.
+## Buyback-authorization discovery (scout)
+
+`EdgarBuybackSignal` (`scout/signals.py`, keyless, **VPS-safe** — SEC-hosted, no Yahoo WAF)
+discovers 8-Ks whose full text announces a **new/expanded share-or-stock repurchase
+authorization**, via an **EFTS exact-phrase query** over a curated verb-anchored phrase set
+(`scout/buyback.py:DEFAULT_PHRASES` — e.g. "approved a new share repurchase program"; the
+verb anchor excludes "purchases under our existing program" boilerplate). It **extends the
+shared EFTS leaf** (`data/efts.py`): a generic `q=` exact-phrase path threaded through
+`_page`/`_range`/`fetch_eightk_range`/`fetch_eightk_window` — the three existing no-`q`
+consumers (8-K originator, veto sweep, 8-K backfill) stay **byte-identical** (pinned by
+`tests/test_data_efts_phrase.py`) — plus phrase wrappers (`fetch_phrase_day`/
+`fetch_phrase_window`) with their **own cache namespace** (`.cache/efts_buyback/<phrase-hash>/`,
+complete-unfiltered day payload, same `EFTS_LAG_DAYS` finality rule).
+
+**A DEFENSIBLE academic prior, but shipped DISABLED at weight 0.5** on the **8-K
+MEASURE-FIRST precedent**: Ikenberry-Lakonishok-Vermaelen 1995 (+abnormal 4y drift) /
+Peyer-Vermaelen 2009 (persists OOS) justify *building* it, but the sign in THIS funnel's
+universe/horizon is exactly what the pre-registered backfill cohort
+(`preregister/edgar_buyback.yaml`, expected sign POSITIVE, K=3m, window 2022–2025, blocks≥8,
+frac≥0.90) earns or kills — academic prior notwithstanding (the 8-K originator's own KILL is
+the cautionary precedent). Backfill leg: `shortlist-scout backfill --signal buyback` (spec row
+in `scout/backfill.py`; `assemble_buyback_events` mirrors `_assemble_8k` minus item logic —
+the phrase match already happened at fetch time; **filer IS the subject**, PiT `Symbology` at
+the FILING date, `sics` inline). The **filer IS the subject** — CIK→ticker via `cik_tickers`
+only (**no `display_names` ticker fallback — ever**); SPAC/SIC-6770 drops; `_junk_suffix` +
+`deny_list`. Walk-back `session-2..session` PER PHRASE with a capped accession-seen set in
+`ScoutState` (`buyback_seen`); flat strength 0.6 (authorization SIZE isn't parseable from EFTS
+metadata without a per-doc fetch — deferred). Emission carries `cik` + `meta={adsh, items,
+file_date, phrase}`. EFTS returns **relevance order** when `q` is present, so the signal
+**re-sorts by `file_date` DESC before `daily_cap`** (keeps the freshest authorization, not an
+older higher-scoring one) and names overflow in `available()` — no silent truncation.
+
+**Phrase precision** (mandatory implementation-time gate) live-probed 2026-07-09: **29/30
+hand-classified hits (~97%)** were genuine new/expanded authorizations over a 10-week window
+(the one false positive was a "previously authorized … implement" restatement notice); well
+above the 70% floor, so the phrase set landed as-is. Volume is **lumpy** (~4/wk). Two knobs
+are **live-only** (the backfill cohort measures neither): `daily_cap` (default 6/day) and a
+populated `deny_list` — keep `deny_list` empty and `daily_cap` generous unless re-measuring
+(the 8-K precedent). Tune `scout.buyback` + `scout.signals.edgar_buyback`. `scoring.score()`
+is untouched.
 
 ## WSB social hype (harness + scout)
 

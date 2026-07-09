@@ -16,10 +16,18 @@ Live-probed facts this module encodes (2026-07-07, twice — do not "fix" back):
   is split recursively at the date midpoint (earnings-heavy months approach the cap).
 - Browser-ish UA + Accept headers required; intermittent 500s -> bounded retry+backoff.
 - SEC fair access: THROTTLE_S sleep before every request (~3 req/s).
+
+The default (`q=None`) item-query path is what EdgarEightKSignal / the veto sweep / the 8-K
+backfill ride, and its request params are FROZEN (a byte-identical regression test in
+tests/test_data_efts.py pins them). An OPTIONAL exact-phrase `q` threads a `"..."` full-text
+query through the same fetch discipline for the buyback originator (data/buyback.py), with
+its OWN cache namespace (`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/
+split/finality machinery lives here ONCE; only the params gain a `q` key when a phrase is set.
 """
 from __future__ import annotations
 
 import calendar as _cal
+import hashlib
 import time
 import warnings
 from datetime import date, timedelta
@@ -89,12 +97,23 @@ def _hits(payload: dict) -> list:
     return (payload.get("hits") or {}).get("hits") or []
 
 
+def _phrase_q(phrase: str) -> str:
+    """EFTS exact-phrase query value: the phrase wrapped in double quotes (live-probed —
+    `q="share repurchase program"` matches the phrase, unquoted ANDs the terms)."""
+    return f'"{phrase}"'
+
+
 def _page(get: Callable, start: date, end: date, from_: int, *,
-          throttle_s: float, max_retries: int) -> Optional[dict]:
-    """One throttled page with bounded retry-on-5xx. None = failed (never raises)."""
+          throttle_s: float, max_retries: int, q: Optional[str] = None) -> Optional[dict]:
+    """One throttled page with bounded retry-on-5xx. None = failed (never raises).
+
+    `q=None` (the default) reproduces the FROZEN item-query params byte-for-byte (pinned by
+    tests/test_data_efts.py); a non-None `q` adds ONLY a trailing exact-phrase `q` key."""
     params = {"forms": "8-K", "dateRange": "custom",
               "startdt": start.isoformat(), "enddt": end.isoformat(),
               "from": from_, "size": _PAGE}
+    if q is not None:
+        params["q"] = _phrase_q(q)
     for attempt in range(max_retries + 1):
         if throttle_s > 0:
             time.sleep(throttle_s)
@@ -108,18 +127,18 @@ def _page(get: Callable, start: date, end: date, from_: int, *,
 
 
 def _range(start: date, end: date, *, get: Callable, throttle_s: float,
-           max_retries: int) -> Optional[list[dict]]:
-    first = _page(get, start, end, 0, throttle_s=throttle_s, max_retries=max_retries)
+           max_retries: int, q: Optional[str] = None) -> Optional[list[dict]]:
+    first = _page(get, start, end, 0, throttle_s=throttle_s, max_retries=max_retries, q=q)
     if first is None:
         return None
     total = _total(first)
     if total >= _SPLIT_TOTAL and start < end:
         mid = start + timedelta(days=(end - start).days // 2)
-        left = _range(start, mid, get=get, throttle_s=throttle_s, max_retries=max_retries)
+        left = _range(start, mid, get=get, throttle_s=throttle_s, max_retries=max_retries, q=q)
         if left is None:
             return None
         right = _range(mid + timedelta(days=1), end, get=get,
-                       throttle_s=throttle_s, max_retries=max_retries)
+                       throttle_s=throttle_s, max_retries=max_retries, q=q)
         if right is None:
             return None
         return left + right
@@ -130,7 +149,7 @@ def _range(start: date, end: date, *, get: Callable, throttle_s: float,
     from_ = _PAGE
     while from_ < total and from_ + _PAGE <= 10_000:
         page = _page(get, start, end, from_, throttle_s=throttle_s,
-                     max_retries=max_retries)
+                     max_retries=max_retries, q=q)
         if page is None:
             return None
         hs = _hits(page)
@@ -143,10 +162,14 @@ def _range(start: date, end: date, *, get: Callable, throttle_s: float,
 
 def fetch_eightk_range(start: date, end: date, *, identity: str,
                        throttle_s: float = THROTTLE_S, max_retries: int = _MAX_RETRIES,
-                       timeout: float = 30.0, _get=None) -> Optional[list[dict]]:
+                       timeout: float = 30.0, q: Optional[str] = None,
+                       _get=None) -> Optional[list[dict]]:
     """All normalized 8-K-rooted rows filed in [start, end]. None = fetch failed (warned,
     redacted); [] = none. `_get(params) -> (status, payload|None)` is the test seam; the
-    default opens ONE httpx.Client for the whole (possibly split/paginated) range."""
+    default opens ONE httpx.Client for the whole (possibly split/paginated) range.
+
+    `q` (optional exact phrase) narrows the query to full-text hits — the buyback path; the
+    default `q=None` is the frozen item-query used by the 8-K originator/veto/backfill."""
     close = None
     get = _get
     if get is None:
@@ -163,7 +186,8 @@ def fetch_eightk_range(start: date, end: date, *, identity: str,
             except ValueError:
                 return 200, None
     try:
-        return _range(start, end, get=get, throttle_s=throttle_s, max_retries=max_retries)
+        return _range(start, end, get=get, throttle_s=throttle_s,
+                      max_retries=max_retries, q=q)
     except Exception as exc:  # noqa: BLE001 — the leaf never raises to a live scan
         warnings.warn(f"efts: range fetch failed for {start}:{end}: "
                       f"{redact_secrets(str(exc))}", stacklevel=2)
@@ -228,12 +252,17 @@ def _month_spans(start: date, end: date) -> list[tuple[date, date]]:
 
 def fetch_eightk_window(start: date, end: date, *, identity: str,
                         cache_dir: str = ".cache/efts",
-                        today: Optional[date] = None, **fetch_kw) -> Optional[list[dict]]:
+                        today: Optional[date] = None, q: Optional[str] = None,
+                        **fetch_kw) -> Optional[list[dict]]:
     """Ranged fetch over [start, end], chunked by month, reusing the day cache: a chunk
     whose every day is cache-fresh makes ZERO requests; otherwise ONE ranged fetch (with
     the >=9,900 split inside fetch_eightk_range) re-fills every day cache in the chunk
     (empty days included, so weekends/holidays never force a refetch). None = any chunk
-    failed (the caller treats the window as failed — resumable at its own layer)."""
+    failed (the caller treats the window as failed — resumable at its own layer).
+
+    `q` (optional exact phrase) is threaded to the range fetch AND stored complete/unfiltered
+    per-day (the caller must supply a phrase-specific `cache_dir` so hits never pool with the
+    item-query day cache — see fetch_phrase_window)."""
     today = today or date.today()
     out: list[dict] = []
     for c_start, c_end in _month_spans(start, end):
@@ -243,7 +272,7 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
             for d in days:
                 out.extend(cached[d])
             continue
-        rows = fetch_eightk_range(c_start, c_end, identity=identity, **fetch_kw)
+        rows = fetch_eightk_range(c_start, c_end, identity=identity, q=q, **fetch_kw)
         if rows is None:
             return None
         by_day: dict[str, list[dict]] = {d.isoformat(): [] for d in days}
@@ -252,4 +281,53 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
         for d in days:
             _write_day_cache(d, by_day.get(d.isoformat(), []), cache_dir, today)
         out.extend(rows)
+    return out
+
+
+# --- exact-phrase full-text queries (the buyback originator; own cache namespace) ---
+
+BUYBACK_CACHE_DIR = ".cache/efts_buyback"
+
+
+def _phrase_subdir(cache_dir: str, phrase: str) -> str:
+    """A phrase-hash subdirectory under the buyback cache namespace, so each phrase's
+    complete/unfiltered day cache is isolated (keyed by (phrase-hash, day))."""
+    h = hashlib.sha1(phrase.encode("utf-8")).hexdigest()[:16]
+    return str(Path(cache_dir) / h)
+
+
+def fetch_phrase_day(phrase: str, day: date, *, identity: str,
+                     cache_dir: str = BUYBACK_CACHE_DIR, today: Optional[date] = None,
+                     **fetch_kw) -> Optional[list[dict]]:
+    """One day's COMPLETE normalized rows matching an exact phrase, day-cached under
+    `<cache_dir>/<phrase-hash>/<day>.json` (same envelope + finality rule as the item-query
+    day cache). None = fetch failed (cache untouched — a failure is never frozen)."""
+    today = today or date.today()
+    sub = _phrase_subdir(cache_dir, phrase)
+    cached = _read_day_cache(day, sub, today)
+    if cached is not None:
+        return cached
+    rows = fetch_eightk_range(day, day, identity=identity, q=phrase, **fetch_kw)
+    if rows is None:
+        return None
+    _write_day_cache(day, rows, sub, today)   # complete + unfiltered, ALWAYS
+    return rows
+
+
+def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,
+                        cache_dir: str = BUYBACK_CACHE_DIR, today: Optional[date] = None,
+                        **fetch_kw) -> Optional[list[dict]]:
+    """Ranged fetch over [start, end] for EVERY phrase, each with its own phrase-hash day
+    cache; rows are tagged with the matched `phrase` and merged (accession dedup is the
+    aggregator's job, never here). None = any phrase's window failed. Used by the 8-K-shaped
+    buyback backfill (the fetch factory in scout/backfill.py)."""
+    today = today or date.today()
+    out: list[dict] = []
+    for phrase in phrases:
+        sub = _phrase_subdir(cache_dir, phrase)
+        rows = fetch_eightk_window(start, end, identity=identity, cache_dir=sub,
+                                   today=today, q=phrase, **fetch_kw)
+        if rows is None:
+            return None
+        out.extend({**r, "phrase": phrase} for r in rows)
     return out

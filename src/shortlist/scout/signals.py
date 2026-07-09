@@ -676,6 +676,93 @@ class EdgarThirteenFSignal:
 register("edgar_13f", EdgarThirteenFSignal)
 
 
+class EdgarBuybackSignal:
+    """New-repurchase-authorization discovery from EDGAR full-text search (EFTS; data/efts.py).
+
+    Surfaces 8-Ks whose full text matches a verb-anchored authorization phrase (default set
+    in scout/buyback.py; e.g. "approved a new share repurchase program"). A DEFENSIBLE
+    academic prior (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 — positive
+    post-announcement drift), but shipped DISABLED at weight 0.5 on the 8-K MEASURE-FIRST
+    precedent: the sign in THIS funnel's universe/horizon is what the pre-registered backfill
+    cohort (preregister/edgar_buyback.yaml) earns or kills. Keyless + VPS-safe (SEC-hosted,
+    no Yahoo WAF). EFTS lags a day or two, so scan() walks session-2..session PER PHRASE and
+    dedups via a capped accession-seen set in ScoutState (daily.py persists new_accessions).
+    """
+    name = "edgar_buyback"
+    is_discovery = True
+
+    def __init__(self, identity: str | None = None, *, phrases=None, deny_list=None,
+                 drop_spacs: bool = True, daily_cap: int = 6, lookback_days: int = 2,
+                 seen_accessions: list[str] | None = None,
+                 cache_dir: str | None = None,
+                 resolver_cache_dir: str = ".cache/sec_tickers") -> None:
+        from .buyback import DEFAULT_PHRASES
+        self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self.phrases = list(phrases or DEFAULT_PHRASES)
+        self.deny_list = list(deny_list or [])
+        self.drop_spacs = drop_spacs
+        self.daily_cap = daily_cap
+        self.lookback_days = lookback_days
+        self.seen_accessions = set(seen_accessions or [])
+        self.cache_dir = cache_dir  # None => the efts BUYBACK_CACHE_DIR default
+        self.resolver_cache_dir = resolver_cache_dir
+        self._resolver: dict[str, str] | None = None
+        self.new_accessions: list[str] = []   # daily.py persists these into ScoutState
+        self._status = (False, "not run")
+
+    def scan(self, session: date) -> list[Emission]:
+        from ..data import efts
+        from .buyback import buyback_events_from_rows
+        from .cik_tickers import load_cik_to_ticker, resolve_ticker
+        cache_kw = {} if self.cache_dir is None else {"cache_dir": self.cache_dir}
+        try:
+            if self._resolver is None:
+                self._resolver = load_cik_to_ticker(self.identity,
+                                                    cache_dir=self.resolver_cache_dir)
+            resolver = self._resolver
+            rows: list[dict] = []
+            failed: list[str] = []
+            # EFTS lags (today often total: 0) — walk back session-2..session for each phrase;
+            # the accession-seen state below stops the overlap re-emitting across runs. Each
+            # (phrase, day) is day-cached in its own phrase-hash namespace.
+            for phrase in self.phrases:
+                for back in range(self.lookback_days, -1, -1):
+                    day = session - timedelta(days=back)
+                    got = efts.fetch_phrase_day(phrase, day, identity=self.identity,
+                                                **cache_kw)
+                    if got is None:
+                        failed.append(f"{day.isoformat()}")
+                    else:
+                        rows.extend({**r, "phrase": phrase} for r in got)
+        except Exception as e:  # noqa: BLE001 — degrade, never crash the run
+            self._status = (False, redact_secrets(str(e)))
+            return []
+        ems = buyback_events_from_rows(
+            rows, resolve_ticker_fn=lambda cik: resolve_ticker(cik, resolver),
+            deny_list=self.deny_list, drop_spacs=self.drop_spacs)
+        fresh = [e for e in ems if e.meta.get("adsh") not in self.seen_accessions]
+        # EFTS returns RELEVANCE order when q is present — sort by file_date desc so the cap
+        # keeps the FRESHEST authorizations, not an older higher-scoring one (design §2.5).
+        fresh.sort(key=lambda e: e.meta.get("file_date") or "", reverse=True)
+        capped = fresh[:self.daily_cap]
+        overflow = [e.ticker for e in fresh[self.daily_cap:]]
+        self.new_accessions = [e.meta["adsh"] for e in capped]
+        # De-dup the failed-day list (phrases share the walk-back days).
+        failed_days = sorted(set(failed))
+        tail = f"; failed days: {', '.join(failed_days)}" if failed_days else ""
+        over = f"; overflow past cap: {', '.join(overflow)}" if overflow else ""
+        self._status = (not failed_days,
+                        f"{len(capped)} buyback auths from {len(rows)} hits "
+                        f"(cap {self.daily_cap}){over}{tail}")
+        return capped
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("edgar_buyback", EdgarBuybackSignal)
+
+
 class WsbHypeSignal:
     """WSB hype discovery via ApeWisdom — surfaces tickers whose mention velocity is
     rising above an absolute floor (emerging hype, not perennial mega-cap chatter)."""
