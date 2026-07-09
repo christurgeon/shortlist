@@ -302,6 +302,10 @@ def test_run_explicitly_disabled_byte_identical_to_absent_zero_fetches(tmp_path,
     manifest/report artifacts as an absent `eightk` block -- and neither run may touch
     EFTS or the CIK resolver even once (mirrors test_orchestrator_integration.py's
     stub-signal run() harness)."""
+    # run() reads the repo-relative scout/validate-latest.json (VALIDATE_LATEST_PATH) for
+    # the display-only validation section — isolate the CWD so the artifacts never depend
+    # on live repo state (the test_scout_backfill_cli.py idiom; PR #117 cwd-leak class).
+    monkeypatch.chdir(tmp_path)
 
     def boom(*a, **k):
         raise AssertionError("run() must not fetch EFTS/resolver when the veto is off")

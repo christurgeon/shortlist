@@ -101,9 +101,13 @@ timers). Loose ends, roughly by urgency:
 6. ~~**SUE decay runs systematically fast**~~ — **FIXED 2026-07-09** (entry at top): the
    root cause turned out deeper (free-tier calendar has NO history at all); anchor now
    rides the EDGAR 10-Q/10-K filed date.
-7. **Test isolation nit:** the run()-level veto regression test reads the repo-relative
-   `scout/validate-latest.json` (same class as the PR #117 cwd leak; benign today since both
-   runs read the same file). Cheap tmp-dir isolation when next touched.
+7. ~~**Test isolation nit**~~ — **FIXED 2026-07-09:** `monkeypatch.chdir(tmp_path)` added to
+   the run()-level veto byte-identical test (the `test_scout_backfill_cli.py` idiom).
+   Residual observation: other run()-level tests (`test_scout_daily_research_gate`,
+   `scout/test_digest_fmp_toggle`, `scout/test_fixes`, `scout/test_daily_push_flag`,
+   `scout/test_orchestrator_integration`) still read the repo-relative
+   `scout/validate-latest.json` — same benign-today class; apply the same one-liner when
+   next touched.
 
 **Status:** open — item 1 is a one-command operator step; 2–4 are observation gates; 5–7 are
 future work.
@@ -526,7 +530,8 @@ Also corrects the now-stale "Quiver = highest-leverage add" framing in `DATA_SOU
 since shipped keyless). If the originator is ever wanted: first a feasibility pass on the free
 House Clerk PTR / Senate eFD feeds (PDF/HTML-shaped; community JSON mirrors unmaintained).
 
-**Status:** committed on `docs/congressional-trades-verdict`; push → PR → merge pending.
+**Status:** ~~committed on `docs/congressional-trades-verdict`; push → PR → merge pending.~~
+**RESOLVED (verified 2026-07-09):** merged as #103 (`d67677a`); branch gone from origin.
 
 ## Scout delivery-confirmation log — commit/PR + deploy (2026-07-01)
 
@@ -542,8 +547,11 @@ fix — can't retroactively confirm the 06-30 push (eyeball Telegram for that).
 Also pending: delete the merged branch `docs/todo-fmp-digest-wrapup` (PR #101 MERGED; note is
 on `origin/main`) — local `git branch -D` + optional remote delete.
 
-**Status:** code + test done on `feat/scout-delivery-log`, uncommitted; PR/deploy + stale-branch
-cleanup pending operator action.
+**Status:** ~~code + test done on `feat/scout-delivery-log`, uncommitted; PR/deploy + stale-branch
+cleanup pending operator action.~~ **RESOLVED (verified 2026-07-09):** merged as #102
+(`78f8024`, `git cherry` clean) and long since deployed — `daily.py` on the live install
+logs the positive delivery line. Stale-branch cleanup done too: GitHub had auto-deleted
+all merged branches; 34 stale local remote-tracking refs pruned (`git remote prune origin`).
 
 ## Verified: first FMP-free digest ran clean (2026-06-30) — item below resolved
 
