@@ -4,9 +4,12 @@ must be UNCHANGED by the phrase addition. All HTTP is injected via the `_get` se
 import json
 from datetime import date
 
+from pathlib import Path
+
 from shortlist.data import efts
 from shortlist.data.efts import (BUYBACK_CACHE_DIR, _phrase_q, _phrase_subdir,
-                                 fetch_eightk_range, fetch_phrase_day, fetch_phrase_window)
+                                 fetch_eightk_range, fetch_eightk_window, fetch_phrase_day,
+                                 fetch_phrase_window)
 
 
 def _hit(adsh, cik="0000320193", items=("8.01",), file_date="2026-06-03",
@@ -102,6 +105,21 @@ def test_phrase_day_cache_idempotent_second_call_zero_fetches(tmp_path):
     poison = _ScriptedGet([])
     rows2 = fetch_phrase_day("p", date(2026, 6, 3), _get=poison, **kw)
     assert len(rows2) == 1 and poison.calls == []
+
+
+def test_window_q_redirects_to_phrase_subdir_never_shared_item_cache(tmp_path):
+    """Structural guard: fetch_eightk_window with `q` set writes its day cache under the
+    phrase-hash subdir, NEVER the shared item-query day cache (`cache_dir` root) — so a
+    caller that forgot to namespace can't pool phrase-filtered rows into .cache/efts."""
+    get = _ScriptedGet([(200, _payload([_hit("a-1")]))])
+    phrase = "authorized a share repurchase program"
+    rows = fetch_eightk_window(date(2026, 6, 3), date(2026, 6, 3), identity="t@e.co",
+                               cache_dir=str(tmp_path), today=date(2026, 6, 10),
+                               q=phrase, throttle_s=0, _get=get)
+    assert [r["adsh"] for r in rows] == ["a-1"]
+    sub = _phrase_subdir(str(tmp_path), phrase)
+    assert (Path(sub) / "2026-06-03.json").exists()      # written under the phrase namespace
+    assert not (Path(str(tmp_path)) / "2026-06-03.json").exists()  # item cache root untouched
 
 
 def test_default_buyback_cache_dir_constant():

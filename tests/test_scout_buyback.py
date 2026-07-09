@@ -73,6 +73,21 @@ def test_deny_list_and_junk_suffix_dropped():
     assert ems == []
 
 
+def test_per_ticker_per_day_dedup_first_wins():
+    """Two DISTINCT same-day accessions for one issuer -> ONE emission (mirrors eightk.py's
+    final per-ticker-per-day dedup), so a double-file day never burns two daily_cap slots."""
+    rows = [_row("a-1", cik="0000000007", file_date="2026-06-25"),
+            _row("a-2", cik="0000000007", file_date="2026-06-25")]   # same ticker + day
+    ems = buyback_events_from_rows(rows, resolve_ticker_fn=_resolve({"0000000007": "RBI"}))
+    assert [e.ticker for e in ems] == ["RBI"]           # deduped to one
+    assert ems[0].meta["adsh"] == "a-1"                 # FIRST accession wins
+    # a different DAY for the same ticker is NOT deduped (a genuine re-authorization)
+    rows2 = [_row("a-1", cik="0000000007", file_date="2026-06-25"),
+             _row("a-3", cik="0000000007", file_date="2026-07-10")]
+    ems2 = buyback_events_from_rows(rows2, resolve_ticker_fn=_resolve({"0000000007": "RBI"}))
+    assert [e.meta["adsh"] for e in ems2] == ["a-1", "a-3"]
+
+
 def test_drop_spacs_false_keeps_named_shell():
     rows = [_row("a-1", names=["Something Acquisition Corp"])]
     ems = buyback_events_from_rows(rows, resolve_ticker_fn=_resolve({"0000000007": "RBI"}),

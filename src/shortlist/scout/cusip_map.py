@@ -53,22 +53,28 @@ def normalize_issuer_name(name: str | None) -> str:
 
 
 def build_name_to_ticker(raw: dict) -> dict[str, str]:
-    """{normalized issuer name -> ticker} from the raw company_tickers.json payload. A
-    normalized key that maps to two DIFFERENT tickers is ambiguous and dropped (abstain,
-    never guess). Uses the first ticker seen per CIK-name via first-occurrence (common stock
-    is listed first per CIK, mirroring cik_tickers)."""
+    """{normalized issuer name -> ticker} from the raw company_tickers.json payload.
+    First-occurrence per CIK wins (common stock is listed first per CIK, mirroring
+    cik_tickers), so a same-CIK dual-class issuer whose classes share a normalized name
+    (GOOGL/GOOG, BRK-A/BRK-B) keeps the first ticker. Only a CROSS-CIK normalized-name
+    collision (two DIFFERENT issuers collapsing to one key) is ambiguous and dropped
+    (abstain, never guess)."""
     out: dict[str, str] = {}
+    first_cik: dict[str, str] = {}
     ambiguous: set[str] = set()
     for row in raw.values():
         key = normalize_issuer_name(row.get("title"))
         tkr = str(row.get("ticker") or "").upper()
+        cik = str(row.get("cik_str") or "")
         if not key or not tkr:
             continue
         prev = out.get(key)
         if prev is None:
             out[key] = tkr
-        elif prev != tkr:
-            ambiguous.add(key)          # same normalized name, different tickers -> drop
+            first_cik[key] = cik
+        elif cik != first_cik[key] and tkr != prev:
+            ambiguous.add(key)          # DIFFERENT issuer, same normalized name -> drop
+        # same CIK (dual-class share classes): keep the first-occurrence ticker
     for key in ambiguous:
         out.pop(key, None)
     return out
@@ -157,7 +163,9 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
                     ) -> list[list[dict]]:
     """Download + parse the `want` most-recent published FTD files, walking back from the
     current half-month (bounded at `max_attempts` — the current period may not be posted
-    yet). Parsed rows are cached FOREVER by filename (a published FTD file is immutable).
+    yet). NON-EMPTY parsed rows are cached FOREVER by filename (a published FTD file is
+    immutable); an EMPTY parse is treated as a fetch failure (never cached — a truncated
+    zip / HTML body must not freeze a poisoned half-month) and the walk-back continues.
     Returns a list of per-file row lists (newest first). Never raises: a failure yields
     fewer files (fewer resolutions), the resolver then leans on the name fallback / abstains.
     `throttle` is invoked before each network GET (SEC fair-access)."""
@@ -180,6 +188,12 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
         if not raw:
             continue                                  # not published yet -> walk back
         rows = parse_ftd_zip(raw)
+        if not rows:
+            # An empty parse (200-status truncated zip / HTML error body — parse_ftd_zip
+            # swallows all) must NOT be cached under the immutable filename key, or it would
+            # poison that half-month forever and burn a `want` slot. Treat it as a fetch
+            # failure: don't cache, don't count it, walk back to the next-older file.
+            continue
         write_json_cache(cp, rows)
         out.append(rows)
     return out

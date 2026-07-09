@@ -261,9 +261,14 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
     failed (the caller treats the window as failed — resumable at its own layer).
 
     `q` (optional exact phrase) is threaded to the range fetch AND stored complete/unfiltered
-    per-day (the caller must supply a phrase-specific `cache_dir` so hits never pool with the
-    item-query day cache — see fetch_phrase_window)."""
+    per-day. STRUCTURAL GUARD: whenever `q` is set, the day cache is redirected under a
+    phrase-hash subdir (`_phrase_subdir`) of `cache_dir`, so phrase-FILTERED rows can NEVER
+    pool into the shared item-query day cache (`.cache/efts`) regardless of the caller's
+    `cache_dir` — the cache-completeness invariant is enforced by construction, not docstring.
+    The `q=None` path is byte-identical (no redirect)."""
     today = today or date.today()
+    if q is not None:
+        cache_dir = _phrase_subdir(cache_dir, q)
     out: list[dict] = []
     for c_start, c_end in _month_spans(start, end):
         days = [c_start + timedelta(days=i) for i in range((c_end - c_start).days + 1)]
@@ -318,14 +323,14 @@ def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,
                         cache_dir: str = BUYBACK_CACHE_DIR, today: Optional[date] = None,
                         **fetch_kw) -> Optional[list[dict]]:
     """Ranged fetch over [start, end] for EVERY phrase, each with its own phrase-hash day
-    cache; rows are tagged with the matched `phrase` and merged (accession dedup is the
-    aggregator's job, never here). None = any phrase's window failed. Used by the 8-K-shaped
-    buyback backfill (the fetch factory in scout/backfill.py)."""
+    cache (fetch_eightk_window namespaces automatically whenever `q` is set); rows are tagged
+    with the matched `phrase` and merged (accession dedup is the aggregator's job, never
+    here). None = any phrase's window failed. Used by the 8-K-shaped buyback backfill (the
+    fetch factory in scout/backfill.py)."""
     today = today or date.today()
     out: list[dict] = []
     for phrase in phrases:
-        sub = _phrase_subdir(cache_dir, phrase)
-        rows = fetch_eightk_window(start, end, identity=identity, cache_dir=sub,
+        rows = fetch_eightk_window(start, end, identity=identity, cache_dir=cache_dir,
                                    today=today, q=phrase, **fetch_kw)
         if rows is None:
             return None

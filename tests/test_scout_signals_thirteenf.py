@@ -66,7 +66,25 @@ def test_new_position_diff_weight_and_strength_math():
     assert [d["cusip"] for d in out] == ["NEWCUS"]  # only the genuinely-new CUSIP
     d = out[0]
     assert abs(d["weight"] - 0.05) < 1e-9           # 50 / 1000
-    assert abs(d["strength"] - 0.80) < 1e-9         # weight==full_strength -> capped
+    # design §1.8: strength = min(1.0, weight / full_strength_pct); weight==full_strength -> 1.0
+    assert abs(d["strength"] - 1.0) < 1e-9
+
+
+def test_new_position_diff_strength_is_linear_not_reshaped():
+    """A barely-qualifying 0.5%-of-book position gets a PROPORTIONALLY small strength
+    (0.005/0.05 = 0.1), not the old base+conv inflation (~0.485); a full 5% bet -> 1.0."""
+    small = {"S": {"value": 5.0, "name": "S", "title": "C"},
+             "REST": {"value": 995.0, "name": "R", "title": "C"}}
+    out = new_position_diff(small, {"REST": {"value": 995.0, "name": "R", "title": "C"}},
+                            min_position_pct=0.005, full_strength_pct=0.05)
+    assert abs(out[0]["weight"] - 0.005) < 1e-9
+    assert abs(out[0]["strength"] - 0.1) < 1e-9     # min(1.0, 0.005/0.05), no 0.45 base
+    # a 5% bet caps at full conviction 1.0 (not the old 0.80 cap)
+    big = {"B": {"value": 50.0, "name": "B", "title": "C"},
+           "REST": {"value": 950.0, "name": "R", "title": "C"}}
+    out2 = new_position_diff(big, {"REST": {"value": 950.0, "name": "R", "title": "C"}},
+                             min_position_pct=0.005, full_strength_pct=0.05)
+    assert abs(out2[0]["strength"] - 1.0) < 1e-9
 
 
 def test_new_position_diff_min_threshold_and_ordering():
@@ -101,6 +119,22 @@ def test_thirteenf_emissions_top_n_and_abstention_and_junk_drop():
     ems1, abst1 = thirteenf_emissions(positions, resolve_fn=resolve, fund_name="Fund X",
                                       period="2026-03-31", filing_date="2026-05-15", top_n=1)
     assert [e.ticker for e in ems1] == ["AAA"] and abst1 == 0
+
+
+def test_thirteenf_emissions_meta_carries_fund_identity_and_accession():
+    """meta must carry structured fund identity + filing accession (firehose join keys) —
+    parity with the 8-K/13D/buyback emissions, not just the free-text evidence string."""
+    positions = [{"cusip": "C1", "name": "One", "title": "COM", "value": 1,
+                  "weight": 0.10, "strength": 0.8}]
+    ems, _ = thirteenf_emissions(positions, resolve_fn=lambda c, n: "AAA",
+                                 fund_name="Berkshire Hathaway", period="2026-03-31",
+                                 filing_date="2026-05-15", fund_cik=1067983,
+                                 accession="0001067983-26-000012")
+    m = ems[0].meta
+    assert m["fund_cik"] == "1067983"                # stringified for a stable join key
+    assert m["fund_name"] == "Berkshire Hathaway"
+    assert m["adsh"] == "0001067983-26-000012"
+    assert m["cusip"] == "C1" and m["weight"] == 0.10  # existing keys preserved
 
 
 def test_parse_submissions_excludes_amendments_newest_first():
@@ -218,6 +252,46 @@ def test_scan_max_filings_carry_over(monkeypatch):
     _wire(sig2, monkeypatch, submissions=subs, infotables=infos)
     sig2.scan(date(2026, 5, 21))
     assert sig2.processed_accessions == ["acc-3-latest"]
+
+
+def test_scan_empty_prior_parse_is_fund_error_not_new_book(monkeypatch):
+    """A prior infotable that parses EMPTY (swallowed parse/fetch failure) must NOT emit the
+    whole current book as 'new' and must NOT mark the accession processed — count a fund
+    error and retry next session."""
+    sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
+    sig._resolver = _FakeResolver({"NEWCUS": "NEW", "OLDCUS": "OLD"})
+    _wire(sig, monkeypatch,
+          submissions={1067983: _submissions([
+              ("13F-HR", "acc-latest", "2026-05-15", "2026-03-31"),
+              ("13F-HR", "acc-prior", "2026-02-14", "2025-12-31")])},
+          infotables={
+              "acc-latest": _infotable([("New Co", "NEWCUS", 50, "SH", ""),
+                                        ("Old Co", "OLDCUS", 950, "SH", "")]),
+              "acc-prior": f'<informationTable xmlns="{_NS}"></informationTable>'})  # empty
+    ems = sig.scan(date(2026, 5, 20))
+    assert ems == []                                     # NOT the whole current book
+    assert sig.processed_accessions == []                # NOT frozen — retry next session
+    ran, detail = sig.available()
+    assert ran is False and "1 fund errors" in detail
+
+
+def test_scan_fully_degraded_resolver_skips_without_marking(monkeypatch):
+    """A resolver with zero FTD + zero name entries (FTD outage + name-index failure) must
+    abort the whole scan (signal error) rather than abstain-then-mark every quarter."""
+    from shortlist.scout.cusip_map import CusipResolver
+    sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
+    sig._resolver = CusipResolver({}, {})                # fully degraded
+    calls = []
+    import shortlist.scout.thirteenf as tf
+    sig._throttle = lambda: None
+    monkeypatch.setattr(tf, "fetch_submissions",
+                        lambda *a, **k: calls.append(1) or _submissions([]))
+    ems = sig.scan(date(2026, 5, 20))
+    assert ems == []
+    assert sig.processed_accessions == []                # nothing marked
+    assert calls == []                                   # bailed before any fund fetch
+    ran, detail = sig.available()
+    assert ran is False and "degraded" in detail
 
 
 def test_scan_degrades_on_error_and_redacts(monkeypatch):

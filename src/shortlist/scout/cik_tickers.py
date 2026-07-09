@@ -83,4 +83,9 @@ def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
     """Day-cached company_tickers.json -> resolver index. SEC blocks UA-less GETs, so a
     contact-email User-Agent is mandatory. Never raises: returns {} on any failure."""
     raw = load_raw_company_tickers(identity, cache_dir=cache_dir, _today=_today, _client=_client)
-    return build_cik_to_ticker(raw) if raw else {}
+    if not raw:
+        return {}
+    try:
+        return build_cik_to_ticker(raw)
+    except Exception:  # noqa: BLE001 — a truthy-but-malformed payload (null/non-int cik_str,
+        return {}      # list-shaped body) must degrade to {}, never crash the daily run.

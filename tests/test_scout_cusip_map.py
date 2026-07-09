@@ -69,6 +69,26 @@ def test_name_to_ticker_drops_ambiguous_and_keeps_unique():
     assert "BETA" not in idx                            # ambiguous normalized name -> abstain
 
 
+def test_name_to_ticker_same_cik_dualclass_keeps_first_crosscik_drops():
+    """A same-CIK dual-class issuer (GOOGL/GOOG, BRK-A/B) shares a normalized name but keeps
+    the first-occurrence ticker; only a CROSS-CIK name collision (two issuers) abstains."""
+    raw = {
+        # same CIK 1652044, both normalize to ALPHABET -> keep first (GOOGL)
+        "0": {"cik_str": 1652044, "ticker": "GOOGL", "title": "Alphabet Inc."},
+        "1": {"cik_str": 1652044, "ticker": "GOOG", "title": "Alphabet Inc."},
+        # same CIK 1067983, both normalize to BERKSHIRE HATHAWAY -> keep first (BRK-A)
+        "2": {"cik_str": 1067983, "ticker": "BRK-A", "title": "Berkshire Hathaway Inc"},
+        "3": {"cik_str": 1067983, "ticker": "BRK-B", "title": "Berkshire Hathaway Inc"},
+        # DIFFERENT CIKs collapsing to DELTA -> ambiguous, dropped
+        "4": {"cik_str": 27904, "ticker": "DAL", "title": "Delta Corp"},
+        "5": {"cik_str": 88888, "ticker": "DEL", "title": "Delta Co"},
+    }
+    idx = build_name_to_ticker(raw)
+    assert idx["ALPHABET"] == "GOOGL"                   # first-occurrence per CIK
+    assert idx["BERKSHIRE HATHAWAY"] == "BRK-A"
+    assert "DELTA" not in idx                            # cross-CIK collision abstains
+
+
 def test_resolver_layered_order_and_near_miss_abstention():
     cusip_idx = {"02005N100": "ALLY"}
     name_idx = build_name_to_ticker({"0": {"cik_str": 1, "ticker": "AAPL", "title": "Apple Inc"}})
@@ -102,6 +122,29 @@ def test_fetch_ftd_walks_back_until_two_files(tmp_path):
     idx = build_cusip_to_symbol(files)
     assert idx["02005N100"] == "ALLY" and idx["12345X678"] == "OLD"
     assert calls[0].endswith("cnsfails202606b.zip")      # newest-first, 'b' before 'a'
+
+
+def test_fetch_ftd_empty_parse_not_cached_and_walk_back_continues(tmp_path):
+    """An empty parse (truncated zip / HTML body -> parse_ftd_zip returns []) is a fetch
+    failure: no cache file is written (no poisoning the immutable filename key) and it does
+    NOT count toward `want` — the walk-back continues to the next older file."""
+    empty_zip = _zip_bytes("SETTLEMENT DATE|CUSIP|SYMBOL\n")   # header only -> [] rows
+    good_zip = _zip_bytes(_ftd("20260520|12345X678|OLD|1|X|1"))
+    published = {
+        "https://www.sec.gov/files/data/fails-deliver-data/cnsfails202606a.zip": empty_zip,
+        "https://www.sec.gov/files/data/fails-deliver-data/cnsfails202605b.zip": good_zip,
+    }
+
+    def fake_get(url, identity, timeout):
+        return published.get(url)
+
+    files = fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 20),
+                            want=1, _http_get=fake_get)
+    assert len(files) == 1                               # the empty parse did not count
+    assert build_cusip_to_symbol(files)["12345X678"] == "OLD"  # walked back to the good file
+    # the empty-parse period's cache file was NEVER written (would poison it forever)
+    assert not (tmp_path / "cnsfails202606a.json").exists()
+    assert (tmp_path / "cnsfails202605b.json").exists()  # the good one IS cached
 
 
 def test_fetch_ftd_caches_forever_by_filename(tmp_path):

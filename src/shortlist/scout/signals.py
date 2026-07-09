@@ -606,6 +606,18 @@ class EdgarThirteenFSignal:
             self._status = (False, redact_secrets(str(e)))
             return []
 
+        # A fully-degraded resolver (FTD outage AND name-index failure -> zero entries) would
+        # abstain on EVERY CUSIP, yet still _mark_processed the quarter — permanently
+        # suppressing that quarter's candidates. Treat it as a signal error: skip the whole
+        # scan, mark nothing, retry next session. (Fakes injected in tests lack these attrs ->
+        # the `== {}` guard is False for them, so the real-resolver path alone is gated.)
+        cusip_idx = getattr(self._resolver, "cusip_to_symbol", None)
+        name_idx = getattr(self._resolver, "name_to_ticker", None)
+        if cusip_idx == {} and name_idx == {}:
+            self._status = (False, "CUSIP resolver fully degraded (0 FTD + 0 name entries); "
+                                   "skipped — retry next session")
+            return []
+
         out: list[Emission] = []
         processed = 0
         abstained = 0
@@ -639,6 +651,15 @@ class EdgarThirteenFSignal:
                                                       timeout=self.timeout, throttle=self._throttle)
                 prior_rows = tf.fetch_infotable_rows(cik, prior["accession"], self.identity,
                                                      timeout=self.timeout, throttle=self._throttle)
+                if not latest_rows or not prior_rows:
+                    # An empty parsed row list is indistinguishable from a swallowed fetch/
+                    # parse failure (unrecognized infotable member, ET.ParseError -> []), and a
+                    # real 13F-HR ALWAYS carries an infotable. If prior parses empty we'd emit
+                    # the whole current book as "new"; if latest parses empty we'd silently lose
+                    # the quarter — either way _mark_processed would freeze it. Count a fund
+                    # error, emit nothing, DO NOT mark processed (retry next session).
+                    errors += 1
+                    continue
                 new_pos = tf.new_position_diff(
                     tf.aggregate_positions(latest_rows), tf.aggregate_positions(prior_rows),
                     min_position_pct=self.min_position_pct,
@@ -646,6 +667,7 @@ class EdgarThirteenFSignal:
                 ems, abst = tf.thirteenf_emissions(
                     new_pos, resolve_fn=self._resolver.resolve, fund_name=fund_name,
                     period=latest["period"], filing_date=latest["filing_date"],
+                    fund_cik=cik, accession=latest["accession"],
                     deny_list=self.deny_list, top_n=self.top_n)
                 out.extend(ems)
                 abstained += abst

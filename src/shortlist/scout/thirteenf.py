@@ -23,11 +23,9 @@ from .models import Emission
 
 SIGNAL = "edgar:13f_new_position"
 
-# Fixed emission strengths: below the 13D/Form-4 marquee tier (weight 1.0, information up to
-# 45 days stale). A base + a conviction term scaled by the new position's within-book weight.
-_BASE = 0.45
-_W_CONV = 0.35
-_CAP = 0.80
+# Emission strength = within-book conviction, capped at 1.0 (design §1.8): a 5%-of-book new
+# position is a full-conviction bet. Below the 13D/Form-4 marquee tier only via the smaller
+# default weight the signal ships at (the information is up to 45 days stale).
 
 
 class SecThrottle:
@@ -148,9 +146,10 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
                       full_strength_pct: float = 0.05) -> list[dict]:
     """New positions (CUSIP in `latest`, absent in `prior`) that clear `min_position_pct` of
     the latest book, sorted by within-book weight descending. Each carries `weight` and a
-    `strength` = min(_CAP, base + conv·min(1, weight/full_strength_pct)). Material ADDS to
-    existing positions are out of scope (v1: new positions are the sharpest best-idea event).
-    An empty/zero-total latest book yields [] (no division by zero)."""
+    `strength` = min(1.0, weight / full_strength_pct) (design §1.8 — a `full_strength_pct`
+    position is full conviction). Material ADDS to existing positions are out of scope
+    (v1: new positions are the sharpest best-idea event). An empty/zero-total latest book
+    yields [] (no division by zero)."""
     total = sum(p["value"] for p in latest.values() if p.get("value"))
     if total <= 0:
         return []
@@ -161,8 +160,7 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
         weight = pos["value"] / total
         if weight < min_position_pct:
             continue
-        conv = min(1.0, weight / full_strength_pct) if full_strength_pct > 0 else 1.0
-        strength = min(_CAP, _BASE + _W_CONV * conv)
+        strength = min(1.0, weight / full_strength_pct) if full_strength_pct > 0 else 1.0
         out.append({"cusip": cusip, "name": pos.get("name") or "",
                     "title": pos.get("title") or "", "value": pos["value"],
                     "weight": weight, "strength": strength})
@@ -172,12 +170,15 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
 
 def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                         fund_name: str, period: str, filing_date: str,
+                        fund_cik: str | int | None = None, accession: str = "",
                         deny_list=None, top_n: int = 10) -> tuple[list[Emission], int]:
     """New-position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
     ticker (abstain on a miss — counted, never guessed), drops deny-listed + 5th-letter
     junk-suffix symbols, dedups within the filing, and caps at `top_n` KEPT names (an
     unresolved position never consumes a slot). Emissions carry `cik=None` (the CUSIP
-    resolver yields a ticker but no CIK — a stated measurement limit). Never raises."""
+    resolver yields a ticker but no *subject* CIK — a stated measurement limit); the FUND's
+    identity + filing accession ride `meta` (`fund_cik`/`fund_name`/`adsh`) as firehose join
+    keys for per-fund attribution, matching the 8-K/13D/buyback emissions. Never raises."""
     deny = {str(d).upper() for d in (deny_list or [])}
     out: list[Emission] = []
     seen: set[str] = set()
@@ -197,7 +198,10 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
               f"{pct:.1f}% of book")
         out.append(Emission(tkr, SIGNAL, pos["strength"], ev, is_discovery=True,
                             cik=None, meta={"cusip": pos["cusip"], "period": period,
-                                            "filing_date": filing_date, "weight": pos["weight"]}))
+                                            "filing_date": filing_date, "weight": pos["weight"],
+                                            "fund_cik": (str(fund_cik) if fund_cik is not None
+                                                         else None),
+                                            "fund_name": fund_name, "adsh": accession}))
         if len(out) >= top_n:
             break
     return out, abstained

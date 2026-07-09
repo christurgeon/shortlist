@@ -99,3 +99,21 @@ def test_load_never_raises_on_failure(tmp_path):
     idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 6, 28),
                              _client=_BoomClient())
     assert idx == {}
+
+
+def test_load_never_raises_on_truthy_but_malformed_payload(tmp_path):
+    """A truthy-but-malformed company_tickers.json body must degrade to {} — build_cik_to_ticker
+    is inside the never-raises contract, so unwrapped callers (daily._build_scoreboard,
+    symbology resolver) never crash the daily run."""
+    day = date(2026, 6, 28)
+    malformed = [
+        {"0": {"cik_str": None, "ticker": "AAA", "title": "A"}},    # null cik_str
+        {"0": {"cik_str": "not-an-int", "ticker": "AAA", "title": "A"}},  # non-int cik
+        [{"cik_str": 1, "ticker": "AAA", "title": "A"}],            # list-shaped (no .values)
+        {"0": {"ticker": "AAA"}},                                   # missing cik_str key
+    ]
+    for i, payload in enumerate(malformed):
+        d = tmp_path / str(i)
+        idx = load_cik_to_ticker("me@x.com", cache_dir=str(d), _today=day,
+                                 _client=_FakeClient(payload))
+        assert idx == {}
