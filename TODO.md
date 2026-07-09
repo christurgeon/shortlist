@@ -6,6 +6,33 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Two new discovery originators shipped: edgar_13f + edgar_buyback — deploy + backfill pending (2026-07-09)
+
+Shipped (commits `f698bf6..c871487`, full suite 1911 green): **`edgar_13f`** marquee-fund
+new-position cloning (7 live-verified fund CIKs, CUSIP→ticker via SEC FTD files +
+name fallback in `scout/cusip_map.py`; DEFENSIBLE prior, **ON at weight 1.0**) and
+**`edgar_buyback`** 8-K repurchase-authorization discovery (EFTS phrase query, measured
+phrase precision **29/30 ≈ 97%**; DEFENSIBLE prior but **OFF at 0.5** on the 8-K
+measure-first precedent). Design spec (local, gitignored):
+`docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md`. Post-merge
+multi-agent review found 16 defects; the 9 kept correctness/cleanup findings are fixed in
+`c871487`. Follow-ups, by urgency:
+
+1. **Deploy**: git pull → `install_opt_shortlist.sh` → restart `shortlist-bot`; then watch
+   the first 22:30 UTC run for the two new `available()` lines + `edgar:13f_new_position`
+   firehose events. Note the 13F burst behavior: first live sessions process 3 filings/day
+   (carry-over) until all 7 funds' latest 13F-HRs are seen; next natural burst mid-Aug.
+2. **Buyback backfill** (the only path to enabling it): `shortlist-scout backfill --signal
+   buyback` + `validate` against `preregister/edgar_buyback.yaml` (POSITIVE expected, K=3m,
+   2022–2025). KILL-shaped ⇒ stays off (the edgar_8k precedent).
+3. **13F deferred**: PiT CUSIP symbology for a backfill cohort (live FTD files leak
+   post-event symbols); material-adds/exits; per-fund attribution is now possible from the
+   firehose (`meta.fund_cik`/`adsh` added in `c871487`).
+4. Commits are **local-only** — push (and PR if desired) pending operator action.
+
+**Status:** open — item 1 is the standard deploy flow; 2 is a one-command measurement gate;
+3 is future work.
+
 ## Deploy to /opt/shortlist done (code side) — bot restart + Telegram smoke pending (2026-07-09)
 
 The pending deploy carrying #128 (/explain), #130 (VFLEX non-registrant skip), and #132
