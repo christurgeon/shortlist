@@ -4,6 +4,8 @@ from typing import Optional
 
 from .models import Coverage, ScoreCard
 
+# `risk` is deliberately omitted: it is a composite-only tilt excluded from
+# confidence/scored by design, so its absence is never a data gap worth flagging.
 _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
 # Single source of truth for the per-provider fetch statuses that signal a coverage

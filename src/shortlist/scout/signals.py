@@ -382,11 +382,20 @@ class EdgarActivist13DSignal:
 
     def scan(self, session: date) -> list[Emission]:
         from .cik_tickers import load_cik_to_ticker, resolve_ticker
-        from .edgar_index import (activist_stakes_from_records,
-                                  fetch_recent_activist_records)
+        from .edgar_index import activist_stakes_from_records, fetch_recent_activist_records
         try:
             if self._resolver is None:
                 self._resolver = load_cik_to_ticker(self.identity, cache_dir=self.cache_dir)
+            if self._resolver == {}:
+                # An empty CIK->ticker resolver would abstain on EVERY subject (no
+                # display_names fallback), so a broken resolver reads as a quiet day and
+                # filings age out of the walk-back window unemitted. Mirror the buyback
+                # degraded guard: skip LOUDLY, drop the memoized resolver so "retry next
+                # session" is real.
+                self._resolver = None
+                self._status = (False,
+                                "CIK→ticker resolver empty; skipped — retry next session")
+                return []
             resolver = self._resolver
 
             def resolve(cik):
@@ -435,17 +444,16 @@ class FinraShortInterestSignal:
         self.cache_dir = cache_dir
         self.timeout = timeout
         self.last_settlement = last_settlement
-        self._params = dict(min_jump_pct=min_jump_pct, min_dtc=min_dtc, max_dtc=max_dtc,
-                            max_prior_dtc=max_prior_dtc,
-                            min_avg_daily_volume=min_avg_daily_volume,
-                            min_prev_short_shares=min_prev_short_shares,
-                            deny_list=list(deny_list or []), top_n=top_n)
+        self._params = {"min_jump_pct": min_jump_pct, "min_dtc": min_dtc, "max_dtc": max_dtc,
+                            "max_prior_dtc": max_prior_dtc,
+                            "min_avg_daily_volume": min_avg_daily_volume,
+                            "min_prev_short_shares": min_prev_short_shares,
+                            "deny_list": list(deny_list or []), "top_n": top_n}
         self.settlement: str | None = None   # discovered cycle (daily.py persists it)
         self._status = (False, "not run")
 
     def scan(self, session: date) -> list[Emission]:
-        from .short_interest import (fetch_short_interest_rows,
-                                     short_interest_jumps_from_rows)
+        from .short_interest import fetch_short_interest_rows, short_interest_jumps_from_rows
         try:
             rows, settlement = fetch_short_interest_rows(self.cache_dir, self.timeout)
         except Exception as e:  # noqa: BLE001 — degrade, never crash the run
@@ -511,6 +519,16 @@ class EdgarEightKSignal:
             if self._resolver is None:
                 self._resolver = load_cik_to_ticker(self.identity,
                                                     cache_dir=self.resolver_cache_dir)
+            if self._resolver == {}:
+                # An empty CIK->ticker resolver would abstain on EVERY row (no display_names
+                # fallback), yet a naive run would still record new_accessions and permanently
+                # suppress those filings. Mirror the buyback degraded guard: skip, record
+                # nothing, drop the memoized resolver so "retry next session" is real.
+                self._resolver = None
+                self.new_accessions = []
+                self._status = (False,
+                                "CIK→ticker resolver empty; skipped — retry next session")
+                return []
             resolver = self._resolver
             rows: list[dict] = []
             failed: list[str] = []
@@ -624,6 +642,7 @@ class EdgarThirteenFSignal:
         processed = 0
         abstained = 0
         errors = 0
+        last_error: str | None = None
         capped = False
         skipped: list[str] = []
         for fund in self.funds:
@@ -701,11 +720,13 @@ class EdgarThirteenFSignal:
                 processed += 1
             except Exception as e:  # noqa: BLE001 — isolate one bad fund; keep the rest
                 errors += 1
-                self._last_error = redact_secrets(str(e))
+                last_error = redact_secrets(str(e))
                 continue
 
         tail = f", {abstained} unresolved CUSIPs" if abstained else ""
         tail += f", {errors} fund errors" if errors else ""
+        if errors and last_error:
+            tail += f" (last: {last_error})"    # surfaced, not dead state
         tail += "; filings-cap hit (carry-over)" if capped else ""
         tail += ("; " + "; ".join(skipped)) if skipped else ""   # loud, named skip notes
         self._status = (errors == 0,

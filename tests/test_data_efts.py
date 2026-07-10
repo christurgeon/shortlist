@@ -3,7 +3,6 @@
 fixture idiom."""
 import json
 from datetime import date
-from pathlib import Path
 
 from shortlist.data.efts import (EFTS_LAG_DAYS, fetch_eightk_day,
                                  fetch_eightk_range, fetch_eightk_window,

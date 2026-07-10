@@ -10,8 +10,18 @@ import enum
 from typing import Protocol
 
 from .html import HtmlBuilder
-from .theme import (FLAG_DESCRIPTIONS, GATE_DESCRIPTIONS, SUB_LABELS, SUBS, describe_code,
-                    rgb_hex, score_to_rgb, stance_emoji, stance_to_rgb, text_on)
+from .theme import (
+    FLAG_DESCRIPTIONS,
+    GATE_DESCRIPTIONS,
+    SUB_LABELS,
+    SUBS,
+    describe_code,
+    rgb_hex,
+    score_to_rgb,
+    stance_emoji,
+    stance_to_rgb,
+    text_on,
+)
 from .viewmodel import ReportVM
 
 
@@ -390,11 +400,16 @@ class _MacroHeader:
 
     def _line(self, mc):
         bits = [f"Regime: {mc.regime}"]
-        if mc.hy_oas is not None:   bits.append(f"HY OAS {mc.hy_oas:.1f}%")
-        if mc.t10y2y is not None:   bits.append(f"2s10s {mc.t10y2y:+.2f}")
-        if mc.vix is not None:      bits.append(f"VIX {mc.vix:.0f}")
-        if mc.dgs10 is not None:    bits.append(f"10y {mc.dgs10:.1f}%")
-        if mc.fedfunds is not None: bits.append(f"FFR {mc.fedfunds:.1f}%")
+        if mc.hy_oas is not None:
+            bits.append(f"HY OAS {mc.hy_oas:.1f}%")
+        if mc.t10y2y is not None:
+            bits.append(f"2s10s {mc.t10y2y:+.2f}")
+        if mc.vix is not None:
+            bits.append(f"VIX {mc.vix:.0f}")
+        if mc.dgs10 is not None:
+            bits.append(f"10y {mc.dgs10:.1f}%")
+        if mc.fedfunds is not None:
+            bits.append(f"FFR {mc.fedfunds:.1f}%")
         return " · ".join(bits)
 
     def render_html(self, vm, h):

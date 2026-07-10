@@ -141,7 +141,27 @@ def main(argv: list[str] | None = None) -> int:
 
     load_env()  # pick up API keys from a .env file if present
 
-    config = yaml.safe_load(Path(args.config).read_text())
+    # Guarded config load: a missing file, empty YAML (None), or non-mapping top
+    # level would otherwise surface as a raw traceback deep inside scoring. This
+    # is deliberately NOT schema validation — just the three load-shape failures.
+    cfg_path = Path(args.config)
+    try:
+        raw = cfg_path.read_text()
+    except OSError as e:
+        print(f"shortlist: cannot read config file {cfg_path}: {e}", file=sys.stderr)
+        return 2
+    try:
+        config = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        print(f"shortlist: invalid YAML in config file {cfg_path}: {e}", file=sys.stderr)
+        return 2
+    if config is None:
+        print(f"shortlist: config file {cfg_path} is empty", file=sys.stderr)
+        return 2
+    if not isinstance(config, dict):
+        print(f"shortlist: config file {cfg_path} must be a YAML mapping, "
+              f"got {type(config).__name__}", file=sys.stderr)
+        return 2
 
     from .cache import configure_default_cache
     cache_cfg = config.get("cache", {})
@@ -158,12 +178,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.demo:
         tickers = ["GEV", "LMT", "SCHW", "TMO", "GOOGL"]
     else:
-        tickers = [t.strip().upper() for t in args.tickers.split(",")]
+        # Strip whitespace and drop empties so "AAPL, MSFT," never sends "" or
+        # " MSFT" into the harness.
+        tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
+        if not tickers:
+            ap.error(f"--tickers {args.tickers!r} contains no ticker symbols")
 
     if args.demo:
         sources = ["mock"]
     elif args.provider:
-        sources = args.provider.split(",")
+        sources = [s.strip() for s in args.provider.split(",") if s.strip()]
+        if not sources:
+            # an all-empty value (e.g. a misexpanded shell variable) must fail
+            # loudly — an empty source list would "succeed" with all-null scores
+            ap.error(f"--provider {args.provider!r} contains no source names")
     else:
         sources = config.get("harness_sources",
                              ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
@@ -180,7 +208,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.csv:
         _write_csv(cards, args.csv)
-        print(f"wrote {args.csv}")
+        # stderr, NOT stdout — with --json this line would corrupt the JSON stream.
+        print(f"wrote {args.csv}", file=sys.stderr)
     if args.json:
         print(json.dumps([_card_dict(c, research_paths) for c in cards], indent=2))
     else:

@@ -50,6 +50,22 @@ def test_save_unlinks_legacy_twin_for_same_day(tmp_path):
     assert captured_days("LMT", tmp_path) == ["2026-07-07"]   # counted once
 
 
+def test_save_failure_cleans_up_temp_file(tmp_path, monkeypatch):
+    # A failed gzip write must propagate the error AND not leak the .tmp file.
+    import pytest
+
+    def _boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("shortlist.data.store.gzip.open", _boom)
+    with pytest.raises(OSError, match="disk full"):
+        save(_snap(), tmp_path)
+    tdir = tmp_path / "LMT"
+    leftovers = [p.name for p in tdir.iterdir()] if tdir.is_dir() else []
+    assert not any(n.endswith(".tmp") for n in leftovers), leftovers
+    assert not (tdir / "2026-07-07.json.gz").exists()   # nothing half-written
+
+
 def test_latest_prefers_gz_when_both_days_present(tmp_path):
     tdir = tmp_path / "LMT"
     tdir.mkdir()

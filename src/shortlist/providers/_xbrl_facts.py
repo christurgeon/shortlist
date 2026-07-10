@@ -22,9 +22,20 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
+# Consecutive-fiscal-year span window: admits 52/53-week fiscal years; excludes
+# quarters/half-years (transition/stub-period annuals are rare and dropped).
+# Single-sourced in stats.py (which applies the same window to instant
+# balance-sheet dates for asset_growth/accruals).
+from ..stats import _FY_MAX_DAYS as _MAX_PERIOD_DAYS
+from ..stats import _FY_MIN_DAYS as _MIN_PERIOD_DAYS
+from ._gaap_tags import (
+    DEBT_ISSUANCE_TAGS,
+    DEBT_REPAYMENT_TAGS,
+    DIVIDEND_TAGS,
+    REPURCHASE_TAGS,
+)
+
 _ANNUAL_FORMS = {"10-K", "10-K/A", "20-F", "20-F/A"}
-_MIN_PERIOD_DAYS = 350   # admits 52/53-week fiscal years; excludes quarters/half-years
-_MAX_PERIOD_DAYS = 380   # (transition/stub-period annuals are rare and dropped)
 
 
 def _d(iso: str) -> date:
@@ -109,23 +120,15 @@ WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap,
 ASSETS = ["Assets"]   # us-gaap, instant balance-sheet total; feeds asset_growth + accruals (PREDICTIVE_SIGNALS §3)
 # Cash-flow financing FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS §5).
 # Raw us-gaap, ANNUAL flow, POSITIVE magnitudes (companyfacts reports PaymentsOf* /
-# RepaymentsOf* as positive outflows). MUST mirror the edgartools families in
-# _edgar_facts.py — edit both. Verified live (AAPL/MSFT/LMT). Unlike the priority-with-
-# fallback aliases elsewhere, these are SUMMED per fiscal end (common + preferred, etc.)
-# via sum_family, since a filer may tag several distinct members in the same year.
-DIVIDENDS_PAID = ["PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
-                  "PaymentsOfDividendsPreferredStockAndPreferenceStock",
-                  "PaymentsOfDividendsMinorityInterest"]
-REPURCHASES = ["PaymentsForRepurchaseOfCommonStock", "PaymentsForRepurchaseOfEquity",
-               "PaymentsForRepurchaseOfPreferredStockAndPreferenceStock",
-               "PaymentsForRepurchaseOfRedeemablePreferredStock"]
-DEBT_REPAYMENTS = ["RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
-                   "RepaymentsOfDebtMaturingInMoreThanThreeMonths",
-                   "RepaymentsOfLongTermDebtAndCapitalSecurities",
-                   "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable"]
-DEBT_ISSUANCE = ["ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
-                 "ProceedsFromIssuanceOfSeniorLongTermDebt",
-                 "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable"]
+# RepaymentsOf* as positive outflows). Single-sourced in _gaap_tags.py (shared with
+# the edgartools extraction in _edgar_facts.py — edit THERE). Unlike the priority-
+# with-fallback aliases elsewhere, these are SUMMED per fiscal end (common +
+# preferred, etc.) via sum_family, since a filer may tag several distinct members
+# in the same year.
+DIVIDENDS_PAID = list(DIVIDEND_TAGS)
+REPURCHASES = list(REPURCHASE_TAGS)
+DEBT_REPAYMENTS = list(DEBT_REPAYMENT_TAGS)
+DEBT_ISSUANCE = list(DEBT_ISSUANCE_TAGS)
 
 
 # ---------------------------------------------------------------------------

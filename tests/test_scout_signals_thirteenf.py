@@ -114,7 +114,7 @@ def test_thirteenf_emissions_top_n_and_abstention_and_junk_drop():
     assert abst == 1                                 # C3 abstained
     assert ems[0].signal == "edgar:13f_new_position"
     assert ems[0].cik is None                        # CUSIP resolver yields no CIK (stated limit)
-    assert "Fund X new 13F position (Q1 2026, filed 2026-05-15): 10.0% of book" == ems[0].evidence
+    assert ems[0].evidence == "Fund X new 13F position (Q1 2026, filed 2026-05-15): 10.0% of book"
     # top_n caps KEPT names; an unresolved position never consumes a slot (break before C3).
     ems1, abst1 = thirteenf_emissions(positions, resolve_fn=resolve, fund_name="Fund X",
                                       period="2026-03-31", filing_date="2026-05-15", top_n=1)

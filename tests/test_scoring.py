@@ -645,6 +645,56 @@ def test_score_carries_flags_and_passed_unaffected():
     assert card.passed is True                                # advisory only
 
 
+def test_flag_blocks_honor_enabled_false():
+    # Uniform `enabled:` handling (_flag_block): `enabled: false` under any soft-
+    # flag block must behave exactly like the block being absent, while the same
+    # block without the key (or with `enabled: true`) still fires.
+    cases = [
+        ("crowded_short", _crowded_metrics(),
+         {"min_short_pct_outstanding": 0.10, "min_days_to_cover": 5.0,
+          "require_rising": True, "max_staleness_days": 35}),
+        ("insider_cluster_buy", StockMetrics(ticker="X", insider_distinct_buyers=3),
+         {"min_distinct": 3}),
+        ("planned_sale", StockMetrics(ticker="X", insider_planned_sell_value=100.0),
+         {"min_value": 1}),
+        ("dilution", StockMetrics(ticker="X", share_count_cagr=0.05),
+         {"min_share_cagr": 0.03}),
+        ("cash_burn", StockMetrics(ticker="X", fcf_positive=False),
+         {"enabled": True}),
+        ("social_hype", StockMetrics(ticker="X", social_mentions=100),
+         {"min_mentions": 50, "max_staleness_days": 2}),
+        ("news_spike", StockMetrics(ticker="X", news_count_7d=20),
+         {"min_count_7d": 10, "max_staleness_days": 3}),
+        ("filing_text_change", StockMetrics(ticker="X", filing_text_similarity=0.5),
+         {"max_similarity": 0.7}),
+    ]
+    for name, m, block in cases:
+        assert name in check_flags(m, {name: dict(block)}), f"{name} should fire"
+        assert name not in check_flags(m, {name: {**block, "enabled": False}}), \
+            f"{name} must honor enabled: false"
+        assert name not in check_flags(m, {}), f"{name} absent-block baseline"
+
+
+def test_value_trap_honors_enabled_false():
+    cfg = dict(CONFIG)
+    cfg["flags"] = {"value_trap": {**VT_CFG["value_trap"], "enabled": False}}
+    card = score(_value_trap_metrics(), cfg)
+    assert "value_trap" not in card.flags
+
+
+def test_risk_off_regime_honors_enabled_false():
+    from shortlist.data.macro import MacroContext
+    risk_off = MacroContext("2026-06-01", 4.45, -0.2, 5.4, 27.0, 3.64, "risk-off", True)
+    m = StockMetrics(ticker="LEV", market_cap=10e9, net_debt_to_ebitda=4.5)
+    block = {"max_net_debt_ebitda": 3.0, "max_debt_to_equity": 1.5,
+             "cyclical_buckets": []}
+    cfg = dict(CONFIG)
+    cfg["flags"] = {"risk_off_regime": dict(block)}
+    assert "risk_off_regime" in score(m, cfg, macro=risk_off).flags
+    cfg["flags"] = {"risk_off_regime": {**block, "enabled": False}}
+    assert "risk_off_regime" not in score(m, cfg, macro=risk_off).flags
+
+
 # --- Risk sub-score (7th axis) -------------------------------------------
 
 import copy

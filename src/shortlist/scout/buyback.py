@@ -22,7 +22,7 @@ authorization so the tests can pin the pure filter/resolution contract.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 from .eightk import _junk_suffix
 from .models import Emission

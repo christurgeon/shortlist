@@ -1,4 +1,4 @@
-from shortlist.scout.bot import parse_command, allowed_message, Command
+from shortlist.scout.bot import parse_command, allowed_message
 
 
 def test_parse_screen_splits_comma_and_space_uppercases_dedupes():

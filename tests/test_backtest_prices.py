@@ -94,3 +94,64 @@ def test_nominal_close_asof_uses_unadjusted_series():
     assert h.nominal_close_asof(date(2021, 1, 6)) == 101.0
     assert h.close_asof(date(2021, 1, 6)) == 91.0   # adjusted path unchanged
     assert h.nominal_price_on(date(2021, 1, 5)) == 101.0
+
+
+# --- fetch_history cache discipline: never cache soft failures -----------------
+
+import asyncio
+
+from shortlist.backtest.prices import fetch_history
+
+
+class _FakeResp:
+    def __init__(self, payload): self._p = payload
+    def raise_for_status(self): pass
+    def json(self): return self._p
+
+
+class _FakeClient:
+    def __init__(self, payload): self.payload = payload; self.calls = 0
+    async def get(self, url, *a, **k):
+        self.calls += 1
+        return _FakeResp(self.payload)
+
+
+def test_fetch_history_day_caches_definitive_empty_payload(tmp_path, capsys):
+    """A well-formed chart envelope with no rows is Yahoo's DEFINITIVE answer for a
+    dead/unknown symbol: it IS day-cached (or every re-run re-fetches dead tickers
+    and baits the WAF), with a stderr warning naming the ticker."""
+    client = _FakeClient({"chart": {"result": None, "error": {"code": "Not Found"}}})
+    h = asyncio.run(fetch_history("GONE", client,
+                                  cache_dir=str(tmp_path), today="2026-07-10"))
+    assert h.dates == [] and h.closes == []
+    assert len(list(tmp_path.iterdir())) == 1        # definitive miss cached for the day
+    assert "GONE" in capsys.readouterr().err          # stderr warning names the ticker
+    asyncio.run(fetch_history("GONE", client,
+                              cache_dir=str(tmp_path), today="2026-07-10"))
+    assert client.calls == 1                          # re-run served from the day-cache
+
+
+def test_fetch_history_never_caches_malformed_payload(tmp_path, capsys):
+    """A 200 whose body is NOT a chart envelope is a soft failure: never cached
+    (caching it would silently drop the ticker for the rest of the day)."""
+    client = _FakeClient({"unexpected": "shape"})
+    h = asyncio.run(fetch_history("GONE", client,
+                                  cache_dir=str(tmp_path), today="2026-07-10"))
+    assert h.dates == [] and h.closes == []
+    assert list(tmp_path.iterdir()) == []            # no cache file written
+    assert "GONE" in capsys.readouterr().err
+    asyncio.run(fetch_history("GONE", client,
+                              cache_dir=str(tmp_path), today="2026-07-10"))
+    assert client.calls == 2                          # the soft failure was not cached
+
+
+def test_fetch_history_caches_good_payload(tmp_path):
+    raw = _chart([(86400, 100.0), (172800, 101.0)])
+    client = _FakeClient(raw)
+    h1 = asyncio.run(fetch_history("AAA", client,
+                                   cache_dir=str(tmp_path), today="2026-07-10"))
+    h2 = asyncio.run(fetch_history("AAA", client,
+                                   cache_dir=str(tmp_path), today="2026-07-10"))
+    assert h1.closes == [100.0, 101.0] == h2.closes
+    assert client.calls == 1                          # second run served from disk
+    assert (tmp_path / "AAA-fullhist-2026-07-10.json").exists()

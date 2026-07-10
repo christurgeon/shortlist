@@ -5,6 +5,7 @@ from shortlist.research.assess import _insider_line, _build_user_prompt
 from shortlist.research.models import FilingBundle, FilingText
 from shortlist.data.models import TickerSnapshot, Insider, InsiderTxn
 from shortlist.data.bridge import snapshot_to_metrics
+import contextlib
 
 
 CFG_ON = {"enabled": True, "max_items": 6}
@@ -132,10 +133,8 @@ def test_assess_threads_card_metrics_insider_recent_into_prompt(monkeypatch):
     class _Card:
         metrics = StockMetrics(ticker="AAPL", insider_recent=_TRADES)
 
-    try:
+    with contextlib.suppress(Exception):
         A.assess(_Card(), _bundle(), {"research": {"insider_detail": CFG_ON}}, runner=runner)
-    except Exception:
-        pass
     assert captured.get("insider_recent") == _TRADES
 
 

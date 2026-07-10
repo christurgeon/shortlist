@@ -183,3 +183,61 @@ def test_delete_webhook_drops_pending_and_chat_action_carries_chat_id():
     joined = "".join(b.decode() for b in bodies)
     assert "drop_pending_updates" in joined          # backlog cleared server-side
     assert "typing" in joined and "42" in joined      # chat_action carries chat_id (required)
+
+
+def test_send_message_chunks_by_utf16_units_for_astral_emoji():
+    """Telegram's 4096 cap counts UTF-16 code units; astral-plane emoji weigh 2. A
+    code-point chunker would pack 4096 emoji (8192 UTF-16 units) into one chunk -> 400."""
+    import json as _json
+    from shortlist.scout.notify import _MSG_CAP
+    bodies = []
+    n = TelegramNotifier("T", "42", client=_body_client(bodies))
+    text = "\N{ROCKET}" * 3000                      # 3000 code points = 6000 UTF-16 units
+    assert n.send_message(text) is True
+    assert len(bodies) == 2                          # 2048 + 952 emoji, not one 3000-chunk
+    total = ""
+    for b in bodies:
+        chunk = _json.loads(b.decode())["text"]
+        assert len(chunk.encode("utf-16-le")) // 2 <= _MSG_CAP
+        total += chunk
+    assert total == text                             # content preserved, no split surrogate
+
+
+def test_send_message_ascii_chunking_unchanged():
+    # For ASCII (1 UTF-16 unit per char) the chunk boundaries are byte-identical to the
+    # old code-point split: 4096 + 4096 + 808.
+    import json as _json
+    bodies = []
+    n = TelegramNotifier("T", "42", client=_body_client(bodies))
+    assert n.send_message("x" * 9000) is True
+    assert [len(_json.loads(b.decode())["text"]) for b in bodies] == [4096, 4096, 808]
+
+
+def test_non_200_logs_one_stderr_line_with_redacted_body(capsys):
+    def handler(request):
+        return httpx.Response(400, json={"ok": False,
+                                         "description": "Bad Request: see ?token=SECRET"})
+    n = TelegramNotifier("T", "42",
+                         client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert n.send_message("hi") is False
+    err = capsys.readouterr().err
+    assert "telegram sendMessage failed: HTTP 400" in err
+    assert "SECRET" not in err                       # redact_secrets applied to the body
+    assert len(err.strip().splitlines()) == 1        # one line, not per-retry spam
+
+
+def test_send_message_reuses_one_client_across_chunks(monkeypatch):
+    """A multi-chunk message must not open a fresh httpx.Client per chunk."""
+    import shortlist.scout.notify as notify
+    created = []
+    real_client = httpx.Client
+
+    def counting_client(*a, **k):
+        created.append(1)
+        k["transport"] = httpx.MockTransport(lambda r: httpx.Response(200, json={"ok": True}))
+        return real_client(*a, **k)
+
+    monkeypatch.setattr(notify.httpx, "Client", counting_client)
+    n = TelegramNotifier("T", "42")                  # no injected client
+    assert n.send_message("x" * 9000) is True        # 3 chunks
+    assert len(created) == 1                         # one client for the whole message

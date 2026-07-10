@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from shortlist.portfolio import Holding, load_holdings
 
@@ -72,7 +71,7 @@ def test_utf8_bom_handled(tmp_path):
     assert warnings == []
 
 
-from shortlist.portfolio import Position, PortfolioSummary, summarize
+from shortlist.portfolio import summarize
 
 
 class _Card:

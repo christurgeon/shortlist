@@ -77,7 +77,7 @@ def last_traded_close(dates: list, closes: list, cutoff: date) -> Optional[float
         return None
     best_d: Optional[date] = None
     best_c: Optional[float] = None
-    for d, c in zip(dates, closes):
+    for d, c in zip(dates, closes, strict=False):
         if d is None or c is None or d > cutoff:
             continue
         if best_d is None or d > best_d:

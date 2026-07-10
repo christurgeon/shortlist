@@ -1,6 +1,6 @@
 from datetime import date
 from shortlist.scout.models import Emission
-from shortlist.scout.firehose import CohortEvent, cohort_events_from_emissions
+from shortlist.scout.firehose import cohort_events_from_emissions
 
 
 def test_builder_maps_every_emission_presorter():

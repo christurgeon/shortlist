@@ -12,7 +12,6 @@ from shortlist.backtest.signals import XbrlSignalSource
 from shortlist.backtest.engine import collect_observations, observation_grid
 from shortlist.backtest.metrics import quantile_spread
 from shortlist.backtest.xbrl import read_companyfacts_cache, _facts_cache_path
-from shortlist.backtest.prices import PriceHistory
 
 # Reuse the established XBRL fixtures (sibling test module; pytest prepend-import).
 from test_xbrl_signal import _facts_for, _price_history

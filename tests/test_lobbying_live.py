@@ -4,9 +4,12 @@ import os
 import pytest
 from shortlist.data.sources import LobbyingSource
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
     os.environ.get("SHORTLIST_LIVE") != "1",
-    reason="set SHORTLIST_LIVE=1 to run network-bound LDA tests")
+    reason="set SHORTLIST_LIVE=1 to run network-bound LDA tests"),
+]
 
 
 def _fetch(ticker):

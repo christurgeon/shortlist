@@ -5,8 +5,11 @@ import os
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("SEC_IDENTITY"), reason="needs SEC_IDENTITY + edgar extra")
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        not os.getenv("SEC_IDENTITY"), reason="needs SEC_IDENTITY + edgar extra"),
+]
 
 
 def test_fetch_proxy_aapl_populates_structured_fields():

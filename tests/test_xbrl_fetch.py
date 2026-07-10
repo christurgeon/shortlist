@@ -69,3 +69,16 @@ def test_fetch_companyfacts_negative_caches_ifrs_only_filer(tmp_path):
         "0000000001", client, cache_dir=str(tmp_path), month="2026-06"))
     assert r1 is None and r2 is None
     assert client.calls == 1   # negative marker served from disk on the second call
+
+
+from shortlist.backtest.xbrl import fetch_cik_index
+
+def test_fetch_cik_index_shares_the_raw_tickers_cache(tmp_path):
+    """fetch_cik_index is fetch_company_tickers_raw + build_cik_index — same cache
+    file/keys, one upstream call, subsequent calls served from disk."""
+    client = _FakeClient(_RAW)
+    idx1 = asyncio.run(fetch_cik_index(client, cache_dir=str(tmp_path), month="2026-06"))
+    idx2 = asyncio.run(fetch_cik_index(client, cache_dir=str(tmp_path), month="2026-06"))
+    assert idx1["AAPL"] == "0000320193" and idx2 == idx1
+    assert client.calls == 1
+    assert (tmp_path / "company_tickers-2026-06.json").exists()

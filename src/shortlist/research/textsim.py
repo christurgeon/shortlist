@@ -64,13 +64,6 @@ def cosine_similarity(current: str, prior: str) -> Optional[float]:
     return min(1.0, dot / (norm_a * norm_b))
 
 
-def section_similarity(current: str, prior: str) -> Optional[float]:
-    """Public alias for the per-section similarity. Kept distinct from
-    cosine_similarity so the metric could later switch to Jaccard / SequenceMatcher
-    without touching callers."""
-    return cosine_similarity(current, prior)
-
-
 def combined_similarity(
     cur_risk: str, prior_risk: str, cur_mda: str, prior_mda: str
 ) -> Optional[float]:

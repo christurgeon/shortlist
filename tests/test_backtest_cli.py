@@ -159,3 +159,88 @@ def test_main_collinearity_emitted_for_momentum_source(monkeypatch, capsys):
     assert rc == 0
     captured = capsys.readouterr()
     assert "Leg collinearity" in captured.err
+
+
+# --- guarded config / date / fit-horizon parsing (hardening round 1) -----------
+
+def test_main_rejects_missing_config(tmp_path, capsys):
+    from shortlist.backtest.cli import main
+    rc = main(["--tickers", "AAPL", "--config", str(tmp_path / "nope.yaml")])
+    assert rc == 2
+    assert "nope.yaml" in capsys.readouterr().err
+
+
+def test_main_rejects_empty_yaml_config(tmp_path, capsys):
+    from shortlist.backtest.cli import main
+    cfg = tmp_path / "empty.yaml"
+    cfg.write_text("")           # yaml.safe_load -> None
+    rc = main(["--tickers", "AAPL", "--config", str(cfg)])
+    assert rc == 2
+    assert "empty.yaml" in capsys.readouterr().err
+
+
+def test_main_rejects_config_missing_thresholds(tmp_path, capsys):
+    from shortlist.backtest.cli import main
+    cfg = tmp_path / "partial.yaml"
+    cfg.write_text("weights: {}\n")   # no 'thresholds'
+    rc = main(["--tickers", "AAPL", "--config", str(cfg)])
+    assert rc == 2
+    assert "thresholds" in capsys.readouterr().err
+
+
+def test_main_accepts_thresholds_only_config(tmp_path, capsys, monkeypatch):
+    # 'weights' is only read by the --fit path (which has its own guard); a
+    # thresholds-only config must pass validation for plain IC-measurement runs.
+    import shortlist.backtest.cli as cli
+    from shortlist.backtest.prices import PriceHistory
+
+    async def _no_histories(tickers, cache_dir, today):
+        return {}, PriceHistory("SPY", [], [], nominal_closes=[])
+
+    monkeypatch.setattr(cli, "_load_histories", _no_histories)
+    cfg = tmp_path / "thresholds_only.yaml"
+    cfg.write_text("thresholds: {}\n")
+    rc = cli.main(["--tickers", "AAPL", "--config", str(cfg)])
+    err = capsys.readouterr().err
+    # past config validation: fails later on (stubbed-empty) price data, not on config
+    assert rc == 1
+    assert "no price history" in err
+
+
+def test_main_rejects_invalid_yaml_config(tmp_path, capsys):
+    from shortlist.backtest.cli import main
+    cfg = tmp_path / "broken.yaml"
+    cfg.write_text("thresholds: [unclosed\n")
+    rc = main(["--tickers", "AAPL", "--config", str(cfg)])
+    assert rc == 2
+    assert "broken.yaml" in capsys.readouterr().err
+
+
+def test_main_rejects_malformed_start_date(capsys):
+    from shortlist.backtest.cli import main
+    rc = main(["--tickers", "AAPL", "--start", "not-a-date"])
+    assert rc == 2
+    assert "--start" in capsys.readouterr().err
+
+
+def test_main_rejects_malformed_end_date(capsys):
+    from shortlist.backtest.cli import main
+    rc = main(["--tickers", "AAPL", "--end", "2026-13-99"])
+    assert rc == 2
+    assert "--end" in capsys.readouterr().err
+
+
+def test_fit_horizon_zero_rejected(capsys):
+    # horizon 0 would spin observation_grid forever (_add_months(cur, 0) never
+    # advances) — the arg check must fire before ANY work, without SEC_IDENTITY.
+    from shortlist.backtest.cli import main
+    rc = main(["--source", "xbrl", "--fit", "--fit-horizon", "0"])
+    assert rc == 2
+    assert "--fit-horizon" in capsys.readouterr().err
+
+
+def test_fit_horizon_negative_rejected(capsys):
+    from shortlist.backtest.cli import main
+    rc = main(["--source", "xbrl", "--fit", "--fit-horizon", "-3"])
+    assert rc == 2
+    assert "--fit-horizon" in capsys.readouterr().err

@@ -6,9 +6,12 @@ import pytest
 
 from shortlist.env import load_env
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
     os.environ.get("SHORTLIST_LIVE") != "1",
-    reason="set SHORTLIST_LIVE=1 to run network-bound Finnhub news tests")
+    reason="set SHORTLIST_LIVE=1 to run network-bound Finnhub news tests"),
+]
 
 
 def test_aapl_has_recent_news():

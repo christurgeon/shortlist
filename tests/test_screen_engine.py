@@ -29,6 +29,71 @@ def test_main_demo_runs(capsys):
     assert '"composite"' in out
 
 
+def test_csv_confirmation_goes_to_stderr_not_stdout(capsys, tmp_path):
+    # "wrote <path>" on stdout would corrupt the --json stream.
+    import json as _json
+    csv_path = tmp_path / "out.csv"
+    rc = main(["--demo", "--json", "--csv", str(csv_path)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    _json.loads(captured.out)                      # stdout is pure JSON
+    assert "wrote" not in captured.out
+    assert f"wrote {csv_path}" in captured.err
+    assert csv_path.exists()
+
+
+def test_ticker_and_provider_parsing_strips_and_drops_empties(monkeypatch):
+    from shortlist import screen
+    seen = {}
+
+    def fake_run_harness(tickers, sources, config, macro=None):
+        seen["tickers"], seen["sources"] = tickers, sources
+        return []
+
+    monkeypatch.setattr(screen, "run_harness", fake_run_harness)
+    monkeypatch.setattr("shortlist.data.macro.fetch_macro", lambda config: None)
+    rc = main(["--tickers", " aapl, ,msft ,", "--provider", " mock , mock ,",
+               "--json", "--no-cache"])
+    assert rc == 0
+    assert seen["tickers"] == ["AAPL", "MSFT"]     # stripped, uppercased, empties dropped
+    assert seen["sources"] == ["mock", "mock"]     # stripped, empties dropped
+
+
+def test_all_empty_provider_or_tickers_fails_loudly():
+    # An ALL-empty value (misexpanded shell var) must be a loud argparse error —
+    # sources=[] would otherwise "succeed" with a plausible all-null screen.
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        main(["--tickers", "AAPL", "--provider", " , ", "--json", "--no-cache"])
+    assert e.value.code == 2
+    with pytest.raises(SystemExit) as e:
+        main(["--tickers", " , ", "--json", "--no-cache"])
+    assert e.value.code == 2
+
+
+def test_missing_config_file_exits_2_with_message(capsys, tmp_path):
+    rc = main(["--demo", "--config", str(tmp_path / "nope.yaml")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "cannot read config file" in err and "nope.yaml" in err
+
+
+def test_empty_config_file_exits_2_with_message(capsys, tmp_path):
+    p = tmp_path / "empty.yaml"
+    p.write_text("")                               # yaml.safe_load -> None
+    rc = main(["--demo", "--config", str(p)])
+    assert rc == 2
+    assert "is empty" in capsys.readouterr().err
+
+
+def test_non_mapping_config_exits_2_with_message(capsys, tmp_path):
+    p = tmp_path / "list.yaml"
+    p.write_text("- just\n- a\n- list\n")
+    rc = main(["--demo", "--config", str(p)])
+    assert rc == 2
+    assert "must be a YAML mapping" in capsys.readouterr().err
+
+
 def test_main_routes_to_harness(monkeypatch):
     # The harness is the only engine: main must dispatch to run_harness.
     from shortlist import screen

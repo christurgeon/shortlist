@@ -9,7 +9,7 @@ POLITENESS: this hits an unofficial endpoint we must not get banned from. Run it
 ONCE, manually, targeting ONLY this file — never the whole suite, never in CI, never
 in a loop. On a cold WAF 429 it SKIPS (not fails) so nobody re-runs to chase green.
 
-    RUN_LIVE_TESTS=1 uv run pytest tests/scout/test_yahoo_live.py -v
+    RUN_LIVE_TESTS=1 uv run pytest -m live tests/scout/test_yahoo_live.py -v
 """
 import os
 from datetime import date
@@ -17,6 +17,8 @@ from datetime import date
 import pytest
 
 from shortlist.scout.signals import YahooScreenerSignal
+
+pytestmark = pytest.mark.live
 
 
 @pytest.mark.skipif(

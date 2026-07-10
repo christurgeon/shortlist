@@ -7,10 +7,12 @@ from shortlist.scout.validate import (
 )
 
 
-def _ff3(months=range(1, 13)):
+def _ff3(months=None):
     """FF3 map with small deterministic NON-ZERO variance on all three factors so X'X is
     well-conditioned (pure OLS, no ridge). R_p is still built with NO smb/hml loading in the
     tests below, so alpha / b_mkt are recovered exactly and b_smb ~ b_hml ~ 0."""
+    if months is None:
+        months = range(1, 13)
     return {
         f"2025-{m:02d}": (
             0.01 * ((m % 3) - 1),      # mkt   (period-3 pattern)

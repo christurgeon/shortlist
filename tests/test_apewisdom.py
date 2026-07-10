@@ -1,4 +1,4 @@
-from shortlist.data.apewisdom import parse_wsb, norm_symbol, WsbMention
+from shortlist.data.apewisdom import parse_wsb, norm_symbol
 
 _PAYLOAD = {
     "count": 3, "pages": 1, "current_page": 1,
@@ -66,7 +66,6 @@ def test_norm_symbol_collapses_separators():
 def test_fetch_reads_disk_cache_without_network(tmp_path, monkeypatch):
     # Pre-seed today's cache file; fetch must parse it and make ZERO network calls.
     import json
-    import shortlist.data.apewisdom as ape
     from shortlist.data.apewisdom import fetch_wsb_mentions, _today_iso
 
     def _boom(*a, **k):

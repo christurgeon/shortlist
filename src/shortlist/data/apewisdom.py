@@ -6,8 +6,8 @@ top tickers by volume), normalized + disk-cached by fetch date. NEVER raises.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 

@@ -31,8 +31,15 @@ def composite_with(card, momentum: Optional[float], weights: dict, config: Optio
     # the exact same composite as the real scorer (which uses raw, unrounded values).
     if config is not None and card.metrics is not None:
         from shortlist.scoring import (
-            _quality_legs, _moat_legs, _growth_legs, _momentum_legs, _value_legs,
-            _eval_subscore, resolve_bucket, insider_score, risk_score
+            _eval_subscore,
+            _growth_legs,
+            _moat_legs,
+            _momentum_legs,
+            _quality_legs,
+            _value_legs,
+            insider_score,
+            resolve_bucket,
+            risk_score,
         )
 
         m = card.metrics
@@ -194,7 +201,7 @@ def prize_bound(cards, candidate_values: dict, weights: dict, config: dict, *,
                 for t in score_by_ticker}
 
     inc_scores = dict(zip(tickers,
-                          to_rank_scores([(card_by[t].momentum or 0.0) for t in tickers])))
+                          to_rank_scores([(card_by[t].momentum or 0.0) for t in tickers]), strict=False))
     base_rank = ranking_from(composites(inc_scores))
 
     # (A) weight bound: rank-reverse of incumbent (max-decorrelated legal leg) plus a
@@ -213,8 +220,8 @@ def prize_bound(cards, candidate_values: dict, weights: dict, config: dict, *,
     candidates = {}
     for name, vals in candidate_values.items():
         ct = [t for t in tickers if t in vals]
-        cand = dict(zip(ct, to_rank_scores([vals[t] for t in ct])))
-        inc = dict(zip(ct, to_rank_scores([(card_by[t].momentum or 0.0) for t in ct])))
+        cand = dict(zip(ct, to_rank_scores([vals[t] for t in ct]), strict=False))
+        inc = dict(zip(ct, to_rank_scores([(card_by[t].momentum or 0.0) for t in ct]), strict=False))
         cbase = ranking_from({t: composite_with(card_by[t], inc[t], weights, config) for t in ct})
         cnew = {t: composite_with(card_by[t], cand[t], weights, config) for t in ct}
         candidates[name] = _churn(cbase, cnew, top_ns)
@@ -250,11 +257,13 @@ def run_live(config: dict, *, universe_file: str = None) -> dict:
     STOP_COLLINEAR verdict."""
     import asyncio
     from datetime import date
+
     import httpx
-    from ..screen import run_harness
-    from .universe import load_universe
-    from .prices import _UA, fetch_history
+
     from ..data.sources import mom_6m, mom_12_1
+    from ..screen import run_harness
+    from .prices import _UA, fetch_history
+    from .universe import load_universe
 
     tickers = load_universe(universe_file or "largecap")
     sources = config.get("harness_sources",
@@ -284,8 +293,10 @@ def run_live(config: dict, *, universe_file: str = None) -> dict:
 
 def _main() -> int:
     import json
-    import yaml
     from pathlib import Path
+
+    import yaml
+
     from ..env import load_env
     load_env()
     config = yaml.safe_load(Path("config.yaml").read_text())

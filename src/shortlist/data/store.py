@@ -53,9 +53,13 @@ def save(snapshot: TickerSnapshot, root: str | Path) -> Path:
     # PID-unique temp so an overlapping run (manual + timer) can't clobber a
     # half-written temp. Suffix MUST stay `.tmp` or the data globs would see it.
     tmp = out_dir / f".{day}.{os.getpid()}.json.gz.tmp"
-    with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=6) as f:
-        f.write(data)
-    os.replace(tmp, path)               # atomic on POSIX within the same directory
+    try:
+        with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=6) as f:
+            f.write(data)
+        os.replace(tmp, path)           # atomic on POSIX within the same directory
+    except BaseException:
+        tmp.unlink(missing_ok=True)     # a failed write must not leak the temp file
+        raise
     legacy = out_dir / f"{day}.json"
     if legacy.exists():
         legacy.unlink()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Optional, TypeVar
@@ -90,7 +91,10 @@ class Statements:
     debt_issuance: Optional[float] = None
 
     def gross_margins(self) -> list[float]:
-        return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False) if r]
+        # Guard BOTH sides: FMP stores gross_profit verbatim, so a year can carry
+        # truthy revenue with a None gross profit — `if r` alone would TypeError.
+        return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False)
+                if r and g is not None]
 
 
 @dataclass
@@ -365,7 +369,18 @@ class TickerSnapshot:
         """Inverse of to_dict: rebuild a snapshot (and its nested sections) from a
         persisted JSON dict. Unknown keys are ignored so the model can evolve."""
         def _build(klass, payload):
-            if payload is None:
+            # A corrupt store file can carry a non-dict section payload (list/str);
+            # treat it as absent rather than AttributeError-ing the whole load —
+            # but LOUDLY, or a store-format regression silently thins every
+            # snapshot the replay backtest reads.
+            if not isinstance(payload, dict):
+                if payload is not None:
+                    warnings.warn(
+                        f"snapshot {d.get('ticker', '?')}: section "
+                        f"{klass.__name__} has non-dict payload "
+                        f"({type(payload).__name__}); treating as absent",
+                        stacklevel=2,
+                    )
                 return None
             names = {f.name for f in fields(klass)}
             return klass(**{k: v for k, v in payload.items() if k in names})

@@ -12,6 +12,7 @@ from __future__ import annotations
 import calendar
 import json
 import math
+import sys
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -162,6 +163,7 @@ async def fetch_history(symbol: str, client, *, cache_dir: str, today: str,
             raw = json.loads(path.read_text())
         except (ValueError, OSError):
             raw = None
+    fetched = False
     if raw is None:
         now = int(datetime.now(tz=timezone.utc).timestamp())
         resp = await client.get(
@@ -172,7 +174,22 @@ async def fetch_history(symbol: str, client, *, cache_dir: str, today: str,
         )
         resp.raise_for_status()
         raw = resp.json()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(raw))
+        fetched = True
     dates, closes, nominal = parse_chart(raw)
+    if fetched:
+        # Parse BEFORE caching: never cache a MALFORMED payload (a soft failure
+        # would silently drop the ticker for the rest of the day). But a
+        # well-formed chart envelope with no rows is Yahoo's definitive answer
+        # (delisted/unknown symbol) — day-cache it, or every re-run re-fetches
+        # dead tickers and baits the WAF.
+        definitive = bool(dates) or isinstance(
+            (raw or {}).get("chart") if isinstance(raw, dict) else None, dict)
+        if definitive:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(raw))
+        if not dates:
+            print(f"backtest: empty{'' if definitive else '/unparseable'} Yahoo "
+                  f"history for {symbol} — "
+                  f"{'cached for today' if definitive else 'not cached'}, ticker "
+                  "will have no price history this run", file=sys.stderr)
     return PriceHistory(symbol.upper(), dates, closes, nominal_closes=nominal)

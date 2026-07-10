@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 
@@ -24,8 +25,23 @@ class PollResult:
 
 
 def _chunks(text: str, size: int):
-    for i in range(0, len(text), size):
-        yield text[i:i + size]
+    """Split `text` into chunks of at most `size` UTF-16 code units.
+
+    Telegram's 4096 message cap counts UTF-16 code units (len(s.encode("utf-16-le")) // 2),
+    NOT Python code points — an emoji-dense report chunked by code points overflows the cap
+    and 400s. Astral-plane chars (ord > 0xFFFF) weigh 2 units; iterating per code point
+    means a surrogate pair is never split across chunks."""
+    buf: list[str] = []
+    units = 0
+    for ch in text:
+        w = 2 if ord(ch) > 0xFFFF else 1
+        if units + w > size and buf:
+            yield "".join(buf)
+            buf, units = [], 0
+        buf.append(ch)
+        units += w
+    if buf:
+        yield "".join(buf)
 
 
 class TelegramNotifier:
@@ -42,10 +58,11 @@ class TelegramNotifier:
     def configured(self) -> bool:
         return bool(self.token and self.chat_id)
 
-    def _post(self, method: str, **kwargs) -> bool:
+    def _post(self, method: str, *, _client: httpx.Client | None = None, **kwargs) -> bool:
         if not self.configured():
             return False
-        c = self._client or httpx.Client(timeout=30.0)
+        c = _client or self._client or httpx.Client(timeout=30.0)
+        owns = _client is None and self._client is None
         url = _API.format(token=self.token, method=method)
         try:
             for attempt in range(self.max_retries + 1):
@@ -57,20 +74,38 @@ class TelegramNotifier:
                     # parser tolerates the RFC-7231 HTTP-date header form.
                     time.sleep(retry_after_seconds(resp.headers.get("Retry-After"), 2 ** attempt))
                     continue
+                if resp.status_code != 200:
+                    # LOUD degradation: a silently-dropped chunk/photo is invisible. The
+                    # body carries Telegram's error description; the URL (which embeds the
+                    # token) is never printed, and the body is redacted anyway.
+                    print(f"telegram {method} failed: HTTP {resp.status_code} "
+                          f"{redact_secrets(resp.text[:200])}", file=sys.stderr)
                 return resp.status_code == 200
             return False
         except Exception as e:  # noqa: BLE001
-            print(f"telegram {method} failed: {redact_secrets(str(e))}")
+            print(f"telegram {method} failed: {redact_secrets(str(e))}", file=sys.stderr)
             return False
         finally:
-            if self._client is None:
+            if owns:
                 c.close()
 
     def send_message(self, text: str) -> bool:
-        ok = True
-        for chunk in _chunks(text, _MSG_CAP):
-            ok = self._post("sendMessage", json={"chat_id": self.chat_id, "text": chunk}) and ok
-        return ok
+        chunks = list(_chunks(text, _MSG_CAP))
+        if not chunks:
+            return True
+        if not self.configured():
+            return False
+        # One client reused across all chunks of the message (not one per chunk).
+        c = self._client or httpx.Client(timeout=30.0)
+        try:
+            ok = True
+            for chunk in chunks:
+                ok = self._post("sendMessage", _client=c,
+                                json={"chat_id": self.chat_id, "text": chunk}) and ok
+            return ok
+        finally:
+            if self._client is None:
+                c.close()
 
     def send_photo(self, png: bytes, caption: str = "") -> bool:
         return self._post("sendPhoto",

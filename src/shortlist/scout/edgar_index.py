@@ -8,14 +8,15 @@ concurrency budget; this module keeps the *pure* aggregation testable in isolati
 """
 from __future__ import annotations
 
+import warnings
 from collections import defaultdict
 from datetime import date, timedelta
 
+from ..env import redact_secrets
 from ..providers._form4 import classify_code
 from .calendar import is_trading_day
 from .models import Emission
-from .quality import (is_affiliate_filing, is_initial_13d, is_spac_or_shell,
-                      marquee_activist)
+from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
 
 # Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
 # foreign filers). They are NOT real symbols — left unfiltered they bucket together
@@ -109,7 +110,10 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
             except Exception:  # noqa: BLE001 — skip an unparseable filing
                 continue
         return [r for r in records if r["ticker"]]  # _is_real_ticker() already blanked placeholders
-    except Exception:  # noqa: BLE001 — edgartools missing or SEC error -> degrade
+    except Exception as exc:  # noqa: BLE001 — edgartools missing or SEC error -> degrade
+        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
+        # must not read as "0 filings today".
+        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
 
 
@@ -242,7 +246,10 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
             except Exception:  # noqa: BLE001 — skip an unparseable filing
                 continue
         return records
-    except Exception:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+    except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
+        # must not read as "0 filings today".
+        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
 
 

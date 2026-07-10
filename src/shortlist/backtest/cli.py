@@ -216,7 +216,6 @@ def _fit_prior_from_config(config: dict, fit_axes: list[str]) -> tuple[dict, flo
 def _run_fit(args, src, hists, spy, start, end, config) -> int:
     from .fit import FitGuardError, fit_weights
     from .fit_data import build_fit_rows
-    from .metrics import spearman_ic
     from .report import evaluate_gate, fit_report_to_dict, render_fit_report
 
     fit_axes = [a.strip() for a in args.fit_axes.split(",") if a.strip()]
@@ -225,7 +224,12 @@ def _run_fit(args, src, hists, spy, start, end, config) -> int:
         print(f"--fit-axes must be a subset of {_FUNDAMENTAL_AXES}; got {bad}",
               file=sys.stderr)
         return 2
-    prior, s_f = _fit_prior_from_config(config, fit_axes)
+    try:
+        prior, s_f = _fit_prior_from_config(config, fit_axes)
+    except (KeyError, TypeError) as e:
+        print(f"config {args.config}: 'weights' block is missing/invalid for fit "
+              f"axes {fit_axes}: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
     rows = build_fit_rows(src, sorted(hists), hists, spy, start=start, end=end,
                           horizon=args.fit_horizon, axes=fit_axes,
                           return_mode=args.return_mode)
@@ -411,6 +415,11 @@ def main(argv=None) -> int:
         print("--fit requires --fit-horizon (months); fitted ratios are horizon-conditional",
               file=sys.stderr)
         return 2
+    if args.fit and args.fit_horizon < 1:
+        # A 0-month horizon would spin observation_grid forever (_add_months(cur, 0)
+        # never advances) — reject before any work.
+        print("--fit-horizon must be a positive integer month (>= 1)", file=sys.stderr)
+        return 2
     if args.source == "snapshot":
         print("snapshot source is GATED: no organic point-in-time snapshot history "
               "exists yet (needs >= 24 daily captures). Use --source momentum.",
@@ -459,8 +468,29 @@ def main(argv=None) -> int:
     if any(h < 1 for h in horizons):
         print("--horizons must be positive integer months (>= 1)", file=sys.stderr)
         return 2
+    for flag, value in (("--start", args.start), ("--end", args.end)):
+        if value:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                print(f"{flag} must be an ISO date (YYYY-MM-DD); got {value!r}",
+                      file=sys.stderr)
+                return 2
     today = datetime.now(tz=timezone.utc).date().isoformat()
-    config = yaml.safe_load(Path(args.config).read_text())
+    try:
+        config = yaml.safe_load(Path(args.config).read_text())
+    except OSError as e:
+        print(f"cannot read config {args.config}: {e}", file=sys.stderr)
+        return 2
+    except yaml.YAMLError as e:
+        print(f"config {args.config} is not valid YAML: {e}", file=sys.stderr)
+        return 2
+    # only 'thresholds' is required here — 'weights' is read solely by the --fit
+    # path (_fit_prior_from_config), which carries its own missing-key guard
+    if not isinstance(config, dict) or "thresholds" not in config:
+        print(f"config {args.config} must be a YAML mapping with a 'thresholds' key",
+              file=sys.stderr)
+        return 2
     thresholds = config["thresholds"]
 
     hists, spy = asyncio.run(_load_histories(tickers, args.cache_dir, today))

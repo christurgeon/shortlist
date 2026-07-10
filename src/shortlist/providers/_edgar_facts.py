@@ -19,28 +19,24 @@ import pandas as pd
 
 from ..stats import accruals, asset_growth
 
+# Cash-flow financing concept FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS
+# §5). Raw us-gaap tags (matched on the `concept` column). Single-sourced in
+# _gaap_tags.py (shared with the XBRL panel in _xbrl_facts.py — edit THERE).
+from ._gaap_tags import (
+    DEBT_ISSUANCE_TAGS as _DEBT_ISSUANCE_TAGS,
+)
+from ._gaap_tags import (
+    DEBT_REPAYMENT_TAGS as _DEBT_REPAYMENT_TAGS,
+)
+from ._gaap_tags import (
+    DIVIDEND_TAGS as _DIVIDEND_TAGS,
+)
+from ._gaap_tags import (
+    REPURCHASE_TAGS as _REPURCHASE_TAGS,
+)
+
 _FY_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\s*\(FY\)$")
 _INSTANT_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})$")
-
-# Cash-flow financing concept FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS
-# §5). Raw us-gaap tags (matched on the `concept` column). MUST mirror the XBRL panel's
-# families in _xbrl_facts.py — edit both. Verified live (AAPL/MSFT/LMT). Dividends and
-# repurchases are summed across common+preferred members; debt repayment/issuance are
-# netted (repayments - issuance) downstream.
-_DIVIDEND_TAGS = ("PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
-                  "PaymentsOfDividendsPreferredStockAndPreferenceStock",
-                  "PaymentsOfDividendsMinorityInterest")
-_REPURCHASE_TAGS = ("PaymentsForRepurchaseOfCommonStock",
-                    "PaymentsForRepurchaseOfEquity",
-                    "PaymentsForRepurchaseOfPreferredStockAndPreferenceStock",
-                    "PaymentsForRepurchaseOfRedeemablePreferredStock")
-_DEBT_REPAYMENT_TAGS = ("RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
-                        "RepaymentsOfDebtMaturingInMoreThanThreeMonths",
-                        "RepaymentsOfLongTermDebtAndCapitalSecurities",
-                        "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable")
-_DEBT_ISSUANCE_TAGS = ("ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
-                       "ProceedsFromIssuanceOfSeniorLongTermDebt",
-                       "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable")
 
 
 @dataclass

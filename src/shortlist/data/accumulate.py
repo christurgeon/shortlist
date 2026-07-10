@@ -138,7 +138,7 @@ def _append_run_log(root: str | Path, run: AccumulationRun) -> None:
         "captured": len(run.captured), "skipped": len(run.skipped),
         "failed": len(run.failed), "thin": len(run.thin), "gated": len(run.gated),
         "mean_coverage": run.mean_coverage,
-        "coverage": {tk: cov for tk, cov in run.captured + run.thin},
+        "coverage": dict(run.captured + run.thin),
     }
     with open(Path(root) / "_runs.jsonl", "a") as f:
         f.write(json.dumps(rec) + "\n")

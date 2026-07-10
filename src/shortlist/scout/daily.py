@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import json
 import os
 import sys
@@ -142,18 +143,17 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
         return resolve_ticker(p.get("cik"), cik_index) or p["ticker"]
 
     async def _run() -> list[dict]:
-        from ..data.sources import (YahooSource, _closes_from_chart,
-                                     _dates_from_chart)
+        from ..data.sources import YahooSource, _closes_from_chart, _dates_from_chart
         from .picks import pick_performance
         src = YahooSource()
         try:
             spy_raw = await src._get_chart("SPY")
-            spy_series = list(zip(_dates_from_chart(spy_raw), _closes_from_chart(spy_raw)))
+            spy_series = list(zip(_dates_from_chart(spy_raw), _closes_from_chart(spy_raw), strict=False))
             rows: list[dict] = []
             for p in prior:
                 try:
                     raw = await src._get_chart(_current_ticker(p))
-                    series = list(zip(_dates_from_chart(raw), _closes_from_chart(raw)))
+                    series = list(zip(_dates_from_chart(raw), _closes_from_chart(raw), strict=False))
                     perf = pick_performance(p, series, spy_series)
                     perf["evidence"] = p.get("evidence", "")
                     rows.append(perf)
@@ -230,10 +230,8 @@ def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, l
     earliest = session - timedelta(days=lookback - 1)
     start = earliest
     if cursor:
-        try:
+        with contextlib.suppress(ValueError):
             start = max(earliest, date.fromisoformat(str(cursor)) + timedelta(days=1))
-        except ValueError:
-            pass
     try:
         from ..data import efts
         from .cik_tickers import load_cik_to_ticker, resolve_ticker
@@ -460,8 +458,8 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     chosen, dropped = select(kept, daily_x=scout_cfg.get("daily_x", 15))
 
     # 2. Deep-screen via the harness scorer (mock source offline in --demo)
-    from ..screen import run_harness
     from ..data.macro import fetch_macro
+    from ..screen import run_harness
     base_sources = scout_cfg.get("deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar"])
     include_fmp = scout_cfg.get("daily_push", {}).get("include_fmp", True)  # default True = back-compat
     sources = ["mock"] if demo else digest_sources(base_sources, include_fmp)
