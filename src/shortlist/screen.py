@@ -5,8 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
-
+from .config import ConfigError, load_config
 from .coverage import build_coverage, coverage_note_line
 from .env import load_env, redact_secrets
 from .models import ScoreCard, rank_key
@@ -141,26 +140,13 @@ def main(argv: list[str] | None = None) -> int:
 
     load_env()  # pick up API keys from a .env file if present
 
-    # Guarded config load: a missing file, empty YAML (None), or non-mapping top
-    # level would otherwise surface as a raw traceback deep inside scoring. This
-    # is deliberately NOT schema validation — just the three load-shape failures.
-    cfg_path = Path(args.config)
+    # Guarded config load (shared shape contract in config.py): a missing file,
+    # invalid/empty YAML, or non-mapping top level would otherwise surface as a
+    # raw traceback deep inside scoring.
     try:
-        raw = cfg_path.read_text()
-    except OSError as e:
-        print(f"shortlist: cannot read config file {cfg_path}: {e}", file=sys.stderr)
-        return 2
-    try:
-        config = yaml.safe_load(raw)
-    except yaml.YAMLError as e:
-        print(f"shortlist: invalid YAML in config file {cfg_path}: {e}", file=sys.stderr)
-        return 2
-    if config is None:
-        print(f"shortlist: config file {cfg_path} is empty", file=sys.stderr)
-        return 2
-    if not isinstance(config, dict):
-        print(f"shortlist: config file {cfg_path} must be a YAML mapping, "
-              f"got {type(config).__name__}", file=sys.stderr)
+        config = load_config(args.config)
+    except ConfigError as e:
+        print(f"shortlist: {e}", file=sys.stderr)
         return 2
 
     from .cache import configure_default_cache
