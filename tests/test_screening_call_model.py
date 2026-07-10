@@ -1,6 +1,6 @@
 from shortlist.research.models import (
     STANCES, CONVICTIONS, ScreeningCall, _screening_call,
-    DEFAULT_STANCE_LABELS, stance_label, call_disclaimer,
+    stance_label, call_disclaimer,
     QualitativeAssessment,
 )
 

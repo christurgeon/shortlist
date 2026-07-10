@@ -140,7 +140,7 @@ def test_ties_use_average_rank_matching_spearman_ic_convention():
     assert r_ctrl1 == [1.5, 1.5, 3.0, 4.0]     # average-tie sanity check
     r_ctrl2 = ref_rank([2.0, 4.0, 1.0, 3.0])
     r_target = ref_rank([7.0, 3.0, 9.0, 1.0])
-    X = [list(row) for row in zip(r_ctrl1, r_ctrl2)]
+    X = [list(row) for row in zip(r_ctrl1, r_ctrl2, strict=False)]
     b = ols(r_target, X)
     expected_resid = _residuals(r_target, X, b)
 

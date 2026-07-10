@@ -3,7 +3,7 @@ the prereg YAML loads + pins, and CLI routing. Mirrors test_scout_backfill_eight
 injected-seam idiom — no network."""
 from datetime import date
 
-from shortlist.scout import backfill, daily
+from shortlist.scout import daily
 from shortlist.scout.backfill import (_BACKFILL_SPECS, assemble_buyback_events,
                                       run_backfill_buyback)
 from shortlist.scout.buyback import SIGNAL as SIGNAL_BUYBACK

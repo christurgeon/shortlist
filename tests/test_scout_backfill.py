@@ -153,7 +153,7 @@ def test_trading_gap_guard_r_a1():
     h = _hist("HALT", date(2022, 7, 1), 400)
     horizon = date(2023, 8, 1)
     dates, closes = [], []
-    for d, c in zip(h.dates, h.closes):
+    for d, c in zip(h.dates, h.closes, strict=False):
         if abs((d - horizon).days) <= 20:                     # excise +/-20d around horizon
             continue
         dates.append(d)
@@ -168,7 +168,7 @@ def test_trading_gap_guard_r_a1():
 def test_look_ahead_invariance_post_horizon_corruption():
     h = _hist("TGT", date(2022, 7, 1), 400)
     ev1 = measure_event(_ev(), h, 12, today=TODAY, fetch_delisting_records=lambda cik: [])
-    cut = [c if d <= date(2023, 9, 1) else 999.0 for d, c in zip(h.dates, h.closes)]
+    cut = [c if d <= date(2023, 9, 1) else 999.0 for d, c in zip(h.dates, h.closes, strict=False)]
     h2 = PriceHistory(ticker="TGT", dates=list(h.dates), closes=cut, nominal_closes=cut)
     ev2 = measure_event(_ev(), h2, 12, today=TODAY, fetch_delisting_records=lambda cik: [])
     assert ev1.meta["measurable"] == ev2.meta["measurable"]
@@ -179,7 +179,7 @@ def test_zero_entry_price_is_non_measurable_never_raises():
     # a (synthetic/bad-data) zero close at entry must not divide-by-zero in the delisting arm
     h = _hist("BAD", date(2022, 7, 1), 70)
     # zero out every close at/before entry
-    closes = [0.0 if d <= date(2022, 8, 1) else c for d, c in zip(h.dates, h.closes)]
+    closes = [0.0 if d <= date(2022, 8, 1) else c for d, c in zip(h.dates, h.closes, strict=False)]
     h2 = PriceHistory(ticker="BAD", dates=list(h.dates), closes=closes,
                       nominal_closes=list(closes))
     recs = [FilingRecord("8-K", date(2022, 9, 20), items=("1.03",)),
@@ -702,7 +702,7 @@ def test_score_event_pit_invariance_trio():
     baseline = score_event(ev, h, facts, spy, "3711", _SE_CONFIG)
 
     # (a) closes corrupted STRICTLY AFTER as_of -> identical result.
-    cut = [c if d <= AS_OF else 999.0 for d, c in zip(h.dates, h.closes)]
+    cut = [c if d <= AS_OF else 999.0 for d, c in zip(h.dates, h.closes, strict=False)]
     h_after = PriceHistory(ticker="TST", dates=list(h.dates), closes=cut,
                            nominal_closes=cut)
     assert score_event(ev, h_after, facts, spy, "3711", _SE_CONFIG) == baseline
@@ -717,7 +717,7 @@ def test_score_event_pit_invariance_trio():
     # (c) closes corrupted specifically in (filing_date, entry] -- the F12 announcement-pop
     # window. Using event_date (rather than filing_date) as as_of would pull this window
     # into the price legs and change the result; using filing_date must not.
-    cut2 = [c if not (AS_OF < d <= _SE_ENTRY) else 12345.0 for d, c in zip(h.dates, h.closes)]
+    cut2 = [c if not (AS_OF < d <= _SE_ENTRY) else 12345.0 for d, c in zip(h.dates, h.closes, strict=False)]
     h_leak_window = PriceHistory(ticker="TST", dates=list(h.dates), closes=cut2,
                                  nominal_closes=cut2)
     assert score_event(ev, h_leak_window, facts, spy, "3711", _SE_CONFIG) == baseline

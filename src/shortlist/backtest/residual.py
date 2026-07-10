@@ -84,9 +84,9 @@ def residual_rows(
 
         if method == "rank":
             y = rank(y_raw)
-            cols = list(zip(*x_raw)) if controls else []
+            cols = list(zip(*x_raw, strict=False)) if controls else []
             ranked_cols = [rank(list(col)) for col in cols]
-            x = [list(row) for row in zip(*ranked_cols)] if ranked_cols else [[] for _ in y]
+            x = [list(row) for row in zip(*ranked_cols, strict=False)] if ranked_cols else [[] for _ in y]
         else:
             y = y_raw
             x = x_raw

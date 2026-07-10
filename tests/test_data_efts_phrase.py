@@ -6,7 +6,6 @@ from datetime import date
 
 from pathlib import Path
 
-from shortlist.data import efts
 from shortlist.data.efts import (BUYBACK_CACHE_DIR, _phrase_q, _phrase_subdir,
                                  fetch_eightk_range, fetch_eightk_window, fetch_phrase_day,
                                  fetch_phrase_window)

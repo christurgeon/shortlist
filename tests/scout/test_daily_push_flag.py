@@ -1,5 +1,6 @@
 from datetime import date
 from shortlist.scout import daily
+import contextlib
 
 
 def test_daily_push_disabled_returns_zero_before_scanning(capsys, monkeypatch):
@@ -31,8 +32,6 @@ def test_demo_bypasses_daily_push_flag(monkeypatch):
         reached["v"] = True
         raise RuntimeError("stop after proving we got here")
     monkeypatch.setattr(daily, "build_signals", mark, raising=False)
-    try:
+    with contextlib.suppress(RuntimeError):
         daily.run({"scout": {}}, demo=True, today=date(2026, 6, 6))
-    except RuntimeError:
-        pass
     assert reached["v"] is True

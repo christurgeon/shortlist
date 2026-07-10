@@ -6,8 +6,7 @@ import io
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .theme import (BG, FG, SUB_LABELS, SUBS, score_to_rgb, stance_to_rgb,
-                    text_on)
+from .theme import BG, FG, SUB_LABELS, SUBS, score_to_rgb, stance_to_rgb, text_on
 from .viewmodel import ReportVM
 
 _W = 760           # target width (px); we supersample 2x then downscale

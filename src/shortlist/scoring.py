@@ -47,6 +47,19 @@ def _avg(components: list[Optional[float]]) -> Optional[float]:
     return mean(present) if present else None
 
 
+def _flag_block(flags_cfg: Optional[dict], name: str) -> Optional[dict]:
+    """The named soft-flag config block, or None when it is absent/falsy OR
+    explicitly disabled (`enabled: false`). Uniform `enabled:` handling for every
+    advisory-flag site — a present block defaults to ON (back-compat: the shipped
+    config.yaml never sets `enabled` under these blocks except cash_burn's
+    `enabled: true`, so this is byte-identical there and on the block-absent
+    paths the invariance tests pin)."""
+    block = flags_cfg.get(name) if flags_cfg else None
+    if not block:
+        return None
+    return block if block.get("enabled", True) else None
+
+
 def quality_score(m: StockMetrics, t: dict) -> Optional[float]:
     return _avg([
         _norm(m.roe, *t["roe"]),
@@ -167,15 +180,23 @@ def piotroski_score(m: StockMetrics, t: dict, min_legs: int = 4) -> Optional[flo
     return _norm(frac, *t["piotroski_f"]) if frac is not None else None
 
 
+def _band_axis(value: Optional[float], key: str, t: dict) -> Optional[float]:
+    """Shared shape of the standalone backtest measurement axes below: None when
+    the band `key` is absent from the thresholds or the metric is None, else the
+    metric mapped through the band via _norm. Inversion is expressed by the band
+    ordering [high, low], never here."""
+    if key not in t or value is None:
+        return None
+    return _norm(value, *t[key])
+
+
 def share_count_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone dilution axis: the inverted share-count-CAGR band -> 0..100 (net
     buybacks score higher than net issuance). Exists so the backtest can measure the
     share-count rank IC on its own (like piotroski_score); the PRODUCTION signal is
     the opt-in quality dilution leg + the `dilution` flag, not this. None when the
     band or the signal is absent."""
-    if "share_count_cagr" not in t or m.share_count_cagr is None:
-        return None
-    return _norm(m.share_count_cagr, *t["share_count_cagr"])
+    return _band_axis(m.share_count_cagr, "share_count_cagr", t)
 
 
 def asset_growth_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -184,9 +205,7 @@ def asset_growth_score(m: StockMetrics, t: dict) -> Optional[float]:
     so the backtest can measure the rank IC on its own (like share_count_score); the
     PRODUCTION signal is the opt-in quality earnings_quality leg, not this. None when
     the band or the signal is absent."""
-    if "asset_growth" not in t or m.asset_growth is None:
-        return None
-    return _norm(m.asset_growth, *t["asset_growth"])
+    return _band_axis(m.asset_growth, "asset_growth", t)
 
 
 def accruals_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -194,9 +213,7 @@ def accruals_score(m: StockMetrics, t: dict) -> Optional[float]:
     (high accruals = soft earnings score low). Backtest-only, like asset_growth_score;
     partly overlaps the Piotroski CFO>NI leg (the `accruals~piotroski` collinearity
     pair measures it). None when the band or the signal is absent."""
-    if "accruals" not in t or m.accruals is None:
-        return None
-    return _norm(m.accruals, *t["accruals"])
+    return _band_axis(m.accruals, "accruals", t)
 
 
 def shareholder_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -206,9 +223,7 @@ def shareholder_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
     rank IC + its collinearity vs fcf_yield and share_count on its own; the PRODUCTION
     signal is the opt-in value shareholder_yield leg, not this. None when the band or the
     signal is absent."""
-    if "shareholder_yield" not in t or m.shareholder_yield is None:
-        return None
-    return _norm(m.shareholder_yield, *t["shareholder_yield"])
+    return _band_axis(m.shareholder_yield, "shareholder_yield", t)
 
 
 def _sue_value(m: StockMetrics, *, sigma_floor: float = _SUE_SIGMA_FLOOR,
@@ -255,9 +270,7 @@ def residual_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
     PRODUCTION signal is the opt-in momentum.residual leg folded into momentum_score, not
     this — exists so the backtest can measure its rank IC + collinearity vs raw momentum.
     None when the band or the signal is absent."""
-    if "residual_momentum" not in t or m.residual_momentum is None:
-        return None
-    return _norm(m.residual_momentum, *t["residual_momentum"])
+    return _band_axis(m.residual_momentum, "residual_momentum", t)
 
 
 def pct_to_52w_high_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -266,9 +279,7 @@ def pct_to_52w_high_score(m: StockMetrics, t: dict) -> Optional[float]:
     axis (like residual_momentum_score) — NO production leg reads it; exists so the backtest
     can measure its rank IC + the load-bearing collinearity vs price_vs_200dma (both are
     close/(trailing reference); corr >= 0.5 => duplicate). None when band or metric absent."""
-    if "pct_to_52w_high" not in t or m.pct_to_52w_high is None:
-        return None
-    return _norm(m.pct_to_52w_high, *t["pct_to_52w_high"])
+    return _band_axis(m.pct_to_52w_high, "pct_to_52w_high", t)
 
 
 def max_daily_return_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -277,9 +288,7 @@ def max_daily_return_score(m: StockMetrics, t: dict) -> Optional[float]:
     Inversion is expressed by the band ordering [high, low] (like accruals_score), so a flipped
     band would silently score high-MAX high; a monotonicity test pins the direction. Backtest-
     only. None when band or metric absent."""
-    if "max_daily_return" not in t or m.max_daily_return is None:
-        return None
-    return _norm(m.max_daily_return, *t["max_daily_return"])
+    return _band_axis(m.max_daily_return, "max_daily_return", t)
 
 
 def vol_scaled_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -287,9 +296,7 @@ def vol_scaled_momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
     momentum` band -> 0..100 (NOT inverted). Backtest-only; exists so the backtest can measure
     its rank IC + the load-bearing collinearity vs residual_momentum (the expected cousin).
     None when band or metric absent."""
-    if "vol_scaled_momentum" not in t or m.vol_scaled_momentum is None:
-        return None
-    return _norm(m.vol_scaled_momentum, *t["vol_scaled_momentum"])
+    return _band_axis(m.vol_scaled_momentum, "vol_scaled_momentum", t)
 
 
 def price_vs_200dma_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -297,18 +304,14 @@ def price_vs_200dma_score(m: StockMetrics, t: dict) -> Optional[float]:
     exposed on its own (reusing its existing band) so the leg-level `pct_to_52w_high ~
     price_vs_200dma` collinearity can be measured (the duplication hides at the leg, not the
     momentum sub-score). Backtest-only. None when band or metric absent."""
-    if "price_vs_200dma" not in t or m.price_vs_200dma is None:
-        return None
-    return _norm(m.price_vs_200dma, *t["price_vs_200dma"])
+    return _band_axis(m.price_vs_200dma, "price_vs_200dma", t)
 
 
 def rel_strength_6m_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone rel-strength-6m LEG axis (reuses the production band) — the companion leg-
     level collinearity reference for pct_to_52w_high / vol_scaled_momentum. Backtest-only.
     None when band or metric absent."""
-    if "rel_strength_6m" not in t or m.rel_strength_6m is None:
-        return None
-    return _norm(m.rel_strength_6m, *t["rel_strength_6m"])
+    return _band_axis(m.rel_strength_6m, "rel_strength_6m", t)
 
 
 def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -316,9 +319,7 @@ def net_debt_to_ebitda_score(m: StockMetrics, t: dict) -> Optional[float]:
     0..100 (less leverage scores higher; net cash tops the band). Backtest-only,
     like share_count_score; the PRODUCTION signal is the over_leveraged GATE, not
     this. None when the band or the signal is absent."""
-    if "net_debt_to_ebitda" not in t or m.net_debt_to_ebitda is None:
-        return None
-    return _norm(m.net_debt_to_ebitda, *t["net_debt_to_ebitda"])
+    return _band_axis(m.net_debt_to_ebitda, "net_debt_to_ebitda", t)
 
 
 def ebit_ev_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -326,9 +327,7 @@ def ebit_ev_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
     yield band -> 0..100 (higher yield = cheaper scores higher). Backtest-only,
     like share_count_score; there is NO production sub-score reading ebit_ev_yield
     yet (spec §11 deferred the leg). None when the band or the signal is absent."""
-    if "ebit_ev_yield" not in t or m.ebit_ev_yield is None:
-        return None
-    return _norm(m.ebit_ev_yield, *t["ebit_ev_yield"])
+    return _band_axis(m.ebit_ev_yield, "ebit_ev_yield", t)
 
 
 def value_fcf_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -646,7 +645,7 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     """Soft, NON-disqualifying advisories (parallel to check_gates). Fully None-safe:
     returns [] when inputs or config are absent, so the screener engine is a no-op."""
     out: list[str] = []
-    cs = f.get("crowded_short") if f else None
+    cs = _flag_block(f, "crowded_short")
     if cs and m.short_pct_outstanding is not None and m.days_to_cover is not None:
         fresh = (m.short_data_age_days is None
                  or m.short_data_age_days <= cs["max_staleness_days"])
@@ -660,29 +659,29 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     for attr in _FILING_STREAM_FLAGS:
         if getattr(m, attr, None):
             out.append(attr)
-    cb = f.get("insider_cluster_buy") if f else None
+    cb = _flag_block(f, "insider_cluster_buy")
     if cb and m.insider_distinct_buyers is not None \
             and m.insider_distinct_buyers >= cb["min_distinct"]:
         out.append("insider_cluster_buy")
-    ps = f.get("planned_sale") if f else None
+    ps = _flag_block(f, "planned_sale")
     if ps and m.insider_planned_sell_value is not None \
             and m.insider_planned_sell_value >= ps["min_value"]:
         out.append("planned_sale")
     # Dilution advisory: persistent net share issuance. Soft/None-safe like the
     # others — no-op when the config block is absent; never affects passed/composite.
-    dil = f.get("dilution") if f else None
+    dil = _flag_block(f, "dilution")
     if dil and m.share_count_cagr is not None and m.share_count_cagr >= dil["min_share_cagr"]:
         out.append("dilution")
     # Cash-burn advisory: ALWAYS visible when FCF is negative (the stage-aware
     # negative_fcf gate may excuse a grower, but the burn is still surfaced).
-    burn = f.get("cash_burn") if f else None
-    if bool(burn) and burn.get("enabled", True) and m.fcf_positive is False:
+    burn = _flag_block(f, "cash_burn")
+    if burn and m.fcf_positive is False:
         out.append("cash_burn")
     # Social-media hype advisory (WSB via ApeWisdom). Soft/None-safe like the others —
     # no-op when the config block is absent; never affects passed/composite/scored.
     # "Context-aware" by coexistence: renders alongside crowded_short (squeeze) or
     # value_trap (pump caution) — no extra logic needed.
-    sh = f.get("social_hype") if f else None
+    sh = _flag_block(f, "social_hype")
     if sh and m.social_mentions is not None:
         fresh = (m.social_data_age_days is None
                  or m.social_data_age_days <= sh["max_staleness_days"])
@@ -697,7 +696,7 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
 
     # news_spike: elevated AND rising mainstream news flow (Finnhub company-news).
     # Advisory only; mirrors social_hype. No-op when the config block is absent.
-    ns = f.get("news_spike") if f else None
+    ns = _flag_block(f, "news_spike")
     # Explicitly suppress on truncated (free-tier-capped, always-noisy) names: a spike
     # is meaningful for a normally-quiet name, and the counts are lower bounds there.
     if ns and m.news_count_7d is not None and not m.news_truncated:
@@ -712,7 +711,7 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     # the point-in-time similarity vs the immediately-prior same-type filing is BELOW
     # max_similarity. Advisory only; mirrors social_hype/news_spike — None-safe, a
     # no-op when the config block is absent, never affects passed/composite/scored.
-    ft = f.get("filing_text_change") if f else None
+    ft = _flag_block(f, "filing_text_change")
     if ft and m.filing_text_similarity is not None \
             and m.filing_text_similarity < ft["max_similarity"]:
         out.append("filing_text_change")
@@ -797,7 +796,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     # is present, the Piotroski-lite fraction SUPPRESSES the flag on cheap-but-
     # improving names and CONFIRMS it on cheap-but-deteriorating ones (suppression
     # wins). Byte-identical to the legacy flag when the sub-block is absent.
-    vt = (config.get("flags") or {}).get("value_trap")
+    vt = _flag_block(config.get("flags") or {}, "value_trap")
     if vt and val is not None and val >= vt["min_value_score"]:
         base = ((q is not None and q < vt["max_quality_score"])
                 or (gr is not None and gr < vt["max_growth_score"]))
@@ -820,7 +819,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     # disabled / fetch failed) or the config block is absent — keeps score()
     # byte-identical to the pre-feature scorer. NOTE: this signal is intentionally
     # NOT validatable by the XBRL backtest (backtest/signals.py passes no macro/SIC).
-    ro = (config.get("flags") or {}).get("risk_off_regime")
+    ro = _flag_block(config.get("flags") or {}, "risk_off_regime")
     if ro and macro is not None and macro.risk_off:
         dte_ceil = ((config.get("gates") or {}).get("leverage") or {}).get("dte_artifact_ceiling")
         leveraged = (

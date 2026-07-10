@@ -6,9 +6,10 @@ from typing import Optional
 
 # Consecutive-fiscal-end spacing window for the asset-growth / accruals signals.
 # Admits 52/53-week years; excludes gap-spanning ratios (a missing year would put
-# the prior end ~2yr back) and transition/stub-period annuals. Mirrors the
-# _xbrl_facts annual_series period guard, applied here to INSTANT balance-sheet
-# dates (which annual_series does not length-check).
+# the prior end ~2yr back) and transition/stub-period annuals. SINGLE SOURCE for
+# this window: providers/_xbrl_facts.py imports these for its annual_series
+# period guard (same window, applied there to duration spans and here to INSTANT
+# balance-sheet dates, which annual_series does not length-check).
 _FY_MIN_DAYS = 350
 _FY_MAX_DAYS = 380
 

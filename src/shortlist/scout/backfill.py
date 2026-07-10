@@ -29,13 +29,16 @@ from pathlib import Path
 from typing import Optional
 
 from ..env import redact_secrets
+from .buyback import SIGNAL as SIGNAL_BUYBACK
+from .buyback import STRENGTH as _BUYBACK_STRENGTH
 from .calendar import is_trading_day
 from .delisting import classify_delisting, normalize_items, terminal_price
-from .buyback import SIGNAL as SIGNAL_BUYBACK, STRENGTH as _BUYBACK_STRENGTH
-from .eightk import (DEFAULT_ITEM_SETS as _EIGHTK_ITEM_SETS, NEGATIVE_SIGNAL as SIGNAL_8K_NEG,
-                     SIGNAL as SIGNAL_8K, STRENGTH as _EIGHTK_STRENGTH, _junk_suffix,
-                     match_item_sets, match_negative)
 from .edgar_index import _is_real_ticker, activist_stakes_from_records
+from .eightk import DEFAULT_ITEM_SETS as _EIGHTK_ITEM_SETS
+from .eightk import NEGATIVE_SIGNAL as SIGNAL_8K_NEG
+from .eightk import SIGNAL as SIGNAL_8K
+from .eightk import STRENGTH as _EIGHTK_STRENGTH
+from .eightk import _junk_suffix, match_item_sets, match_negative
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
 
@@ -228,7 +231,7 @@ def assemble_events(records_by_day: dict, resolve_ticker, *, drop_spacs: bool = 
                 sentinel_ciks.setdefault(cik, r)
                 continue
             resolved_rows.append({**r, "ticker": norm})
-        for cik, r in sentinel_ciks.items():
+        for cik in sentinel_ciks:
             events.append(CohortEvent(
                 signal=SIGNAL, ticker=f"CIK:{cik}", cik=cik, event_date=entry,
                 as_of_price=None, strength=0.7, gated=None, composite=None, origin="backfill",
@@ -712,9 +715,8 @@ def run_backfill(config: dict, *, signal_key: str, start: date, end: date, ident
             if recs is None:
                 failed_chunks.append(f"{c_start}:{c_end}")
                 continue
-            events = spec["assemble"](recs,
-                                      _symbology.resolve_ticker if _symbology else
-                                      (lambda cik, as_of: None))
+            # _symbology is provably non-None here (built just above when absent).
+            events = spec["assemble"](recs, _symbology.resolve_ticker)
             fresh = [e for e in events if e.meta.get("key") not in existing_keys]
             measured = []
             for ev in fresh:
@@ -836,12 +838,13 @@ def score_event(ev, hist, facts, spy, sic, config):
         panel = extract_panel(facts, as_of)
         price = hist.nominal_close_asof(as_of)
         # v2 §5: clamp — the callback's 5-day forward tolerance must never reach past as_of
-        price_at = lambda d: hist.nominal_price_on(d) if d <= as_of else None
+        def price_at(d):
+            return hist.nominal_price_on(d) if d <= as_of else None
         m1 = panel_to_metrics(panel, ticker=ev.ticker, sic=sic, price=price, price_at=price_at)
         dates, closes = hist.through(as_of)
         spy_d, spy_c = spy.through(as_of) if spy is not None else ([], [])
-        from ..data.sources import snapshot_from_closes_dated
         from ..data.bridge import snapshot_to_metrics
+        from ..data.sources import snapshot_from_closes_dated
         m2 = snapshot_to_metrics(snapshot_from_closes_dated(ev.ticker, dates, closes, spy_d, spy_c))
         from .. import scoring
         card = scoring.score(merge_metrics(m1, m2), config)

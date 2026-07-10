@@ -139,6 +139,48 @@ def test_truncation_flag_set_when_capped():
     _run(src.aclose())
 
 
+def _lmt_handler(calls):
+    def handler(req):
+        calls["n"] += 1
+        if req.url.path.endswith("count/"):
+            return httpx.Response(200, json={"results": {"contracts": 1}})
+        return httpx.Response(200, json={"results": [
+            {"Recipient Name": "LOCKHEED MARTIN CORPORATION",
+             "Action Date": "2025-12-01", "Transaction Amount": 7e9}],
+            "page_metadata": {"hasNext": False}})
+    return handler
+
+
+def test_legacy_unversioned_cache_is_treated_as_miss():
+    # Pre-versioning cache files carry no "v" key -> must be ignored (refetch),
+    # never rebuilt into a GovContracts blindly.
+    from datetime import date
+    from shortlist.data.diskcache import write_json_cache
+    calls = {"n": 0}
+    src = _source_with(_lmt_handler(calls))
+    write_json_cache(src._cache_path("LMT", date.today().isoformat()),
+                     {"matched": True, "gc": {"ttm_obligated": 1.0}})  # legacy shape
+    gc = _run(src.fetch("LMT")).partial.gov_contracts
+    assert calls["n"] > 0                 # live path ran: legacy cache was a miss
+    assert gc.ttm_obligated == 7e9        # fresh data, not the stale cached 1.0
+    _run(src.aclose())
+
+
+def test_corrupt_versioned_cache_never_raises_and_refetches():
+    # A versioned payload whose gc dict no longer matches the dataclass fields
+    # must degrade to a miss (live refetch), not raise out of fetch().
+    from datetime import date
+    from shortlist.data.diskcache import write_json_cache
+    calls = {"n": 0}
+    src = _source_with(_lmt_handler(calls))
+    write_json_cache(src._cache_path("LMT", date.today().isoformat()),
+                     {"v": src._CACHE_V, "matched": True, "gc": {"no_such_field": 1}})
+    res = _run(src.fetch("LMT"))          # must not raise
+    assert res.partial.gov_contracts.ttm_obligated == 7e9
+    assert calls["n"] > 0
+    _run(src.aclose())
+
+
 def test_same_day_rerun_uses_cache():
     calls = {"n": 0}
 

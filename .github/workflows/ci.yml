@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Sync deps (core + edgar + scout extras + dev group)
+        run: uv sync --extra edgar --extra scout
+      - name: Lint (ruff)
+        run: uv run ruff check src tests
+      - name: Tests (hermetic; live tests are deselected by addopts)
+        run: uv run pytest -q

@@ -108,3 +108,21 @@ def test_markdown_renders_added_risks(tmp_path):
     md = report.to_markdown(a)
     assert "Newly disclosed risks" in md
     assert "New cyber risk" in md
+
+
+def test_write_commits_md_last_so_no_stranded_cached_brief(tmp_path, monkeypatch):
+    """The .md brief is the COMMIT MARKER (is_cached keys on it) and must be written
+    LAST: a crash before the brief write leaves the JSON record on disk but the name
+    still uncached, so the next run regenerates cleanly — never a 'cached' brief with
+    no screening-call record."""
+    import pytest
+    a = _assessment()
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("crash between the two writes")
+
+    monkeypatch.setattr(report, "to_markdown", boom)
+    with pytest.raises(RuntimeError):
+        report.write(a, tmp_path)
+    assert report.record_path("AAPL", a.filing_accession, tmp_path).exists()
+    assert report.is_cached("AAPL", a.filing_accession, tmp_path) is False

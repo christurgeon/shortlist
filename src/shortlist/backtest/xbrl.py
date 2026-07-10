@@ -109,21 +109,9 @@ async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
 
 
 async def fetch_cik_index(client, *, cache_dir: str, month: str) -> dict[str, str]:
-    """SEC company_tickers.json -> {TICKER: CIK}, month-cached."""
-    cp = Path(cache_dir) / f"company_tickers-{month}.json"
-    try:
-        if cp.exists():
-            return build_cik_index(json.loads(cp.read_text()))
-    except (ValueError, OSError):
-        pass
-    resp = await client.get(_TICKERS_URL)
-    resp.raise_for_status()
-    raw = resp.json()
-    try:
-        Path(cache_dir).mkdir(parents=True, exist_ok=True)
-        cp.write_text(json.dumps(raw))
-    except Exception:
-        pass
+    """SEC company_tickers.json -> {TICKER: CIK}, month-cached. Thin wrapper over
+    fetch_company_tickers_raw (same cache file/keys) + the build_cik_index transform."""
+    raw = await fetch_company_tickers_raw(client, cache_dir=cache_dir, month=month)
     return build_cik_index(raw)
 
 

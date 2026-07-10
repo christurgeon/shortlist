@@ -20,8 +20,8 @@ import httpx
 import yaml
 
 from ..env import load_env, redact_secrets
-from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
 from ..validation import no_data, partition_format
+from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
 from .models import RunManifest
 
 _KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain"}

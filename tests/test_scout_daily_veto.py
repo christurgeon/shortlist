@@ -2,7 +2,6 @@
 daily._negative_veto_sweep run step (mirrors test_scout_daily_firehose.py's tmp-state
 idiom; EFTS + resolver are monkeypatched at module level — no network)."""
 from datetime import date
-from pathlib import Path
 
 import shortlist.data.efts as efts_mod
 import shortlist.scout.cik_tickers as ct_mod

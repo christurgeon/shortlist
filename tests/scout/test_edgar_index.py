@@ -79,3 +79,38 @@ def test_is_real_ticker_rejects_placeholders_and_keeps_real_symbols():
     assert _is_real_ticker(" brk.b ") == "BRK.B"
     assert _is_real_ticker("axia3") == "AXIA3"
     assert _is_real_ticker("AAPL") == "AAPL"
+
+
+def _broken_edgar_module(monkeypatch):
+    """Install a fake `edgar` module whose set_identity raises — deterministic outer-except
+    trigger whether or not edgartools is installed."""
+    import sys
+    import types
+
+    fake = types.ModuleType("edgar")
+
+    def _boom(*a, **k):
+        raise RuntimeError("SEC outage https://sec.gov/x?apikey=SECRET")
+
+    fake.set_identity = _boom
+    fake.get_filings = _boom
+    monkeypatch.setitem(sys.modules, "edgar", fake)
+
+
+def test_fetch_daily_records_outage_degrades_loudly(monkeypatch):
+    import pytest
+    from shortlist.scout.edgar_index import fetch_daily_records
+    _broken_edgar_module(monkeypatch)
+    with pytest.warns(UserWarning, match="edgar index fetch failed") as w:
+        assert fetch_daily_records(date(2026, 7, 1), 5, "x@y.z") == []   # still never-raises
+    assert "SECRET" not in str(w[0].message)          # redact_secrets applied
+
+
+def test_fetch_activist_records_outage_degrades_loudly(monkeypatch):
+    import pytest
+    from shortlist.scout.edgar_index import fetch_activist_records
+    _broken_edgar_module(monkeypatch)
+    with pytest.warns(UserWarning, match="edgar index fetch failed") as w:
+        assert fetch_activist_records(date(2026, 7, 1), 5, "x@y.z",
+                                      lambda cik: None) == []            # still never-raises
+    assert "SECRET" not in str(w[0].message)          # redact_secrets applied

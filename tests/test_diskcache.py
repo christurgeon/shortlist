@@ -8,9 +8,7 @@ is best-effort — it creates parent dirs and never raises.
 """
 
 import json
-from pathlib import Path
 
-import pytest
 
 from shortlist.data.diskcache import read_json_cache, write_json_cache
 

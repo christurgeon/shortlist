@@ -208,7 +208,7 @@ def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
         if weighting == "value":
             ws = [float(m.composite or 0.0) for m in held]     # placeholder weight source
             tot = sum(ws)
-            r = sum(c * w for c, w in zip(contribs, ws)) / tot if tot > 0 else sum(contribs) / len(contribs)
+            r = sum(c * w for c, w in zip(contribs, ws, strict=False)) / tot if tot > 0 else sum(contribs) / len(contribs)
         else:
             r = sum(contribs) / len(contribs)
         rows.append((_month_iso(month_start), r, len(held)))
@@ -260,7 +260,7 @@ def ols(y: list[float], X: list[list[float]]) -> list[float]:
         for r in range(k):
             if r != col and abs(M[r][col]) > 0:
                 factor = M[r][col]
-                M[r] = [a - factor * b for a, b in zip(M[r], M[col])]
+                M[r] = [a - factor * b for a, b in zip(M[r], M[col], strict=False)]
     return [M[i][k] for i in range(k)]
 
 
@@ -461,7 +461,8 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
 
     verdict = "HOLD"
     if frac < floor:
-        verdict = "INSUFFICIENT"; notes.append(f"measurable fraction {frac:.2f} < floor")
+        verdict = "INSUFFICIENT"
+        notes.append(f"measurable fraction {frac:.2f} < floor")
     else:
         by_vintage = measurement.measurable_fraction_by_vintage()
         bad_vintages = [(yr, n_meas, n_sel, vfrac)
@@ -473,9 +474,11 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
             notes.append(f"vintage-stratified measurable fraction below floor for {detail}")
 
     if verdict == "HOLD" and eff < prereg.get("min_independent_blocks", 2):
-        verdict = "INSUFFICIENT"; notes.append(f"{eff} independent blocks < min")
+        verdict = "INSUFFICIENT"
+        notes.append(f"{eff} independent blocks < min")
     elif verdict == "HOLD" and sensitivity_flip:
-        verdict = "INSUFFICIENT"; notes.append("delisting-return sensitivity band flips the sign")
+        verdict = "INSUFFICIENT"
+        notes.append("delisting-return sensitivity band flips the sign")
     # "Could not compute a risk-adjusted alpha" is NOT "non-negative alpha" -- a missing alpha
     # (empty/misaligned FF3, e.g. a failed factor fetch) or missing bootstrap CI must read as
     # INSUFFICIENT, never fall through to the HOLD "no negative evidence" branch (verdict honesty).
@@ -483,9 +486,11 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         verdict = "INSUFFICIENT"
         notes.append("could not compute FF3 alpha (insufficient factor overlap / alignment)")
     elif verdict == "HOLD" and ci is not None and ci[1] < 0:
-        verdict = "KILL"; notes.append(f"alpha 90% CI entirely negative {ci}")
+        verdict = "KILL"
+        notes.append(f"alpha 90% CI entirely negative {ci}")
     elif verdict == "HOLD" and alpha is not None and alpha <= 0:
-        verdict = "KILL"; notes.append(f"point alpha {alpha:.4f}/mo <= 0 past min sample")
+        verdict = "KILL"
+        notes.append(f"point alpha {alpha:.4f}/mo <= 0 past min sample")
     elif verdict == "HOLD":
         notes.append("no negative evidence; HOLD (promote requires live corroboration + factor verdict)")
 
@@ -526,10 +531,12 @@ def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
         while len(by) < n:
             start = int(_rand() * n) % n
             i = start
-            by.append(y[i]); bX.append(X[i])
+            by.append(y[i])
+            bX.append(X[i])
             while _rand() > p and len(by) < n:           # extend the block
                 i = (i + 1) % n
-                by.append(y[i]); bX.append(X[i])
+                by.append(y[i])
+                bX.append(X[i])
         try:
             b = ols(by, bX)
             alphas.append(b[0])

@@ -7,20 +7,31 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from . import claude_cli
+from ..env import redact_secrets
+from . import claude_cli, reverse_dcf
+from . import earnings as earnings_ctx
 from . import gov_contracts as gov_contracts_ctx
 from . import lobbying as lobbying_ctx
-from . import earnings as earnings_ctx
 from . import proxy as proxy_ctx
-from . import reverse_dcf
-from ..env import redact_secrets
 from .claude_cli import CliResult
-from .models import (SCHEMA_HINT, FilingBundle, QualitativeAssessment,
-                     assessment_from_payload, STANCES, _screening_call)
 from .coverage_caveat import coverage_caveats
+from .models import (
+    SCHEMA_HINT,
+    STANCES,
+    FilingBundle,
+    QualitativeAssessment,
+    _screening_call,
+    assessment_from_payload,
+    default_valid_signals,
+)
 
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12
+
+# Conviction-cap confidence thresholds (config research.screening_call.conviction_cap
+# overrides). Module-level so apply_guards and _high_corroborated can never drift.
+_LOW_BELOW_DEFAULT = 0.45
+_MEDIUM_BELOW_DEFAULT = 0.70
 
 SYSTEM_PROMPT = (
     "You are an equity analyst reviewing one company's recent SEC filings (a 10-K, "
@@ -393,7 +404,7 @@ def _cap_conv(conv: str, ceiling: str) -> str:
 def _high_corroborated(assessment, card, scfg: dict) -> bool:
     cap = scfg.get("conviction_cap") or {}
     conf = getattr(card, "confidence", None)
-    if conf is None or conf < cap.get("medium_below", 0.70):
+    if conf is None or conf < cap.get("medium_below", _MEDIUM_BELOW_DEFAULT):
         return False
     stance = assessment.screening_call.stance
     bullish = stance in ("STRONG_BUY", "BUY")
@@ -447,9 +458,9 @@ def apply_guards(assessment, card, config: dict) -> None:
     # 2. conviction cap (thin data)
     cap = scfg.get("conviction_cap") or {}
     conf = getattr(card, "confidence", None)
-    if conf is None or conf < cap.get("low_below", 0.45):
+    if conf is None or conf < cap.get("low_below", _LOW_BELOW_DEFAULT):
         call.conviction = _cap_conv(call.conviction, "LOW")
-    elif conf < cap.get("medium_below", 0.70):
+    elif conf < cap.get("medium_below", _MEDIUM_BELOW_DEFAULT):
         call.conviction = _cap_conv(call.conviction, "MEDIUM")
     if call.decided_without:
         call.conviction = _cap_conv(call.conviction, "MEDIUM")
@@ -472,7 +483,6 @@ def assess(card, bundle: FilingBundle, config: dict,
     scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-4-6")
     timeout = rcfg.get("timeout_s", 180)
-    from .models import default_valid_signals
     vs = default_valid_signals()
     max_conflicts = rcfg.get("max_conflicts", 3)
     max_falsifiers = rcfg.get("max_falsifiers", 3)

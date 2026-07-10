@@ -6,7 +6,33 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## Two new discovery originators shipped: edgar_13f + edgar_buyback — deploy + backfill pending (2026-07-09)
+## Hardening-cleanup round 1 completed — review findings fixed, lint-clean, PR'd (2026-07-10)
+
+The sweep on `chore/hardening-cleanup-round1` (new `.github/workflows/ci.yml` — first CI
+in the repo, `providers/_gaap_tags.py`, new hardening tests) was picked up mid-flight,
+review-hardened, and completed:
+
+1. A high-effort multi-agent review (22 agents) of the diff found 12 distinct defects;
+   the 9 real ones were fixed with regression tests: FINRA truncated-page-cap payload no
+   longer cached (complete-rows cache contract); claude_cli kills the detached process
+   group on ANY escape from communicate (Ctrl-C orphan); backtest config validation
+   requires only `thresholds` (weights is --fit-only); `from_dict` warns loudly on
+   non-dict sections; all-empty `--tickers`/`--provider` is an argparse error (was a
+   silent all-null screen); `ScoutState._save` uses a PID-unique temp (timer-overlap
+   race); the research `.md` commit marker is written atomically; definitive-empty Yahoo
+   chart envelopes are day-cached again (WAF protection) while malformed payloads stay
+   uncached; the notify exception diagnostic goes to stderr.
+2. All 86 ruff errors cleared (76 pre-existed on main; fixed here so the new CI lint
+   gate passes from the first run). B905 zips got `strict=False` (semantics-preserving).
+3. Full suite `1976 passed, 6 skipped` + `ruff check` clean.
+
+**Deferred** (review finding 10, cleanup-only): the guarded YAML config load is
+hand-rolled twice (`screen.py` main + `backtest/cli.py` main) with divergent shapes; a
+shared `load_config(path, required_keys=())` helper would keep the next entrypoint
+(accumulate/scout/bot also load config.yaml) from growing a third variant.
+
+**Status:** open only for the deferred config-load helper; the round itself is merged or
+pending merge via PR.
 
 Shipped (commits `f698bf6..52b979c`, full suite 1919 green): **`edgar_13f`** marquee-fund
 new-position cloning (7 live-verified fund CIKs, CUSIP→ticker via SEC FTD files +

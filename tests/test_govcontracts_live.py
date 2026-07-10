@@ -4,9 +4,12 @@ import os
 import pytest
 from shortlist.data.sources import GovContractsSource
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
     os.environ.get("SHORTLIST_LIVE") != "1",
-    reason="set SHORTLIST_LIVE=1 to run network-bound USAspending tests")
+    reason="set SHORTLIST_LIVE=1 to run network-bound USAspending tests"),
+]
 
 
 def _fetch(ticker):

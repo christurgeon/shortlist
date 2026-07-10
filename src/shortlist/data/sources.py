@@ -4,6 +4,7 @@ import asyncio
 import dataclasses
 import inspect
 import os
+import sys
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -547,7 +548,7 @@ class EdgarSource(Source):
             summary = aggregate_form4(
                 Company(ticker).get_filings(form="4").latest(_FORM4_FETCH_LIMIT), cutoff, self._conviction)
         except Exception as e:
-            res.errors.append(f"edgar: {e}")
+            res.errors.append(f"edgar: {redact_secrets(e)}")
             res.partial = TickerSnapshot(ticker=ticker)
             return res
 
@@ -667,21 +668,21 @@ class EdgarSource(Source):
                 else:
                     res.partial.profile.sic = sic
         except Exception as e:
-            res.errors.append(f"edgar-sic: {e}")
+            res.errors.append(f"edgar-sic: {redact_secrets(e)}")
         # Financials are isolated: a failure here must never drop the insider result.
         try:
             fin_snap = self._build_financials_snapshot(ticker, self._fetch_financials_object(ticker))
             if fin_snap.statements is not None:
                 res.partial.statements = fin_snap.statements
         except Exception as e:
-            res.errors.append(f"edgar-financials: {e}")
+            res.errors.append(f"edgar-financials: {redact_secrets(e)}")
         # Events are isolated: a failure here must never drop insider/statements.
         try:
             ev = self._build_events_from_records(self._fetch_filings_index(ticker))
             if ev is not None:
                 res.partial.events = ev
         except Exception as e:
-            res.errors.append(f"edgar-events: {e}")
+            res.errors.append(f"edgar-events: {redact_secrets(e)}")
         return res
 
 
@@ -721,6 +722,9 @@ class YahooSource(Source):
         self._cache_dir = Path(cache_dir)
         self._spy_closes: Optional[list[float]] = None
         self._spy_dates: Optional[list[date]] = None
+        # Guards the load-once SPY fetch: without it ~8 concurrent cold-cache
+        # tickers would each fire the full SPY chart request (thundering herd).
+        self._load_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -748,9 +752,11 @@ class YahooSource(Source):
         """SPY closes, fetched once per run. Also populates `_spy_dates` from the same
         payload so the residual-momentum leg can date-inner-join stock vs SPY."""
         if self._spy_closes is None:
-            raw = await self._get_chart("SPY")
-            self._spy_closes = _closes_from_chart(raw)
-            self._spy_dates = _dates_from_chart(raw)
+            async with self._load_lock:
+                if self._spy_closes is None:   # re-check: another task may have loaded
+                    raw = await self._get_chart("SPY")
+                    self._spy_dates = _dates_from_chart(raw)
+                    self._spy_closes = _closes_from_chart(raw)
         return self._spy_closes
 
     async def fetch(self, ticker: str) -> SourceResult:
@@ -789,6 +795,7 @@ class FinraSource(Source):
     DATA = _finra.FINRA_DATA_URL
     PARTS = _finra.FINRA_PARTS_URL
     PAGE = _finra.FINRA_PAGE   # FINRA record-max-limit
+    MAX_PAGES = 200            # hard cap: ~1M rows dwarfs the real universe (~30k)
 
     def __init__(self, timeout: float = 30.0, cache_dir: str = ".cache/finra"):
         import httpx  # lazy: only needed for live runs
@@ -797,6 +804,7 @@ class FinraSource(Source):
         self._index: Optional[dict] = None
         self._settlement: Optional[str] = None
         self._load_error: Optional[str] = None
+        self._load_lock = asyncio.Lock()   # bulk load fires once, not per ticker
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -828,6 +836,12 @@ class FinraSource(Source):
         """Discover the latest cycle and build the symbol index once."""
         if self._index is not None or self._load_error is not None:
             return
+        async with self._load_lock:
+            await self._load_locked()
+
+    async def _load_locked(self) -> None:
+        if self._index is not None or self._load_error is not None:
+            return   # another task won the race while we waited on the lock
         try:
             settlement = _finra_latest_partition(await self._fetch_partitions())
             if not settlement:
@@ -835,14 +849,23 @@ class FinraSource(Source):
                 return
             rows = self._read_cache(settlement)
             if rows is None:
-                rows, offset = [], 0
-                while True:
+                rows, offset, truncated = [], 0, False
+                for _ in range(self.MAX_PAGES):
                     page = await self._fetch_page(settlement, offset)
                     rows.extend(page)
                     if len(page) < self.PAGE:
                         break
                     offset += self.PAGE
-                self._write_cache(settlement, rows)
+                else:  # cap hit: a buggy/looping endpoint, never real data
+                    truncated = True
+                    print(f"finra: pagination cap ({self.MAX_PAGES} pages) hit for "
+                          f"settlement {settlement}; result may be truncated",
+                          file=sys.stderr)
+                if not truncated:
+                    # never cache a truncated set: the scout's short-interest
+                    # fetcher shares this file and requires the COMPLETE rows
+                    # for the whole ~2-week settlement cycle
+                    self._write_cache(settlement, rows)
             self._index = _finra_index(rows)
             self._settlement = settlement
         except Exception as e:
@@ -879,10 +902,17 @@ class WsbSource(Source):
         self._cache_dir = cache_dir
         self._index: Optional[dict] = None
         self._load_error: Optional[str] = None
+        self._load_lock = asyncio.Lock()   # bulk load fires once, not per ticker
 
     async def _load(self) -> None:
         if self._index is not None or self._load_error is not None:
             return
+        async with self._load_lock:
+            await self._load_locked()
+
+    async def _load_locked(self) -> None:
+        if self._index is not None or self._load_error is not None:
+            return   # another task won the race while we waited on the lock
         from . import apewisdom
         idx, err = await asyncio.to_thread(
             apewisdom.fetch_wsb_mentions, self._cache_dir, self._timeout)
@@ -1215,6 +1245,7 @@ class GovContractsSource(Source):
         self._max_pages = int(cfg.get("max_pages", 5))
         self._name_index: Optional[dict] = None
         self._load_error: Optional[str] = None
+        self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -1222,6 +1253,12 @@ class GovContractsSource(Source):
     async def _load_names(self) -> None:
         if self._name_index is not None or self._load_error is not None:
             return
+        async with self._load_lock:
+            await self._load_names_locked()
+
+    async def _load_names_locked(self) -> None:
+        if self._name_index is not None or self._load_error is not None:
+            return   # another task won the race while we waited on the lock
         try:
             from ..backtest import xbrl
             month = date.today().strftime("%Y-%m")
@@ -1240,11 +1277,18 @@ class GovContractsSource(Source):
     def _cache_path(self, ticker: str, day: str) -> Path:
         return self._cache_dir / f"contracts-{ticker.upper()}-{day}.json"
 
+    _CACHE_V = 1   # bump if the cached GovContracts shape changes
+
     def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        return read_json_cache(self._cache_path(ticker, day))
+        # version-gated (LobbyingSource pattern): a stale-shape / legacy
+        # un-versioned payload is treated as a miss so a _CACHE_V bump refetches.
+        payload = read_json_cache(self._cache_path(ticker, day))
+        if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
+            return payload
+        return None
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        write_json_cache(self._cache_path(ticker, day), payload)
+        write_json_cache(self._cache_path(ticker, day), {"v": self._CACHE_V, **payload})
 
     async def fetch(self, ticker: str) -> SourceResult:
         from .govcontract_match import match_confidence
@@ -1266,11 +1310,16 @@ class GovContractsSource(Source):
         # basket makes zero USAspending calls.
         cached = self._read_cache(ticker, end)
         if cached is not None:
-            if cached.get("matched"):
-                snap.gov_contracts = GovContracts(**cached["gc"])
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "total_txns": cached.get("total_txns"), "cached": True}
-            return res
+            # Guarded rebuild: a corrupt/stale payload must never raise out of
+            # fetch() — it degrades to a cache miss and the live path below runs.
+            try:
+                if cached.get("matched"):
+                    snap.gov_contracts = GovContracts(**cached["gc"])
+                res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
+                           "total_txns": cached.get("total_txns"), "cached": True}
+                return res
+            except Exception:
+                snap.gov_contracts = None
         start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         try:
@@ -1372,6 +1421,7 @@ class LobbyingSource(Source):
         self._max_retries = int(cfg.get("max_retries", 2))
         self._name_index: Optional[dict] = None
         self._load_error: Optional[str] = None
+        self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -1390,6 +1440,12 @@ class LobbyingSource(Source):
     async def _load_names(self) -> None:
         if self._name_index is not None or self._load_error is not None:
             return
+        async with self._load_lock:
+            await self._load_names_locked()
+
+    async def _load_names_locked(self) -> None:
+        if self._name_index is not None or self._load_error is not None:
+            return   # another task won the race while we waited on the lock
         try:
             from ..backtest import xbrl
             month = date.today().strftime("%Y-%m")

@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import warnings
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 _EMPTY: dict = {"screened": {}, "runs": [], "held": [], "picks": {}}
@@ -25,14 +26,34 @@ class ScoutState:
             try:
                 return json.loads(self.path.read_text())
             except json.JSONDecodeError as e:
-                # A corrupt ledger must not crash the daily run; start fresh.
-                warnings.warn(f"ScoutState: corrupt {self.path}, starting fresh: {e}", stacklevel=2)
+                # A corrupt ledger must not crash the daily run; start fresh — but the
+                # firehose/picks history is the permanent record, so preserve the corrupt
+                # bytes under a timestamped sibling name instead of overwriting them on
+                # the next _save().
+                stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+                preserved = self.path.with_name(f"{self.path.name}.corrupt-{stamp}")
+                try:
+                    os.replace(self.path, preserved)
+                    where = f"preserved as {preserved}"
+                except OSError as mv:
+                    where = f"could not preserve copy: {mv}"
+                warnings.warn(f"ScoutState: corrupt {self.path} ({where}), "
+                              f"starting fresh: {e}", stacklevel=2)
         # Deep-copy so nested lists/dicts are not shared across ScoutState instances.
         return copy.deepcopy(_EMPTY)
 
     def _save(self) -> None:
+        # Atomic write: a crash mid-write must never truncate the ledger (the firehose +
+        # picks permanent record). PID-unique sibling temp + os.replace (atomic on
+        # POSIX) — a fixed .tmp name would let a manual run overlapping the systemd
+        # timer interleave writes into one file before either replace lands.
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self._data, indent=2, sort_keys=True))
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(json.dumps(self._data, indent=2, sort_keys=True))
+            os.replace(tmp, self.path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     # --- cooldown ---
     def record_screened(self, tickers: list[str], session: date) -> None:
@@ -44,7 +65,10 @@ class ScoutState:
         iso = self._data["screened"].get(ticker.upper())
         if not iso:
             return False
-        last = date.fromisoformat(iso)
+        try:
+            last = date.fromisoformat(iso)
+        except (TypeError, ValueError):
+            return False        # malformed persisted entry: not-in-cooldown, never abort
         return on - last < timedelta(days=cooldown_days)
 
     # --- idempotency ---
@@ -62,7 +86,12 @@ class ScoutState:
         """True while a prior Yahoo WAF block is still in effect (rest-of-day cooldown).
         Absent key (old state files) reads as not-blocked — backward compatible."""
         iso = self._data.get("yahoo_blocked_until")
-        return bool(iso) and on <= date.fromisoformat(iso)
+        if not iso:
+            return False
+        try:
+            return on <= date.fromisoformat(iso)
+        except (TypeError, ValueError):
+            return False        # malformed persisted entry: not-blocked, never abort
 
     def yahoo_blocked_until(self) -> str | None:
         return self._data.get("yahoo_blocked_until")

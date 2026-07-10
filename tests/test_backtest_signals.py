@@ -1,3 +1,4 @@
+import contextlib
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -403,10 +404,9 @@ def test_observe_uses_nominal_close_for_market_cap(monkeypatch):
                         closes=[45.0, 50.0],          # adjusted (post-split)
                         nominal_closes=[90.0, 100.0])  # unadjusted (what a live observer saw)
     src = XbrlSignalSource(facts={"X": {"cik": "1"}}, histories={"X": hist}, thresholds={})
-    try:
+    with contextlib.suppress(KeyError):
+        # empty thresholds{} trips the axis-scoring loop AFTER panel_to_metrics
+        # already captured price/price_at into `seen` -- that's all this test checks
         src.observe("X", date(2021, 1, 5))
-    except KeyError:
-        pass  # empty thresholds{} trips the axis-scoring loop AFTER panel_to_metrics
-              # already captured price/price_at into `seen` -- that's all this test checks
     assert seen["price"] == 100.0          # nominal at as_of, NOT the adjusted 50.0
     assert seen["price_at"] == 90.0        # nominal at the historical PE-year date

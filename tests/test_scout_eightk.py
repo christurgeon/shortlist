@@ -34,8 +34,8 @@ def test_match_negative():
     assert match_negative(("2.06", "9.01")) == ["2.06"]
     assert match_negative(("1.03", "2.06")) == ["1.03", "2.06"]
     assert match_negative(("1.01", "9.01")) is None
-    assert NEGATIVE_ITEMS == frozenset({"1.03", "2.04", "2.05", "2.06",
-                                        "3.01", "4.02", "5.01"})
+    assert frozenset({"1.03", "2.04", "2.05", "2.06",
+                                        "3.01", "4.02", "5.01"}) == NEGATIVE_ITEMS
 
 
 def test_happy_path_emission_shape():

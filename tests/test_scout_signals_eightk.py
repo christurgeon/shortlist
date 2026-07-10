@@ -88,7 +88,29 @@ def test_degrades_on_error_and_redacts(monkeypatch):
 
     monkeypatch.setattr(efts, "fetch_eightk_day", boom)
     sig = EdgarEightKSignal(identity="x@y.z")
-    sig._resolver = {}
+    # populated resolver: the empty-resolver guard must not short-circuit before the fetch
+    sig._resolver = {"0000000007": "RBI"}
     assert sig.scan(date(2026, 7, 3)) == []
     ran, detail = sig.available()
     assert ran is False and "SECRET" not in detail
+
+
+def test_scan_empty_resolver_guard_skips_and_resets(monkeypatch):
+    """An empty CIK->ticker resolver must skip the scan LOUDLY: status False, no emissions,
+    NO recorded new_accessions, and the memoized resolver dropped so the retry is real
+    (mirrors the buyback originator's guard)."""
+    import shortlist.data.efts as efts
+    import shortlist.scout.cik_tickers as ct
+
+    monkeypatch.setattr(ct, "load_cik_to_ticker", lambda *a, **k: {})   # resolver loads empty
+
+    def boom(*a, **k):  # EFTS must never be reached once the guard fires
+        raise AssertionError("EFTS fetched despite an empty resolver")
+
+    monkeypatch.setattr(efts, "fetch_eightk_day", boom)
+    sig = EdgarEightKSignal(identity="x@y.z")
+    ems = sig.scan(date(2026, 7, 3))
+    assert ems == [] and sig.new_accessions == []
+    assert sig._resolver is None                          # dropped -> real retry next session
+    ran, detail = sig.available()
+    assert ran is False and "resolver empty" in detail

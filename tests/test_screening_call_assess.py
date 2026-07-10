@@ -1,6 +1,6 @@
 import json
 from types import SimpleNamespace
-from shortlist.research.assess import assess, SYSTEM_PROMPT
+from shortlist.research.assess import assess
 from shortlist.research.claude_cli import CliResult
 from shortlist.research.models import FilingText, FilingBundle
 

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import sys
 from typing import Any, Optional
 
+from ..env import redact_secrets
 from . import riskdiff, textsim
 from .models import FilingBundle, FilingText
 
@@ -96,7 +98,11 @@ def _prior_year_risk_factors(ticker: str) -> str:
                 tenk = f.obj()
                 return _section(tenk, "risk_factors")
         return ""
-    except Exception:
+    except Exception as e:
+        # Never-raises contract: the YoY diff degrades to "" — but say why on
+        # stderr so a systematic failure doesn't hide as "no prior 10-K".
+        print(f"research: prior-year 10-K risk-factor fetch failed for {ticker}: "
+              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
         return ""
 
 
@@ -166,7 +172,11 @@ def filing_text_change(
             "current_date": _acceptance_date(current),
             "prior_date": _acceptance_date(prior),
         }
-    except Exception:
+    except Exception as e:
+        # Never-raises contract: the similarity abstains to None — but say why
+        # on stderr so a systematic failure doesn't hide as "no filing pair".
+        print(f"research: filing_text_change failed for {ticker}: "
+              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
         return None
 
 

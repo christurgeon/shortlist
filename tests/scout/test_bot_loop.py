@@ -1,4 +1,3 @@
-import threading
 from shortlist.scout.bot import TelegramBot
 from shortlist.scout.notify import PollResult
 

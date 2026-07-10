@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 from pathlib import Path
 
-from .models import QualitativeAssessment, stance_label, call_disclaimer
+from .models import QualitativeAssessment, call_disclaimer, stance_label
 
 
 def _safe(accession: str) -> str:
@@ -138,9 +139,19 @@ def write(a: QualitativeAssessment, root, config=None) -> Path:
     key = a.cache_key or a.filing_accession
     bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)
-    bp.write_text(to_markdown(a, config), encoding="utf-8")
+    # Commit order matters: is_cached() keys on the .md brief, so the .md is the
+    # COMMIT MARKER and must be written LAST. JSON record first — a crash between
+    # the two writes must never strand a "cached" brief with no screening-call record.
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
     record_path(a.ticker, key, root).write_text(
         json.dumps(record, indent=2, default=str), encoding="utf-8")
+    # The marker itself must be atomic too: a truncated .md would read as
+    # "cached" forever. PID-unique temp + os.replace (the store.py pattern).
+    tmp = bp.with_name(f"{bp.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(to_markdown(a, config), encoding="utf-8")
+        os.replace(tmp, bp)
+    finally:
+        tmp.unlink(missing_ok=True)
     return bp

@@ -19,8 +19,8 @@ from typing import Optional
 
 import httpx
 
-from .cik_tickers import build_cik_to_ticker, load_cik_to_ticker, _norm_cik, _UNIT_SUFFIX, _PREF_SUFFIX
 from ..env import redact_secrets
+from .cik_tickers import _PREF_SUFFIX, _UNIT_SUFFIX, _norm_cik, build_cik_to_ticker, load_cik_to_ticker
 
 _CDX_URL = "http://web.archive.org/cdx/search/cdx"
 _WB_RAW = "http://web.archive.org/web/{ts}id_/https://www.sec.gov/files/company_tickers.json"
@@ -143,7 +143,7 @@ def _raw_snapshot(timestamp: str, *, cache_dir: str, client: Optional[httpx.Clie
             pass
         if attempt < 2:                     # no dead sleep after the final failed attempt
             time.sleep(2 ** attempt)        # fixed backoff 1s/2s (no random)
-    import warnings                          # L2: a give-up is NOT silent (distinguish from "no snapshot")
+    import warnings  # L2: a give-up is NOT silent (distinguish from "no snapshot")
     warnings.warn(f"symbology: snapshot fetch failed after retries for {timestamp}", stacklevel=2)
     return None
 

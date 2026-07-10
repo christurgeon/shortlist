@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Optional
+
+from ..env import redact_secrets
 
 # edgartools' "<1% / *" beneficial-ownership sentinel (NOT a literal 0.5%).
 _SENTINEL_PCT = 0.5
@@ -227,7 +230,11 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
             ticker, str(getattr(latest, "accession_no", "") or ""),
             _acceptance_date(latest), latest.obj())
         return facts if facts.usable() else None
-    except Exception:
+    except Exception as e:
+        # Never-raises contract: the context line simply abstains — but say why
+        # on stderr so a systematic failure doesn't hide as "no proxy".
+        print(f"research: DEF 14A proxy fetch failed for {ticker}: "
+              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
         return None
 
 

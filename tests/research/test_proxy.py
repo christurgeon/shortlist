@@ -324,6 +324,7 @@ def test_extract_pvp_orders_newest_first_regardless_of_source_order():
 # --- _pick_latest (pure PiT/exact-form selection; no network) -----------------
 
 from shortlist.research.proxy import _pick_latest
+import contextlib
 
 
 class _Filing:
@@ -370,10 +371,8 @@ def _run_assess_capture(monkeypatch, proxy_enabled):
     cfg = {"research": {"screening_call": {"enabled": False},
                         "proxy": {"enabled": proxy_enabled, "max_holders": 3,
                                   "control_pct": 30.0}}}
-    try:
+    with contextlib.suppress(Exception):
         assess.assess(_AssessCard(), _bundle(), cfg, runner=runner)
-    except Exception:
-        pass
     return cap
 
 
