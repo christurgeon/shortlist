@@ -26,13 +26,13 @@ review-hardened, and completed:
    gate passes from the first run). B905 zips got `strict=False` (semantics-preserving).
 3. Full suite `1976 passed, 6 skipped` + `ruff check` clean.
 
-**Deferred** (review finding 10, cleanup-only): the guarded YAML config load is
-hand-rolled twice (`screen.py` main + `backtest/cli.py` main) with divergent shapes; a
-shared `load_config(path, required_keys=())` helper would keep the next entrypoint
-(accumulate/scout/bot also load config.yaml) from growing a third variant.
+**Deferred item DONE (2026-07-10, same day):** the shared config loader shipped as
+`shortlist/config.py` (`load_config(path, required_keys=())` + `ConfigError`), TDD'd,
+and wired into ALL FOUR config.yaml entrypoints — including `scout/daily.py` and
+`scout/bot.py`, which were previously UNGUARDED (raw traceback on a missing/corrupt
+config; now a prefixed one-liner + exit 2, matching the screen/backtest contract).
 
-**Status:** open only for the deferred config-load helper; the round itself is merged or
-pending merge via PR.
+**Status:** closed.
 
 Shipped (commits `f698bf6..52b979c`, full suite 1919 green): **`edgar_13f`** marquee-fund
 new-position cloning (7 live-verified fund CIKs, CUSIP→ticker via SEC FTD files +

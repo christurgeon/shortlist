@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-import yaml
 
+from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
 from ..validation import no_data, partition_format
 from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
@@ -419,7 +419,11 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     load_env()
-    config = yaml.safe_load(Path(args.config).read_text())
+    try:
+        config = load_config(args.config)
+    except ConfigError as e:
+        print(f"shortlist-bot: {e}", file=sys.stderr)
+        return 2
 
     # Honour the cache block exactly like daily.py so the bot benefits from warm
     # re-screens and respects the operator's TTL/kill-switch.

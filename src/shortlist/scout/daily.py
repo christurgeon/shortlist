@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 
+from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
 from ._caption import _caption
 from .budget import select
@@ -1099,7 +1100,11 @@ def main(argv: list[str] | None = None) -> int:
     load_env()
     if args.no_research:
         os.environ["SCOUT_NO_RESEARCH"] = "1"
-    config = yaml.safe_load(Path(args.config).read_text())
+    try:
+        config = load_config(args.config)
+    except ConfigError as e:
+        print(f"scout: {e}", file=sys.stderr)
+        return 2
     today = datetime.now(timezone.utc).date()
 
     subcommand = getattr(args, "subcommand", None)

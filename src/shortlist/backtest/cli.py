@@ -11,8 +11,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
-import yaml
 
+from ..config import ConfigError, load_config
 from ..env import load_env
 from .engine import (
     _TRUST_MIN_BREADTH,
@@ -477,19 +477,13 @@ def main(argv=None) -> int:
                       file=sys.stderr)
                 return 2
     today = datetime.now(tz=timezone.utc).date().isoformat()
+    # Shared shape contract (config.py). Only 'thresholds' is required here —
+    # 'weights' is read solely by the --fit path (_fit_prior_from_config),
+    # which carries its own missing-key guard.
     try:
-        config = yaml.safe_load(Path(args.config).read_text())
-    except OSError as e:
-        print(f"cannot read config {args.config}: {e}", file=sys.stderr)
-        return 2
-    except yaml.YAMLError as e:
-        print(f"config {args.config} is not valid YAML: {e}", file=sys.stderr)
-        return 2
-    # only 'thresholds' is required here — 'weights' is read solely by the --fit
-    # path (_fit_prior_from_config), which carries its own missing-key guard
-    if not isinstance(config, dict) or "thresholds" not in config:
-        print(f"config {args.config} must be a YAML mapping with a 'thresholds' key",
-              file=sys.stderr)
+        config = load_config(args.config, required_keys=("thresholds",))
+    except ConfigError as e:
+        print(f"shortlist-backtest: {e}", file=sys.stderr)
         return 2
     thresholds = config["thresholds"]
 
