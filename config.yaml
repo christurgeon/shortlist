@@ -646,7 +646,12 @@ scout:
     edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
                                               # Cohen-Polk-Silli 2010) — DEFENSIBLE prior, ON; weight below the
                                               # 13D/Form-4 tier (info up to 45 days stale; return from FILING date)
-    edgar_buyback: {enabled: false, weight: 0.5}   # DEFENSIBLE prior (ILV 1995 / Peyer-Vermaelen 2009) but OFF on the 8-K MEASURE-FIRST precedent; backfill verdict earns/kills it
+    edgar_buyback: {enabled: false, weight: 0.5}   # KILLED by the pre-registered backfill (2026-07-11, scored/gated cohort:
+                                                   # FF3 alpha −0.84%/mo, 90% CI entirely negative, 16 blocks, frac 0.96 —
+                                                   # scout/backfill/verdict-buyback-2022-2025.json). The ILV/Peyer-Vermaelen
+                                                   # drift did NOT survive this funnel's universe/horizon (K=3m, 2022–2025);
+                                                   # stays OFF on evidence, the edgar_8k precedent. Do not enable without a
+                                                   # new pre-registered cohort.
 
 # Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
 # sort beyond the existing confidence tiebreak, nor `passed`/`composite`.

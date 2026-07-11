@@ -6,7 +6,45 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## Hardening-cleanup round 1 completed — review findings fixed, lint-clean, PR'd (2026-07-10)
+## Buyback backfill KILL + combined-universe XBRL IC run (2026-07-11)
+
+Branch `fix/buyback-prereg-slug` (local, unpushed — operator to push/PR/merge):
+
+1. **Slug fix shipped**: `preregister/edgar_buyback.yaml` → `edgar_buyback_auth.yaml`
+   (pure git-mv rename; validate derives the slug from the event signal
+   `edgar:buyback_auth`, so the old name could only ever yield INSUFFICIENT
+   "prereg missing"). `_BACKFILL_SPECS` slug updated; new invariant test pins
+   `spec["slug"] == _slug_for_signal(spec["signal"])` + file-exists for ALL four
+   signals. Suite 1992 green, ruff clean.
+2. **Buyback originator KILLED by its pre-registered cohort** (588 events 2022–2025,
+   K=3m): scored/gated cohort FF3 alpha **−0.84%/mo, 90% CI entirely negative**
+   [−1.80%, −0.005%], 16 blocks, frac 0.96, no delisting flip. Raw cohort
+   INSUFFICIENT (frac 0.89 < 0.90) but same sign. The ILV/Peyer-Vermaelen drift did
+   not survive this funnel — same outcome as edgar_8k. Stays `enabled: false`;
+   config comment cites `scout/backfill/verdict-buyback-2022-2025.json`.
+3. **Combined-universe (231-name) XBRL IC run** — first trust-floor-passing
+   fundamental ICs at h=1/3/6 (breadth 68–163; h=12 stays EXPLORATORY, 16 periods).
+   Results doc: `docs/superpowers/specs/2026-07-11-combined-universe-xbrl-ic-results.md`
+   (local). Verdicts: **value complex corroborated** (value_fcf_yield t=3.12/2.56/2.68);
+   EV/EBIT don't-ship reconfirmed (corr 0.552, no incremental IC); **leverage tilt NOT
+   earned** (net_debt_to_ebitda t≤1.7 raw, ≤1.24 residualized — the 07-05 exploratory
+   numbers don't generalize; drop from the wiring queue); share_count = top future
+   candidate (XS t 1.5–1.9 sub-bar, but bottom-bucket dilution penalty −7 to −26pp);
+   shareholder_yield mixed (XS +2.08 but bottom bucket outperforms) stays OFF.
+
+Follow-ups, by urgency:
+1. **accruals re-measurement**: the ENABLED accruals leg shows XS≈0 (t=−0.05 @3m) on
+   this 231-name run vs the +0.036 (t=2.1) 195-name broad-universe evidence that
+   enabled it. Not a kill (TS +1.7–2.8; different universe mix + window), but
+   re-measure on the original broad universe before citing the old number; if it
+   stays flat there too, reconsider the leg.
+2. Operator: push branch `fix/buyback-prereg-slug` (+ PR/merge), then the still-open
+   deploy of HEAD to /opt/shortlist (13F originator not yet live; see 2026-07-09/10
+   entries below).
+3. Consider a `dilution`-flag threshold review instead of the share_count scored leg
+   (the payoff is tail-concentrated, which suits a flag/screen better than a ranker).
+
+**Status:** open — items are follow-ups; the session's builds/measurements themselves are done.
 
 The sweep on `chore/hardening-cleanup-round1` (new `.github/workflows/ci.yml` — first CI
 in the repo, `providers/_gaap_tags.py`, new hardening tests) was picked up mid-flight,
