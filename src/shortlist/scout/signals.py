@@ -754,7 +754,7 @@ class EdgarBuybackSignal:
     academic prior (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 — positive
     post-announcement drift), but shipped DISABLED at weight 0.5 on the 8-K MEASURE-FIRST
     precedent: the sign in THIS funnel's universe/horizon is what the pre-registered backfill
-    cohort (preregister/edgar_buyback.yaml) earns or kills. Keyless + VPS-safe (SEC-hosted,
+    cohort (preregister/edgar_buyback_auth.yaml) earns or kills. Keyless + VPS-safe (SEC-hosted,
     no Yahoo WAF). EFTS lags a day or two, so scan() walks session-2..session PER PHRASE and
     dedups via a capped accession-seen set in ScoutState (daily.py persists new_accessions).
     """

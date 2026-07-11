@@ -82,12 +82,12 @@ def test_assemble_resolver_called_with_filing_date_not_entry():
 def test_backfill_spec_row_resolves():
     spec = _BACKFILL_SPECS["buyback"]
     assert spec["signal"] == SIGNAL_BUYBACK == "edgar:buyback_auth"
-    assert spec["slug"] == "edgar_buyback"
+    assert spec["slug"] == "edgar_buyback_auth"
     assert callable(spec["assemble"]) and callable(spec["fetch_factory"])
 
 
-def test_prereg_edgar_buyback_pins():
-    p = load_prereg("edgar_buyback", repo_root=_REPO_ROOT)
+def test_prereg_edgar_buyback_auth_pins():
+    p = load_prereg("edgar_buyback_auth", repo_root=_REPO_ROOT)
     assert p["signal"] == "edgar:buyback_auth"
     assert p["window_start"] == date(2022, 1, 1) and p["window_end"] == date(2025, 12, 31)
     assert p["k_months"] == 3
@@ -124,7 +124,7 @@ def test_run_backfill_buyback_loads_prereg_by_slug(monkeypatch, tmp_path):
                          _fetch_window=lambda *a, **k: [], _symbology=_FakeSym(),
                          _fetch_history=lambda t: None, _fetch_delisting=lambda c: [],
                          _free_gb=lambda p: 50.0)
-    assert seen == ["edgar_buyback"]
+    assert seen == ["edgar_buyback_auth"]
 
 
 def test_cli_choice_accepts_buyback_and_routes(monkeypatch):
@@ -140,3 +140,16 @@ def test_cli_choice_accepts_buyback_and_routes(monkeypatch):
     rc = daily._run_backfill_cli({"scout": {}}, signal="buyback", start=date(2022, 1, 1),
                                  end=date(2022, 1, 31), out_path=None, as_json=True)
     assert rc == 0 and calls == ["buyback"]
+
+
+def test_backfill_spec_slugs_match_validate_slug_derivation():
+    """validate derives the prereg slug from the EVENT's signal string
+    (daily._slug_for_signal); the backfill writes events with spec["signal"]. If
+    spec["slug"] != _slug_for_signal(spec["signal"]), the backfill loads one prereg
+    and validate looks for another -> verdict silently degrades to INSUFFICIENT
+    ("pre-registration missing"). Pin the invariant for every signal, and that the
+    file actually exists under that slug."""
+    from shortlist.scout.daily import _slug_for_signal
+    for key, spec in _BACKFILL_SPECS.items():
+        assert spec["slug"] == _slug_for_signal(spec["signal"]), key
+        assert load_prereg(spec["slug"], repo_root=_REPO_ROOT), key

@@ -609,7 +609,7 @@ scout:
                              # (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 —
                              # positive post-announcement drift) but shipped OFF (signals
                              # below) at weight 0.5 on the 8-K MEASURE-FIRST precedent: the
-                             # pre-registered backfill cohort (preregister/edgar_buyback.yaml)
+                             # pre-registered backfill cohort (preregister/edgar_buyback_auth.yaml)
                              # earns or kills it, academic prior notwithstanding. UNFITTED priors.
                              # Phrase PRECISION (live-probed 2026-07-09, 30 hits hand-classified
                              # over a 10-week window 2026-04-21..07-02 — see scout/buyback.py):

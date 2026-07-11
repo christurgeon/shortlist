@@ -49,7 +49,7 @@ commit found 12 more half-closed gaps, all fixed in `52b979c`. Follow-ups, by ur
    firehose events. Note the 13F burst behavior: first live sessions process 3 filings/day
    (carry-over) until all 7 funds' latest 13F-HRs are seen; next natural burst mid-Aug.
 2. **Buyback backfill** (the only path to enabling it): `shortlist-scout backfill --signal
-   buyback` + `validate` against `preregister/edgar_buyback.yaml` (POSITIVE expected, K=3m,
+   buyback` + `validate` against `preregister/edgar_buyback_auth.yaml` (POSITIVE expected, K=3m,
    2022–2025). KILL-shaped ⇒ stays off (the edgar_8k precedent).
 3. **13F deferred**: PiT CUSIP symbology for a backfill cohort (live FTD files leak
    post-event symbols); material-adds/exits; per-fund attribution is now possible from the
