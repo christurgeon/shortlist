@@ -607,10 +607,11 @@ scout:
                              # 8-K full text (EFTS phrase query, data/efts.py; own cache
                              # namespace .cache/efts_buyback). A DEFENSIBLE academic prior
                              # (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 —
-                             # positive post-announcement drift) but shipped OFF (signals
-                             # below) at weight 0.5 on the 8-K MEASURE-FIRST precedent: the
-                             # pre-registered backfill cohort (preregister/edgar_buyback_auth.yaml)
-                             # earns or kills it, academic prior notwithstanding. UNFITTED priors.
+                             # positive post-announcement drift) shipped OFF at weight 0.5 on the
+                             # 8-K MEASURE-FIRST precedent — and the pre-registered backfill cohort
+                             # (preregister/edgar_buyback_auth.yaml) then KILLED it (2026-07-11: FF3
+                             # alpha −0.84%/mo, 90% CI entirely negative; docs/audits/2026-07-11-
+                             # buyback-backfill-kill.md). Stays OFF on evidence, not just prior.
                              # Phrase PRECISION (live-probed 2026-07-09, 30 hits hand-classified
                              # over a 10-week window 2026-04-21..07-02 — see scout/buyback.py):
                              # 29/30 genuine new/expanded authorizations (~97%), 1 boilerplate
@@ -648,7 +649,7 @@ scout:
                                               # 13D/Form-4 tier (info up to 45 days stale; return from FILING date)
     edgar_buyback: {enabled: false, weight: 0.5}   # KILLED by the pre-registered backfill (2026-07-11, scored/gated cohort:
                                                    # FF3 alpha −0.84%/mo, 90% CI entirely negative, 16 blocks, frac 0.96 —
-                                                   # scout/backfill/verdict-buyback-2022-2025.json). The ILV/Peyer-Vermaelen
+                                                   # docs/audits/2026-07-11-buyback-backfill-kill.md). The ILV/Peyer-Vermaelen
                                                    # drift did NOT survive this funnel's universe/horizon (K=3m, 2022–2025);
                                                    # stays OFF on evidence, the edgar_8k precedent. Do not enable without a
                                                    # new pre-registered cohort.
