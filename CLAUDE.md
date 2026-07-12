@@ -514,9 +514,10 @@ complete-unfiltered day payload, same `EFTS_LAG_DAYS` finality rule).
 MEASURE-FIRST precedent**: Ikenberry-Lakonishok-Vermaelen 1995 (+abnormal 4y drift) /
 Peyer-Vermaelen 2009 (persists OOS) justify *building* it, but the sign in THIS funnel's
 universe/horizon is exactly what the pre-registered backfill cohort
-(`preregister/edgar_buyback.yaml`, expected sign POSITIVE, K=3m, window 2022–2025, blocks≥8,
-frac≥0.90) earns or kills — academic prior notwithstanding (the 8-K originator's own KILL is
-the cautionary precedent). Backfill leg: `shortlist-scout backfill --signal buyback` (spec row
+(`preregister/edgar_buyback_auth.yaml`, expected sign POSITIVE, K=3m, window 2022–2025, blocks≥8,
+frac≥0.90) earns or kills. **It KILLED it** (2026-07-11: scored/gated FF3 alpha −0.84%/mo,
+90% CI entirely negative — `docs/audits/2026-07-11-buyback-backfill-kill.md`), same outcome
+as the 8-K originator; the signal stays OFF on evidence. Backfill leg: `shortlist-scout backfill --signal buyback` (spec row
 in `scout/backfill.py`; `assemble_buyback_events` mirrors `_assemble_8k` minus item logic —
 the phrase match already happened at fetch time; **filer IS the subject**, PiT `Symbology` at
 the FILING date, `sics` inline). The **filer IS the subject** — CIK→ticker via `cik_tickers`

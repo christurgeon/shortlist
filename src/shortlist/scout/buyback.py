@@ -5,7 +5,7 @@ matches one of a curated set of verb-anchored authorization phrases (Ikenberry-L
 Vermaelen 1995: +abnormal drift post-announcement; Peyer-Vermaelen 2009: persists OOS). A
 CONTESTED-until-measured prior on the 8-K precedent — the academic sign justifies BUILDING
 the originator, but the sign in THIS funnel's universe/horizon is what the pre-registered
-backfill cohort (preregister/edgar_buyback.yaml) exists to measure, so the signal ships
+backfill cohort (preregister/edgar_buyback_auth.yaml) exists to measure, so the signal ships
 DISABLED at weight 0.5 and supplies attention, not direction (the scorer + gates judge it).
 
 Filter order mirrors eightk.py and is load-bearing: the `file_type != "8-K"` drop comes

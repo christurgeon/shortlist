@@ -602,7 +602,7 @@ _BACKFILL_SPECS: dict[str, dict] = {
            "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k},
     "8k-neg": {"signal": SIGNAL_8K_NEG, "slug": "edgar_8k_negative",
                "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k_neg},
-    "buyback": {"signal": SIGNAL_BUYBACK, "slug": "edgar_buyback",
+    "buyback": {"signal": SIGNAL_BUYBACK, "slug": "edgar_buyback_auth",
                 "fetch_factory": _buyback_fetch_factory, "assemble": _assemble_buyback},
 }
 
@@ -788,7 +788,7 @@ def run_backfill_8k_neg(config: dict, *, start: date, end: date, identity: str,
 def run_backfill_buyback(config: dict, *, start: date, end: date, identity: str,
                          today: Optional[date] = None, out_path: Optional[str] = None,
                          **seams) -> dict:
-    """Buyback-authorization leg (edgar:buyback_auth; prereg edgar_buyback.yaml, K=3m).
+    """Buyback-authorization leg (edgar:buyback_auth; prereg edgar_buyback_auth.yaml, K=3m).
     Expected sign: POSITIVE (Ikenberry-Lakonishok-Vermaelen 1995 / Peyer-Vermaelen 2009).
     The cohort runs uncapped/undenied over the live phrase set — daily_cap/deny_list are
     live-only knobs the backfill never applies (the 8-K precedent)."""
