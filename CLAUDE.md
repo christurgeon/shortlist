@@ -205,11 +205,14 @@ backtest-only). Not masked (share count universally defined); reads **as-reporte
 no split guard yet (a reverse split can inject a spurious jump).
 
 The **`quality.earnings_quality`** block (PREDICTIVE_SIGNALS §3 — Cooper-Gulen-Schill 2008
-asset growth, Sloan 1996 accruals; both negative predictors) ships **ON with per-leg
-control**: **`accruals` ENABLED** (backtest-validated: XS-IC +0.036 t=2.1 @3m on the
-195-name broad universe, hit-rate 60–69%, orthogonal to Piotroski), **`asset_growth` OFF**
-(`asset_growth: false` — no XS edge, −0.006 t=−0.3; still measured-but-off). Per-leg flags
-default True when absent (back-compat). An enabled leg adds an **inverted** leg to
+asset growth, Sloan 1996 accruals; both negative predictors) ships **with BOTH legs OFF**
+(measured-but-not-scored). `accruals` was briefly ENABLED (2026-06-21) on a since-lost
+ad-hoc 195-name universe (XS-IC +0.036 t=2.1 @3m) but a **2026-07-12 re-measurement on the
+committed universes DISABLED it** (`accruals: false`): positive-signed yet sub-significant
+on largecap (t=1.1–1.5, hit up to 0.66) and flat-to-negative on the 231-name combined run —
+never clears t~2 on any reproducible universe (`docs/audits/2026-07-12-accruals-leg-disable.md`).
+**`asset_growth` OFF** too (`asset_growth: false` — no XS edge, −0.006 t=−0.3). Per-leg flags
+default True when absent (back-compat). An enabled leg would add an **inverted** leg to
 `quality_score`: `asset_growth` (`Assets_t/Assets_{t-1}−1`, consecutive fiscal ends) /
 `accruals` (`(NetIncome−CFO)/avg-assets`, Sloan convention — avg `(A_t+A_{t-1})/2`, CFO
 **as-reported, no sign flip**). **Byte-identical** when the block is absent. Derived on

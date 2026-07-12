@@ -263,21 +263,23 @@ fmp:
 #   dilution:
 #     enabled: true
 
-# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). The accruals leg
-# (Sloan 1996) is now ENABLED — backtest-validated: significant cross-sectional rank IC
-# (195-name broad universe, excess returns), XS-IC +0.036 (t=2.1) at 3m, +0.059 (t=1.6)
-# at 12m, hit-rate 60–69%, orthogonal to Piotroski (collinearity -0.00). Cheap, cash-
-# backed names score above soft-accrual ones. The sibling asset_growth leg (Cooper-Gulen-
-# Schill 2008) stays OFF (asset_growth: false): flat / wrong-signed even broadly
-# (XS-IC -0.006, t=-0.3) — it remains measured in the backtest, just not scored. Both
-# legs are INVERTED (high -> lower score). Per-leg keys default to True when absent, so an
-# `enabled: true` block with no per-leg keys keeps both legs (back-compat).
+# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). BOTH legs now OFF
+# (measured-but-not-scored). The accruals leg (Sloan 1996) was enabled 2026-06-21 on a
+# single ad-hoc 195-name universe (XS-IC +0.036 t=2.1 @3m) whose composition + results doc
+# are gitignored and no longer exist. A 2026-07-12 re-measurement on the committed,
+# reproducible universes DISABLED it: positive-signed but SUB-SIGNIFICANT on largecap
+# (t=1.1–1.5 @1–12m, hit up to 0.66) and FLAT-to-negative on the 231-name combined run
+# (XS-IC ~0.000, t~-0.05 @1–6m) — it never clears t~2 on any reproducible universe, and was
+# flat/negative in small/mid caps where it still moved live scores. Evidence:
+# docs/audits/2026-07-12-accruals-leg-disable.md. The sibling asset_growth leg (Cooper-Gulen-
+# Schill 2008) stays OFF too (XS-IC -0.006, t=-0.3). Both remain measured in the backtest,
+# just not scored; both INVERTED (high -> lower score). Per-leg keys default True when absent.
 # (If both quality blocks are wanted, merge them under one `quality:` mapping.)
 quality:
   earnings_quality:
     enabled: true
     asset_growth: false   # no cross-sectional edge (XS-IC -0.006 t=-0.3) — measured-but-off
-    accruals: true        # validated XS-IC +0.036 t=2.1 broad — ACTIVE quality leg
+    accruals: false       # re-measured 2026-07-12: sub-significant on largecap, flat combined — measured-but-off
 
 # Total-shareholder-yield SCORING (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber).
 # DISABLED by default: leave commented so value_score is byte-identical to the pre-feature
