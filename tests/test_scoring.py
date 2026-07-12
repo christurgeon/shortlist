@@ -343,21 +343,23 @@ def test_shipped_config_price_axis_band_directions():
     assert t["vol_scaled_momentum"][0] < t["vol_scaled_momentum"][1]   # positive: higher risk-adj momentum scores higher
 
 
-def test_shipped_config_enables_accruals_only():
-    # The shipped default config.yaml must enable the accruals leg (measurably moving
-    # quality/composite vs the block-absent run) while leaving asset_growth OFF.
+def test_shipped_config_disables_earnings_quality_legs():
+    # Re-measured 2026-07-12 (docs/audits/2026-07-12-accruals-leg-disable.md): accruals is
+    # sub-significant on largecap (t=1.1-1.5) and flat on the combined universe, so BOTH
+    # earnings-quality legs now ship OFF (measured-but-not-scored). The shipped config must
+    # add neither leg, and must be byte-identical to dropping the block entirely.
     from shortlist.scoring import _quality_legs
     cfg = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
     m = dataclasses.replace(metrics_all_50(), asset_growth=0.30, accruals=0.15)
     names = {leg.name for leg in _quality_legs(m, cfg)}
-    assert "accruals" in names           # ACTIVE
+    assert "accruals" not in names       # re-measured OFF
     assert "asset_growth" not in names   # measured-but-off
-    # Leg-really-wired: composite/quality differs from a block-absent run (drop only
-    # the earnings_quality block, keeping any other quality.* sub-blocks intact).
+    # Both legs off -> byte-identical to dropping the earnings_quality block (keeping any
+    # other quality.* sub-blocks intact).
     no_block = {**cfg, "quality": {k: v for k, v in (cfg.get("quality") or {}).items()
                                    if k != "earnings_quality"}}
-    assert score(m, cfg).quality != score(m, no_block).quality
-    assert score(m, cfg).composite != score(m, no_block).composite
+    assert score(m, cfg).quality == score(m, no_block).quality
+    assert score(m, cfg).composite == score(m, no_block).composite
 
 
 def test_asset_growth_and_accruals_backtest_axes():
