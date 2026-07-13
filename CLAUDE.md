@@ -16,6 +16,33 @@ A quantitative stock pre-screen: pull fundamentals, score quality / moat /
 growth / opportunity (momentum **or** value) / insider / risk, rank a shortlist
 for a human deep dive. Config-driven via `config.yaml` (thresholds, weights, gates).
 
+## Design premise — build the right thing (read before adding signals)
+
+This is a **triage funnel for a human deep-dive, NOT a return-predicting alpha model.**
+Keep that honest, because the two failure modes both come from forgetting it:
+
+- **The data can't support a robust alpha model, and that's expected.** We validate on
+  ~80–238 free-tier, survivorship-biased, currently-listed names — not CRSP/Compustat with
+  delisted names and decades of history. At that scale most factor legs are statistically
+  indistinguishable from noise; a single-universe `t≈2` is usually noise (proven repeatedly —
+  buyback KILL, leverage tilt, accruals all failed to replicate). So **stop adding scoring
+  legs hoping one crosses `t=2`.** The scorer is good at "is this a solid *business*"
+  (quality/moat/margins); it is **not** the thing that predicts "does the *stock* go up" —
+  that's mostly priced-in and won't yield to another leg on this data. New scoring legs are
+  the exception, gated hard on reproducible cross-universe rank IC, not the default move.
+
+- **The real edge lives in event-driven DISCOVERY + letting evidence accumulate, not in the
+  composite.** The filings originators (13D / 13F / insider / buyback / 8-K) are the most
+  defensible part — event-driven origination is where retail-accessible edge plausibly still
+  exists. The highest-leverage work is usually: improve what *feeds* the funnel (originators
+  with confirmed cohorts) and let the **selection ledger** + **accumulation store** earn
+  signals their weight over calendar time — not more scorer surface area.
+
+- **Measure-first, kill-on-evidence, commit the evidence.** Every enabled signal that moves
+  live scores needs a *reproducible* verdict recorded under the tracked `docs/audits/` tree
+  (NOT gitignored `docs/superpowers/specs/` — that's how two enablement artifacts already
+  evaporated). Disabling a leg that can't earn its slot is a win, not a regression.
+
 ## One fetching layer: the data harness
 
 The async `httpx` **harness** (`shortlist.data.*`) is the sole production data layer:
