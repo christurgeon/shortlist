@@ -498,8 +498,11 @@ scout:
     marquee_boost: 0.2      # strength bump when a credible (curated) activist is the filer
     stake_increase:           # EdgarStakeIncreaseSignal — material 13D/A escalations
       min_increase_pp: 2.0    # LIVE-only tune; the backfill cohort uses stake.MIN_INCREASE_PP
-      max_prior_fetches: 10   # cold-start baseline lookups per session (overflow is named)
-      daily_cap: 300
+      max_prior_fetches: 10   # cold-start baseline lookups per session (overflow is named).
+                              # LIVE-ONLY knob — the backfill cohort never applies it: it
+                              # seeds baselines from the chronological walk itself (uncapped).
+      daily_cap: 300          # LIVE-ONLY knob, same reason (the 8-K/buyback precedent) —
+                              # the backfill cohort processes every walked amendment.
   picks:                    # selection ledger + benchmark-relative scoreboard (track picks over time)
     enabled: true
     scoreboard_max: 10      # prior picks shown in the digest scoreboard

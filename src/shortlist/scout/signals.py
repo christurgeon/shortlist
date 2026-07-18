@@ -492,12 +492,25 @@ class EdgarStakeIncreaseSignal:
             return []
 
         records = [r for r in records if r.get("accession") not in self.seen]
+        # Cheap index-level quality filters BEFORE the doc-fetch + prior-fetch budget spend
+        # (the design mandate: amendments only fetch after passing these). The aggregator
+        # below applies the same predicates again (pure-function contract, belt-and-braces).
+        from .quality import is_affiliate_filing, is_spac_or_shell
+        records = [r for r in records
+                   if not (self.drop_spacs and is_spac_or_shell(r.get("subject_name") or ""))
+                   and not (self.drop_affiliates
+                            and is_affiliate_filing(r.get("activist") or "",
+                                                    r.get("subject_name") or ""))]
         # Doc-fetch stake % per surviving record; cold-start prior fetches are budgeted.
         prior_budget, overflow = self.max_prior_fetches, 0
+        attempted: set[str] = set()   # a pair spends prior-fetch budget at most once/scan
         for r in records:
             r["stake_pct"] = _stake_from_filing(r.get("_filing"))
             pk = pair_key(r.get("filer_cik"), r.get("cik"))
             if (pk and pk not in self.baselines and r["stake_pct"] is not None):
+                if pk in attempted:
+                    continue           # already attempted this scan; skip (no re-spend, no re-count)
+                attempted.add(pk)
                 if prior_budget > 0:
                     prior_budget -= 1
                     try:
