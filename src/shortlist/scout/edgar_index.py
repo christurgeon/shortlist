@@ -164,7 +164,7 @@ def _dedup_by_accession(filings):
 
 
 def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=True,
-                                 marquee_boost=0.2):
+                                 marquee_boost=0.2, stake_by_accession=None):
     """Pure aggregation: records -> one Emission per resolved ticker (initial 13D only).
 
     record: {ticker, cik, subject_name, activist, form, accession}. Placeholder tickers
@@ -172,7 +172,10 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
     the resolved TICKER (co-filers on the same target collapse to one emission). SPAC/shell
     subjects and affiliate filings (filer name echoes the subject) are dropped by config;
     a marquee (credible) activist boosts strength. The subject CIK is carried on the
-    Emission so the selection ledger can re-resolve a renamed ticker later."""
+    Emission so the selection ledger can re-resolve a renamed ticker later.
+
+    When stake_by_accession is provided (a dict mapping accession -> stake %), the first
+    row's accession that exists in the dict gains meta={"stake_pct": <value>}."""
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         tkr = _is_real_ticker(r.get("ticker"))
@@ -197,8 +200,18 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
         who = marquee or next((a for a in activists if a), None) or subject
         who_part = who if n == 1 else f"{n} filers incl. {who}"
         ev = f"Activist 13D: {who_part} → {subject}"
+
+        # Enrich with stake % if available
+        meta = {}
+        if stake_by_accession:
+            for r in rows:
+                pct = stake_by_accession.get(r.get("accession"))
+                if pct is not None:
+                    meta = {"stake_pct": pct}
+                    break
+
         out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True,
-                            cik=rows[0].get("cik")))
+                            cik=rows[0].get("cik"), meta=meta))
     return out
 
 
@@ -249,7 +262,7 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
                     "ticker": tkr, "cik": f"{int(cik):010d}",
                     "subject_name": getattr(ci, "name", "") or "",
                     "activist": activist, "form": getattr(f, "form", ""),
-                    "accession": acc})
+                    "accession": acc, "_filing": f})
             except Exception:  # noqa: BLE001 — skip an unparseable filing
                 continue
         return records

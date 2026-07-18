@@ -58,6 +58,14 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
             if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
+def _initial_stake_fetcher(record):
+    """Doc-fetch + parse stake % for an initial-13D record (ledger enrichment; only wired
+    when the stake-increase signal is enabled). record carries no _filing on this path, so
+    this is a no-op returning None unless one is present."""
+    from .signals import _stake_from_filing
+    return _stake_from_filing(record.get("_filing"))
+
+
 def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                    eightk_seen: list[str] | None = None, *,
                    thirteenf_seen: list[str] | None = None,
@@ -80,6 +88,8 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
     tf = scout_cfg.get("thirteenf", {})
     bb = scout_cfg.get("buyback", {})
     sti = act.get("stake_increase", {})
+    sig_map = scout_cfg.get("signals", {})
+    sti_on = bool(sig_map.get("edgar_13d_stake_increase", {}).get("enabled"))
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -92,7 +102,8 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                                "max_filings": act.get("daily_cap", 300),
                                "drop_spacs": act.get("drop_spacs", True),
                                "drop_affiliates": act.get("drop_affiliates", True),
-                               "marquee_boost": act.get("marquee_boost", 0.2)},
+                               "marquee_boost": act.get("marquee_boost", 0.2),
+                               "stake_fetcher": _initial_stake_fetcher if sti_on else None},
         "finra_short_interest": {"last_settlement": last_finra_settlement,
                                  "min_jump_pct": si.get("min_jump_pct", 0.25),
                                  "min_dtc": si.get("min_dtc", 3.0),

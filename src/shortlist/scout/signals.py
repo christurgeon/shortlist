@@ -370,13 +370,15 @@ class EdgarActivist13DSignal:
 
     def __init__(self, identity: str | None = None, max_filings: int = 300,
                  drop_spacs: bool = True, drop_affiliates: bool = True,
-                 marquee_boost: float = 0.2, cache_dir: str = ".cache/sec_tickers") -> None:
+                 marquee_boost: float = 0.2, cache_dir: str = ".cache/sec_tickers",
+                 stake_fetcher=None) -> None:
         self.identity = identity or "shortlist-scout turgechr@duck.com"
         self.max_filings = max_filings
         self.drop_spacs = drop_spacs
         self.drop_affiliates = drop_affiliates
         self.marquee_boost = marquee_boost
         self.cache_dir = cache_dir
+        self.stake_fetcher = stake_fetcher
         self._resolver: dict[str, str] | None = None
         self._status = (False, "not run")
 
@@ -406,9 +408,17 @@ class EdgarActivist13DSignal:
         except Exception as e:  # noqa: BLE001 — degrade, never crash the run
             self._status = (False, redact_secrets(str(e)))
             return []
+
+        stakes: dict[str, float] = {}
+        if self.stake_fetcher is not None:
+            for r in records:
+                pct = self.stake_fetcher(r)
+                if pct is not None and r.get("accession"):
+                    stakes[r["accession"]] = pct
+
         ems = activist_stakes_from_records(
             records, drop_spacs=self.drop_spacs, drop_affiliates=self.drop_affiliates,
-            marquee_boost=self.marquee_boost)
+            marquee_boost=self.marquee_boost, stake_by_accession=stakes or None)
         fallback = "" if used == session else f"; {session} index empty, used {used}"
         self._status = (True, f"{len(ems)} activist 13D from {len(records)} filings"
                         f" (cap {self.max_filings}){fallback}")
