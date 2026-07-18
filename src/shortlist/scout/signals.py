@@ -421,6 +421,114 @@ class EdgarActivist13DSignal:
 register("edgar_activist_13d", EdgarActivist13DSignal)
 
 
+def _stake_from_filing(filing):
+    from .stake import stake_pct_from_filing
+    return stake_pct_from_filing(filing)
+
+
+def _prior_stake(subject_cik, filer_cik10, before, identity):
+    from .stake import fetch_prior_stake
+    return fetch_prior_stake(subject_cik, filer_cik10, before, identity)
+
+
+class EdgarStakeIncreaseSignal:
+    """Material stake-INCREASE 13D/A amendments (discovery; measure-first, ships OFF).
+
+    The escalation analogue of EdgarActivist13DSignal: an activist who crossed 5% and
+    keeps buying is a conviction signal the initial filing can't carry. Keyless +
+    VPS-safe (pure SEC EDGAR). Ships disabled at weight 0.5 pending the pre-registered
+    backfill verdict (preregister/edgar_13d_stake_increase.yaml) — the buyback/8-K
+    measure-first precedent. Emission rule + abstentions live in the pure
+    edgar_index.stake_increases_from_records; this class does fetch budgeting only.
+    """
+    name = "edgar_13d_stake_increase"
+    is_discovery = True
+
+    def __init__(self, identity: str | None = None, max_filings: int = 300,
+                 min_increase_pp: float | None = None, max_prior_fetches: int = 10,
+                 drop_spacs: bool = True, drop_affiliates: bool = True,
+                 seen_accessions: list[str] | None = None,
+                 baselines: dict | None = None,
+                 cache_dir: str = ".cache/sec_tickers") -> None:
+        self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self.max_filings = max_filings
+        self.min_increase_pp = min_increase_pp
+        self.max_prior_fetches = max_prior_fetches
+        self.drop_spacs = drop_spacs
+        self.drop_affiliates = drop_affiliates
+        self.seen = set(seen_accessions or [])
+        self.baselines = dict(baselines or {})
+        self.cache_dir = cache_dir
+        self._resolver: dict[str, str] | None = None
+        self.new_accessions: list[str] = []
+        self.baseline_updates: dict[str, dict] = {}
+        self._status = (False, "not run")
+
+    def _resolver_map(self) -> dict[str, str]:
+        from .cik_tickers import load_cik_to_ticker
+        if self._resolver is None:
+            self._resolver = load_cik_to_ticker(self.identity, cache_dir=self.cache_dir)
+        return self._resolver
+
+    def scan(self, session: date) -> list[Emission]:
+        from . import edgar_index
+        from .cik_tickers import resolve_ticker
+        from .stake import pair_key
+        try:
+            resolver = self._resolver_map()
+            if resolver == {}:
+                self._resolver = None
+                self._status = (False,
+                                "CIK→ticker resolver empty; skipped — retry next session")
+                return []
+
+            def resolve(cik):
+                return resolve_ticker(cik, resolver)
+
+            records, used = edgar_index.fetch_recent_amendment_records(
+                session, self.max_filings, self.identity, resolve)
+        except Exception as e:  # noqa: BLE001 — degrade, never crash the run
+            self._status = (False, redact_secrets(str(e)))
+            return []
+
+        records = [r for r in records if r.get("accession") not in self.seen]
+        # Doc-fetch stake % per surviving record; cold-start prior fetches are budgeted.
+        prior_budget, overflow = self.max_prior_fetches, 0
+        for r in records:
+            r["stake_pct"] = _stake_from_filing(r.get("_filing"))
+            pk = pair_key(r.get("filer_cik"), r.get("cik"))
+            if (pk and pk not in self.baselines and r["stake_pct"] is not None):
+                if prior_budget > 0:
+                    prior_budget -= 1
+                    try:
+                        fd = date.fromisoformat(str(r.get("file_date"))[:10])
+                    except ValueError:
+                        fd = session
+                    prior = _prior_stake(r.get("cik"), r.get("filer_cik"), fd,
+                                         self.identity)
+                    if prior is not None:
+                        self.baselines[pk] = {"pct": prior, "date": ""}
+                else:
+                    overflow += 1
+        ems, updates = edgar_index.stake_increases_from_records(
+            records, self.baselines, min_increase_pp=self.min_increase_pp,
+            drop_spacs=self.drop_spacs, drop_affiliates=self.drop_affiliates)
+        self.baseline_updates = updates
+        self.new_accessions = [r["accession"] for r in records if r.get("accession")]
+        fallback = "" if used == session else f"; {session} index empty, used {used}"
+        over = (f"; {overflow} pair(s) skipped prior-fetch budget"
+                if overflow else "")
+        self._status = (True, f"{len(ems)} stake increases from {len(records)} 13D/A "
+                        f"(cap {self.max_filings}){over}{fallback}")
+        return ems
+
+    def available(self) -> tuple[bool, str]:
+        return self._status
+
+
+register("edgar_13d_stake_increase", EdgarStakeIncreaseSignal)
+
+
 class FinraShortInterestSignal:
     """FINRA short-interest jump discovery (the crowded_short flag's discovery analogue).
 

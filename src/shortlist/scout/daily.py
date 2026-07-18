@@ -46,7 +46,7 @@ def digest_sources(base: list[str], include_fmp: bool) -> list[str]:
 
 _DISCOVERY_SIGNAL_NAMES = {"yahoo_screener", "edgar_form4", "wsb_hype",
                            "edgar_activist_13d", "finra_short_interest", "edgar_8k",
-                           "edgar_13f", "edgar_buyback"}
+                           "edgar_13f", "edgar_buyback", "edgar_13d_stake_increase"}
 _BOOSTER_SIGNAL_NAMES   = {"finnhub_news", "wikipedia"}
 # Config keys we know how to build a signal for. An enabled key not in here is
 # ignored; a disabled key in here still gets a "✗ (disabled)" coverage line.
@@ -61,20 +61,25 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
 def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                    eightk_seen: list[str] | None = None, *,
                    thirteenf_seen: list[str] | None = None,
-                   buyback_seen: list[str] | None = None) -> dict[str, dict]:
+                   buyback_seen: list[str] | None = None,
+                   stake_increase_seen: list[str] | None = None,
+                   stake_baselines: dict | None = None) -> dict[str, dict]:
     """Build per-signal constructor kwargs from config + env for live (non-demo) runs.
 
     `last_finra_settlement` (from ScoutState) lets the short-interest signal emit only on a
-    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` / `buyback_seen` (from
-    ScoutState) are the 8-K / buyback originators' rolling accession dedup across the
-    walk-back overlap; `thirteenf_seen` is the 13F originator's processed-filing dedup.
-    All passed as keyword args (the positional list is already unwieldy)."""
+    newer FINRA cycle (the bi-monthly cadence guard). `eightk_seen` / `buyback_seen` /
+    `stake_increase_seen` (from ScoutState) are the 8-K / buyback / stake-increase
+    originators' rolling accession dedup across the walk-back overlap; `thirteenf_seen` is
+    the 13F originator's processed-filing dedup; `stake_baselines` is the stake-increase
+    originator's pair->last-known-% map. All passed as keyword args (the positional list
+    is already unwieldy)."""
     wsb = scout_cfg.get("wsb_hype", {})
     act = scout_cfg.get("activist_13d", {})
     si = scout_cfg.get("short_interest", {})
     ek = scout_cfg.get("eightk", {})
     tf = scout_cfg.get("thirteenf", {})
     bb = scout_cfg.get("buyback", {})
+    sti = act.get("stake_increase", {})
     return {
         "edgar_form4":   {"max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},
@@ -117,6 +122,15 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                           "drop_spacs": bb.get("drop_spacs", True),
                           "daily_cap": bb.get("daily_cap", 6),
                           "seen_accessions": buyback_seen or []},
+        "edgar_13d_stake_increase": {
+            "identity": os.environ.get("SEC_IDENTITY"),
+            "max_filings": sti.get("daily_cap", 300),
+            "min_increase_pp": sti.get("min_increase_pp"),   # None => stake.MIN_INCREASE_PP
+            "max_prior_fetches": sti.get("max_prior_fetches", 10),
+            "drop_spacs": act.get("drop_spacs", True),
+            "drop_affiliates": act.get("drop_affiliates", True),
+            "seen_accessions": stake_increase_seen or [],
+            "baselines": stake_baselines or {}},
     }
 
 
@@ -362,7 +376,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
                                         state.eightk_seen_accessions(),
                                         thirteenf_seen=state.thirteenf_seen_accessions(),
-                                        buyback_seen=state.buyback_seen_accessions())
+                                        buyback_seen=state.buyback_seen_accessions(),
+                                        stake_increase_seen=state.stake_increase_seen_accessions(),
+                                        stake_baselines=state.stake_baselines())
         signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
         boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
         # Emit a SignalStatus for each configured-but-disabled signal so the
@@ -405,6 +421,14 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             # (session-2..session) doesn't re-emit them on the next runs.
             if s.name == "edgar_buyback" and not demo and getattr(s, "new_accessions", None):
                 state.add_buyback_accessions(s.new_accessions)
+            # Persist the stake-increase originator's surfaced accessions (walk-back overlap
+            # dedup) + updated pair baselines (newest parsed % per campaign pair) so the
+            # cold-start prior-fetch budget isn't re-spent on already-known pairs.
+            if s.name == "edgar_13d_stake_increase" and not demo:
+                if getattr(s, "new_accessions", None):
+                    state.add_stake_increase_accessions(s.new_accessions)
+                if getattr(s, "baseline_updates", None):
+                    state.update_stake_baselines(s.baseline_updates)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are
