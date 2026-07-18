@@ -29,9 +29,21 @@ def test_immaterial_increase_updates_baseline_but_never_emits():
 
 
 def test_decrease_never_emits():
-    ems, _ = stake_increases_from_records(
+    ems, upd = stake_increases_from_records(
         [_rec(stake_pct=3.0)], {"0000000900|0000000123": {"pct": 5.5, "date": "2026-01-01"}})
     assert ems == []
+    assert upd["0000000900|0000000123"]["pct"] == 3.0
+
+
+def test_within_batch_chaining_diffs_against_just_updated_baseline():
+    # Two amendments for the SAME pair in one batch: the second diffs against the
+    # first's just-updated pct (8.1 - 6.9 = 1.2 < 2.0), NOT the stale state
+    # baseline (8.1 - 5.5 = 2.6, which would wrongly emit).
+    ems, upd = stake_increases_from_records(
+        [_rec(stake_pct=6.9, accession="a1"), _rec(stake_pct=8.1, accession="a2")],
+        {"0000000900|0000000123": {"pct": 5.5, "date": "2026-01-01"}})
+    assert ems == []
+    assert upd["0000000900|0000000123"]["pct"] == 8.1
 
 
 def test_no_baseline_seeds_only():
