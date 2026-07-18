@@ -343,3 +343,50 @@ def fetch_recent_amendment_records(session: date, max_filings: int, identity: st
         while not is_trading_day(d):
             d -= timedelta(days=1)
     return [], session
+
+
+def stake_increases_from_records(records, baselines, *,
+                                 min_increase_pp: float | None = None,
+                                 drop_spacs: bool = True, drop_affiliates: bool = True):
+    """Pure: amendment records (+ merged baselines) -> (emissions, baseline_updates).
+
+    Rules (registered in the prereg — same live and backfill): SPAC/affiliate rows are
+    EXCLUDED by signal definition; a row with unparseable stake_pct or no usable pair key
+    neither emits nor updates (abstention); a pair with no baseline SEEDS and never emits;
+    an emission requires new - prior >= min_increase_pp (absolute pp). Baselines update to
+    the newest parsed % regardless of emission, so a slow creep can't re-qualify daily.
+    """
+    from .quality import is_13d_amendment
+    from .stake import MIN_INCREASE_PP, STRENGTH, pair_key
+    from .stake import SIGNAL as STAKE_SIGNAL
+    floor = MIN_INCREASE_PP if min_increase_pp is None else min_increase_pp
+    emissions: list[Emission] = []
+    updates: dict[str, dict] = {}
+    merged = dict(baselines or {})
+    for r in records:
+        tkr = _is_real_ticker(r.get("ticker"))
+        if not tkr or not is_13d_amendment(r.get("form", "")):
+            continue
+        subj, act = r.get("subject_name", "") or "", r.get("activist", "") or ""
+        if drop_spacs and is_spac_or_shell(subj):
+            continue
+        if drop_affiliates and is_affiliate_filing(act, subj):
+            continue
+        pk = pair_key(r.get("filer_cik"), r.get("cik"))
+        pct = r.get("stake_pct")
+        if pk is None or pct is None:
+            continue                               # abstention: no emit, no update
+        prior = merged.get(pk, {}).get("pct")
+        entry = {"pct": pct, "date": str(r.get("file_date") or ""),
+                 "adsh": r.get("accession")}
+        merged[pk] = entry
+        updates[pk] = entry
+        if prior is None or pct - prior < floor:
+            continue                               # seed-only / immaterial / decrease
+        ev = (f"13D/A stake increase: {act or subj} "
+              f"{prior:.1f}%→{pct:.1f}% in {subj or tkr}")
+        emissions.append(Emission(
+            tkr, STAKE_SIGNAL, STRENGTH, ev, is_discovery=True, cik=r.get("cik"),
+            meta={"adsh": r.get("accession"), "prior_pct": prior, "new_pct": pct,
+                  "file_date": str(r.get("file_date") or "")}))
+    return emissions, updates
