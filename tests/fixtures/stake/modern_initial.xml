@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13D" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13D</submissionType>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <!-- Field: Pseudo-Tag; ID: Name; Data: V%2DCo Investors 4 LLC -->
+          <cik>0002137034</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPageHeader>
+      <securitiesClassTitle>Common Stock, par value $0.0001 per share</securitiesClassTitle>
+      <dateOfEvent>06/30/2026</dateOfEvent>
+      <previouslyFiledFlag>false</previouslyFiledFlag>
+      <issuerInfo>
+        <issuerCIK>0001716166</issuerCIK>
+        <issuerCusips>
+          <issuerCusipNumber>92859E207</issuerCusipNumber>
+        </issuerCusips>
+        <issuerName>Vivos Therapeutics, Inc.</issuerName>
+        <address>
+          <com:street1>7921 SOUTHPARK PLAZA</com:street1>
+          <com:street2>SUITE 210</com:street2>
+          <com:city>LITTLETON</com:city>
+          <com:stateOrCountry>CO</com:stateOrCountry>
+          <com:zipCode>80120</com:zipCode>
+        </address>
+      </issuerInfo>
+      <authorizedPersons>
+        <notificationInfo>
+          <personName>Bradley J. Wyatt</personName>
+          <personPhoneNum>(602) 445-8057</personPhoneNum>
+          <personAddress>
+            <com:street1>Greenberg Traurig LLP</com:street1>
+            <com:street2>2375 E Camelback Road, Suite 800</com:street2>
+            <com:city>Phoenix</com:city>
+            <com:stateOrCountry>AZ</com:stateOrCountry>
+            <com:zipCode>85016</com:zipCode>
+          </personAddress>
+        </notificationInfo>
+      </authorizedPersons>
+    </coverPageHeader>
+    <reportingPersons>
+      <reportingPersonInfo>
+        <reportingPersonCIK>0002049575</reportingPersonCIK>
+        <reportingPersonNoCIK>N</reportingPersonNoCIK>
+        <reportingPersonName>V-CO Investors LLC</reportingPersonName>
+        <fundType>PF</fundType>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>WY</citizenshipOrOrganization>
+        <soleVotingPower>0.00</soleVotingPower>
+        <sharedVotingPower>514498.00</sharedVotingPower>
+        <soleDispositivePower>0.00</soleDispositivePower>
+        <sharedDispositivePower>514498.00</sharedDispositivePower>
+        <aggregateAmountOwned>514498.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>3.7</percentOfClass>
+        <typeOfReportingPerson>OO</typeOfReportingPerson>
+        <commentContent>The percentage is calculated based upon (i) 13,894,600 shares of Common Stock as of May 20, 2026, as reported by the Issuer on its Quarterly Report on Form 10-Q, filed with the SEC on May 20, 2026, plus (ii) 86,979 shares of Common Stock issuable upon conversion or exercise of securities held by V-Co Investors 4 LLC in light of the beneficial ownership limitation described in Item 5 below.</commentContent>
+      </reportingPersonInfo>
+      ...
+    </reportingPersons>
+  </formData>
+</edgarSubmission>
