@@ -202,20 +202,27 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
     return out
 
 
+def _get_13d_index_rows(session: date, identity: str) -> list:
+    """Raw 13D-family daily-index rows (both form spellings; prefix match includes /A).
+    Isolated so tests can fake it; raises to the caller's guard on SEC failure."""
+    from edgar import get_filings, set_identity
+    set_identity(identity)
+    rows = []
+    for form in ("SCHEDULE 13D", "SC 13D"):
+        try:
+            rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
+        except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
+            continue
+    return rows
+
+
 def fetch_activist_records(session: date, max_filings: int, identity: str,
                            resolve_ticker_fn) -> list[dict]:
     """Live: pull the SCHEDULE 13D (+ legacy SC 13D) daily index for `session`, dedup the
     doubled rows, parse each header into a record. `resolve_ticker_fn(cik)->ticker|None`
     maps the SUBJECT company's CIK to its ticker. Never raises (degrades to [])."""
     try:
-        from edgar import get_filings, set_identity  # edgartools (optional dep)
-        set_identity(identity)
-        rows = []
-        for form in ("SCHEDULE 13D", "SC 13D"):
-            try:
-                rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
-            except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
-                continue
+        rows = _get_13d_index_rows(session, identity)
         records: list[dict] = []
         for f in _dedup_by_accession(rows)[:max_filings]:
             try:
@@ -260,6 +267,73 @@ def fetch_recent_activist_records(session: date, max_filings: int, identity: str
     isn't published until ~02:00 UTC, so the after-close run walks back to the last
     published session). Returns (records, session_used). Never raises."""
     fetch = _fetch or fetch_activist_records
+    d = session
+    for _ in range(lookback + 1):
+        recs = fetch(d, max_filings, identity, resolve_ticker_fn)
+        if recs:
+            return recs, d
+        d -= timedelta(days=1)
+        while not is_trading_day(d):
+            d -= timedelta(days=1)
+    return [], session
+
+
+def fetch_amendment_records(session: date, max_filings: int, identity: str,
+                            resolve_ticker_fn) -> list[dict]:
+    """Live: SCHEDULE 13D/A (+ legacy SC 13D/A) records for `session`. Same contract as
+    fetch_activist_records but keeps ONLY amendments and also parses the FILER CIK (the
+    stake-baseline pair key needs both sides). Never raises (degrades to [])."""
+    from .quality import is_13d_amendment
+    try:
+        rows = _get_13d_index_rows(session, identity)
+        records: list[dict] = []
+        for f in _dedup_by_accession(rows)[:max_filings]:
+            try:
+                if not is_13d_amendment(getattr(f, "form", "")):
+                    continue
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if not subs:
+                    continue
+                ci = subs[0].company_information
+                cik = getattr(ci, "cik", None)
+                if not cik:
+                    continue
+                tkr = resolve_ticker_fn(cik)
+                if not tkr:
+                    continue
+                filer_cik = activist = None
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    if filers:
+                        fci = filers[0].company_information
+                        activist = getattr(fci, "name", "") or ""
+                        raw_fc = getattr(fci, "cik", None)
+                        filer_cik = f"{int(raw_fc):010d}" if raw_fc else None
+                except Exception:  # noqa: BLE001 — a bad FILER block must not drop the subject
+                    pass
+                acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                records.append({
+                    "ticker": tkr, "cik": f"{int(cik):010d}", "filer_cik": filer_cik,
+                    "subject_name": getattr(ci, "name", "") or "",
+                    "activist": activist or "", "form": getattr(f, "form", ""),
+                    "accession": acc,
+                    "file_date": str(getattr(f, "filing_date", "") or ""),
+                    "_filing": f})            # carried so the signal can doc-fetch stake
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return records
+    except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        warnings.warn(f"scout: edgar 13D/A index fetch failed: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return []
+
+
+def fetch_recent_amendment_records(session: date, max_filings: int, identity: str,
+                                   resolve_ticker_fn, lookback: int = 4,
+                                   _fetch=None) -> tuple[list[dict], date]:
+    """Walk-back twin of fetch_recent_activist_records for the /A stream."""
+    fetch = _fetch or fetch_amendment_records
     d = session
     for _ in range(lookback + 1):
         recs = fetch(d, max_filings, identity, resolve_ticker_fn)

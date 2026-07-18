@@ -50,3 +50,57 @@ def pair_key(filer_cik, subject_cik) -> str | None:
         return f"{int(str(filer_cik).strip()):010d}|{int(str(subject_cik).strip()):010d}"
     except (TypeError, ValueError):
         return None
+
+
+def stake_pct_from_filing(filing) -> float | None:
+    """Best-effort percent-of-class from an edgartools Filing: structured XML first
+    (13D/G modernization, late 2024+), full text second. Never raises -> None."""
+    for getter in ("xml", "text"):
+        try:
+            raw = getattr(filing, getter)()
+        except Exception:  # noqa: BLE001 — a missing/broken document tier -> next tier
+            continue
+        pct = extract_stake_pct(raw)
+        if pct is not None:
+            return pct
+    return None
+
+
+def fetch_prior_stake(subject_cik, filer_cik10: str, before, identity: str,
+                      _get_company=None) -> float | None:
+    """Cold-start baseline: the latest 13D-family filing for (subject, filer) STRICTLY
+    before `before`, parsed for stake %. One bounded EDGAR company-filings lookup; never
+    raises -> None. `_get_company(cik, identity) -> list[Filing]` is the test seam."""
+    try:
+        if _get_company is None:
+            def _get_company(cik, identity):
+                from edgar import Company, set_identity
+                set_identity(identity)
+                out = []
+                for form in ("SCHEDULE 13D", "SC 13D"):
+                    try:
+                        out.extend(list(Company(int(str(cik))).get_filings(form=form)))
+                    except Exception:  # noqa: BLE001
+                        continue
+                return out
+        from datetime import date as _date
+        best = None
+        for f in _get_company(subject_cik, identity):
+            fd = str(getattr(f, "filing_date", "") or "")[:10]
+            try:
+                if _date.fromisoformat(fd) >= before:
+                    continue
+            except ValueError:
+                continue
+            try:
+                filers = getattr(f.header, "filers", None)
+                raw_fc = filers[0].company_information.cik if filers else None
+                if not raw_fc or f"{int(raw_fc):010d}" != filer_cik10:
+                    continue                    # a different holder's filing on the subject
+            except Exception:  # noqa: BLE001 — unreadable filer -> can't confirm the pair
+                continue
+            if best is None or str(getattr(best, "filing_date", "")) < fd:
+                best = f
+        return stake_pct_from_filing(best) if best is not None else None
+    except Exception:  # noqa: BLE001 — cold-start convenience, never a crash
+        return None
