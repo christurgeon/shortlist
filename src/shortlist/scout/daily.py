@@ -1064,7 +1064,8 @@ def _run_backfill_cli(config: dict, *, signal: str, start: date, end: date,
     traceback. Dispatch is by name through the backfill module attribute so tests can
     monkeypatch `shortlist.scout.backfill.run_backfill_13d` etc."""
     runners = {"13d": "run_backfill_13d", "8k": "run_backfill_8k",
-               "8k-neg": "run_backfill_8k_neg", "buyback": "run_backfill_buyback"}
+               "8k-neg": "run_backfill_8k_neg", "buyback": "run_backfill_buyback",
+               "13d-a": "run_backfill_13d_a"}
     runner_name = runners.get(signal)
     if runner_name is None:
         print(f"scout backfill: unsupported --signal '{signal}' "
@@ -1114,10 +1115,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     bp = sub.add_parser(
         "backfill",
         help="batch-backfill a discovery signal's historical cohort (offline, writes JSONL)")
-    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg", "buyback"], required=True,
+    bp.add_argument("--signal", choices=["13d", "8k", "8k-neg", "buyback", "13d-a"],
+                    required=True,
                     help="which signal to backfill ('13d' = edgar:activist_13d, "
                          "'8k' = edgar:8k positive pocket, '8k-neg' = edgar:8k_negative "
-                         "veto cohort, 'buyback' = edgar:buyback_auth authorizations)")
+                         "veto cohort, 'buyback' = edgar:buyback_auth authorizations, "
+                         "'13d-a' = edgar:13d_stake_increase material stake-increase "
+                         "amendments)")
     bp.add_argument("--start", required=True, type=date.fromisoformat,
                     help="ISO start date, e.g. 2022-08-01")
     bp.add_argument("--end", required=True, type=date.fromisoformat,

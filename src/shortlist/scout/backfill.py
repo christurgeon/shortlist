@@ -41,6 +41,7 @@ from .eightk import STRENGTH as _EIGHTK_STRENGTH
 from .eightk import _junk_suffix, match_item_sets, match_negative
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
+from .stake import SIGNAL as SIGNAL_STAKE
 
 SIGNAL = "edgar:activist_13d"
 
@@ -575,6 +576,70 @@ def _buyback_fetch_factory(bf: dict, today: date):
     return _fetch
 
 
+def _amendment_fetch_factory(bf: dict, today: date):
+    """Window fetcher for the 13D/A stake-increase leg — the fetch_activist_window
+    analogue that also returns amendments + doc-fetched stake_pct (same injected-
+    `_fetch_window` call shape)."""
+    def _fetch(c_start, c_end, identity, *, throttle_s, max_records):
+        from ..backtest.edgar_history import fetch_amendment_window
+        return fetch_amendment_window(c_start, c_end, identity, throttle_s=throttle_s,
+                                      max_records=max_records)
+    return _fetch
+
+
+def _assemble_13d_a_factory(bf: dict, today: date):
+    """Run-level stateful assembler: chunks arrive oldest-first, so an in-window initial
+    13D (or earlier amendment) seeds the pair baseline before later amendments diff
+    against it. First-sighting amendments SEED AND NEVER EMIT (registered rule); parse
+    abstention is a selection exclusion, never a sentinel. min_increase_pp is the CODE
+    constant (stake.MIN_INCREASE_PP) — config tunes live only."""
+    from .quality import is_13d_amendment
+    from .stake import MIN_INCREASE_PP, STRENGTH, pair_key
+    from .stake import SIGNAL as STAKE_SIGNAL
+    baselines: dict[str, dict] = {}
+
+    def _assemble(recs, resolve_ticker):
+        events: list[CohortEvent] = []
+        for r in sorted(recs, key=lambda x: x["filing_date"]):
+            subj = r.get("subject_name") or ""
+            if is_spac_or_shell(subj):
+                continue
+            if is_affiliate_filing(r.get("activist") or "", subj):
+                continue
+            pk = pair_key(r.get("filer_cik"), r.get("cik"))
+            pct = r.get("stake_pct")
+            if pk is None or pct is None:
+                continue                                   # abstention: excluded
+            fday = r["filing_date"]
+            if not is_13d_amendment(r.get("form") or ""):
+                baselines[pk] = {"pct": pct, "date": fday.isoformat()}
+                continue                                   # initials seed only
+            prior = baselines.get(pk, {}).get("pct")
+            baselines[pk] = {"pct": pct, "date": fday.isoformat()}
+            if prior is None or pct - prior < MIN_INCREASE_PP:
+                continue                                   # seed-only / immaterial
+            entry = next_trading_day(fday)
+            cik = r.get("cik")
+            tkr = resolve_ticker(cik, fday) if cik else None
+            norm = _is_real_ticker(tkr) if tkr else ""
+            meta = {"filing_date": fday.isoformat(), "prior_pct": prior, "new_pct": pct,
+                    "key": f"{STAKE_SIGNAL}|{cik or r.get('accession')}|{fday.isoformat()}"}
+            if not norm:                                   # SELECTED but non-measurable
+                events.append(CohortEvent(
+                    signal=STAKE_SIGNAL, ticker=f"CIK:{cik}", cik=cik, event_date=entry,
+                    as_of_price=None, strength=STRENGTH, gated=None, composite=None,
+                    origin="backfill",
+                    meta={**meta, "non_measurable_hint": "unresolved_ticker"}))
+                continue
+            events.append(CohortEvent(
+                signal=STAKE_SIGNAL, ticker=norm, cik=cik, event_date=entry,
+                as_of_price=None, strength=STRENGTH, gated=None, composite=None,
+                origin="backfill", meta=meta))
+        return events
+
+    return _assemble
+
+
 def _assemble_13d(recs: list[dict], resolve_ticker) -> list[CohortEvent]:
     return assemble_events(group_by_day_records(recs), resolve_ticker)
 
@@ -595,6 +660,8 @@ def _assemble_buyback(rows: list[dict], resolve_ticker) -> list[CohortEvent]:
 # Per-signal backfill specs (spec 2026-07-07 §5): CLI name -> {firehose signal string,
 # prereg slug (Task 6 YAML filenames), default window fetcher factory, assembler}.
 # The "13d" row reproduces the pre-generalization coordinator byte-for-byte.
+# "13d-a" (Task 8) uses "assemble_factory" instead of "assemble" -- a run-level stateful
+# closure (chronological pair-baseline map across chunks), not a pure per-chunk function.
 _BACKFILL_SPECS: dict[str, dict] = {
     "13d": {"signal": SIGNAL, "slug": "edgar_activist_13d",
             "fetch_factory": _activist_fetch_factory, "assemble": _assemble_13d},
@@ -604,6 +671,9 @@ _BACKFILL_SPECS: dict[str, dict] = {
                "fetch_factory": _efts_fetch_factory, "assemble": _assemble_8k_neg},
     "buyback": {"signal": SIGNAL_BUYBACK, "slug": "edgar_buyback_auth",
                 "fetch_factory": _buyback_fetch_factory, "assemble": _assemble_buyback},
+    "13d-a": {"signal": SIGNAL_STAKE, "slug": "edgar_13d_stake_increase",
+              "fetch_factory": _amendment_fetch_factory,
+              "assemble_factory": _assemble_13d_a_factory},
 }
 
 
@@ -614,14 +684,15 @@ def run_backfill(config: dict, *, signal_key: str, start: date, end: date, ident
                  _prereg=None, _free_gb=None) -> dict:
     """Generic batch backfill: walk -> assemble -> OPTIONALLY score (PiT reconstruction) ->
     measure -> idempotent JSONL. Serial + rate-limited by design (runs on the production
-    VPS). `signal_key` selects a _BACKFILL_SPECS row ("13d" | "8k" | "8k-neg"); the 13d row
-    is byte-identical to the pre-generalization coordinator (pinned by
+    VPS). `signal_key` selects a _BACKFILL_SPECS row ("13d" | "8k" | "8k-neg" | "buyback" |
+    "13d-a"); the 13d row is byte-identical to the pre-generalization coordinator (pinned by
     tests/test_scout_backfill.py passing unchanged). Returns the run summary.
 
     `scout.backfill.score_events` (default true) gates the scored-cohort reconstruction
     (design A4): false reproduces the byte-identical raw-only JSONL (gated/composite
     stay None, nothing else about a written row changes)."""
     spec = _BACKFILL_SPECS[signal_key]
+    _assemble_spec = None
     bf = (config.get("scout") or {}).get("backfill") or {}
     sec_throttle = float(bf.get("sec_throttle_s", 0.2))
     yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
@@ -709,6 +780,8 @@ def run_backfill(config: dict, *, signal_key: str, start: date, end: date, ident
         _symbology = Symbology(identity,
                                cache_dir=bf.get("symbology_cache_dir", ".cache/symbology"))
     try:
+        _assemble_spec = (spec["assemble_factory"](bf, today)
+                          if "assemble_factory" in spec else spec["assemble"])
         for c_start, c_end in _month_chunks(start, end):
             recs = _fetch_window(c_start, c_end, identity, throttle_s=sec_throttle,
                                  max_records=max_records)
@@ -716,7 +789,7 @@ def run_backfill(config: dict, *, signal_key: str, start: date, end: date, ident
                 failed_chunks.append(f"{c_start}:{c_end}")
                 continue
             # _symbology is provably non-None here (built just above when absent).
-            events = spec["assemble"](recs, _symbology.resolve_ticker)
+            events = _assemble_spec(recs, _symbology.resolve_ticker)
             fresh = [e for e in events if e.meta.get("key") not in existing_keys]
             measured = []
             for ev in fresh:
@@ -766,6 +839,17 @@ def run_backfill_13d(config: dict, *, start: date, end: date, identity: str,
     tests/test_scout_backfill.py + tests/test_scout_backfill_cli.py passing unchanged)."""
     return run_backfill(config, signal_key="13d", start=start, end=end, identity=identity,
                         today=today, out_path=out_path, **seams)
+
+
+def run_backfill_13d_a(config: dict, *, start: date, end: date, identity: str,
+                       today: Optional[date] = None, out_path: Optional[str] = None,
+                       **seams) -> dict:
+    """13D/A material stake-increase escalation leg (edgar:13d_stake_increase; prereg
+    edgar_13d_stake_increase.yaml, K=3m). Expected sign: POSITIVE (Bebchuk-Brav-Jiang 2015
+    campaign-drift family) — ships disabled at weight 0.5 pending this backfill verdict, the
+    buyback/8-K measure-first precedent."""
+    return run_backfill(config, signal_key="13d-a", start=start, end=end,
+                        identity=identity, today=today, out_path=out_path, **seams)
 
 
 def run_backfill_8k(config: dict, *, start: date, end: date, identity: str,
