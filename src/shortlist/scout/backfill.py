@@ -623,7 +623,7 @@ def _assemble_13d_a_factory(bf: dict, today: date):
             tkr = resolve_ticker(cik, fday) if cik else None
             norm = _is_real_ticker(tkr) if tkr else ""
             meta = {"filing_date": fday.isoformat(), "prior_pct": prior, "new_pct": pct,
-                    "key": f"{STAKE_SIGNAL}|{cik or r.get('accession')}|{fday.isoformat()}"}
+                    "key": f"{STAKE_SIGNAL}|{r.get('accession') or cik}|{fday.isoformat()}"}
             if not norm:                                   # SELECTED but non-measurable
                 events.append(CohortEvent(
                     signal=STAKE_SIGNAL, ticker=f"CIK:{cik}", cik=cik, event_date=entry,

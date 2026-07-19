@@ -96,11 +96,50 @@ def test_spac_and_affiliate_rows_excluded_never_seed_or_emit():
     affiliate["subject_name"] = "Hawkeye Systems"
     affiliate["activist"] = "Hawkeye HoldCo LLC"
     assert asm([affiliate], lambda c, d: "TGT") == []
-    # neither seeded a baseline: a later material "amendment" on the same pair is still
-    # a first-sighting seed, not an emission
+    # neither seeded a baseline: a later material "amendment" on the SAME pair key (same
+    # subject/filer CIKs) but a NON-SPAC subject name isn't excluded by the SPAC check --
+    # if either prior row had seeded a baseline, this pct (9.0 vs the spac row's 5.0, a
+    # +4.0pp delta) would clear MIN_INCREASE_PP and emit. It doesn't, proving the SPAC row
+    # never seeded (this is the first sighting for this pair, so it seeds-only).
     later = _rec(pct=9.0, acc="a3", fdate=date(2023, 6, 1))
-    later["subject_name"] = "Peace Acquisition Corp"
+    later["subject_name"] = "Peace Industries Inc"
     assert asm([later], lambda c, d: "TGT") == []
+
+
+def test_two_filers_same_subject_same_day_amendments_both_emit_with_distinct_keys():
+    """Regression: the dedup key must be accession-first, not subject-CIK-first. Two
+    DISTINCT filers escalating the SAME subject on the SAME day previously collided under
+    one f"{signal}|{cik}|{date}" key (append_events dedups by meta['key']), silently
+    dropping the second filer's event."""
+    asm = _assemble_13d_a_factory({}, date(2026, 7, 17))
+    # seed both pairs via two initial 13Ds (same subject, distinct filers)
+    asm([
+        _rec(form="SCHEDULE 13D", pct=5.0, fdate=date(2023, 1, 5), acc="i1",
+             filer="0000000900", subj="0000000123"),
+        _rec(form="SCHEDULE 13D", pct=5.0, fdate=date(2023, 1, 5), acc="i2",
+             filer="0000000901", subj="0000000123"),
+    ], lambda c, d: "TGT")
+    # same-day, same-subject amendments from both filers -- both material increases
+    ev = asm([
+        _rec(pct=8.0, fdate=date(2023, 3, 10), acc="a1", filer="0000000900",
+             subj="0000000123"),
+        _rec(pct=8.0, fdate=date(2023, 3, 10), acc="a2", filer="0000000901",
+             subj="0000000123"),
+    ], lambda c, d: "TGT")
+    assert len(ev) == 2
+    keys = {e.meta["key"] for e in ev}
+    assert len(keys) == 2                                 # distinct keys -- no collision
+
+
+def test_in_chunk_records_are_sorted_by_filing_date_regardless_of_list_order():
+    """A single chunk's records list can arrive out of date order (no ordering guarantee
+    from the caller) -- the assembler's internal sorted() by filing_date must still process
+    the initial before the later amendment."""
+    asm = _assemble_13d_a_factory({}, date(2026, 7, 17))
+    amendment = _rec(pct=8.0, fdate=date(2023, 3, 10), acc="a1")
+    initial = _rec(form="SCHEDULE 13D", pct=5.0, fdate=date(2023, 1, 5), acc="i1")
+    ev = asm([amendment, initial], lambda c, d: "TGT")    # amendment listed BEFORE initial
+    assert len(ev) == 1 and ev[0].meta["prior_pct"] == 5.0
 
 
 def test_min_increase_pp_is_the_code_constant_not_config():
