@@ -54,8 +54,10 @@ def pair_key(filer_cik, subject_cik) -> str | None:
 
 def stake_pct_from_filing(filing) -> float | None:
     """Best-effort percent-of-class from an edgartools Filing: structured XML first
-    (13D/G modernization, late 2024+), full text second. Never raises -> None."""
-    for getter in ("xml", "text"):
+    (13D/G modernization, late 2024+), then raw HTML, then rendered text. The html
+    tier recovers sibling-div legacy cover pages the text renderer drops; live-probed
+    2026-07-18. Never raises -> None."""
+    for getter in ("xml", "html", "text"):
         try:
             raw = getattr(filing, getter)()
         except Exception:  # noqa: BLE001 — a missing/broken document tier -> next tier

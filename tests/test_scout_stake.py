@@ -25,6 +25,18 @@ def test_legacy_text_amendment():
     assert pct is not None and 0 < pct <= 100
 
 
+def test_legacy_sibling_div_amendment():
+    # Real (trimmed) FLOTEK INDUSTRIES cover-page fragment (SC 13D/A,
+    # 0001013594-22-000096, filed 2022-02-04): row 13's label and its "3.1%"
+    # value sit in sibling <div>s inside the same <td> -- a shape edgartools'
+    # .text() rendering drops (the label survives, the value doesn't) but the
+    # tag-strip tier here recovers directly from raw HTML. Correct value
+    # confirmed against the filing's own cover page (max across the 5
+    # reporting-person pages in the full document is 9.4%; this trimmed
+    # single-page fragment carries only the 3.1% page).
+    assert extract_stake_pct(_read("legacy_amendment_sibling_div.txt")) == 3.1
+
+
 def test_garbage_abstains():
     assert extract_stake_pct(_read("garbage_no_pct.txt")) is None
     assert extract_stake_pct("") is None
