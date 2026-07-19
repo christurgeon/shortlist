@@ -52,6 +52,33 @@ copy only — see the CLAUDE.md section for the durable summary).
 **Status:** code + prereg + docs done on the branch; the production backfill run and its
 `validate` verdict are the operator's next step, outside this session.
 
+## Snapshot-replay path is ready to un-gate; SUE not yet measurable (2026-07-18)
+
+Checked the accumulation store (`/opt/shortlist/state/snapshots`) while chasing the
+SUE/Lazy-Prices validation reminder. Findings:
+
+- Accumulation has run cleanly since **2026-06-22** (~29 names/day). The mega-caps
+  (AAPL/MSFT/NVDA/AMZN/META) now hold **26 daily snapshots — past the ≥24 floor**, and each
+  carries the SUE inputs (verified live: `recent_surprise_pcts` = 4 quarters, clears the ≥3
+  σ-guard; `last_surprise_pct`; the decay anchor). `SnapshotSignalSource` + `sue_score` are
+  fully wired behind the gate.
+- **`--source snapshot` is still hard-gated** by a stub in `backtest/cli.py:~423` that
+  `return 2`s with "no organic history exists yet" — written when the store was empty.
+  Follow-up: replace it with a real ≥24-snapshot store-history check so the path activates
+  automatically (correctness-by-construction; smoke-test end-to-end). Small, no verdict.
+- **SUE is NOT measurable today regardless of the gate** — the earliest snapshot is only
+  ~26 days old and forward returns come from `PriceHistory.forward_return(T, horizon)`, so
+  no forward window has closed yet. First ~1-month points close early Aug; a prereg-grade
+  verdict (≥8 non-overlapping blocks) is a late-2026-into-2027 proposition. Just needs
+  calendar time — keep accumulating.
+- **Lazy-Prices (`filing_text_change`) can never validate on this path** — full filing text
+  was deliberately kept out of the snapshot (EdgarSource fetches Form 4 + financials +
+  filing-index only). Already noted below (2026-07-09 item #5) as a structural no-op; not a
+  waiting game.
+
+**Status:** open — un-gating the snapshot path is the only actionable prep; the SUE verdict
+itself is blocked on calendar time, not code.
+
 ---
 
 ## Buyback backfill KILL + combined-universe XBRL IC run (2026-07-11)
@@ -82,11 +109,15 @@ Branch `fix/buyback-prereg-slug` (local, unpushed — operator to push/PR/merge)
    shareholder_yield mixed (XS +2.08 but bottom bucket outperforms) stays OFF.
 
 Follow-ups, by urgency:
-1. **accruals re-measurement**: the ENABLED accruals leg shows XS≈0 (t=−0.05 @3m) on
-   this 231-name run vs the +0.036 (t=2.1) 195-name broad-universe evidence that
-   enabled it. Not a kill (TS +1.7–2.8; different universe mix + window), but
-   re-measure on the original broad universe before citing the old number; if it
-   stays flat there too, reconsider the leg.
+1. ~~**accruals re-measurement**~~ — **RESOLVED 2026-07-18.** This item was already
+   superseded the day after it was written: the 2026-07-12 audit disabled the leg
+   (`accruals: false`, #138) on the reproducible universes, and the original 195-name
+   broad universe it asked to re-measure on is **permanently unreproducible** (its
+   composition + results doc were gitignored and are gone). Re-ran both reproducible
+   universes on current code 2026-07-18 — largecap +0.013→+0.048 (XS t ≤ 1.46, sub-bar;
+   only a TS t=2.62 @h6), combined flat-to-negative — **reproducing the 07-12 table
+   bit-for-bit.** Verdict stands DISABLED; nothing left to measure. Reproduction appended
+   to `docs/audits/2026-07-12-accruals-leg-disable.md`.
 2. Operator: push branch `fix/buyback-prereg-slug` (+ PR/merge), then the still-open
    deploy of HEAD to /opt/shortlist (13F originator not yet live; see 2026-07-09/10
    entries below).
