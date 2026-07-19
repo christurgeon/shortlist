@@ -496,6 +496,13 @@ scout:
     drop_spacs: true        # SPAC/shell subjects are not takeoff candidates
     drop_affiliates: true   # filer name echoing the subject = control txn, not outside activism
     marquee_boost: 0.2      # strength bump when a credible (curated) activist is the filer
+    stake_increase:           # EdgarStakeIncreaseSignal — material 13D/A escalations
+      min_increase_pp: 2.0    # LIVE-only tune; the backfill cohort uses stake.MIN_INCREASE_PP
+      max_prior_fetches: 10   # cold-start baseline lookups per session (overflow is named).
+                              # LIVE-ONLY knob — the backfill cohort never applies it: it
+                              # seeds baselines from the chronological walk itself (uncapped).
+      daily_cap: 300          # LIVE-ONLY knob, same reason (the 8-K/buyback precedent) —
+                              # the backfill cohort processes every walked amendment.
   picks:                    # selection ledger + benchmark-relative scoreboard (track picks over time)
     enabled: true
     scoreboard_max: 10      # prior picks shown in the digest scoreboard
@@ -644,6 +651,9 @@ scout:
     quiver:         {enabled: false, weight: 1.0}
     wsb_hype:       {enabled: true,  weight: 0.5}
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
+    edgar_13d_stake_increase: {enabled: false, weight: 0.5}  # MEASURE-FIRST — OFF pending the
+                                                   # pre-registered backfill verdict
+                                                   # (preregister/edgar_13d_stake_increase.yaml)
     finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
     edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
     edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;

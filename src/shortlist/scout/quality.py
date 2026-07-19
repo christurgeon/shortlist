@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 _INITIAL_FORMS = {"SCHEDULE 13D", "SC 13D"}
+_AMENDMENT_FORMS = {"SCHEDULE 13D/A", "SC 13D/A"}
 _SPAC_MARKERS = ("acquisition corp", "acquisition company", "acquisition holdings",
                  "blank check", "spac")
 # stripped before affiliate overlap so funds don't collide on generic words. _norm() has
@@ -50,6 +51,12 @@ def _norm(s: str) -> str:
 def is_initial_13d(form: str) -> bool:
     """True for an initial SCHEDULE 13D (or legacy SC 13D); False for /A amendments."""
     return (form or "").strip().upper() in _INITIAL_FORMS
+
+
+def is_13d_amendment(form: str) -> bool:
+    """True for a SCHEDULE 13D/A (or legacy SC 13D/A) amendment; disjoint from
+    is_initial_13d by construction."""
+    return (form or "").strip().upper() in _AMENDMENT_FORMS
 
 
 def is_spac_or_shell(subject_name: str) -> bool:

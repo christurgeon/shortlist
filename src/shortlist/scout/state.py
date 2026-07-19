@@ -234,6 +234,38 @@ class ScoutState:
         is ample headroom)."""
         self._append_capped("thirteenf_seen", accessions, cap)
 
+    # --- 13D/A stake-increase originator: pair->baseline map + accession dedup ---
+    def stake_baselines(self) -> dict[str, dict]:
+        """'<filer10>|<subject10>' -> {"pct","date","adsh"} last-known stake per campaign
+        pair. Absent key (old state files) reads as {} — back-compatible, no migration."""
+        return dict(self._data.get("stake_baselines", {}))
+
+    def update_stake_baselines(self, updates: dict[str, dict], cap: int = 500) -> None:
+        """Merge baseline updates (newest filing DATE wins per pair; a same-date update
+        also wins so a re-run refreshes), evicting the oldest-INSERTED pairs past `cap`
+        (dict order is insertion order; a refreshed pair re-inserts at the tail).
+        One save."""
+        m = self._data.setdefault("stake_baselines", {})
+        for k, v in updates.items():
+            cur = m.get(k)
+            if cur is None or str(cur.get("date") or "") <= str(v.get("date") or ""):
+                m.pop(k, None)
+                m[k] = v
+        while len(m) > cap:
+            del m[next(iter(m))]
+        self._save()
+
+    def stake_increase_seen_accessions(self) -> list[str]:
+        """Amendment accessions the stake-increase originator already surfaced (the
+        session-2..session walk-back would otherwise re-emit for 3 runs). Absent key
+        reads as [] — back-compatible."""
+        return list(self._data.get("stake_increase_seen", []))
+
+    def add_stake_increase_accessions(self, accessions: list[str], cap: int = 500) -> None:
+        """~20-46 amendments/day pre-filter -> a 500 cap is a 2-4 week window, far beyond
+        the 3-day scan overlap it guards."""
+        self._append_capped("stake_increase_seen", accessions, cap)
+
     # --- held list ---
     def set_held(self, tickers: list[str]) -> None:
         self._data["held"] = [t.upper() for t in tickers]

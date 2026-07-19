@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><edgarSubmission xmlns="http://www.sec.gov/edgar/schedule13D" xmlns:com="http://www.sec.gov/edgar/common">
+  <schemaVersion>X0202</schemaVersion>
+<headerData>
+    <submissionType>SCHEDULE 13D/A</submissionType>
+    <previousAccessionNumber>0000950103-26-002612</previousAccessionNumber>
+    <filerInfo>
+      <filer>
+        <filerCredentials>
+          <!-- Field: Pseudo-Tag; ID: Name; Data: AIPCF VIII (Cayman), Ltd. -->
+          <cik>0002048379</cik>
+          <ccc>XXXXXXXX</ccc>
+        </filerCredentials>
+      </filer>
+      <liveTestFlag>LIVE</liveTestFlag>
+
+
+
+    </filerInfo>
+  </headerData>
+  <formData>
+    <coverPageHeader>
+      <amendmentNo>1</amendmentNo>
+      <securitiesClassTitle>Common stock, par value $0.01 per share</securitiesClassTitle>
+      <dateOfEvent>07/14/2026</dateOfEvent>
+      <previouslyFiledFlag>false</previouslyFiledFlag>
+      <issuerInfo>
+        <issuerCIK>0001597672</issuerCIK>
+        <issuerCusips>
+          <issuerCusipNumber>75508B104</issuerCusipNumber>
+        </issuerCusips>
+        <issuerName>RAYONIER ADVANCED MATERIALS INC.</issuerName>
+        <address>
+          <com:street1>1301 Riverplace Boulevard</com:street1>
+          <com:street2>Suite 2300</com:street2>
+          <com:city>Jacksonville</com:city>
+          <com:stateOrCountry>FL</com:stateOrCountry>
+          <com:zipCode>32207</com:zipCode>
+        </address>
+      </issuerInfo>
+      <authorizedPersons>
+        <notificationInfo>
+          <personName>American Industrial Partners</personName>
+          <personPhoneNum>(212) 916-8171</personPhoneNum>
+          <personAddress>
+            <com:street1>450 Lexington Avenue</com:street1>
+            <com:street2>40th Floor</com:street2>
+            <com:city>New York</com:city>
+            <com:stateOrCountry>NY</com:stateOrCountry>
+            <com:zipCode>10017</com:zipCode>
+          </personAddress>
+        </notificationInfo>
+      </authorizedPersons>
+    </coverPageHeader>
+    <reportingPersons>
+      <reportingPersonInfo>
+        <reportingPersonCIK>0002048422</reportingPersonCIK>
+        <reportingPersonNoCIK>N</reportingPersonNoCIK>
+        <reportingPersonName>Lightship Capital III LP</reportingPersonName>
+        <fundType>WC</fundType>
+        <fundType>OO</fundType>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>DE</citizenshipOrOrganization>
+        <soleVotingPower>0.00</soleVotingPower>
+        <sharedVotingPower>3400000.00</sharedVotingPower>
+        <soleDispositivePower>0.00</soleDispositivePower>
+        <sharedDispositivePower>3400000.00</sharedDispositivePower>
+        <aggregateAmountOwned>3400000.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>5.0416</percentOfClass>
+        <typeOfReportingPerson>PN</typeOfReportingPerson>
+      </reportingPersonInfo>
+      <reportingPersonInfo>
+        <reportingPersonCIK>0002048483</reportingPersonCIK>
+        <reportingPersonNoCIK>N</reportingPersonNoCIK>
+        <reportingPersonName>Lightship Capital III GP, LLC</reportingPersonName>
+        <fundType>AF</fundType>
+        <legalProceedings>N</legalProceedings>
+        <citizenshipOrOrganization>DE</citizenshipOrOrganization>
+        <soleVotingPower>0.00</soleVotingPower>
+        <sharedVotingPower>3400000.00</sharedVotingPower>
+        <soleDispositivePower>0.00</soleDispositivePower>
+        <sharedDispositivePower>3400000.00</sharedDispositivePower>
+        <aggregateAmountOwned>3400000.00</aggregateAmountOwned>
+        <isAggregateExcludeShares>N</isAggregateExcludeShares>
+        <percentOfClass>5.0416</percentOfClass>
+        <typeOfReportingPerson>OO</typeOfReportingPerson>
+      </reportingPersonInfo>
+      ...
+    </reportingPersons>
+  </formData>
+</edgarSubmission>

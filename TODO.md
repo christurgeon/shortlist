@@ -6,6 +6,52 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## 13D escalation pack shipped — backfill run pending (2026-07-18)
+
+Branch `feat/13d-escalation-pack` (worktree, review pending — not yet merged): shipped
+`EdgarStakeIncreaseSignal` (`edgar_13d_stake_increase`, OFF at weight 0.5, measure-first)
++ `scout/stake.py` pure percent-of-class leaf (XML tier → raw-HTML tier → text tier;
+max-of-coverpages; abstain-never-guess) + a `--signal 13d-a` backfill leg with a
+run-level stateful chronological assembler. Pre-registered:
+`preregister/edgar_13d_stake_increase.yaml` (POSITIVE, K=3m, window 2022–2025,
+blocks≥8, frac 0.90, as_of 2026-07-18). Design + verified facts:
+`docs/superpowers/specs/2026-07-17-13d-escalation-pack-design.md` (gitignored, local
+copy only — see the CLAUDE.md section for the durable summary).
+
+1. **Operator runbook — production backfill + validate (not yet run):**
+   ```
+   uv run --extra edgar shortlist-scout backfill --signal 13d-a \
+       --start 2022-01-01 --end 2025-12-31
+   uv run --extra edgar shortlist-scout validate \
+       --backfill scout/backfill/13d-a-2022-01-01-2025-12-31.jsonl --json
+   ```
+   Run **outside 21:15–23:00 UTC** (SEC EDGAR maintenance window); the runner's `df`
+   disk preflight aborts below 8 GB free. Serial + rate-limited by design, and
+   **resumable** (re-run reports `written_this_run=0` once complete) — safe to split
+   across sessions if it doesn't finish in one sitting. 2022-01-01..2025-12-31 IS the
+   pre-registered window; don't widen or narrow it post hoc.
+   **Expectation-setting:** the buyback/8-K precedent means a KILL-shaped verdict
+   (negative or INSUFFICIENT FF3 alpha) is a live, even likely, outcome — the signal
+   stays OFF either way with the evidence committed under `docs/audits/`. Known,
+   already-diagnosed non-issues the evaluator will see: a legacy-cover-page parse rate
+   well under 100% (~93% post html-tier-fix on the 2022-23 spot-check sample) with a
+   couple of legitimate `ZERO_PERCENT_ONLY`-style abstentions (a holding-company-chain
+   entity disclaiming ownership at that layer — correctly dropped, not a bug); and the
+   population-scope caveat (backfill's measured cohort is slightly broader than what
+   live scanning would ever emit, since backfill resolves tickers PiT while the live
+   walker drops unresolvable-ticker rows before baselining).
+2. **Deferred from the design spec §7** (recorded, not scheduled): a stake-**decrease**
+   / exit negative-context signal; reweighting the initial-13D live strength by
+   stake-%  (needs ledger data first); a generic `include_amendments: true` config
+   (non-increase amendments stay dropped in v1).
+3. **Repo test suite is Python-minor-version sensitive:** a fresh 3.11 venv fails
+   `test_block_bootstrap_ci_*` on a floating-point boundary that a 3.13 venv doesn't
+   hit (surfaced setting up this worktree). Consider pinning the dev environment via a
+   `.python-version` file so a fresh clone doesn't hit a spurious local failure.
+
+**Status:** code + prereg + docs done on the branch; the production backfill run and its
+`validate` verdict are the operator's next step, outside this session.
+
 ## Snapshot-replay path is ready to un-gate; SUE not yet measurable (2026-07-18)
 
 Checked the accumulation store (`/opt/shortlist/state/snapshots`) while chasing the
