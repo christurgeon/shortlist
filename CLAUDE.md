@@ -421,6 +421,62 @@ report sections (`report/sections.py`). The autonomous push still ships **OFF**
 pass to `/deep`** (we enter after-close, so the edge is post-filing drift —
 Bebchuk-Brav-Jiang 2015 — not the filing-day pop), screening triage, not advice.
 
+## 13D/A stake-increase escalation (scout)
+
+`EdgarStakeIncreaseSignal` (`edgar_13d_stake_increase`, `scout/signals.py`, keyless,
+**VPS-safe**) is the escalation analogue of the initial-13D originator above: it scans
+`SCHEDULE 13D/A` (+ legacy `SC 13D/A`) amendments for a **material stake INCREASE** — an
+activist who crossed 5% and keeps buying, a conviction signal the initial filing can't
+carry (Bebchuk-Brav-Jiang 2015 campaign-drift family). **Ships DISABLED at weight 0.5** on
+the buyback/8-K MEASURE-FIRST precedent, pending its own pre-registered backfill
+(`preregister/edgar_13d_stake_increase.yaml`, K=3m, expected sign POSITIVE, window
+2022–2025).
+
+**`scout/stake.py`** (new pure leaf, the `_form4.py`/`_edgar_facts.py` shared-leaf
+pattern): percent-of-class parsing, **abstain-never-guess**, **max-of-coverpages**
+aggregation (a joint filing's several reporting-person cover pages → the group max, used
+consistently on both sides of a delta so max-vs-max stays internally consistent). Three
+accessor tiers tried in order (`stake_pct_from_filing`): structured XML
+(`<percentOfClass>`, the late-2024+ 13D/G modernization) → raw HTML → rendered text.
+**Verified facts (live-probed 2026-07-17/18; do not "fix" back — full detail + accession
+numbers in `docs/superpowers/specs/2026-07-17-13d-escalation-pack-design.md`):** the XML
+tag is confirmed `<percentOfClass>`, no namespace, via `f.xml()`; legacy (pre-2024) cover
+pages need the **raw-HTML tier**, not `.text()` — edgartools' text rendering drops the
+value out of a sibling `<div>` for one common filer-agent template, which was **74% of all
+abstentions** on a 30-filing 2022–23 hand-checked sample before the fix landed; adding the
+html tier took that same sample's parse rate **7/30 (23.3%) → 28/30 (93.3%)**, 32/32
+hand-checked values correct across both rounds, zero wrong. `MIN_INCREASE_PP = 2.0`
+(absolute percentage points, never relative) is a **code constant** (`stake.py`, the
+buyback `DEFAULT_PHRASES` precedent) — the backfill cohort always uses it;
+`scout.activist_13d.stake_increase.min_increase_pp` tunes the **live** signal only.
+
+**Baselines + dedup** live in `ScoutState` (`stake_baselines` — capped pair→pct map keyed
+by `pair_key(filer_cik, subject_cik)`; `stake_increase_seen` — capped accession set; both
+forward-compatible). A cold-start unseen pair costs one bounded prior-filing fetch
+(`max_prior_fetches`, default 10/session; overflow is named in `available()`, never
+silent). The live walker filters SPAC/affiliate rows **before** the doc-fetch/prior-fetch
+budget is spent (cheap, index-level) — the aggregator re-applies the same predicates
+belt-and-braces. **First-sighting amendments seed the baseline and never emit**; parse
+abstention is a **selection exclusion**, never counted as survivorship loss (same rule
+live and backfill).
+
+**Population-scope caveat** (also on the class docstring): the live walker drops an
+amendment row whose subject ticker fails to resolve at scan time
+(`edgar_index.fetch_amendment_records`), *before* any baseline is seeded, while the
+backfill keeps every row and resolves the ticker point-in-time only at emission — so the
+**measured backfill cohort's population is slightly broader than live emissions**. A
+future evaluator comparing live hit-rate to the backfill verdict should know this.
+
+The initial-13D signal's `stake_pct` meta enrichment wires in **only when
+`edgar_13d_stake_increase` is enabled** (`daily.py:_initial_stake_fetcher`) —
+**byte-identical** otherwise. Backfill: `shortlist-scout backfill --signal 13d-a` (spec
+row in `scout/backfill.py`) uses a **run-level stateful chronological assembler**
+(`_assemble_13d_a_factory` — month-chunks arrive oldest-first so an in-window initial 13D
+or earlier amendment seeds the pair baseline before later amendments diff against it), not
+the pure per-chunk assembler the other three backfill signals share. `scoring.score()` is
+untouched by all of this. Tune `scout.activist_13d.stake_increase` +
+`scout.signals.edgar_13d_stake_increase`.
+
 ## 8-K discovery + negative-item veto (scout)
 
 `EdgarEightKSignal` (`scout/signals.py`, keyless, **VPS-safe** — SEC-hosted, no Yahoo WAF)

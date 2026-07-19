@@ -450,6 +450,12 @@ class EdgarStakeIncreaseSignal:
     backfill verdict (preregister/edgar_13d_stake_increase.yaml) — the buyback/8-K
     measure-first precedent. Emission rule + abstentions live in the pure
     edgar_index.stake_increases_from_records; this class does fetch budgeting only.
+
+    Population-scope caveat: this live walker drops an amendment row whose subject
+    ticker fails to resolve at scan time (edgar_index.fetch_amendment_records),
+    BEFORE any baseline is seeded, while the 13d-a backfill keeps every row and
+    resolves the ticker point-in-time only at emission — so the measured backfill
+    cohort's population is slightly broader than what live scanning ever emits.
     """
     name = "edgar_13d_stake_increase"
     is_discovery = True
