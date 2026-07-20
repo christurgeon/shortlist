@@ -49,6 +49,22 @@ def test_bridge_interest_coverage_negative_on_real_operating_loss():
     assert m.interest_coverage == pytest.approx(-5.0, rel=1e-9)
 
 
+def test_bridge_net_debt_to_ebitda_abstains_on_negative_ebitda():
+    # A leveraged money-loser: debt 500 > cash 120 but EBITDA -490. Dividing by the
+    # negative denominator flips the sign (-0.78), which downstream reads as NET CASH
+    # (screen.py display-floors negatives to 0.0; the inverted backtest axis scores it
+    # at the top). Leverage-over-EBITDA is meaningless with EBITDA <= 0 -> abstain;
+    # the over_leveraged gate's D/E fallback already covers gating.
+    st = Statements(
+        fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
+        revenue=[1000.0], total_debt=[500.0], cash_and_equivalents=[120.0],
+        operating_income=[-500.0], dep_amort=[10.0], ebitda=[-490.0],
+    )
+    m = snapshot_to_metrics(TickerSnapshot(ticker="Z", statements=st))
+    assert m.ebitda == -490.0            # the raw fact still surfaces
+    assert m.net_debt_to_ebitda is None  # the ratio abstains
+
+
 def test_bridge_derives_ebit_ev_yield():
     # EBIT = operating_income[0] = 200; net debt = 500 - 100 = 400;
     # EV = market_cap + net_debt = 1300 + 400 = 1700 -> yield = 200 / 1700.

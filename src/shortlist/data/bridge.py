@@ -205,8 +205,13 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
             # stays positive; the numerator's sign is meaningful (a real
             # operating loss -> negative coverage).
             m.interest_coverage = oi0 / abs(ie0)
-        if (m.net_debt_to_ebitda is None and m.ebitda and debt0 is not None
-                and m.cash_and_equivalents is not None):
+        # EBITDA must be POSITIVE, not just non-zero: a negative denominator flips
+        # the ratio's sign, so a leveraged money-loser would read as net cash (the
+        # display floor + inverted backtest axis both trust the sign). Abstain —
+        # the over_leveraged gate's D/E fallback covers gating (its own ebitda>0
+        # usability check already refuses negative EBITDA).
+        if (m.net_debt_to_ebitda is None and m.ebitda is not None and m.ebitda > 0
+                and debt0 is not None and m.cash_and_equivalents is not None):
             m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
         # EV/EBIT earnings yield (absolute valuation leg, §2.2). EBIT = operating
         # income; EV = market_cap + net_debt. Same positional [0] alignment the

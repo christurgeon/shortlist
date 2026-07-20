@@ -159,13 +159,19 @@ def sum_family(facts: dict, concepts: list[str], as_of: date) -> dict:
     return out
 
 
-def ratio_latest(num: dict, den: dict) -> Optional[float]:
-    """num/den at the LATEST fiscal end both report. None if no common end or den==0."""
+def ratio_latest(num: dict, den: dict, *, positive_den: bool = False) -> Optional[float]:
+    """num/den at the LATEST fiscal end both report. None if no common end or den==0.
+    With positive_den=True, also None when the denominator is negative — for ratios
+    whose sign convention is meaningless over a negative base (net_debt/EBITDA: a
+    negative-EBITDA denominator would make a leveraged name read as net cash)."""
     common = set(num) & set(den)
     if not common:
         return None
     e = max(common)   # ISO-8601 keys sort chronologically -> max() is the latest end
-    return (num[e] / den[e]) if den[e] != 0.0 else None
+    d = den[e]
+    if d == 0.0 or (positive_den and d < 0):
+        return None
+    return num[e] / d
 
 
 def desc(series: dict) -> list[float]:
@@ -392,7 +398,8 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     # net_debt = total_debt - cash and net_debt/EBITDA, all aligned by fiscal end via the
     # panel helpers (never mixing ends across the three series).
     net_debt_series = sum_aligned(p.total_debt, {e: -v for e, v in p.cash.items()})
-    m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series)
+    m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series,
+                                        positive_den=True)
 
     # EV/EBIT earnings yield, point-in-time. EBIT and net_debt are each taken at
     # their OWN latest fiscal end (two independent latest() calls — no common-end

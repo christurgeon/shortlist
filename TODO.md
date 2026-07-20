@@ -6,6 +6,53 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Data audit — 4 fixes shipped; statements-merge data loss + leverage-axis re-measure deferred (2026-07-20)
+
+Branch `fix/data-audit-2026-07-20` (PR #144; suite 2001 green, ruff clean) ships four
+audit fixes: (1) `net_debt_to_ebitda` abstains on EBITDA ≤ 0
+on BOTH paths (was sign-flipping so a leveraged money-loser displayed as net cash and
+topped the inverted backtest leverage axis); (2) `fmp.fetch_insider` was a documented-but-
+dead knob — the paid 402 endpoint burned ~1 of ~13 FMP quota calls/ticker on every fetch,
+now honored; (3) FMP insider netting is now actually 183d-windowed (was "last 60 txns,
+any age" labeled `net_value_6m`, and an all-stale list built a zero-valued `Insider` that
+would claim the txn group over EDGAR in `_merge_insider`); (4) CLAUDE.md `daily_push`
+doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
+
+1. **FMP-won statements silently drop every EDGAR-only field** — `statements` is a
+   whole-source pick-first merge and `fmp` precedes `edgar`, so for exactly the
+   well-covered (non-402) names the merged snapshot loses `diluted_shares`,
+   `diluted_eps`, `fiscal_period_end`, `total_assets`, `asset_growth`, `accruals`, and
+   the §5 financing legs that EdgarSource fetched anyway. Consequences: the
+   ON-by-default **`dilution` flag can never fire for FMP-covered names**
+   (`share_count_cagr` None), `eps_cagr_ps` inert, and the accumulation store
+   (fmp,finnhub,edgar) is persisting snapshots whose §3/§5 measurement inputs are
+   missing for FMP-covered names — degrading future snapshot-replay measurement.
+   Fix options: (a) extract the fields from FMP's ALREADY-FETCHED payloads (income
+   statement carries diluted EPS/weighted-avg diluted shares/`date`; balance carries
+   totalAssets; cash-flow carries dividends/repurchases/debt rows — /stable/ field
+   names need LIVE verification first, the repo rule); or (b) a bespoke statements
+   merger that backfills only the internally-aligned EDGAR pieces (the pre-computed
+   scalars + the coherent `diluted_eps`/`diluted_shares`/`fiscal_period_end` triple).
+   CAREFUL either way: `piotroski_f` and `_financial_series` align series by LIST
+   POSITION — never positionally mix two sources' series in one Statements.
+2. **Re-measure the `net_debt_to_ebitda` axis post-fix**: every prior IC run (incl. the
+   2026-07-11 combined-universe "leverage tilt NOT earned" verdict) scored
+   negative-EBITDA names at the TOP of the inverted leverage band (they read as net
+   cash). The contamination is worst in the smallmid/combined universes where
+   money-losers are common. One re-run on both committed universes before treating the
+   axis as permanently dead — the verdict may stand, but it was measured on polluted data.
+3. Minor parked observations: the `pe_ttm` fallback accepts negative EPS (harmless —
+   `pe_vs_history()` guards `> 0`, and pe_ttm isn't in `--json`); `bridge._close_near`
+   has no max-gap bound (a short monthly history can pair a fiscal end with a
+   months-away close); `Fundamentals.operating_margin`/`current_ratio` and
+   `Statements.total_equity` are extracted but consumed nowhere on the harness path;
+   WSB `upvotes`/`rank_24h_ago` are captured but unused.
+
+**Status:** open — fixes await operator push/PR; item 1 is the highest-value build
+(pure data recovery, no new scoring surface); item 2 is one backtest command per universe.
+
+---
+
 ## 13D escalation pack shipped — backfill run pending (2026-07-18)
 
 Branch `feat/13d-escalation-pack` (worktree, review pending — not yet merged): shipped
