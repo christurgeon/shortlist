@@ -74,7 +74,7 @@ def render_glance(vm: ReportVM) -> bytes:
         d.rectangle([left, ry + 3 * s, left + bw, ry + (_ROW - 6) * s], fill=col)
         d.text((left + bw + 6 * s, ry + 6 * s), f"{ld.composite:.0f}", font=f_cell, fill=FG)
         a = ld.assessment
-        if a is not None and getattr(a, "call_stance", ""):
+        if a is not None and a.call_stance:
             pcol = stance_to_rgb(a.call_stance)
             label = a.call_label or a.call_stance
             bb = d.textbbox((0, 0), label, font=f_cell)

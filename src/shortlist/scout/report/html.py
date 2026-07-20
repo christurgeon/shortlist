@@ -20,14 +20,15 @@ class HtmlBuilder:
     def esc(self, s) -> str:
         return _html.escape("" if s is None else str(s), quote=True)
 
+    def _attrs(self, attrs: dict) -> str:
+        return "".join(f' {k.lstrip("_").replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
+
     def tag(self, name: str, text: str = "", **attrs) -> str:
-        a = "".join(f' {k.lstrip("_").replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
-        return f"<{name}{a}>{self.esc(text)}</{name}>"
+        return f"<{name}{self._attrs(attrs)}>{self.esc(text)}</{name}>"
 
     def raw(self, name: str, inner_html: str, **attrs) -> str:
         """Wrap already-safe inner HTML (built from other esc'd pieces)."""
-        a = "".join(f' {k.lstrip("_").replace("_", "-")}="{self.esc(v)}"' for k, v in attrs.items())
-        return f"<{name}{a}>{inner_html}</{name}>"
+        return f"<{name}{self._attrs(attrs)}>{inner_html}</{name}>"
 
 
 # A small inline radar/scope mark for brand character — pure SVG, no deps.

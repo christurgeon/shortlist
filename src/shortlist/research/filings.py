@@ -101,8 +101,7 @@ def _prior_year_risk_factors(ticker: str) -> str:
     except Exception as e:
         # Never-raises contract: the YoY diff degrades to "" — but say why on
         # stderr so a systematic failure doesn't hide as "no prior 10-K".
-        print(f"research: prior-year 10-K risk-factor fetch failed for {ticker}: "
-              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
+        log_abstain("prior-year 10-K risk-factor fetch failed", ticker, e)
         return ""
 
 
@@ -121,6 +120,29 @@ def _acceptance_date(filing: Any) -> str:
     'YYYY-MM-DD' string. Uses filing_date (the date the filing became public);
     a string compare orders ISO dates correctly. "" if unknown (sorts first)."""
     return str(getattr(filing, "filing_date", "") or "")
+
+
+def require_identity(identity: Optional[str] = None) -> None:
+    """Resolve the SEC EDGAR contact-email identity (explicit override, else the
+    SEC_IDENTITY env var) and register it with edgartools via `set_identity`.
+    Raises RuntimeError if neither is set — the SEC requires a contact identity
+    on every request. Shared by every EDGAR-fetching entry point in this package
+    (fetch_10k / filing_text_change / proxy.fetch_proxy); process-global, so it's
+    safe to call once per fetch."""
+    from edgar import set_identity  # lazy: optional [edgar] extra
+
+    ident = identity or os.environ.get("SEC_IDENTITY")
+    if not ident:
+        raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
+    set_identity(ident)
+
+
+def log_abstain(action: str, ticker: str, e: Exception) -> None:
+    """stderr line for the 'never raises, degrade to the abstain value' contract
+    shared by several EDGAR fetchers here and in proxy.py: a systematic failure
+    must not silently look identical to 'no data for this ticker'."""
+    print(f"research: {action} for {ticker}: "
+          f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
 
 
 def filing_text_change(
@@ -143,12 +165,9 @@ def filing_text_change(
     current-and-prior pair (fewer than two filings at-or-before as_of, or no
     extractable text). Never raises. Requires SEC_IDENTITY (the [edgar] extra).
     """
-    from edgar import Company, set_identity  # lazy: optional [edgar] extra
+    from edgar import Company  # lazy: optional [edgar] extra
 
-    ident = identity or os.environ.get("SEC_IDENTITY")
-    if not ident:
-        raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
-    set_identity(ident)
+    require_identity(identity)
     try:
         filings = Company(ticker).get_filings(form=form)
         # Exact-form only (drop /A amendments and adjacent forms), then restrict to
@@ -175,8 +194,7 @@ def filing_text_change(
     except Exception as e:
         # Never-raises contract: the similarity abstains to None — but say why
         # on stderr so a systematic failure doesn't hide as "no filing pair".
-        print(f"research: filing_text_change failed for {ticker}: "
-              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
+        log_abstain("filing_text_change failed", ticker, e)
         return None
 
 
@@ -185,13 +203,9 @@ def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingTex
     Returns None if there is no usable 10-K (e.g. foreign filers file 20-F) or
     all narrative sections are empty. Raises RuntimeError if SEC_IDENTITY is unset.
     """
-    from edgar import Company, set_identity  # lazy: optional [edgar] extra
+    from edgar import Company  # lazy: optional [edgar] extra
 
-    ident = identity or os.environ.get("SEC_IDENTITY")
-    if not ident:
-        raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
-    set_identity(ident)  # process-global; safe to set once per fetch here
-
+    require_identity(identity)
     latest = Company(ticker).get_filings(form="10-K").latest(1)
     if latest is None:
         return None

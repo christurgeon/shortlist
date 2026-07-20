@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ..data.diskcache import read_json_cache, write_json_cache
-from ..env import redact_secrets
 
 _FTD_URL = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails{ym}{half}.zip"
 
@@ -255,7 +254,6 @@ def load_cusip_resolver(identity: str, *, resolver_cache_dir: str = ".cache/sec_
         ftd = fetch_ftd_files(identity, cache_dir=ftd_cache_dir, timeout=timeout,
                               today=today, throttle=throttle)
         cusip_index = build_cusip_to_symbol(ftd)
-    except Exception as exc:  # noqa: BLE001 — never let resolver construction crash the scan
-        _ = redact_secrets(str(exc))
+    except Exception:  # noqa: BLE001 — never let resolver construction crash the scan
         cusip_index = {}
     return CusipResolver(cusip_index, name_index)

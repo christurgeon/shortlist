@@ -90,6 +90,11 @@ _YAHOO_HEADERS = {
     "Sec-Fetch-Dest": "empty",
 }
 
+# Shared across every CIK->ticker-resolver-backed originator (13D, stake-increase, 8-K,
+# buyback): an empty resolver would abstain on EVERY row (no display_names fallback), so
+# each `scan()` bails LOUDLY with this exact message rather than reading as a quiet day.
+_CIK_RESOLVER_EMPTY_MSG = "CIK→ticker resolver empty; skipped — retry next session"
+
 _YAHOO_MAX_RETRIES = 1
 _YAHOO_RETRY_BASE_S = 1.0
 _YAHOO_RETRY_MAX_S = 5.0
@@ -395,8 +400,7 @@ class EdgarActivist13DSignal:
                 # degraded guard: skip LOUDLY, drop the memoized resolver so "retry next
                 # session" is real.
                 self._resolver = None
-                self._status = (False,
-                                "CIK→ticker resolver empty; skipped — retry next session")
+                self._status = (False, _CIK_RESOLVER_EMPTY_MSG)
                 return []
             resolver = self._resolver
 
@@ -431,12 +435,13 @@ class EdgarActivist13DSignal:
 register("edgar_activist_13d", EdgarActivist13DSignal)
 
 
-def _stake_from_filing(filing):
+def _stake_from_filing(filing) -> float | None:
     from .stake import stake_pct_from_filing
     return stake_pct_from_filing(filing)
 
 
-def _prior_stake(subject_cik, filer_cik10, before, identity):
+def _prior_stake(subject_cik: str | int | None, filer_cik10: str | None, before: date,
+                 identity: str) -> float | None:
     from .stake import fetch_prior_stake
     return fetch_prior_stake(subject_cik, filer_cik10, before, identity)
 
@@ -494,8 +499,7 @@ class EdgarStakeIncreaseSignal:
             resolver = self._resolver_map()
             if resolver == {}:
                 self._resolver = None
-                self._status = (False,
-                                "CIK→ticker resolver empty; skipped — retry next session")
+                self._status = (False, _CIK_RESOLVER_EMPTY_MSG)
                 return []
 
             def resolve(cik):
@@ -663,8 +667,7 @@ class EdgarEightKSignal:
                 # nothing, drop the memoized resolver so "retry next session" is real.
                 self._resolver = None
                 self.new_accessions = []
-                self._status = (False,
-                                "CIK→ticker resolver empty; skipped — retry next session")
+                self._status = (False, _CIK_RESOLVER_EMPTY_MSG)
                 return []
             resolver = self._resolver
             rows: list[dict] = []
@@ -808,17 +811,13 @@ class EdgarThirteenFSignal:
                 # An empty parsed row list is indistinguishable from a swallowed fetch/parse
                 # failure (unrecognized infotable member, ET.ParseError -> []), and a real
                 # 13F-HR ALWAYS carries an infotable. EDGAR is uncached, so a transient
-                # truncation heals on a second fetch -> retry ONCE in-scan before giving up.
-                # Trade-off: still-empty after the retry MARKS the accession processed and
-                # skips the quarter LOUDLY (a truly transient empty then loses one quarter —
-                # accepted) rather than the old never-mark policy, which wedged a fund into
-                # re-fetching daily for ~2 quarters with the signal status pinned to failed.
-                latest_rows = tf.fetch_infotable_rows(cik, latest["accession"], self.identity,
-                                                      timeout=self.timeout, throttle=self._throttle)
-                if not latest_rows:                      # retry the LATEST once (halve requests:
-                    latest_rows = tf.fetch_infotable_rows(  # check before fetching the prior)
-                        cik, latest["accession"], self.identity,
-                        timeout=self.timeout, throttle=self._throttle)
+                # truncation heals on a second fetch -> retry ONCE in-scan before giving up
+                # (see _fetch_infotable_retry). Trade-off: still-empty after the retry MARKS
+                # the accession processed and skips the quarter LOUDLY (a truly transient
+                # empty then loses one quarter — accepted) rather than the old never-mark
+                # policy, which wedged a fund into re-fetching daily for ~2 quarters with the
+                # signal status pinned to failed.
+                latest_rows = self._fetch_infotable_retry(tf, cik, latest["accession"])
                 if not latest_rows:
                     errors += 1
                     skipped.append(f"{fund_name} {latest['accession']}: empty infotable parse "
@@ -827,12 +826,7 @@ class EdgarThirteenFSignal:
                     processed += 1
                     continue
                 prior = filings[1]
-                prior_rows = tf.fetch_infotable_rows(cik, prior["accession"], self.identity,
-                                                     timeout=self.timeout, throttle=self._throttle)
-                if not prior_rows:                       # retry the PRIOR once
-                    prior_rows = tf.fetch_infotable_rows(
-                        cik, prior["accession"], self.identity,
-                        timeout=self.timeout, throttle=self._throttle)
+                prior_rows = self._fetch_infotable_retry(tf, cik, prior["accession"])
                 if not prior_rows:
                     # If prior parses empty we'd emit the whole current book as "new" — skip
                     # the quarter, but mark the LATEST processed so we don't refetch daily.
@@ -875,6 +869,17 @@ class EdgarThirteenFSignal:
         if accession and accession not in self.seen_accessions:
             self.seen_accessions.add(accession)
             self.processed_accessions.append(accession)
+
+    def _fetch_infotable_retry(self, tf, cik, accession: str) -> list[dict]:
+        """One infotable fetch + a single in-scan retry on empty (EDGAR is uncached, so a
+        transient truncation heals on a second fetch — see the retry rationale in scan()).
+        Still-empty after the retry is treated as genuinely unparseable, not transient."""
+        rows = tf.fetch_infotable_rows(cik, accession, self.identity,
+                                       timeout=self.timeout, throttle=self._throttle)
+        if not rows:
+            rows = tf.fetch_infotable_rows(cik, accession, self.identity,
+                                           timeout=self.timeout, throttle=self._throttle)
+        return rows
 
     def available(self) -> tuple[bool, str]:
         return self._status
@@ -933,7 +938,7 @@ class EdgarBuybackSignal:
                 # nothing, drop the memoized resolver so "retry next session" is real.
                 self._resolver = None
                 self.new_accessions = []
-                self._status = (False, "CIK→ticker resolver empty; skipped — retry next session")
+                self._status = (False, _CIK_RESOLVER_EMPTY_MSG)
                 return []
             resolver = self._resolver
             rows: list[dict] = []

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import ceil
-from typing import Any
+from typing import Any, Optional
 
 from .engine import BacktestReport
 from .metrics import aggregate_ic
@@ -115,7 +115,7 @@ def render_table(r: BacktestReport) -> str:
     return buf.getvalue()
 
 
-def _sign(x):
+def _sign(x: Optional[float]) -> int:
     if x is None:
         return 0
     return 1 if x > 0 else (-1 if x < 0 else 0)

@@ -111,12 +111,12 @@ class StockMetrics:
     activist_13d: Optional[bool] = None
     passive_13g: Optional[bool] = None
     planned_insider_sale_144: Optional[bool] = None
-    filing_events: Optional[list] = None   # list of {form, filed, accession, url} dicts
+    filing_events: Optional[list[dict]] = None   # list of {form, filed, accession, url} dicts
 
     # Recent open-market insider Form-4 trades (enrichment only; NOT scored). Set by the
     # bridge from snap.insider.recent — a compact {date, name, role, kind, value} per trade
     # (newest-first) for the research brief's context, parallel to filing_events.
-    insider_recent: Optional[list] = None
+    insider_recent: Optional[list[dict]] = None
 
     # Up-to-5y financial series (newest-first), each entry a dict:
     # {fiscal_year, period_end, revenue, gross_profit, net_income,
@@ -124,7 +124,7 @@ class StockMetrics:
     # Plain list-of-dicts (not the data.Statements type) to avoid a core->data import;
     # research quant-context only, never read by the scorer. None on stacks without
     # full statements (e.g. the lean screener path).
-    financial_series: Optional[list] = None
+    financial_series: Optional[list[dict]] = None
 
     # Short interest (FINRA consolidated; derived in bridge.py). Soft-flag inputs only.
     short_pct_outstanding: Optional[float] = None  # short_shares / (market_cap/price); under-states float
@@ -193,7 +193,7 @@ class StockMetrics:
     filing_text_similarity: Optional[float] = None  # 1.0 == unchanged, 0.0 == fully rewritten
 
     # Bookkeeping: which provider supplied each populated field
-    sources: dict = field(default_factory=dict)
+    sources: dict[str, str] = field(default_factory=dict)
 
     def upside_to_target(self) -> Optional[float]:
         if self.price and self.target_median:
@@ -241,7 +241,7 @@ class ScoreCard:
     sic_bucket: Optional[str] = None
     confidence: float = 1.0
     scored: bool = True
-    abstentions: list = field(default_factory=list)
+    abstentions: list[dict[str, str]] = field(default_factory=list)
     # 7th sub-score (risk). Appended last so positional construction through the
     # leading fields is unaffected. Composite-only tilt; excluded from confidence.
     risk: Optional[float] = None
@@ -265,7 +265,7 @@ class ScoreCard:
         return not self.gates and self.scored
 
 
-def rank_key(card) -> tuple:
+def rank_key(card) -> tuple[bool, float, float]:
     """Ranking order, descending: scored first, then composite, then confidence as a
     tiebreaker. composite is rounded to 0.1 (scoring.py), so confidence only decides
     exact ties — a higher composite always wins (we never bury a strong-but-thin name).

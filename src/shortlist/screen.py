@@ -104,7 +104,7 @@ def _print_coverage_notes(cards: list[ScoreCard]) -> None:
         print(coverage_note_line(c.ticker, c.coverage), file=sys.stderr)
 
 
-def _f(x):
+def _f(x: float | None) -> str:
     return f"{x:.0f}" if x is not None else "-"
 
 
@@ -211,7 +211,7 @@ def _research_available() -> bool:
     return is_available()
 
 
-def _run_enrich(cards, config, n, refresh):
+def _run_enrich(cards: list[ScoreCard], config: dict, n: int, refresh: bool):
     from .research import enrich
     return enrich(cards, config, top_n=n, refresh=refresh)
 

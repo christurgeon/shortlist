@@ -246,22 +246,22 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         cutoff = (date.today() - timedelta(days=183)).isoformat()
         insiders = [tx for tx in insiders
                     if (tx.get("transactionDate") or "") >= cutoff]
-    if isinstance(insiders, list) and insiders:
-        net = buys = sells = 0
-        recent = []
-        for tx in insiders[:60]:
-            val = tx_value(tx)
-            buy = is_buy(tx)
-            net += val if buy else -val
-            buys += buy
-            sells += not buy
-            if len(recent) < 10:
-                recent.append(InsiderTxn(
-                    date=tx.get("transactionDate"), name=tx.get("reportingName"),
-                    role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
-                    shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
-                ))
-        snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
+        if insiders:
+            net = buys = sells = 0
+            recent = []
+            for tx in insiders[:60]:
+                val = tx_value(tx)
+                buy = is_buy(tx)
+                net += val if buy else -val
+                buys += buy
+                sells += not buy
+                if len(recent) < 10:
+                    recent.append(InsiderTxn(
+                        date=tx.get("transactionDate"), name=tx.get("reportingName"),
+                        role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
+                        shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
+                    ))
+            snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
     return snap
 
 
@@ -346,6 +346,8 @@ def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
         count_prior=None if prior_unreliable else prior,
         count_window=window, latest_dt=latest.isoformat() if latest else None,
         truncated=capped)
+
+
 def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) -> Earnings:
     """Build an Earnings section from Finnhub `stock/earnings` rows (newest-first)
     and a `calendar/earnings` payload. Pure. surprisePercent is already in percent."""
@@ -590,12 +592,12 @@ class EdgarSource(Source):
             res.partial = TickerSnapshot(ticker=ticker)
         return res
 
-    def _fetch_financials_object(self, ticker: str):
+    def _fetch_financials_object(self, ticker: str) -> Any:
         """Seam for mocking: returns an edgartools Financials (or raises)."""
         from edgar import Company
         return Company(ticker).get_financials()
 
-    def _build_financials_snapshot(self, ticker: str, fin) -> TickerSnapshot:
+    def _build_financials_snapshot(self, ticker: str, fin: Any) -> TickerSnapshot:
         """Map an edgartools Financials onto a Statements-only snapshot. Pure given
         `fin`. Values are absolute USD (no scaling)."""
         from ..providers._edgar_facts import extract_financials
@@ -647,7 +649,7 @@ class EdgarSource(Source):
         from ..sectors import extract_sic
         return extract_sic(Company(ticker))
 
-    def _raw_filings(self, ticker: str):
+    def _raw_filings(self, ticker: str) -> Any:
         """Network seam (mockable): the filtered edgartools filings object."""
         from edgar import Company
         return Company(ticker).get_filings(form=self._event_forms)
@@ -670,7 +672,7 @@ class EdgarSource(Source):
             })
         return out
 
-    def _build_events_from_records(self, records: list[dict]):
+    def _build_events_from_records(self, records: list[dict]) -> Optional[Events]:
         return build_events_section(records, self._event_lookback_days, date.today())
 
     def _fetch_sync(self, ticker: str) -> SourceResult:
@@ -844,7 +846,7 @@ class FinraSource(Source):
     def _cache_path(self, settlement: str) -> Path:
         return self._cache_dir / f"{settlement}.json"
 
-    def _read_cache(self, settlement: str):
+    def _read_cache(self, settlement: str) -> Optional[list]:
         return read_json_cache(self._cache_path(settlement))
 
     def _write_cache(self, settlement: str, rows: list) -> None:
@@ -887,7 +889,7 @@ class FinraSource(Source):
             self._index = _finra_index(rows)
             self._settlement = settlement
         except Exception as e:
-            self._load_error = redact_secrets(str(e))
+            self._load_error = redact_secrets(e)
             self._index = {}
 
     async def fetch(self, ticker: str) -> SourceResult:
@@ -989,8 +991,6 @@ def _year(d: Any) -> Optional[int]:
 # _finra_* names so call sites + tests that import them from here keep working.
 _finra_latest_partition = _finra.latest_partition
 _finra_norm_symbol = _finra.norm_symbol
-_finra_num = _finra.num
-_finra_flag = _finra.flag
 _finra_row_to_si = _finra.row_to_si
 _finra_index = _finra.index_rows
 
@@ -1284,7 +1284,7 @@ class GovContractsSource(Source):
                 self._client, cache_dir=str(self._cache_dir), month=month)
             self._name_index = xbrl.build_name_index(raw)
         except Exception as e:
-            self._load_error = redact_secrets(str(e))
+            self._load_error = redact_secrets(e)
             self._name_index = {}
 
     def _filters(self, name: str, start: str, end: str) -> dict:
@@ -1401,7 +1401,7 @@ class GovContractsSource(Source):
                                             "gc": dataclasses.asdict(gc)})
             res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
         except Exception as e:
-            res.errors.append(f"gov_contracts: {redact_secrets(str(e))}")
+            res.errors.append(f"gov_contracts: {redact_secrets(e)}")
         return res
 
 
@@ -1471,7 +1471,7 @@ class LobbyingSource(Source):
                 self._client, cache_dir=str(self._cache_dir), month=month)
             self._name_index = xbrl.build_name_index(raw)
         except Exception as e:
-            self._load_error = redact_secrets(str(e))
+            self._load_error = redact_secrets(e)
             self._name_index = {}
 
     def _cache_path(self, ticker: str, day: str) -> Path:
@@ -1485,7 +1485,7 @@ class LobbyingSource(Source):
         return None
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        write_json_cache(self._cache_path(ticker, day), payload)
+        write_json_cache(self._cache_path(ticker, day), {"v": self._CACHE_V, **payload})
 
     _CACHE_V = 1   # bump if the cached Lobbying shape changes
 
@@ -1576,7 +1576,7 @@ class LobbyingSource(Source):
                         truncated = True
                     page += 1
             if best_client is None:
-                self._write_cache(ticker, end, {"v": self._CACHE_V, "matched": False})
+                self._write_cache(ticker, end, {"matched": False})
                 res.raw = {"resolved_name": name, "matched": False, "total_filings": total}
                 return res
             lb = Lobbying(
@@ -1585,11 +1585,10 @@ class LobbyingSource(Source):
                 match_confidence=best_conf, registrant_count=len(registrants),
                 truncated=truncated, total_filings=total)
             snap.lobbying = lb
-            self._write_cache(ticker, end, {"v": self._CACHE_V, "matched": True,
-                                            "lb": dataclasses.asdict(lb)})
+            self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
             res.raw = {"resolved_name": name, "matched": True, "total_filings": total}
         except Exception as e:
-            res.errors.append(f"lobbying: {redact_secrets(str(e))}")
+            res.errors.append(f"lobbying: {redact_secrets(e)}")
         return res
 
 
@@ -1615,7 +1614,7 @@ def build_sources(names: list[str], config: Optional[dict] = None) -> list[Sourc
             else:
                 out.append(cls())
         except Exception as e:
-            skipped.append(f"{n} ({redact_secrets(str(e))})")
+            skipped.append(f"{n} ({redact_secrets(e)})")
     if skipped:
         print(f"  ! skipped sources: {', '.join(skipped)}")
     return out

@@ -28,6 +28,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
+from ..backtest.prices import PriceHistory
 from ..env import redact_secrets
 from .buyback import SIGNAL as SIGNAL_BUYBACK
 from .buyback import STRENGTH as _BUYBACK_STRENGTH
@@ -47,7 +48,7 @@ SIGNAL = "edgar:activist_13d"
 
 
 def fetch_history_sync(ticker: str, *, identity: str, today: date,
-                       cache_dir: str = ".cache/yahoo", _transport=None):
+                       cache_dir: str = ".cache/yahoo", _transport=None) -> Optional[PriceHistory]:
     """Sync bridge over the async backtest.prices.fetch_history (it needs an AsyncClient).
     One asyncio.run + one short-lived AsyncClient per call — serial by design (VPS).
     Never raises -> None on failure (warned, redacted).
@@ -692,7 +693,6 @@ def run_backfill(config: dict, *, signal_key: str, start: date, end: date, ident
     (design A4): false reproduces the byte-identical raw-only JSONL (gated/composite
     stay None, nothing else about a written row changes)."""
     spec = _BACKFILL_SPECS[signal_key]
-    _assemble_spec = None
     bf = (config.get("scout") or {}).get("backfill") or {}
     sec_throttle = float(bf.get("sec_throttle_s", 0.2))
     yh_throttle = float(bf.get("yahoo_throttle_s", 0.5))
@@ -934,5 +934,6 @@ def score_event(ev, hist, facts, spy, sic, config):
         card = scoring.score(merge_metrics(m1, m2), config)
         return (bool(card.gates), card.composite)
     except Exception as exc:  # noqa: BLE001 — a single unscoreable event must not sink the batch
-        warnings.warn(f"backfill: score_event failed for {ev.ticker}: {exc}", stacklevel=2)
+        warnings.warn(f"backfill: score_event failed for {ev.ticker}: "
+                      f"{redact_secrets(str(exc))}", stacklevel=2)
         return (None, None)

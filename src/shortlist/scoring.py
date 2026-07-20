@@ -392,11 +392,11 @@ class _Leg:
 
 
 def _eval_subscore(name: str, bucket: str, legs: list[_Leg], t: dict,
-                   config: dict) -> tuple[Optional[float], list[dict]]:
+                   config: dict) -> tuple[Optional[float], list[dict[str, str]]]:
     """Return (sub-score or None, abstentions). Replaces silent-drop with an
     explicit applicable/present partition; the floor is bucket-gated so 'unknown'
     stays a bit-identical no-op."""
-    abst: list[dict] = []
+    abst: list[dict[str, str]] = []
     applicable: list[_Leg] = []
     for lg in legs:
         if leg_applicable(bucket, lg.name, config):
@@ -723,9 +723,9 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     w = config["weights"]
     bucket = resolve_bucket(m.sic, config)
 
-    abst: list[dict] = []
+    abst: list[dict[str, str]] = []
 
-    def sub(name, legs):
+    def sub(name: str, legs: list[_Leg]) -> Optional[float]:
         s, a = _eval_subscore(name, bucket, legs, t, config)
         abst.extend(a)
         return s
@@ -749,7 +749,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     inapplicable = {a["field"] for a in abst
                     if a["scope"] == "subscore" and a["reason"] == "inapplicable"}
 
-    def applic(*subs):
+    def applic(*subs: str) -> bool:
         return any(s not in inapplicable for s in subs)
 
     components = [

@@ -99,7 +99,9 @@ def gross_margin_stability(margins: list[float]) -> Optional[float]:
     return max(0.0, 1.0 - (pstdev(margins) / avg))
 
 
-def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
+def piotroski_f(*, net_income: list[Optional[float]], ocf: list[Optional[float]],
+                total_debt: list[Optional[float]], gross_profit: list[Optional[float]],
+                revenue: list[Optional[float]],
                 most_recent_first: bool = True) -> tuple[Optional[int], Optional[int]]:
     """Core-6 Piotroski-inspired fundamental-quality score (asset-free, equity-free).
 
@@ -122,7 +124,7 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
     config (the floor is applied by consumers in scoring/backtest). A 1-year input
     yields (<=3, <=3) from the level legs; when NO leg is evaluable (all series empty)
     it returns (None, None) — the model's 'no data' sentinel. Pure; no I/O."""
-    def _series(s):
+    def _series(s: Optional[list[Optional[float]]]) -> list[Optional[float]]:
         s = list(s or [])
         return s if most_recent_first else list(reversed(s))
 
@@ -132,7 +134,8 @@ def piotroski_f(*, net_income, ocf, total_debt, gross_profit, revenue,
     gp = _series(gross_profit)
     rev = _series(revenue)
 
-    def _t(s):   # (latest, prior) or (None, None) if no prior year
+    def _t(s: list[Optional[float]]) -> tuple[Optional[float], Optional[float]]:
+        # (latest, prior) or (None, None) if no prior year
         return (s[0], s[1]) if len(s) >= 2 else (None, None)
 
     won = 0

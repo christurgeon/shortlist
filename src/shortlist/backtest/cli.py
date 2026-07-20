@@ -9,6 +9,7 @@ import sys
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 import httpx
 
@@ -117,7 +118,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return ap
 
 
-async def _load_companyfacts(tickers, cache_dir, month):
+async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict[str, str]]:
     """WARM the companyfacts disk cache for the universe (one fetch per ticker,
     written to `CIK{cik}-{month}.json`) WITHOUT retaining the payloads in memory —
     the source reads them back lazily one at a time (memory-bounded). Returns
@@ -158,7 +159,7 @@ async def _load_companyfacts(tickers, cache_dir, month):
     return resolved, index
 
 
-async def _load_histories(tickers, cache_dir, today):
+async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
         try:
             spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)
@@ -183,7 +184,7 @@ def _grid_start(earliest: date) -> date:
     return _add_months(earliest, 14)
 
 
-def _write_csv(report, path):
+def _write_csv(report, path) -> None:
     import csv
 
     d = report_to_dict(report)
@@ -272,7 +273,7 @@ def _parse_residualize(spec: str) -> tuple[str, list[str]]:
     return target, controls
 
 
-def _raw_target_intersection(observations, target, controls):
+def _raw_target_intersection(observations, target, controls) -> dict[date, dict[str, float]]:
     """Raw `target` values restricted to the SAME co-presence set `residual_rows`
     uses (target AND every control present) — the paired `_rawx` baseline (design
     review B2). Independent of `residual_rows`' regression floor/singular skips,
@@ -289,7 +290,7 @@ def _raw_target_intersection(observations, target, controls):
     return dict(out)
 
 
-def _overlap_fraction(observations, target, raw_intersection):
+def _overlap_fraction(observations, target, raw_intersection) -> Optional[float]:
     """Co-present names / names-with-target-present, averaged over dates where the
     target is present at all (design §Implementation 3)."""
     target_present: dict = defaultdict(int)
@@ -304,7 +305,7 @@ def _overlap_fraction(observations, target, raw_intersection):
     return (sum(fracs) / len(fracs)) if fracs else None
 
 
-def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode):
+def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode) -> list[tuple[date, str, float, float]]:
     """Join a `{date: {ticker: value}}` map to a horizon's OWN step=h grid dates +
     forward returns, via the same `fwd_return` the engine uses — the per-horizon
     join that keeps each horizon's aggregation confined to its own non-overlapping
@@ -325,7 +326,7 @@ def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode):
     return out
 
 
-def _per_date_ic(rows):
+def _per_date_ic(rows) -> dict[date, float]:
     """Per-date Spearman IC with NO breadth floor (unlike `_signal_report`'s xs_ic,
     which suppresses below `xs_min_breadth`) — used only for the paired per-date
     IC-difference diagnostic, which pairs on whatever dates both series share."""
@@ -340,8 +341,9 @@ def _per_date_ic(rows):
     return out
 
 
-def run_residualize(src, hists, spy, *, start, end, horizons, target, controls,
-                    return_mode="excess", n_buckets=5):
+def run_residualize(src, hists, spy, *, start: date, end: date, horizons: list[int],
+                    target: str, controls: list[str], return_mode: str = "excess",
+                    n_buckets: int = 5) -> tuple[list, dict]:
     """Compute the residualized-IC measurement (design spec 2026-07-05-leverage-
     residualized-ic, §Implementation 3): residuals computed ONCE from a union-grid
     observation pass, then per horizon joined to THAT horizon's own step=h grid +
@@ -512,7 +514,7 @@ def main(argv=None) -> int:
         # bounded to the source's small LRU instead of the whole universe.
         _cdir, _month = args.xbrl_cache_dir, month
 
-        def _fact_loader(tk, _idx=cik_index):
+        def _fact_loader(tk, _idx=cik_index) -> Optional[dict]:
             return read_companyfacts_cache(
                 cik_for(tk, _idx), cache_dir=_cdir, month=_month)
 

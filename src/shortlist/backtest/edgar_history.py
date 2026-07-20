@@ -29,19 +29,45 @@ def _norm_cik10(raw) -> Optional[str]:
         return None
 
 
+def _resolve_get_filings(identity: str, _get_filings):
+    """The bound `get_filings(form=..., filing_date=...)` callable to use: the
+    caller-supplied test seam if given, else a freshly-imported edgartools
+    `get_filings` with `set_identity(identity)` applied. None (warned) if
+    edgartools is unavailable — shared by fetch_activist_window and
+    fetch_amendment_window, which otherwise duplicated this exact fallback."""
+    if _get_filings is not None:
+        return _get_filings
+    try:
+        from edgar import get_filings, set_identity  # edgartools (optional dep, lazy)
+        set_identity(identity)
+        return get_filings
+    except Exception as exc:  # noqa: BLE001
+        warnings.warn(f"edgar_history: edgartools unavailable: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return None
+
+
+def _parse_filing_date(f) -> Optional[date]:
+    """A filing row's `filing_date` attribute coerced to a `date`, or None if
+    absent/unparseable — the caller drops such a row (no date to key on) rather
+    than keeping it with a guessed date. Shared by fetch_activist_window and
+    fetch_amendment_window (identical coercion in both)."""
+    fd = getattr(f, "filing_date", None)
+    if isinstance(fd, str):
+        try:
+            fd = date.fromisoformat(fd[:10])
+        except ValueError:
+            fd = None
+    return fd if isinstance(fd, date) else None
+
+
 def fetch_activist_window(start: date, end: date, identity: str, *,
                           throttle_s: float = 0.2, max_records: Optional[int] = None,
                           _get_filings=None) -> Optional[list[dict]]:
     """All initial 13D records filed in [start, end]. None = index fetch failed; [] = none."""
+    _get_filings = _resolve_get_filings(identity, _get_filings)
     if _get_filings is None:
-        try:
-            from edgar import get_filings, set_identity  # edgartools (optional dep, lazy)
-            set_identity(identity)
-            _get_filings = get_filings
-        except Exception as exc:  # noqa: BLE001
-            warnings.warn(f"edgar_history: edgartools unavailable: {redact_secrets(str(exc))}",
-                          stacklevel=2)
-            return None
+        return None
     rng = f"{start.isoformat()}:{end.isoformat()}"
     rows = []
     try:
@@ -69,13 +95,8 @@ def fetch_activist_window(start: date, end: date, identity: str, *,
                 warnings.warn(f"edgar_history: max_records={max_records} hit for {rng} — "
                               "window truncated, narrow the range", stacklevel=2)
                 break
-            fd = getattr(f, "filing_date", None)
-            if isinstance(fd, str):
-                try:
-                    fd = date.fromisoformat(fd[:10])
-                except ValueError:
-                    fd = None
-            if not isinstance(fd, date):
+            fd = _parse_filing_date(f)
+            if fd is None:
                 continue                              # unusable row (no date to key on)
             acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
             cik = subject = activist = None
@@ -130,15 +151,9 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
     `scout.stake.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per
     window (never per row) once at least one doc was attempted.
     """
+    _get_filings = _resolve_get_filings(identity, _get_filings)
     if _get_filings is None:
-        try:
-            from edgar import get_filings, set_identity  # edgartools (optional dep, lazy)
-            set_identity(identity)
-            _get_filings = get_filings
-        except Exception as exc:  # noqa: BLE001
-            warnings.warn(f"edgar_history: edgartools unavailable: {redact_secrets(str(exc))}",
-                          stacklevel=2)
-            return None
+        return None
     if _stake_fn is None:
         from ..scout.stake import stake_pct_from_filing
         _stake_fn = stake_pct_from_filing
@@ -167,13 +182,8 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
                 warnings.warn(f"edgar_history: max_records={max_records} hit for {rng} — "
                               "window truncated, narrow the range", stacklevel=2)
                 break
-            fd = getattr(f, "filing_date", None)
-            if isinstance(fd, str):
-                try:
-                    fd = date.fromisoformat(fd[:10])
-                except ValueError:
-                    fd = None
-            if not isinstance(fd, date):
+            fd = _parse_filing_date(f)
+            if fd is None:
                 continue                              # unusable row (no date to key on)
             acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
             cik = subject = activist = filer_cik = None

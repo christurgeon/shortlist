@@ -101,8 +101,10 @@ class PriceHistory:
             return [], []
         return self.dates[: i + 1], self.closes[: i + 1]
 
-    def price_on(self, target: date, tol_days: int = 5) -> Optional[float]:
-        """Close on the nearest trading day to target, within +/- tol_days."""
+    def _nearest_trading_idx(self, target: date, tol_days: int) -> Optional[int]:
+        """Index into `self.dates` of the trading day nearest `target`, within
+        +/- tol_days, else None. Shared search behind price_on/nominal_price_on
+        (identical scan over self.dates; only the series indexed differs)."""
         if not self.dates:
             return None
         anchor = bisect_right(self.dates, target)
@@ -113,24 +115,22 @@ class PriceHistory:
             gap = abs((self.dates[i] - target).days)
             if gap <= tol_days and (best_gap is None or gap < best_gap):
                 best_i, best_gap = i, gap
-        return self.closes[best_i] if best_i is not None else None
+        return best_i
+
+    def price_on(self, target: date, tol_days: int = 5) -> Optional[float]:
+        """Close on the nearest trading day to target, within +/- tol_days."""
+        i = self._nearest_trading_idx(target, tol_days)
+        return self.closes[i] if i is not None else None
 
     def nominal_price_on(self, target: date, tol_days: int = 5) -> Optional[float]:
         """Nearest-trading-day UNADJUSTED close within +/- tol_days (nominal counterpart
         of price_on, for the per-year pe_median_5y join)."""
-        if not self.dates or not self.nominal_closes:
+        if not self.nominal_closes:
             return None
-        anchor = bisect_right(self.dates, target)
-        lo = max(0, anchor - tol_days - 2)
-        hi = min(len(self.dates), anchor + tol_days + 2)
-        best_i, best_gap = None, None
-        for i in range(lo, hi):
-            gap = abs((self.dates[i] - target).days)
-            if gap <= tol_days and (best_gap is None or gap < best_gap):
-                best_i, best_gap = i, gap
-        if best_i is None or best_i >= len(self.nominal_closes):
+        i = self._nearest_trading_idx(target, tol_days)
+        if i is None or i >= len(self.nominal_closes):
             return None
-        return self.nominal_closes[best_i]
+        return self.nominal_closes[i]
 
     def forward_return(self, t: date, horizon_months: int,
                        tol_days: int = 5) -> Optional[float]:

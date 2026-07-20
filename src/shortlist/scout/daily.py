@@ -10,6 +10,7 @@ import sys
 from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -18,11 +19,16 @@ from ..env import load_env, redact_secrets
 from ._caption import _caption
 from .budget import select
 from .calendar import last_session
-from .firehose import cohort_events_from_emissions
+from .firehose import CohortEvent, cohort_events_from_emissions
 from .funnel import aggregate, apply_veto, prefilter
-from .models import Emission, RunManifest, SignalStatus
+from .models import Candidate, Emission, RunManifest, SignalStatus
 from .signals import build_signals
 from .state import ScoutState
+
+if TYPE_CHECKING:
+    # Type-only: .report is imported lazily at call sites (kept out of the module's
+    # eager import graph), so this must not become a runtime import.
+    from .report import ReportArtifacts
 
 _DEFAULT_CONFIG = Path(__file__).parent.parent.parent.parent / "config.yaml"
 
@@ -58,7 +64,7 @@ def _enabled_signal_names(scout_cfg: dict) -> list[str]:
             if v.get("enabled") and k in _KNOWN_SIGNAL_KEYS]
 
 
-def _initial_stake_fetcher(record):
+def _initial_stake_fetcher(record: dict) -> float | None:
     """Doc-fetch + parse stake % for an initial-13D record (ledger enrichment; only wired
     when the stake-increase signal is enabled). record carries no _filing on this path, so
     this is a no-op returning None unless one is present."""
@@ -145,7 +151,7 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
     }
 
 
-def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
+def _build_scoreboard(state: ScoutState, session: date, picks_cfg: dict) -> list[dict]:
     """Prior-picks scoreboard: for each recent pick, return-since-selection vs SPY from a
     fresh keyless Yahoo chart series (split-safe). Bounded by scoreboard_max; per-name
     failure-isolated; never raises (returns [] on any failure). Uses the chart endpoint
@@ -199,7 +205,8 @@ def _build_scoreboard(state, session: date, picks_cfg: dict) -> list[dict]:
     return rows
 
 
-def _log_firehose(state, emissions, session, scout_cfg) -> list:
+def _log_firehose(state: ScoutState, emissions: list[Emission], session: date,
+                  scout_cfg: dict) -> list[CohortEvent]:
     """Best-effort: record the pre-scorer discovery emissions to the raw-signal firehose.
     Config-gated by scout.firehose.enabled; a failure NEVER aborts the run (mirrors the
     mark_yahoo_blocked best-effort convention).
@@ -225,7 +232,8 @@ def _log_firehose(state, emissions, session, scout_cfg) -> list:
         return []
 
 
-def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, list[str]]:
+def _negative_veto_sweep(state: ScoutState, scout_cfg: dict,
+                         session: date) -> tuple[dict, list[str]]:
     """The negative-item 8-K veto sweep (spec 2026-07-07 §4): fetch the EFTS window the
     state hasn't finalized yet (bounded cold-start: at most `lookback_days`; the day cache
     is shared with the originator, so the two halves cost ONE fetch), extract negative-item
@@ -298,7 +306,7 @@ def _negative_veto_sweep(state, scout_cfg: dict, session: date) -> tuple[dict, l
         return _active(state.eightk_negative_map()), [note]
 
 
-def _veto_notes(state, vetoed, veto_map: dict) -> list[str]:
+def _veto_notes(state: ScoutState, vetoed: list[Candidate], veto_map: dict) -> list[str]:
     """Named manifest notes for this run's vetoed candidates, deduped by
     (ticker, accession) via the ScoutState ledger — a vetoed name never enters
     screened-cooldown, so without the ledger the same note would re-fire daily for up to
@@ -340,6 +348,61 @@ def _load_validation_digest(config: dict, *, today: date,
         return data
     except Exception:  # noqa: BLE001 — best-effort read, never blocks the digest
         return None
+
+
+def _persist_post_scan_state(s, state: ScoutState, demo: bool, session: date) -> None:
+    """Persist each discovery signal's own dedup/cooldown bookkeeping right after a
+    successful scan (called from inside run()'s per-signal try block, so a failure in
+    here is still caught by that block's except and surfaces as this signal's
+    SignalStatus error — factoring it out changes nothing about that). No-op in demo
+    (offline run; no state writes)."""
+    if demo:
+        return
+    # Persist a rest-of-day cooldown so later runs make zero Yahoo requests.
+    # Best-effort: if _save() raises it's caught by the caller and the block is simply
+    # re-discovered next run (one extra single-request bail, never a spam loop).
+    if getattr(s, "waf_blocked", False):
+        state.mark_yahoo_blocked(session)
+    # Record the FINRA cycle just processed so the same bi-monthly cohort isn't
+    # re-surfaced daily until a newer settlement publishes (the cadence guard).
+    if s.name == "finra_short_interest" and getattr(s, "settlement", None):
+        state.set_finra_cycle(s.settlement)
+    # Persist the 8-K accessions surfaced this run so the walk-back overlap
+    # (session-2..session) doesn't re-emit them on the next runs.
+    if s.name == "edgar_8k" and getattr(s, "new_accessions", None):
+        state.add_eightk_accessions(s.new_accessions)
+    # Persist the 13F filings PROCESSED this run (even empty-diff ones) so a fund's
+    # already-diffed latest 13F-HR isn't re-downloaded daily; carry-over filings stay
+    # unseen and surface on a later session.
+    if s.name == "edgar_13f" and getattr(s, "processed_accessions", None):
+        state.add_thirteenf_accessions(s.processed_accessions)
+    # Persist the buyback accessions surfaced this run so the walk-back overlap
+    # (session-2..session) doesn't re-emit them on the next runs.
+    if s.name == "edgar_buyback" and getattr(s, "new_accessions", None):
+        state.add_buyback_accessions(s.new_accessions)
+    # Persist the stake-increase originator's surfaced accessions (walk-back overlap
+    # dedup) + updated pair baselines (newest parsed % per campaign pair) so the
+    # cold-start prior-fetch budget isn't re-spent on already-known pairs.
+    if s.name == "edgar_13d_stake_increase":
+        if getattr(s, "new_accessions", None):
+            state.add_stake_increase_accessions(s.new_accessions)
+        if getattr(s, "baseline_updates", None):
+            state.update_stake_baselines(s.baseline_updates)
+
+
+def _record_session_picks(state: ScoutState, cards, chosen, session: date) -> None:
+    """Record this session's picks (gated ones too — for raw-signal measurement) so
+    future scoreboards can track them. Idempotent upsert; best-effort — a ledger-write
+    failure must never crash an already-delivered run."""
+    try:
+        from .picks import pick_from_card
+        cand_by_ticker = {c.ticker: c for c in chosen}
+        recs = [pick_from_card(card, cand_by_ticker[card.ticker], session)
+                for card in cards if card.ticker in cand_by_ticker]
+        if recs:
+            state.record_picks(recs, session)
+    except Exception as exc:  # noqa: BLE001 — ledger write must not crash a delivered run
+        print(f"scout: recording picks failed ({redact_secrets(str(exc))})", file=sys.stderr)
 
 
 def run(config: dict, *, demo: bool, today: date) -> int:
@@ -406,40 +469,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             until = state.yahoo_blocked_until()
             statuses.append(SignalStatus(s.name, False, f"skipped: WAF cooldown through {until}"))
             continue
-        # FIX 2: guard the discovery body so one failing signal can't abort the whole run.
+        # Guard the discovery body so one failing signal can't abort the whole run.
         try:
             ems = s.scan(session)
             emissions.extend(ems)
-            # Persist a rest-of-day cooldown so later runs make zero Yahoo requests.
-            # Best-effort: if _save() raises it's caught below and the block is simply
-            # re-discovered next run (one extra single-request bail, never a spam loop).
-            if getattr(s, "waf_blocked", False) and not demo:
-                state.mark_yahoo_blocked(session)
-            # Record the FINRA cycle just processed so the same bi-monthly cohort isn't
-            # re-surfaced daily until a newer settlement publishes (the cadence guard).
-            if s.name == "finra_short_interest" and not demo and getattr(s, "settlement", None):
-                state.set_finra_cycle(s.settlement)
-            # Persist the 8-K accessions surfaced this run so the walk-back overlap
-            # (session-2..session) doesn't re-emit them on the next runs.
-            if s.name == "edgar_8k" and not demo and getattr(s, "new_accessions", None):
-                state.add_eightk_accessions(s.new_accessions)
-            # Persist the 13F filings PROCESSED this run (even empty-diff ones) so a fund's
-            # already-diffed latest 13F-HR isn't re-downloaded daily; carry-over filings stay
-            # unseen and surface on a later session.
-            if s.name == "edgar_13f" and not demo and getattr(s, "processed_accessions", None):
-                state.add_thirteenf_accessions(s.processed_accessions)
-            # Persist the buyback accessions surfaced this run so the walk-back overlap
-            # (session-2..session) doesn't re-emit them on the next runs.
-            if s.name == "edgar_buyback" and not demo and getattr(s, "new_accessions", None):
-                state.add_buyback_accessions(s.new_accessions)
-            # Persist the stake-increase originator's surfaced accessions (walk-back overlap
-            # dedup) + updated pair baselines (newest parsed % per campaign pair) so the
-            # cold-start prior-fetch budget isn't re-spent on already-known pairs.
-            if s.name == "edgar_13d_stake_increase" and not demo:
-                if getattr(s, "new_accessions", None):
-                    state.add_stake_increase_accessions(s.new_accessions)
-                if getattr(s, "baseline_updates", None):
-                    state.update_stake_baselines(s.baseline_updates)
+            _persist_post_scan_state(s, state, demo, session)
             ran, detail = s.available()
             statuses.append(SignalStatus(s.name, ran, detail))
             # weight by config: map signal name back to its config key. Names are
@@ -449,7 +483,6 @@ def run(config: dict, *, demo: bool, today: date) -> int:
             for e in ems:
                 weights_by_signal[e.signal] = w
         except Exception as exc:  # noqa: BLE001
-            ems = []
             statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
             continue
 
@@ -572,15 +605,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # Record this session's picks (gated ones too — for raw-signal measurement) so future
     # scoreboards can track them. Idempotent upsert; never blocks delivery.
     if picks_cfg.get("enabled", True):
-        try:
-            from .picks import pick_from_card
-            cand_by_ticker = {c.ticker: c for c in chosen}
-            recs = [pick_from_card(card, cand_by_ticker[card.ticker], session)
-                    for card in cards if card.ticker in cand_by_ticker]
-            if recs:
-                state.record_picks(recs, session)
-        except Exception as exc:  # noqa: BLE001 — ledger write must not crash a delivered run
-            print(f"scout: recording picks failed ({redact_secrets(str(exc))})", file=sys.stderr)
+        _record_session_picks(state, cards, chosen, session)
     if result.configured and not result.all_ok:
         return 2
     return 0
@@ -698,7 +723,7 @@ def _one_line_brief_from_file(brief_path) -> str:
             or data.get("summary") or "")[:200]
 
 
-def _persist(scout_cfg, manifest, artifacts) -> None:
+def _persist(scout_cfg: dict, manifest: RunManifest, artifacts: "ReportArtifacts") -> None:
     out_dir = Path(scout_cfg.get("artifact_dir", "scout")) / manifest.session.isoformat()
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "manifest.json").write_text(json.dumps(manifest.to_dict(), indent=2))

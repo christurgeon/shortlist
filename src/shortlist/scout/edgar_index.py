@@ -11,6 +11,7 @@ from __future__ import annotations
 import warnings
 from collections import defaultdict
 from datetime import date, timedelta
+from typing import Callable
 
 from ..env import redact_secrets
 from ..providers._form4 import classify_code
@@ -117,27 +118,34 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
         return []
 
 
-def fetch_recent_records(session: date, max_filings: int, identity: str,
-                         lookback: int = 4, _fetch=None) -> tuple[list[dict], date]:
-    """Most-recent *published* Form 4 daily index at or before `session`.
-
-    The SEC daily index for the current session is not published until ~02:00 UTC,
-    so at the scout's after-close run time (22:30 UTC) today's index is empty even
-    though the session has closed. An empty result therefore means "not published
-    yet," not "no insider activity" — so we walk back up to `lookback` trading days
-    to the last published index. Returns (records, session_used) so the caller can
-    surface the fallback in coverage. Never raises (degrades to ([], session)).
-    """
-    fetch = _fetch or fetch_daily_records
+def _walk_back_to_published(session: date, lookback: int,
+                            fetch_day: Callable[[date], list[dict]]) -> tuple[list[dict], date]:
+    """Shared walk-back shape for every "most-recent published SEC daily index" scanner
+    (Form 4, initial 13D, 13D/A): the SEC daily index for `session` is not published
+    until ~02:00 UTC, so at the scout's after-close run time today's index is empty even
+    though the session has closed. An empty result means "not published yet," not "no
+    activity" — so call `fetch_day` for `session`, then walk back up to `lookback` trading
+    days until it returns non-empty. Returns (records, day_used); ([], session) if the
+    whole window comes up empty. Never raises (that's `fetch_day`'s contract)."""
     d = session
     for _ in range(lookback + 1):
-        recs = fetch(d, max_filings, identity)
+        recs = fetch_day(d)
         if recs:
             return recs, d
         d -= timedelta(days=1)
         while not is_trading_day(d):
             d -= timedelta(days=1)
     return [], session
+
+
+def fetch_recent_records(session: date, max_filings: int, identity: str,
+                         lookback: int = 4, _fetch=None) -> tuple[list[dict], date]:
+    """Most-recent *published* Form 4 daily index at or before `session`. See
+    _walk_back_to_published for the fallback rationale. Returns (records, session_used) so
+    the caller can surface the fallback in coverage. Never raises (degrades to ([], session)).
+    """
+    fetch = _fetch or fetch_daily_records
+    return _walk_back_to_published(session, lookback, lambda d: fetch(d, max_filings, identity))
 
 
 # --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---
@@ -276,19 +284,12 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
 def fetch_recent_activist_records(session: date, max_filings: int, identity: str,
                                   resolve_ticker_fn, lookback: int = 4,
                                   _fetch=None) -> tuple[list[dict], date]:
-    """Most-recent *published* SCHEDULE 13D index at or before `session` (the daily index
-    isn't published until ~02:00 UTC, so the after-close run walks back to the last
-    published session). Returns (records, session_used). Never raises."""
+    """Most-recent *published* SCHEDULE 13D index at or before `session`. See
+    _walk_back_to_published for the fallback rationale. Returns (records, session_used).
+    Never raises."""
     fetch = _fetch or fetch_activist_records
-    d = session
-    for _ in range(lookback + 1):
-        recs = fetch(d, max_filings, identity, resolve_ticker_fn)
-        if recs:
-            return recs, d
-        d -= timedelta(days=1)
-        while not is_trading_day(d):
-            d -= timedelta(days=1)
-    return [], session
+    return _walk_back_to_published(
+        session, lookback, lambda d: fetch(d, max_filings, identity, resolve_ticker_fn))
 
 
 def fetch_amendment_records(session: date, max_filings: int, identity: str,
@@ -347,15 +348,8 @@ def fetch_recent_amendment_records(session: date, max_filings: int, identity: st
                                    _fetch=None) -> tuple[list[dict], date]:
     """Walk-back twin of fetch_recent_activist_records for the /A stream."""
     fetch = _fetch or fetch_amendment_records
-    d = session
-    for _ in range(lookback + 1):
-        recs = fetch(d, max_filings, identity, resolve_ticker_fn)
-        if recs:
-            return recs, d
-        d -= timedelta(days=1)
-        while not is_trading_day(d):
-            d -= timedelta(days=1)
-    return [], session
+    return _walk_back_to_published(
+        session, lookback, lambda d: fetch(d, max_filings, identity, resolve_ticker_fn))
 
 
 def stake_increases_from_records(records, baselines, *,

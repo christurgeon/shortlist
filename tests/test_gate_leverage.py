@@ -73,6 +73,22 @@ def test_near_zero_ebitda_margin_routes_to_fallback():
     assert "over_leveraged" not in gates(m)
 
 
+def test_negative_ebitda_routes_to_fallback_not_signed_ratio():
+    # A leveraged money-loser (revenue 1000, EBITDA -490, per the PR #144 audit fix at
+    # the bridge level: net_debt_to_ebitda now abstains to None for negative EBITDA
+    # rather than sign-flipping to a "net cash"-looking negative ratio). This pins the
+    # commit-message claim that the GATE itself was "already safe" regardless: even if
+    # a stale/pre-fix caller still hands it a sign-flipped negative net_debt_to_ebitda,
+    # `ebitda_usable` requires ebitda > 0 and must reject it outright, falling through
+    # to the D/E fallback instead of reading the flipped ratio as healthy net cash.
+    m = _m(revenue=1000.0, ebitda=-490.0, net_debt_to_ebitda=-0.78, debt_to_equity=1.0)
+    assert "over_leveraged" not in gates(m)           # clean D/E -> fallback spares it
+    # ...but a levered, weak-coverage money-loser still trips via the same fallback.
+    m2 = _m(revenue=1000.0, ebitda=-490.0, net_debt_to_ebitda=-0.78,
+            debt_to_equity=9.0, interest_coverage=1.0)
+    assert "over_leveraged" in gates(m2)
+
+
 def test_dte_exactly_at_ceiling_still_trips():
     # D/E == dte_artifact_ceiling (20.0) is NOT an artifact (strict >); weak/absent
     # coverage in the plausible window -> trips.

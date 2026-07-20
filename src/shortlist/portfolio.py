@@ -92,7 +92,7 @@ class PortfolioSummary:
     weighted_composite: Optional[float]
 
 
-def _is_alert(card, no_data: bool) -> bool:
+def _is_alert(card: Optional[ScoreCard], no_data: bool) -> bool:
     if no_data:
         return True
     return bool(card.gates) or bool(card.flags) or not getattr(card, "scored", True)

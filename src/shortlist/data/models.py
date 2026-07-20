@@ -388,9 +388,9 @@ class TickerSnapshot:
         snap = cls(ticker=d.get("ticker", "?"))
         snap.as_of = d.get("as_of", snap.as_of)
         for name, klass in _DEFAULTS.items():
-            snap.__dict__[name] = _build(klass, d.get(name))
+            setattr(snap, name, _build(klass, d.get(name)))
         for name, klass in _AUX_DEFAULTS.items():
-            snap.__dict__[name] = _build(klass, d.get(name))
+            setattr(snap, name, _build(klass, d.get(name)))
         ins = d.get("insider")
         if snap.insider is not None and ins and ins.get("recent"):
             snap.insider.recent = [_build(InsiderTxn, t) for t in ins["recent"]]
@@ -403,7 +403,7 @@ class TickerSnapshot:
         return snap
 
 
-_DEFAULTS = {
+_DEFAULTS: dict[str, type] = {
     "profile": Profile, "fundamentals": Fundamentals, "statements": Statements,
     "analyst": Analyst, "insider": Insider, "price": Price,
 }
@@ -412,12 +412,14 @@ _DEFAULTS = {
 # Auxiliary sections live on the snapshot and are merged, but are DELIBERATELY excluded
 # from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
 # assessment-ready fundamentals). from_dict round-trips them via this map.
-_AUX_DEFAULTS = {"short_interest": ShortInterest, "events": Events,
-                 "social": SocialSentiment, "gov_contracts": GovContracts,
-                 "lobbying": Lobbying, "news": NewsFlow, "earnings": Earnings}
+_AUX_DEFAULTS: dict[str, type] = {
+    "short_interest": ShortInterest, "events": Events,
+    "social": SocialSentiment, "gov_contracts": GovContracts,
+    "lobbying": Lobbying, "news": NewsFlow, "earnings": Earnings,
+}
 
 
-def _signal_fields(obj_or_cls: Any) -> list:
+def _signal_fields(obj_or_cls: Any) -> list[dataclasses.Field]:
     """Declared dataclass fields minus the non-signal plumbing ones."""
     return [f for f in fields(obj_or_cls) if f.name not in _NON_SIGNAL_FIELDS]
 

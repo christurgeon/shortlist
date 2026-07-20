@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+from datetime import date, datetime
 from typing import Optional
 
 from ..models import StockMetrics
@@ -21,7 +22,6 @@ from .models import TickerSnapshot
 def _close_near(monthly_closes: list, iso_date: str) -> Optional[float]:
     """Close from the sampled history nearest (by absolute day distance) to iso_date.
     None if no usable point or the target date is unparseable."""
-    from datetime import date
     if not monthly_closes:
         return None
     try:
@@ -48,7 +48,6 @@ _DTC_SENTINEL = 999.99            # FINRA's zero-volume days-to-cover cap
 def _age_days(as_of: Optional[str], settlement: Optional[str]) -> Optional[int]:
     """Whole days between a snapshot's capture time and the SI settlement date.
     Pure (no clock read) and None-safe (unparseable -> None)."""
-    from datetime import date, datetime
     if not as_of or not settlement:
         return None
     try:

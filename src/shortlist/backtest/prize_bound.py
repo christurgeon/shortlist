@@ -47,7 +47,7 @@ def composite_with(card, momentum: Optional[float], weights: dict, config: Optio
         t = config["thresholds"]
         w = weights
 
-        def sub(name, legs):
+        def sub(name, legs) -> Optional[float]:
             s, _ = _eval_subscore(name, bucket, legs, t, config)
             return s
 
@@ -238,7 +238,7 @@ def prize_bound(cards, candidate_values: dict, weights: dict, config: dict, *,
 
 def _verdict(bound: dict, candidates: dict, top_ns) -> str:
     n = max(top_ns)
-    def inert(churn):
+    def inert(churn: dict) -> bool:
         return churn["kendall_tau"] >= _STOP_TAU and churn["topn_overlap"][n] >= _STOP_OVERLAP
     if inert(bound):
         return "STOP_WEIGHT_INERT"          # even the max-disruptive leg can't move it
@@ -272,7 +272,7 @@ def run_live(config: dict, *, universe_file: str = None) -> dict:
     scored = [c.ticker for c in cards]
     today = date.today().isoformat()
 
-    async def _closes():
+    async def _closes() -> dict:
         out = {}
         async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
             for tk in scored:

@@ -69,25 +69,25 @@ class EdgarFinancials:
     debt_issuance: Optional[float] = None          # latest FY, inflow magnitude
 
 
-def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
-    """[(iso_date, column_name)] for FY columns, sorted newest-first."""
+def _matching_columns(df: pd.DataFrame, pattern: re.Pattern) -> list[tuple[str, str]]:
+    """[(iso_date, column_name)] for columns whose name matches `pattern`, newest-first."""
     cols = []
     for c in df.columns:
-        m = _FY_RE.match(str(c))
+        m = pattern.match(str(c))
         if m:
             cols.append((m.group(1), c))
     return sorted(cols, key=lambda t: t[0], reverse=True)
+
+
+def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
+    """[(iso_date, column_name)] for FY columns, sorted newest-first."""
+    return _matching_columns(df, _FY_RE)
 
 
 def _instant_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
     """[(iso_date, column_name)] for balance-sheet INSTANT columns (plain ISO dates,
     no '(FY)' suffix — edgartools labels balance-sheet periods that way), newest-first."""
-    cols = []
-    for c in df.columns:
-        m = _INSTANT_RE.match(str(c))
-        if m:
-            cols.append((m.group(1), c))
-    return sorted(cols, key=lambda t: t[0], reverse=True)
+    return _matching_columns(df, _INSTANT_RE)
 
 
 def _sum_concepts(df: pd.DataFrame, concepts: list[str],

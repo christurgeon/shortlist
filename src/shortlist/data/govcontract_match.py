@@ -40,7 +40,7 @@ def match_confidence(sec_name: str, recipient_name: str,
             # whole-word (token-set) containment, NOT raw substring — a short alias
             # token must appear as complete words, never as a fragment of another name.
             if set(tok.split()) <= b_tokens:
-                return max(base, 1.0)
+                return 1.0  # base is a SequenceMatcher ratio, always <= 1.0 already
     return base
 
 
