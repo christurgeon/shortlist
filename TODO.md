@@ -8,8 +8,8 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ## Data audit — 4 fixes shipped; statements-merge data loss + leverage-axis re-measure deferred (2026-07-20)
 
-Branch `fix/data-audit-2026-07-20` (local, unpushed — operator to push/PR/merge; suite 2001
-green, ruff clean) ships four audit fixes: (1) `net_debt_to_ebitda` abstains on EBITDA ≤ 0
+Branch `fix/data-audit-2026-07-20` (PR #144; suite 2001 green, ruff clean) ships four
+audit fixes: (1) `net_debt_to_ebitda` abstains on EBITDA ≤ 0
 on BOTH paths (was sign-flipping so a leveraged money-loser displayed as net cash and
 topped the inverted backtest leverage axis); (2) `fmp.fetch_insider` was a documented-but-
 dead knob — the paid 402 endpoint burned ~1 of ~13 FMP quota calls/ticker on every fetch,
