@@ -80,11 +80,12 @@ to `scout/backfill/13d-a-2022-01-01-2025-12-31.jsonl`; validate `rc=0`, digest a
    several filers per subject/day; double-counting understates standard errors (block
    bootstrap only partly mitigates) and `adsh` being null blocks dedup auditing.
 
-**Remaining:** write the verdict up under the tracked **`docs/audits/`** tree (the
-accruals/buyback precedent — NOT the gitignored specs dir). **Evidence is currently
-untracked and perishable** — it lives only in `scout/backfill/*.log`, the `.jsonl`, and
-`scout/validate-latest.json`, and that last one is **overwritten by the next validate run of
-any signal**.
+**Evidence COMMITTED (2026-07-20, #142):**
+`docs/audits/2026-07-19-13d-a-stake-increase-backfill-verdict.md` is now the canonical
+record (full verdict tables, five caveats, repro notes). The caveats above are the short
+form — **cite the audit doc, not this entry**. Two code bugs it records are still open:
+the chunk-boundary overshoot (caveat 2) and null `meta.adsh` on backfill emissions
+(caveat 3).
 
 **Deferred decision — do NOT wire a "KILL" config comment (revised 2026-07-20).** The
 handoff script said to point config at a kill if KILL-shaped. Hold that, or word it as
