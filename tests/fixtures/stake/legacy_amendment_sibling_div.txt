@@ -1,0 +1,33 @@
+<tr>
+          <td style="width: 9.17%; vertical-align: top; border-left: #000000 2px solid; border-top: #000000 2px solid;">
+            <div style="text-align: center; line-height: 12.55pt; font-weight: bold;">12</div>
+          </td>
+          <td colspan="3" style="width: 90.83%; vertical-align: top; border-left: #000000 2px solid; border-right: #000000 2px solid; border-top: #000000 2px solid; border-bottom: #000000 2px solid;">
+            <div style="line-height: 13.7pt; font-size: 12pt;">CHECK BOX IF THE AGGREGATE AMOUNT IN ROW (11)<br>
+              EXCLUDES CERTAIN SHARES&#160;&#160;&#160;&#160;[ ]</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 9.17%; vertical-align: top; border-left: #000000 2px solid; border-top: #000000 2px solid;">
+            <div style="text-align: center; line-height: 12.55pt; font-weight: bold;">13</div>
+          </td>
+          <td colspan="3" style="width: 90.83%; vertical-align: top; border-left: #000000 2px solid; border-right: #000000 2px solid; border-top: #000000 2px solid; border-bottom: #000000 2px solid;">
+            <div style="line-height: 12.55pt;">PERCENT OF CLASS REPRESENTED BY AMOUNT IN ROW (11)</div>
+            <div style="line-height: 12.55pt;">3.1%</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="width: 9.17%; vertical-align: top; border-left: #000000 2px solid; border-top: #000000 2px solid; border-bottom: #000000 2px solid;">
+            <div style="text-align: center; line-height: 12.55pt; font-weight: bold;">14</div>
+          </td>
+          <td colspan="3" style="width: 90.83%; vertical-align: top; border-left: #000000 2px solid; border-right: #000000 2px solid; border-top: #000000 2px solid; border-bottom: #000000 2px solid;">
+            <div style="line-height: 12.55pt;">TYPE OF REPORTING PERSON (See Instructions)</div>
+            <div style="line-height: 12.55pt;">PN</div>
+          </td>
+        </tr>
+
+    </table>
+    <div style="line-height: 11.4pt;">(1) Includes 1,022,860 shares of Common Stock issuable upon the optional conversion of the convertible note (as disclosed in Item 4); does not include the conversion of any accrued but unpaid interest on such note.</div>
+    <div style="clear: both; margin-top: 10pt; margin-bottom: 10pt;" id="DSPFPageBreakArea">
+      <div style="page-break-after:always;" id="DSPFPageBreak">
+        <hr noshade="noshade" style="margin: 4px 0px; width: 100%; border-width: 0; height: 2px; color: #000000; background-color: #000000; clear: both;"></div>

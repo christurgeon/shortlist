@@ -164,7 +164,7 @@ def _dedup_by_accession(filings):
 
 
 def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=True,
-                                 marquee_boost=0.2):
+                                 marquee_boost=0.2, stake_by_accession=None):
     """Pure aggregation: records -> one Emission per resolved ticker (initial 13D only).
 
     record: {ticker, cik, subject_name, activist, form, accession}. Placeholder tickers
@@ -172,7 +172,10 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
     the resolved TICKER (co-filers on the same target collapse to one emission). SPAC/shell
     subjects and affiliate filings (filer name echoes the subject) are dropped by config;
     a marquee (credible) activist boosts strength. The subject CIK is carried on the
-    Emission so the selection ledger can re-resolve a renamed ticker later."""
+    Emission so the selection ledger can re-resolve a renamed ticker later.
+
+    When stake_by_accession is provided (a dict mapping accession -> stake %), the first
+    row's accession that exists in the dict gains meta={"stake_pct": <value>}."""
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         tkr = _is_real_ticker(r.get("ticker"))
@@ -197,9 +200,33 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
         who = marquee or next((a for a in activists if a), None) or subject
         who_part = who if n == 1 else f"{n} filers incl. {who}"
         ev = f"Activist 13D: {who_part} → {subject}"
+
+        # Enrich with stake % if available
+        meta = {}
+        if stake_by_accession:
+            for r in rows:
+                pct = stake_by_accession.get(r.get("accession"))
+                if pct is not None:
+                    meta = {"stake_pct": pct}
+                    break
+
         out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True,
-                            cik=rows[0].get("cik")))
+                            cik=rows[0].get("cik"), meta=meta))
     return out
+
+
+def _get_13d_index_rows(session: date, identity: str) -> list:
+    """Raw 13D-family daily-index rows (both form spellings; prefix match includes /A).
+    Isolated so tests can fake it; raises to the caller's guard on SEC failure."""
+    from edgar import get_filings, set_identity
+    set_identity(identity)
+    rows = []
+    for form in ("SCHEDULE 13D", "SC 13D"):
+        try:
+            rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
+        except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
+            continue
+    return rows
 
 
 def fetch_activist_records(session: date, max_filings: int, identity: str,
@@ -208,14 +235,7 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
     doubled rows, parse each header into a record. `resolve_ticker_fn(cik)->ticker|None`
     maps the SUBJECT company's CIK to its ticker. Never raises (degrades to [])."""
     try:
-        from edgar import get_filings, set_identity  # edgartools (optional dep)
-        set_identity(identity)
-        rows = []
-        for form in ("SCHEDULE 13D", "SC 13D"):
-            try:
-                rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
-            except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
-                continue
+        rows = _get_13d_index_rows(session, identity)
         records: list[dict] = []
         for f in _dedup_by_accession(rows)[:max_filings]:
             try:
@@ -242,7 +262,7 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
                     "ticker": tkr, "cik": f"{int(cik):010d}",
                     "subject_name": getattr(ci, "name", "") or "",
                     "activist": activist, "form": getattr(f, "form", ""),
-                    "accession": acc})
+                    "accession": acc, "_filing": f})
             except Exception:  # noqa: BLE001 — skip an unparseable filing
                 continue
         return records
@@ -269,3 +289,117 @@ def fetch_recent_activist_records(session: date, max_filings: int, identity: str
         while not is_trading_day(d):
             d -= timedelta(days=1)
     return [], session
+
+
+def fetch_amendment_records(session: date, max_filings: int, identity: str,
+                            resolve_ticker_fn) -> list[dict]:
+    """Live: SCHEDULE 13D/A (+ legacy SC 13D/A) records for `session`. Same contract as
+    fetch_activist_records but keeps ONLY amendments and also parses the FILER CIK (the
+    stake-baseline pair key needs both sides). Never raises (degrades to [])."""
+    from .quality import is_13d_amendment
+    try:
+        rows = _get_13d_index_rows(session, identity)
+        records: list[dict] = []
+        for f in _dedup_by_accession(rows)[:max_filings]:
+            try:
+                if not is_13d_amendment(getattr(f, "form", "")):
+                    continue
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if not subs:
+                    continue
+                ci = subs[0].company_information
+                cik = getattr(ci, "cik", None)
+                if not cik:
+                    continue
+                tkr = resolve_ticker_fn(cik)
+                if not tkr:
+                    continue
+                filer_cik = activist = None
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    if filers:
+                        fci = filers[0].company_information
+                        activist = getattr(fci, "name", "") or ""
+                        raw_fc = getattr(fci, "cik", None)
+                        filer_cik = f"{int(raw_fc):010d}" if raw_fc else None
+                except Exception:  # noqa: BLE001 — a bad FILER block must not drop the subject
+                    pass
+                acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                records.append({
+                    "ticker": tkr, "cik": f"{int(cik):010d}", "filer_cik": filer_cik,
+                    "subject_name": getattr(ci, "name", "") or "",
+                    "activist": activist or "", "form": getattr(f, "form", ""),
+                    "accession": acc,
+                    "file_date": str(getattr(f, "filing_date", "") or ""),
+                    "_filing": f})            # carried so the signal can doc-fetch stake
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return records
+    except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        warnings.warn(f"scout: edgar 13D/A index fetch failed: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return []
+
+
+def fetch_recent_amendment_records(session: date, max_filings: int, identity: str,
+                                   resolve_ticker_fn, lookback: int = 4,
+                                   _fetch=None) -> tuple[list[dict], date]:
+    """Walk-back twin of fetch_recent_activist_records for the /A stream."""
+    fetch = _fetch or fetch_amendment_records
+    d = session
+    for _ in range(lookback + 1):
+        recs = fetch(d, max_filings, identity, resolve_ticker_fn)
+        if recs:
+            return recs, d
+        d -= timedelta(days=1)
+        while not is_trading_day(d):
+            d -= timedelta(days=1)
+    return [], session
+
+
+def stake_increases_from_records(records, baselines, *,
+                                 min_increase_pp: float | None = None,
+                                 drop_spacs: bool = True, drop_affiliates: bool = True):
+    """Pure: amendment records (+ merged baselines) -> (emissions, baseline_updates).
+
+    Rules (registered in the prereg — same live and backfill): SPAC/affiliate rows are
+    EXCLUDED by signal definition; a row with unparseable stake_pct or no usable pair key
+    neither emits nor updates (abstention); a pair with no baseline SEEDS and never emits;
+    an emission requires new - prior >= min_increase_pp (absolute pp). Baselines update to
+    the newest parsed % regardless of emission, so a slow creep can't re-qualify daily.
+    """
+    from .quality import is_13d_amendment
+    from .stake import MIN_INCREASE_PP, STRENGTH, pair_key
+    from .stake import SIGNAL as STAKE_SIGNAL
+    floor = MIN_INCREASE_PP if min_increase_pp is None else min_increase_pp
+    emissions: list[Emission] = []
+    updates: dict[str, dict] = {}
+    merged = dict(baselines or {})
+    for r in records:
+        tkr = _is_real_ticker(r.get("ticker"))
+        if not tkr or not is_13d_amendment(r.get("form", "")):
+            continue
+        subj, act = r.get("subject_name", "") or "", r.get("activist", "") or ""
+        if drop_spacs and is_spac_or_shell(subj):
+            continue
+        if drop_affiliates and is_affiliate_filing(act, subj):
+            continue
+        pk = pair_key(r.get("filer_cik"), r.get("cik"))
+        pct = r.get("stake_pct")
+        if pk is None or pct is None:
+            continue                               # abstention: no emit, no update
+        prior = merged.get(pk, {}).get("pct")
+        entry = {"pct": pct, "date": str(r.get("file_date") or ""),
+                 "adsh": r.get("accession")}
+        merged[pk] = entry
+        updates[pk] = entry
+        if prior is None or pct - prior < floor:
+            continue                               # seed-only / immaterial / decrease
+        ev = (f"13D/A stake increase: {act or subj} "
+              f"{prior:.1f}%→{pct:.1f}% in {subj or tkr}")
+        emissions.append(Emission(
+            tkr, STAKE_SIGNAL, STRENGTH, ev, is_discovery=True, cik=r.get("cik"),
+            meta={"adsh": r.get("accession"), "prior_pct": prior, "new_pct": pct,
+                  "file_date": str(r.get("file_date") or "")}))
+    return emissions, updates

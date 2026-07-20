@@ -1,0 +1,24 @@
+# Pre-registered validation parameters for the edgar:13d_stake_increase signal (material
+# stake-INCREASE SCHEDULE 13D/A amendments — activist accumulation as escalation/conviction;
+# Bebchuk-Brav-Jiang 2015 campaign-drift family). Shipped DISABLED at weight 0.5 on the
+# buyback/8-K MEASURE-FIRST precedent; EXPECTED SIGN: POSITIVE. Signal-definition constants
+# frozen in code, not config (the buyback DEFAULT_PHRASES precedent): min increase =
+# stake.MIN_INCREASE_PP (2.0pp absolute), aggregation = max-of-coverpages, first-sighting
+# amendments seed-and-never-emit, parse abstention = selection exclusion (never counted as
+# survivorship loss). Committed BEFORE any backfill/eval run; the evaluator verifies this
+# file's git commit time against the run as_of.
+signal: edgar:13d_stake_increase
+as_of: 2026-07-18            # set to the actual commit date
+window_start: 2022-01-01
+window_end: 2025-12-31
+# window_end + K = 2026-03-31 < as_of: every window event has fully matured, so the FIRST
+# verdict is canonical — never immaturity-INTERIM (the buyback convention).
+verdict_as_of: 2026-07-18    # set to the actual commit date
+k_months: 3                  # the funnel's 30-90d watch horizon; ~16 independent blocks
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90    # UNCHANGED from the 8-K/13D/buyback prereg
+min_independent_blocks: 8
+min_bucket_events: 5
+delisting_return: -0.55      # Shumway partial (Nasdaq-listed default); band tested in eval
+regime_down_rule: spy_trailing_3m_negative

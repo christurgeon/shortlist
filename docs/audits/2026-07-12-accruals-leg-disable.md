@@ -55,3 +55,34 @@ This is the second enabled-signal whose evidence-of-record had evaporated into a
 `docs/superpowers/specs/` doc (the buyback KILL, 2026-07-11, was the first). Any signal that
 moves live scores should record its evidence under the tracked `docs/audits/` tree. Filed as
 a standing follow-up.
+
+## Reproduction (2026-07-18)
+
+TODO follow-up #1 (2026-07-11) asked to re-measure accruals on the **original 195-name broad
+universe** before citing the old +0.036/t=2.1 number. That universe is **permanently
+unreproducible** — its composition and results doc were gitignored and are gone (see "Why
+re-measured" above), so the original number can never be re-derived. This follow-up is
+therefore closed on the *reproducible* universes instead, which is what the disable decision
+already rested on.
+
+Re-ran the identical measurement six days later on current code (`--source xbrl`, keyless
+companyfacts, `price_asof` 2026-07-18) to confirm the verdict is stable, not a stale artifact:
+
+| universe | h=1 | h=3 | h=6 | h=12 |
+|---|---|---|---|---|
+| **largecap** (79) | +0.0132 (t=1.19, hit .54) | +0.0205 (t=1.14, hit .55) | +0.0347 (t=1.30, hit .66) | +0.0479 (t=1.46, hit .62) |
+| **combined** (229) | −0.0002 (t=−0.03, hit .48) | −0.0008 (t=−0.05, hit .48) | −0.0018 (t=−0.07, hit .50) | −0.0173 (t=−0.54, hit .38) |
+
+Both rows **reproduce the 2026-07-12 table to the reported precision** (the small
+universe-size drift — 79/229 vs 79/231 — is a few small/mid names whose CIK no longer resolves
+in `company_tickers.json`: TOWN, CIVI, VTLE, MMC, AGCO; it does not move the ICs). Accruals is
+positive-signed but sub-significant on largecap (XS t ≤ 1.46 at every horizon; its only
+above-threshold read is a **TS-IC** t=2.62 @h6 — a weak large-cap *time-series* tilt, never a
+cross-sectional ranking edge) and flat-to-negative on combined. The XS-IC bar a ranking leg
+must clear (positive **and** t>~2 at h≤6 on a reproducible universe) is missed everywhere.
+
+**Verdict stands: DISABLED.** No further re-measurement is warranted — the enabling universe is
+gone and every surviving reproducible universe agrees. Closed.
+
+(Commands: `shortlist-backtest --source xbrl --universe largecap --horizons 1,3,6,12 --json`
+and the same with `--tickers <largecap∪smallmid CSV>`. Raw JSON in the session scratchpad.)

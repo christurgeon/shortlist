@@ -53,6 +53,125 @@ doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
 
 ---
 
+## 13D escalation pack shipped — backfill run pending (2026-07-18)
+
+Branch `feat/13d-escalation-pack` (worktree, review pending — not yet merged): shipped
+`EdgarStakeIncreaseSignal` (`edgar_13d_stake_increase`, OFF at weight 0.5, measure-first)
++ `scout/stake.py` pure percent-of-class leaf (XML tier → raw-HTML tier → text tier;
+max-of-coverpages; abstain-never-guess) + a `--signal 13d-a` backfill leg with a
+run-level stateful chronological assembler. Pre-registered:
+`preregister/edgar_13d_stake_increase.yaml` (POSITIVE, K=3m, window 2022–2025,
+blocks≥8, frac 0.90, as_of 2026-07-18). Design + verified facts:
+`docs/superpowers/specs/2026-07-17-13d-escalation-pack-design.md` (gitignored, local
+copy only — see the CLAUDE.md section for the durable summary).
+
+1. **Operator runbook — production backfill + validate (not yet run):**
+   ```
+   uv run --extra edgar shortlist-scout backfill --signal 13d-a \
+       --start 2022-01-01 --end 2025-12-31
+   uv run --extra edgar shortlist-scout validate \
+       --backfill scout/backfill/13d-a-2022-01-01-2025-12-31.jsonl --json
+   ```
+   Run **outside 21:15–23:00 UTC** (SEC EDGAR maintenance window); the runner's `df`
+   disk preflight aborts below 8 GB free. Serial + rate-limited by design, and
+   **resumable** (re-run reports `written_this_run=0` once complete) — safe to split
+   across sessions if it doesn't finish in one sitting. 2022-01-01..2025-12-31 IS the
+   pre-registered window; don't widen or narrow it post hoc.
+   **Expectation-setting:** the buyback/8-K precedent means a KILL-shaped verdict
+   (negative or INSUFFICIENT FF3 alpha) is a live, even likely, outcome — the signal
+   stays OFF either way with the evidence committed under `docs/audits/`. Known,
+   already-diagnosed non-issues the evaluator will see: a legacy-cover-page parse rate
+   well under 100% (~93% post html-tier-fix on the 2022-23 spot-check sample) with a
+   couple of legitimate `ZERO_PERCENT_ONLY`-style abstentions (a holding-company-chain
+   entity disclaiming ownership at that layer — correctly dropped, not a bug); and the
+   population-scope caveat (backfill's measured cohort is slightly broader than what
+   live scanning would ever emit, since backfill resolves tickers PiT while the live
+   walker drops unresolvable-ticker rows before baselining).
+2. **Deferred from the design spec §7** (recorded, not scheduled): a stake-**decrease**
+   / exit negative-context signal; reweighting the initial-13D live strength by
+   stake-%  (needs ledger data first); a generic `include_amendments: true` config
+   (non-increase amendments stay dropped in v1).
+3. **Repo test suite is Python-minor-version sensitive:** a fresh 3.11 venv fails
+   `test_block_bootstrap_ci_*` on a floating-point boundary that a 3.13 venv doesn't
+   hit (surfaced setting up this worktree). Consider pinning the dev environment via a
+   `.python-version` file so a fresh clone doesn't hit a spurious local failure.
+
+**Status:** MERGED as #141 (HEAD `2257646`). **Backfill + validate COMPLETE (2026-07-19/20).**
+Run: 2026-07-19 13:45→18:44 UTC (**4h59m**, `rc=0`) on `/opt/shortlist`, 1422 events written
+to `scout/backfill/13d-a-2022-01-01-2025-12-31.jsonl`; validate `rc=0`, digest artifact
+`scout/validate-latest.json` written. (Op note: box had NO warm `sec_xbrl` and sat at 7.27 GB
+— under the 8 GB preflight floor; cleared the shared uv cache to proceed. Disk finished at
+~7.5 GB, so **a re-run would abort the preflight until space is freed again**.)
+
+**VERDICT — `INSUFFICIENT` on both cohorts, but KILL-shaped (expected sign was POSITIVE):**
+- raw: alpha **−1.99%/mo**, CI [−2.95%, −0.86%] (entirely negative), IR −1.92, blocks 17,
+  measurable **0.72 < 0.90 floor** ← the INSUFFICIENT trigger.
+- scored/gated: alpha **−4.39%/mo**, CI [−5.90%, −2.79%], IR −3.22, blocks 16, measurable
+  0.938 clears the floor but the **2023 vintage stratum is 0.85** ← the trigger there.
+- `n_immature: 0` (all matured — first verdict is canonical, not INTERIM); `sensitivity_flip:
+  false`; evaluator self-labels "SYNTHETIC cohort — rank/KILL only (M1)". Signal **stays OFF**.
+- Within-cohort double-sort is positive (spread +1.61%/mo, CI [0.11%, 2.93%]) but **both legs
+  are negative** (high IR −1.24 / low −1.86) — ranking carries some info, level is still bad.
+
+**Known caveats to carry into the audit doc (do not lose):**
+1. **`delisting_by_reason` came back EMPTY** — the prereg's `delisting_return: -0.55` was
+   never applied; the 393 unmeasurable (327 `no_price_series`) were **dropped, not imputed**.
+   The drops are **non-random and skew toward ACQUISITIONS** (NLSN/MYOV/MTTR were takeouts —
+   the *successful* activist outcome), so the missing 28% plausibly biases measured alpha
+   **DOWNWARD**. The negative result may overstate how bad the signal is; worth a
+   delisting-imputation sensitivity re-run before treating −4.4%/mo as the true level.
+2. **4 out-of-window events** dated 2026-01-02 (SCOR×3, TTSH) past `window_end` — 0.28%,
+   immaterial to the verdict, but a chunk-boundary overshoot worth a bug note.
+3. **64 excess records / 48 duplicate `(ticker, event_date)` keys** (e.g. CRVW ×4 on
+   2023-02-02) with `meta.adsh` **None** on backfill emissions (unlike live) — likely
+   several filers per subject/day; double-counting understates standard errors (block
+   bootstrap only partly mitigates) and `adsh` being null blocks dedup auditing.
+
+**Evidence COMMITTED (2026-07-20, #142):**
+`docs/audits/2026-07-19-13d-a-stake-increase-backfill-verdict.md` is now the canonical
+record (full verdict tables, five caveats, repro notes). The caveats above are the short
+form — **cite the audit doc, not this entry**. Two code bugs it records are still open:
+the chunk-boundary overshoot (caveat 2) and null `meta.adsh` on backfill emissions
+(caveat 3).
+
+**Deferred decision — do NOT wire a "KILL" config comment (revised 2026-07-20).** The
+handoff script said to point config at a kill if KILL-shaped. Hold that, or word it as
+"measured INSUFFICIENT, stays off pending delisting-imputation sensitivity". Caveat 1 above
+(dropped names skew toward ACQUISITIONS → alpha biased DOWNWARD) means the defensible claim
+is **"no evidence to enable,"** NOT "proven value-destructive." The signal is already OFF at
+weight 0.5, so the comment changes no behavior — asserting a clean kill would overstate the
+evidence. Optional follow-on: delisting-imputation sensitivity re-run to pin the true level
+(**needs disk freed first — box is ~7.5 GB, under the 8 GB preflight floor**).
+
+## Snapshot-replay path is ready to un-gate; SUE not yet measurable (2026-07-18)
+
+Checked the accumulation store (`/opt/shortlist/state/snapshots`) while chasing the
+SUE/Lazy-Prices validation reminder. Findings:
+
+- Accumulation has run cleanly since **2026-06-22** (~29 names/day). The mega-caps
+  (AAPL/MSFT/NVDA/AMZN/META) now hold **26 daily snapshots — past the ≥24 floor**, and each
+  carries the SUE inputs (verified live: `recent_surprise_pcts` = 4 quarters, clears the ≥3
+  σ-guard; `last_surprise_pct`; the decay anchor). `SnapshotSignalSource` + `sue_score` are
+  fully wired behind the gate.
+- **`--source snapshot` is still hard-gated** by a stub in `backtest/cli.py:~423` that
+  `return 2`s with "no organic history exists yet" — written when the store was empty.
+  Follow-up: replace it with a real ≥24-snapshot store-history check so the path activates
+  automatically (correctness-by-construction; smoke-test end-to-end). Small, no verdict.
+- **SUE is NOT measurable today regardless of the gate** — the earliest snapshot is only
+  ~26 days old and forward returns come from `PriceHistory.forward_return(T, horizon)`, so
+  no forward window has closed yet. First ~1-month points close early Aug; a prereg-grade
+  verdict (≥8 non-overlapping blocks) is a late-2026-into-2027 proposition. Just needs
+  calendar time — keep accumulating.
+- **Lazy-Prices (`filing_text_change`) can never validate on this path** — full filing text
+  was deliberately kept out of the snapshot (EdgarSource fetches Form 4 + financials +
+  filing-index only). Already noted below (2026-07-09 item #5) as a structural no-op; not a
+  waiting game.
+
+**Status:** open — un-gating the snapshot path is the only actionable prep; the SUE verdict
+itself is blocked on calendar time, not code.
+
+---
+
 ## Buyback backfill KILL + combined-universe XBRL IC run (2026-07-11)
 
 Branch `fix/buyback-prereg-slug` (local, unpushed — operator to push/PR/merge):
@@ -81,11 +200,15 @@ Branch `fix/buyback-prereg-slug` (local, unpushed — operator to push/PR/merge)
    shareholder_yield mixed (XS +2.08 but bottom bucket outperforms) stays OFF.
 
 Follow-ups, by urgency:
-1. **accruals re-measurement**: the ENABLED accruals leg shows XS≈0 (t=−0.05 @3m) on
-   this 231-name run vs the +0.036 (t=2.1) 195-name broad-universe evidence that
-   enabled it. Not a kill (TS +1.7–2.8; different universe mix + window), but
-   re-measure on the original broad universe before citing the old number; if it
-   stays flat there too, reconsider the leg.
+1. ~~**accruals re-measurement**~~ — **RESOLVED 2026-07-18.** This item was already
+   superseded the day after it was written: the 2026-07-12 audit disabled the leg
+   (`accruals: false`, #138) on the reproducible universes, and the original 195-name
+   broad universe it asked to re-measure on is **permanently unreproducible** (its
+   composition + results doc were gitignored and are gone). Re-ran both reproducible
+   universes on current code 2026-07-18 — largecap +0.013→+0.048 (XS t ≤ 1.46, sub-bar;
+   only a TS t=2.62 @h6), combined flat-to-negative — **reproducing the 07-12 table
+   bit-for-bit.** Verdict stands DISABLED; nothing left to measure. Reproduction appended
+   to `docs/audits/2026-07-12-accruals-leg-disable.md`.
 2. Operator: push branch `fix/buyback-prereg-slug` (+ PR/merge), then the still-open
    deploy of HEAD to /opt/shortlist (13F originator not yet live; see 2026-07-09/10
    entries below).
