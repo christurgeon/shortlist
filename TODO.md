@@ -49,8 +49,51 @@ copy only — see the CLAUDE.md section for the durable summary).
    hit (surfaced setting up this worktree). Consider pinning the dev environment via a
    `.python-version` file so a fresh clone doesn't hit a spurious local failure.
 
-**Status:** code + prereg + docs done on the branch; the production backfill run and its
-`validate` verdict are the operator's next step, outside this session.
+**Status:** MERGED as #141 (HEAD `2257646`). **Backfill + validate COMPLETE (2026-07-19/20).**
+Run: 2026-07-19 13:45→18:44 UTC (**4h59m**, `rc=0`) on `/opt/shortlist`, 1422 events written
+to `scout/backfill/13d-a-2022-01-01-2025-12-31.jsonl`; validate `rc=0`, digest artifact
+`scout/validate-latest.json` written. (Op note: box had NO warm `sec_xbrl` and sat at 7.27 GB
+— under the 8 GB preflight floor; cleared the shared uv cache to proceed. Disk finished at
+~7.5 GB, so **a re-run would abort the preflight until space is freed again**.)
+
+**VERDICT — `INSUFFICIENT` on both cohorts, but KILL-shaped (expected sign was POSITIVE):**
+- raw: alpha **−1.99%/mo**, CI [−2.95%, −0.86%] (entirely negative), IR −1.92, blocks 17,
+  measurable **0.72 < 0.90 floor** ← the INSUFFICIENT trigger.
+- scored/gated: alpha **−4.39%/mo**, CI [−5.90%, −2.79%], IR −3.22, blocks 16, measurable
+  0.938 clears the floor but the **2023 vintage stratum is 0.85** ← the trigger there.
+- `n_immature: 0` (all matured — first verdict is canonical, not INTERIM); `sensitivity_flip:
+  false`; evaluator self-labels "SYNTHETIC cohort — rank/KILL only (M1)". Signal **stays OFF**.
+- Within-cohort double-sort is positive (spread +1.61%/mo, CI [0.11%, 2.93%]) but **both legs
+  are negative** (high IR −1.24 / low −1.86) — ranking carries some info, level is still bad.
+
+**Known caveats to carry into the audit doc (do not lose):**
+1. **`delisting_by_reason` came back EMPTY** — the prereg's `delisting_return: -0.55` was
+   never applied; the 393 unmeasurable (327 `no_price_series`) were **dropped, not imputed**.
+   The drops are **non-random and skew toward ACQUISITIONS** (NLSN/MYOV/MTTR were takeouts —
+   the *successful* activist outcome), so the missing 28% plausibly biases measured alpha
+   **DOWNWARD**. The negative result may overstate how bad the signal is; worth a
+   delisting-imputation sensitivity re-run before treating −4.4%/mo as the true level.
+2. **4 out-of-window events** dated 2026-01-02 (SCOR×3, TTSH) past `window_end` — 0.28%,
+   immaterial to the verdict, but a chunk-boundary overshoot worth a bug note.
+3. **64 excess records / 48 duplicate `(ticker, event_date)` keys** (e.g. CRVW ×4 on
+   2023-02-02) with `meta.adsh` **None** on backfill emissions (unlike live) — likely
+   several filers per subject/day; double-counting understates standard errors (block
+   bootstrap only partly mitigates) and `adsh` being null blocks dedup auditing.
+
+**Remaining:** write the verdict up under the tracked **`docs/audits/`** tree (the
+accruals/buyback precedent — NOT the gitignored specs dir). **Evidence is currently
+untracked and perishable** — it lives only in `scout/backfill/*.log`, the `.jsonl`, and
+`scout/validate-latest.json`, and that last one is **overwritten by the next validate run of
+any signal**.
+
+**Deferred decision — do NOT wire a "KILL" config comment (revised 2026-07-20).** The
+handoff script said to point config at a kill if KILL-shaped. Hold that, or word it as
+"measured INSUFFICIENT, stays off pending delisting-imputation sensitivity". Caveat 1 above
+(dropped names skew toward ACQUISITIONS → alpha biased DOWNWARD) means the defensible claim
+is **"no evidence to enable,"** NOT "proven value-destructive." The signal is already OFF at
+weight 0.5, so the comment changes no behavior — asserting a clean kill would overstate the
+evidence. Optional follow-on: delisting-imputation sensitivity re-run to pin the true level
+(**needs disk freed first — box is ~7.5 GB, under the 8 GB preflight floor**).
 
 ## Snapshot-replay path is ready to un-gate; SUE not yet measurable (2026-07-18)
 
