@@ -126,7 +126,13 @@ class FMPSource(_KeyedHttpSource):
         # recovered call caches a real 200, an exhausted 429 -> coverage rate_limited_429,
         # a persistent 5xx -> the generic "error" status). Daily-quota 429s won't clear,
         # so max_retries is deliberately small (config: fmp.max_retries, default 2).
-        self._max_retries = int(((config or {}).get("fmp") or {}).get("max_retries", 2))
+        fmp_cfg = (config or {}).get("fmp") or {}
+        self._max_retries = int(fmp_cfg.get("max_retries", 2))
+        # The /stable/ insider endpoint is PAID (402 on free plans) — config.yaml
+        # ships fetch_insider: false so the guaranteed-to-fail request stops
+        # burning ~1 of the ~13 quota calls/ticker. Default True: an absent key
+        # keeps the historical fetch-everything behavior.
+        self._fetch_insider = bool(fmp_cfg.get("fetch_insider", True))
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
@@ -146,6 +152,8 @@ class FMPSource(_KeyedHttpSource):
             "insider": ("insider-trading/search", {"symbol": ticker, "page": 0, "limit": 100}),
             "price_change": ("stock-price-change", {"symbol": ticker}),
         }
+        if not self._fetch_insider:
+            del sections["insider"]     # paid endpoint disabled -> save the quota call
         await _fetch_sections(res, self._get, sections)
         res.partial = _normalize_fmp(ticker, res.raw)
         return res
@@ -228,6 +236,16 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
             ret_6m=_pct(chg.get("6M")), ret_12m=_pct(chg.get("1Y")),
         )
     insiders = raw.get("insider")
+    if isinstance(insiders, list) and insiders:
+        # WINDOW the raw list before netting: the endpoint returns "the most recent
+        # N transactions" with no date scope, which for a low-velocity name spans
+        # years — un-windowed, the sum mislabels itself as net_value_6m. Undated
+        # rows are dropped (can't be confirmed in-window; ISO dates compare
+        # lexicographically). The window matches EdgarSource's lookback (183d) so
+        # the two sources' figures describe the same period in _merge_insider.
+        cutoff = (date.today() - timedelta(days=183)).isoformat()
+        insiders = [tx for tx in insiders
+                    if (tx.get("transactionDate") or "") >= cutoff]
     if isinstance(insiders, list) and insiders:
         net = buys = sells = 0
         recent = []

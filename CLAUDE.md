@@ -114,8 +114,8 @@ no new scoring):
     adding a flag fails CI until documented). Allowlists `TELEGRAM_CHAT_ID`,
     handlers on a single worker thread (poll loop never blocks), reuses
     `run_harness`/`build_report`/`deliver`. **Run ONE instance** (two concurrent
-    `getUpdates` pollers 409). The daily push is **OFF by default**
-    (`scout.daily_push.enabled`); the bot is the primary driver. Caps/timeout in
+    `getUpdates` pollers 409). The daily push is **ON** (`scout.daily_push.enabled: true`,
+    armed 2026-06-29, lean digest mode); the bot remains the interactive driver. Caps/timeout in
     `config.yaml: scout.bot`; systemd unit `deploy/shortlist-bot.service`.
 
 ## Dev workflow (uv)
@@ -416,8 +416,8 @@ Gated picks are recorded too (raw-signal measurement). Tune `scout.picks`.
 **screen+gate+rank digest** (the scorer + a copy-paste **`/deep` block** of the non-gated
 names) and **skips the Claude auto-research phase** — no daily Claude/FMP burn; default
 `true` preserves the legacy decision-ready push. The `/deep` block + scoreboard are two
-report sections (`report/sections.py`). The autonomous push still ships **OFF**
-(`scout.daily_push.enabled: false`). Framed as **activist re-rating candidates to watch /
+report sections (`report/sections.py`). The autonomous push is **ARMED**
+(`scout.daily_push.enabled: true` since 2026-06-29, running this digest mode). Framed as **activist re-rating candidates to watch /
 pass to `/deep`** (we enter after-close, so the edge is post-filing drift —
 Bebchuk-Brav-Jiang 2015 — not the filing-day pop), screening triage, not advice.
 
