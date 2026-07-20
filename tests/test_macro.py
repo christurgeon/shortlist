@@ -92,12 +92,17 @@ def test_fetch_macro_day_cache_avoids_second_pull(monkeypatch, tmp_path):
     fetch_macro(CFG)
     assert calls["n"] == first  # second run served from disk cache
 
-def test_fetch_macro_never_raises(monkeypatch, tmp_path):
+def test_fetch_macro_never_raises(monkeypatch, tmp_path, capsys):
     def boom(series_id, api_key): raise RuntimeError("network down ?apikey=SECRET")
     monkeypatch.setattr(macro_mod, "_fetch_series", boom)
     monkeypatch.setattr(macro_mod, "_CACHE_DIR", tmp_path)
     monkeypatch.setenv("FRED_API_KEY", "testkey")
     assert fetch_macro(CFG) is None  # degrades, no exception
+    # the degrade path prints the exception to stderr (never sinks a run) -- it must
+    # go through redact_secrets() first, or the FRED key leaks into logs/CI output.
+    err = capsys.readouterr().err
+    assert "SECRET" not in err
+    assert "<redacted>" in err
 
 
 def test_fetch_macro_no_key_returns_none(monkeypatch, tmp_path, capsys):

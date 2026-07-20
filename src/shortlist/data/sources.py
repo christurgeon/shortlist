@@ -91,15 +91,13 @@ class _KeyedHttpSource(Source):
         params[self._AUTH_PARAM] = self.key
 
         async def fetch():
-            # Retry transient throttling (429) and 5xx with Retry-After-aware, capped
-            # backoff when _max_retries > 0; 402 gating and other 4xx are NOT retried.
-            # With _max_retries == 0 this is a single attempt (the no-retry default).
+            # _retry_after_backoff retries transient throttling (429) and 5xx,
+            # Retry-After-aware, capped when _max_retries > 0; 402 gating and other
+            # 4xx are NOT retried. With _max_retries == 0 this is a single attempt
+            # (the no-retry default).
             for attempt in range(self._max_retries + 1):
                 r = await self._client.get(f"{self.BASE}/{path}", params=params)
-                retriable = r.status_code == 429 or 500 <= r.status_code < 600
-                if retriable and attempt < self._max_retries:
-                    await asyncio.sleep(
-                        _retry_after_seconds(r.headers.get("Retry-After"), 2 ** attempt))
+                if await _retry_after_backoff(r, attempt, self._max_retries):
                     continue
                 r.raise_for_status()
                 return r.json()
@@ -985,6 +983,49 @@ def _year(d: Any) -> Optional[int]:
         return None
 
 
+async def _retry_after_backoff(r: Any, attempt: int, max_retries: int) -> bool:
+    """Shared Retry-After-aware backoff decision for the keyed-HTTP retry loops
+    (`_KeyedHttpSource._get`, `LobbyingSource._get_json`): 429 and 5xx are
+    retriable, 402 gating and other 4xx are NOT. Sleeps (Retry-After header, else
+    exponential 2**attempt) and returns True when the caller should retry;
+    returns False once not-retriable or attempts are exhausted, so the caller
+    proceeds to `raise_for_status()`/`return r.json()`."""
+    retriable = r.status_code == 429 or 500 <= r.status_code < 600
+    if retriable and attempt < max_retries:
+        await asyncio.sleep(_retry_after_seconds(r.headers.get("Retry-After"), 2 ** attempt))
+        return True
+    return False
+
+
+async def _load_ticker_name_index(client: Any, cache_dir: str) -> tuple[dict, Optional[str]]:
+    """Bulk-load SEC company_tickers.json into a ticker->name index, shared by
+    GovContractsSource and LobbyingSource (both resolve ticker->entity name the
+    same way via `backtest.xbrl`'s month-cached bulk fetch). Returns
+    `(index, error)`: error is None on success; on failure index is `{}` and
+    error is the redacted exception string."""
+    try:
+        from ..backtest import xbrl
+        month = date.today().strftime("%Y-%m")
+        raw = await xbrl.fetch_company_tickers_raw(client, cache_dir=cache_dir, month=month)
+        return xbrl.build_name_index(raw), None
+    except Exception as e:
+        return {}, redact_secrets(e)
+
+
+def _read_versioned_cache(path: Path, version: int) -> Optional[dict]:
+    """Version-gated JSON-dict cache read, shared by GovContractsSource and
+    LobbyingSource: a stale-shape / legacy un-versioned payload is treated as a
+    miss so bumping `version` refetches rather than deserializing garbage."""
+    payload = read_json_cache(path)
+    if isinstance(payload, dict) and payload.get("v") == version:
+        return payload
+    return None
+
+
+def _write_versioned_cache(path: Path, version: int, payload: dict) -> None:
+    write_json_cache(path, {"v": version, **payload})
+
+
 # --- FINRA short interest (pure helpers) ----------------------------------
 # Single-sourced in data/finra.py so the sync scout fetcher shares one row-shape
 # definition (CLAUDE.md "edit … not in two places"). Re-exported under the historical
@@ -1140,17 +1181,26 @@ def _closes_from_chart(raw: Any) -> list[float]:
     return [c for c in series if isinstance(c, (int, float))]
 
 
+def _chart_ts_and_series(raw: Any) -> tuple[Optional[list], Optional[list]]:
+    """Pull the Yahoo chart payload's (timestamp, adjclose) arrays as a pair, or
+    (None, None) on any malformed/absent shape. Shared by `_dates_from_chart` and
+    `_monthly_closes_from_chart` (both need timestamps paired with closes).
+    NOT used by `_closes_from_chart`: that function tolerates a payload with
+    closes but no timestamp array (older cached 5y payloads), which requires
+    looking up `timestamp` and `adjclose` independently rather than atomically."""
+    try:
+        result = raw["chart"]["result"][0]
+        return result["timestamp"], result["indicators"]["adjclose"][0]["adjclose"]
+    except (KeyError, IndexError, TypeError):
+        return None, None
+
+
 def _dates_from_chart(raw: Any) -> list[date]:
     """Bar dates aligned 1:1 to `_closes_from_chart(raw)` (same numeric-close filter),
     oldest->newest, as `datetime.date`. Returns [] when timestamps are absent (older
     cached 5y payloads lacking a timestamp array) or misaligned (len(ts) != len(series)),
     so the caller can fall back to the date-less (residual-momentum-None) behavior."""
-    try:
-        result = raw["chart"]["result"][0]
-        ts = result["timestamp"]
-        series = result["indicators"]["adjclose"][0]["adjclose"]
-    except (KeyError, IndexError, TypeError):
-        return []
+    ts, series = _chart_ts_and_series(raw)
     if not ts or not series or len(ts) != len(series):
         return []
     out: list[date] = []
@@ -1165,12 +1215,7 @@ def _monthly_closes_from_chart(raw: Any) -> list[list]:
     """Pair the chart's timestamp + adjclose arrays and down-sample to ~one point
     per calendar month (last valid obs each month), oldest->newest as [iso, close].
     Returns [] if timestamps are absent (e.g. older cached 5y payloads lacking a timestamp array, or any malformed payload)."""
-    try:
-        result = raw["chart"]["result"][0]
-        ts = result["timestamp"]
-        series = result["indicators"]["adjclose"][0]["adjclose"]
-    except (KeyError, IndexError, TypeError):
-        return []
+    ts, series = _chart_ts_and_series(raw)
     if not ts or not series:
         return []
     by_month: dict[str, list] = {}
@@ -1277,15 +1322,8 @@ class GovContractsSource(Source):
     async def _load_names_locked(self) -> None:
         if self._name_index is not None or self._load_error is not None:
             return   # another task won the race while we waited on the lock
-        try:
-            from ..backtest import xbrl
-            month = date.today().strftime("%Y-%m")
-            raw = await xbrl.fetch_company_tickers_raw(
-                self._client, cache_dir=str(self._cache_dir), month=month)
-            self._name_index = xbrl.build_name_index(raw)
-        except Exception as e:
-            self._load_error = redact_secrets(e)
-            self._name_index = {}
+        self._name_index, self._load_error = await _load_ticker_name_index(
+            self._client, str(self._cache_dir))
 
     def _filters(self, name: str, start: str, end: str) -> dict:
         return {"recipient_search_text": [name],
@@ -1298,15 +1336,10 @@ class GovContractsSource(Source):
     _CACHE_V = 1   # bump if the cached GovContracts shape changes
 
     def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        # version-gated (LobbyingSource pattern): a stale-shape / legacy
-        # un-versioned payload is treated as a miss so a _CACHE_V bump refetches.
-        payload = read_json_cache(self._cache_path(ticker, day))
-        if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
-            return payload
-        return None
+        return _read_versioned_cache(self._cache_path(ticker, day), self._CACHE_V)
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        write_json_cache(self._cache_path(ticker, day), {"v": self._CACHE_V, **payload})
+        _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
 
     async def fetch(self, ticker: str) -> SourceResult:
         from .govcontract_match import match_confidence
@@ -1447,10 +1480,7 @@ class LobbyingSource(Source):
     async def _get_json(self, path: str, params: dict) -> Any:
         for attempt in range(self._max_retries + 1):
             r = await self._client.get(f"{self._base}/{path}", params=params)
-            retriable = r.status_code == 429 or 500 <= r.status_code < 600
-            if retriable and attempt < self._max_retries:
-                await asyncio.sleep(
-                    _retry_after_seconds(r.headers.get("Retry-After"), 2 ** attempt))
+            if await _retry_after_backoff(r, attempt, self._max_retries):
                 continue
             r.raise_for_status()
             return r.json()
@@ -1464,28 +1494,17 @@ class LobbyingSource(Source):
     async def _load_names_locked(self) -> None:
         if self._name_index is not None or self._load_error is not None:
             return   # another task won the race while we waited on the lock
-        try:
-            from ..backtest import xbrl
-            month = date.today().strftime("%Y-%m")
-            raw = await xbrl.fetch_company_tickers_raw(
-                self._client, cache_dir=str(self._cache_dir), month=month)
-            self._name_index = xbrl.build_name_index(raw)
-        except Exception as e:
-            self._load_error = redact_secrets(e)
-            self._name_index = {}
+        self._name_index, self._load_error = await _load_ticker_name_index(
+            self._client, str(self._cache_dir))
 
     def _cache_path(self, ticker: str, day: str) -> Path:
         return self._cache_dir / f"lobby-{ticker.upper()}-{day}.json"
 
     def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        # version-gated: ignore a stale-shape payload so a _CACHE_V bump refetches
-        payload = read_json_cache(self._cache_path(ticker, day))
-        if isinstance(payload, dict) and payload.get("v") == self._CACHE_V:
-            return payload
-        return None
+        return _read_versioned_cache(self._cache_path(ticker, day), self._CACHE_V)
 
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        write_json_cache(self._cache_path(ticker, day), {"v": self._CACHE_V, **payload})
+        _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
 
     _CACHE_V = 1   # bump if the cached Lobbying shape changes
 

@@ -77,7 +77,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog="shortlist-backtest",
         description="Validate screener scores against forward returns.")
     ap.add_argument("--universe", default="largecap",
-                    help="'largecap' (bundled) or comma-separated tickers")
+                    help="'largecap'/'smallmid' (bundled) or comma-separated tickers")
     ap.add_argument("--tickers", help="alias for an ad-hoc --universe CSV")
     ap.add_argument("--horizons", default="3",
                     help="comma-separated months, e.g. 1,3,6,12")

@@ -133,3 +133,24 @@ def test_default_max_retries_when_config_absent():
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(src._get("quote", symbol="AAPL"))
     assert calls["n"] == 3
+
+
+def test_fetch_redacts_apikey_from_section_errors():
+    # `apikey` rides as a real query param (`_AUTH_PARAM`), so a raised
+    # httpx.HTTPStatusError's str() embeds the full request URL, key included.
+    # `_fetch_sections` is the ONLY thing between that raw exception and
+    # `SourceResult.errors` (which lands in --json / logs) — pin that the real
+    # key from env.py:redact_secrets()'s pattern never survives the trip, for the
+    # full FMPSource.fetch() path (not just the lower-level `_get` retry loop
+    # the rest of this file exercises).
+    def handler(request):
+        assert "apikey=SUPERSECRETKEY" in str(request.url)
+        return httpx.Response(500, text="server error")
+
+    src = _src(handler, max_retries=0)
+    src.key = "SUPERSECRETKEY"
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.errors  # every section failed the same way
+    joined = " ".join(res.errors)
+    assert "SUPERSECRETKEY" not in joined
+    assert "<redacted>" in joined
