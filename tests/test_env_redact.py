@@ -1,4 +1,6 @@
-from shortlist.env import redact_secrets
+import os
+
+from shortlist.env import load_env, redact_secrets
 
 
 def test_redacts_url_query_secrets():
@@ -21,3 +23,47 @@ def test_redacts_telegram_bot_token_in_url_path():
     out = redact_secrets(raw)
     assert "123456:ABCdef" not in out
     assert "/bot<redacted>/" in out
+
+
+# --- load_env: an explicit `export` must always win over the .env file --------
+#
+# load_env() was documented (CLAUDE.md "Secrets") but had zero test coverage:
+# `load_dotenv(dotenv_path, override=False)` is the one line enforcing "a real
+# shell export always wins" -- flip that kwarg (or drop it) and secrets in a
+# stale committed-adjacent .env could silently shadow a deliberately-set key,
+# with no test catching it.
+
+_TEST_VAR = "SHORTLIST_TEST_ENV_LOAD_VAR"
+
+
+def test_load_env_real_export_wins_over_dotenv_file(tmp_path, monkeypatch):
+    monkeypatch.setenv(_TEST_VAR, "from-shell")
+    envfile = tmp_path / ".env"
+    envfile.write_text(f"{_TEST_VAR}=from-file\n")
+    load_env(str(envfile))
+    assert os.environ[_TEST_VAR] == "from-shell"  # export beats the file, never overridden
+
+
+def test_load_env_sets_var_from_file_when_absent(tmp_path, monkeypatch):
+    monkeypatch.delenv(_TEST_VAR, raising=False)
+    envfile = tmp_path / ".env"
+    envfile.write_text(f"{_TEST_VAR}=from-file\n")
+    try:
+        load_env(str(envfile))
+        assert os.environ[_TEST_VAR] == "from-file"
+    finally:
+        monkeypatch.delenv(_TEST_VAR, raising=False)  # load_dotenv sets os.environ directly
+
+
+def test_load_env_missing_file_returns_none(tmp_path):
+    assert load_env(str(tmp_path / "nope.env")) is None
+
+
+def test_load_env_returns_loaded_path_on_success(tmp_path, monkeypatch):
+    monkeypatch.delenv(_TEST_VAR, raising=False)
+    envfile = tmp_path / ".env"
+    envfile.write_text(f"{_TEST_VAR}=x\n")
+    try:
+        assert load_env(str(envfile)) == str(envfile)
+    finally:
+        monkeypatch.delenv(_TEST_VAR, raising=False)

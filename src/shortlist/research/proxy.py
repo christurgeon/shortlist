@@ -16,12 +16,8 @@ Design + evidence grading: docs/superpowers/specs/2026-06-27-def14a-proxy-reader
 from __future__ import annotations
 
 import math
-import os
-import sys
 from dataclasses import dataclass, field
 from typing import Optional
-
-from ..env import redact_secrets
 
 # edgartools' "<1% / *" beneficial-ownership sentinel (NOT a literal 0.5%).
 _SENTINEL_PCT = 0.5
@@ -216,12 +212,11 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
     no XBRL, or nothing extractable). Never raises FROM THE edgartools fetch; it does
     raise if SEC_IDENTITY is unset (like its filings.py siblings) — assess() guards that.
     """
-    from edgar import Company, set_identity  # lazy: optional [edgar] extra
+    from edgar import Company  # lazy: optional [edgar] extra
 
-    ident = identity or os.environ.get("SEC_IDENTITY")
-    if not ident:
-        raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
-    set_identity(ident)
+    from .filings import log_abstain, require_identity
+
+    require_identity(identity)
     try:
         latest = _pick_latest(Company(ticker).get_filings(form="DEF 14A"), as_of)
         if latest is None:
@@ -233,8 +228,7 @@ def fetch_proxy(ticker: str, as_of: Optional[str] = None,
     except Exception as e:
         # Never-raises contract: the context line simply abstains — but say why
         # on stderr so a systematic failure doesn't hide as "no proxy".
-        print(f"research: DEF 14A proxy fetch failed for {ticker}: "
-              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
+        log_abstain("DEF 14A proxy fetch failed", ticker, e)
         return None
 
 

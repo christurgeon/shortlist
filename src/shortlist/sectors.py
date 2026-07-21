@@ -26,7 +26,7 @@ def extract_sic(company) -> Optional[str]:
     return s if s.isdigit() else None   # rejects "", "None", "abc"
 
 
-def resolve_bucket(sic, config: dict) -> str:
+def resolve_bucket(sic: str | int | None, config: dict) -> str:
     """Map a SEC SIC (str|int|None) to a bucket name, or 'unknown'. First bucket
     whose inclusive ranges contain the SIC wins; buckets are an ORDERED list so
     resolution never depends on dict-key order."""
@@ -52,7 +52,7 @@ def gate_applicable(bucket: str, gate: str, config: Optional[dict]) -> bool:
     return gate not in config.get("sectors", {}).get("masked_gates", [])
 
 
-def _as_int(sic) -> Optional[int]:
+def _as_int(sic: str | int | None) -> Optional[int]:
     if sic is None:
         return None
     s = str(sic).strip()

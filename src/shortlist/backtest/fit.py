@@ -8,9 +8,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from .metrics import aggregate_ic, spearman_ic
+
+# (period_id, {axis: subscore}, forward_return). period_id is any sortable, hashable
+# key (in practice a `date`, the grid point) -- required to be an actual `date` only
+# when `min_period_gap_days` is passed to `fit_weights` (see its docstring).
+FitRow = tuple[Any, dict[str, float], float]
 
 
 class FitGuardError(RuntimeError):
@@ -36,7 +41,7 @@ def _composite(sub: dict[str, float], w: dict[str, float]) -> float:
     return num / den if den else 0.0
 
 
-def _ic_for_weights(rows, w) -> Optional[float]:
+def _ic_for_weights(rows: list[FitRow], w: dict[str, float]) -> Optional[float]:
     by_period: dict = defaultdict(list)
     for p, sub, fwd in rows:
         by_period[p].append((_composite(sub, w), fwd))
@@ -54,7 +59,7 @@ def _normalize(w: dict[str, float]) -> dict[str, float]:
     return {k: (max(0.0, v) / s if s else 0.0) for k, v in w.items()}
 
 
-def _coordinate_ascent(train, prior) -> dict[str, float]:
+def _coordinate_ascent(train: list[FitRow], prior: dict[str, float]) -> dict[str, float]:
     """Deterministic coordinate ascent on weights maximizing in-sample IC."""
     w = dict(prior)
     best = _ic_for_weights(train, w)
@@ -73,7 +78,7 @@ def _coordinate_ascent(train, prior) -> dict[str, float]:
     return w
 
 
-def fit_weights(rows, prior: dict[str, float], *, min_periods: int = 24,
+def fit_weights(rows: list[FitRow], prior: dict[str, float], *, min_periods: int = 24,
                 shrink: float = 0.5, n_folds: int = 4,
                 min_period_gap_days: Optional[int] = None) -> FitResult:
     """rows: list of (period_id, {axis: subscore}, fwd_return). Walk-forward over

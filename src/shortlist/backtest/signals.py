@@ -37,6 +37,19 @@ class SignalSource(Protocol):
     def observe(self, ticker: str, as_of: date) -> Optional[Observation]: ...
 
 
+def _score_axes(m, thresholds: dict, axes: tuple[str, ...]) -> dict[str, float]:
+    """{axis: score} for every `axis` in `axes` whose `scoring.<axis>_score(m,
+    thresholds)` is not None (dropped, never zeroed). Shared by
+    MomentumSignalSource and XbrlSignalSource, which each score a tuple of axis
+    names via the same `getattr(scoring, f"{axis}_score")` convention."""
+    sig: dict[str, float] = {}
+    for axis in axes:
+        v = getattr(scoring, f"{axis}_score")(m, thresholds)
+        if v is not None:
+            sig[axis] = v
+    return sig
+
+
 class MomentumSignalSource:
     """Reconstructs the production momentum sub-score at a historical date from
     price history alone — by reusing snapshot_from_closes -> snapshot_to_metrics
@@ -81,11 +94,9 @@ class MomentumSignalSource:
         # axes (price_vs_200dma / rel_strength_6m) so the leg-level collinearity can be
         # measured. Backtest-only — NO production leg reads them (the momentum sub-score above
         # is byte-identical). Emitted None-safe.
-        for axis in ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
-                     "price_vs_200dma", "rel_strength_6m"):
-            v = getattr(scoring, f"{axis}_score")(m, self.thresholds)
-            if v is not None:
-                sig[axis] = v
+        sig.update(_score_axes(m, self.thresholds,
+                                ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
+                                 "price_vs_200dma", "rel_strength_6m")))
         return Observation(as_of, ticker.upper(), sig)
 
 
@@ -216,11 +227,7 @@ class XbrlSignalSource:
             return None
         m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,  # SIC not in companyfacts; sector masking is a score()-level concern
                              price=price, price_at=price_at)
-        sig: dict[str, float] = {}
-        for axis in self._AXES:
-            v = getattr(scoring, f"{axis}_score")(m, self.thresholds)
-            if v is not None:
-                sig[axis] = v
+        sig = _score_axes(m, self.thresholds, self._AXES)
         if not sig:
             return None
         return Observation(as_of, ticker.upper(), sig)

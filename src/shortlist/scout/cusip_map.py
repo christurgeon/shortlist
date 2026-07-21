@@ -256,6 +256,8 @@ def load_cusip_resolver(identity: str, *, resolver_cache_dir: str = ".cache/sec_
                               today=today, throttle=throttle)
         cusip_index = build_cusip_to_symbol(ftd)
     except Exception as exc:  # noqa: BLE001 — never let resolver construction crash the scan
+        # Deliberate no-op: kept so anyone who later logs `exc` here reaches for the
+        # redacted form first — these are sec.gov URLs. Don't "clean up" as dead code.
         _ = redact_secrets(str(exc))
         cusip_index = {}
     return CusipResolver(cusip_index, name_index)

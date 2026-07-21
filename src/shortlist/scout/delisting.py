@@ -202,7 +202,10 @@ def fetch_filing_records(cik, identity: str, *, forms=_FETCH_FORMS) -> Optional[
 
     from ..env import redact_secrets
     try:
-        cik_int = int(str(cik).lstrip("0") or "0") if str(cik).strip().isdigit() else int(cik)
+        # int() already ignores leading zeros in a decimal string ("00123" -> 123), so no
+        # separate zero-stripping branch is needed — this raises the same (TypeError,
+        # ValueError) for the same malformed inputs a hand-stripped version would.
+        cik_int = int(cik)
     except (TypeError, ValueError):
         warnings.warn(f"delisting: malformed CIK {cik!r}", stacklevel=2)
         return None

@@ -22,7 +22,7 @@ from .theme import (
     stance_to_rgb,
     text_on,
 )
-from .viewmodel import ReportVM
+from .viewmodel import MetricsVM, ReportVM
 
 
 class Detail(enum.Enum):
@@ -42,7 +42,7 @@ _SI_MIN_DISPLAY = 0.05   # only surface short interest once it's material (FINRA
                          # most names at ~1%, which is noise); crowded_short fires at 10%.
 
 
-def _short_interest_text(mvm) -> "str | None":
+def _short_interest_text(mvm: MetricsVM) -> "str | None":
     """Compact FINRA short-interest string, or None when absent / immaterial. Pairs with
     the crowded_short flag: '22.4% / 8.1d ↑' (days-to-cover + rising arrow each optional).
     Note: unsigned, 1-decimal % (deliberately unlike _fmt's signed integer %) — short
@@ -160,7 +160,7 @@ _FUND_ROWS = [("Price", "price", {}), ("Mkt cap", "market_cap", {"money": True})
               ("Net debt/EBITDA", "net_debt_to_ebitda", {})]
 
 
-def _piotroski_text(mvm) -> "str | None":
+def _piotroski_text(mvm: MetricsVM) -> "str | None":
     """'won/legs' Piotroski fraction (e.g. '5/6'), or None when absent."""
     pf = getattr(mvm, "piotroski_f", None)
     if pf is None:
@@ -168,7 +168,7 @@ def _piotroski_text(mvm) -> "str | None":
     return f"{pf}/{getattr(mvm, 'piotroski_f_legs', None) or 6}"
 
 
-def _earnings_text(mvm) -> "str | None":
+def _earnings_text(mvm: MetricsVM) -> "str | None":
     """Compact earnings-execution string, or None when absent: beat consistency,
     avg surprise, and days to the next report — e.g. '4/4 beats · +3.7% · next 18d'.
     avg-surprise and next-report are each included only when present."""
@@ -426,7 +426,7 @@ class _Portfolio:
     id, title = "portfolio", "Portfolio"
 
     def applies(self, vm):
-        p = getattr(vm, "portfolio", None)
+        p = vm.portfolio
         return p is not None and hasattr(p, "alerts")
 
     @staticmethod
@@ -518,7 +518,7 @@ def _present_codes(vm) -> tuple[list[str], list[str]]:
     for ld in vm.leaders:
         gates += ld.gates
         flags += ld.flags
-    p = getattr(vm, "portfolio", None)
+    p = vm.portfolio
     if p is not None:
         for pos in getattr(p, "positions", []):
             card = getattr(pos, "card", None)
@@ -589,10 +589,11 @@ class _DeepBlock:
     id, title = "deep", "Pass to /deep"
 
     def applies(self, vm) -> bool:
-        return bool(getattr(vm, "deep_block", None))
+        return bool(vm.deep_block)
 
     def _lines(self, vm) -> list[str]:
-        t = list(getattr(vm, "deep_block", []) or [])
+        t = list(vm.deep_block or [])   # None-tolerant: applies() gates render, but a
+        # directly-constructed ReportVM (tests) may pass None rather than the [] default.
         return [", ".join(t[i:i + _DEEP_PER_LINE]) for i in range(0, len(t), _DEEP_PER_LINE)]
 
     def render_html(self, vm, h) -> str:
@@ -618,7 +619,7 @@ class _PriorPicks:
     id, title = "picks", "Prior picks"
 
     def applies(self, vm) -> bool:
-        return bool(getattr(vm, "prior_picks", None))
+        return bool(vm.prior_picks)
 
     @staticmethod
     def _line(p: dict) -> str:
@@ -628,11 +629,11 @@ class _PriorPicks:
 
     def render_html(self, vm, h) -> str:
         rows = "".join(h.tag("div", self._line(p), _class="pick")
-                       for p in getattr(vm, "prior_picks", []) or [])
+                       for p in (vm.prior_picks or []))
         return h.raw("div", rows, _class="picks")
 
     def render_text(self, vm, detail) -> list[str]:
-        picks = list(getattr(vm, "prior_picks", []) or [])
+        picks = list(vm.prior_picks or [])
         if not picks:
             return []
         return ["", "Prior picks scoreboard (return since selection vs SPY):"] + \
@@ -662,7 +663,7 @@ class _ValidationScoreboard:
     _DISCLAIMER = "display / provisional / survivorship-biased — not evidence, not advice."
 
     def applies(self, vm) -> bool:
-        data = getattr(vm, "validation", None)
+        data = vm.validation
         if not isinstance(data, dict):
             return False
         verdicts = data.get("verdicts")
@@ -696,11 +697,11 @@ class _ValidationScoreboard:
                 f"n={ds.get('n_high', '—')}/{ds.get('n_low', '—')}")
 
     def _meta_line(self, vm) -> str:
-        data = getattr(vm, "validation", {}) or {}
+        data = vm.validation or {}
         return f"as of {data.get('as_of', '?')} ({data.get('source', '?')})"
 
     def render_html(self, vm, h) -> str:
-        data = getattr(vm, "validation", None) or {}
+        data = vm.validation or {}
         rows = []
         for v in data.get("verdicts") or []:
             rows.append(h.tag("div", self._verdict_line(v), _class="verdict"))
@@ -712,7 +713,7 @@ class _ValidationScoreboard:
         return h.raw("div", meta + "".join(rows) + note, _class="validation")
 
     def render_text(self, vm, detail) -> list[str]:
-        data = getattr(vm, "validation", None) or {}
+        data = vm.validation or {}
         verdicts = data.get("verdicts") or []
         if not verdicts:
             return []

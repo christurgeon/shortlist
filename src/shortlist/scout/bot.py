@@ -175,6 +175,23 @@ class TelegramBot:
         from .daily import _research_phase
         return _research_phase
 
+    # --- shared handler scaffolding (screen/deep/portfolio each: fetch macro, screen,
+    # split present/no-data) ---
+    @staticmethod
+    def _fetch_macro(config):
+        from ..data.macro import fetch_macro
+        return fetch_macro(config)
+
+    @staticmethod
+    def _partition_present(cards):
+        """Split screened cards into (present, missing) by the no_data() predicate."""
+        return [c for c in cards if not no_data(c)], [c for c in cards if no_data(c)]
+
+    def _send_dropped_note(self, verb: str, kept: list[str], dropped: int) -> None:
+        if dropped:
+            self.notifier.send_message(
+                f"({verb} first {len(kept)}; {dropped} more not run — re-send them)")
+
     # --- handlers ---
     def _handle(self, cmd: Command) -> None:
         if cmd.name == "screen":
@@ -214,11 +231,9 @@ class TelegramBot:
         # "Heard you" feedback. Runs on the WORKER thread (this handler), never the
         # poll thread — a slow/flaky chat-action POST must not stall getUpdates.
         self.notifier.send_chat_action("upload_photo")
-        from ..data.macro import fetch_macro
-        macro = fetch_macro(self.config)
+        macro = self._fetch_macro(self.config)
         cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
-        present = [c for c in cards if not no_data(c)]
-        missing = [c for c in cards if no_data(c)]
+        present, missing = self._partition_present(cards)
         if present:
             manifest = _interactive_manifest(len(kept), len(present), "screen", [])
             art = self._report_fn()(present, manifest, assessments={}, macro=macro)
@@ -227,9 +242,7 @@ class TelegramBot:
                                session=manifest.session.isoformat())
         if missing:
             self.notifier.send_message(_no_data_note(missing))
-        if dropped:
-            self.notifier.send_message(
-                f"(screened first {len(kept)}; {dropped} more not run — re-send them)")
+        self._send_dropped_note("screened", kept, dropped)
         if fmt_note:
             self.notifier.send_message(fmt_note)
 
@@ -240,11 +253,9 @@ class TelegramBot:
         kept, dropped = _soft_cap(tuple(good), self.max_deep)
         self.notifier.send_message(
             f"Researching {', '.join(kept)} — this can take several minutes…")
-        from ..data.macro import fetch_macro
-        macro = fetch_macro(self.config)
+        macro = self._fetch_macro(self.config)
         cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
-        present = [c for c in cards if not no_data(c)]
-        missing = [c for c in cards if no_data(c)]
+        present, missing = self._partition_present(cards)
         if present:
             _briefs, assessments, researched, note, skipped = self._research_fn()(
                 present, self.config, self.scout_cfg,
@@ -264,9 +275,7 @@ class TelegramBot:
                 self.notifier.send_message("⚠️ research unavailable —\n" + lines)
         if missing:
             self.notifier.send_message(_no_data_note(missing))
-        if dropped:
-            self.notifier.send_message(
-                f"(researched first {len(kept)}; {dropped} more not run — re-send them)")
+        self._send_dropped_note("researched", kept, dropped)
         if fmt_note:
             self.notifier.send_message(fmt_note)
 
@@ -289,10 +298,9 @@ class TelegramBot:
         screened_holdings, dropped_tickers = holdings[:cap], [h.ticker for h in holdings[cap:]]
         tickers = [h.ticker for h in screened_holdings]
         self.notifier.send_chat_action("upload_photo")
-        from ..data.macro import fetch_macro
-        macro = fetch_macro(self.config)
+        macro = self._fetch_macro(self.config)
         cards = self._screen_fn()(tickers, self.sources, self.config, macro=macro)
-        present = [c for c in cards if not no_data(c)]
+        present, _missing = self._partition_present(cards)
         summary = pf.summarize(screened_holdings, present)
         manifest = _interactive_manifest(len(tickers), len(present), "portfolio", [])
         art = self._report_fn()(present, manifest, assessments={}, macro=macro,

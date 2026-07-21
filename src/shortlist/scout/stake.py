@@ -10,6 +10,8 @@ rule on both sides, so max-vs-max is internally consistent.
 from __future__ import annotations
 
 import re
+from datetime import date
+from typing import Callable
 
 SIGNAL = "edgar:13d_stake_increase"
 STRENGTH = 0.6          # flat, unfitted prior (the buyback precedent); deltas ride meta
@@ -68,8 +70,8 @@ def stake_pct_from_filing(filing) -> float | None:
     return None
 
 
-def fetch_prior_stake(subject_cik, filer_cik10: str, before, identity: str,
-                      _get_company=None) -> float | None:
+def fetch_prior_stake(subject_cik: str | int, filer_cik10: str, before: date, identity: str,
+                      _get_company: Callable | None = None) -> float | None:
     """Cold-start baseline: the latest 13D-family filing for (subject, filer) STRICTLY
     before `before`, parsed for stake %. One bounded EDGAR company-filings lookup; never
     raises -> None. `_get_company(cik, identity) -> list[Filing]` is the test seam."""

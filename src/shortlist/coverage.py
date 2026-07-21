@@ -34,7 +34,7 @@ _FMP_RATE_LIMIT_NOTE = (
 )
 
 
-def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optional[Coverage]:
+def build_coverage(outcomes: dict[str, str], contributed: set[str], card: ScoreCard) -> Optional[Coverage]:
     """Assemble a Coverage record, or None when every provider is "ok".
 
     `outcomes` maps provider/source name -> fetch status: "ok"/"gated_402"/
@@ -68,7 +68,7 @@ def build_coverage(outcomes: dict, contributed: set, card: ScoreCard) -> Optiona
                     note=_build_note(providers))
 
 
-def _build_note(providers: dict) -> Optional[str]:
+def _build_note(providers: dict[str, str]) -> Optional[str]:
     flagged = {n: s for n, s in providers.items() if s in _STATUS_LABEL}
     if not flagged:
         return None

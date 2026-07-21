@@ -20,14 +20,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional
+from typing import Callable, Optional
 
 # Consecutive-fiscal-year span window: admits 52/53-week fiscal years; excludes
 # quarters/half-years (transition/stub-period annuals are rare and dropped).
 # Single-sourced in stats.py (which applies the same window to instant
 # balance-sheet dates for asset_growth/accruals).
+from ..models import StockMetrics
 from ..stats import _FY_MAX_DAYS as _MAX_PERIOD_DAYS
 from ..stats import _FY_MIN_DAYS as _MIN_PERIOD_DAYS
+from ..stats import (
+    accruals,
+    asset_growth,
+    avg_roic,
+    cagr,
+    compute_ebit_ev_yield,
+    gross_margin_stability,
+    growth_persistence,
+    median_pe,
+    piotroski_f,
+    shareholder_yield,
+)
 from ._gaap_tags import (
     DEBT_ISSUANCE_TAGS,
     DEBT_REPAYMENT_TAGS,
@@ -265,19 +278,6 @@ def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
 # ---------------------------------------------------------------------------
 # Panel -> StockMetrics
 # ---------------------------------------------------------------------------
-from ..models import StockMetrics  # noqa: E402
-from ..stats import (  # noqa: E402
-    accruals,
-    asset_growth,
-    avg_roic,
-    cagr,
-    compute_ebit_ev_yield,
-    gross_margin_stability,
-    growth_persistence,
-    median_pe,
-    piotroski_f,
-    shareholder_yield,
-)
 
 _STATUTORY_TAX = 0.21
 
@@ -306,7 +306,8 @@ def _roic_series(p: XbrlPanel) -> list[float]:
 
 
 def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
-                     price: Optional[float], price_at) -> StockMetrics:
+                     price: Optional[float],
+                     price_at: Callable[[date], Optional[float]]) -> StockMetrics:
     """Build the scorer's StockMetrics from a point-in-time panel + price.
     Every ratio aligns by fiscal end; missing inputs leave fields None
     (scorer redistributes the composite weight)."""
