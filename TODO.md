@@ -6,6 +6,47 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Code-quality sweep — 5 refactors measured and deliberately NOT taken (2026-07-21)
+
+Branch `chore/code-quality-sweep` (PR #145; suite 2070 green, ruff clean, `shortlist
+--demo --json` byte-identical to main) was a behavior-neutral parallel-agent pass. Each
+item below LOOKED like obvious duplication and was rejected on inspection — recorded so
+the next sweep (human or agent) doesn't re-derive the same "obvious" fix and get it wrong:
+
+1. **`assemble_eightk_events` / `assemble_buyback_events` (`scout/backfill.py`)** — the
+   buyback docstring says it "Mirrors assemble_eightk_events MINUS the item-set match",
+   which reads like a merge waiting to happen. It isn't: the negative leg skips the
+   quality drops entirely, buyback carries a `phrase` field, and junk-suffix timing
+   differs. Merging would silently change **which events enter a measured cohort** — i.e.
+   invalidate a committed audit verdict without failing a test.
+
+2. **`bridge.py:snapshot_to_metrics` (~280 lines)** — an order-dependent pipeline, not a
+   long function. Gov-contracts materiality reads `m.revenue` set earlier; the SUE decay
+   anchor depends on `snap.events` computed later than `snap.earnings`. Splitting into
+   per-section helpers risks reordering an interleaved derivation.
+
+3. **`extract_financials` / `panel_to_metrics` (`providers/_edgar_facts.py`,
+   `_xbrl_facts.py`)** — long but already banner-segmented 1:1 to `StockMetrics` fields;
+   the risk of a silent transcription bug in a numerics extraction path outweighs the
+   readability gain.
+
+4. **Four-way `_load` / `_load_names` double-checked-lock wrapper (`data/sources.py`)** —
+   `FinraSource`/`WsbSource`/`GovContractsSource`/`LobbyingSource` share the shape but
+   differ in attribute names and bodies; genericizing needs a mixin across 4 classes for
+   ~5 lines each.
+
+5. **`GovContractsSource.fetch` / `LobbyingSource.fetch` (~90 lines each)** — pagination
+   loops threading several accumulators (`primary_amt`, `recipients`, `ttm`/`prior`); no
+   clean extraction seam without risking accumulator-ordering bugs.
+
+Also parked: **`edgartools` `standard_concept` alias lists stay untouched** (version-
+sensitive — bucket names drift across library releases and have broken accruals before).
+
+**Status:** All five are deliberate no-ops, not backlog. Revisit only with a specific
+reason and a measurement plan; items 1–3 in particular need evidence, not tidiness.
+
+---
+
 ## Data audit — 4 fixes shipped; statements-merge data loss + leverage-axis re-measure deferred (2026-07-20)
 
 Branch `fix/data-audit-2026-07-20` (PR #144; suite 2001 green, ruff clean) ships four

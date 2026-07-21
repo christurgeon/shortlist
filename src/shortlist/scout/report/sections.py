@@ -592,7 +592,8 @@ class _DeepBlock:
         return bool(vm.deep_block)
 
     def _lines(self, vm) -> list[str]:
-        t = list(vm.deep_block)
+        t = list(vm.deep_block or [])   # None-tolerant: applies() gates render, but a
+        # directly-constructed ReportVM (tests) may pass None rather than the [] default.
         return [", ".join(t[i:i + _DEEP_PER_LINE]) for i in range(0, len(t), _DEEP_PER_LINE)]
 
     def render_html(self, vm, h) -> str:
@@ -628,11 +629,11 @@ class _PriorPicks:
 
     def render_html(self, vm, h) -> str:
         rows = "".join(h.tag("div", self._line(p), _class="pick")
-                       for p in vm.prior_picks)
+                       for p in (vm.prior_picks or []))
         return h.raw("div", rows, _class="picks")
 
     def render_text(self, vm, detail) -> list[str]:
-        picks = list(vm.prior_picks)
+        picks = list(vm.prior_picks or [])
         if not picks:
             return []
         return ["", "Prior picks scoreboard (return since selection vs SPY):"] + \

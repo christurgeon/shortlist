@@ -26,9 +26,8 @@ import warnings
 from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from ..backtest.prices import PriceHistory
 from ..env import redact_secrets
 from .buyback import SIGNAL as SIGNAL_BUYBACK
 from .buyback import STRENGTH as _BUYBACK_STRENGTH
@@ -43,6 +42,11 @@ from .eightk import _junk_suffix, match_item_sets, match_negative
 from .firehose import CohortEvent
 from .quality import is_affiliate_filing, is_spac_or_shell
 from .stake import SIGNAL as SIGNAL_STAKE
+
+if TYPE_CHECKING:
+    # Annotation-only: the runtime import of this module stays lazy/function-local
+    # (see fetch_history_sync), so backfill keeps its one-import-per-use discipline.
+    from ..backtest.prices import PriceHistory
 
 SIGNAL = "edgar:activist_13d"
 

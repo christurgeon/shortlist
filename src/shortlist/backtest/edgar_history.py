@@ -42,8 +42,11 @@ def _resolve_get_filings(identity: str, _get_filings):
         set_identity(identity)
         return get_filings
     except Exception as exc:  # noqa: BLE001
+        # stacklevel=3, not 2: this helper adds a frame, so 3 still attributes the
+        # warning to the caller of fetch_activist_window/fetch_amendment_window
+        # (what warnings filters and the reported lineno key on).
         warnings.warn(f"edgar_history: edgartools unavailable: {redact_secrets(str(exc))}",
-                      stacklevel=2)
+                      stacklevel=3)
         return None
 
 
