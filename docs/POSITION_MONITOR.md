@@ -148,16 +148,26 @@ The bot and the daily timer are separate processes. Rather than lock a shared fi
 
 | Store | Owner | Contents |
 |---|---|---|
-| `positions.json` | **bot** (interactive commands only) | tickers, shares, thesis, `entry_card`, decisions |
-| `ScoutState` | **daily run** (already its exclusive owner) | `position_alerts_seen` (dedup ledger) + `position_last_prompted` (§5.4) |
+| `positions.json` | **bot** (interactive commands only) | tickers, shares, thesis, `entry_card` |
+| `ScoutState` | **daily run** (already its exclusive owner) | `position_alerts_seen` — the dedup ledger, nothing else |
 
-This matters. Atomic `os.replace` prevents a torn file but **not a lost update**: the daily
-run would read at 22:30, spend tens of seconds screening, then write back — silently
-erasing any `/add` that landed in that window, or having its own dedup ledger erased by
-one. The latter would re-arm every alert on the book, breaking the one invariant that keeps
-this feature unmuted. Split ownership removes the failure mode instead of documenting it.
-(Verified: `bot.py` currently has zero `ScoutState` references — the daily run's exclusivity
-is real.)
+This matters. Atomic `os.replace` prevents a torn file but **not a lost update**: if both
+processes wrote the same file, the daily run would read at 22:30, spend tens of seconds
+screening, then write back — silently erasing any `/add` that landed in that window, or
+having its own dedup ledger erased by one. The latter would re-arm every alert on the book,
+breaking the one invariant that keeps this feature unmuted. Split ownership removes the
+failure mode instead of documenting it.
+
+**The daily run READS `positions.json` (bot-written) but never writes it** — the monitor
+step and the `set_held` wiring both only read it, and write their state into `ScoutState`.
+That read is safe against a concurrent bot write with no lock: atomic `os.replace` swaps the
+directory entry to a new inode, and a POSIX reader either opens the old inode (and reads it
+whole) or the new one (whole) — **never a half-written file**. The monitor sees a
+possibly-one-cycle-stale but always internally-consistent snapshot; a `/add` mid-run is
+simply picked up next digest. (Verified: `bot.py` has zero `ScoutState` references and the
+daily run is `positions.json`'s sole reader-not-writer — the exclusivity is real. The one
+rule an implementer must honor: **the daily monitor never writes `positions.json`.** If a
+future "mark alerted" needs per-position state, it goes in `ScoutState`, not the store.)
 
 ### 3.2 Schema
 
@@ -169,8 +179,7 @@ is real.)
       "added": "2026-07-21",
       "shares": 12,
       "thesis": "Datacenter capex cycle has another two years",
-      "entry_card": {"composite": 71.2, "quality": 78, "…": "…",
-                     "gates": [], "flags": [], "abstentions": [],
+      "entry_card": {"composite": 71.2,
                      "sources": ["yahoo", "finnhub", "edgar"],
                      "as_of": "2026-07-21"}
     }
@@ -183,13 +192,16 @@ is real.)
 **No lots, no FIFO, no cost basis, no CSV migration.** Each was cut for a specific reason
 recorded in §10.
 
-**`entry_card.sources` is load-bearing.** An earlier draft captured `entry_card` on the full
-FMP chain while the monitor ran on the rationed free chain. Those produce different `value`
-and therefore different `composite` — so the first delta rendered for every position would
-have been fabricated, with nothing having changed in the world. Two guards: `/add` screens
-on **the same chain the monitor uses** (§4), and `sources` is stored so any future delta
-renderer can refuse a cross-chain comparison. `abstentions` is stored for the same reason —
-a v2 gate-diff must distinguish "gate cleared" from "input was `None`" (§10).
+**`entry_card` is a minimal seam, not a rendered field.** Nothing in v1 displays it — the
+delta view is deferred (§10). It stores only `composite`, `sources`, and `as_of`, because
+those cannot be reconstructed point-in-time later (the same "record now, read later" logic
+as the decision ledger), and it is near-free since `/add` already runs the screen.
+Deliberately **not** stored: `gates`/`flags`/`abstentions`, which existed only to feed a v2
+gate-diff that §10 defers twice over — capturing them now is machinery for a feature two
+steps away. `sources` **is** kept and load-bearing: `/add` screens on the same free chain
+the monitor uses (§4), and `sources` lets any future delta renderer refuse a cross-chain
+comparison (an earlier draft captured the entry card on the full FMP chain and would have
+rendered a fabricated day-one delta against the free-chain monitor).
 
 ### 3.3 Decision ledger — and why `/remove` is non-destructive
 
@@ -202,8 +214,7 @@ a v2 gate-diff must distinguish "gate cleared" from "input was `None`" (§10).
 
 Append-only JSONL, no structure to maintain, no reader in v1. It exists because the data
 **cannot be reconstructed later** and because it records the outcome that matters most —
-*"I looked and decided to hold"* — which an exits-only ledger would miss entirely. It also
-doubles as the engagement signal (§5.4).
+*"I looked and decided to hold"* — which an exits-only ledger would miss entirely.
 
 **`/remove` must not lose the thesis.** It is a Telegram command with no undo and no
 confirmation prompt, so a fat-finger deletes a position — and the thesis you wrote months
@@ -224,31 +235,56 @@ on every exit is its own friction, and the ledger makes it unnecessary.)
 
 | Command | Behavior |
 |---|---|
-| `/add NVDA` | Adds the position. Shares and thesis optional: `/add NVDA 12`, `/add NVDA 12 datacenter capex cycle`. **Bulk form:** `/add NVDA, MSFT, LMT` (comma-parsed, reusing `/screen`'s tokenizer) adds several bare tickers in one message — first-run setup is one paste off a broker app, not twelve messages. On an existing ticker, **fills in or updates** shares/thesis without disturbing `added` or `entry_card`. Screens and replies with the card (bulk form replies with a count + the current holdings). |
-| `/thesis NVDA <why you own it>` | Sets or replaces the thesis on an existing holding. The lazy path for the friction-minimized `/add`. |
-| `/hold NVDA [note]` | Records that you looked at an alert and chose to hold. Appends to `decisions.jsonl`. |
-| `/remove NVDA [reason]` | Closes the position **non-destructively** (§3.3). Alias `/sold`. |
+| `/add TICKER [shares]` | `/add NVDA` or `/add NVDA 12`. Shares is an **optional numeric token** (accepts a fraction, e.g. `12.5`). **Bulk form:** `/add NVDA, MSFT, LMT` — a comma anywhere means bulk, bare tickers only. On an existing ticker, fills/updates shares without disturbing `added` or `entry_card`. Screens the name and replies with the card; bulk replies with a count. |
+| `/thesis TICKER <why you own it>` | Sets/replaces the thesis. **The only command that takes free-text prose** (see grammar below). |
+| `/hold TICKER [note]` | Records that you looked at an alert and chose to hold. Appends to `decisions.jsonl`. |
+| `/remove TICKER [reason]` | Closes the position **non-destructively** (§3.3). Alias `/sold`. |
 | `/portfolio` | The **single** holdings view — the existing screened dashboard (exposure, sector concentration, per-name scorecards), rewired from `portfolio.csv` to this store. |
 
-There is **no `/positions`.** An earlier draft had a bare ticker+shares list alongside
-`/portfolio`; two "show my holdings" commands is redundant, and the bare list is caught in a
-bind — with no returns it is a dead view you would ignore in favor of your broker, and with
-returns it becomes the purchase-price disposition anchor §2 bans. `/portfolio` is the one
-viewer; `/add` confirms the holding count on success.
+**Grammar — kept unambiguous by keeping prose out of `/add`.** An earlier draft let `/add`
+carry an inline thesis (`/add NVDA 12 datacenter capex cycle`). That is unparseable: `/add
+NVDA 2 years of runway` cannot tell shares from thesis, and a comma inside a thesis collides
+with the bulk form. The fix costs nothing in capability and removes every ambiguity —
+**`/add` never takes prose; thesis is always `/thesis`.** Concretely:
 
-`/add` **screens on the free chain** (`digest_sources(include_fmp=False)`) — the same chain
-the monitor uses — so `entry_card` is comparable by construction. The reply notes that
-`/screen NVDA` gives the full-chain view including `peg` and `upside_to_target`.
+- `/add` accepts a ticker and an optional *numeric* second token. A non-numeric second token
+  is rejected with usage text (it is almost certainly a thesis typed in the wrong command).
+- **Uppercase the ticker token only** — do not reuse `_tickers()` (`bot.py:38`), which
+  upper-cases the whole line; `/thesis` prose must keep its case. `BRK.B` and lowercase
+  input (`/add nvda`) both work because only the validated ticker token is upper-cased.
+- `/thesis`, `/hold`, `/remove` on a **not-yet-tracked** ticker reply `not tracked — /add
+  TICKER first` — never auto-create, never silent error.
+
+There is **no `/positions`** (§10): `/portfolio` is the one viewer.
+
+`/add` **screens on the free chain** — it must resolve `digest_sources(base,
+include_fmp=False)` explicitly, **not** inherit the bot's default `self.sources` (which
+includes `fmp`, `bot.py:141`) — so `entry_card.sources` matches the monitor's chain by
+construction. The reply notes `/screen NVDA` gives the full-chain view (`peg`,
+`upside_to_target`).
 
 Positions without `shares` are monitored for filings but **excluded from exposure and
-sector math**, and named explicitly in the `/portfolio` output. This reuses `portfolio.py`'s
-existing `unpriced` / `no_data_tickers` convention — never silently drop a holding.
+sector math**, and named explicitly in the `/portfolio` output (the existing
+`unpriced` / `no_data_tickers` convention — never silently drop a holding).
 
 **Thesis is optional but nudged, never required.** Requiring it at `/add` reintroduces the
-friction that left `portfolio.csv` unused; omitting it entirely produces alerts with no
-anchor (§5.3). So the nudge is asymmetric: `/add` accepts a bare ticker, and every
-`/portfolio` line and the `/add` reply carry `⚠ no thesis — /thesis NVDA <why>` until one is
-set. The thesis is captured lazily, when you have a reason to write it, not as an entry tax.
+friction that left `portfolio.csv` unused; omitting it produces anchorless alerts (§5.3). So
+the nudge is asymmetric: `/add` accepts a bare ticker, and every `/portfolio` line, the
+`/add` reply, and the thesis-less alert carry `⚠ no thesis — /thesis NVDA <why>` until one
+is set. Captured lazily, not as an entry tax.
+
+**First-run experience (must not be skipped in implementation).** The on-ramp is as
+important as the alert for a CRUD-first feature:
+
+- **`_HELP` (`bot.py:84`) gains a line per new command** — plain verbs: `/add NVDA 12 —
+  track a holding`, `/thesis NVDA <why> — why you own it`, `/remove NVDA — stop tracking`,
+  and note `/portfolio` now shows what you `/add`.
+- **The empty-state `/portfolio` reply is rewritten.** Today it says *"create portfolio.csv
+  …"* (`bot.py:290`) — **wrong** after the rewire. New copy: *"No holdings yet. Add one with
+  `/add NVDA` (shares optional), or paste several: `/add NVDA, MSFT, LMT`."* This turns the
+  most-likely first interaction from a dead-end into the on-ramp.
+- **The `/add` success reply teaches the next step** — confirms the holding count and points
+  at `/portfolio`.
 
 New user-facing terms require `scout/glossary.py` entries (the AST-scan test enforces it).
 
@@ -278,7 +314,12 @@ sign of an item can differ by side (a pending control change is a reason not to 
 often a reason to be pleased you *held*).
 
 **Dedup:** `8k:<accession>` recorded in `ScoutState.position_alerts_seen` via the existing
-`_append_capped` helper. A given filing surfaces exactly once, ever.
+`_append_capped` helper (copy `add_eightk_accessions`, `state.py:130`). A given filing
+surfaces exactly once, ever. **Cap sizing matters:** `_append_capped` evicts oldest past
+cap, and the veto map is 30-day-pruned — so an accession can only re-arm if it is evicted
+*while still in the map*. Size the cap well above the 30-day held-book inflow (the far-denser
+8-K originator uses 500; 500 is generous here) and an eviction can never re-fire a live
+alert. Document the window in the setter docstring, like `add_eightk_neg_logged`.
 
 **Known limitation (stated, not fixed):** the veto map holds **one record per ticker,
 newest-wins**, pruned at 30 days (`state.update_eightk_negative`). Two negative 8-Ks for one
@@ -289,8 +330,11 @@ design does not have.
 ### 5.2 Delivery — structurally rate-capped
 
 **The alert is a section in the existing daily digest, not a standalone message.** The scout
-push already arrives daily; a held-name filing becomes a section at the top of it, gated by
-`applies()` exactly like `_Portfolio`.
+push already arrives daily; a held-name filing becomes a **new** section near the top of it
+(§6 — it is *not* the `_Portfolio` section, which the daily `build_report` never renders).
+Its `applies()` keys on **payload-presence, not alert-presence**: it returns True whenever
+the monitor is enabled and positions exist, so the heartbeat (below) renders even on a quiet
+day. Byte-identical when the payload is absent, exactly like `_ValidationScoreboard`.
 
 This bounds the alert rate at **one message per day by construction**, regardless of what
 fires or how wrong the rate estimate is. A structural cap is more robust than a
@@ -305,48 +349,51 @@ from a broken one, so the digest carries a one-line footer even when nothing fir
 `Monitoring N holdings · last filing check <date>`. It confirms the sweep is alive without
 being an interrupt, and it is nearly free since the digest already renders.
 
-**Promotion path:** the item set is deliberately narrow to start (§5.1). If engagement data
-(§5.4) shows you act on these, *widen* — add 2.05/2.06, or promote 4.02/1.03 to a standalone
-message — on evidence. Starting quiet and widening is recoverable; starting loud and getting
-muted is not.
+**Promotion path (manual judgment, not machinery).** The item set is deliberately narrow to
+start (§5.1). If you find over time that you *act* on these alerts, widen the `items` config
+— add 2.05/2.06, or promote 4.02/1.03 to a standalone push. For one user reading their own
+digest, that judgment needs no instrumentation: an earlier draft built a `last_prompted`
+"you've ignored this 3× " disengagement detector, which is patronizing for a solo user and
+redundant with the firehose (every alert is already logged with a pre-registered expected
+sign, §1). **Cut** — the firehose is the measurement seam; the promotion call is yours.
+Starting quiet and widening is recoverable; starting loud and getting muted is not.
 
 ### 5.3 Message
 
-With a thesis on the name — the thesis is the anchor that makes the alert a *decision*
-rather than free-floating anxiety:
+**Plain meaning leads; the item code is secondary provenance.** "Non-reliance on previously
+issued financial statements" does not read as *bad* to a human on a phone — so the first line
+says what happened in plain words, with the SEC item code trailing for the link/glossary. The
+three v1 glosses (also in `scout/glossary.py`, enforced by the §9 AST scan):
+
+- **4.02** → *"its past financial statements can no longer be relied on — a restatement is coming"*
+- **1.03** → *"filed for bankruptcy"*
+- **2.04** → *"a lender is calling debt due early (default/acceleration)"*
+
+With a thesis on the name — the anchor that makes the alert a *decision* rather than
+free-floating anxiety:
 
 ```
-NVDA — 8-K item 4.02 filed 2026-07-19
-Non-reliance on previously issued financial statements
+NVDA — its past financials can no longer be relied on; a restatement is coming.
+8-K item 4.02, filed 2026-07-19
 https://www.sec.gov/Archives/edgar/data/…
 Your thesis: "Datacenter capex cycle has another two years"
-→ /hold NVDA <note>   ·   /deep NVDA   ·   /remove NVDA <reason>
+→ /hold NVDA <your note>   ·   /deep NVDA   ·   /remove NVDA <your reason>
 ```
 
 Without one — the friction-minimized `/add NVDA` path — the alert **leads with the missing
-anchor** instead of showing an empty quote, turning the gap into a one-tap prompt at the
-moment it matters most:
+anchor** instead of an empty quote, turning the gap into a one-tap prompt when it matters most:
 
 ```
-NVDA — 8-K item 4.02 filed 2026-07-19
-Non-reliance on previously issued financial statements
+NVDA — its past financials can no longer be relied on; a restatement is coming.
+8-K item 4.02, filed 2026-07-19
 https://www.sec.gov/Archives/edgar/data/…
 ⚠ No thesis on file — why do you own this? /thesis NVDA <reason>
-→ /hold NVDA <note>   ·   /deep NVDA   ·   /remove NVDA <reason>
+→ /hold NVDA <your note>   ·   /deep NVDA   ·   /remove NVDA <your reason>
 ```
 
-No stance, no score, no recommendation. The alert's job is to route to primary evidence.
-Item codes are rendered with their plain-English meaning from `scout/glossary.py`.
-
-### 5.4 Engagement
-
-`last_prompted` (per ticker, in `ScoutState`) is tracked **separately from any decision**.
-An earlier draft stamped `last_reunderwrite` on delivery — asserting in the schema that a
-review happened when the data only recorded that a message was sent.
-
-If a ticker is prompted 3× with no `/hold`, `/deep`, or `/remove`, the digest notes once
-that alerts for it appear unread. This is the disengagement detector and the input to the
-promotion decision in §5.2.
+No stance, no score, no recommendation — the alert routes to primary evidence and stops.
+(The `<your note>` placeholders read as literal to a first-time user; the first alert and
+`_HELP` both note "type your reason after the command".)
 
 ## 6. Wiring
 
@@ -354,13 +401,41 @@ promotion decision in §5.2.
   called nowhere, and `funnel.py:32` already drops held tickers via `is_held` — so Scout
   will re-surface names you own the moment positions exist, burning FMP deep-screen slots
   from a budget of ~10/day. Latent today (`held` is `[]`), real immediately after. ~10 lines.
-- **`daily.py:run`** gains one failure-isolated monitor step after the veto sweep: read
-  positions → intersect with `veto_map` → drop seen accessions → emit section → firehose-log
-  → persist. Any exception is caught and noted; it must never crash an already-delivered run
-  (the `_record_session_picks` precedent).
-- **`bot.py`** gains four handlers; `_do_portfolio` swaps its loader.
-- **`portfolio.py`** — `summarize()` and the `_Portfolio` section are untouched. Only the
-  input path changes.
+
+- **`daily.py:run` — the monitor is THREE insertions, not one step.** `veto_map` is a live
+  local from `_negative_veto_sweep` (`daily.py:505`) through the end of `run()`, but "emit a
+  section" is not something `run()` does inline — a section renders inside `build_report`.
+  So:
+  1. **Compute the payload** just before the `build_report` call (`daily.py:581`): intersect
+     `positions.json` with `veto_map`, filter to the `items` subset, drop
+     `position_alerts_seen`. Also assemble the heartbeat (`count`, `last filing check`).
+  2. **Thread it through `build_report`** as a new `positions_monitor=` kwarg → `build_view_model`
+     → a new `ReportVM` field → a new `Section` (§below). The daily `build_report` passes no
+     `portfolio=`, so the `_Portfolio` section does not render on the digest — the monitor
+     needs its **own** section.
+  3. **Firehose-log + persist `position_alerts_seen`** *after* `deliver()`, beside
+     `_record_session_picks` (`daily.py:607`) — the "never crash an already-delivered run"
+     precedent. The whole monitor is failure-isolated: any exception is caught + noted.
+
+- **New digest section** (`scout/report/`): copy `_ValidationScoreboard` (`sections.py:644`)
+  — a display-only, byte-identical-when-absent section. Touches: `viewmodel.py` (`ReportVM`
+  field + `build_view_model` kwarg), `report/__init__.py` (`build_report` kwarg forward),
+  `sections.py` (one `Section` class + one `SECTIONS` entry, placed right after
+  `_MacroHeader` for "top"). `applies()` returns True on payload-presence (heartbeat).
+
+- **`bot.py`** gains the `/add`, `/thesis`, `/hold`, `/remove` handlers, updates `_HELP`, and
+  swaps `_do_portfolio`'s loader (`bot.py:288`) from `load_holdings(csv)` to the new store.
+
+- **`portfolio.py` — `summarize()` is NOT untouched; it crashes on `shares=None`.** Its guard
+  is on price, not shares (`value = h.shares * price if price else None`, `portfolio.py:126`),
+  and `Holding.shares` is typed `float` (`portfolio.py:21`). The CSV loader never produced a
+  null share count, so the new optional-shares store is the first producer — and `None *
+  price` raises `TypeError`, crashing the whole `/portfolio` render on the first shares-less
+  `/add`. **Fix:** widen `Holding.shares` to `Optional[float]` and guard `value = h.shares *
+  price if (price and h.shares is not None) else None`. Then a shares-less holding flows to
+  `value=None → weight=None`, excluded from exposure and listed in `unpriced` — exactly the
+  §4 behavior. The `_Portfolio` **section** is genuinely untouched (it never reads
+  `pos.shares`).
 
 ## 7. Config
 
@@ -386,6 +461,7 @@ still leading the price merge. Interactive `/screen` and `/deep` always keep the
 | Failure | Behavior |
 |---|---|
 | Store missing / unreadable / corrupt | Empty, loud warning, never raises. Bot stays up. |
+| Position added without shares | `summarize()` guards `shares=None` (§6) → no exposure, listed in `unpriced`. Must be tested — it is the first-ever null-shares path. |
 | Monitor step raises | Caught; manifest note; digest still delivers. |
 | Veto sweep stale or failed | Already degrades loudly with a stale note; the monitor **inherits that note** rather than silently under-alerting. |
 | Holding screens with no data | Surfaced via the existing `no_data` predicate; contributes no exposure. |
@@ -396,20 +472,26 @@ still leading the price merge. Interactive `/screen` and `/deep` always keep the
 
 ## 9. Testing
 
+Each has a close in-repo template to copy — this is pattern-matching, not invention:
+
 - **Store:** add / update / remove, optional shares and thesis, unknown-key preservation,
-  corrupt-file tolerance, atomic write.
+  corrupt-file tolerance, atomic write. (Back-compat idiom: `test_state.py:35`.)
+- **`shares=None` render:** a holding with null shares flows through `summarize` → `/portfolio`
+  render without a `TypeError` and is listed in `unpriced` (the §6 crash-fix regression guard).
 - **Dedup:** one accession surfaces exactly once across N consecutive sessions; the capped
-  ledger never evicts an unbounded-growth key in a way that re-arms a recent alert.
+  ledger never re-arms a recent alert on eviction. Template:
+  `test_scout_daily_veto.py:152` (fire-once across runs) + `:79` (cap round-trip).
 - **`KNOWN_BREACH_KINDS` + AST scan** — a frozen set plus a scan asserting no alert kind is
-  emitted outside it, and that each has a glossary entry. This replaces an earlier draft's
-  proposed "test that the non-goals list produces no alert," which was unenforceable: §2 is
-  a list of English concepts, and a future contributor adding a trigger would not fail it.
-  The repo already solved this exact problem with `KNOWN_GATES` / `KNOWN_FLAGS`.
-- **Chain consistency:** `entry_card.sources` matches the monitor's chain; a cross-chain
-  delta is refused.
+  emitted outside it, each with a glossary entry. Enforceable where an earlier draft's "test
+  that the §2 non-goals produce no alert" was not (§2 is English concepts). Template:
+  `test_scoring_names.py` (whole file — AST walk + vacuity floor) + the glossary-binding
+  `tests/scout/test_glossary.py:71`.
+- **Chain consistency:** `entry_card.sources` matches the monitor's chain.
 - **Quota:** the holdings screen resolves to the free chain when `include_fmp: false`.
-- **Isolation:** a raising monitor step still delivers the digest.
-- **Disabled-block invariance:** absent `monitor:` → discovery run byte-identical.
+- **Section isolation + disabled-block invariance:** all *other* digest sections are
+  byte-identical whether the monitor payload is present or absent, and absent `monitor:` →
+  discovery run byte-identical. Template: `test_scout_report_sections.py:82` (section
+  present-vs-absent) + `test_scout_daily_veto.py:297` (run-level disabled byte-identical).
 
 ## 10. Deferred, with reasons
 
@@ -421,6 +503,8 @@ Named so they do not creep back in.
 | **Hard-gate transitions** | Three of four are continuous-threshold crossings (`heavy_insider_selling` reads monthly-refreshed Finnhub MSPR), violating §2. And gate-diffing cannot distinguish "cleared" from "input was `None`" — every gate short-circuits on `None`, so one EDGAR timeout would clear a key and the next night's success would fire a false alert. Returns only when **abstention-aware** (using `ScoreCard.abstentions`) and **hysteretic** (re-fire only after N consecutive absent sessions and ≥90 days). |
 | **8-K items 2.05 / 2.06 / 3.01 / 5.01** | Matched by the sweep but **not alerted** in v1 (§5.1). 5.01 is often a favorable buyout; 2.05/2.06 are already-priced large-cap noise; 3.01 doesn't fire on a quality book. Widen the `items` config on engagement evidence. |
 | **`/positions` command** | Redundant with `/portfolio`; the bare list is either a dead view (no returns) or a disposition anchor (with returns). `/portfolio` is the single holdings view. |
+| **Engagement detector** (`last_prompted` + "ignored 3×") | Patronizing for a solo user who reads their own digest, and redundant with the firehose (the measurement seam). ScoutState carries only `position_alerts_seen`. |
+| **`entry_card` gates/flags/abstentions** | Captured only to feed a v2 gate-diff that is itself deferred (this table). v1 stores the minimal `composite`/`sources`/`as_of` seam. |
 | **Post-earnings re-underwrite** | Deferred pending engagement data. Likely v2 shape is **pull-only `/review <ticker>`** — thesis + delta-vs-entry + current card on demand, no push, no queue, no cadence machinery. |
 | **`dilution`** | Annual data, continuous threshold, slow quality drift — not a dated event. |
 | **Lots / FIFO / `/trim`** | Highest-complexity, lowest-frequency code in the design. Also produced an undefined return for multi-lot positions (no single entry date). |
