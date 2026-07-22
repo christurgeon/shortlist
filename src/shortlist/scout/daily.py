@@ -306,6 +306,55 @@ def _negative_veto_sweep(state: ScoutState, scout_cfg: dict,
         return _active(state.eightk_negative_map()), [note]
 
 
+def _build_monitor_payload(store_path, veto_map, *, items, state, session):
+    """Pure-ish: read the store, compute alerts (dedup vs state) + heartbeat. Never raises
+    into the caller — the caller wraps it, but keep it total anyway."""
+    from .. import positions as pos
+    from . import monitor as mon
+    store = pos.load_store(store_path)
+    positions = store.get("positions", {})
+    seen = set(state.position_alerts_seen())
+    alerts = mon.compute_alerts(positions, veto_map, items, seen)
+    return {"alerts": alerts, "heartbeat": mon.heartbeat(positions, session.isoformat())}
+
+
+def _build_monitor_payload_if_enabled(config, *, veto_map, state, session):
+    """Returns the payload dict, or None when the monitor block is absent/disabled (→ the
+    section never renders and the digest is byte-identical)."""
+    mon_cfg = ((config.get("portfolio") or {}).get("monitor") or {})
+    if not mon_cfg.get("enabled"):
+        return None
+    store_path = (config.get("portfolio") or {}).get("store", "positions.json")
+    items = tuple(mon_cfg.get("items", ("1.03", "2.04", "4.02")))
+    try:
+        return _build_monitor_payload(store_path, veto_map, items=items,
+                                      state=state, session=session)
+    except Exception as exc:  # noqa: BLE001 — never crash a delivered run
+        return {"alerts": [], "heartbeat": {"count": 0, "as_of": session.isoformat()},
+                "note": f"position monitor failed: {redact_secrets(str(exc))}"}
+
+
+def _persist_monitor(state, payload) -> None:
+    """Mark this run's alert keys seen (dedup). Idempotent; failure-isolated by the caller."""
+    if not payload:
+        return
+    keys = [a["key"] for a in payload.get("alerts", []) if a.get("key")]
+    if keys:
+        state.add_position_alerts(keys)
+
+
+def _feed_held(config, state) -> None:
+    """Populate ScoutState.held from the position store so discovery stops re-surfacing owned
+    names (funnel.py uses is_held). Failure-isolated. Reads positions.json, never writes it."""
+    try:
+        from .. import positions as pos
+        store_path = (config.get("portfolio") or {}).get("store", "positions.json")
+        tickers = list(pos.load_store(store_path).get("positions", {}).keys())
+        state.set_held(tickers)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _veto_notes(state: ScoutState, vetoed: list[Candidate], veto_map: dict) -> list[str]:
     """Named manifest notes for this run's vetoed candidates, deduped by
     (ticker, accession) via the ScoutState ledger — a vetoed name never enters
@@ -491,6 +540,9 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     cands = aggregate(emissions, weights_by_signal)
     after_dedup = len(cands)
 
+    if not demo:
+        _feed_held(config, state)
+
     kept = prefilter(
         cands,
         in_cooldown=lambda t: state.in_cooldown(t, on=session,
@@ -578,8 +630,13 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     prior_picks = (_build_scoreboard(state, session, picks_cfg)
                    if picks_cfg.get("enabled", True) else [])
     validation = _load_validation_digest(config, today=today)
+    monitor_payload = _build_monitor_payload_if_enabled(
+        config, veto_map=veto_map, state=state, session=session)
+    if monitor_payload and monitor_payload.get("note"):
+        manifest.notes.append(monitor_payload["note"])
     artifacts = build_report(cards, manifest, assessments=assessments, macro=macro,
-                             prior_picks=prior_picks, validation=validation)
+                             prior_picks=prior_picks, validation=validation,
+                             positions_monitor=monitor_payload)
     caption = _caption(manifest, cards, rep_cfg.get("caption_top_n", 3))
 
     notifier = TelegramNotifier()
@@ -606,6 +663,10 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # scoreboards can track them. Idempotent upsert; never blocks delivery.
     if picks_cfg.get("enabled", True):
         _record_session_picks(state, cards, chosen, session)
+    try:
+        _persist_monitor(state, monitor_payload)
+    except Exception as exc:  # noqa: BLE001 — persist must not crash a delivered run
+        print(f"scout: monitor persist failed: {redact_secrets(str(exc))}", file=sys.stderr)
     if result.configured and not result.all_ok:
         return 2
     return 0
