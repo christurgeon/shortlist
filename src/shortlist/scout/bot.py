@@ -151,11 +151,16 @@ def allowed_message(update: dict, chat_id: str | None) -> str | None:
 
 _HELP = (
     "Shortlist scout bot. Commands:\n"
-    "/screen NVDA, LMT, MSFT — score tickers (seconds), reply with the dashboard\n"
+    "/add NVDA 12 — track a holding (shares optional; paste several: /add NVDA, MSFT)\n"
+    "/thesis NVDA <why you own it> — record your thesis for a holding\n"
+    "/portfolio — view your holdings: exposure, sectors, per-name scores\n"
+    "/hold NVDA <note> — after an alert, log that you looked and held\n"
+    "/remove NVDA <reason> — stop tracking (recoverable)\n"
+    "/screen NVDA, LMT — score tickers (seconds), reply with the dashboard\n"
     "/deep TSLA — score + Claude 10-K research brief (slower)\n"
-    "/portfolio — screen your holdings (portfolio.csv): exposure + deterioration alerts\n"
-    "/explain 13d — what a term in these reports means (no arg: full list)\n"
-    "/help — this message"
+    "/explain 13d — what a term in these reports means\n"
+    "/help — this message\n"
+    "(type your note/reason right after the command)"
 )
 
 
@@ -208,6 +213,9 @@ class TelegramBot:
         self.max_deep = int(self.bot_cfg.get("max_deep", 3))
         self.sources = self.scout_cfg.get(
             "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar", "finra"])
+        pf_cfg = config.get("portfolio", {})
+        self.store_path = pf_cfg.get("store", "positions.json")
+        self.decisions_path = pf_cfg.get("decisions", "decisions.jsonl")
         self._screen = screen_fn
         self._report = report_fn
         self._research = research_fn
@@ -270,6 +278,14 @@ class TelegramBot:
             self._do_portfolio()
         elif cmd.name == "explain":
             self._do_explain(explain_term(cmd.raw))
+        elif cmd.name == "add":
+            self._do_add(cmd.raw)
+        elif cmd.name == "thesis":
+            self._do_thesis(cmd.raw)
+        elif cmd.name == "hold":
+            self._do_decision(cmd.raw, "hold")
+        elif cmd.name in ("remove", "sold"):
+            self._do_remove(cmd.raw)
         elif cmd.name in ("help", "start"):
             self.notifier.send_message(_HELP)
         else:
@@ -347,24 +363,104 @@ class TelegramBot:
         if fmt_note:
             self.notifier.send_message(fmt_note)
 
+    def _free_sources(self):
+        from .daily import digest_sources
+        base = self.scout_cfg.get("deep_screen_sources",
+                                  ["yahoo", "fmp", "finnhub", "edgar"])
+        return digest_sources(base, include_fmp=False)
+
+    def _do_add(self, raw: str) -> None:
+        from .. import positions as pos
+        tickers, shares, err = parse_add(raw)
+        if err:
+            self.notifier.send_message(err)
+            return
+        store = pos.load_store(self.store_path)
+        macro = self._fetch_macro(self.config)
+        entry_by_ticker = {}
+        # Screen (free chain) to capture entry_card + reply with the card.
+        cards = self._screen_fn()(tickers, self._free_sources(), self.config, macro=macro)
+        present, _missing = self._partition_present(cards)
+        session = datetime.now(timezone.utc).date().isoformat()
+        for c in present:
+            entry_by_ticker[c.ticker] = {
+                "composite": getattr(c, "composite", None),
+                "sources": list(self._free_sources()),
+                "as_of": session}
+        for t in tickers:
+            pos.add_or_update(store, t, shares=shares,
+                              entry_card=entry_by_ticker.get(t))
+        pos.save_store(self.store_path, store)
+        n = len(store["positions"])
+        nudge = ""
+        if len(tickers) == 1 and not store["positions"][tickers[0]].get("thesis"):
+            nudge = f"  ⚠ no thesis — /thesis {tickers[0]} <why you own it>"
+        self.notifier.send_message(
+            f"Tracking {', '.join(tickers)} — {n} holding(s). /portfolio to view.{nudge}")
+
+    def _do_thesis(self, raw: str) -> None:
+        from .. import positions as pos
+        ticker, text, err = parse_thesis(raw)
+        if err:
+            self.notifier.send_message(err)
+            return
+        store = pos.load_store(self.store_path)
+        if not pos.set_thesis(store, ticker, text):
+            self.notifier.send_message(f"{ticker} not tracked — /add {ticker} first.")
+            return
+        pos.save_store(self.store_path, store)
+        self.notifier.send_message(f"Thesis saved for {ticker}.")
+
+    def _do_decision(self, raw: str, action: str) -> None:
+        from .. import positions as pos
+        ticker, note, err = parse_ticker_note(raw)
+        if err:
+            self.notifier.send_message(err)
+            return
+        store = pos.load_store(self.store_path)
+        if ticker not in store.get("positions", {}):
+            self.notifier.send_message(f"{ticker} not tracked — /add {ticker} first.")
+            return
+        pos.append_decision(self.decisions_path,
+                            {"ts": datetime.now(timezone.utc).date().isoformat(),
+                             "ticker": ticker, "action": action, "note": note})
+        self.notifier.send_message(f"Logged: held {ticker}." if action == "hold"
+                                   else f"Logged {ticker}.")
+
+    def _do_remove(self, raw: str) -> None:
+        from .. import positions as pos
+        ticker, note, err = parse_ticker_note(raw)
+        if err:
+            self.notifier.send_message(err)
+            return
+        store = pos.load_store(self.store_path)
+        rec = pos.remove(store, ticker)
+        if rec is None:
+            self.notifier.send_message(f"{ticker} not tracked.")
+            return
+        pos.append_decision(self.decisions_path,
+                            {"ts": datetime.now(timezone.utc).date().isoformat(),
+                             "ticker": ticker, "action": "remove", "note": note,
+                             "position": rec})       # full record embedded => recoverable
+        pos.save_store(self.store_path, store)
+        self.notifier.send_message(f"Removed {ticker} (recoverable from the log).")
+
     def _do_portfolio(self) -> None:
         # lazy import: keep the always-on bot import path light
         from .. import portfolio as pf
-        pf_cfg = self.config.get("portfolio") or {}
-        path = pf_cfg.get("path", "portfolio.csv")
-        cap = int(pf_cfg.get("max_holdings", 50))
-        holdings, warnings = pf.load_holdings(path)
+        from .. import positions as pos
+        store = pos.load_store(self.store_path)
+        holdings = pos.holdings_view(store)
         if not holdings:
-            msg = ("No holdings found. Create portfolio.csv (ticker,shares) — "
-                   "copy portfolio.example.csv to portfolio.csv and edit it.")
-            if warnings:
-                msg += "\n" + "\n".join(warnings)
-            self.notifier.send_message(msg)
+            self.notifier.send_message(
+                "No holdings yet. Add one with /add NVDA (shares optional), "
+                "or paste several: /add NVDA, MSFT, LMT.")
             return
+        cap = int((self.config.get("portfolio") or {}).get("max_holdings", 50))
+        screened_holdings, dropped = holdings[:cap], [h.ticker for h in holdings[cap:]]
+        tickers = [h.ticker for h in screened_holdings]
         # NO silent truncation — dropping an owned name hides its alerts. Screen the
         # full list up to the safety cap; warn explicitly about any overflow.
-        screened_holdings, dropped_tickers = holdings[:cap], [h.ticker for h in holdings[cap:]]
-        tickers = [h.ticker for h in screened_holdings]
         self.notifier.send_chat_action("upload_photo")
         macro = self._fetch_macro(self.config)
         cards = self._screen_fn()(tickers, self.sources, self.config, macro=macro)
@@ -376,11 +472,9 @@ class TelegramBot:
         self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
                            caption=_caption(manifest, present),
                            session=manifest.session.isoformat())
-        if warnings:
-            self.notifier.send_message("⚠️ portfolio file:\n" + "\n".join(warnings))
-        if dropped_tickers:
+        if dropped:
             self.notifier.send_message(
-                f"⚠️ {len(dropped_tickers)} holdings NOT screened (cap {cap}): {', '.join(dropped_tickers)}. "
+                f"⚠️ {len(dropped)} holdings NOT screened (cap {cap}): {', '.join(dropped)}. "
                 "Alerts for these are INCOMPLETE — raise portfolio.max_holdings or warm the cache.")
 
     def _do_explain(self, term: str) -> None:
