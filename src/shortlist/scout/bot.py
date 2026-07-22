@@ -20,11 +20,12 @@ import httpx
 
 from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
-from ..validation import no_data, partition_format
+from ..validation import no_data, partition_format, valid_format
 from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
 from .models import RunManifest
 
-_KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain"}
+_KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain",
+          "add", "thesis", "hold", "remove", "sold"}
 _SPLIT = re.compile(r"[,\s]+")
 
 
@@ -59,6 +60,73 @@ def explain_term(raw: str) -> str:
     Command.tickers uppercases + dedups, so re-derive from raw)."""
     parts = raw.strip().split(maxsplit=1)
     return parts[1].strip() if len(parts) > 1 else ""
+
+
+def _strip_cmd(raw: str) -> str:
+    """Everything after the leading /command token (mirrors explain_term's split)."""
+    parts = raw.strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
+
+
+def parse_add(raw: str) -> tuple[list[str], float | None, str | None]:
+    """(tickers, shares, error). Comma anywhere => bulk bare tickers. Else ticker + optional
+    NUMERIC shares. A non-numeric second token is rejected (it is almost certainly a thesis
+    typed in the wrong command)."""
+    args = _strip_cmd(raw)
+    if not args:
+        return [], None, "Usage: /add NVDA [shares]  or  /add NVDA, MSFT, LMT"
+    if "," in args:
+        seen: list[str] = []
+        for tok in args.split(","):
+            t = tok.strip().upper()
+            if not t:
+                continue
+            if not valid_format(t):
+                return [], None, f"Invalid ticker: {t}. Use US symbols like NVDA, BRK.B."
+            if t not in seen:
+                seen.append(t)
+        if not seen:
+            return [], None, "Usage: /add NVDA, MSFT, LMT"
+        return seen, None, None
+    toks = args.split()
+    ticker = toks[0].upper()
+    if not valid_format(ticker):
+        return [], None, f"Invalid ticker: {ticker}. Use US symbols like NVDA, BRK.B."
+    if len(toks) == 1:
+        return [ticker], None, None
+    try:
+        shares = float(toks[1])
+    except ValueError:
+        return [], None, ("Usage: /add NVDA [shares]. Set a thesis separately with "
+                          "/thesis NVDA <why you own it>.")
+    return [ticker], shares, None
+
+
+def parse_thesis(raw: str) -> tuple[str | None, str | None, str | None]:
+    """(ticker, thesis_text, error). Ticker upper-cased; thesis prose keeps its case."""
+    args = _strip_cmd(raw)
+    parts = args.split(maxsplit=1)
+    if not parts:
+        return None, None, "Usage: /thesis NVDA <why you own it>"
+    ticker = parts[0].upper()
+    if not valid_format(ticker):
+        return None, None, f"Invalid ticker: {ticker}."
+    if len(parts) == 1:
+        return ticker, None, "Usage: /thesis NVDA <why you own it>"
+    return ticker, parts[1].strip(), None
+
+
+def parse_ticker_note(raw: str) -> tuple[str | None, str | None, str | None]:
+    """(ticker, note, error) for /hold and /remove. Note prose keeps its case."""
+    args = _strip_cmd(raw)
+    parts = args.split(maxsplit=1)
+    if not parts:
+        return None, None, "Usage: TICKER [reason]"
+    ticker = parts[0].upper()
+    if not valid_format(ticker):
+        return None, None, f"Invalid ticker: {ticker}."
+    note = parts[1].strip() if len(parts) > 1 else None
+    return ticker, note, None
 
 
 def allowed_message(update: dict, chat_id: str | None) -> str | None:
