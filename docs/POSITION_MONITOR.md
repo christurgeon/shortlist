@@ -19,7 +19,7 @@ review.
 
 ### What the evidence actually supports
 
-**One trigger, measured on this repo's own universe.** The negative-8-K item set
+**One trigger, measured on this repo's own universe.** The full negative-8-K item set
 {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01} was backfilled and evaluated as
 `edgar:8k_negative` (`TODO.md:468`):
 
@@ -41,6 +41,18 @@ non-measurable tail was no-price-series micro/OTC junk whose exclusion, if anyth
 The published event-study literature agrees on sign and is weaker on size: Item 4.02
 non-reliance shows CAR ≈ −0.9% at 1 day and −1.5% at 20 days over 2007–2023, decayed
 roughly 5× from 1990s samples.
+
+**But that cohort validated the set for the wrong side of the funnel, and v1 uses a
+subset (§5.1).** The measurement was a *veto over a micro-cap-skewed discovery cohort* —
+names one might buy. Held large/mid names are a different job, and item-by-item the set
+does not transfer cleanly: 5.01 (change of control) fires most often on an *acquisition*,
+frequently a premium buyout — a favorable outcome for a holder, not a negative; 2.05/2.06
+(restructuring/impairment) are routine on large caps, backward-looking, and usually already
+priced; 3.01 (delisting) is a micro-cap phenomenon that essentially never fires on a
+quality-screened book. So v1 alerts on only the three clean, unambiguous negatives —
+{1.03, 2.04, 4.02} — and the "same signal, opposite side of the funnel" reuse is
+deliberately partial. This is the single most important quality decision in the design: a
+silent monitor is trusted or discarded on its *first* alert, so the first one must be sharp.
 
 ### What the evidence does not support
 
@@ -171,7 +183,7 @@ on **the same chain the monitor uses** (§4), and `sources` is stored so any fut
 renderer can refuse a cross-chain comparison. `abstentions` is stored for the same reason —
 a v2 gate-diff must distinguish "gate cleared" from "input was `None`" (§10).
 
-### 3.3 Decision ledger
+### 3.3 Decision ledger — and why `/remove` is non-destructive
 
 `/hold` and `/remove` append one line to `decisions.jsonl` (gitignored, append-only):
 
@@ -185,15 +197,36 @@ Append-only JSONL, no structure to maintain, no reader in v1. It exists because 
 *"I looked and decided to hold"* — which an exits-only ledger would miss entirely. It also
 doubles as the engagement signal (§5.4).
 
+**`/remove` must not lose the thesis.** It is a Telegram command with no undo and no
+confirmation prompt, so a fat-finger deletes a position — and the thesis you wrote months
+ago is irreplaceable. Therefore `/remove` embeds the **entire** position record (thesis,
+`entry_card`, `added` date, shares) into its `decisions.jsonl` line before removing it from
+`positions.json`:
+
+```json
+{"ts": "2026-07-22", "ticker": "NVDA", "action": "remove", "note": "thesis broke",
+ "position": {"added": "2026-03-14", "shares": 12, "thesis": "…", "entry_card": {…}}}
+```
+
+The removal is then non-destructive — recoverable by hand from the ledger — which is why no
+confirmation prompt is needed. (No confirmation is a deliberate choice: a yes/no round-trip
+on every exit is its own friction, and the ledger makes it unnecessary.)
+
 ## 4. Commands
 
 | Command | Behavior |
 |---|---|
-| `/add NVDA` | Adds the position. Shares and thesis optional: `/add NVDA 12`, `/add NVDA 12 datacenter capex cycle`. On an existing ticker, **fills in or updates** shares/thesis without disturbing `added` or `entry_card`. Screens the name and replies with the card. |
-| `/remove NVDA [reason]` | Removes it; appends a `decisions.jsonl` line. Alias `/sold`. |
-| `/positions` | One line per holding: ticker · shares (or `—`) · `⚠ no thesis`. |
-| `/hold NVDA [note]` | Records that you looked and chose to hold. Appends to `decisions.jsonl`. |
-| `/portfolio` | **Unchanged** dashboard, rewired from `portfolio.csv` to this store. |
+| `/add NVDA` | Adds the position. Shares and thesis optional: `/add NVDA 12`, `/add NVDA 12 datacenter capex cycle`. **Bulk form:** `/add NVDA, MSFT, LMT` (comma-parsed, reusing `/screen`'s tokenizer) adds several bare tickers in one message — first-run setup is one paste off a broker app, not twelve messages. On an existing ticker, **fills in or updates** shares/thesis without disturbing `added` or `entry_card`. Screens and replies with the card (bulk form replies with a count + the current holdings). |
+| `/thesis NVDA <why you own it>` | Sets or replaces the thesis on an existing holding. The lazy path for the friction-minimized `/add`. |
+| `/hold NVDA [note]` | Records that you looked at an alert and chose to hold. Appends to `decisions.jsonl`. |
+| `/remove NVDA [reason]` | Closes the position **non-destructively** (§3.3). Alias `/sold`. |
+| `/portfolio` | The **single** holdings view — the existing screened dashboard (exposure, sector concentration, per-name scorecards), rewired from `portfolio.csv` to this store. |
+
+There is **no `/positions`.** An earlier draft had a bare ticker+shares list alongside
+`/portfolio`; two "show my holdings" commands is redundant, and the bare list is caught in a
+bind — with no returns it is a dead view you would ignore in favor of your broker, and with
+returns it becomes the purchase-price disposition anchor §2 bans. `/portfolio` is the one
+viewer; `/add` confirms the holding count on success.
 
 `/add` **screens on the free chain** (`digest_sources(include_fmp=False)`) — the same chain
 the monitor uses — so `entry_card` is comparable by construction. The reply notes that
@@ -203,22 +236,38 @@ Positions without `shares` are monitored for filings but **excluded from exposur
 sector math**, and named explicitly in the `/portfolio` output. This reuses `portfolio.py`'s
 existing `unpriced` / `no_data_tickers` convention — never silently drop a holding.
 
+**Thesis is optional but nudged, never required.** Requiring it at `/add` reintroduces the
+friction that left `portfolio.csv` unused; omitting it entirely produces alerts with no
+anchor (§5.3). So the nudge is asymmetric: `/add` accepts a bare ticker, and every
+`/portfolio` line and the `/add` reply carry `⚠ no thesis — /thesis NVDA <why>` until one is
+set. The thesis is captured lazily, when you have a reason to write it, not as an entry tax.
+
 New user-facing terms require `scout/glossary.py` entries (the AST-scan test enforces it).
 
 ## 5. The trigger
 
-### 5.1 One trigger
+### 5.1 One trigger, three items
 
-A **negative-item 8-K filed against a held ticker** — items {1.03, 2.04, 2.05, 2.06, 3.01,
-4.02, 5.01}.
+A **clean-negative 8-K filed against a held ticker** — items **{1.03 bankruptcy, 2.04 debt
+acceleration, 4.02 non-reliance/restatement}**.
 
-It is the only trigger because it is the only candidate that is simultaneously **discrete,
-dated, verifiable, free, and measured in-repo** (§1). `daily.py:_negative_veto_sweep`
+This is a **subset** of the seven-item set the veto sweep matches, chosen per §1: these three
+are unambiguously bad for an equity holder, rare, and high-signal. The other four the sweep
+sees are filtered out for the held-book job — 5.01 (change of control) is frequently a
+premium buyout and would fire ⚠ on *good* news; 2.05/2.06 are routine, already-priced
+large-cap noise; 3.01 (delisting) does not fire on a quality book. The monitor matches
+`meta.items` against the v1 subset and ignores the rest. A `positions_monitor.items` config
+key holds the subset so it can be widened later on engagement evidence, not guesswork.
+
+It is the only *trigger family* because it is the only candidate that is simultaneously
+**discrete, dated, verifiable, free, and measured in-repo** (§1). `daily.py:_negative_veto_sweep`
 already sweeps EFTS market-wide every day and returns a ticker-keyed map of
 `{last_date, items, adsh}`. The monitor reads that map. **Marginal cost: zero fetches.**
 
 The same data already *drops* discovery candidates pre-screen; here it *surfaces* a held
-name. Same signal, opposite side of the funnel.
+name. Same signal, opposite side of the funnel — but a **narrower** item set, because the
+sign of an item can differ by side (a pending control change is a reason not to *enter*, and
+often a reason to be pleased you *held*).
 
 **Dedup:** `8k:<accession>` recorded in `ScoutState.position_alerts_seen` via the existing
 `_append_capped` helper. A given filing surfaces exactly once, ever.
@@ -239,21 +288,42 @@ This bounds the alert rate at **one message per day by construction**, regardles
 fires or how wrong the rate estimate is. A structural cap is more robust than a
 `max_alerts_per_year` config that has to be tuned and enforced by a test.
 
-It also matches urgency to the trigger set: the volume drivers (2.05 restructuring costs,
-2.06 impairment) are routine and non-urgent, and nothing here is time-critical for a
-medium-to-long-term holder deciding whether a thesis broke.
+It also matches urgency to the trigger set: nothing in {1.03, 2.04, 4.02} is time-critical
+for a medium-to-long-term holder deciding whether a thesis broke — same-day versus
+next-digest is immaterial.
 
-**Promotion path:** if engagement data (§5.4) shows these get skimmed past, promote the
-severe subset (4.02, 1.03) to standalone messages *then*, on evidence. Starting quiet and
-promoting is recoverable; starting loud and getting muted is not.
+**A once-daily heartbeat rides the same section.** A silent monitor is indistinguishable
+from a broken one, so the digest carries a one-line footer even when nothing fired —
+`Monitoring N holdings · last filing check <date>`. It confirms the sweep is alive without
+being an interrupt, and it is nearly free since the digest already renders.
+
+**Promotion path:** the item set is deliberately narrow to start (§5.1). If engagement data
+(§5.4) shows you act on these, *widen* — add 2.05/2.06, or promote 4.02/1.03 to a standalone
+message — on evidence. Starting quiet and widening is recoverable; starting loud and getting
+muted is not.
 
 ### 5.3 Message
+
+With a thesis on the name — the thesis is the anchor that makes the alert a *decision*
+rather than free-floating anxiety:
 
 ```
 NVDA — 8-K item 4.02 filed 2026-07-19
 Non-reliance on previously issued financial statements
 https://www.sec.gov/Archives/edgar/data/…
 Your thesis: "Datacenter capex cycle has another two years"
+→ /hold NVDA <note>   ·   /deep NVDA   ·   /remove NVDA <reason>
+```
+
+Without one — the friction-minimized `/add NVDA` path — the alert **leads with the missing
+anchor** instead of showing an empty quote, turning the gap into a one-tap prompt at the
+moment it matters most:
+
+```
+NVDA — 8-K item 4.02 filed 2026-07-19
+Non-reliance on previously issued financial statements
+https://www.sec.gov/Archives/edgar/data/…
+⚠ No thesis on file — why do you own this? /thesis NVDA <reason>
 → /hold NVDA <note>   ·   /deep NVDA   ·   /remove NVDA <reason>
 ```
 
@@ -294,6 +364,7 @@ portfolio:
   monitor:
     enabled: true            # remove this block -> byte-identical pre-feature behavior
     include_fmp: false       # holdings screen on the free chain (quota; see below)
+    items: ["1.03", "2.04", "4.02"]   # v1 clean-negative subset (§5.1); widen on evidence
 ```
 
 **FMP quota is why `include_fmp` defaults false.** The harness makes ~13 FMP calls/ticker
@@ -340,6 +411,8 @@ Named so they do not creep back in.
 |---|---|
 | **Drawdown bands** | §2. Deleted outright, **not shipped disabled** — leaving the key is an invitation to enable the one feature most likely to prompt selling a bottom. |
 | **Hard-gate transitions** | Three of four are continuous-threshold crossings (`heavy_insider_selling` reads monthly-refreshed Finnhub MSPR), violating §2. And gate-diffing cannot distinguish "cleared" from "input was `None`" — every gate short-circuits on `None`, so one EDGAR timeout would clear a key and the next night's success would fire a false alert. Returns only when **abstention-aware** (using `ScoreCard.abstentions`) and **hysteretic** (re-fire only after N consecutive absent sessions and ≥90 days). |
+| **8-K items 2.05 / 2.06 / 3.01 / 5.01** | Matched by the sweep but **not alerted** in v1 (§5.1). 5.01 is often a favorable buyout; 2.05/2.06 are already-priced large-cap noise; 3.01 doesn't fire on a quality book. Widen the `items` config on engagement evidence. |
+| **`/positions` command** | Redundant with `/portfolio`; the bare list is either a dead view (no returns) or a disposition anchor (with returns). `/portfolio` is the single holdings view. |
 | **Post-earnings re-underwrite** | Deferred pending engagement data. Likely v2 shape is **pull-only `/review <ticker>`** — thesis + delta-vs-entry + current card on demand, no push, no queue, no cadence machinery. |
 | **`dilution`** | Annual data, continuous threshold, slow quality drift — not a dated event. |
 | **Lots / FIFO / `/trim`** | Highest-complexity, lowest-frequency code in the design. Also produced an undefined return for multi-lot positions (no single entry date). |
