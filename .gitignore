@@ -36,3 +36,7 @@ state/scout_state.json
 # Superpowers process artifacts (design specs + implementation plans) — kept local, not published
 /docs/superpowers/specs/
 /docs/superpowers/plans/
+
+# Position monitor (user-owned holdings + decision log)
+positions.json
+decisions.jsonl
