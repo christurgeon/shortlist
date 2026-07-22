@@ -34,8 +34,10 @@ def test_alert_renders_plain_english_and_ticker():
     vm = build_view_model([], _manifest(), assessments={}, positions_monitor=_pm([alert]))
     txt = render_text(vm, Detail.FULL)
     assert "NVDA" in txt and "relied on" in txt and "4.02" in txt
+    assert "browse-edgar" in txt and "CIK=NVDA" in txt and "type=8-K" in txt
     html = render_html_body(vm)
     assert "NVDA" in html
+    assert "browse-edgar" in html and "CIK=NVDA" in html and "type=8-K" in html
 
 
 def test_other_sections_byte_identical_when_payload_absent_vs_none():

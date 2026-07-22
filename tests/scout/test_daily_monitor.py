@@ -30,3 +30,19 @@ def test_persist_marks_alerts_seen(tmp_path):
     payload = {"alerts": [{"key": "8k:AAA"}, {"key": "8k:BBB"}], "heartbeat": {}}
     daily._persist_monitor(state, payload)
     assert set(state.position_alerts_seen()) == {"8k:AAA", "8k:BBB"}
+
+
+def test_build_monitor_payload_suppresses_already_seen_alert(tmp_path):
+    """M14: an alert already recorded in ScoutState (a prior run's `_persist_monitor`)
+    must be suppressed end-to-end through `_build_monitor_payload` — the seen->suppress
+    seam, pinned here rather than only at the pure `monitor.compute_alerts` layer."""
+    store = {"version": 1, "positions": {
+        "AAA": {"added": "2026-01-01", "shares": 10, "thesis": "t", "entry_card": None}}}
+    pos.save_store(tmp_path / "positions.json", store)
+    state = ScoutState(tmp_path / "state.json")
+    state.add_position_alerts(["8k:AAA"])
+    veto_map = {"AAA": {"items": ["4.02"], "adsh": "AAA", "last_date": "2026-07-19"}}
+    payload = daily._build_monitor_payload(
+        str(tmp_path / "positions.json"), veto_map,
+        items=("1.03", "2.04", "4.02"), state=state, session=date(2026, 7, 22))
+    assert payload["alerts"] == []

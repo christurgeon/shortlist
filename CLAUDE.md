@@ -134,9 +134,11 @@ no new scoring):
     once-daily heartbeat so a silent monitor reads as alive, not broken. **Two-store split
     ownership, no lock needed**: the bot is the sole writer of `positions.json`; the daily run
     only reads it and writes its own dedup state into `ScoutState` — never the reverse.
-    `include_fmp: false` screens holdings on the free chain (`yahoo`/`finnhub`/`edgar`) so the
-    monitor doesn't compete with discovery's FMP quota. Remove the `portfolio.monitor` block
-    for byte-identical pre-feature behavior.
+    the holdings screen is **hardcoded** to the free chain (`yahoo`/`finnhub`/`edgar` —
+    `bot.py:_free_sources` calls `digest_sources(base, include_fmp=False)`) so the monitor
+    doesn't compete with discovery's FMP quota; this is fixed v1 behavior, not a
+    `config.yaml` knob — the `monitor` block only has `enabled`/`items`. Remove the
+    `portfolio.monitor` block for byte-identical pre-feature behavior.
 
 ## Dev workflow (uv)
 

@@ -651,11 +651,20 @@ class _PositionMonitor:
         return isinstance(vm.positions_monitor, dict)
 
     @staticmethod
+    def _filing_url(ticker: str) -> str:
+        """EDGAR 8-K filings list for the ticker — a fetch-free, always-valid link. The
+        alert dict carries no CIK (the veto_map only has {last_date, items, adsh}), so this
+        ticker-keyed filings-list page substitutes for a per-accession deep link; the alert
+        already prints the item + filing date, so the reader can find the exact filing."""
+        return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={ticker}&type=8-K"
+
+    @staticmethod
     def _alert_lines(pm) -> list[str]:
         lines = []
         for a in pm.get("alerts", []):
             lines.append(f"⚠ {a['ticker']} — {a['meaning']}. "
                          f"8-K item {'+'.join(a['items'])}, filed {a['date']}")
+            lines.append(f"    filing: {_PositionMonitor._filing_url(a['ticker'])}")
             if a.get("thesis"):
                 lines.append(f"    your thesis: \"{a['thesis']}\"")
             else:
@@ -665,10 +674,20 @@ class _PositionMonitor:
     def render_html(self, vm, h) -> str:
         pm = vm.positions_monitor
         parts = []
-        alines = self._alert_lines(pm)
-        if alines:
-            items = "".join(h.tag("li", ln) for ln in alines)
-            parts.append(h.raw("ul", items))
+        alerts = pm.get("alerts", [])
+        if alerts:
+            items = []
+            for a in alerts:
+                text = (f"⚠ {a['ticker']} — {a['meaning']}. "
+                        f"8-K item {'+'.join(a['items'])}, filed {a['date']}")
+                link = h.tag("a", self._filing_url(a["ticker"]), href=self._filing_url(a["ticker"]))
+                if a.get("thesis"):
+                    thesis = f'your thesis: "{a["thesis"]}"'
+                else:
+                    thesis = f"⚠ no thesis — /thesis {a['ticker']} <why you own it>"
+                inner = (h.tag("div", text) + h.raw("div", link) + h.tag("div", thesis))
+                items.append(h.raw("li", inner))
+            parts.append(h.raw("ul", "".join(items)))
         hb = pm.get("heartbeat") or {}
         parts.append(h.tag("div", f"Monitoring {hb.get('count', 0)} holding(s) · "
                                   f"last filing check {hb.get('as_of', '—')}"))

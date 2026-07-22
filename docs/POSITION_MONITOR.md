@@ -446,15 +446,19 @@ portfolio:
   max_holdings: 50
   monitor:
     enabled: true            # remove this block -> byte-identical pre-feature behavior
-    include_fmp: false       # holdings screen on the free chain (quota; see below)
     items: ["1.03", "2.04", "4.02"]   # v1 clean-negative subset (§5.1); widen on evidence
+    # NOTE: no `include_fmp` key here. The holdings screen is hardcoded to the free chain
+    # (see below) — it is v1 fixed behavior, not a config knob.
 ```
 
-**FMP quota is why `include_fmp` defaults false.** The harness makes ~13 FMP calls/ticker
-against a 250/day free limit (≈19 tickers/day), and discovery already spends up to
-`scout.daily_x` = 10. Screening 12 holdings on the full chain would starve the funnel.
-Verified: `digest_sources(include_fmp=False)` yields `[yahoo, finnhub, edgar]` with yahoo
-still leading the price merge. Interactive `/screen` and `/deep` always keep the full chain.
+**FMP quota is why the holdings screen defaults to the free chain.** The harness makes ~13
+FMP calls/ticker against a 250/day free limit (≈19 tickers/day), and discovery already
+spends up to `scout.daily_x` = 10. Screening 12 holdings on the full chain would starve the
+funnel. `bot.py:_free_sources` calls `digest_sources(base, include_fmp=False)` **directly**
+— `include_fmp` is a hardcoded `False` argument at the call site, not a `config.yaml` key
+(v1: hardcoded, not a config key). Verified: `digest_sources(include_fmp=False)` yields
+`[yahoo, finnhub, edgar]` with yahoo still leading the price merge. Interactive `/screen`
+and `/deep` always keep the full chain.
 
 ## 8. Failure modes
 
@@ -487,7 +491,8 @@ Each has a close in-repo template to copy — this is pattern-matching, not inve
   `test_scoring_names.py` (whole file — AST walk + vacuity floor) + the glossary-binding
   `tests/scout/test_glossary.py:71`.
 - **Chain consistency:** `entry_card.sources` matches the monitor's chain.
-- **Quota:** the holdings screen resolves to the free chain when `include_fmp: false`.
+- **Quota:** the holdings screen resolves to the free chain (`include_fmp=False` is
+  hardcoded in v1, not a config key — see §7).
 - **Section isolation + disabled-block invariance:** all *other* digest sections are
   byte-identical whether the monitor payload is present or absent, and absent `monitor:` →
   discovery run byte-identical. Template: `test_scout_report_sections.py:82` (section

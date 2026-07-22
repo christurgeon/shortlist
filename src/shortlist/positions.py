@@ -14,8 +14,6 @@ from typing import Optional
 
 from .portfolio import Holding
 
-KNOWN_ACTIONS = frozenset({"hold", "remove"})
-
 
 def _today() -> date:                       # seam for tests
     return datetime.now(timezone.utc).date()
