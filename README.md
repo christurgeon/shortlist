@@ -286,7 +286,8 @@ systemd unit: [`deploy/shortlist-bot.service`](deploy/shortlist-bot.service) (se
 position with `/add NVDA 12` (shares optional; bulk `/add NVDA, MSFT, LMT`), optionally record
 `/thesis NVDA <why you own it>`, and drop one with `/remove NVDA <reason>` (non-destructive —
 alias `/sold`). `/hold NVDA <note>` logs that you saw an alert and chose to keep the
-position. All four append to a `decisions.jsonl` ledger (`config.yaml: portfolio.decisions`).
+position. `/hold` and `/remove` append to a `decisions.jsonl` ledger (`config.yaml:
+portfolio.decisions`); `/remove` embeds the full position record first, so it is recoverable.
 
 `/portfolio` then screens your tracked names and replies with the usual report plus a
 **Portfolio** section: position weights, sector concentration, and alerts on any holding
