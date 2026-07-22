@@ -1,6 +1,4 @@
 import json
-from pathlib import Path
-import pytest
 from shortlist.scout.bot import TelegramBot, parse_command
 
 

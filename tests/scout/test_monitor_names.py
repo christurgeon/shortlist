@@ -13,7 +13,7 @@ def test_emitted_breach_kinds_subset_of_declared():
     emitted = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Dict):
-            for k, v in zip(node.keys, node.values):
+            for k, v in zip(node.keys, node.values, strict=True):
                 if (isinstance(k, ast.Constant) and k.value == "kind"
                         and isinstance(v, ast.Constant) and isinstance(v.value, str)):
                     emitted.add(v.value)

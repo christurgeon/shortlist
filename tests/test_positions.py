@@ -1,7 +1,5 @@
 import json
 from datetime import date
-from pathlib import Path
-import pytest
 from shortlist import positions as pos
 from shortlist.portfolio import Holding
 
