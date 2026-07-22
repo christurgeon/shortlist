@@ -289,38 +289,36 @@ git commit -m "feat(positions): bot-owned positions.json store leaf"
 **Interfaces:**
 - Produces: `Holding.shares: Optional[float]`; `summarize()` tolerant of `shares=None` (holding → `unpriced`, no exposure).
 
-**Context:** `summarize()` at `portfolio.py:126` is `value = h.shares * price if price else None` — it guards on `price`, not `shares`. `Holding.shares` is typed `float`. The CSV loader never produced null shares, so the Task-1 store is the first producer; `None * price` raises `TypeError` and crashes the whole `/portfolio` render.
+**Context:** `summarize()` at `portfolio.py:125` is `value = h.shares * price if price else None` — it guards on `price`, not `shares`. `Holding.shares` is typed `float` (`portfolio.py:22`). The CSV loader never produced null shares, so the Task-1 store is the first producer; `None * price` raises `TypeError` and crashes the whole `/portfolio` render. `summarize` builds `unpriced = [p.ticker for p in positions if p.price is None and not p.no_data]` (`portfolio.py:147`) — meaning "no price data." We broaden it to `p.value is None` so a shares-less holding (valid price, no shares → `value=None`) is also surfaced there, honoring the spec's "named explicitly, reuses the unpriced convention." Backward-compatible: a price-missing card already yields `value=None`, so the existing price=None case (`test_portfolio.py:110`) is unaffected.
 
 - [ ] **Step 1: Write the failing test**
 
-```python
-# tests/test_portfolio.py — add
-from shortlist.portfolio import Holding, summarize
-from shortlist.providers import MockProvider   # existing offline StockMetrics factory
-# NOTE: match how test_portfolio.py already builds ScoreCards; if it uses a local
-# _card(ticker, price=...) helper, reuse that instead of MockProvider.
+The real helper in `tests/test_portfolio.py` is a class `_Card` (capital C, keyword-only args:
+`_Card(ticker, *, composite=50.0, price=100.0, mcap=1e9, ...)`), instantiated directly — NOT a
+pytest fixture. Use it directly:
 
-def test_summarize_tolerates_none_shares(_card):   # _card: existing fixture/helper in this file
-    # A holding with shares=None and a valid-price card must NOT crash; it is unpriced.
-    cards = [_card("NVDA", price=100.0), _card("MSFT", price=50.0)]
+```python
+# tests/test_portfolio.py — add (Holding, summarize, _Card are already in this file's scope)
+def test_summarize_tolerates_none_shares():
+    # A holding with shares=None and a valid-price card must NOT crash; it has no exposure
+    # and is surfaced in `unpriced` (excluded from weights, never silently dropped).
+    cards = [_Card("NVDA", price=100.0), _Card("MSFT", price=50.0)]
     holdings = [Holding("NVDA", 10), Holding("MSFT", None)]
     summary = summarize(holdings, cards)
-    assert "MSFT" in summary.unpriced          # excluded from exposure
-    assert summary.total_value == 1000.0       # only NVDA counted
+    assert summary.total_value == 1000.0       # only NVDA counted (10 × 100)
+    assert "MSFT" in summary.unpriced          # named explicitly, excluded from exposure
     msft = next(p for p in summary.positions if p.ticker == "MSFT")
     assert msft.value is None and msft.weight is None
 ```
-
-Note to implementer: open `tests/test_portfolio.py` first and reuse its existing ScoreCard-building helper (there is one — the file already tests `summarize`). Do not introduce a new card factory if one exists.
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_portfolio.py -k none_shares -q`
 Expected: FAIL with `TypeError: unsupported operand type(s) for *: 'NoneType' and 'float'`
 
-- [ ] **Step 3: Apply the two-line fix**
+- [ ] **Step 3: Apply the three-part fix**
 
-In `src/shortlist/portfolio.py`, change the `Holding` dataclass field:
+In `src/shortlist/portfolio.py`, change the `Holding` dataclass field (`portfolio.py:22`):
 
 ```python
 @dataclass(frozen=True)
@@ -329,10 +327,16 @@ class Holding:
     shares: Optional[float]
 ```
 
-And the value computation in `summarize()` (the line at ~126):
+The value computation in `summarize()` (the line at ~125):
 
 ```python
         value = h.shares * price if (price and h.shares is not None) else None
+```
+
+And broaden the `unpriced` definition (the line at ~147) so a shares-less holding is named:
+
+```python
+    unpriced = [p.ticker for p in positions if p.value is None and not p.no_data]
 ```
 
 (`Optional` is already imported in this file.)
@@ -346,8 +350,10 @@ Expected: PASS (all existing + the new case)
 
 ```bash
 git add src/shortlist/portfolio.py tests/test_portfolio.py
-git commit -m "fix(portfolio): summarize tolerates shares=None (optional-shares holdings)"
+git commit -m "fix(portfolio): summarize tolerates shares=None; surface unsized holdings in unpriced"
 ```
+
+- [ ] **Step 6 note:** confirm no regression in the existing `unpriced` test (`test_portfolio.py:110`, the `price=None` case) — the broadened definition is a superset, so it must still pass. `uv run pytest tests/test_portfolio.py -q` already covers it.
 
 ---
 
@@ -785,11 +791,19 @@ Rewire `_do_portfolio` (`bot.py:282`): replace the `load_holdings` + CSV empty-s
         cap = int((self.config.get("portfolio") or {}).get("max_holdings", 50))
         screened_holdings, dropped = holdings[:cap], [h.ticker for h in holdings[cap:]]
         tickers = [h.ticker for h in screened_holdings]
-        # ... (keep the rest of the existing method unchanged: send_chat_action,
-        #      macro, screen, summarize, report, deliver, dropped-warning)
+        # ... (keep the middle of the existing method: send_chat_action, macro, screen,
+        #      summarize, report, deliver, and the `dropped`-tickers warning)
 ```
 
-Reuse the existing `pf.summarize(...)` / report / deliver tail (it already imports `from .. import portfolio as pf` — keep that import for `summarize`). Remove the old `warnings` plumbing from `load_holdings` (the new store has no parse warnings).
+Two edits to the existing method body, precisely:
+1. Replace the opening (the `pf.load_holdings(path)` call + the `if not holdings:` CSV
+   empty-state block, `bot.py:288-291`) with the store-loading + new empty-state above.
+2. **Delete** the trailing `if warnings: self.notifier.send_message(...)` block
+   (`bot.py:311-312`) — `warnings` no longer exists (the store has no parse warnings), so
+   leaving it references an undefined name. Keep the `if dropped_tickers:` warning (rename
+   its local to `dropped` to match above, or keep the existing name — just stay consistent).
+
+Keep the existing `from .. import portfolio as pf` import (still used for `pf.summarize`).
 
 Ensure `_fetch_macro` is available (it is a static method at `bot.py:181`; call as `self._fetch_macro(self.config)`).
 
@@ -969,16 +983,20 @@ from shortlist.scout import monitor as mon
 
 
 def test_emitted_breach_kinds_subset_of_declared():
-    """Every string literal assigned to `kind=` inside compute_alerts must be declared in
-    KNOWN_BREACH_KINDS — so a new breach kind can't ship undocumented."""
+    """Every "kind" value in the dict literals compute_alerts builds must be declared in
+    KNOWN_BREACH_KINDS — so a new breach kind can't ship undocumented. compute_alerts emits
+    via a DICT LITERAL ({"kind": "8k_negative", ...}), so the scan walks ast.Dict nodes for
+    the value paired with the "kind" key (NOT ast.keyword, which is call syntax only)."""
     src = inspect.getsource(mon.compute_alerts)
     tree = ast.parse(src)
     emitted = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and node.arg == "kind" and \
-                isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-            emitted.add(node.value.value)
-    assert emitted, "AST scan found no kind= literals — scan is vacuous, fix it"
+        if isinstance(node, ast.Dict):
+            for k, v in zip(node.keys, node.values):
+                if (isinstance(k, ast.Constant) and k.value == "kind"
+                        and isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                    emitted.add(v.value)
+    assert emitted, "AST scan found no kind literal — scan is vacuous, fix it"
     assert emitted <= set(mon.KNOWN_BREACH_KINDS), emitted - set(mon.KNOWN_BREACH_KINDS)
 
 
@@ -1056,15 +1074,20 @@ def heartbeat(positions: dict, session_iso: str) -> dict:
 
 - [ ] **Step 4: Add glossary entry for the breach kind**
 
-In `src/shortlist/scout/glossary.py`, add one `Entry` to the `GLOSSARY` list (match the existing `Entry` fields — inspect a neighbor entry for the exact dataclass shape; it has `name`, `aliases`, `category`, and a body). Add an entry whose `name` is `"8k_negative"` with aliases covering the item codes, e.g.:
+In `src/shortlist/scout/glossary.py`, add one `Entry` to the `GLOSSARY` list. **The field is
+`text`, NOT `body`** — the real dataclass (`glossary.py:35`) is `Entry(name, category,
+aliases, text)`, and `GLOSSARY` is built at module import, so a wrong field name raises
+`TypeError` on import and takes down every glossary-dependent test. `category` must be one of
+`CATEGORIES` — use `"SEC filings"`. The aliases below were verified collision-free against
+`_BY_ALIAS`:
 
 ```python
     Entry(
         name="8k_negative",
+        category="SEC filings",
         aliases=("8-k negative", "negative 8-k", "clean-negative 8-k",
                  "8k item 1.03", "8k item 2.04", "8k item 4.02"),
-        category="SEC filings",
-        body=("A clean-negative 8-K is a current report announcing an unambiguously bad, "
+        text=("A clean-negative 8-K is a current report announcing an unambiguously bad, "
               "dated event: bankruptcy (item 1.03), a lender calling debt due early (2.04), "
               "or that past financial statements can no longer be relied on — a restatement "
               "(4.02). The position monitor surfaces one against a name you own as an "
@@ -1072,8 +1095,6 @@ In `src/shortlist/scout/glossary.py`, add one `Entry` to the `GLOSSARY` list (ma
               "and never a recommendation to sell."),
     ),
 ```
-
-Match the actual `Entry` constructor exactly (field names/order) — read `glossary.py:43` and a nearby entry first.
 
 - [ ] **Step 5: Run tests to verify pass**
 
@@ -1281,7 +1302,6 @@ git commit -m "feat(report): position-monitor digest section (alerts + heartbeat
 from datetime import date
 from shortlist.scout import daily
 from shortlist.scout.state import ScoutState
-from shortlist.scout import positions as _unused  # noqa  (import guard)
 from shortlist import positions as pos
 
 
@@ -1380,10 +1400,11 @@ def _feed_held(config, state) -> None:
         _feed_held(config, state)
 ```
 
-(b) Payload compute + thread — just before `build_report` (`daily.py:581`):
+(b) Payload compute + thread — just before `build_report` (`daily.py:581`). This point is
+already past the `demo` early-return (`daily.py:566-569`), so no `demo` guard is needed here:
 
 ```python
-    monitor_payload = None if demo else _build_monitor_payload_if_enabled(
+    monitor_payload = _build_monitor_payload_if_enabled(
         config, veto_map=veto_map, state=state, session=session)
     if monitor_payload and monitor_payload.get("note"):
         manifest.notes.append(monitor_payload["note"])
