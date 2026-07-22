@@ -640,6 +640,49 @@ class _PriorPicks:
                [f"  {self._line(p)}" for p in picks]
 
 
+# ---- position monitor: held-name clean-negative 8-K alerts + liveness heartbeat ----
+class _PositionMonitor:
+    """Held-name clean-negative 8-K alerts + a liveness heartbeat (docs/POSITION_MONITOR.md
+    §5). Display-only; byte-identical when vm.positions_monitor is None. applies() keys on
+    payload PRESENCE so the heartbeat renders on quiet days."""
+    id, title = "positions", "Holdings watch"
+
+    def applies(self, vm) -> bool:
+        return isinstance(vm.positions_monitor, dict)
+
+    @staticmethod
+    def _alert_lines(pm) -> list[str]:
+        lines = []
+        for a in pm.get("alerts", []):
+            lines.append(f"⚠ {a['ticker']} — {a['meaning']}. "
+                         f"8-K item {'+'.join(a['items'])}, filed {a['date']}")
+            if a.get("thesis"):
+                lines.append(f"    your thesis: \"{a['thesis']}\"")
+            else:
+                lines.append(f"    ⚠ no thesis — /thesis {a['ticker']} <why you own it>")
+        return lines
+
+    def render_html(self, vm, h) -> str:
+        pm = vm.positions_monitor
+        parts = []
+        alines = self._alert_lines(pm)
+        if alines:
+            items = "".join(h.tag("li", ln) for ln in alines)
+            parts.append(h.raw("ul", items))
+        hb = pm.get("heartbeat") or {}
+        parts.append(h.tag("div", f"Monitoring {hb.get('count', 0)} holding(s) · "
+                                  f"last filing check {hb.get('as_of', '—')}"))
+        return "".join(parts)
+
+    def render_text(self, vm, detail) -> list[str]:
+        pm = vm.positions_monitor
+        out = list(self._alert_lines(pm))
+        hb = pm.get("heartbeat") or {}
+        out.append(f"Monitoring {hb.get('count', 0)} holding(s) · "
+                   f"last filing check {hb.get('as_of', '—')}")
+        return out
+
+
 # ---- signal-validation verdicts (display-only; shortlist-scout validate + digest wiring) ----
 class _ValidationScoreboard:
     """Display-only per-signal KILL/HOLD/INSUFFICIENT verdicts, read (with NO network at
@@ -727,9 +770,9 @@ class _ValidationScoreboard:
         return lines
 
 
-SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
-                            _DeepBlock(), _PriorPicks(), _ValidationScoreboard(), _Portfolio(),
-                            _Glossary(), _Footer()]
+SECTIONS: list[Section] = [_MacroHeader(), _PositionMonitor(), _Leaderboard(), _Fundamentals(),
+                            _Research(), _DeepBlock(), _PriorPicks(), _ValidationScoreboard(),
+                            _Portfolio(), _Glossary(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:

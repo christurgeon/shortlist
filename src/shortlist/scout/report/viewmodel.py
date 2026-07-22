@@ -120,6 +120,7 @@ class ReportVM:
                                        # (scout.validate.latest_max_age_days) -- None here means
                                        # absent/stale/malformed, and the display-only scoreboard
                                        # section is omitted (byte-identical report).
+    positions_monitor: "dict | None" = None   # {"alerts": [...], "heartbeat": {...}} or None
 
 
 def _claim(x) -> str:
@@ -218,7 +219,7 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
 
 def build_view_model(cards, manifest: RunManifest, *,
                      assessments: dict[str, dict], macro=None, portfolio=None,
-                     prior_picks=None, validation=None) -> ReportVM:
+                     prior_picks=None, validation=None, positions_monitor=None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
     leaders = [_leader_vm(c, assessments) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
@@ -237,4 +238,5 @@ def build_view_model(cards, manifest: RunManifest, *,
         portfolio=portfolio,
         deep_block=deep_block,
         prior_picks=list(prior_picks or []),
-        validation=validation)
+        validation=validation,
+        positions_monitor=positions_monitor)
