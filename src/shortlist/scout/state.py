@@ -152,6 +152,17 @@ class ScoutState:
         scan window it guards; mirrors add_eightk_accessions)."""
         self._append_capped("buyback_seen", accessions, cap)
 
+    # --- position monitor: capped rolling alert-dedup ledger (8k:<accession> keys) ---
+    def position_alerts_seen(self) -> list[str]:
+        """Alert keys (8k:<accession>) already surfaced for held names. Absent key (old
+        state files) reads as [] — back-compatible, no migration."""
+        return list(self._data.get("position_alerts_seen", []))
+
+    def add_position_alerts(self, keys: list[str], cap: int = 500) -> None:
+        """Append newly-surfaced alert keys. Cap 500 ≫ the 30-day held-book negative-8-K
+        inflow (the veto map is 30-day-pruned), so eviction can never re-arm a live alert."""
+        self._append_capped("position_alerts_seen", keys, cap)
+
     # --- 8-K negative-item veto: map + swept-through cursor + note ledger + log set ---
     def eightk_negative_map(self) -> dict[str, dict]:
         """UPPER ticker -> {"last_date","items","adsh"} for names with a fresh negative-item
