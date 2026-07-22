@@ -101,8 +101,9 @@ being wrong is cheap.
 The following **must never produce an alert.** This list is enforced by
 `KNOWN_BREACH_KINDS` + an AST scan (§9), not by convention.
 
-**No price-derived trigger of any kind** — no drawdown-from-entry, no trailing stop, no
-52-week low, no relative strength, no moving-average cross. Two independent reasons:
+**No price-derived _alert_, ever** — no drawdown-from-entry, no trailing stop, no
+52-week low, no relative strength, no moving-average cross may ever *push* a message or
+interrupt you. Two independent reasons:
 
 - Price-from-entry is a **purchase-price anchor** — investor-specific, carrying zero
   information about the business, and the canonical disposition-effect reference point
@@ -118,6 +119,13 @@ band in the same week. The information content of ten simultaneous alerts is "th
 went down," which the user already knows — and it would arrive at the moment judgment is
 most impaired. `CLAUDE.md` already warns that drawdown "peaks at bottoms and can be
 anti-predictive at turning points."
+
+**The door is left open for pulled price _context_.** The ban is on price *pushing* — an
+alert or interrupt. It does **not** forbid a future pull-only surface (a v2 `/review NVDA`)
+from showing a price move as passive context the user chose to look at, which carries none
+of the salience-manufacturing harm. The distinction is push vs. pull, and it is the whole
+principle: the system never uses price to *decide to contact you*. v1 builds no price
+surface at all; this paragraph exists only so the doctrine doesn't foreclose one.
 
 **No continuous-threshold crossing.** No composite drift, no per-axis decay, no valuation
 change, and **no hard-gate transitions in v1** (see §10 for why they were cut and what they
