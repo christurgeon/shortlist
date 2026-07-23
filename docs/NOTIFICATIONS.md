@@ -219,8 +219,10 @@ opt-in) daily push. Design spec: `docs/superpowers/specs/2026-06-06-scout-telegr
   errors are caught and replied as a `redact_secrets`-filtered message, transport errors back
   off, and a `409 Conflict` (a second poller) alerts once then backs off.
 - **Commands.** `/screen <tickers>` → the same PNG + HTML report this doc describes;
-  `/deep <ticker>` → adds the Claude brief; `/help`. Soft per-request caps live in
-  `config.yaml: scout.bot` (`max_screen` / `max_deep` / `poll_timeout_s`).
+  `/deep <ticker>` → adds the Claude brief; `/help`. Position-monitor commands (`/add`,
+  `/thesis`, `/hold`, `/remove`, `/portfolio`) drive the bot-owned `positions.json` store and
+  the daily digest's held-name 8-K alerts — see `docs/POSITION_MONITOR.md`. Soft per-request
+  caps live in `config.yaml: scout.bot` (`max_screen` / `max_deep` / `poll_timeout_s`).
 - **Allowlist.** The bot answers **only** `TELEGRAM_CHAT_ID` (private text messages); every other
   sender / chat type / edited message is silently ignored — no reply, so it isn't an oracle for
   token-guessers. There is no quota guard by design: only the operator can reach the bot, and

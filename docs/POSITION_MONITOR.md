@@ -1,6 +1,8 @@
 # Position Monitor — design (v1)
 
-**Status:** spec, not yet implemented. Date: 2026-07-21.
+**Status:** implemented and shipped (PR #146, 2026-07-22) — deployed to `/opt/shortlist`.
+Spec dated 2026-07-21; this document remains the design authority. v2 items in §10 are
+still deferred.
 
 Tells you when something material and verifiable is **filed against a name you own**. It is
 a filings watch, not a selling system.
