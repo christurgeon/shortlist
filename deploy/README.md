@@ -212,8 +212,17 @@ The operator drives screening by chatting:
 |---------|--------------|
 | `/screen NVDA, LMT, MSFT` | Fast scores + gates report; same PNG dashboard + HTML deep-dive the daily push sends |
 | `/deep TSLA` | Same as `/screen` but also runs the Claude 10-K research brief (slower) |
-| `/portfolio` | Re-screens your holdings from a gitignored `portfolio.csv` (`ticker,shares`, in the bot's working dir); adds a Portfolio section with exposure, sector concentration, and deterioration alerts. Cap: `config.yaml: portfolio.max_holdings` |
+| `/add NVDA 12` | Track a holding in the bot-owned `positions.json` store (shares optional; bulk `/add NVDA, MSFT, LMT`) |
+| `/thesis NVDA <why you own it>` | Record why you hold a tracked name (the only command taking free-text prose) |
+| `/hold NVDA <note>` | After an alert, log that you looked and chose to keep the position (`decisions.jsonl`) |
+| `/remove NVDA <reason>` | Stop tracking a holding (non-destructive — embeds the full record first; alias `/sold`) |
+| `/portfolio` | Re-screens your tracked holdings from `positions.json`; adds a Portfolio section with exposure, sector concentration, and deterioration alerts. Cap: `config.yaml: portfolio.max_holdings` |
 | `/help` | Lists available commands |
+
+The daily digest also carries a **position-monitor** section: a held ticker hit by a fresh
+clean-negative 8-K (items 1.03 / 2.04 / 4.02) surfaces once with a link to the SEC filing,
+plus a "Monitoring N holdings" heartbeat. Filings watch, not a selling system — no stance.
+Toggle via `config.yaml: portfolio.monitor` (design: `docs/POSITION_MONITOR.md`).
 
 > **This unit is NOT auto-installed.** Copy it manually after reviewing the paths
 > for your install location.
