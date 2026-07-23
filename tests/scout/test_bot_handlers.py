@@ -303,20 +303,32 @@ def test_deep_all_no_data_skips_research_and_report():
 
 
 # --- /portfolio tests ---
+# NOTE: /portfolio was rewired in Task 4 (Position Monitor v1) from reading
+# portfolio.csv to reading the bot-owned positions.json store. These tests were
+# updated in lockstep (seed via shortlist.positions instead of writing CSV text)
+# so they keep exercising the same behavior (happy path / over-cap / all-no-data)
+# against the new store-backed implementation.
 
-def _bot_pf(tmp_path, csv_text=None, **kw):
+def _bot_pf(tmp_path, holdings=None, **kw):
     cfg = {"scout": {"bot": {"max_screen": 2, "max_deep": 1},
                      "deep_screen_sources": ["mock"]},
-           "portfolio": {"path": str(tmp_path / "portfolio.csv"), "max_holdings": 2}}
-    if csv_text is not None:
-        (tmp_path / "portfolio.csv").write_text(csv_text)
+           "portfolio": {"store": str(tmp_path / "positions.json"),
+                        "decisions": str(tmp_path / "decisions.jsonl"),
+                        "max_holdings": 2}}
+    if holdings is not None:
+        from shortlist import positions as pos
+        store_path = tmp_path / "positions.json"
+        store = pos.load_store(store_path)
+        for ticker, shares in holdings:
+            pos.add_or_update(store, ticker, shares=shares)
+        pos.save_store(store_path, store)
     return TelegramBot(FakeNotifier(), cfg, **kw)
 
 
-def test_portfolio_missing_file_replies_with_setup_hint(tmp_path):
-    bot = _bot_pf(tmp_path)                       # no file written
+def test_portfolio_no_holdings_replies_add_hint(tmp_path):
+    bot = _bot_pf(tmp_path)                       # no positions written
     bot._handle(Command("portfolio", (), "/portfolio"))
-    assert any("portfolio.csv" in m for m in bot.notifier.messages)
+    assert any("/add" in m for m in bot.notifier.messages)
 
 
 def test_portfolio_happy_path_screens_and_delivers(tmp_path):
@@ -330,7 +342,7 @@ def test_portfolio_happy_path_screens_and_delivers(tmp_path):
     def deliver_fn(notifier, *, png, html, text, caption, session):
         calls["delivered"] = True
         return None
-    bot = _bot_pf(tmp_path, "AAPL,40\nLMT,15\n",
+    bot = _bot_pf(tmp_path, [("AAPL", 40), ("LMT", 15)],
                   screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
     bot._handle(Command("portfolio", (), "/portfolio"))
     assert calls["tickers"] == ["AAPL", "LMT"]
@@ -346,7 +358,7 @@ def test_portfolio_over_cap_warns_incomplete(tmp_path):
         return type("A", (), {"png": b"P", "html": "<h>", "text": "t"})()
     def deliver_fn(notifier, *, png, html, text, caption, session):
         return None
-    bot = _bot_pf(tmp_path, "AAPL,1\nLMT,1\nMSFT,1\n",   # 3 > max_holdings=2
+    bot = _bot_pf(tmp_path, [("AAPL", 1), ("LMT", 1), ("MSFT", 1)],   # 3 > max_holdings=2
                   screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
     bot._handle(Command("portfolio", (), "/portfolio"))
     warn = " ".join(bot.notifier.messages)
@@ -365,7 +377,7 @@ def test_portfolio_all_no_data_still_delivers(tmp_path):
     def deliver_fn(notifier, *, png, html, text, caption, session):
         calls["delivered"] = True
         return None
-    bot = _bot_pf(tmp_path, "AAPL,1\nLMT,1\n",
+    bot = _bot_pf(tmp_path, [("AAPL", 1), ("LMT", 1)],
                   screen_fn=screen_fn, report_fn=report_fn, deliver_fn=deliver_fn)
     bot._handle(Command("portfolio", (), "/portfolio"))
     assert calls["delivered"] is True

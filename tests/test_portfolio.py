@@ -157,6 +157,18 @@ def test_all_unpriced_total_value_none():
     assert s.weighted_composite is None
 
 
+def test_summarize_tolerates_none_shares():
+    # A holding with shares=None and a valid-price card must NOT crash; it has no exposure
+    # and is surfaced in `unpriced` (excluded from weights, never silently dropped).
+    cards = [_Card("NVDA", price=100.0), _Card("MSFT", price=50.0)]
+    holdings = [Holding("NVDA", 10), Holding("MSFT", None)]
+    summary = summarize(holdings, cards)
+    assert summary.total_value == 1000.0       # only NVDA counted (10 × 100)
+    assert "MSFT" in summary.unpriced          # named explicitly, excluded from exposure
+    msft = next(p for p in summary.positions if p.ticker == "MSFT")
+    assert msft.value is None and msft.weight is None
+
+
 def test_short_position_is_net_exposure():
     # Net-exposure convention: long-heavy book -> weight > 100%, short -> negative weight,
     # priced weights still sum to 1.0. Deliberate, not a bug.

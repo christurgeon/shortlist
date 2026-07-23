@@ -691,5 +691,10 @@ macro:
 
 # --- portfolio-awareness (bot /portfolio) ---
 portfolio:
-  path: portfolio.csv      # gitignored holdings file (ticker,shares); relative to cwd
+  path: portfolio.csv      # legacy CSV — no longer read (superseded by the store)
+  store: positions.json    # bot-owned source of truth (gitignored); atomic writes
+  decisions: decisions.jsonl   # append-only decision ledger (gitignored)
   max_holdings: 50         # safety cap; over this, screen the cap + WARN (never silent-drop)
+  monitor:
+    enabled: true          # remove this block -> daily run byte-identical (no monitor section)
+    items: ["1.03", "2.04", "4.02"]   # v1 clean-negative subset (§5.1); widen on evidence

@@ -267,7 +267,11 @@ uv run shortlist-bot           # starts the long-poll loop (Ctrl-C to stop)
 |---------|-------|
 | `/screen nvda, lmt, msft` | Ranked dashboard (PNG chart + HTML deep-dive), seconds. Comma/space-separated, case-insensitive. |
 | `/deep tsla` | Same, plus the Claude 10-K research brief (slower — opt-in). |
-| `/portfolio` | Re-screens your own holdings from a gitignored `portfolio.csv` (`ticker,shares`): exposure weights, sector concentration, and per-holding deterioration alerts. No arguments. |
+| `/add NVDA 12` | Track a holding (shares optional; paste several: `/add NVDA, MSFT, LMT`). |
+| `/thesis NVDA <why you own it>` | Record why you own a tracked holding (the only command taking free-text prose). |
+| `/hold NVDA <note>` | Log that you saw an alert and chose to keep the position. |
+| `/remove NVDA <reason>` | Stop tracking a holding (non-destructive; alias `/sold`). |
+| `/portfolio` | Re-screens your own holdings from the bot-owned `positions.json` store: exposure weights, sector concentration, and per-holding deterioration alerts. No arguments. |
 | `/help` | Command list. |
 
 It reuses the exact scorer and report pipeline as the daily push. Soft per-request caps
@@ -277,22 +281,25 @@ sending coexist, only **two concurrent pollers** conflict (run one instance). Al
 systemd unit: [`deploy/shortlist-bot.service`](deploy/shortlist-bot.service) (see
 [`deploy/README.md`](deploy/README.md)).
 
-**Holdings (`/portfolio`).** Copy `portfolio.example.csv` to `portfolio.csv` (gitignored;
-resolved relative to the bot's working directory — `config.yaml: portfolio.path`) and list
-your positions, one `ticker,shares` per line:
+**Holdings (`/portfolio`).** Positions live in a bot-owned `positions.json` store
+(gitignored, atomic writes — `config.yaml: portfolio.store`), not a hand-edited CSV. Track a
+position with `/add NVDA 12` (shares optional; bulk `/add NVDA, MSFT, LMT`), optionally record
+`/thesis NVDA <why you own it>`, and drop one with `/remove NVDA <reason>` (non-destructive —
+alias `/sold`). `/hold NVDA <note>` logs that you saw an alert and chose to keep the
+position. `/hold` and `/remove` append to a `decisions.jsonl` ledger (`config.yaml:
+portfolio.decisions`); `/remove` embeds the full position record first, so it is recoverable.
 
-```csv
-ticker,shares
-AAPL,40
-LMT,15
-```
-
-`/portfolio` then screens those names and replies with the usual report plus a **Portfolio**
-section: position weights, sector concentration, and alerts on any holding that trips a gate,
-fires a flag, isn't scored, or comes back as an unknown ticker. It's a hand-maintained file —
-no brokerage sync, no cost basis. A portfolio larger than `portfolio.max_holdings` (default
-50) is screened up to the cap with an explicit "alerts incomplete" warning naming the
+`/portfolio` then screens your tracked names and replies with the usual report plus a
+**Portfolio** section: position weights, sector concentration, and alerts on any holding
+that trips a gate, fires a flag, isn't scored, or comes back as an unknown ticker. No
+brokerage sync, no cost basis. A portfolio larger than `portfolio.max_holdings` (default 50)
+is screened up to the cap with an explicit "alerts incomplete" warning naming the
 un-screened tickers — never a silent drop.
+
+The daily digest also carries a **Holdings watch** section: a held ticker hit by a fresh
+clean-negative 8-K (bankruptcy, debt acceleration, or a coming restatement) surfaces once,
+plain-English first, with a link to the filer's EDGAR 8-K list — a filings watch, not a
+selling system (see [`docs/POSITION_MONITOR.md`](docs/POSITION_MONITOR.md)).
 
 ### Telegram delivery setup
 

@@ -19,7 +19,7 @@ from .validation import no_data as _no_data
 @dataclass(frozen=True)
 class Holding:
     ticker: str
-    shares: float
+    shares: Optional[float]
 
 
 def load_holdings(path) -> tuple[list[Holding], list[str]]:
@@ -122,7 +122,7 @@ def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSumma
             m = getattr(card, "metrics", None)
             p = getattr(m, "price", None) if m is not None else None
             price = p if p else None          # 0/None price -> unpriced: excluded from total_value & weights, listed in `unpriced`
-        value = h.shares * price if price else None
+        value = h.shares * price if (price and h.shares is not None) else None
         if value is not None:
             total += value
         raw.append({"h": h, "card": card, "nd": nd, "price": price, "value": value})
@@ -144,7 +144,7 @@ def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSumma
     positions.sort(key=lambda p: (p.weight is not None, p.weight or 0.0), reverse=True)
     sector_weights = sorted(sector_acc.items(), key=lambda kv: kv[1], reverse=True)
     alerts = [p for p in positions if _is_alert(p.card, p.no_data)]
-    unpriced = [p.ticker for p in positions if p.price is None and not p.no_data]
+    unpriced = [p.ticker for p in positions if p.value is None and not p.no_data]
     no_data_tickers = [p.ticker for p in positions if p.no_data]
     priced_count = sum(1 for p in positions if p.weight is not None)
     weighted_composite = wcomp if total_value else None

@@ -101,3 +101,27 @@ def test_malformed_yahoo_blocked_until_reads_as_not_blocked(tmp_path):
     path.write_text('{"screened": {}, "runs": [], "held": [], "picks": {},'
                     ' "yahoo_blocked_until": 20260605}')
     assert ScoutState(path).yahoo_blocked_on(date(2026, 6, 5)) is False
+
+
+def test_position_alerts_seen_roundtrip(tmp_path):
+    from shortlist.scout.state import ScoutState
+    s = ScoutState(tmp_path / "state.json")
+    assert s.position_alerts_seen() == []
+    s.add_position_alerts(["8k:0001-1", "8k:0001-2"])
+    assert s.position_alerts_seen() == ["8k:0001-1", "8k:0001-2"]
+    s.add_position_alerts(["8k:0001-2", "8k:0001-3"])   # dedup
+    assert s.position_alerts_seen() == ["8k:0001-1", "8k:0001-2", "8k:0001-3"]
+
+
+def test_position_alerts_absent_key_back_compat(tmp_path):
+    from shortlist.scout.state import ScoutState
+    (tmp_path / "state.json").write_text('{"held": []}')   # old file, no key
+    s = ScoutState(tmp_path / "state.json")
+    assert s.position_alerts_seen() == []
+
+
+def test_position_alerts_cap_evicts_oldest(tmp_path):
+    from shortlist.scout.state import ScoutState
+    s = ScoutState(tmp_path / "state.json")
+    s.add_position_alerts([f"8k:{i}" for i in range(5)], cap=3)
+    assert s.position_alerts_seen() == ["8k:2", "8k:3", "8k:4"]

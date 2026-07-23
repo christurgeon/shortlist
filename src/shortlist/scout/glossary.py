@@ -105,6 +105,18 @@ GLOSSARY: list[Entry] = [
           "for these names are often thinner in US data feeds. Here: /deep "
           "briefs are 10-K-only, so foreign issuers get an ADR-aware skip "
           "rather than a wrong-document brief."),
+    Entry(
+        name="8k_negative",
+        category="SEC filings",
+        aliases=("8-k negative", "negative 8-k", "clean-negative 8-k",
+                 "8k item 1.03", "8k item 2.04", "8k item 4.02"),
+        text=("A clean-negative 8-K is a current report announcing an unambiguously bad, "
+              "dated event: bankruptcy (item 1.03), a lender calling debt due early (2.04), "
+              "or that past financial statements can no longer be relied on — a restatement "
+              "(4.02). The position monitor surfaces one against a name you own as an "
+              "attention flag routed to the SEC filing; it is screening triage, not advice, "
+              "and never a recommendation to sell."),
+    ),
     # -------------------------------------------------------------- Sub-scores
     Entry("quality", "Sub-scores", ("quality score",),
           "0–100: how good the business engine is — margins, returns on "

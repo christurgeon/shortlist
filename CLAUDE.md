@@ -117,6 +117,28 @@ no new scoring):
     `getUpdates` pollers 409). The daily push is **ON** (`scout.daily_push.enabled: true`,
     armed 2026-06-29, lean digest mode); the bot remains the interactive driver. Caps/timeout in
     `config.yaml: scout.bot`; systemd unit `deploy/shortlist-bot.service`.
+  - **Position monitor** (`portfolio.monitor`, **ON**) rewires `/portfolio` off the legacy
+    `portfolio.csv` onto a **bot-owned** `positions.json` store (gitignored, atomic writes) —
+    a filings watch, not a selling system (no stance, no price-derived trigger; design +
+    rejected-evidence trail in `docs/POSITION_MONITOR.md`). New bot commands: `/add TICKER
+    [shares]` (shares optional; bulk `/add NVDA, MSFT, LMT`), `/thesis TICKER <why>` (the only
+    command taking free-text prose), `/hold TICKER [note]` / `/remove TICKER [reason]`
+    (aliased `/sold`) — both append to `decisions.jsonl` (gitignored, append-only), and
+    `/remove` embeds the full position record before deleting it (non-destructive, no
+    confirmation prompt needed). The daily digest gains a **position-monitor section**: a
+    held ticker hit by a fresh clean-negative 8-K (items **1.03 bankruptcy / 2.04 debt
+    acceleration / 4.02 non-reliance-restatement** — a deliberate subset of the veto sweep's
+    7-item set, chosen because these three are unambiguous for a *holder* while 5.01/2.05/2.06/3.01
+    are noisy or reverse-signed on that side) surfaces once (deduped via
+    `ScoutState.position_alerts_seen`), plain-English first, item code trailing, plus a
+    once-daily heartbeat so a silent monitor reads as alive, not broken. **Two-store split
+    ownership, no lock needed**: the bot is the sole writer of `positions.json`; the daily run
+    only reads it and writes its own dedup state into `ScoutState` — never the reverse.
+    the holdings screen is **hardcoded** to the free chain (`yahoo`/`finnhub`/`edgar` —
+    `bot.py:_free_sources` calls `digest_sources(base, include_fmp=False)`) so the monitor
+    doesn't compete with discovery's FMP quota; this is fixed v1 behavior, not a
+    `config.yaml` knob — the `monitor` block only has `enabled`/`items`. Remove the
+    `portfolio.monitor` block for byte-identical pre-feature behavior.
 
 ## Dev workflow (uv)
 
