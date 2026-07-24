@@ -4,10 +4,6 @@ import inspect
 from typing import Optional
 
 from ...env import redact_secrets
-from ..models import (
-    SourceResult,
-    TickerSnapshot,
-)
 from ._common import _load_ticker_name_index, _read_versioned_cache, _write_versioned_cache  # noqa: F401
 from .base import Source, _fetch_sections, _KeyedHttpSource, _retry_after_backoff  # noqa: F401
 from .edgar import EdgarSource, _edgar_semaphore, build_events_section, classify_event_form  # noqa: F401
@@ -22,6 +18,7 @@ from .finra import (  # noqa: F401
 from .fmp import FMPSource, _match, _normalize_fmp, _year  # noqa: F401
 from .govcontracts import GovContractsSource  # noqa: F401
 from .lobbying import LobbyingSource  # noqa: F401
+from .mock import MockSource  # noqa: F401
 from .wsb import WsbSource  # noqa: F401
 from .yahoo import YahooSource  # noqa: F401
 from .yahoo_prices import (  # noqa: F401
@@ -52,24 +49,6 @@ from .yahoo_prices import (  # noqa: F401
     snapshot_from_closes_dated,
     vol_scaled_momentum,
 )
-
-# --- Mock: offline demo (illustrative, not verified) ----------------------
-
-class MockSource(Source):
-    name = "mock"
-
-    async def fetch(self, ticker: str) -> SourceResult:
-        from ..mockdata import SAMPLE
-        data = SAMPLE.get(ticker.upper())
-        res = SourceResult(source=self.name)
-        if not data:
-            res.errors.append(f"mock: no sample for {ticker}")
-            res.partial = TickerSnapshot(ticker=ticker)
-            return res
-        res.raw = {"sample": data["raw_echo"]}
-        res.partial = data["snapshot"](ticker)
-        return res
-
 
 _REGISTRY = {
     "yahoo": YahooSource,
