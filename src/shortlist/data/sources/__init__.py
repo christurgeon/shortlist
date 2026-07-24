@@ -10,18 +10,18 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
-from .._util import first as _first
-from .._util import from_millions as _mm
-from .._util import pct as _pct
-from .._util import retry_after_seconds as _retry_after_seconds
-from ..cache import get_default_cache
-from ..env import redact_secrets
-from ..providers._fmp_insider import is_buy, tx_value
-from ..stats import avg_roic, median_pe
-from ..stats import residual_momentum as _stats_residual_momentum
-from . import finra as _finra
-from .diskcache import read_json_cache, write_json_cache
-from .models import (
+from ..._util import first as _first
+from ..._util import from_millions as _mm
+from ..._util import pct as _pct
+from ..._util import retry_after_seconds as _retry_after_seconds
+from ...cache import get_default_cache
+from ...env import redact_secrets
+from ...providers._fmp_insider import is_buy, tx_value
+from ...stats import avg_roic, median_pe
+from ...stats import residual_momentum as _stats_residual_momentum
+from .. import finra as _finra
+from ..diskcache import read_json_cache, write_json_cache
+from ..models import (
     Analyst,
     Earnings,
     Events,
@@ -558,7 +558,7 @@ class EdgarSource(Source):
         non-None res.partial (on all branches, including the except branch)."""
         from edgar import Company
 
-        from ..providers._form4 import aggregate_form4
+        from ...providers._form4 import aggregate_form4
 
         res = SourceResult(source=self.name)
         cutoff = date.today() - timedelta(days=self.lookback_days)
@@ -598,7 +598,7 @@ class EdgarSource(Source):
     def _build_financials_snapshot(self, ticker: str, fin: Any) -> TickerSnapshot:
         """Map an edgartools Financials onto a Statements-only snapshot. Pure given
         `fin`. Values are absolute USD (no scaling)."""
-        from ..providers._edgar_facts import extract_financials
+        from ...providers._edgar_facts import extract_financials
         try:
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
@@ -644,7 +644,7 @@ class EdgarSource(Source):
         concurrency semaphore. Returns a 4-digit string or None."""
         from edgar import Company
 
-        from ..sectors import extract_sic
+        from ...sectors import extract_sic
         return extract_sic(Company(ticker))
 
     def _raw_filings(self, ticker: str) -> Any:
@@ -710,7 +710,7 @@ class MockSource(Source):
     name = "mock"
 
     async def fetch(self, ticker: str) -> SourceResult:
-        from .mockdata import SAMPLE
+        from ..mockdata import SAMPLE
         data = SAMPLE.get(ticker.upper())
         res = SourceResult(source=self.name)
         if not data:
@@ -931,7 +931,7 @@ class WsbSource(Source):
     async def _load_locked(self) -> None:
         if self._index is not None or self._load_error is not None:
             return   # another task won the race while we waited on the lock
-        from . import apewisdom
+        from .. import apewisdom
         idx, err = await asyncio.to_thread(
             apewisdom.fetch_wsb_mentions, self._cache_dir, self._timeout)
         if err:
@@ -941,7 +941,7 @@ class WsbSource(Source):
             self._index = idx
 
     async def fetch(self, ticker: str) -> SourceResult:
-        from . import apewisdom
+        from .. import apewisdom
         res = SourceResult(source=self.name)
         await self._load()
         snap = TickerSnapshot(ticker=ticker)
@@ -1004,7 +1004,7 @@ async def _load_ticker_name_index(client: Any, cache_dir: str) -> tuple[dict, Op
     `(index, error)`: error is None on success; on failure index is `{}` and
     error is the redacted exception string."""
     try:
-        from ..backtest import xbrl
+        from ...backtest import xbrl
         month = date.today().strftime("%Y-%m")
         raw = await xbrl.fetch_company_tickers_raw(client, cache_dir=cache_dir, month=month)
         return xbrl.build_name_index(raw), None
@@ -1342,8 +1342,8 @@ class GovContractsSource(Source):
         _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
 
     async def fetch(self, ticker: str) -> SourceResult:
-        from .govcontract_match import match_confidence
-        from .models import GovContracts
+        from ..govcontract_match import match_confidence
+        from ..models import GovContracts
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
@@ -1524,8 +1524,8 @@ class LobbyingSource(Source):
         return None
 
     async def fetch(self, ticker: str) -> SourceResult:
-        from .entity_match import match_confidence
-        from .models import Lobbying
+        from ..entity_match import match_confidence
+        from ..models import Lobbying
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
