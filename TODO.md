@@ -6,6 +6,34 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## sources.py package split shipped — daily.py::run is the next maintainability target (2026-07-24)
+
+`src/shortlist/data/sources.py` (1,639-line god module) was split into a `data/sources/`
+package, one module per Source, behavior-neutral (PR #148; branch
+`refactor/sources-package-split`). Surface pinned by `tests/test_sources_surface.py`
+(47-name contract); whole-branch Opus review + 3/5 code-review passes clean (2 passes cut
+short by a monthly spend limit, not by findings). Spec/plan live under the gitignored
+`docs/superpowers/{specs,plans}/2026-07-2{3,4}-sources-package-split-*`.
+
+Deferred follow-ups:
+- **The higher-value target we identified but did NOT do:** `scout/daily.py::run` — a single
+  218-line function threading mutable state through ~8 phases (cache-config → session-gate →
+  signal-scan → Yahoo-cooldown → deep-screen → research → deliver → persist). Unlike
+  `sources.py` (long but boring, already failure-isolated classes), this is short-ish but
+  *dangerous* — it's where ordering bugs hide as signals are added. Extract named phase
+  helpers (`_scan_discovery`/`_deep_screen`/`_deliver`/`_persist_state`); pure extract-method,
+  no numeric change. Consider `scout/signals.py` (1,059 lines) as a package split after.
+- **Optional guardrail:** add ruff `C901` with a `max-complexity` (or a soft line ceiling) so
+  these mega-functions can't silently regrow after a split. Fits the "curated for signal" ruff
+  config; its own small change, not bundled with a refactor.
+- **Cosmetic nits from the split's review** (not worth churn-risk on their own; fold into the
+  next time these files are touched): a stray `# --- helpers ---` section header was dropped;
+  a few docstrings/comments now cross-reference symbols that moved to sibling modules.
+
+**Status:** OPEN — `daily.py::run` extraction is the recommended next maintainability PR.
+
+---
+
 ## Code-quality sweep — 5 refactors measured and deliberately NOT taken (2026-07-21)
 
 Branch `chore/code-quality-sweep` (PR #145; suite 2070 green, ruff clean, `shortlist
