@@ -454,6 +454,85 @@ def _record_session_picks(state: ScoutState, cards, chosen, session: date) -> No
         print(f"scout: recording picks failed ({redact_secrets(str(exc))})", file=sys.stderr)
 
 
+def _build_signals_and_statuses(scout_cfg: dict, state: ScoutState, demo: bool,
+                                statuses: list[SignalStatus]) -> tuple[list, list]:
+    """Build this run's discovery + booster signal objects. Appends a disabled
+    SignalStatus for each configured-but-off signal (so the coverage line shows it,
+    e.g. "quiver ✗ (disabled)"). Returns (signals, boosters)."""
+    if demo:
+        return build_signals(["mock"]), []
+    all_names = _enabled_signal_names(scout_cfg)
+    kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
+                                    state.eightk_seen_accessions(),
+                                    thirteenf_seen=state.thirteenf_seen_accessions(),
+                                    buyback_seen=state.buyback_seen_accessions(),
+                                    stake_increase_seen=state.stake_increase_seen_accessions(),
+                                    stake_baselines=state.stake_baselines())
+    signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
+    boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
+    sig_cfg = scout_cfg.get("signals", {})
+    for cfg_key, sig_val in sig_cfg.items():
+        if not sig_val.get("enabled") and cfg_key in _KNOWN_SIGNAL_KEYS:
+            statuses.append(SignalStatus(cfg_key, False, "disabled"))
+    return signals, boosters
+
+
+def _scan_discovery(discovery: list, *, state: ScoutState, demo: bool, session: date,
+                    sig_cfg: dict, statuses: list[SignalStatus]) -> tuple[list, dict]:
+    """Run each discovery signal's scan, failure-isolated so one bad signal can't abort
+    the run. Persists post-scan state, appends a SignalStatus per signal, and records
+    each emission's config weight. Returns (emissions, weights_by_signal)."""
+    emissions: list = []
+    weights_by_signal: dict[str, float] = {}
+    for s in discovery:
+        # Polite cooldown: after a Yahoo WAF block we skip the endpoint entirely (zero
+        # requests) for the rest of the day to protect the IP's reputation.
+        if s.name == "yahoo_screener" and not demo and state.yahoo_blocked_on(session):
+            until = state.yahoo_blocked_until()
+            statuses.append(SignalStatus(s.name, False, f"skipped: WAF cooldown through {until}"))
+            continue
+        # Guard the discovery body so one failing signal can't abort the whole run.
+        try:
+            ems = s.scan(session)
+            emissions.extend(ems)
+            _persist_post_scan_state(s, state, demo, session)
+            ran, detail = s.available()
+            statuses.append(SignalStatus(s.name, ran, detail))
+            # weight by config: map signal name back to its config key. Names are
+            # identity except the demo "mock" signal, which borrows yahoo_screener's weight.
+            cfg_key = "yahoo_screener" if s.name == "mock" else s.name
+            w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
+            for e in ems:
+                weights_by_signal[e.signal] = w
+        except Exception as exc:  # noqa: BLE001
+            statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
+            continue
+    return emissions, weights_by_signal
+
+
+def _run_boosters(boosters: list, kept: list, *, session: date, sig_cfg: dict,
+                  statuses: list[SignalStatus]) -> None:
+    """Run confluence boosters on already-discovered names (§3 step 2 / §4). Boosters
+    only raise interest for tickers already in `kept`; they never originate. Mutates the
+    `kept` candidates in place and appends a SignalStatus per booster."""
+    if not boosters:
+        return
+    kept_by_ticker = {c.ticker: c for c in kept}
+    for booster in boosters:
+        cfg_key = booster.name  # e.g. "finnhub_news", "wikipedia"
+        w = sig_cfg.get(cfg_key, {}).get("weight", 0.5)
+        try:
+            booster_ems = booster.scan_for([c.ticker for c in kept], session)
+        except Exception as exc:  # noqa: BLE001
+            booster_ems = []
+            booster._status = (False, redact_secrets(str(exc)))  # type: ignore[attr-defined]
+        for em in booster_ems:
+            if em.ticker in kept_by_ticker:  # only fold into existing candidates
+                kept_by_ticker[em.ticker].add(em, w)
+        ran, detail = booster.available()
+        statuses.append(SignalStatus(booster.name, ran, detail))
+
+
 def run(config: dict, *, demo: bool, today: date) -> int:
     scout_cfg = config.get("scout", {})
 
@@ -486,54 +565,14 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         return 0
 
     # 1. Scan discovery signals
-    weights_by_signal: dict[str, float] = {}
     sig_cfg = scout_cfg.get("signals", {})
     statuses: list[SignalStatus] = []
-    emissions = []
-
-    if demo:
-        signals = build_signals(["mock"])
-        boosters = []
-    else:
-        all_names = _enabled_signal_names(scout_cfg)
-        kwargs_by_name = _signal_kwargs(scout_cfg, state.finra_last_settlement(),
-                                        state.eightk_seen_accessions(),
-                                        thirteenf_seen=state.thirteenf_seen_accessions(),
-                                        buyback_seen=state.buyback_seen_accessions(),
-                                        stake_increase_seen=state.stake_increase_seen_accessions(),
-                                        stake_baselines=state.stake_baselines())
-        signals = build_signals(all_names, kwargs_by_name=kwargs_by_name)
-        boosters = [s for s in signals if not getattr(s, "is_discovery", True)]
-        # Emit a SignalStatus for each configured-but-disabled signal so the
-        # coverage line in the report shows them (e.g. "quiver ✗ (disabled)").
-        for cfg_key, sig_val in sig_cfg.items():
-            if not sig_val.get("enabled") and cfg_key in _KNOWN_SIGNAL_KEYS:
-                statuses.append(SignalStatus(cfg_key, False, "disabled"))
+    signals, boosters = _build_signals_and_statuses(scout_cfg, state, demo, statuses)
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
-    for s in discovery:
-        # Polite cooldown: after a Yahoo WAF block we skip the endpoint entirely (zero
-        # requests) for the rest of the day to protect the IP's reputation.
-        if s.name == "yahoo_screener" and not demo and state.yahoo_blocked_on(session):
-            until = state.yahoo_blocked_until()
-            statuses.append(SignalStatus(s.name, False, f"skipped: WAF cooldown through {until}"))
-            continue
-        # Guard the discovery body so one failing signal can't abort the whole run.
-        try:
-            ems = s.scan(session)
-            emissions.extend(ems)
-            _persist_post_scan_state(s, state, demo, session)
-            ran, detail = s.available()
-            statuses.append(SignalStatus(s.name, ran, detail))
-            # weight by config: map signal name back to its config key. Names are
-            # identity except the demo "mock" signal, which borrows yahoo_screener's weight.
-            cfg_key = "yahoo_screener" if s.name == "mock" else s.name
-            w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
-            for e in ems:
-                weights_by_signal[e.signal] = w
-        except Exception as exc:  # noqa: BLE001
-            statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
-            continue
+    emissions, weights_by_signal = _scan_discovery(
+        discovery, state=state, demo=demo, session=session, sig_cfg=sig_cfg,
+        statuses=statuses)
 
     raw = len(emissions)
     _log_firehose(state, emissions, session, scout_cfg)
@@ -559,22 +598,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     veto_notes.extend(_veto_notes(state, vetoed_cands, veto_map))
 
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
-    # Boosters only raise interest for tickers already in `kept`; they never originate.
-    if boosters:
-        kept_by_ticker = {c.ticker: c for c in kept}
-        for booster in boosters:
-            cfg_key = booster.name  # e.g. "finnhub_news", "wikipedia"
-            w = sig_cfg.get(cfg_key, {}).get("weight", 0.5)
-            try:
-                booster_ems = booster.scan_for([c.ticker for c in kept], session)
-            except Exception as exc:  # noqa: BLE001
-                booster_ems = []
-                booster._status = (False, redact_secrets(str(exc)))  # type: ignore[attr-defined]
-            for em in booster_ems:
-                if em.ticker in kept_by_ticker:  # only fold into existing candidates
-                    kept_by_ticker[em.ticker].add(em, w)
-            ran, detail = booster.available()
-            statuses.append(SignalStatus(booster.name, ran, detail))
+    _run_boosters(boosters, kept, session=session, sig_cfg=sig_cfg, statuses=statuses)
 
     chosen, dropped = select(kept, daily_x=scout_cfg.get("daily_x", 15))
 
