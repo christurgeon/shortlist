@@ -6,31 +6,28 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## sources.py package split shipped — daily.py::run is the next maintainability target (2026-07-24)
+## Maintainability sweep — sources split + daily run() done; remaining follow-ups (2026-07-24)
 
-`src/shortlist/data/sources.py` (1,639-line god module) was split into a `data/sources/`
-package, one module per Source, behavior-neutral (PR #148; branch
-`refactor/sources-package-split`). Surface pinned by `tests/test_sources_surface.py`
-(47-name contract); whole-branch Opus review + 3/5 code-review passes clean (2 passes cut
-short by a monthly spend limit, not by findings). Spec/plan live under the gitignored
-`docs/superpowers/{specs,plans}/2026-07-2{3,4}-sources-package-split-*`.
+Two behavior-neutral refactors shipped: `src/shortlist/data/sources.py` (1,639-line god
+module) → a `data/sources/` package, one module per Source (PR #148; surface pinned by
+`tests/test_sources_surface.py`), and `scout/daily.py::run` extracted into named phase
+helpers (`_build_signals_and_statuses`/`_scan_discovery`/`_run_boosters`; 218 → 163 lines,
+PR #149). Both verified via full suite + byte-identical `--demo`. Specs/plans live under the
+gitignored `docs/superpowers/{specs,plans}/2026-07-2{3,4}-sources-package-split-*`.
 
-Deferred follow-ups:
-- **The higher-value target we identified but did NOT do:** `scout/daily.py::run` — a single
-  218-line function threading mutable state through ~8 phases (cache-config → session-gate →
-  signal-scan → Yahoo-cooldown → deep-screen → research → deliver → persist). Unlike
-  `sources.py` (long but boring, already failure-isolated classes), this is short-ish but
-  *dangerous* — it's where ordering bugs hide as signals are added. Extract named phase
-  helpers (`_scan_discovery`/`_deep_screen`/`_deliver`/`_persist_state`); pure extract-method,
-  no numeric change. Consider `scout/signals.py` (1,059 lines) as a package split after.
+Still open (lower priority):
+- **`scout/signals.py` (1,059 lines)** — candidate package split (many signal classes in one
+  file), same one-module-per-thing pattern as the sources split. Lower urgency: the classes
+  are already cohesive.
 - **Optional guardrail:** add ruff `C901` with a `max-complexity` (or a soft line ceiling) so
   these mega-functions can't silently regrow after a split. Fits the "curated for signal" ruff
   config; its own small change, not bundled with a refactor.
-- **Cosmetic nits from the split's review** (not worth churn-risk on their own; fold into the
+- **Cosmetic nits from the sources-split review** (not worth churn-risk on their own; fold in
   next time these files are touched): a stray `# --- helpers ---` section header was dropped;
   a few docstrings/comments now cross-reference symbols that moved to sibling modules.
 
-**Status:** OPEN — `daily.py::run` extraction is the recommended next maintainability PR.
+**Status:** OPEN — only the lower-priority `signals.py` split + `C901` guardrail + cosmetic
+nits remain; the two high-value targets (sources, daily run) are shipped.
 
 ---
 
@@ -298,34 +295,6 @@ Follow-ups, by urgency:
 
 ---
 
-## Hardening-cleanup round 1 completed — review findings fixed, lint-clean, PR'd (2026-07-10)
-
-The sweep on `chore/hardening-cleanup-round1` (new `.github/workflows/ci.yml` — first CI
-in the repo, `providers/_gaap_tags.py`, new hardening tests) was picked up mid-flight,
-review-hardened, and completed:
-
-1. A high-effort multi-agent review (22 agents) of the diff found 12 distinct defects;
-   the 9 real ones were fixed with regression tests: FINRA truncated-page-cap payload no
-   longer cached (complete-rows cache contract); claude_cli kills the detached process
-   group on ANY escape from communicate (Ctrl-C orphan); backtest config validation
-   requires only `thresholds` (weights is --fit-only); `from_dict` warns loudly on
-   non-dict sections; all-empty `--tickers`/`--provider` is an argparse error (was a
-   silent all-null screen); `ScoutState._save` uses a PID-unique temp (timer-overlap
-   race); the research `.md` commit marker is written atomically; definitive-empty Yahoo
-   chart envelopes are day-cached again (WAF protection) while malformed payloads stay
-   uncached; the notify exception diagnostic goes to stderr.
-2. All 86 ruff errors cleared (76 pre-existed on main; fixed here so the new CI lint
-   gate passes from the first run). B905 zips got `strict=False` (semantics-preserving).
-3. Full suite `1976 passed, 6 skipped` + `ruff check` clean.
-
-**Deferred item DONE (2026-07-10, same day):** the shared config loader shipped as
-`shortlist/config.py` (`load_config(path, required_keys=())` + `ConfigError`), TDD'd,
-and wired into ALL FOUR config.yaml entrypoints — including `scout/daily.py` and
-`scout/bot.py`, which were previously UNGUARDED (raw traceback on a missing/corrupt
-config; now a prefixed one-liner + exit 2, matching the screen/backtest contract).
-
-**Status:** closed.
-
 Shipped (commits `f698bf6..52b979c`, full suite 1919 green): **`edgar_13f`** marquee-fund
 new-position cloning (7 live-verified fund CIKs, CUSIP→ticker via SEC FTD files +
 name fallback in `scout/cusip_map.py`; DEFENSIBLE prior, **ON at weight 1.0**) and
@@ -456,105 +425,6 @@ timers). Loose ends, roughly by urgency:
 
 **Status:** open — item 1 is a one-command operator step; 2–4 are observation gates; 5–7 are
 future work.
-
-## Production 8-K backfill runs — blocked on the smoke/audit entry below (2026-07-07)
-
-Both 4-year legs are cheap on requests (~55–65 EFTS pages/month ≈ 3k requests ≈ 20 min at
-≤3 req/s); the per-event measurement (Yahoo history + delisting classification) is the
-long pole (hours, 13D-run scale). Serial + resumable — re-run the same command to resume a
-failed chunk. Run OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 + shortlist-scout
-22:30 timers), and check disk first (the runner also aborts below 8 GB free —
-`scout.backfill.min_free_disk_gb`):
-
-```bash
-df -BG --output=avail . | tail -1
-uv run --extra edgar shortlist-scout backfill --signal 8k --start 2022-01-01 --end 2025-12-31
-uv run --extra edgar shortlist-scout backfill --signal 8k-neg --start 2022-01-01 --end 2025-12-31
-uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-2022-01-01-2025-12-31.jsonl --json
-uv run --extra edgar shortlist-scout validate --backfill scout/backfill/8k-neg-2022-01-01-2025-12-31.jsonl --json
-```
-
-Expectation-setting (design §5): the 13D sibling's raw fraction was 0.70 < 0.90 and this
-population is plausibly MORE small-cap-skewed — **raw = INSUFFICIENT is closer to the base
-case than a tail risk**; decision weight rides on the scored_gated cohort + double-sort,
-and the R-A4 vintage-stratified guard applies with more vintage buckets at K=3m. For
-`8k-neg` the EXPECTED sign is negative: a KILL-shaped verdict CONFIRMS the ON-default veto;
-HOLD/positive falsifies it. Either way the machinery, veto, and firehose stand on their own.
-
-**RUNS COMPLETE + FIRST CANONICAL VERDICTS (2026-07-08, supervised, nice/ionice, no
-incidents).** 8k: 1,843 events (~30 min — warm caches); 8k-neg: 11,612 events (~3 h).
-Artifacts: `scout/backfill/verdict-8k-2022-2025.json` + `verdict-8kneg-2022-2025.json`;
-merged into `/opt/shortlist/scout/validate-latest.json` for the digest.
-- **`edgar:8k` scored_gated: KILL** (canonical — fraction 0.941 clears the floor, zero
-  immature at K=3m; FF3 alpha −8.6%/mo, CI [−9.9, −7.4], IR −8.1). Raw: INSUFFICIENT
-  (fraction 0.715 — the pre-registered base case). Per the frozen audit frame
-  (`docs/audits/2026-07-08-eightk-composition-audit.md`: cohort "mixed", merger 0.30/other
-  0.40/junk 0.30): the KILL settles the SIGNAL AS SHIPPED — the originator stays disabled,
-  now by evidence — but does NOT cleanly indict the Lerman-Livnat merger pocket (70% of the
-  cohort is micro-cap financing/defensive junk). A merger-conditioned sub-cohort analysis
-  would need a NEW pre-registration; at −8.6%/mo on the blend, low priority.
-- **`edgar:8k_negative`: INSUFFICIENT on both cohorts** (raw fraction 0.625; scored 0.883 —
-  1.7pp under the 0.90 floor, the honest refusal). Labeled non-verdict observation: alpha
-  is decisively negative on both (raw −5.5%/mo CI [−6.7, −4.5]; scored −5.8%/mo CI
-  [−6.7, −4.8]) — the pre-registered "KILL-shaped result CONFIRMS the veto" reading is met
-  directionally; the ON-default veto stands with strong (formally unverdicted) support.
-  The non-measurable tail is no-price-series micro/OTC junk whose exclusion, if anything,
-  flatters the estimate.
-- Cross-observation (non-evidence): the "positive pocket" measured WORSE (−8.6%/mo) than
-  the documented-negative item set (−5.8%/mo) — consistent with the audit's composition
-  finding (the pocket is dominated by dilutive micro-cap financing events).
-
-**Status:** DONE (2026-07-08) — first canonical KILL delivered; veto confirmed
-directionally; originator remains disabled (now evidence-backed, not just prudence).
-
-## 8-K originator/veto — operator smoke + composition audit (pre-production) (2026-07-07)
-
-Live checks gated on an operator (never pytest — repo tests stay offline). Run from the
-repo root on the VPS, OUTSIDE 21:15–23:00 UTC (shortlist-accumulate 21:30 +
-shortlist-scout 22:30 timers). All three must be done and recorded HERE before the 4-year
-production runs.
-
-1. **One-week live smoke** (bounded: ~7 days x 3–6 EFTS pages, day-cached):
-
-   ```bash
-   df -BG --output=avail . | tail -1     # preflight; the runner itself aborts below 8 GB
-   uv run --extra edgar shortlist-scout backfill --signal 8k --start 2026-06-22 --end 2026-06-28
-   uv run --extra edgar shortlist-scout backfill --signal 8k-neg --start 2026-06-22 --end 2026-06-28
-   ```
-
-   Expect: n_selected in the probed daily-rate band (8k ~3–5/day → ~15–25; 8k-neg ~8/day →
-   ~40–60), `.cache/efts/2026-06-*.json` day files written (complete rows, 8-K/A included),
-   an immediate re-run reports `written_this_run=0` (idempotent resume).
-2. **Items-vs-submissions fidelity spot-check**: for ~20 accessions sampled from the smoke
-   JSONLs, fetch `https://data.sec.gov/submissions/CIK##########.json` (SEC_IDENTITY as
-   User-Agent), locate the accession in `filings.recent` and compare its `items` string
-   against the event's `meta.items`. Expect ≥19/20 exact containment matches; any mismatch
-   is a feed-fidelity bug — STOP and investigate before trusting a 4-year cohort.
-3. **~50-filing composition audit (pre-registered — BEFORE the production run, spec §5)**:
-   hand-classify ~50 matched 1.01∧3.03 filings (merger / credit-facility / rights-plan /
-   reverse-split, by SIC + market cap) and record the tallies in this entry. 3.03 in 2026
-   also fires on covenanted credit agreements, NOL poison pills, and reverse splits
-   (negative-prior listing-compliance junk). NO pre-filtering on 5.03 co-occurrence (that
-   would be fitting) — audit first, let the ledger decide.
-
-**Results (2026-07-08 — full detail + 50-row table committed in
-`docs/audits/2026-07-08-eightk-composition-audit.md`):**
-1. **Smoke: PASS** — 8k n=4 / 8k-neg n=31, both `window_not_preregistered` (expected),
-   100% immature (K=3m), idempotent re-runs `written: 0`. The 8k band miss vs "~15-25" was
-   investigated (fetch-bug-only rule): raw cached rows contain exactly 4 matches that week
-   — the registered band was a miscalibrated pooled estimate, the selection is faithful.
-2. **Fidelity: PASS** — 20/20 exact containment, zero mismatches.
-3. **Composition audit tallies** (n=50, stratified 13/13/12/12 over a 1,864-event frame;
-   volume-weighted by exact per-year frame counts; blind double-classification κ≈0.90):
-   **merger_agreement 0.299 · rights_plan 0.184 · reverse_split 0.021 · credit_facility
-   0.093 · other 0.404** (other = mostly preferred issuances 10/20 + warrant amendments
-   5/20). Merger bucket clean: de-SPAC 1/15, acquirer-side 1/15. 5.03 co-occurs 31/50
-   (observation only). Cap: 42% unknown (delisting proxy), 34% micro. Per the FROZEN
-   interpretive frame: **neither merger- nor junk-dominated ⇒ "mixed"** — at ~30% merger
-   share a cohort-level verdict cannot cleanly indict or confirm the Lerman-Livnat merger
-   pocket; any merger-conditioned sub-analysis needs a NEW pre-registration.
-
-**Status:** DONE (2026-07-08) — production backfill runs unblocked (entry above).
 
 ## Snapshot-replay composite suppression rate is unmeasured (guard residual) (2026-07-07)
 
@@ -862,41 +732,6 @@ every build-order item shipped or resolved (Plan 4 FINRA leg deferred at its
 pre-registered gate). The only remaining step is the OPERATOR one: fire the paused
 production backfill run (entry at top), then `validate --backfill` for the first real
 verdict, which will now also flow into the nightly digest automatically.
-
-## Congressional-trade copy-trading — evaluated, rejected as scored signal; docs PR pending (2026-07-01)
-
-Branch `docs/congressional-trades-verdict` (off `main`, doc-only) records the verdict:
-post-STOCK-Act evidence for copy-trading disclosed congressional trades is null-to-negative
-(Eggers-Hainmueller 2013; Belmont-Sacerdote et al. 2020), so it is **rejected as a scored
-leg / auto-copy** — contested-prior scout discovery originator at most (cluster buys, FINRA
-short-interest pattern), full entry in `PREDICTIVE_SIGNALS_RESEARCH.md` → deferred/rejected.
-Also corrects the now-stale "Quiver = highest-leverage add" framing in `DATA_SOURCES.md` C2 +
-§2 gap 5, `ASSESSMENT_GAPS.md`, `CLAUDE.md`, `README.md` (gov contracts / lobbying / WSB have
-since shipped keyless). If the originator is ever wanted: first a feasibility pass on the free
-House Clerk PTR / Senate eFD feeds (PDF/HTML-shaped; community JSON mirrors unmaintained).
-
-**Status:** ~~committed on `docs/congressional-trades-verdict`; push → PR → merge pending.~~
-**RESOLVED (verified 2026-07-09):** merged as #103 (`d67677a`); branch gone from origin.
-
-## Scout delivery-confirmation log — commit/PR + deploy (2026-07-01)
-
-Branch `feat/scout-delivery-log` (off `origin/main`) adds a positive Telegram-delivery log
-line in `daily.py` — a successful send now emits `scout: delivered <session> report to
-telegram (<n> names)` to stderr (previously **silent** on success; only failures surfaced via
-exit-code 2 + a manifest note). Also logs the not-configured journal path and names the failed
-transports on partial failure. Test added; 27 related scout tests pass. **Uncommitted.**
-Remaining: commit → PR (match #100/#101 flow) → merge → deploy to `/opt/shortlist` (`git pull`
-→ `install_opt_shortlist.sh` → restart) so the next 22:30 run logs delivery. Only a *future*-run
-fix — can't retroactively confirm the 06-30 push (eyeball Telegram for that).
-
-Also pending: delete the merged branch `docs/todo-fmp-digest-wrapup` (PR #101 MERGED; note is
-on `origin/main`) — local `git branch -D` + optional remote delete.
-
-**Status:** ~~code + test done on `feat/scout-delivery-log`, uncommitted; PR/deploy + stale-branch
-cleanup pending operator action.~~ **RESOLVED (verified 2026-07-09):** merged as #102
-(`78f8024`, `git cherry` clean) and long since deployed — `daily.py` on the live install
-logs the positive delivery line. Stale-branch cleanup done too: GitHub had auto-deleted
-all merged branches; 34 stale local remote-tracking refs pruned (`git remote prune origin`).
 
 ## Verified: first FMP-free digest ran clean (2026-06-30) — item below resolved
 
