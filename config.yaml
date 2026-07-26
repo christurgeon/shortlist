@@ -489,7 +489,13 @@ scout:
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
-  edgar_index_daily_cap: 400   # Form 4 filings FETCHED/session (edgar_form4 max_filings)
+  edgar_index_daily_cap: 2500   # Form 4 filings FETCHED/session (edgar_form4 max_filings).
+                                # Measured SEC DERA 2025Q1 daily volume: median 838, p90 1,498,
+                                # max 3,496 -- 2500 clears p90 with headroom, binding only on rare
+                                # spike days (silent truncation in EDGAR index order would be an
+                                # uncharacterizable sampling bias, exactly the coverage defect this
+                                # signal exists to fix). At <=6 req/s that's ~7min worst case, which
+                                # the daily run can absorb.
   form4:                     # EdgarForm4Signal -- opportunistic-insider buys.
                              # DRIFT CAPTURE, not an information edge: Form 4 is public T+2
                              # and every vendor parses it instantly. UNFITTED PRIORS below.

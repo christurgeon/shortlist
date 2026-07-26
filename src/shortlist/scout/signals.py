@@ -382,9 +382,15 @@ class EdgarForm4Signal:
         # asserting "unpublished".
         fallback = "" if used == session else f"; {session} index empty, used {used}"
         joint = f"; {n_joint} joint filings abstained" if n_joint else ""
+        # Fetch volume genuinely reaching the daily cap means the day's filings were
+        # truncated in EDGAR index order -- an uncharacterizable sampling bias, not a
+        # complete scan. That must be visibly distinct from a quiet day that merely
+        # happens to mention the same cap number in its status string (silent truncation
+        # is exactly the coverage defect edgar_index_daily_cap: 2500 exists to minimize).
+        truncated = " TRUNCATED" if len(docs) >= self.max_filings else ""
         self._status = (bool(docs),
                         f"{len(ems)} insider buys from {len(docs)} Form 4s "
-                        f"(cap {self.max_filings}){joint}{fallback}")
+                        f"(cap {self.max_filings}{truncated}){joint}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:

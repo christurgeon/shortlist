@@ -63,3 +63,33 @@ def test_removing_the_form4_block_leaves_the_signal_inert():
     sig = EdgarForm4Signal(cfg={}, fetch_submissions=lambda s, c: ([], s),
                            load_index=dict)
     assert sig.scan(date(2025, 6, 2)) == []
+
+
+def test_available_marks_truncation_when_fetch_count_reaches_the_cap():
+    """When the fetched-doc count reaches max_filings, the day's filings were truncated in
+    EDGAR index order -- an uncharacterizable sampling bias that must be visibly distinct
+    from a quiet day, not just a repeat of the same "(cap N)" number every run."""
+    xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
+    sig = EdgarForm4Signal(
+        cfg={}, max_filings=3,
+        fetch_submissions=lambda session, cap: ([xml, xml, xml], session),
+        load_index=dict,
+    )
+    sig.scan(date(2025, 3, 31))
+    ok, detail = sig.available()
+    assert ok
+    assert "TRUNCATED" in detail
+    assert "cap 3" in detail
+
+
+def test_available_does_not_mark_truncation_when_fetch_count_is_below_the_cap():
+    xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
+    sig = EdgarForm4Signal(
+        cfg={}, max_filings=100,
+        fetch_submissions=lambda session, cap: ([xml], session),
+        load_index=dict,
+    )
+    sig.scan(date(2025, 3, 31))
+    ok, detail = sig.available()
+    assert ok
+    assert "TRUNCATED" not in detail
