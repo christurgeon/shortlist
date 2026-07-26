@@ -182,9 +182,27 @@ separate:
 **Deliberate deviation from the strictest CMP reading.** CMP can be read as requiring a trade
 in *each* of the past 3 years to classify at all. We require 3 *distinct* years plus recency.
 The strict reading would push most sporadic officer/director traders into UNCLASSIFIED and the
-filter would do little work. **Open measurement:** once the index is built, record the actual
-routine / opportunistic / unclassified mix. If unclassified dominates, revisit this choice —
-the tier is logged on every emission precisely so it can be measured.
+filter would do little work.
+
+**MEASURED 2026-07-26 — the open question is answered, and the filter bites hard.** Index
+built from 15 published quarters (66,337 insiders); evaluated against the newest quarter's v1
+population (P buys ≥ $100k, officer/director, not 10b5-1, not joint; n=887, as-of 2026-03-31):
+
+| tier | n | share | treatment |
+|---|---|---|---|
+| **routine** | 430 | **48.5%** | **dropped** |
+| opportunistic | 171 | 19.3% | strength × 1.0 |
+| unclassified | 286 | 32.2% | strength × 0.6 |
+
+**Nearly half the qualifying population is discarded as routine.** That independently
+reproduces CMP-2012's own headline — *"over half the entire universe of insider trades are
+routine"* — on a completely different sample two decades later, which is meaningful
+corroboration that the classifier is working rather than misfiring. Unclassified does **not**
+dominate, so the §6 deviation stands as chosen and needs no revisiting.
+
+Sanity check on volume: ~13 issuers/day carry a ≥$100k buy, and dropping 48.5% leaves roughly
+6–7/day — matching §7's expected 6–8 emissions/day. Reproduce with
+`scratchpad/tiermix.py`.
 
 **`owner_cik` is canonicalised (`.strip().zfill(10)`) on both the index build and the lookup.**
 It is the join key between the live path and the DERA-built history, and a padding mismatch

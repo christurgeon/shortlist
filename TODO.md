@@ -135,10 +135,40 @@ Open work, in order:
    quarterly-ZIP fetching plus a point-in-time `assemble_factory` (index from quarters
    strictly BEFORE each event's quarter, else future trading behaviour leaks into the
    classification). That needs its own spec.
-   **Execution state (2026-07-26, mid-flight):** Task 1 (`scout/insider.py` — `InsiderTxn` +
-   raw Form 4 XML parser) implemented and reviewed **spec ✅ / quality approved**; fix round 1
-   in flight for the joint-filing finding below. **Tasks 2–6 not started.** Nothing merged;
-   branch is unpushed at time of writing.
+   **Execution state (2026-07-26, mid-flight):** Tasks 1–4 **complete, each reviewed spec ✅ /
+   quality approved** — `scout/insider.py` (record + XML parser + CMP classification +
+   qualification/strength/emission) and `scout/dera.py` (bulk parser + trade-month index +
+   quarterly ZIP fetch/cache). **Task 5 (live wiring) implemented, fix round 1 in flight.
+   Task 6 (pre-registration + docs) NOT started.** Nothing merged; branch
+   `feat/form4-opportunistic-insider` is unpushed at time of writing. Ledger:
+   `.superpowers/sdd/PLAN_FORM4_INSIDER/progress.md`.
+   - **Task 5 finding, still open:** `config.yaml`'s `edgar_index_daily_cap` was still **400**,
+     and `daily.py` passes it as `max_filings` — so the live signal would still read ~400 of a
+     **median 838 / p90 1,498 / max 3,496** filing day, i.e. the coverage defect the rebuild
+     exists to fix. Fix in flight raises it to **2500** with the measured justification.
+   - **Two real bugs in the plan's pseudocode, caught by the Task 5 implementer:** a dangling
+     `_default_index` reference, and `edgartools' Filing.text()` round-tripping XML-native
+     forms through an HTML renderer, **destroying the `<ownershipDocument>` tags the parser
+     needs** — use `full_text_submission()` (one request, the raw `.txt`). Both would have
+     shipped a silently non-functional production path.
+   - **`daily.py:_signal_kwargs` edit approved** (outside the task's file list, correctly
+     flagged): without it the `scout.form4` block never reaches the signal and
+     `tier_strength.opportunistic` silently defaults to 0.6 instead of 1.0.
+   - **Memory measured, not assumed:** cold index build = **288 MB peak RSS**, 68,499 entries
+     from 15 real quarters (the 16th unpublished, skipped by design) — under the 400 MB stop
+     threshold set for this 1.9 GB VPS.
+   - **`issuer_cik` added to the record (spec §5.2)** so emissions set `Emission.cik`;
+     `edgar_13f` ships `cik=None` and CLAUDE.md records that as a known limit blocking
+     renamed-ticker re-resolution and CIK-based delisting classification. Retrofitting after
+     the ledger has entries is far more expensive.
+   - **TIER MIX MEASURED (2026-07-26) — the filter bites hard; spec §6 open question CLOSED.**
+     Index from 15 published quarters (66,337 insiders), evaluated on the newest quarter's v1
+     population (n=887, as-of 2026-03-31): **routine 430 (48.5%, DROPPED)** / opportunistic
+     171 (19.3%) / unclassified 286 (32.2%). Nearly half the qualifying population is
+     discarded as routine, independently reproducing CMP-2012's own "over half … are routine"
+     on a different sample two decades later. `unclassified` does **not** dominate, so the §6
+     deviation stands as chosen. Volume sanity: ~13 issuers/day with a ≥$100k buy, less 48.5%,
+     ≈ 6–7/day — matching the spec's expected 6–8. Reproduce: `scratchpad/tiermix.py`.
    - **Spec amended mid-execution → `docs/FORM4_INSIDER.md` §5.1: joint filings are
      ABSTAINED.** A Form 4 may carry several `<reportingOwner>` blocks and neither the XML nor
      DERA joins a transaction to a *particular* owner. Measured 2025Q1: **1.72%** of all Form
