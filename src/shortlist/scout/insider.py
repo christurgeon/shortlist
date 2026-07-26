@@ -26,6 +26,14 @@ class InsiderTxn:
     plan_10b5_1: bool
     roles: frozenset[str]
     title: str | None = None
+    # Last field (positional back-compat): a joint filing (multiple <reportingOwner>
+    # blocks on one Form 4) has no per-owner attribution in the XML or in DERA -- the
+    # transaction is reported once but the CIK we pick is a guess. We DON'T guess;
+    # qualifies() (a later task) is where that abstention gets acted on, so the parser
+    # stays a faithful reader and every drop decision lives in one place. Measured
+    # 2025Q1 DERA: 1.72% of all Form 4s are joint, but 12.05% of Form 4s with an open-
+    # market purchase are -- and 9.5% of the v1 (P >= $100k, officer/director) population.
+    joint_filing: bool = False
 
     @property
     def value(self) -> float | None:
@@ -75,6 +83,7 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
 
     ticker = (_val(root, "issuer/issuerTradingSymbol") or "").upper()
     owner_cik = _val(root, "reportingOwner/reportingOwnerId/rptOwnerCik") or ""
+    joint_filing = len(root.findall("reportingOwner")) > 1
     rel = root.find("reportingOwner/reportingOwnerRelationship")
     roles = set()
     title = None
@@ -105,5 +114,6 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             shares=_num(tx, "transactionAmounts/transactionShares"),
             price=_num(tx, "transactionAmounts/transactionPricePerShare"),
             plan_10b5_1=plan, roles=frozenset(roles), title=title,
+            joint_filing=joint_filing,
         ))
     return out

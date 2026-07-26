@@ -20,9 +20,10 @@ def test_parses_a_real_open_market_purchase():
     assert t.ticker == "OKLO"
     assert t.date == date(2025, 3, 27)
     assert t.shares == 6000.0
-    assert t.price == 24.5686  # verbatim <transactionPricePerShare><value>; brief's "24.57" was a rounded transcription
+    assert t.price == 24.5686  # verbatim <transactionPricePerShare><value>; DERA rounds this to 24.57
     assert t.plan_10b5_1 is False          # aff10b5One is "0" here, NOT "false"
     assert "director" in t.roles
+    assert t.joint_filing is False         # single <reportingOwner> block
 
 
 def test_missing_price_is_none_not_a_crash():
@@ -91,3 +92,42 @@ def test_absent_relationship_flag_is_false_not_missing():
 def test_malformed_xml_abstains_rather_than_raising():
     assert parse_form4_xml("<not-xml") == []
     assert parse_form4_xml("") == []
+
+
+def test_joint_filing_flag_set_from_reporting_owner_count():
+    """A joint filing (several <reportingOwner> blocks on one Form 4) has no
+    per-owner attribution -- the transaction is reported once but owner_cik is a
+    guess. The parser must flag it (joint_filing=True), never silently pick one."""
+    joint_xml = """<ownershipDocument>
+      <issuer><issuerCik>1</issuerCik><issuerTradingSymbol>ZZZ</issuerTradingSymbol></issuer>
+      <reportingOwner><reportingOwnerId><rptOwnerCik>9</rptOwnerCik></reportingOwnerId>
+        <reportingOwnerRelationship><isDirector>true</isDirector></reportingOwnerRelationship>
+      </reportingOwner>
+      <reportingOwner><reportingOwnerId><rptOwnerCik>10</rptOwnerCik></reportingOwnerId>
+        <reportingOwnerRelationship><isTenPercentOwner>true</isTenPercentOwner></reportingOwnerRelationship>
+      </reportingOwner>
+      <nonDerivativeTable><nonDerivativeTransaction>
+        <transactionDate><value>2025-01-02</value></transactionDate>
+        <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+        <transactionAmounts>
+          <transactionShares><value>10</value></transactionShares>
+          <transactionPricePerShare><value>5</value></transactionPricePerShare>
+        </transactionAmounts>
+      </nonDerivativeTransaction></nonDerivativeTable>
+    </ownershipDocument>"""
+    single_xml = """<ownershipDocument>
+      <issuer><issuerCik>1</issuerCik><issuerTradingSymbol>ZZZ</issuerTradingSymbol></issuer>
+      <reportingOwner><reportingOwnerId><rptOwnerCik>9</rptOwnerCik></reportingOwnerId>
+        <reportingOwnerRelationship><isDirector>true</isDirector></reportingOwnerRelationship>
+      </reportingOwner>
+      <nonDerivativeTable><nonDerivativeTransaction>
+        <transactionDate><value>2025-01-02</value></transactionDate>
+        <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+        <transactionAmounts>
+          <transactionShares><value>10</value></transactionShares>
+          <transactionPricePerShare><value>5</value></transactionPricePerShare>
+        </transactionAmounts>
+      </nonDerivativeTransaction></nonDerivativeTable>
+    </ownershipDocument>"""
+    assert parse_form4_xml(joint_xml)[0].joint_filing is True
+    assert parse_form4_xml(single_xml)[0].joint_filing is False
