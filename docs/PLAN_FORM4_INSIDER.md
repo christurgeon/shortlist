@@ -60,7 +60,15 @@ re-argue its decisions.
    OKLO (CIK 1849056), owner CIK 0002021774, relationship `Director`, `P` 6000 sh on
    2025-03-27, filed 2025-03-31, `aff10b5One` `0`. Present in the 2025q1 DERA ZIP **and**
    fetchable as XML.
-9. **DERA rounds `TRANS_PRICEPERSHARE` to 2dp; the XML carries full precision.** This same
+9. **Joint filings must be ABSTAINED, and they are NOT rare in this population.** A Form 4
+   can carry several `<reportingOwner>` blocks, and neither source joins a transaction to a
+   particular owner. Measured 2025Q1: **1.72%** of all Form 4s are joint, but **12.05%** of
+   those containing an open-market purchase are, and **9.5%** of the v1 population (P buys
+   ≥ $100k carrying officer/director) — so ~1 in 10 emissions would otherwise carry a wrong
+   `owner_cik` and therefore a wrong CMP tier. `InsiderTxn` carries `joint_filing: bool`;
+   `qualifies()` rejects it; the count is surfaced in `available()`, never dropped silently.
+   See `docs/FORM4_INSIDER.md` §5.1.
+10. **DERA rounds `TRANS_PRICEPERSHARE` to 2dp; the XML carries full precision.** This same
    filing is **`24.5686` in the XML and `24.57` in DERA** (found by the Task 1 implementer,
    confirmed 2026-07-26). Consequences: assert `24.5686` in XML-only tests, and the
    cross-path guard must compare price with a tolerance, never `==`. Do not normalise the
@@ -129,7 +137,7 @@ def test_parses_a_real_open_market_purchase():
     assert t.ticker == "OKLO"
     assert t.date == date(2025, 3, 27)
     assert t.shares == 6000.0
-    assert t.price == 24.57
+    assert t.price == 24.5686   # XML full precision; DERA rounds this to 24.57
     assert t.plan_10b5_1 is False          # aff10b5One is "0" here, NOT "false"
     assert "director" in t.roles
 
@@ -238,6 +246,10 @@ class InsiderTxn:
     plan_10b5_1: bool
     roles: frozenset[str]
     title: str | None = None
+    # Appended LAST (positional back-compat). True when the filing has >1 reporting owner:
+    # neither source joins a transaction to a PARTICULAR owner, so any single attribution is
+    # a guess. qualifies() rejects these. 9.5% of the v1 population -- spec §5.1.
+    joint_filing: bool = False
 
     @property
     def value(self) -> float | None:
@@ -286,6 +298,8 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
         return []
 
     ticker = (_val(root, "issuer/issuerTradingSymbol") or "").upper()
+    owners = root.findall("reportingOwner")
+    joint = len(owners) > 1
     owner_cik = _val(root, "reportingOwner/reportingOwnerId/rptOwnerCik") or ""
     rel = root.find("reportingOwner/reportingOwnerRelationship")
     roles = set()
@@ -317,6 +331,7 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             shares=_num(tx, "transactionAmounts/transactionShares"),
             price=_num(tx, "transactionAmounts/transactionPricePerShare"),
             plan_10b5_1=plan, roles=frozenset(roles), title=title,
+            joint_filing=joint,
         ))
     return out
 ```
@@ -519,9 +534,9 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
     """The three DERA TSVs -> InsiderTxn records, matching parse_form4_xml exactly."""
     subs = {r["ACCESSION_NUMBER"]: r for r in csv.DictReader(sub_fh, delimiter="\t")
             if r.get("DOCUMENT_TYPE") == "4"}
-    owners: dict[str, dict] = {}
+    owners: dict[str, list[dict]] = {}
     for r in csv.DictReader(owner_fh, delimiter="\t"):
-        owners.setdefault(r["ACCESSION_NUMBER"], r)
+        owners.setdefault(r["ACCESSION_NUMBER"], []).append(r)
 
     out: list[InsiderTxn] = []
     for r in csv.DictReader(trans_fh, delimiter="\t"):
@@ -531,7 +546,8 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
         d = parse_dera_date(r.get("TRANS_DATE"))
         if d is None:
             continue
-        o = owners.get(r["ACCESSION_NUMBER"], {})
+        os_ = owners.get(r["ACCESSION_NUMBER"], [])
+        o = os_[0] if os_ else {}
         title = (o.get("RPTOWNER_TITLE") or "").strip() or None
         out.append(InsiderTxn(
             owner_cik=(o.get("RPTOWNERCIK") or "").strip(),
@@ -543,6 +559,9 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
             plan_10b5_1=str(s.get("AFF10B5ONE") or "").strip().lower() in _TRUE,
             roles=_roles(o.get("RPTOWNER_RELATIONSHIP")),
             title=title,
+            # >1 reporting owner: neither source joins a transaction to a PARTICULAR
+            # owner, so any single attribution is a guess. Abstain (spec §5.1).
+            joint_filing=len(os_) > 1,
         ))
     return out
 ```
@@ -835,6 +854,10 @@ def _title_weight(title: str | None) -> float:
 
 def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     if txn.code != "P" or tier == ROUTINE:
+        return False
+    # Joint filings carry no per-transaction owner attribution, so owner_cik -- and every
+    # tier derived from it -- would be a guess. 9.5% of this population (spec §5.1).
+    if txn.joint_filing:
         return False
     if cfg.get("exclude_10b5_1", True) and txn.plan_10b5_1:
         return False

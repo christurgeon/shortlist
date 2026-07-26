@@ -112,8 +112,40 @@ edgartools' normalized view — that normalization layer is exactly what drifted
 versions and silently broke the accruals leg
 (`docs/audits/2026-07-12-accruals-leg-disable.md`).
 
-**Guard:** a test parses one real filing through *both* paths and asserts identical
-`InsiderTxn` records. This is the concrete defence against live/history definitional drift.
+**Guard:** a test parses one real filing through *both* paths and asserts the same
+`InsiderTxn`. Categorical fields must match exactly; **price is compared with a tolerance** —
+DERA rounds `TRANS_PRICEPERSHARE` to 2dp while the XML carries full precision (`24.57` vs
+`24.5686` on the fixture filing, found 2026-07-26). Normalising the XML down to 2dp to force
+agreement would discard real precision from the live path; the rounding is immaterial against
+a $100k floor.
+
+### 5.1 Joint filings are ABSTAINED (amended 2026-07-26)
+
+A Form 4 may carry **several `<reportingOwner>` blocks** (a fund and its affiliated director,
+a family group). Neither the XML nor DERA joins a transaction to a *particular* owner — the
+filing is made jointly, so per-transaction attribution does not exist in the source. Taking
+the first owner, which both parsers did in their first draft, silently assigns every
+transaction to one person.
+
+**Measured on 2025Q1** (why this is not a rounding-error concern):
+
+| population | share |
+|---|---|
+| all Form 4s that are joint | 1.72% |
+| Form 4s **containing an open-market purchase** that are joint | **12.05%** |
+| the v1 population (P buys ≥ $100k), joint **and** carrying officer/director | **9.5%** |
+
+A 7× concentration in exactly the population this signal reads. Roughly **1 in 10 emissions
+would carry a wrong `owner_cik`, and therefore a wrong CMP tier.**
+
+**Rule:** `InsiderTxn` gains `joint_filing: bool` (set when a filing has >1 reporting owner on
+either path) and `qualifies()` rejects those transactions. This follows the repo's
+abstain-never-guess idiom (`stake.py`, the CUSIP resolver, the gov-contract matcher). The
+count must be **surfaced in the signal's `available()` detail, never dropped silently** — the
+same rule every other originator follows for truncation.
+
+Signal-wise this costs little: a joint director+10%-owner purchase is a fund-affiliated
+transaction, not the individual discretionary trade the CMP effect is about.
 
 ## 6. Classification
 
