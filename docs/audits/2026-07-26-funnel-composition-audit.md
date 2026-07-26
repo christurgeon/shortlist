@@ -395,18 +395,48 @@ because the sample cannot support any alpha. **That guard was firing correctly t
 time.** §3 of this document quoted the levels anyway and built a thesis on them. The system's
 own floor was the thing to believe.
 
-### 5.4 Standing conclusions
+### 5.4 CORRECTION — this applies to the RAW firehose, not to every cohort
+
+The conclusion above was drafted from the **raw** 13D cohort and over-generalised. Checking
+the measurable fraction per cohort under the fixed evaluator:
+
+| cohort | measurable frac | clears 0.90? | alpha/mo | CI |
+|---|---|---|---|---|
+| 13D **raw** | 0.68 | no | +3.04% | [+1.79, +5.83] |
+| **13D scored_gated** | **0.92** | **YES** | **−0.43%** | **[−2.43, +1.46]** |
+| 8-K **raw** | 0.70 | no | −8.36% | [−9.68, −7.61] |
+| **8-K scored_gated** | **0.93** | **YES** | −8.53% | [−10.21, −7.15] |
+
+**The scored cohorts clear the floor**, and the 13D scored figure — **−0.43%/mo with a CI
+spanning zero** — is a perfectly credible measurement. Quality/gate filtering removes the
+shells and nano-caps whose disappearance drove the attrition, so the surviving population is
+measurable.
+
+This is exactly what the design already says (R-B5: *"the scored/double-sort cohort is the
+decision-relevant one; a raw-cohort kill corroborates but doesn't by itself settle it"*). The
+raw firehose was never the decision surface.
+
+The 8-K scored figure (−8.53%/mo, −65%/yr) still looks extreme, but unlike the raw numbers it
+may be real: that cohort was audited as ~30% junk and 42% delisting-proxy, selecting for
+micro-caps doing dilutive financings, which genuinely do crater. Treat it as plausible-but-
+unverified rather than as an artifact.
+
+### 5.5 Standing conclusions (revised)
 
 1. **Do not build the ABK / value-weighting correction.** It addresses a real but secondary
-   bias and cannot touch the attrition problem. Deleted from the roadmap.
-2. **Never quote a cohort alpha whose measurable fraction is below the floor.** The evaluator
-   currently reports the level *and* the INSUFFICIENT verdict side by side, which is how this
-   analysis went wrong. Recommended change: suppress the level (or mark it unusable) whenever
-   the floor fails, so the number cannot be read as evidence.
-3. **The double-sort spread is the decision-grade statistic**, because it compares two buckets
-   drawn from the same attrition-affected pool, so the common bias largely cancels.
-4. **Level-based KILL verdicts are retired on this data.** Signals earn or lose their place on
-   the within-cohort spread and on the live picks ledger, not on cohort alphas.
+   bias and cannot touch attrition. Deleted from the roadmap.
+2. **Never quote a RAW-cohort alpha.** Raw firehose fractions are 0.68–0.70 and their levels
+   are junk (+43%/yr on 13D). The evaluator prints the level next to the INSUFFICIENT verdict,
+   which is how this analysis went wrong; it should suppress the level whenever the floor
+   fails (item 0f).
+3. **Scored-cohort levels ARE usable** — they clear the floor, and 13D scored gives a credible
+   −0.43%/mo. Read them with the double-sort spread alongside, never alone.
+4. **No new data purchase is indicated.** Survivorship-free vendor data (Sharadar SEP ~$50/mo,
+   Norgate, EODHD) would repair the raw cohorts and tighten the scored ones, but the
+   decision-relevant scored cohorts already measure. Revisit only if a future signal's scored
+   cohort fails the floor.
+5. **KILL still requires an entirely-negative CI on a floor-clearing scored cohort** — never a
+   raw level, and never a bare point estimate (removed 2026-07-26).
 
 **What survives:** the *point estimates* are still roughly the cohorts' mean realized returns,
 so the **signs** in §3 — negative levels, positive composite spreads — are probably real. The

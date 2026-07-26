@@ -90,9 +90,18 @@ Open work, in order:
    non-random attrition; it needs CRSP-style point-in-time delisting returns that free Yahoo
    cannot supply. **The `min_measurable_frac: 0.90` prereg floor was firing correctly all
    along** — 13D measures 0.62–0.70 — and the earlier analysis quoted the levels anyway.
+   **CORRECTION (audit §5.4): this applies to the RAW firehose, not to every cohort.** The
+   **scored/gated** cohorts CLEAR the floor — 13D scored frac **0.92**, alpha **−0.43%/mo, CI
+   [−2.43%, +1.46%]** (credible); 8-K scored frac 0.93. Quality/gate filtering removes the
+   shells whose disappearance drove the attrition, which is what R-B5 already said: the scored
+   cohort is the decision surface, the raw firehose never was.
    Consequences: (a) **do NOT build the ABK/value-weighting correction** — removed from the
-   roadmap; (b) level-based KILL verdicts are retired on this data; (c) signals earn their
-   place on the within-cohort double-sort spread and the live picks ledger.
+   roadmap; (b) never quote a RAW-cohort alpha; (c) **scored-cohort levels ARE usable**, read
+   alongside the double-sort spread; (d) **no data purchase indicated** — survivorship-free
+   vendor data (Sharadar SEP ~$50/mo, Norgate, EODHD) would repair the raw cohorts, but the
+   decision-relevant scored ones already measure; revisit only if a future signal's scored
+   cohort fails the floor; (e) KILL requires an entirely-negative CI on a floor-clearing
+   SCORED cohort.
 0f. **NEXT, small and high-value:** make the evaluator **suppress the alpha level whenever
    the measurable-fraction floor fails** (today it prints the level and the INSUFFICIENT
    verdict side by side, which is exactly how this session's wrong turn happened). Cheap,
