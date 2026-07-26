@@ -128,7 +128,13 @@ Open work, in order:
    normalized view, pinned by a both-paths-parse-identically test; trade-month index built
    from ALL transaction codes; emission unit is the ISSUER with a PER-TRANSACTION $ floor;
    three tiers (routine dropped / opportunistic 1.0 / unclassified 0.6, tier logged).
-   Implementation plan not yet written. Background:
+   **PLAN → `docs/PLAN_FORM4_INSIDER.md`** (6 TDD tasks); execution started 2026-07-26 on
+   branch `feat/form4-opportunistic-insider` via subagent-driven development (ledger:
+   `.superpowers/sdd/PLAN_FORM4_INSIDER/progress.md`). **The `form4` backfill leg is
+   deliberately NOT in scope** — spec §3 defers the cohort, and a Form 4 leg needs
+   quarterly-ZIP fetching plus a point-in-time `assemble_factory` (index from quarters
+   strictly BEFORE each event's quarter, else future trading behaviour leaks into the
+   classification). That needs its own spec. Background:
    1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
    lower-weighted originators were killed by measurement. Today it is a bare count heuristic
    (`min_buyers=2`, **no dollar floor** — real emissions read "2 insiders bought $5k", the
