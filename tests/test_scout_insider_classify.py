@@ -48,6 +48,19 @@ def test_routine_pattern_must_be_within_the_lookback():
     assert classify_tier("A", idx, as_of=date(2025, 1, 1)) == "unclassified"
 
 
+def test_a_lapsed_routine_streak_is_no_longer_routine():
+    """docs/FORM4_INSIDER.md §6 worked example: March 2022-24 evaluated as-of 2026 is
+    opportunistic, not routine. The routine window is anchored to `as_of`, not to the
+    trader's own most-recent activity -- a plausible off-by-one a future refactor could
+    reintroduce silently. By as_of=2026 the streak stopped a full calendar year ago
+    (the strict routine window is 2023-2025), so it must not brand the trader routine
+    forever."""
+    idx = build_trade_month_index([_t("A", date(y, 3, 10)) for y in (2022, 2023, 2024)])
+    result = classify_tier("A", idx, as_of=date(2026, 1, 1))
+    assert result == "opportunistic"
+    assert result != "routine"
+
+
 def test_cik_zero_padding_does_not_break_the_join():
     """owner_cik is the join key between the live XML path and the DERA history index. If
     the two sides ever disagree on zero-padding, every lookup misses and every insider
