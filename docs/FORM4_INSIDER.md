@@ -94,6 +94,7 @@ The single most important structural decision. `dera.py` (history) and `insider.
 ```python
 InsiderTxn = {
     "owner_cik": str,     # stable person ID -- the key the whole classification rests on
+    "issuer_cik": str,    # the COMPANY's CIK -- carried so Emission.cik can be set (see below)
     "ticker": str,
     "date": date,         # transaction date, not filing date
     "code": str,          # "P" == open-market purchase
@@ -146,6 +147,17 @@ same rule every other originator follows for truncation.
 
 Signal-wise this costs little: a joint director+10%-owner purchase is a fund-affiliated
 transaction, not the individual discretionary trade the CMP effect is about.
+
+### 5.2 Emissions carry the issuer CIK (added 2026-07-26)
+
+`Emission.cik` exists so the **selection ledger can re-resolve a renamed ticker** and so
+firehose events can use **CIK-based delisting classification**. `edgar_13f` ships with
+`cik=None` and CLAUDE.md records that as a known limit blocking exactly those two things.
+
+We are not repeating it voluntarily: both sources carry the issuer CIK inline
+(`<issuerCik>` in the XML, `ISSUERCIK` in DERA), so `InsiderTxn` carries `issuer_cik` and
+`emissions_from_txns` sets `Emission.cik`. Retrofitting this after the ledger has entries is
+far more expensive than carrying it from day one.
 
 ## 6. Classification
 
