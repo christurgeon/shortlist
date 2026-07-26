@@ -23,8 +23,11 @@ re-argue its decisions.
 
 - **Design spec is authoritative:** `docs/FORM4_INSIDER.md`. Deviations need a spec amendment.
 - **`scoring.score()` must be untouched.** This is discovery plumbing only.
-- **Config invariance:** removing the `scout.form4` block must reproduce pre-feature behaviour
-  byte-identically (the convention every block in this repo follows).
+- **Config-absence contract** (corrected 2026-07-26; the original "byte-identical to
+  pre-feature behaviour" is unsatisfiable once `cluster_buys_from_records` is retired):
+  with no `scout.form4` block, `scan()` returns `[]` **without fetching and without building
+  or downloading the DERA index**, and `available()` returns `(False, "no scout.form4
+  config")`. Pin it with a test that would FAIL against a signal that still runs.
 - **No network in unit tests.** All fixtures committed under `tests/fixtures/form4/`.
 - **CI gate, in this order:** `uv run ruff check src tests` then `uv run pytest -q`. A ruff
   finding is a hard gate, not a nit.

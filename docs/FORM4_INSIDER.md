@@ -262,7 +262,20 @@ scout:
       cache_dir: .cache/dera
 ```
 
-Removing the `form4` block must leave behaviour byte-identical to the pre-feature signal —
+**Config-absence contract (corrected 2026-07-26).** The original wording — "byte-identical to
+the pre-feature signal" — is **unsatisfiable and has been withdrawn**: this task retires
+`cluster_buys_from_records`, so the pre-feature behaviour no longer exists in the code to be
+identical to. Worse, the test that claimed to pin it injected an empty fetcher and asserted no
+emissions, which would pass against *any* implementation including a deleted one.
+
+The achievable contract, which must be pinned by a test that actually distinguishes
+implementations: **with no `scout.form4` block the signal is an explicit no-op** — `scan()`
+returns `[]` without fetching anything and without building or downloading the DERA index
+(~205 MB), and `available()` returns `(False, "no scout.form4 config")`. An unconfigured
+signal must not silently run at wrong strengths (`tier_strength.opportunistic` defaulting to
+0.6 instead of 1.0) nor pull hundreds of megabytes.
+
+Historical note, kept because it is the general convention here:  removing a block should leave behaviour equivalent to the pre-feature state —
 the invariance convention every other block in this repo follows, pinned by a test.
 
 ## 9. Measurement
