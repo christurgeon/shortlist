@@ -150,8 +150,35 @@ transaction, not the individual discretionary trade the CMP effect is about.
 ## 6. Classification
 
 CMP-2012: an insider is **routine** if they traded in the **same calendar month for 3
-consecutive years**; **opportunistic** if they have ≥3 years of history but no such pattern;
-**unclassified** if history is insufficient.
+consecutive years**; **opportunistic** if they have enough history but no such pattern;
+**unclassified** if history is insufficient or stale.
+
+**Precise semantics (corrected 2026-07-26 during implementation).** The first draft collapsed
+"enough history" and "is the pattern routine" into one calendar window, which made a trader
+with a *gap year* come out UNCLASSIFIED when they should be OPPORTUNISTIC — the reference
+pseudocode contradicted this spec's own worked examples. The two checks are deliberately
+separate:
+
+1. **Enough history to judge at all** — ≥ `lookback_years` **distinct** trading years anywhere
+   in the record, **and** the most recent trade no more than `lookback_years` years before
+   `as_of`. Uses the insider's full history. A gap year should make someone opportunistic, not
+   unjudgeable.
+2. **Is the pattern routine** — checked only over the strict last `lookback_years` calendar
+   years. This is what stops a long-since-ended same-month streak from branding a trader
+   routine forever: March 2022–24 evaluated as-of 2026 is **opportunistic**, not routine.
+
+**Deliberate deviation from the strictest CMP reading.** CMP can be read as requiring a trade
+in *each* of the past 3 years to classify at all. We require 3 *distinct* years plus recency.
+The strict reading would push most sporadic officer/director traders into UNCLASSIFIED and the
+filter would do little work. **Open measurement:** once the index is built, record the actual
+routine / opportunistic / unclassified mix. If unclassified dominates, revisit this choice —
+the tier is logged on every emission precisely so it can be measured.
+
+**`owner_cik` is canonicalised (`.strip().zfill(10)`) on both the index build and the lookup.**
+It is the join key between the live path and the DERA-built history, and a padding mismatch
+would send *every* insider to UNCLASSIFIED with no error raised — a silent failure. Verified
+2026-07-26: all 63,284 DERA CIKs in 2025Q1 are 10-digit zero-padded and 6/6 sampled live XML
+filings agree, so canonicalisation is belt-and-braces against a silent mode, not a live bug.
 
 ```
 routine       -> DROP        (CMP: ~zero abnormal return)
