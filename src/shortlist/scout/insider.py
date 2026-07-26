@@ -117,3 +117,55 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             joint_filing=joint_filing,
         ))
     return out
+
+
+ROUTINE = "routine"
+OPPORTUNISTIC = "opportunistic"
+UNCLASSIFIED = "unclassified"
+
+_LOOKBACK_YEARS = 3
+
+
+def classify_tier(owner_cik: str, index: dict, as_of: date,
+                  lookback_years: int = _LOOKBACK_YEARS) -> str:
+    """Cohen-Malloy-Pomorski (JF 2012) routine/opportunistic split.
+
+    ROUTINE       -- traded in the SAME calendar month in each of the last `lookback_years`
+                     consecutive years (that consecutive run must fall inside the recent
+                     lookback window -- see below). Predictable; ~zero abnormal return.
+    OPPORTUNISTIC -- has >= lookback_years distinct trading years and recent activity, but no
+                     such consecutive same-month pattern.
+    UNCLASSIFIED  -- not enough history, or the history is stale, to judge. Emitted at
+                     reduced strength, never dropped.
+
+    Two separate checks, deliberately NOT collapsed into one calendar window:
+      1. "Enough history to judge at all" -- >= lookback_years DISTINCT trading years
+         anywhere in the record, with the most recent one no more than `lookback_years`
+         years before `as_of`. This uses the insider's FULL history: a trader who has
+         traded in `lookback_years` separate years, one of which sits just outside the
+         strict last-N-calendar-years window, still has enough signal to be judged (a gap
+         year should make them OPPORTUNISTIC, not bump them to UNCLASSIFIED for "missing"
+         a data point that was never required to sit inside a rigid window).
+      2. "Is the pattern routine" -- checked ONLY over the strict last `lookback_years`
+         calendar years (`as_of.year - 1 .. as_of.year - lookback_years`). This is what
+         keeps an old, long-since-ended same-month streak from branding a trader routine
+         forever -- it can only be caught by check 1's staleness gate, or (as here) by
+         simply not being in the window this check inspects.
+
+    `owner_cik` is zero-padded before the lookup -- see build_trade_month_index's docstring:
+    this is the join key against the DERA history index, and a silent zero-padding mismatch
+    would otherwise send every insider to UNCLASSIFIED without any error.
+    """
+    months = index.get((owner_cik or "").strip().zfill(10))
+    if not months:
+        return UNCLASSIFIED
+    distinct_years = {y for (y, _m) in months}
+    if len(distinct_years) < lookback_years:
+        return UNCLASSIFIED
+    if as_of.year - max(distinct_years) > lookback_years:
+        return UNCLASSIFIED  # last trade too long ago -- stale, not judgeable
+    window_years = [as_of.year - k for k in range(1, lookback_years + 1)]
+    for m in range(1, 13):
+        if all((y, m) in months for y in window_years):
+            return ROUTINE
+    return OPPORTUNISTIC

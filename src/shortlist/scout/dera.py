@@ -95,3 +95,27 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
             joint_filing=len(os_) > 1,
         ))
     return out
+
+
+def build_trade_month_index(txns) -> dict[str, set[tuple[int, int]]]:
+    """owner_cik -> {(year, month)} they transacted in.
+
+    Built from ALL transaction codes, deliberately. An insider who sells every March under a
+    standing arrangement is ROUTINE -- precisely the noise the CMP filter strips. Indexing
+    only purchases would classify such a trader as opportunistic and the filter would do
+    nothing. (docs/FORM4_INSIDER.md §6)
+
+    Keyed on a zero-padded CIK: owner_cik is the join key between this history index and the
+    live Form 4 XML path (classify_tier). If the two sides ever disagreed on zero-padding,
+    every lookup would miss and every insider would silently classify as "unclassified" --
+    still emitted, just at reduced strength, so the failure would never surface as an error.
+    Canonicalizing here (and in classify_tier) makes the join robust to that regardless of
+    which representation a caller passes in.
+    """
+    idx: dict[str, set[tuple[int, int]]] = {}
+    for t in txns:
+        if not t.owner_cik or t.date is None:
+            continue
+        key = t.owner_cik.strip().zfill(10)
+        idx.setdefault(key, set()).add((t.date.year, t.date.month))
+    return idx
