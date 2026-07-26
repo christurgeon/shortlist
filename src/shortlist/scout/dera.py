@@ -93,6 +93,7 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
             # >1 reporting owner: neither source joins a transaction to a PARTICULAR
             # owner, so any single attribution is a guess. Abstain (spec §5.1).
             joint_filing=len(os_) > 1,
+            issuer_cik=(s.get("ISSUERCIK") or "").strip(),
         ))
     return out
 

@@ -53,6 +53,12 @@ def test_live_and_history_agree_on_the_same_filing():
 
     for field in ("owner_cik", "ticker", "date", "code", "roles", "title", "plan_10b5_1"):
         assert getattr(xml_t, field) == getattr(dera_t, field), field
+    # issuer_cik: both sides already come formatted zero-padded to 10 digits on this
+    # fixture, but canonicalize with .strip().zfill(10) on both sides anyway -- the
+    # same defensive join-key normalization build_trade_month_index/classify_tier use
+    # for owner_cik -- so this guard doesn't silently pass if a future fixture (or a
+    # real filing) supplies an unpadded CIK on one side only.
+    assert xml_t.issuer_cik.strip().zfill(10) == dera_t.issuer_cik.strip().zfill(10)
     assert xml_t.shares == dera_t.shares
     assert abs(xml_t.price - dera_t.price) < 0.01          # DERA 2dp rounding only
     assert abs(xml_t.value - dera_t.value) / dera_t.value < 1e-3

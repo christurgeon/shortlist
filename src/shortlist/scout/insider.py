@@ -12,6 +12,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 
+from .models import Emission
+
 _TRUE = {"1", "true", "yes", "y"}
 
 
@@ -34,6 +36,11 @@ class InsiderTxn:
     # 2025Q1 DERA: 1.72% of all Form 4s are joint, but 12.05% of Form 4s with an open-
     # market purchase are -- and 9.5% of the v1 (P >= $100k, officer/director) population.
     joint_filing: bool = False
+    # LAST field (positional back-compat, the convention this repo uses everywhere): the
+    # issuer's own CIK. Carried so a discovery Emission can set cik= directly instead of
+    # shipping cik=None like the 13F signal does (a known limitation recorded in
+    # CLAUDE.md) -- both parse_form4_xml and parse_dera_tsvs have it inline already.
+    issuer_cik: str = ""
 
     @property
     def value(self) -> float | None:
@@ -82,6 +89,7 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
         return []
 
     ticker = (_val(root, "issuer/issuerTradingSymbol") or "").upper()
+    issuer_cik = _val(root, "issuer/issuerCik") or ""
     owner_cik = _val(root, "reportingOwner/reportingOwnerId/rptOwnerCik") or ""
     joint_filing = len(root.findall("reportingOwner")) > 1
     rel = root.find("reportingOwner/reportingOwnerRelationship")
@@ -114,7 +122,7 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             shares=_num(tx, "transactionAmounts/transactionShares"),
             price=_num(tx, "transactionAmounts/transactionPricePerShare"),
             plan_10b5_1=plan, roles=frozenset(roles), title=title,
-            joint_filing=joint_filing,
+            joint_filing=joint_filing, issuer_cik=issuer_cik,
         ))
     return out
 
@@ -169,3 +177,68 @@ def classify_tier(owner_cik: str, index: dict, as_of: date,
         if all((y, m) in months for y in window_years):
             return ROUTINE
     return OPPORTUNISTIC
+
+
+SIGNAL = "edgar:form4_insider_buy"
+
+# Role weights -- UNFITTED PRIORS. CFO-type titles above CEO-type above other
+# (Wang-Shin-Francis 2012 find CFO trades more informative than CEO trades).
+_TITLE_WEIGHT = ((("chief financial", "cfo"), 1.00),
+                 (("chief executive", "ceo", "president"), 0.90),
+                 ((), 0.80))
+
+
+def _title_weight(title: str | None) -> float:
+    t = (title or "").lower()
+    for needles, w in _TITLE_WEIGHT:
+        if not needles or any(n in t for n in needles):
+            return w
+    return 0.80
+
+
+def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
+    if txn.code != "P" or tier == ROUTINE:
+        return False
+    # Joint filings carry no per-transaction owner attribution, so owner_cik -- and every
+    # tier derived from it -- would be a guess. 9.5% of this population (spec §5.1).
+    if txn.joint_filing:
+        return False
+    if cfg.get("exclude_10b5_1", True) and txn.plan_10b5_1:
+        return False
+    if not (txn.roles & set(cfg.get("roles") or ("officer", "director"))):
+        return False
+    v = txn.value
+    # PER-TRANSACTION floor, never an aggregate (docs/FORM4_INSIDER.md §7).
+    return v is not None and v >= float(cfg.get("min_value", 100_000))
+
+
+def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emission]:
+    """Qualifying transactions -> one Emission per ISSUER. Pure."""
+    by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
+    for t in txns:
+        tier = classify_tier(t.owner_cik, index, as_of)
+        if not t.ticker or not qualifies(t, tier, cfg):
+            continue
+        by_ticker.setdefault(t.ticker, []).append((t, tier))
+
+    strengths = cfg.get("tier_strength") or {}
+    out: list[Emission] = []
+    for ticker, rows in by_ticker.items():
+        buyers = {t.owner_cik for t, _ in rows}
+        total = sum(t.value or 0.0 for t, _ in rows)
+        best_tier = OPPORTUNISTIC if any(x == OPPORTUNISTIC for _, x in rows) else UNCLASSIFIED
+        tier_mult = float(strengths.get(best_tier, 0.6))
+        role_w = max(_title_weight(t.title) for t, _ in rows)
+        size = min(0.30, total / 5_000_000.0)          # materiality, capped
+        cluster = min(0.20, 0.10 * (len(buyers) - 1))  # cluster is a BONUS, not a gate
+        strength = round(min(1.0, (0.50 + size + cluster) * role_w * tier_mult), 4)
+        # issuer CIK is the same for every row of a given ticker (one issuer); take it
+        # from whichever qualifying transaction has it.
+        issuer_cik = next((t.issuer_cik for t, _ in rows if t.issuer_cik), None)
+        out.append(Emission(
+            ticker, SIGNAL, strength,
+            f"{len(buyers)} insider buy(s), ${total/1000:.0f}k ({best_tier})",
+            is_discovery=True, cik=issuer_cik,
+            meta={"tier": best_tier, "buyers": len(buyers), "value": total},
+        ))
+    return out
