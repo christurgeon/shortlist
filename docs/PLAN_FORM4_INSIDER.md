@@ -977,6 +977,120 @@ def test_signal_degrades_quietly_when_the_fetch_fails():
 Run: `uv run pytest tests/test_scout_form4_signal.py -q`
 Expected: FAIL — `TypeError: __init__() got an unexpected keyword argument 'cfg'`
 
+- [ ] **Step 2b: Add the bulk fetch/cache + index loader to `scout/dera.py`**
+
+> **Gap fixed 2026-07-26:** the first draft of this plan referenced `ensure_quarters`,
+> `load_index` and `_default_load_index` without ever defining them. Code below.
+
+```python
+import json
+import urllib.request
+import warnings
+import zipfile
+from pathlib import Path
+
+from ..env import redact_secrets
+
+_UA = "shortlist-scout turgechr@duck.com"
+
+
+def quarters_back(as_of: date, n: int) -> list[str]:
+    """The `n` quarters ending with the one before `as_of`'s, newest first ('2025q1').
+
+    DERA publishes roughly a quarter in arrears, so the CURRENT quarter is normally absent
+    and `ensure_quarters` skips it rather than failing (verified 2026-07-26: 2026q1 was
+    published, 2026q2 was not).
+    """
+    y, q = as_of.year, (as_of.month - 1) // 3 + 1
+    out = []
+    for _ in range(n):
+        q -= 1
+        if q == 0:
+            y, q = y - 1, 4
+        out.append(f"{y}q{q}")
+    return out
+
+
+def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]:
+    """Download each quarterly ZIP to `cache_dir` if absent; return the paths that exist.
+
+    Cached FOREVER by filename -- a published quarter is immutable. A 404 means "not
+    published yet" and is SKIPPED, never raised: a missing recent quarter must degrade the
+    history, not abort the daily run.
+    """
+    d = Path(cache_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    out: list[Path] = []
+    for q in quarters:
+        p = d / f"{q}_form345.zip"
+        if not p.exists():
+            try:
+                req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    p.write_bytes(r.read())
+            except Exception as exc:  # noqa: BLE001 -- absent quarter degrades history
+                warnings.warn(f"dera: {q} unavailable: {redact_secrets(str(exc))}",
+                              stacklevel=2)
+                continue
+        out.append(p)
+    return out
+
+
+def _index_from_zip(path: Path) -> list:
+    with zipfile.ZipFile(path) as z:
+        with z.open("SUBMISSION.tsv") as s, z.open("REPORTINGOWNER.tsv") as o, \
+             z.open("NONDERIV_TRANS.tsv") as t:
+            return parse_dera_tsvs(
+                io.TextIOWrapper(s, "utf-8", errors="replace"),
+                io.TextIOWrapper(o, "utf-8", errors="replace"),
+                io.TextIOWrapper(t, "utf-8", errors="replace"))
+
+
+def load_index(cache_dir: str, quarters, identity: str = _UA) -> dict:
+    """Trade-month index across `quarters`, disk-cached as compact JSON.
+
+    Rebuilding from ~16 ZIPs on every daily run is wasteful, so the built index is persisted
+    keyed by the exact quarter list. Values are stored as `y*12+m` ints (far smaller than
+    [y, m] pairs) and rehydrated to the (year, month) tuples `classify_tier` expects.
+    """
+    key = "-".join(sorted(quarters))
+    cache = Path(cache_dir) / f"index-{key}.json"
+    if cache.exists():
+        raw = json.loads(cache.read_text())
+        return {k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()}
+    idx: dict[str, set] = {}
+    for p in ensure_quarters(quarters, cache_dir, identity):
+        for cik, months in build_trade_month_index(_index_from_zip(p)).items():
+            idx.setdefault(cik, set()).update(months)
+    cache.write_text(json.dumps(
+        {k: sorted(y * 12 + (m - 1) for (y, m) in vs) for k, vs in idx.items()}))
+    return idx
+```
+
+**Memory note — this runs on a 1.9 GB VPS.** Sixteen quarters is roughly 900k submissions.
+Build the index **one ZIP at a time** (the loop above does; do not read them all into a list
+first) and report the built index's entry count and the process's peak RSS in your task
+report. If peak RSS exceeds ~400 MB, stop and report rather than shipping something that
+will be OOM-killed alongside the daily scout.
+
+Tests for this step (no network — monkeypatch `ensure_quarters` to return a path to the
+committed `dera_2025q1_sample` TSVs zipped into a tmp file, or point `_index_from_zip` at a
+tmp ZIP you build in the test):
+
+```python
+def test_quarters_back_walks_backwards_from_the_previous_quarter():
+    from datetime import date
+    from shortlist.scout.dera import quarters_back
+    assert quarters_back(date(2026, 7, 26), 3) == ["2026q2", "2026q1", "2025q4"]
+
+
+def test_load_index_round_trips_through_its_json_cache(tmp_path):
+    """Second call must hit the cache and return an identical index."""
+    from shortlist.scout.dera import load_index
+    # build a one-quarter ZIP from the committed sample TSVs, monkeypatch ensure_quarters
+    # to return it, call load_index twice, assert equality and that the cache file exists.
+```
+
 - [ ] **Step 3: Add the live fetcher to `scout/edgar_index.py`**
 
 ```python
@@ -1037,19 +1151,23 @@ class EdgarForm4Signal:
             from .edgar_index import fetch_form4_submissions as fetch
         try:
             docs, used = fetch(session, self.max_filings)
-            index = (self._load_index or _default_load_index)()
+            index = (self._load_index or self._default_index)()
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
         txns = [t for doc in docs for t in parse_form4_xml(doc)]
+        # Spec §5.1: joint filings are abstained, and the count must be VISIBLE -- a silent
+        # 9.5% drop is exactly the kind of thing that hides a broken parser.
+        n_joint = len({t.ticker for t in txns if t.joint_filing and t.code == "P"})
         ems = emissions_from_txns(txns, index, session, self.cfg)
         cap = int(self.cfg.get("daily_cap", 25))
         if len(ems) > cap:
             ems = sorted(ems, key=lambda e: e.strength, reverse=True)[:cap]
         fallback = "" if used == session else f"; {session} index empty, used {used}"
+        joint = f"; {n_joint} joint filings abstained" if n_joint else ""
         self._status = (bool(docs),
                         f"{len(ems)} insider buys from {len(docs)} Form 4s "
-                        f"(cap {self.max_filings}){fallback}")
+                        f"(cap {self.max_filings}){joint}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:
