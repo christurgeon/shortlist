@@ -79,6 +79,24 @@ Open work, in order:
      **Not a rehabilitation.** Note added to the 2026-07-08 audit; memory amended.
    - **`edgar:activist_13d` unchanged and now better supported** — −4.45%/mo, CI
      [−5.22%, −4.47%] after a 3.4× widening. The negative level was NOT an artifact.
+0e. **RESOLVED 2026-07-26 — levels are structurally unmeasurable; STOP trying to fix them.**
+   A bounded experiment (audit §5) settled it. Alpha by nominal entry price: ALL **+3.04%/mo
+   (+43%/yr)**, ≥$5 −1.82%, ≥$20 −4.15% — neither end credible; dropping untradeable `*F`/`*Y`
+   OTC tickers moved it 0.13pp, so contamination isn't the driver. The real blocker is
+   **outcome-correlated attrition**: 21.5% of events have no price series and 3.6% no ticker,
+   with the missing rate monotonic in age (2022 **33.7%** → 2025 14.1%) — i.e. companies
+   disappearing via acquisition/delisting. For a 13D cohort that removes the WINNERS (a forced
+   sale at a premium is a successful campaign). No weighting, factor model or bootstrap fixes
+   non-random attrition; it needs CRSP-style point-in-time delisting returns that free Yahoo
+   cannot supply. **The `min_measurable_frac: 0.90` prereg floor was firing correctly all
+   along** — 13D measures 0.62–0.70 — and the earlier analysis quoted the levels anyway.
+   Consequences: (a) **do NOT build the ABK/value-weighting correction** — removed from the
+   roadmap; (b) level-based KILL verdicts are retired on this data; (c) signals earn their
+   place on the within-cohort double-sort spread and the live picks ledger.
+0f. **NEXT, small and high-value:** make the evaluator **suppress the alpha level whenever
+   the measurable-fraction floor fails** (today it prints the level and the INSUFFICIENT
+   verdict side by side, which is exactly how this session's wrong turn happened). Cheap,
+   TDD-able, prevents recurrence.
 0c. **Remaining gap:** `double_sort`'s `spread_ci` still uses the month-resampled bootstrap,
    so the spread CIs are still too tight. Display-only (no verdict reads it) but the digest
    shows it. Needs a per-bucket event resample.

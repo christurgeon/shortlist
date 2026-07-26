@@ -339,10 +339,74 @@ the ask on noise (Blume-Stambaugh 1983; Asparouhova-Bessembinder-Kalcheva 2013).
 cohort is exactly that population.
 
 So the honest state of the instrument is: **the two known first-order defects are fixed, and
-the levels are still not decision-grade.** Only the double-sort spread — a difference between
-two cohorts measured identically, where common biases cancel — should carry weight until a
-level-bias correction (value-weighting, or Asparouhova-style gross-return weighting) is
-implemented and tested. **Do not re-issue KILL verdicts on levels.**
+the levels are still not decision-grade.** §5 settles why.
+
+---
+
+## 5. Why levels are structurally unmeasurable here — and why to stop trying
+
+A bounded experiment was run to decide whether a weighting correction could rescue the
+levels. **The answer is no, and the reason is not weighting.**
+
+### 5.1 The band test
+
+Under the fixed CTP, the 13D raw alpha by nominal entry price:
+
+| band | n | alpha/mo | annualised |
+|---|---|---|---|
+| ALL | 2,256 | **+3.04%** | +43.2% |
+| nominal ≥ $5 | 1,533 | −1.82% | −19.8% |
+| nominal ≥ $20 | 719 | −4.15% | −39.9% |
+
+Strongly positive with cheap names in, strongly negative with them out. Neither end is
+credible. Dropping 5-letter `*F`/`*Y`-style untradeable OTC tickers (2.8% of events, e.g.
+`FMTOF` quoted at $5,831/share, `TIRXF` at $320) moved the number by **0.13pp** — so the
+contamination is not the driver either.
+
+### 5.2 The actual blocker: outcome-correlated attrition
+
+| reason an event leaves the cohort | n | share |
+|---|---|---|
+| measured | 2,269 | 62.2% |
+| **no price series** | **783** | **21.5%** |
+| immature | 394 | 10.8% |
+| **unresolved ticker** | **131** | **3.6%** |
+| no entry price | 67 | 1.8% |
+
+Missing-price rate by event year: **2022 33.7% · 2023 31.3% · 2024 20.5% · 2025 14.1%.**
+
+Monotonic in age. That is names **disappearing** — acquired, delisted, renamed. For a 13D
+cohort this is maximally damaging: forcing a sale is a common *successful* outcome of an
+activist campaign, so the acquisitions — the winners, at a premium — are exactly the events
+that vanish from the sample. A quarter of the cohort is missing, and the missingness is
+correlated with the outcome.
+
+**No weighting scheme, factor model, or bootstrap fixes non-random attrition.** Correcting it
+needs point-in-time delisting and acquisition returns (CRSP-style), which free Yahoo cannot
+provide. This is not a bug to fix; it is the boundary of the data, and CLAUDE.md's design
+premise already names it: *"we validate on free-tier, survivorship-biased, currently-listed
+names."*
+
+### 5.3 The guard was already right, and I ignored it
+
+The pre-registration's `min_measurable_frac: 0.90` exists for precisely this. The 13D cohort
+measures 0.62–0.70 and is therefore INSUFFICIENT — *not* because the alpha was weak, but
+because the sample cannot support any alpha. **That guard was firing correctly the whole
+time.** §3 of this document quoted the levels anyway and built a thesis on them. The system's
+own floor was the thing to believe.
+
+### 5.4 Standing conclusions
+
+1. **Do not build the ABK / value-weighting correction.** It addresses a real but secondary
+   bias and cannot touch the attrition problem. Deleted from the roadmap.
+2. **Never quote a cohort alpha whose measurable fraction is below the floor.** The evaluator
+   currently reports the level *and* the INSUFFICIENT verdict side by side, which is how this
+   analysis went wrong. Recommended change: suppress the level (or mark it unusable) whenever
+   the floor fails, so the number cannot be read as evidence.
+3. **The double-sort spread is the decision-grade statistic**, because it compares two buckets
+   drawn from the same attrition-affected pool, so the common bias largely cancels.
+4. **Level-based KILL verdicts are retired on this data.** Signals earn or lose their place on
+   the within-cohort spread and on the live picks ledger, not on cohort alphas.
 
 **What survives:** the *point estimates* are still roughly the cohorts' mean realized returns,
 so the **signs** in §3 — negative levels, positive composite spreads — are probably real. The
