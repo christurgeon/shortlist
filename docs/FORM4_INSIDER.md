@@ -176,29 +176,45 @@ scout:
 Removing the `form4` block must leave behaviour byte-identical to the pre-feature signal —
 the invariance convention every other block in this repo follows, pinned by a test.
 
-## 9. Measurement — an explicit dependency, not a footnote
+## 9. Measurement
+
+**Amended 2026-07-26** — an earlier draft called the cohort "blocked pending a level-bias
+fix". That was based on an over-generalisation from the *raw* firehose and is withdrawn;
+see `docs/audits/2026-07-26-funnel-composition-audit.md` §5.4.
 
 `preregister/edgar_form4.yaml` is committed **before** any run (the anti-p-hacking guard).
-The cohort itself is **blocked** on the evaluator's level bias.
 
-State of the instrument as of 2026-07-26
-(`docs/audits/2026-07-26-funnel-composition-audit.md` §3a, §4):
+State of the instrument as of 2026-07-26:
 
-- ✅ event-level bootstrap CI — fixed
-- ✅ smooth-path calendar-time portfolio — fixed
-- ❌ **residual level bias — NOT fixed.** The corrected 13D raw alpha is +3.04%/mo (+43%/yr),
-  which is not a credible number. Prime suspect is bid-ask bounce in an equal-weighted,
-  monthly-rebalanced microcap book (Blume-Stambaugh 1983;
-  Asparouhova-Bessembinder-Kalcheva 2013).
+- ✅ event-level bootstrap CI — fixed (§3a)
+- ✅ smooth-path calendar-time portfolio — fixed (§4.5)
+- ⚠️ **raw-firehose levels are unusable** — measurable fraction 0.68–0.70, alphas
+  uninterpretable (13D raw +43%/yr). Outcome-correlated attrition: names vanish via
+  acquisition/delisting, and for event cohorts the disappearances are the *winners*.
+- ✅ **scored/gated cohort levels ARE usable** — they clear the 0.90 floor (13D 0.92, 8-K
+  0.93) and produce credible figures (13D scored −0.43%/mo, CI [−2.43%, +1.46%]).
 
-**Until that is fixed, only the double-sort spread is decision-grade, and no KILL verdict may
-be issued on a level.** This must be treated as a parallel track. Shipping originators we
-cannot evaluate is how this project ends up in three months with a better-looking funnel and
-no idea whether it works.
+**Measurement rule for this signal:**
 
-Interim measurement that does *not* depend on the evaluator: the **picks ledger** records
-every emission with an as-of price, so live forward returns accumulate from day one, and the
-tier field lets opportunistic and unclassified be compared later.
+1. Measure the **scored/gated** cohort. The raw cohort is corroboration only, never the
+   decision surface (design R-B5). Do not quote a raw-cohort level.
+2. **Check the measurable fraction against the pre-registered floor first**, before reading
+   any alpha. If it fails, there is no measurement — full stop. This guard was firing
+   correctly all through the 2026-07-26 analysis while the levels were being quoted anyway;
+   trust the floor over any narrative built on the numbers.
+3. KILL requires an **entirely-negative CI on a floor-clearing scored cohort**. Never a raw
+   level, never a bare point estimate (that trigger was removed 2026-07-26).
+4. Read the **double-sort spread alongside** the level, never the level alone.
+
+**Expected to pass the floor.** A $100k per-transaction floor plus officer/director roles
+biases hard toward real operating companies, which are exactly the names that do not vanish.
+If the scored cohort nonetheless fails the floor, that is the trigger to reconsider buying
+survivorship-free price data (Sharadar SEP ~$50/mo, Norgate, EODHD) — **not before**, since
+the decision-relevant cohorts currently measure without it.
+
+**Live measurement, independent of the cohort:** the picks ledger records every emission with
+an as-of price, so forward returns accumulate from day one, and the tier field (§6) lets
+opportunistic and unclassified be compared as evidence arrives.
 
 ## 10. Testing
 
