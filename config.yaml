@@ -489,7 +489,22 @@ scout:
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
-  edgar_index_daily_cap: 400
+  edgar_index_daily_cap: 400   # Form 4 filings FETCHED/session (edgar_form4 max_filings)
+  form4:                     # EdgarForm4Signal -- opportunistic-insider buys.
+                             # DRIFT CAPTURE, not an information edge: Form 4 is public T+2
+                             # and every vendor parses it instantly. UNFITTED PRIORS below.
+                             # Design: docs/FORM4_INSIDER.md
+    min_value: 100000        # PER-TRANSACTION $ floor, never an aggregate (spec §7).
+                             # Measured 2025Q1: median buy $23.7k; 31% clear $100k.
+    roles: [officer, director]   # tenpercent excluded in v1 (often funds/PE)
+    exclude_10b5_1: true
+    tier_strength: {opportunistic: 1.0, unclassified: 0.6}   # routine is dropped outright
+    daily_cap: 25            # EMISSIONS/session (post-qualification) -- LIVE-ONLY knob, a
+                             # backfill cohort must run UNCAPPED (the 8-K precedent: a live
+                             # truncation the cohort never applied)
+    dera:
+      quarters: 16           # ~4y of history, ~205 MB
+      cache_dir: .cache/dera
   activist_13d:              # EdgarActivist13DSignal — initial SCHEDULE 13D stakes (UNFITTED priors)
     daily_cap: 300          # max 13D filings fetched/session (surfaced in coverage)
     include_amendments: false   # v1: initial 13D only (SCHEDULE 13D/A spam — verified ~20-46/day)
