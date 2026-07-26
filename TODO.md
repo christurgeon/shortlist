@@ -134,7 +134,24 @@ Open work, in order:
    deliberately NOT in scope** — spec §3 defers the cohort, and a Form 4 leg needs
    quarterly-ZIP fetching plus a point-in-time `assemble_factory` (index from quarters
    strictly BEFORE each event's quarter, else future trading behaviour leaks into the
-   classification). That needs its own spec. Background:
+   classification). That needs its own spec.
+   **Execution state (2026-07-26, mid-flight):** Task 1 (`scout/insider.py` — `InsiderTxn` +
+   raw Form 4 XML parser) implemented and reviewed **spec ✅ / quality approved**; fix round 1
+   in flight for the joint-filing finding below. **Tasks 2–6 not started.** Nothing merged;
+   branch is unpushed at time of writing.
+   - **Spec amended mid-execution → `docs/FORM4_INSIDER.md` §5.1: joint filings are
+     ABSTAINED.** A Form 4 may carry several `<reportingOwner>` blocks and neither the XML nor
+     DERA joins a transaction to a *particular* owner. Measured 2025Q1: **1.72%** of all Form
+     4s, **12.05%** of those containing an open-market purchase, **9.5%** of the v1 population
+     — so ~1 in 10 emissions would carry a wrong `owner_cik` and hence a wrong CMP tier.
+     `InsiderTxn.joint_filing` + rejection in `qualifies()` + a surfaced count.
+   - **Also verified mid-execution:** DERA rounds `TRANS_PRICEPERSHARE` to 2dp while the XML
+     keeps full precision (`24.57` vs `24.5686`), so the cross-path guard compares price with
+     a tolerance — do NOT tighten it to `==`, and do NOT round the XML down to match.
+   - **Deferred minor (Task 1):** an `isinstance` assertion-of-convenience in
+     `tests/test_scout_insider_parse.py` exists only to satisfy ruff F401. Harmless; fold into
+     a real assertion next time that file is touched.
+   Background:
    1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
    lower-weighted originators were killed by measurement. Today it is a bare count heuristic
    (`min_buyers=2`, **no dollar floor** — real emissions read "2 insiders bought $5k", the
