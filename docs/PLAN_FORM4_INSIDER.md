@@ -827,7 +827,6 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
 
 def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emission]:
     """Qualifying transactions -> one Emission per ISSUER. Pure."""
-    tiers = {t.tier_strength_key: None for t in ()}  # placeholder removed below
     by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
     for t in txns:
         tier = classify_tier(t.owner_cik, index, as_of)
@@ -855,10 +854,10 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
     return out
 ```
 
-**Note for the implementer:** delete the stray `tiers = ...` placeholder line above — it is
-not used. Check `scout/models.py:Emission` for the exact constructor signature and whether it
-accepts `meta=`; if it does not, add `meta: dict = field(default_factory=dict)` as the LAST
-field (positional back-compat, the convention this repo uses everywhere).
+**Note for the implementer:** check `scout/models.py:Emission` for the exact constructor
+signature and whether it accepts `meta=`; if it does not, add
+`meta: dict = field(default_factory=dict)` as the LAST field (positional back-compat, the
+convention this repo uses everywhere).
 
 - [ ] **Step 4: Run the tests, verify they pass**
 
@@ -1053,17 +1052,27 @@ Form 4 flow (measured median 838/day, p90 1,498)."
 
 ---
 
-### Task 6: Pre-registration, backfill spec row, and docs
+### Task 6: Pre-registration and docs
+
+> **Scope note (pre-flight, 2026-07-26):** an earlier draft of this task also wired a
+> `_BACKFILL_SPECS["form4"]` row. That is **removed** — it contradicted the spec, whose §3
+> explicitly defers the backfill cohort from v1. It is also genuinely under-designed: every
+> existing leg fetches by date window from an EDGAR/EFTS index, whereas a Form 4 leg walks
+> quarterly DERA ZIPs, and its assembler must build the classification index from quarters
+> **strictly before** each event's quarter or future trading behaviour leaks into a
+> point-in-time classification (a stateful `assemble_factory`, like the `13d-a` row, not the
+> pure `assemble` the other three use). That deserves its own spec and plan, not an
+> improvised row here. Committing the pre-registration now still preserves the
+> anti-p-hacking guarantee: the parameters are fixed and git-timestamped before any run.
 
 **Files:**
 - Create: `src/shortlist/scout/preregister/edgar_form4.yaml`
-- Modify: `src/shortlist/scout/backfill.py` (add the `form4` spec row)
 - Modify: `CLAUDE.md`, `docs/FORM4_INSIDER.md` (status), `TODO.md`
 - Test: `tests/test_scout_form4_backcompat.py`
 
 **Interfaces:**
 - Consumes: `SIGNAL = "edgar:form4_insider_buy"` from Task 4.
-- Produces: a `_BACKFILL_SPECS["form4"]` row and a committed pre-registration.
+- Produces: a committed pre-registration. No backfill wiring.
 
 - [ ] **Step 1: Write the config-invariance test**
 
@@ -1106,37 +1115,30 @@ regime_down_rule: spy_trailing_3m_negative
 expected_sign: positive          # Cohen-Malloy-Pomorski 2012; Lakonishok-Lee 2001
 ```
 
-- [ ] **Step 4: Add the backfill spec row**
-
-Open `src/shortlist/scout/backfill.py`, find `_BACKFILL_SPECS`, and add a `"form4"` row
-following the existing `"13d"` row's shape (`signal`, `slug`, `fetch_factory`, `assemble`).
-The fetcher walks DERA quarters rather than an EDGAR index; the assembler reuses
-`emissions_from_txns` with the point-in-time index built from quarters strictly BEFORE each
-event's quarter — **never the full index**, which would leak future trading behaviour into the
-classification.
-
-- [ ] **Step 5: Update the docs**
+- [ ] **Step 4: Update the docs**
 
 - `docs/FORM4_INSIDER.md` — change the status line to `IMPLEMENTED <date>`.
 - `CLAUDE.md` — replace the `edgar_form4` description with the new behaviour; add a one-line
   landmine: *"`aff10b5One` appears as BOTH `0|1` and `false|true`; `transactionPricePerShare`
   may carry only a `footnoteId`."*
-- `TODO.md` — mark item 2 done; note the backfill cohort has not been RUN, only wired.
+- `TODO.md` — mark item 2 done; add a follow-up: **the `form4` backfill leg is NOT wired**
+  (needs its own spec — quarterly-ZIP fetching plus a point-in-time `assemble_factory`).
 
-- [ ] **Step 6: Full gate and commit**
+- [ ] **Step 5: Full gate and commit**
 
 ```bash
 uv run ruff check src tests && uv run pytest -q
 git add -A
-git commit -m "feat(form4): pre-registration, backfill spec row, docs
+git commit -m "feat(form4): pre-registration and docs
 
 Prereg is committed BEFORE any run. Its min_measurable_frac 0.90 must be
 checked BEFORE reading any alpha -- that floor was firing correctly all through
 the 2026-07-26 analysis while the levels it rejected were being quoted.
 
-The backfill assembler builds the classification index from quarters strictly
-BEFORE each event's quarter; using the full index would leak future trading
-behaviour into a point-in-time classification."
+The backfill leg is deliberately NOT wired: spec §3 defers the cohort, and a
+Form 4 leg needs quarterly-ZIP fetching plus a point-in-time assemble_factory
+(index from quarters strictly BEFORE each event's quarter, or future trading
+behaviour leaks into the classification). That needs its own spec."
 ```
 
 ---
@@ -1148,10 +1150,12 @@ behaviour into a point-in-time classification."
 measurement → Task 6. §10 testing → distributed across every task. §11 known limits →
 documented in code comments and `docs/FORM4_INSIDER.md`, no code required.
 
-**Placeholder scan:** one deliberate instruction-rather-than-code step remains — Task 6
-Step 4 (the backfill spec row), because its shape depends on the existing `_BACKFILL_SPECS`
-structure which the implementer must read. The point-in-time constraint is stated explicitly.
-Task 4 Step 3 contains a stray placeholder line flagged for deletion in the note beneath it.
+**Placeholder scan:** clean after the 2026-07-26 pre-flight pass, which removed two defects —
+a stray unused line in Task 4 Step 3, and Task 6's `_BACKFILL_SPECS` row (prose rather than
+code, and contradicting spec §3, which defers the cohort). Every remaining code step contains
+the code to write. Task 5 Step 3 and Task 4 Step 3 carry implementer notes to verify two
+existing signatures (`_walk_back_to_published`, `Emission`) against the codebase rather than
+trusting the plan's rendering of them — that is verification, not a placeholder.
 
 **Type consistency:** `InsiderTxn` fields are identical across Tasks 1, 2, 3, 4.
 `classify_tier(owner_cik, index, as_of)` is called with that signature in Task 4.
