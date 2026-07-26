@@ -1,36 +1,9 @@
 from datetime import date
 from shortlist.scout.edgar_index import (
-    cluster_buys_from_records,
+    fetch_form4_submissions,
     fetch_recent_records,
     _is_real_ticker,
 )
-
-
-def test_cluster_detection_groups_buys_by_issuer():
-    # Two distinct insiders buying the same issuer same day = a cluster.
-    records = [
-        {"ticker": "ABC", "insider": "Jane", "code": "P", "value": 250_000},
-        {"ticker": "ABC", "insider": "John", "code": "P", "value": 120_000},
-        {"ticker": "XYZ", "insider": "Sue",  "code": "P", "value": 90_000},   # lone buy
-        {"ticker": "ABC", "insider": "Jane", "code": "S", "value": 999_999},  # sale ignored
-    ]
-    ems = cluster_buys_from_records(records, min_buyers=2)
-    syms = {e.ticker for e in ems}
-    assert syms == {"ABC"}            # only ABC has >=2 distinct buyers
-    e = next(iter(ems))
-    assert e.is_discovery is True
-    assert "2 insiders" in e.evidence and "370" in e.evidence  # $370k total
-
-
-def test_placeholder_tickers_do_not_form_a_phantom_cluster():
-    # Tickerless filers (unresolved issuer -> "NONE") must not bucket into a fake cluster,
-    # even with >=2 distinct buyers. Regression for the live scout's phantom "NONE" candidate.
-    records = [
-        {"ticker": "NONE", "insider": "Ellen Harvey", "code": "P", "value": 20_000},
-        {"ticker": "NONE", "insider": "Robert Harper", "code": "P", "value": 15_000},
-        {"ticker": "",     "insider": "Anon",          "code": "P", "value": 5_000},
-    ]
-    assert cluster_buys_from_records(records, min_buyers=2) == []
 
 
 def test_fetch_recent_walks_back_to_last_published_index():
@@ -114,3 +87,58 @@ def test_fetch_activist_records_outage_degrades_loudly(monkeypatch):
         assert fetch_activist_records(date(2026, 7, 1), 5, "x@y.z",
                                       lambda cik: None) == []            # still never-raises
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
+
+
+class _FakeFiling:
+    def __init__(self, accession_no, submission_text):
+        self.accession_no = accession_no
+        self._text = submission_text
+
+    def full_text_submission(self):
+        return self._text
+
+
+def _install_fake_edgar_module(monkeypatch, filings_by_day):
+    """Install a fake `edgar` module whose get_filings returns each row TWICE (the
+    documented edgartools quirk _dedup_by_accession guards against)."""
+    import sys
+    import types
+
+    fake = types.ModuleType("edgar")
+    fake.set_identity = lambda *a, **k: None
+    fake.get_filings = lambda form, filing_date: (
+        filings_by_day.get(filing_date, []) * 2)
+    monkeypatch.setitem(sys.modules, "edgar", fake)
+
+
+def test_fetch_form4_submissions_dedups_and_walks_back(monkeypatch):
+    published = {"2026-06-02": [_FakeFiling("0001-26-000001", "<ownershipDocument>A</ownershipDocument>")]}
+    _install_fake_edgar_module(monkeypatch, published)
+
+    docs, used = fetch_form4_submissions(date(2026, 6, 3), 400, "id@x.z")
+    assert used == date(2026, 6, 2)
+    assert docs == ["<ownershipDocument>A</ownershipDocument>"]   # deduped, not doubled
+
+
+def test_fetch_form4_submissions_outage_degrades_loudly(monkeypatch):
+    import pytest
+    _broken_edgar_module(monkeypatch)
+    with pytest.warns(UserWarning, match="form4 submission fetch failed") as w:
+        assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], date(2026, 7, 1))
+    assert "SECRET" not in str(w[0].message)          # redact_secrets applied
+
+
+def test_fetch_form4_submissions_skips_one_bad_filing(monkeypatch):
+    class _Boom(_FakeFiling):
+        def full_text_submission(self):
+            raise RuntimeError("bad doc")
+
+    published = {"2026-06-02": [
+        _Boom("0001-26-000001", ""),
+        _FakeFiling("0001-26-000002", "<ownershipDocument>B</ownershipDocument>"),
+    ]}
+    _install_fake_edgar_module(monkeypatch, published)
+
+    docs, used = fetch_form4_submissions(date(2026, 6, 2), 400, "id@x.z")
+    assert used == date(2026, 6, 2)
+    assert docs == ["<ownershipDocument>B</ownershipDocument>"]

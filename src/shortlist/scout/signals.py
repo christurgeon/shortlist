@@ -323,34 +323,68 @@ register("wikipedia", WikipediaAttentionSignal)
 
 
 class EdgarForm4Signal:
-    """Insider cluster-buy discovery from the SEC Form 4 daily index."""
+    """Opportunistic-insider buy discovery from SEC Form 4 (docs/FORM4_INSIDER.md).
+
+    Drift capture, NOT an information edge: Form 4 is public T+2 and every vendor parses it
+    instantly. The edge, if any, is selectivity over a months-long post-filing drift, via the
+    Cohen-Malloy-Pomorski (JF 2012) routine/opportunistic split (scout/insider.py,
+    scout/dera.py) rather than the retired same-session same-issuer cluster heuristic.
+
+    `fetch_submissions`/`load_index` are injection points for tests (no network): the
+    default `fetch_submissions` fetches the live SEC Form 4 daily index
+    (edgar_index.fetch_form4_submissions), and the default `load_index` builds/loads the
+    DERA classification history (dera.load_index) from `cfg["dera"]`
+    (`quarters`/`cache_dir`, defaulting to 16 quarters / `.cache/dera`).
+    """
     name = "edgar_form4"
     is_discovery = True
 
-    def __init__(self, max_filings: int = 400, identity: str | None = None) -> None:
+    def __init__(self, cfg: dict | None = None, max_filings: int = 2000,
+                 identity: str | None = None,
+                 fetch_submissions=None, load_index=None) -> None:
+        self.cfg = cfg or {}
         self.max_filings = max_filings
         self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self._fetch = fetch_submissions
+        self._load_index = load_index
         self._status = (False, "not run")
 
+    def _default_fetch(self, session: date, cap: int):
+        from .edgar_index import fetch_form4_submissions
+        return fetch_form4_submissions(session, cap, self.identity)
+
+    def _default_index(self, session: date) -> dict:
+        from .dera import load_index, quarters_back
+        dcfg = self.cfg.get("dera") or {}
+        quarters = quarters_back(session, int(dcfg.get("quarters", 16)))
+        return load_index(dcfg.get("cache_dir", ".cache/dera"), quarters, self.identity)
+
     def scan(self, session: date) -> list[Emission]:
-        from .edgar_index import cluster_buys_from_records, fetch_recent_records
+        from .insider import emissions_from_txns, parse_form4_xml
+        fetch = self._fetch or self._default_fetch
+        load_idx = self._load_index or (lambda: self._default_index(session))
         try:
-            # The SEC daily index for `session` isn't published until ~02:00 UTC, so at
-            # the after-close run time today's index is empty; fall back to the last
-            # published session rather than reporting a phantom "0 insider activity".
-            records, used = fetch_recent_records(session, self.max_filings, self.identity)
+            docs, used = fetch(session, self.max_filings)
+            index = load_idx()
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
-        ems = cluster_buys_from_records(records)
-        # FIX 5: surface the per-day fetch cap so truncation is visible in coverage.
+        txns = [t for doc in docs for t in parse_form4_xml(doc)]
+        # Spec §5.1: joint filings are abstained, and the count must be VISIBLE -- a silent
+        # 9.5% drop is exactly the kind of thing that hides a broken parser.
+        n_joint = len({t.ticker for t in txns if t.joint_filing and t.code == "P"})
+        ems = emissions_from_txns(txns, index, session, self.cfg)
+        cap = int(self.cfg.get("daily_cap", 25))
+        if len(ems) > cap:
+            ems = sorted(ems, key=lambda e: e.strength, reverse=True)[:cap]
         # An empty index can mean "not yet published" (the common after-close case) OR a
         # genuinely quiet published session, so word the fallback honestly rather than
         # asserting "unpublished".
         fallback = "" if used == session else f"; {session} index empty, used {used}"
-        self._status = (bool(records),
-                        f"{len(ems)} clusters from {len(records)} txns "
-                        f"(cap {self.max_filings}){fallback}")
+        joint = f"; {n_joint} joint filings abstained" if n_joint else ""
+        self._status = (bool(docs),
+                        f"{len(ems)} insider buys from {len(docs)} Form 4s "
+                        f"(cap {self.max_filings}){joint}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:

@@ -1,10 +1,12 @@
-"""SEC Form 4 daily-index scanner -> same-session insider cluster buys.
+"""SEC EDGAR daily-index scanners: Form 4 submission fetch, initial 13D / 13D-A discovery.
 
-A NEW ingestion path (the per-ticker providers/_form4.py does not do this). The
-daily index lists ~1,700 Form 4 rows (CIK + accession only); resolving cluster
-buys means fetching+parsing each filing, classifying P/S, mapping CIK->ticker,
-and grouping by issuer. Live fetching is bounded by a per-day cap and its own
-concurrency budget; this module keeps the *pure* aggregation testable in isolation.
+A NEW ingestion path (the per-ticker providers/_form4.py does not do this). The Form 4
+daily index lists ~800-1,500 rows/day (CIK + accession only); `fetch_form4_submissions`
+(scout/insider.py's opportunistic-insider originator) fetches each filing's complete
+submission text in one request per filing. The retired `cluster_buys_from_records` same-
+session same-issuer heuristic (edgar:form4_cluster_buy) has been superseded by the CMP
+routine/opportunistic classification in scout/insider.py + scout/dera.py. Live fetching is
+bounded by a per-day cap; this module keeps the *pure* aggregation testable in isolation.
 """
 from __future__ import annotations
 
@@ -14,7 +16,6 @@ from datetime import date, timedelta
 from typing import Callable
 
 from ..env import redact_secrets
-from ..providers._form4 import classify_code
 from .calendar import is_trading_day
 from .models import Emission
 from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
@@ -37,36 +38,6 @@ def _is_real_ticker(raw: str | None) -> str:
     if not t or t in _NON_TICKERS or not any(c.isalpha() for c in t):
         return ""
     return t
-
-
-def cluster_buys_from_records(records: list[dict], min_buyers: int = 2) -> list[Emission]:
-    """Pure aggregation: records -> cluster-buy Emissions.
-
-    Each record: {ticker, insider, code, value}. A cluster = >= min_buyers distinct
-    insiders making open-market purchases ('P') in the same issuer. Records whose
-    ticker is a placeholder (unresolved issuer) are skipped so they can't form a
-    phantom cluster.
-    """
-    buys: dict[str, list[dict]] = defaultdict(list)
-    for r in records:
-        tkr = _is_real_ticker(r.get("ticker"))
-        if not tkr:
-            continue
-        if classify_code(r.get("code", "")) == "buy":
-            buys[tkr].append(r)
-
-    out: list[Emission] = []
-    for ticker, rows in buys.items():
-        buyers = {r["insider"] for r in rows}
-        if len(buyers) < min_buyers:
-            continue
-        total = sum(r.get("value", 0) for r in rows)
-        # strength scales with #buyers and dollar size, capped at 1.0
-        strength = min(1.0, 0.4 + 0.2 * len(buyers) + min(0.4, total / 5_000_000))
-        out.append(Emission(
-            ticker, "edgar:form4_cluster_buy", strength,
-            f"{len(buyers)} insiders bought ${total/1000:.0f}k", is_discovery=True))
-    return out
 
 
 def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[dict]:
@@ -146,6 +117,45 @@ def fetch_recent_records(session: date, max_filings: int, identity: str,
     """
     fetch = _fetch or fetch_daily_records
     return _walk_back_to_published(session, lookback, lambda d: fetch(d, max_filings, identity))
+
+
+def fetch_form4_submissions(session: date, max_filings: int,
+                            identity: str) -> tuple[list[str], date]:
+    """Form 4 complete-submission texts for `session` (walk-back to the last published
+    index, same rule as fetch_recent_records).
+
+    ONE request per filing: `Filing.full_text_submission` downloads the complete-submission
+    `.txt` (~4.6 KB, the full ownershipDocument XML embedded) directly from its
+    deterministic URL (base_dir + accession + '.txt') -- no index.json lookup, since the
+    primary document filename is arbitrary (live-verified 2026-07-26).
+
+    Deliberately NOT `Filing.text()`: for XML-native forms (3/4/5) that method renders the
+    parsed Ownership object back out to HTML and then flattens THAT to prose text (see
+    edgartools' Filing.html()) -- it can cost a second request and, worse, the result no
+    longer contains the raw `<ownershipDocument>` tags parse_form4_xml scans for.
+    `full_text_submission` fetches the same URL scan/text() would eventually reach for HTML
+    filings, just without the XML round-trip, and its output is exactly the raw text
+    parse_form4_xml already expects.
+
+    Never raises: any failure -> ([], session).
+    """
+    try:
+        from edgar import get_filings, set_identity
+        set_identity(identity)
+        filings, used = _walk_back_to_published(
+            session, lookback=5,
+            fetch_day=lambda d: list(get_filings(form="4", filing_date=d.isoformat())))
+        out: list[str] = []
+        for f in _dedup_by_accession(filings)[:max_filings]:
+            try:
+                out.append(f.full_text_submission())
+            except Exception:  # noqa: BLE001 -- skip one bad filing
+                continue
+        return out, used
+    except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
+        warnings.warn(f"scout: form4 submission fetch failed: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return [], session
 
 
 # --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---
