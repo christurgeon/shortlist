@@ -93,7 +93,15 @@ Open work, in order:
    the Jensen bias in item −1, not a real result. **Re-run this test only after item −1
    lands.** Trap for the next attempt: `as_of_price` in the backfill JSONLs is split-adjusted
    and is NOT a size proxy — band on nominal price or, better, on real market cap.
-2. **Rebuild `edgar_form4` as an opportunistic-insider originator.** It is enabled at weight
+2. **Rebuild `edgar_form4` as an opportunistic-insider originator.**
+   **DESIGN APPROVED 2026-07-26 → `docs/FORM4_INSIDER.md`** (tracked deliberately; the
+   conventional `docs/superpowers/specs/` is gitignored and has already eaten two artifacts).
+   Decisions: two pure leaves `scout/dera.py` + `scout/insider.py`; ONE record contract shared
+   by live (raw Form 4 XML) and history (raw DERA TSV), both RAW fields — never edgartools'
+   normalized view, pinned by a both-paths-parse-identically test; trade-month index built
+   from ALL transaction codes; emission unit is the ISSUER with a PER-TRANSACTION $ floor;
+   three tiers (routine dropped / opportunistic 1.0 / unclassified 0.6, tier logged).
+   Implementation plan not yet written. Background:
    1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
    lower-weighted originators were killed by measurement. Today it is a bare count heuristic
    (`min_buyers=2`, **no dollar floor** — real emissions read "2 insiders bought $5k", the
