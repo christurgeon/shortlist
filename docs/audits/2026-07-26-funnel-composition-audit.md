@@ -258,13 +258,22 @@ contribs = [(1.0 + m.ret) ** (1.0 / k_months) - 1.0 for m in held]
 r = sum(contribs) / len(contribs)
 ```
 
-`x → (1+x)^(1/K) − 1` is **concave**, so by Jensen's inequality the mean of the flattened
-returns is ≤ the flattened mean — and the gap explodes near total loss. A −99% event
-contributes **−31.6%/mo**; a +500% winner contributes only **+16%/mo**. Averaging those
-per-event transforms produces a strongly negative number out of a cohort whose arithmetic
-mean return is positive. A calendar-time portfolio's month-*t* return is the mean of held
-names' **actual month-*t* returns**; you may compound an average but you must not average
-compounded quantities.
+**Precise statement of the defect (an earlier draft of this section got the mechanism
+slightly wrong and is corrected here).** It is *not* simply "Jensen's inequality on averaging
+compounded quantities" — that framing is misleading, because if every name really did move at
+a constant rate, the old average would be the *correct* return for a monthly-rebalanced
+portfolio. The actual defect is narrower and worse:
+
+> The code **fabricates a smooth price path** for every event — a constant
+> `(1+ret)**(1/K)-1` every month — and a calendar-time portfolio is **equal-weighted and
+> rebalanced monthly**, which is acutely sensitive to path shape.
+
+A name that collapses 90% in one month and then sits flat is modelled as declining steadily
+for K months. Under monthly rebalancing that means the portfolio keeps buying into the
+fabricated decline and eats the drag K times instead of once. The bias is largest where paths
+are most jagged — i.e. exactly the microcap-heavy event cohorts this funnel produces. A
+calendar-time portfolio's month-*t* return must be the mean of held names' **actual month-*t*
+returns**.
 
 This explains everything §3 treated as signal:
 
@@ -296,8 +305,44 @@ floor, reading ~48% of a median Form 4 day; the DERA dataset really does carry w
 rebuild needs. The **reasons** for the `edgar_form4` rebuild survive; the **evidence framing**
 around cohort levels does not.
 
-**Next action is no longer item 1 or item 2 — it is fixing `calendar_time_portfolio`, then
-re-deriving every verdict this project has ever issued.**
+### 4.5 Fix applied, and what it changed (2026-07-26)
+
+`MeasuredEvent` gained `monthly_rets` (appended after `immature`, preserving its positional
+slot); `measure_cohort` populates it via `_monthly_path`, which reads the real price series
+month by month and returns None if any leg is missing (so a partly-imputed path can never be
+half-real — the caller falls back to the old constant). `calendar_time_portfolio` uses the
+real month-*i* return when present.
+
+**Correctness check:** for all 2,254 measurable 13D events carrying a path,
+`|Π(1+rᵢ) − (1+ret)| ≤ 1.07e-14` — the reconstructed path compounds back to the independently
+measured total return on every event. 2 events fall back to the old constant.
+
+**Effect on the 13D cohort:**
+
+| cohort | smooth-path (old) | real-path (new) |
+|---|---|---|
+| raw | −4.45%/mo, CI [−5.22, −4.47] | **+3.04%/mo**, CI [+1.79, +5.83] |
+| scored_gated | −6.15%/mo, CI [−6.92, −5.70] | **−0.43%/mo**, CI [−2.43, +1.46] |
+| double-sort spread | +2.92%/mo | +2.42%/mo |
+
+The raw sign **flips**, which is what the +7.0% mean 12-month return said it must. The scored
+cohort collapses to approximately zero with a CI spanning it. The composite's sorting spread
+survives at +2.42%/mo — the one §3 claim that was ever safe.
+
+### 4.6 Do NOT now trust the new levels either
+
+**+3.04%/mo is +43%/yr. That is not a credible alpha**, and it should be read as evidence that
+a *residual* level bias remains, now pointing the other way. The prime suspect is well
+documented: an equal-weighted, monthly-rebalanced portfolio of illiquid microcaps earns a
+spurious premium from bid-ask bounce — rebalancing systematically buys at the bid and sells at
+the ask on noise (Blume-Stambaugh 1983; Asparouhova-Bessembinder-Kalcheva 2013). The 13D
+cohort is exactly that population.
+
+So the honest state of the instrument is: **the two known first-order defects are fixed, and
+the levels are still not decision-grade.** Only the double-sort spread — a difference between
+two cohorts measured identically, where common biases cancel — should carry weight until a
+level-bias correction (value-weighting, or Asparouhova-style gross-return weighting) is
+implemented and tested. **Do not re-issue KILL verdicts on levels.**
 
 **What survives:** the *point estimates* are still roughly the cohorts' mean realized returns,
 so the **signs** in §3 — negative levels, positive composite spreads — are probably real. The

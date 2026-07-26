@@ -30,6 +30,13 @@ class MeasuredEvent:
                                 # exists AND the series is not already known-terminated (B1).
                                 # A recent event with NO series / no entry price is NEVER
                                 # immature -- it is non-measurable-and-counted (survivorship).
+    # Appended AFTER `immature` to preserve that field's positional slot. Actual per-
+    # holding-month returns (month i spans event_date+i .. event_date+i+1), so the
+    # calendar-time portfolio can use what each name really DID each month rather than an
+    # assumed smooth path. None/empty -> `calendar_time_portfolio` falls back to the old
+    # constant `(1+ret)**(1/K)-1` rate (old persisted cohorts, hand-built test events).
+    # See docs/audits/2026-07-26-funnel-composition-audit.md §4.
+    monthly_rets: list[float] | None = None
 
 
 @dataclass
@@ -83,6 +90,30 @@ def _event_date(ev: dict) -> date | None:
         return date.fromisoformat(v)
     except (TypeError, ValueError):
         return None
+
+
+def _monthly_path(hist: PriceHistory | None, d: date | None,
+                  horizon_months: int) -> list[float] | None:
+    """Per-holding-month returns for one event: month i spans `d+i` .. `d+i+1` months.
+
+    The calendar-time portfolio rebalances monthly, so it needs what a name actually did
+    each month — inferring a smooth `(1+ret)**(1/K)-1` path spreads a one-month collapse
+    across the whole window and applies the rebalancing drag to it K times
+    (docs/audits/2026-07-26-funnel-composition-audit.md §4).
+
+    Returns None if any leg is unavailable, so the caller falls back to the old constant
+    rate rather than a partly-imputed path — a half-real path would be worse than either.
+    """
+    if hist is None or d is None or horizon_months <= 0:
+        return None
+    out: list[float] = []
+    for i in range(horizon_months):
+        a = hist.price_on(_add_months(d, i), tol_days=5) if i else hist.close_asof(d)
+        b = hist.price_on(_add_months(d, i + 1), tol_days=5)
+        if a is None or b is None or a <= 0:
+            return None
+        out.append(b / a - 1.0)
+    return out
 
 
 def measure_cohort(events: list[dict], signal: str, horizon_months: int,
@@ -154,6 +185,7 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
             measurable=ret is not None,
             strength=ev.get("strength"), gated=ev.get("gated"), composite=ev.get("composite"),
             immature=immature,
+            monthly_rets=_monthly_path(hist, d, horizon_months) if ret is not None else None,
         ))
     n_immature = sum(1 for m in measured if m.immature)
     n_meas = sum(1 for m in measured if m.measurable)
@@ -204,7 +236,20 @@ def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
             if cur is None or m.event_date > cur.event_date:
                 by_ticker[m.ticker] = m
         held = list(by_ticker.values())
-        contribs = [(1.0 + m.ret) ** (1.0 / k_months) - 1.0 for m in held]
+        # A calendar-time portfolio is equal-weighted and REBALANCED MONTHLY, so each
+        # month's return must be the mean of what the held names ACTUALLY did that month.
+        # The old code gave every name a constant `(1+ret)**(1/K)-1` rate for the whole
+        # window, which spreads a one-month collapse evenly across K months and then applies
+        # the rebalancing drag to it K times over. Fall back to that constant only when an
+        # event carries no path (audit 2026-07-26 §4).
+        contribs = []
+        for m in held:
+            i = _months_between(m.event_date, month_start)
+            path = m.monthly_rets
+            if path and 0 <= i < len(path) and path[i] is not None:
+                contribs.append(path[i])
+            else:
+                contribs.append((1.0 + m.ret) ** (1.0 / k_months) - 1.0)
         if weighting == "value":
             ws = [float(m.composite or 0.0) for m in held]     # placeholder weight source
             tot = sum(ws)
