@@ -1,7 +1,8 @@
+import zipfile
 from datetime import date
 from pathlib import Path
 
-from shortlist.scout.dera import dera_zip_url, parse_dera_tsvs
+from shortlist.scout.dera import dera_zip_url, load_index, parse_dera_tsvs, quarters_back
 from shortlist.scout.insider import parse_form4_xml
 
 FIX = Path(__file__).parent / "fixtures" / "form4"
@@ -62,3 +63,39 @@ def test_live_and_history_agree_on_the_same_filing():
     assert xml_t.shares == dera_t.shares
     assert abs(xml_t.price - dera_t.price) < 0.01          # DERA 2dp rounding only
     assert abs(xml_t.value - dera_t.value) / dera_t.value < 1e-3
+
+
+def test_quarters_back_walks_backwards_from_the_previous_quarter():
+    assert quarters_back(date(2026, 7, 26), 3) == ["2026q2", "2026q1", "2025q4"]
+
+
+def _sample_zip(tmp_path: Path) -> Path:
+    """Zip the committed sample TSVs into a one-quarter DERA-shaped ZIP."""
+    p = tmp_path / "2025q1_form345.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        for name in ("SUBMISSION.tsv", "REPORTINGOWNER.tsv", "NONDERIV_TRANS.tsv"):
+            z.write(SAMPLE / name, arcname=name)
+    return p
+
+
+def test_load_index_round_trips_through_its_json_cache(tmp_path, monkeypatch):
+    """Second call must hit the cache and return an identical index -- and must NOT call
+    ensure_quarters again (proof the cache, not a re-download, served it)."""
+    zip_path = _sample_zip(tmp_path)
+    calls = []
+
+    def fake_ensure_quarters(quarters, cache_dir, identity="x"):
+        calls.append(list(quarters))
+        return [zip_path]
+
+    monkeypatch.setattr("shortlist.scout.dera.ensure_quarters", fake_ensure_quarters)
+
+    cache_dir = str(tmp_path / "cache")
+    first = load_index(cache_dir, ["2025q1"])
+    assert len(calls) == 1
+    assert first == {"0002021774": {(2025, 3)}}
+
+    second = load_index(cache_dir, ["2025q1"])
+    assert second == first
+    assert len(calls) == 1  # cache hit -- ensure_quarters not called again
+    assert (Path(cache_dir) / "index-2025q1.json").exists()
