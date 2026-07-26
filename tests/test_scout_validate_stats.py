@@ -92,3 +92,51 @@ def test_block_bootstrap_ci_brackets_true_alpha_and_is_deterministic():
     # (c) deterministic — same seed -> identical CI
     ci2 = stationary_block_bootstrap_alpha(ctp, ff3, k_months=3, n_boot=500, seed=12345)
     assert ci == ci2
+
+
+# --- event-level bootstrap CI (audit 2026-07-26 §3a) ---------------------------------
+# The month-resampled `stationary_block_bootstrap_alpha` resamples an ALREADY-FLATTENED
+# CTP series: `calendar_time_portfolio` replaces each event's whole K-month path with a
+# constant monthly rate, then averages across held names. Cross-sectional dispersion in
+# event outcomes is therefore averaged away BEFORE the bootstrap sees it, so the CI
+# reports only "how smooth is this smooth series" — which is how the committed verdicts
+# ended up with an implied monthly tracking error of 0.32% and an IR of -46.97.
+# The dominant uncertainty is WHICH EVENTS you happened to catch, so the CI must be
+# resampled over events.
+
+def _spread_cohort(rets, k_months=3):
+    """One event per (month, ticker) spread over 24 months, returns cycled from `rets`."""
+    from datetime import date
+    from shortlist.scout.validate import MeasuredEvent
+    out = []
+    for i in range(len(rets)):
+        y = 2025 + (i // 12)
+        mo = (i % 12) + 1
+        r = rets[i]
+        out.append(MeasuredEvent("s", f"T{i}", date(y, mo, 10), r, True, 0.5, False, 60.0))
+    return out
+
+
+def test_event_bootstrap_ci_is_wider_than_month_resampled_ci_on_a_dispersed_cohort():
+    """Same mean event return, huge cross-sectional dispersion: the event-level CI must
+    reflect the dispersion; the month-resampled CI structurally cannot see it."""
+    from shortlist.scout.validate import (
+        calendar_time_portfolio, event_bootstrap_alpha,
+    )
+    # 24 events, alternating +60% / -40% over K=3 -- same pooled mean each month, but
+    # an enormous spread in which events a resample happens to draw.
+    events = _spread_cohort([0.60 if i % 2 == 0 else -0.40 for i in range(24)])
+    ff3 = _ff3(range(1, 13))
+    ff3.update({f"2026-{m:02d}": v for m, v in
+                zip(range(1, 13), list(_ff3(range(1, 13)).values()), strict=True)})
+
+    ctp = calendar_time_portfolio(events, k_months=3)
+    month_ci = stationary_block_bootstrap_alpha(ctp, ff3, 3)
+    event_ci = event_bootstrap_alpha(events, ff3, 3)
+
+    assert month_ci is not None and event_ci is not None
+    month_w = month_ci[1] - month_ci[0]
+    event_w = event_ci[1] - event_ci[0]
+    assert event_w > 3 * month_w, (
+        f"event-level CI ({event_w:.5f}) must be materially wider than the "
+        f"month-resampled CI ({month_w:.5f}) on a dispersed cohort")

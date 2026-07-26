@@ -6,6 +6,103 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Funnel composition audit — originator universe is the bottleneck, not the scorer (2026-07-26)
+
+Full evidence: **`docs/audits/2026-07-26-funnel-composition-audit.md`** (committed). Reviewed
+21 daily sessions, the 141-row selection ledger, and all four backfill cohorts.
+
+The finding that reframes the discovery roadmap: **the composite ranks well inside every
+measured cohort** (double-sort spreads +2.97%/mo for 13D, +6.26%/mo for 8-K, +0.99%/mo for
+buyback) **while every cohort's level is deeply negative** (−0.8 to −8.6%/mo) — universe
+composition at origination, not a scoring failure. Read the *signs* only; see the error-bar
+caveat below.
+
+Entry-price composition is the suspected mechanism, but the support is weaker than the first
+draft claimed and it is **not monotonic** — 8-K has lower penny density than 13D (27% vs 33%)
+yet a worse level (−8.57% vs −5.99%). Only one contrast really holds, on n=3 cohorts: the
+single clearly-non-penny cohort (buyback, 10% sub-$5, median $27.72) is ~7–10× less negative
+than the two penny-heavy ones — and buyback selects profitable firms, a confound that would
+produce the same picture. The better-powered evidence is the 13D gate rate by entry price
+(90% gated at $0–1 → 47% at $20+).
+
+What needs no statistics at all: the live funnel is barbelled — 60% of picks are `wsb:hype`
+at a **$310B** median market cap, 21% are 13D at a **$50M** median, and 46% of all ledger
+rows were gated after burning a deep-screen slot.
+
+**Caveat found while stress-testing the above (§3a of the audit): the evaluator's error bars
+are not valid.** `validate.py:_ctp_rows` flattens each event's whole K-month return to a
+constant monthly rate and repeats it across the holding window, so the CTP series has no
+price-path variance. Implied monthly tracking error backed out of the published `(alpha, ir)`
+pairs: **0.32%** for 13D raw, 1.04% 13D scored, 3.67% 8-K, 2.85% buyback — against a plausible
+3–8%. An IR of −46.97 is an artifact. Consequence: the KILL rule ("alpha 90% CI entirely
+negative") effectively fires on *any* negative point estimate, so the `edgar_buyback_auth`
+KILL (CI upper bound −0.005pp) is likely INSUFFICIENT under honest error bars. Signs survive;
+magnitudes, CIs, IRs and verdict confidence do not.
+
+Open work, in order:
+0. **DONE (2026-07-26) — event-level bootstrap CI.** `alpha_ci` now comes from
+   `validate.py:event_bootstrap_alpha` (resamples EVENTS with replacement, rebuilds the CTP
+   per replicate, relabels drawn tickers so the same-ticker dedup can't discard a duplicate
+   draw); falls back to the month bootstrap for cohorts with no event list. `ir` carries a
+   permanent "upward-biased — display only" note. Suite 2125 green, ruff clean.
+   **Re-derived `edgar_buyback_auth`:** scored CI moved [−1.80%, −0.00%] → [−1.72%, **+0.13%**]
+   — it now straddles zero, so the CI trigger no longer fires. 13D re-derivation (the severe
+   case, implied TE 0.32%) still running at time of writing.
+0b. **DONE (2026-07-26, operator decision) — the bare `alpha <= 0` KILL trigger is REMOVED.**
+   KILL now requires the CI to be entirely negative; a negative point estimate with a
+   straddling CI yields INSUFFICIENT. All four cohorts re-derived (§3b of the audit):
+   - **`edgar:buyback_auth` KILL → INSUFFICIENT — genuinely RETRACTED** (CI now
+     [−1.72%, **+0.13%**]). `docs/audits/2026-07-11-buyback-backfill-kill.md` carries a
+     SUPERSEDED header; the `config.yaml` comment is rewritten. **Stays `enabled: false`.**
+   - **`edgar:8k` KILL → INSUFFICIENT but for an UNRELATED reason** — a vintage measurability
+     floor (2023: 0.89 vs 0.90). Its alpha CI is still entirely negative [−10.21%, −7.15%].
+     **Not a rehabilitation.** Note added to the 2026-07-08 audit; memory amended.
+   - **`edgar:activist_13d` unchanged and now better supported** — −4.45%/mo, CI
+     [−5.22%, −4.47%] after a 3.4× widening. The negative level was NOT an artifact.
+0c. **Remaining gap:** `double_sort`'s `spread_ci` still uses the month-resampled bootstrap,
+   so the spread CIs are still too tight. Display-only (no verdict reads it) but the digest
+   shows it. Needs a per-bucket event resample.
+0d. **Flaky, unrelated:** `tests/scout/test_daily_demo.py` fails on clean HEAD — it reads the
+   live `state/scout_state.json`, so GOOGL falls inside the 7-day cooldown from its
+   2026-07-20 pick. Date-dependent; should use a fixture state, not production state.
+1. **Confirming test (cheap, existing machinery):** re-run `shortlist-scout validate` on
+   the committed 13D/8-K JSONLs with a market-cap/price band applied at cohort assembly. Level
+   should move toward zero with the spread surviving. If it doesn't, items 2–3 need rethinking.
+   Note this test reads the *level*, so it is only as good as item 0 leaves it.
+2. **Rebuild `edgar_form4` as an opportunistic-insider originator.** It is enabled at weight
+   1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
+   lower-weighted originators were killed by measurement. Today it is a bare count heuristic
+   (`min_buyers=2`, **no dollar floor** — real emissions read "2 insiders bought $5k", the
+   bottom quartile of insider buying) and `edgar_index_daily_cap: 400` makes it read ~48% of a
+   median Form 4 day (measured: median 838 filings/day, p90 1,498). Add dollar floor + role
+   weighting + 10b5-1 exclusion + Cohen-Malloy-Pomorski routine/opportunistic split + size
+   band. Backfill via **SEC DERA Insider Transactions Data Sets** (quarterly ZIPs, ~12.8 MB,
+   verified live 2026-07-26; `ISSUERTRADINGSYMBOL` inline = PiT ticker, `AFF10B5ONE` = 10b5-1
+   flag, `RPTOWNERCIK` = stable person ID for the routine classification). Measured headroom:
+   median **13 issuers/day** with a ≥$100k open-market buy vs ~2/day emitted today.
+3. **Funnel composition fixes.** (a) **DONE (2026-07-26, operator decision)** — `wsb_hype`
+   demoted to confirmation-only (`scout.signals.wsb_hype.enabled: false`, rationale in the
+   config comment). Raw flow ~9–13/day → ~5–9; ~4 deep-screen slots/day freed for the EDGAR
+   originators. The per-ticker `social_hype` flag still confirms hype on names that arrive via
+   another originator. **Not yet deployed to `/opt/shortlist`** — takes effect there on the
+   next `git pull` + installer run. (b) Market-cap band at prefilter — **estimated "hours" in the
+   first draft; that was wrong.** `funnel.py:prefilter` receives only ticker + signal
+   provenance and has **no market-cap data at all** (cap arrives later, from the deep
+   screen). Doing this needs a new cheap pre-screen lookup (Finnhub `stock/profile2`
+   `marketCapitalization` is free and ~30 calls/day at current flow) plus its own config
+   block and tests — a small feature, not a config tweak.
+4. **Deferred but kept:** materiality-scaled government-contract-award originator (USAspending
+   daily, award ≥ X% of TTM revenue) — matcher + source already exist.
+
+**Status:** IN PROGRESS — items 0, 0b and 3(a) shipped (suite 2126 green, ruff clean, all four
+cohorts re-derived). Items 0c, 0d, 1, 2, 3(b), 4 remain. Item 1 (size-band re-validation) is
+now unblocked and is the next step; item 2 (the `edgar_form4` rebuild) is the main build and
+has not been started. **All of it is UNCOMMITTED in the working tree** (7 files, ~379 lines;
+`validate.py` is the only production module touched) and nothing is deployed to
+`/opt/shortlist` — the daily push still runs the pre-change behaviour, WSB included.
+
+---
+
 ## Maintainability sweep — sources split + daily run() done; remaining follow-ups (2026-07-24)
 
 Two behavior-neutral refactors shipped: `src/shortlist/data/sources.py` (1,639-line god
