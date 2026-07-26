@@ -214,6 +214,91 @@ Three distinct outcomes, and they must not be conflated:
 so the spread CIs quoted in §3 remain too tight. No verdict reads `spread_ci` (it is display
 only), but the digest shows it. Fixing it needs a per-bucket event resample — not done here.
 
+---
+
+## 4. STOP — the measured LEVEL is sign-flipped. §3's thesis is unsupported.
+
+Running §3's own confirming test (item 1) broke the analysis that motivated it. Recorded in
+full because it invalidates this document's headline.
+
+### 4.1 What the test showed
+
+Re-validating the 13D cohort under an entry-price band, first on the stored `as_of_price`
+and then — after discovering that field is **split-adjusted**, so serial reverse-splitters
+like `LGMK` "enter" at $18,487.50/share — again on true nominal prices via
+`PriceHistory.nominal_close_asof`:
+
+| band | n | FF3 alpha/mo |
+|---|---|---|
+| ALL (no band) | 2,256 | −4.45% |
+| ADJUSTED ≥ $5 / ≥ $20 | 1,513 / 681 | −5.21% / −8.39% |
+| **NOMINAL ≥ $5 / ≥ $20** | 1,533 / 719 | **−5.20% / −8.16%** |
+
+Removing cheap stocks made the measured alpha **monotonically worse**, the opposite of §3's
+prediction, and nominal banding reproduced the adjusted result almost exactly — so reverse
+splits were not the explanation either.
+
+### 4.2 Why — `calendar_time_portfolio` cannot measure a level
+
+Comparing the cohort's **actual** returns against what the evaluator reports:
+
+| band | n | mean 12m return | median | monthly-geo of the mean | CTP mean/mo | ratio |
+|---|---|---|---|---|---|---|
+| ALL | 2,256 | **+7.0%** | −22.4% | **+0.56%** | **−4.46%** | **−7.9×** |
+| NOM ≥ $5 | 1,533 | −18.6% | −24.6% | −1.70% | −5.20% | 3.1× |
+| NOM ≥ $20 | 719 | −34.6% | −45.3% | −3.47% | −8.22% | 2.4× |
+
+**The full 13D cohort's mean 12-month return is POSITIVE (+7.0%), and the evaluator reports
+−4.46%/mo (≈ −42%/yr).** The sign is flipped.
+
+The cause is the same line as §3a, but a first-order defect this time, not a variance one:
+
+```python
+contribs = [(1.0 + m.ret) ** (1.0 / k_months) - 1.0 for m in held]
+r = sum(contribs) / len(contribs)
+```
+
+`x → (1+x)^(1/K) − 1` is **concave**, so by Jensen's inequality the mean of the flattened
+returns is ≤ the flattened mean — and the gap explodes near total loss. A −99% event
+contributes **−31.6%/mo**; a +500% winner contributes only **+16%/mo**. Averaging those
+per-event transforms produces a strongly negative number out of a cohort whose arithmetic
+mean return is positive. A calendar-time portfolio's month-*t* return is the mean of held
+names' **actual month-*t* returns**; you may compound an average but you must not average
+compounded quantities.
+
+This explains everything §3 treated as signal:
+
+- why all four cohorts landed at −0.8 to −8.6%/mo;
+- why `buyback_auth` (fewest catastrophic losers) was least distorted at −0.84%;
+- why the ≥$20 band looked *worse* — that slice holds more near-total losses, so the bias
+  is larger. Not higher-priced 13D targets performing worse; the aggregator amplifying them;
+- why the "penny density" relationship in §3 was noisy and non-monotonic — the real driver
+  is extreme-loss density, which price level only loosely proxies.
+
+### 4.3 What this retracts
+
+- **§3's headline is WITHDRAWN.** "Every cohort's level is deeply negative" is an artifact.
+  The composition thesis is **neither confirmed nor refuted** — the instrument cannot measure
+  a level, so the test that would decide it does not exist yet.
+- **Every level-based verdict is void**, including the ones re-derived in §3b today. The
+  `edgar:8k` "entirely negative CI" and the `edgar:activist_13d` −4.45%/mo both inherit this.
+- **§3a's CI fix remains correct but is second-order** — it fixed the error bars around a
+  point estimate that is itself wrong.
+- **The double-sort spread is the one survivor**, and only because it is a *difference*
+  between two cohorts measured identically, so a common bias largely cancels. That the
+  composite sorts inside a cohort (+2.92 to +7.22%/mo) is the only §3 claim still standing.
+
+### 4.4 What still stands, independent of all of this
+
+Nothing in §1, §4 or §5 touches the evaluator: the funnel really is 60% WSB at a $310B median
+market cap; `edgar_form4` really is unmeasured at the joint-highest weight, with no dollar
+floor, reading ~48% of a median Form 4 day; the DERA dataset really does carry what the
+rebuild needs. The **reasons** for the `edgar_form4` rebuild survive; the **evidence framing**
+around cohort levels does not.
+
+**Next action is no longer item 1 or item 2 — it is fixing `calendar_time_portfolio`, then
+re-deriving every verdict this project has ever issued.**
+
 **What survives:** the *point estimates* are still roughly the cohorts' mean realized returns,
 so the **signs** in §3 — negative levels, positive composite spreads — are probably real. The
 magnitudes, CIs, IRs, and the confidence attached to the KILL verdicts are not. Nothing in §1,

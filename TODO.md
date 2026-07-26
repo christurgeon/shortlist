@@ -39,6 +39,26 @@ negative") effectively fires on *any* negative point estimate, so the `edgar_buy
 KILL (CI upper bound −0.005pp) is likely INSUFFICIENT under honest error bars. Signs survive;
 magnitudes, CIs, IRs and verdict confidence do not.
 
+**🛑 SUPERSEDED SAME DAY — read §4 of the audit first.** Running item 1 (below) broke the
+analysis above. `calendar_time_portfolio` averages **per-event geometric monthly equivalents**
+(`(1+ret)**(1/K)-1`), which is concave — by Jensen the mean of the flattened returns is ≤ the
+flattened mean, and the gap explodes near total loss (a −99% event contributes −31.6%/mo; a
++500% winner only +16%/mo). Measured on the full 13D cohort: **mean 12m return +7.0%
+(POSITIVE), evaluator reports −4.46%/mo (≈ −42%/yr) — the sign is flipped.** So "every cohort's
+level is deeply negative" is an ARTIFACT, the composition thesis is neither confirmed nor
+refuted, and **every level-based verdict this project has issued is void** (including the ones
+re-derived today). The double-sort SPREAD survives — it is a difference between two cohorts
+measured identically, so the common bias cancels. The directly-observed funnel facts (items 2
+and 3) are untouched.
+
+**NEW ITEM −1, ahead of everything: fix `calendar_time_portfolio`.** A month's portfolio
+return must be the mean of held names' ACTUAL month-t returns, not the mean of their
+compounded-then-flattened ones. Needs monthly price paths per event (available — the price
+histories are already fetched and day-cached in `.cache/famafrench`). Then re-derive all four
+cohorts and rewrite the audits. Until that lands, quote NO cohort alpha, and treat the
+`edgar_8k` / `edgar_buyback_auth` / `edgar_activist_13d` verdicts as unmeasured rather than
+negative.
+
 Open work, in order:
 0. **DONE (2026-07-26) — event-level bootstrap CI.** `alpha_ci` now comes from
    `validate.py:event_bootstrap_alpha` (resamples EVENTS with replacement, rebuilds the CTP
@@ -65,10 +85,14 @@ Open work, in order:
 0d. **Flaky, unrelated:** `tests/scout/test_daily_demo.py` fails on clean HEAD — it reads the
    live `state/scout_state.json`, so GOOGL falls inside the 7-day cooldown from its
    2026-07-20 pick. Date-dependent; should use a fixture state, not production state.
-1. **Confirming test (cheap, existing machinery):** re-run `shortlist-scout validate` on
-   the committed 13D/8-K JSONLs with a market-cap/price band applied at cohort assembly. Level
-   should move toward zero with the spread surviving. If it doesn't, items 2–3 need rethinking.
-   Note this test reads the *level*, so it is only as good as item 0 leaves it.
+1. **RUN 2026-07-26 — INCONCLUSIVE, and it exposed item −1.** Banded the 13D cohort at ≥$5 /
+   ≥$20 on both the stored `as_of_price` and (after finding that field is **split-adjusted** —
+   `LGMK` enters at $18,487.50/share) on true nominal prices via
+   `PriceHistory.nominal_close_asof`. Alpha got monotonically WORSE with the band
+   (−4.45% → −5.20% → −8.16%/mo), which is backwards; both price definitions agreed. That is
+   the Jensen bias in item −1, not a real result. **Re-run this test only after item −1
+   lands.** Trap for the next attempt: `as_of_price` in the backfill JSONLs is split-adjusted
+   and is NOT a size proxy — band on nominal price or, better, on real market cap.
 2. **Rebuild `edgar_form4` as an opportunistic-insider originator.** It is enabled at weight
    1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
    lower-weighted originators were killed by measurement. Today it is a bare count heuristic
@@ -94,8 +118,10 @@ Open work, in order:
 4. **Deferred but kept:** materiality-scaled government-contract-award originator (USAspending
    daily, award ≥ X% of TTM revenue) — matcher + source already exist.
 
-**Status:** IN PROGRESS — items 0, 0b and 3(a) shipped (suite 2126 green, ruff clean, all four
-cohorts re-derived). Items 0c, 0d, 1, 2, 3(b), 4 remain. Item 1 (size-band re-validation) is
+**Status:** IN PROGRESS — but the analysis that framed this entry is PARTLY RETRACTED; item −1
+(fix `calendar_time_portfolio`) now precedes everything and no cohort alpha should be quoted
+until it lands. Items 0, 0b and 3(a) shipped (suite 2126 green, ruff clean, committed on
+`fix/validate-event-bootstrap-ci`, pushed). Items 0c, 0d, 1, 2, 3(b), 4 remain. Item 1 (size-band re-validation) is
 now unblocked and is the next step; item 2 (the `edgar_form4` rebuild) is the main build and
 has not been started. **All of it is UNCOMMITTED in the working tree** (7 files, ~379 lines;
 `validate.py` is the only production module touched) and nothing is deployed to
