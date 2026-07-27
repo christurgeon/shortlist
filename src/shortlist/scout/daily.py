@@ -97,7 +97,7 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
     sig_map = scout_cfg.get("signals", {})
     sti_on = bool(sig_map.get("edgar_13d_stake_increase", {}).get("enabled"))
     return {
-        "edgar_form4":   {"cfg": scout_cfg.get("form4", {}),
+        "edgar_form4":   {"cfg": scout_cfg.get("form4"),   # None (absent) -> C-2 inert contract
                          "identity": os.environ.get("SEC_IDENTITY"),
                          "max_filings": scout_cfg.get("edgar_index_daily_cap", 400)},
         "finnhub_news":  {"api_key": os.environ.get("FINNHUB_API_KEY")},

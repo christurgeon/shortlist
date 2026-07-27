@@ -28,7 +28,10 @@ def test_signal_kwargs_threads_form4_block_and_daily_cap():
 
 
 def test_signal_kwargs_form4_defaults_when_block_absent():
+    # C-2: cfg must be None (not {}) when scout.form4 is absent -- EdgarForm4Signal treats
+    # None as "no config block, stay inert" and {} as "block present but empty, run on
+    # code defaults". Collapsing both to {} here would silently defeat that contract.
     kw = _signal_kwargs({})["edgar_form4"]
-    assert kw["cfg"] == {}
+    assert kw["cfg"] is None
     assert kw["max_filings"] == 400
     assert "identity" in kw   # sourced from SEC_IDENTITY env, not asserted here (env-dependent)

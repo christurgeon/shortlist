@@ -120,7 +120,7 @@ def fetch_recent_records(session: date, max_filings: int, identity: str,
 
 
 def fetch_form4_submissions(session: date, max_filings: int,
-                            identity: str) -> tuple[list[str], date]:
+                            identity: str) -> tuple[list[str], date | None]:
     """Form 4 complete-submission texts for `session` (walk-back to the last published
     index, same rule as fetch_recent_records).
 
@@ -137,7 +137,12 @@ def fetch_form4_submissions(session: date, max_filings: int,
     filings, just without the XML round-trip, and its output is exactly the raw text
     parse_form4_xml already expects.
 
-    Never raises: any failure -> ([], session).
+    Never raises. Two DISTINCT empty outcomes (I-1, 2026-07-27):
+    - A normal walk-back exhaustion (the daily index just isn't published yet for any of
+      the last `lookback` days) -> `([], session)`, `used == session`. Not an error.
+    - A real failure (edgartools missing, SEC outage, identity error, ...) -> `([], None)`.
+      `used is None` is the hard-failure sentinel the caller (signals.py) checks to keep a
+      genuine outage from reading identically to a quiet day in `available()`.
     """
     try:
         from edgar import get_filings, set_identity
@@ -155,7 +160,7 @@ def fetch_form4_submissions(session: date, max_filings: int,
     except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
         warnings.warn(f"scout: form4 submission fetch failed: {redact_secrets(str(exc))}",
                       stacklevel=2)
-        return [], session
+        return [], None
 
 
 # --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---

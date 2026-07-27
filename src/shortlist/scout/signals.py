@@ -335,6 +335,13 @@ class EdgarForm4Signal:
     (edgar_index.fetch_form4_submissions), and the default `load_index` builds/loads the
     DERA classification history (dera.load_index) from `cfg["dera"]`
     (`quarters`/`cache_dir`, defaulting to 16 quarters / `.cache/dera`).
+
+    Config-absence contract (C-2, 2026-07-27): `cfg=None` (no `scout.form4` block) makes
+    `scan()` INERT -- no fetch, no DERA index build/download (~205 MB). This is distinct
+    from `cfg={}` (a present-but-empty block), which still runs on the code-level defaults
+    baked into `insider.qualifies`/`emissions_from_txns`. The two used to collapse to the
+    same thing (`cfg or {}`), which made "block removed" untestable against a signal that
+    still silently ran -- see docs/FORM4_INSIDER.md §8.
     """
     name = "edgar_form4"
     is_discovery = True
@@ -342,11 +349,13 @@ class EdgarForm4Signal:
     def __init__(self, cfg: dict | None = None, max_filings: int = 2000,
                  identity: str | None = None,
                  fetch_submissions=None, load_index=None) -> None:
+        self._config_present = cfg is not None
         self.cfg = cfg or {}
         self.max_filings = max_filings
         self.identity = identity or "shortlist-scout turgechr@duck.com"
         self._fetch = fetch_submissions
         self._load_index = load_index
+        self._index_missing: int | None = None
         self._status = (False, "not run")
 
     def _default_fetch(self, session: date, cap: int):
@@ -357,9 +366,16 @@ class EdgarForm4Signal:
         from .dera import load_index, quarters_back
         dcfg = self.cfg.get("dera") or {}
         quarters = quarters_back(session, int(dcfg.get("quarters", 16)))
-        return load_index(dcfg.get("cache_dir", ".cache/dera"), quarters, self.identity)
+        index, n_missing = load_index(dcfg.get("cache_dir", ".cache/dera"), quarters,
+                                      self.identity)
+        self._index_missing = n_missing   # C-1: surfaced in available() below
+        return index
 
     def scan(self, session: date) -> list[Emission]:
+        if not self._config_present:
+            self._status = (False, "no scout.form4 config")
+            return []
+
         from .insider import emissions_from_txns, parse_form4_xml
         fetch = self._fetch or self._default_fetch
         load_idx = self._load_index or (lambda: self._default_index(session))
@@ -369,28 +385,54 @@ class EdgarForm4Signal:
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
+
+        # I-1: fetch_form4_submissions' hard-failure sentinel is `used is None` (a real SEC
+        # outage / edgartools error, caught internally rather than raised) -- distinct from
+        # a normal walk-back exhaustion (`used == session`, "tried every lookback day,
+        # nothing published"). Without this a multi-day SEC outage and a quiet day both
+        # read as "0 insider buys from 0 Form 4s", indistinguishable.
+        sec_failed = used is None
+
         txns = [t for doc in docs for t in parse_form4_xml(doc)]
         # Spec §5.1: joint filings are abstained, and the count must be VISIBLE -- a silent
         # 9.5% drop is exactly the kind of thing that hides a broken parser.
         n_joint = len({t.ticker for t in txns if t.joint_filing and t.code == "P"})
         ems = emissions_from_txns(txns, index, session, self.cfg)
+
+        # I-2: name the overflow, don't just drop it -- spec §5.1's "never dropped silently"
+        # rule and the buyback signal's overflow-naming precedent both apply here too.
         cap = int(self.cfg.get("daily_cap", 25))
+        overflow: list[str] = []
         if len(ems) > cap:
-            ems = sorted(ems, key=lambda e: e.strength, reverse=True)[:cap]
+            ems.sort(key=lambda e: e.strength, reverse=True)
+            overflow = [e.ticker for e in ems[cap:]]
+            ems = ems[:cap]
+
         # An empty index can mean "not yet published" (the common after-close case) OR a
         # genuinely quiet published session, so word the fallback honestly rather than
-        # asserting "unpublished".
-        fallback = "" if used == session else f"; {session} index empty, used {used}"
+        # asserting "unpublished". Suppressed when sec_failed -- `fail` below already covers it.
+        fallback = ("" if sec_failed or used == session
+                    else f"; {session} index empty, used {used}")
         joint = f"; {n_joint} joint filings abstained" if n_joint else ""
+        over = (f"; {len(overflow)} emission(s) over daily_cap: {', '.join(overflow)}"
+                if overflow else "")
+        fail = "; SEC fetch failed (see logs)" if sec_failed else ""
+        # C-1: the DERA index's own size/completeness, so a permanently-empty or
+        # persistently-thin history (e.g. every download failing) is visible here too, not
+        # just silently downgrading everyone to UNCLASSIFIED at reduced strength.
+        idx_note = f"; DERA index {len(index)} owner(s)"
+        if self._index_missing:
+            idx_note += f" ({self._index_missing} quarter(s) missing)"
         # Fetch volume genuinely reaching the daily cap means the day's filings were
         # truncated in EDGAR index order -- an uncharacterizable sampling bias, not a
         # complete scan. That must be visibly distinct from a quiet day that merely
         # happens to mention the same cap number in its status string (silent truncation
         # is exactly the coverage defect edgar_index_daily_cap: 2500 exists to minimize).
         truncated = " TRUNCATED" if len(docs) >= self.max_filings else ""
-        self._status = (bool(docs),
+        self._status = (bool(docs) and not sec_failed,
                         f"{len(ems)} insider buys from {len(docs)} Form 4s "
-                        f"(cap {self.max_filings}{truncated}){joint}{fallback}")
+                        f"(cap {self.max_filings}{truncated}){joint}{over}{fail}"
+                        f"{idx_note}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:

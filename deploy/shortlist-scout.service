@@ -7,6 +7,11 @@ Wants=network-online.target
 Type=oneshot
 User=oracle
 WorkingDirectory=/opt/shortlist
+# edgartools defaults to 9 req/s; the Form 4 originator's live fetch (edgar_index.py:
+# fetch_form4_submissions) now budgets up to edgar_index_daily_cap=2500 filings/day at one
+# request each, so pin the SEC fair-access rate explicitly rather than relying on the
+# library default (which nothing else in this repo sets).
+Environment=EDGAR_RATE_LIMIT_PER_SEC=6
 ExecStart=/opt/shortlist/.venv/bin/shortlist-scout
 # To alert on failure, add: OnFailure=oracle-alert-failure@%n.service (see deploy/README.md)
 # Do NOT add Restart= / auto-retry: the run is marked complete only after delivery, so an

@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 import urllib.request
 import warnings
 import zipfile
@@ -154,6 +155,11 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
     Cached FOREVER by filename -- a published quarter is immutable. A 404 means "not
     published yet" and is SKIPPED, never raised: a missing recent quarter must degrade the
     history, not abort the daily run.
+
+    Writes are ATOMIC (PID-unique sibling temp file + os.replace, the positions.json
+    pattern) -- I-3: a kill or disk-full mid-write must not leave a truncated `p` that
+    `p.exists()` treats as "already downloaded" forever after (a corrupt ZIP `_index_from_zip`
+    would then fail on, every run, with no self-healing retry).
     """
     d = Path(cache_dir)
     d.mkdir(parents=True, exist_ok=True)
@@ -161,14 +167,18 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
     for q in quarters:
         p = d / f"{q}_form345.zip"
         if not p.exists():
+            tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
             try:
                 req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
                 with urllib.request.urlopen(req, timeout=120) as r:
-                    p.write_bytes(r.read())
+                    tmp.write_bytes(r.read())
+                os.replace(tmp, p)
             except Exception as exc:  # noqa: BLE001 -- absent quarter degrades history
                 warnings.warn(f"dera: {q} unavailable: {redact_secrets(str(exc))}",
                               stacklevel=2)
                 continue
+            finally:
+                tmp.unlink(missing_ok=True)
         out.append(p)
     return out
 
@@ -184,11 +194,33 @@ def _index_from_zip(path: Path) -> list[InsiderTxn]:
             io.TextIOWrapper(t, "utf-8", errors="replace"))
 
 
-def load_index(cache_dir: str, quarters, identity: str = _UA) -> dict:
+def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int]:
     """Trade-month index across `quarters`, disk-cached as compact JSON.
 
-    Rebuilding from ~16 ZIPs on every daily run is wasteful, so the built index is persisted
-    keyed by the exact quarter list. Values are stored as `y*12+m` ints (far smaller than
+    Returns (index, n_missing): `n_missing` counts requested quarters that did NOT
+    contribute -- not yet published, or a download/parse failure (indistinguishable from
+    here; both degrade the history the same way). Callers surface both numbers so an
+    operator can tell "running on a thin history" from "the feature silently stopped."
+
+    C-1 FIX (2026-07-27): the cache is written ONLY when every requested quarter
+    contributed (`n_missing == 0`). A prior version wrote the cache unconditionally, so a
+    single network blip on the very first run after deploy persisted an EMPTY (or partial)
+    index to disk FOREVER -- every later run hit that cache and never retried the failed
+    download, silently classifying every insider UNCLASSIFIED (measured 48.5% of the
+    population would otherwise be ROUTINE and correctly dropped). See the Task-5
+    fix-round-2 report for the reproduction this guards against.
+
+    The cache key is the SORTED list of quarters that actually CONTRIBUTED, not the
+    requested list (I-5): a quarter that 404s today (DERA publishes ~a quarter in arrears,
+    so the newest requested quarter is routinely absent for weeks) and shows up six weeks
+    later gets its own cache entry once it does, instead of being pinned behind a
+    requested-quarter key that never changes within the quarter. The tradeoff: while any
+    requested quarter is missing, nothing is cached and every call rebuilds from the ZIPs
+    that ARE present -- correctness over efficiency, and an under-complete cache file from
+    an earlier session is simply orphaned (harmless; not cleaned up).
+
+    Rebuilding a COMPLETE set from ~16 ZIPs on every daily run would be wasteful, which is
+    why a complete index is persisted. Values are stored as `y*12+m` ints (far smaller than
     [y, m] pairs) and rehydrated to the (year, month) tuples `classify_tier` expects.
 
     Memory: quarters are processed ONE AT A TIME (`_index_from_zip` per path, merged into
@@ -196,16 +228,30 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> dict:
     another quarter's, and the ~900k-submission full-history case never materializes as one
     list. This runs on a 1.9 GB VPS alongside the live daily scout.
     """
-    key = "-".join(sorted(quarters))
-    cache = Path(cache_dir) / f"index-{key}.json"
-    if cache.exists():
-        raw = json.loads(cache.read_text())
-        return {k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()}
+    paths = ensure_quarters(quarters, cache_dir, identity)
+    contributed = sorted(p.name.removesuffix("_form345.zip") for p in paths)
+    n_missing = len(quarters) - len(contributed)
+
+    cache = Path(cache_dir) / f"index-{'-'.join(contributed) or 'empty'}.json"
+    if n_missing == 0 and cache.exists():
+        try:
+            raw = json.loads(cache.read_text())
+            return {k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()}, 0
+        except (json.JSONDecodeError, OSError):
+            cache.unlink(missing_ok=True)  # I-3: don't re-serve a corrupt cache forever
+
     idx: dict[str, set] = {}
-    for p in ensure_quarters(quarters, cache_dir, identity):
+    for p in paths:
         for cik, months in build_trade_month_index(_index_from_zip(p)).items():
             idx.setdefault(cik, set()).update(months)
-    Path(cache_dir).mkdir(parents=True, exist_ok=True)
-    cache.write_text(json.dumps(
-        {k: sorted(y * 12 + (m - 1) for (y, m) in vs) for k, vs in idx.items()}))
-    return idx
+
+    if n_missing == 0:
+        Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(json.dumps(
+                {k: sorted(y * 12 + (m - 1) for (y, m) in vs) for k, vs in idx.items()}))
+            os.replace(tmp, cache)
+        finally:
+            tmp.unlink(missing_ok=True)
+    return idx, n_missing

@@ -124,7 +124,10 @@ def test_fetch_form4_submissions_outage_degrades_loudly(monkeypatch):
     import pytest
     _broken_edgar_module(monkeypatch)
     with pytest.warns(UserWarning, match="form4 submission fetch failed") as w:
-        assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], date(2026, 7, 1))
+        # I-1: used=None is the hard-failure sentinel, distinct from a normal walk-back
+        # exhaustion (used == session) -- the caller uses it to tell a real SEC outage
+        # apart from a quiet day.
+        assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], None)
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
 
