@@ -6,6 +6,36 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Form 4 opportunistic-insider rebuild shipped; backfill leg deliberately deferred (2026-07-27)
+
+`edgar_form4` rebuild (item 2 of the funnel-composition-audit entry below) is **DONE** — all
+6 tasks of `.superpowers/sdd/PLAN_FORM4_INSIDER/` landed on
+`feat/form4-opportunistic-insider`: `scout/dera.py` + `scout/insider.py` (CMP
+routine/opportunistic classification off a SEC DERA bulk index), a rewritten
+`EdgarForm4Signal` (raw Form 4 XML, one request/filing via `full_text_submission()`, $100k
+per-transaction floor, role weighting, 10b5-1 exclusion, joint-filing abstention,
+`edgar_index_daily_cap` raised 400→2500), and `scout/preregister/edgar_form4.yaml` committed
+before any measurement run. Docs: `docs/FORM4_INSIDER.md` status flipped to IMPLEMENTED;
+CLAUDE.md gained a full section + the `aff10b5One`/`footnoteId`/DERA-rounding/`Filing.text()`
+landmines.
+
+**Deliberately NOT wired: the backfill cohort itself.** Every other EDGAR originator's
+backfill uses a pure per-chunk `assemble` (or, for `13d-a`, a stateful `assemble_factory`
+that only needs the *prior filing* in scope). A Form 4 backfill is a harder case: the CMP
+classification needs a trade-month index built from DERA quarters **strictly BEFORE** each
+event's quarter, or future trading behaviour leaks into the routine/opportunistic label —
+i.e. a point-in-time `assemble_factory` that walks quarterly ZIPs in order, not a single
+static index. That is a real design (fetch cadence, PiT index cost, cache shape), not an
+afternoon's row in `_BACKFILL_SPECS`, and needs its own spec before it's built. Until then
+the live signal accrues evidence only through the picks ledger + firehose (no cohort verdict
+possible).
+
+**Status:** Rebuild DONE, merged into `feat/form4-opportunistic-insider` (not yet merged to
+main/deployed at time of writing — see the branch's own PR when opened). Backfill leg is
+OPEN, blocked on a follow-up spec; not started.
+
+---
+
 ## Funnel composition audit — originator universe is the bottleneck, not the scorer (2026-07-26)
 
 Full evidence: **`docs/audits/2026-07-26-funnel-composition-audit.md`** (committed). Reviewed
@@ -135,11 +165,11 @@ Open work, in order:
    quarterly-ZIP fetching plus a point-in-time `assemble_factory` (index from quarters
    strictly BEFORE each event's quarter, else future trading behaviour leaks into the
    classification). That needs its own spec.
-   **Execution state (2026-07-26, mid-flight):** Tasks 1–4 **complete, each reviewed spec ✅ /
+   **Execution state — ALL 6 TASKS DONE (2026-07-27).** Tasks 1–4 **complete, each reviewed spec ✅ /
    quality approved** — `scout/insider.py` (record + XML parser + CMP classification +
    qualification/strength/emission) and `scout/dera.py` (bulk parser + trade-month index +
    quarterly ZIP fetch/cache). **Task 5 (live wiring) implemented, fix round 1 in flight.
-   Task 6 (pre-registration + docs) NOT started.** Nothing merged; branch
+   Task 6 (pre-registration + docs) DONE (2026-07-27, this entry).** Nothing merged; branch
    `feat/form4-opportunistic-insider` is unpushed at time of writing. Ledger:
    `.superpowers/sdd/PLAN_FORM4_INSIDER/progress.md`.
    - **Task 5 finding, still open:** `config.yaml`'s `edgar_index_daily_cap` was still **400**,
@@ -209,11 +239,13 @@ Open work, in order:
 **Status:** IN PROGRESS — but the analysis that framed this entry is PARTLY RETRACTED; item −1
 (fix `calendar_time_portfolio`) now precedes everything and no cohort alpha should be quoted
 until it lands. Items 0, 0b and 3(a) shipped (suite 2126 green, ruff clean, committed on
-`fix/validate-event-bootstrap-ci`, pushed). Items 0c, 0d, 1, 2, 3(b), 4 remain. Item 1 (size-band re-validation) is
-now unblocked and is the next step; item 2 (the `edgar_form4` rebuild) is the main build and
-has not been started. **All of it is UNCOMMITTED in the working tree** (7 files, ~379 lines;
-`validate.py` is the only production module touched) and nothing is deployed to
-`/opt/shortlist` — the daily push still runs the pre-change behaviour, WSB included.
+`fix/validate-event-bootstrap-ci`, pushed). **Item 2 (the `edgar_form4` rebuild) is now DONE**
+(2026-07-27, branch `feat/form4-opportunistic-insider`, not yet merged — see the standalone
+entry above for the deferred backfill-leg follow-up). Items 0c, 0d, 1, 3(b), 4 remain. Item 1
+(size-band re-validation) is next. **The rest of this entry's items are UNCOMMITTED in the
+working tree** (7 files, ~379 lines; `validate.py` is the only production module touched) and
+nothing is deployed to `/opt/shortlist` — the daily push still runs the pre-change behaviour,
+WSB included.
 
 ---
 

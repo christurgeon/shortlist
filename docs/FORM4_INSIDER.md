@@ -1,7 +1,11 @@
 # Form 4 opportunistic-insider originator — design (2026-07-26)
 
-**Status:** design approved, not implemented. Supersedes the current
-`EdgarForm4Signal` (`scout/signals.py` + `scout/edgar_index.py:cluster_buys_from_records`).
+**Status:** IMPLEMENTED 2026-07-27. Supersedes the retired count-heuristic
+`EdgarForm4Signal` (`cluster_buys_from_records`) with the rewrite described below:
+`scout/dera.py` + `scout/insider.py` + a rewritten `scout/signals.py:EdgarForm4Signal`,
+config in `config.yaml: scout.form4`, pre-registration committed at
+`scout/preregister/edgar_form4.yaml`. The backfill cohort itself is **deliberately NOT
+wired** (see §9 and `TODO.md`) — this doc's design content below remains current.
 
 **Doc location note:** design specs conventionally live in `docs/superpowers/specs/`, which
 is **gitignored** — the mechanism by which two enablement artifacts have already evaporated
