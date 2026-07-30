@@ -174,13 +174,17 @@ Open work, in order:
    decision-relevant scored ones already measure; revisit only if a future signal's scored
    cohort fails the floor; (e) KILL requires an entirely-negative CI on a floor-clearing
    SCORED cohort.
-0f. **NEXT, small and high-value:** make the evaluator **suppress the alpha level whenever
-   the measurable-fraction floor fails** (today it prints the level and the INSUFFICIENT
-   verdict side by side, which is exactly how this session's wrong turn happened). Cheap,
-   TDD-able, prevents recurrence.
 0c. **Remaining gap:** `double_sort`'s `spread_ci` still uses the month-resampled bootstrap,
    so the spread CIs are still too tight. Display-only (no verdict reads it) but the digest
    shows it. Needs a per-bucket event resample.
+0g. **Remaining gap, surfaced by the 0f review:** the **double-sort cohort is never
+   measurability-floor-checked at all.** `daily.py` builds it from `ds_evs` (gate-agnostic,
+   composite-defined) — a different population from the scored cohort whose floor `decide()`
+   tests. 0f blanks the absolute legs (`high_ir`/`low_ir`) whenever the PARENT verdict is
+   suppressed, which closes the leak that mattered, but a ds cohort could still fail a floor
+   its parent passes and nobody would know. Wants its own `measure_cohort`-side floor check
+   before any ds level is read as evidence. The SPREAD is unaffected either way (a difference
+   between two identically-measured buckets cancels the common bias).
 0d. **Flaky, unrelated:** `tests/scout/test_daily_demo.py` fails on clean HEAD — it reads the
    live `state/scout_state.json`, so GOOGL falls inside the 7-day cooldown from its
    2026-07-20 pick. Date-dependent; should use a fixture state, not production state.

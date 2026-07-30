@@ -509,6 +509,31 @@ def _suppress_level(verdict: SignalVerdict) -> SignalVerdict:
     return verdict
 
 
+# The double-sort's SPREAD legs are differences between two identically-measured buckets, so
+# the attrition bias cancels and they survive suppression. `high_ir`/`low_ir` are ABSOLUTE
+# per-bucket levels -- they carry exactly the bias the floor rejected, so they must not.
+_ABSOLUTE_DOUBLE_SORT_LEGS = ("high_ir", "low_ir")
+
+
+def attach_double_sort(verdict: SignalVerdict, ds: dict | None) -> SignalVerdict:
+    """Attach a double-sort result to `verdict`, blanking its ABSOLUTE per-bucket legs when
+    the verdict's level is suppressed.
+
+    Assignment goes through this helper rather than `verdict.double_sort = ds` so a
+    suppressed verdict can never ship a quotable level one key down from the ones R-0f just
+    blanked (the raw `--json` / `scout/validate-latest.json` surface, which is where audits
+    are actually written from). `spread_alpha_monthly`/`spread_ci` and every count are left
+    alone -- the spread is the statistic this data supports.
+    """
+    if ds is not None and verdict.alpha_suppressed:
+        ds = dict(ds)
+        for leg in _ABSOLUTE_DOUBLE_SORT_LEGS:
+            if leg in ds:
+                ds[leg] = None
+    verdict.double_sort = ds
+    return verdict
+
+
 def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
            sensitivity_flip: bool = False, cohort_type: str = "raw") -> SignalVerdict:
     """KILL / HOLD / INSUFFICIENT (never PROMOTE) per spec §6.4. Kill is cheap; promote is
@@ -523,9 +548,11 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     R-0f: whenever EITHER floor fails, the cohort's alpha LEVEL (`alpha_monthly`,
     `alpha_ci`, `ir`) is SUPPRESSED to None and `alpha_suppressed` is set — a rejected
     cohort must not hand the reader a number to quote (`_suppress_level`). Sample
-    diagnostics (fractions, counts, blocks) and the within-cohort double-sort spread are
+    diagnostics (fractions, counts, blocks) and the within-cohort double-sort SPREAD are
     untouched: the spread is a difference between two identically-measured buckets, so the
-    attrition bias cancels there.
+    attrition bias cancels there. The double-sort's ABSOLUTE legs (`high_ir`/`low_ir`) do
+    NOT get that exemption — see `attach_double_sort`, which every assignment must go
+    through.
 
     R-B5: a KILL on a "raw" (undifferentiated firehose) cohort is framed as confirmatory,
     not fresh evidence -- the scored/double-sort cohort (post quality/gate filtering) is

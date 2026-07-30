@@ -469,22 +469,24 @@ def test_alpha_level_suppressed_when_pooled_measurable_fraction_below_floor():
 
 def test_alpha_level_suppressed_when_a_vintage_bucket_fails_despite_pooled_pass():
     from shortlist.scout.validate import calendar_time_portfolio
-    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
-    evs = _measurable_events(-0.2153)
-    # 3 of the 24 events in the 2022 vintage lose their price series: that bucket lands at
-    # 21/24 = 0.875 < floor while the pooled fraction (93/96 = 0.97) still clears.
-    lost = [i for i, e in enumerate(evs) if e.event_date.year == 2022][:3]
-    for i in lost:
-        evs[i] = replace(evs[i], ret=None, measurable=False)
-    ctp = calendar_time_portfolio(evs, k_months=12)
-    meas = CohortMeasurement("s", len(evs), len(evs) - 3, evs)
-    assert meas.measurable_fraction() >= 0.90
+    events = list(_dispersed_measurement().events)
+    # 2 of the 12 events in the 2025 vintage lose their price series: that bucket lands at
+    # 10/12 = 0.83 < floor while the pooled fraction (22/24 = 0.92) still clears.
+    for i in [i for i, e in enumerate(events) if e.event_date.year == 2025][:2]:
+        events[i] = replace(events[i], ret=None, measurable=False)
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+    meas = CohortMeasurement("s", len(events), len(events) - 2, events)
+    assert meas.measurable_fraction() >= 0.90            # only the VINTAGE floor fails
 
-    v = decide(meas, ctp, ff3, k_months=12, prereg=_PREREG)
+    v = decide(meas, ctp, ff3, k_months=3, prereg=prereg)
 
     assert v.verdict == "INSUFFICIENT"
     assert "vintage" in " ".join(v.notes).lower()
     assert v.alpha_suppressed is True
+    # All three are genuinely computable on this fixture (alpha ~ +0.067, IR ~ 8.7), so
+    # every None below is the suppression, not an unrelated abstention.
     assert (v.alpha_monthly, v.alpha_ci, v.ir) == (None, None, None)
 
 
@@ -508,15 +510,17 @@ def test_alpha_level_suppressed_on_the_unsupported_factor_model_path_too():
     # The factor-model guard returns early, before the floor notes are appended -- the
     # suppression must still apply there or a failing-floor cohort quotes its level.
     from shortlist.scout.validate import calendar_time_portfolio
-    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
-    evs = _measurable_events(-0.2153)
-    ctp = calendar_time_portfolio(evs, k_months=12)
-    meas = CohortMeasurement("s", len(evs) * 2, len(evs), evs)
-    prereg = dict(_PREREG, factor_model="ff5")
+    events = _dispersed_measurement().events        # alpha AND IR both computable here
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2,
+              "factor_model": "ff5"}
 
-    v = decide(meas, ctp, ff3, k_months=12, prereg=prereg)
+    v = decide(CohortMeasurement("s", len(events) * 2, len(events), events),
+               ctp, ff3, k_months=3, prereg=prereg)
 
     assert v.verdict == "INSUFFICIENT"
+    assert "factor_model" in " ".join(v.notes).lower()
     assert v.alpha_suppressed is True
     assert (v.alpha_monthly, v.alpha_ci, v.ir) == (None, None, None)
 

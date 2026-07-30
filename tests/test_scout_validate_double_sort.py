@@ -220,6 +220,70 @@ def test_signal_verdict_double_sort_field_is_optional_and_positionally_stable():
     # Every later field is APPENDED (never inserted), so earlier positional slots survive:
     # n_immature/n_events keep their order and slots, and `alpha_suppressed` (R-0f level
     # suppression) sits after them at the very end.
-    assert names.index("n_immature") == names.index("n_events") - 1
-    assert names[-1] == "alpha_suppressed"
+    assert names[-3:] == ["n_immature", "n_events", "alpha_suppressed"]
     assert v.alpha_suppressed is False
+
+
+# --- R-0f: the double-sort's ABSOLUTE legs don't get the spread's bias-cancellation ------
+
+def _ds(**over):
+    base = {"n_high": 20, "n_low": 22, "months": 30, "effective_blocks": 6,
+            "spread_alpha_monthly": 0.0244, "spread_ci": (0.001, 0.048),
+            "high_ir": 1.0438, "low_ir": 0.4956}
+    base.update(over)
+    return base
+
+
+def _verdict(**over):
+    base = dict(signal="s", verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
+                alpha_ci=None, effective_blocks=6, n_selected=100, n_measurable=92,
+                measurable_fraction=0.92, sensitivity_flip=False,
+                cohort_type="scored_gated")
+    base.update(over)
+    return SignalVerdict(**base)
+
+
+def test_attach_double_sort_blanks_absolute_legs_when_the_level_is_suppressed():
+    """high_ir/low_ir are per-bucket LEVELS, not differences -- they carry exactly the
+    attrition bias the measurability floor rejected, so a suppressed verdict must not ship
+    them one key down from the fields R-0f just blanked (the raw --json / persisted
+    artifact surface). Reproduces the real shape in scout/validate-latest.json, where an
+    edgar:activist_13d scored cohort failed its 2025 vintage bucket while carrying
+    high_ir 1.04."""
+    from shortlist.scout.validate import attach_double_sort
+
+    v = attach_double_sort(_verdict(alpha_suppressed=True), _ds())
+
+    assert v.double_sort["high_ir"] is None
+    assert v.double_sort["low_ir"] is None
+
+
+def test_attach_double_sort_keeps_the_spread_when_the_level_is_suppressed():
+    """The spread IS a difference between two identically-measured buckets, so the common
+    bias cancels -- suppression must not take it, or the one statistic this data supports
+    disappears with the one it doesn't."""
+    from shortlist.scout.validate import attach_double_sort
+
+    v = attach_double_sort(_verdict(alpha_suppressed=True), _ds())
+
+    assert v.double_sort["spread_alpha_monthly"] == 0.0244
+    assert v.double_sort["spread_ci"] == (0.001, 0.048)
+    assert (v.double_sort["n_high"], v.double_sort["n_low"]) == (20, 22)
+    assert v.double_sort["effective_blocks"] == 6
+
+
+def test_attach_double_sort_is_a_passthrough_when_not_suppressed():
+    from shortlist.scout.validate import attach_double_sort
+
+    ds = _ds()
+    v = attach_double_sort(_verdict(verdict="HOLD"), ds)
+
+    assert v.double_sort == ds
+    assert v.double_sort["high_ir"] == 1.0438
+    assert ds["high_ir"] == 1.0438          # never mutates the caller's dict
+
+
+def test_attach_double_sort_tolerates_none():
+    from shortlist.scout.validate import attach_double_sort
+
+    assert attach_double_sort(_verdict(alpha_suppressed=True), None).double_sort is None

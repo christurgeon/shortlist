@@ -914,6 +914,7 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
     from .preregister import load_prereg, verify_untampered
     from .validate import (
         SignalVerdict,
+        attach_double_sort,
         calendar_time_portfolio,
         decide,
         double_sort,
@@ -1028,7 +1029,10 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
                 min_bucket_events=prereg.get("min_bucket_events", 5),
                 min_independent_blocks=prereg.get("min_independent_blocks", 2),
                 weighting=weighting)
-            scored_verdict.double_sort = ds_result
+            # Never `scored_verdict.double_sort = ds_result` directly: on a floor-suppressed
+            # verdict the helper blanks the ABSOLUTE per-bucket legs (high_ir/low_ir), which
+            # carry the same attrition bias the floor rejected (R-0f).
+            attach_double_sort(scored_verdict, ds_result)
             if ds_result is None:
                 # v2 §2's "insufficient_blocks marker in the run log" — a coarse WHY so a
                 # None double-sort never reads as "not attempted" vs "attempted and thin".

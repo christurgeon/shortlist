@@ -432,14 +432,29 @@ def test_print_validate_table_omits_immature_suffix_when_zero(capsys):
 
 def test_print_validate_table_marks_a_suppressed_level_not_a_bare_dash(capsys):
     """A level suppressed by the measurability floor must read differently from one that
-    could not be computed -- a bare '-' invites re-deriving it by hand."""
+    could not be computed -- a bare '-' invites re-deriving it by hand. BOTH level columns
+    (IR and ALPHA/mo) must say so: asserting a single 'SUPP' anywhere passes against a
+    half-implemented renderer that only marks one of them."""
     v = SignalVerdict(signal="s", verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
                       alpha_ci=None, effective_blocks=4, n_selected=100, n_measurable=62,
                       measurable_fraction=0.62, sensitivity_flip=False, cohort_type="raw",
                       alpha_suppressed=True)
     daily._print_validate_table([v])
     out = capsys.readouterr().out
-    assert "SUPP" in out
+    assert out.count("SUPP") == 2
+
+
+def test_print_validate_table_prints_real_levels_when_not_suppressed(capsys):
+    """The negative half: a verdict carrying real numbers must still print them, so the
+    marker above can't be a renderer that says SUPP unconditionally."""
+    v = SignalVerdict(signal="s", verdict="KILL", ir=-1.25, alpha_monthly=-0.0432,
+                      alpha_ci=(-0.06, -0.02), effective_blocks=4, n_selected=100,
+                      n_measurable=98, measurable_fraction=0.98, sensitivity_flip=False,
+                      cohort_type="raw")
+    daily._print_validate_table([v])
+    out = capsys.readouterr().out
+    assert "SUPP" not in out
+    assert "-1.25" in out and "-0.0432" in out
 
 
 def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
@@ -692,3 +707,37 @@ def test_load_validation_digest_null_safe_validate_none(tmp_path, monkeypatch):
     # 4 days old <= default 14 -> fresh
     result = _load_validation_digest(cfg, today=date(2026, 7, 5))
     assert result == payload
+
+
+def test_suppressed_verdict_survives_the_persist_round_trip_with_no_leaked_level(
+        tmp_path, monkeypatch):
+    """R-0f end to end: a floor-suppressed verdict must reach the digest with the flag
+    intact, every level field null, and NO absolute double-sort leg -- the persisted
+    artifact is the surface audits actually get written from."""
+    monkeypatch.chdir(tmp_path)
+    from shortlist.scout.validate import attach_double_sort
+
+    v = attach_double_sort(
+        SignalVerdict(signal="test:sig", verdict="INSUFFICIENT", ir=None,
+                      alpha_monthly=None, alpha_ci=None, effective_blocks=6,
+                      n_selected=100, n_measurable=92, measurable_fraction=0.92,
+                      sensitivity_flip=False, cohort_type="scored_gated",
+                      alpha_suppressed=True),
+        {"n_high": 20, "n_low": 22, "months": 30, "effective_blocks": 6,
+         "spread_alpha_monthly": 0.0244, "spread_ci": (0.001, 0.048),
+         "high_ir": 1.0438, "low_ir": 0.4956})
+    monkeypatch.setattr(daily, "run_validate", lambda *a, **k: [v])
+
+    today = date(2026, 7, 5)
+    _run_validate_cli({"scout": {"validate": {}}}, today=today, lookback_days=365,
+                      as_json=False)
+
+    data = _load_validation_digest({}, today=today)
+    got = data["verdicts"][0]
+    assert got["alpha_suppressed"] is True
+    assert got["ir"] is None and got["alpha_monthly"] is None and got["alpha_ci"] is None
+    assert got["double_sort"]["high_ir"] is None
+    assert got["double_sort"]["low_ir"] is None
+    assert got["double_sort"]["spread_alpha_monthly"] == 0.0244      # the spread survives
+    # Nothing anywhere in the artifact reads as a quotable per-cohort level.
+    assert "1.0438" not in json.dumps(got)
