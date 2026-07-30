@@ -1,3 +1,17 @@
+# ============================================================================
+# WARNING -- TWO INSTALL ROUTES EXIST AND THEY CAN DRIFT.
+#
+# `deploy/install_opt_shortlist.sh` does NOT read this file: it GENERATES its own
+# unit inline (a heredoc, because it interpolates the run-user, home and dest).
+# This file is only used by the MANUAL route documented in deploy/README.md
+# (`sudo cp deploy/shortlist-scout.service /etc/systemd/system/`).
+#
+# So any Service setting added here MUST also be added to the installer's heredoc,
+# or it silently has no effect on the normal deploy. That exact mistake was made on
+# 2026-07-30: MemoryMax/EDGAR_RATE_LIMIT_PER_SEC were added here and never took
+# effect in production. Change both, every time.
+# ============================================================================
+
 [Unit]
 Description=shortlist autonomous scout — daily candidate discovery + report
 After=network-online.target

@@ -109,6 +109,9 @@ journalctl -u shortlist-scout.service -f
 #    your install location (default assumes /opt/shortlist; see below).
 
 # 2. Copy units to systemd
+# NOTE: this MANUAL route uses the static unit files. `install_opt_shortlist.sh`
+# does NOT -- it generates its own units inline. The two can drift; a Service
+# setting added to one must be added to the other. (Bitten 2026-07-30.)
 sudo cp deploy/shortlist-scout.service /etc/systemd/system/
 sudo cp deploy/shortlist-scout.timer   /etc/systemd/system/
 

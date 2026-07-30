@@ -149,6 +149,28 @@ no new scoring):
     `config.yaml` knob — the `monitor` block only has `enabled`/`items`. Remove the
     `portfolio.monitor` block for byte-identical pre-feature behavior.
 
+## Deploying to the VPS (the ONE command)
+
+The live scout/bot run from **`/opt/shortlist`**, an rsync'd copy — editing this repo changes
+nothing in production until you deploy. From a checkout of the merged branch:
+
+```bash
+sudo bash deploy/install_opt_shortlist.sh     # rsync + uv sync + units + daemon-reload + bot restart
+```
+
+Idempotent. It handles everything: rsync to `/opt/shortlist`, `uv sync --extra scout --extra
+edgar`, unit (re)install, `systemctl daemon-reload`, `enable --now` the timer, and a
+`try-restart` of `shortlist-bot.service` (which otherwise keeps running the OLD code after an
+rsync). Then optionally one real run: `sudo systemctl start shortlist-scout.service`.
+
+**GOTCHA — the installer GENERATES its unit files inline; it does NOT read `deploy/*.service`.**
+`deploy/shortlist-{scout,accumulate}.{service,timer}` are only used by the *manual* route in
+`deploy/README.md`. Both routes are supported, so **a `[Service]` setting added to one must be
+added to the other** or it silently never takes effect in production. That mistake was made on
+2026-07-30 (`MemoryMax`/`EDGAR_RATE_LIMIT_PER_SEC` edited into the static file, no effect).
+`deploy/shortlist-bot.service` is the exception: it is NOT generated, so the static file IS
+the real one.
+
 ## Dev workflow (uv)
 
 ```bash

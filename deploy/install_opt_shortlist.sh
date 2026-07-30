@@ -97,11 +97,19 @@ WorkingDirectory=$DEST
 Environment=HOME=$RUN_HOME
 Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=$DEST/.venv/bin/shortlist-scout
+# Cap memory: the DERA insider index peaks at ~295 MB on a cold build (measured live
+# 2026-07-30: 26.9s, 68,499 entries, 15 quarters). This box has 1.9 GB and also runs
+# oracle-bot, so bound the scout rather than let the OOM killer pick its neighbour.
+MemoryMax=600M
+# edgartools defaults to 9 req/s (EDGAR_RATE_LIMIT_PER_SEC); SEC fair-access wants <=10 but
+# this signal now fetches up to 2500 Form 4s per run, so hold it at 6.
+Environment=EDGAR_RATE_LIMIT_PER_SEC=6
 # Do NOT add Restart=/auto-retry: the run is marked complete only after delivery, so an
 # auto-restart before that re-runs discovery and re-hits the unofficial Yahoo endpoint
 # (see CLAUDE.md "Yahoo WAF gotcha"). Type=oneshot already means no restart — keep it.
 # Optional failure ping (uncomment if oracle-alert-failure@.service is deployed):
 # OnFailure=oracle-alert-failure@%n.service
+# 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
 TimeoutStartSec=1800
 # No [Install] section: this oneshot is driven solely by shortlist-scout.timer.
 UNIT
@@ -155,6 +163,7 @@ Nice=10
 # scout uses it) and SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
 # default that degrades without the optional extra is a footgun).
 ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
+# 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
 TimeoutStartSec=1800
 UNIT
   cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
