@@ -6,6 +6,43 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Form 4 rebuild — final review applied; branch ready but UNMERGED, UNPUSHED (2026-07-30)
+
+Branch `feat/form4-opportunistic-insider`, 23 commits, head `bf367c9`. All six tasks
+implemented and individually reviewed; whole-branch review returned **SHIP WITH FIXES** and
+every Critical/Important is now applied and verified. **ruff clean, 2177 passed.**
+
+**Not done — pick up here:**
+1. **Push the branch and open the PR.** Nothing is pushed; nothing is deployed. The live
+   scout still runs the OLD cluster-count signal.
+2. **A scoped re-review of the fix-wave commit `bf367c9` was never run** — the subagent
+   budget was exhausted, so the fixes were applied in the controller session and reviewed
+   only by the author. That is the one process gap in this branch; treat `bf367c9` as
+   unreviewed by a second pair of eyes.
+3. **Deploy note:** `deploy/shortlist-scout.service` gained `RuntimeMaxSec=3600`,
+   `MemoryMax=600M` and `EDGAR_RATE_LIMIT_PER_SEC=6`. These take effect only after
+   `systemctl daemon-reload`.
+4. **First live run will be slow** — it cold-downloads ~15 DERA quarters (~192 MB) and
+   builds the index at ~288 MB peak RSS before caching.
+
+**Highest-value finding, for the record:** the placeholder-ticker guard
+(`edgar_index._is_real_ticker`) protected against a bug seen in production, and its Form 4
+call sites were deleted with `cluster_buys_from_records` without anyone re-owning it.
+Measured on real data: **459 of 57,797 Form 4 filings in 2025Q1 (0.79%)** carry a placeholder
+`issuerTradingSymbol` — and because emissions bucket by ticker, 305 `NONE` rows from
+unrelated companies merged into a single high-strength phantom emission. Now guarded by
+`insider.is_real_ticker` with the provenance in a comment so it is not deleted a third time.
+
+**Unrelated pre-existing failure:** `tests/test_earnings.py::test_normalize_finnhub_populates_earnings`
+hardcodes `2026-07-29` as a *future* earnings date; the calendar has passed it, so it now
+fails on clean HEAD too (verified via stash). Same hygiene class as the date-dependent
+`test_daily_demo.py`. Both should use relative dates.
+
+**Status:** OPEN — branch complete and green but unmerged, unpushed, and `bf367c9` awaits an
+independent review.
+
+---
+
 ## Form 4 opportunistic-insider rebuild shipped; backfill leg deliberately deferred (2026-07-27)
 
 `edgar_form4` rebuild (item 2 of the funnel-composition-audit entry below) is **DONE** — all
