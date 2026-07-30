@@ -131,3 +131,25 @@ def test_joint_filing_flag_set_from_reporting_owner_count():
     </ownershipDocument>"""
     assert parse_form4_xml(joint_xml)[0].joint_filing is True
     assert parse_form4_xml(single_xml)[0].joint_filing is False
+
+
+def test_aff10b5one_wrapped_in_a_value_element_is_read():
+    """The parser reads every other scalar through a <value> child. Reading aff10b5One via
+    raw .text meant a filer agent emitting the nested form would silently yield False --
+    disabling the 10b5-1 exclusion entirely, with nothing to notice it."""
+    xml = """<ownershipDocument>
+      <issuer><issuerCik>1</issuerCik><issuerTradingSymbol>ZZZ</issuerTradingSymbol></issuer>
+      <reportingOwner><reportingOwnerId><rptOwnerCik>9</rptOwnerCik></reportingOwnerId>
+        <reportingOwnerRelationship><isDirector>true</isDirector></reportingOwnerRelationship>
+      </reportingOwner>
+      <aff10b5One><value>1</value></aff10b5One>
+      <nonDerivativeTable><nonDerivativeTransaction>
+        <transactionDate><value>2025-01-02</value></transactionDate>
+        <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+        <transactionAmounts>
+          <transactionShares><value>10</value></transactionShares>
+          <transactionPricePerShare><value>5</value></transactionPricePerShare>
+        </transactionAmounts>
+      </nonDerivativeTransaction></nonDerivativeTable>
+    </ownershipDocument>"""
+    assert parse_form4_xml(xml)[0].plan_10b5_1 is True

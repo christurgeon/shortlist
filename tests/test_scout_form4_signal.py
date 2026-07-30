@@ -156,3 +156,31 @@ def test_available_does_not_mark_truncation_when_fetch_count_is_below_the_cap():
     ok, detail = sig.available()
     assert ok
     assert "TRUNCATED" not in detail
+
+
+def test_a_dead_index_reports_not_ran_even_though_filings_arrived():
+    """I-4: an empty index is not a quiet day. Everything classifies UNCLASSIFIED, nothing
+    is dropped as routine (measured: 48.5% of the population), and the signal emits roughly
+    double the names at 0.6 strength. That state must not read as healthy.
+
+    Patches dera.load_index rather than injecting the constructor double, so the real
+    _default_index path runs and sets the missing-quarter state the guard reads.
+    """
+    from datetime import date
+
+    from shortlist.scout import dera
+    from shortlist.scout.signals import EdgarForm4Signal
+
+    xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
+    orig = dera.load_index
+    dera.load_index = lambda cache_dir, quarters, identity=None: ({}, len(quarters))
+    try:
+        sig = EdgarForm4Signal(
+            cfg={"min_value": 100000, "roles": ["officer", "director"],
+                 "exclude_10b5_1": True, "dera": {"quarters": 2}},
+            fetch_submissions=lambda session, cap: ([xml], session, 1))
+        sig.scan(date(2025, 3, 31))
+        ok, detail = sig.available()
+        assert ok is False, f"a dead index must not report ran=True: {detail}"
+    finally:
+        dera.load_index = orig

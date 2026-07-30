@@ -158,3 +158,77 @@ def test_load_index_unlinks_a_corrupt_cache_and_rebuilds(tmp_path, monkeypatch):
     assert idx == {"0002021774": {(2025, 3)}}
     assert len(calls) == 1
     _json.loads(corrupt.read_text())   # rebuilt cache is valid JSON, not the corrupt text
+
+
+# --- final-review fast-follow: the dera.py safety paths had no tests ------------------
+# The cache gate, ZIP validation and per-quarter parse isolation were verified by hand but
+# pinned by nothing. All three are silent-failure guards, so a regression would not surface.
+
+def _zip_at(path, members=("SUBMISSION.tsv", "REPORTINGOWNER.tsv", "NONDERIV_TRANS.tsv")):
+    import zipfile
+    src = Path(__file__).parent / "fixtures" / "form4" / "dera_2025q1_sample"
+    with zipfile.ZipFile(path, "w") as z:
+        for m in members:
+            z.write(src / m, m)
+    return path
+
+
+def test_partial_success_caches_under_the_contributed_quarters(tmp_path, monkeypatch):
+    """The gate that regressed: requiring EVERY quarter meant the cache never wrote, because
+    DERA publishes ~a quarter in arrears, so the index rebuilt nightly at ~288 MB."""
+    from shortlist.scout import dera
+    monkeypatch.setattr(dera, "ensure_quarters",
+                        lambda qs, cd, identity=None: [_zip_at(tmp_path / "2025q1_form345.zip")])
+    idx, missing = dera.load_index(str(tmp_path), ["2025q1", "2025q2"])
+    assert idx and missing == 1
+    assert (tmp_path / "index-2025q1.json").exists(), "partial success must still cache"
+    assert not (tmp_path / "index-2025q1-2025q2.json").exists(), "key must use CONTRIBUTED only"
+
+
+def test_total_failure_never_caches_and_retries(tmp_path, monkeypatch):
+    """Guards the previously-fixed Critical: an empty index persisted once would be served
+    forever, silently classifying every insider UNCLASSIFIED."""
+    from shortlist.scout import dera
+    calls = []
+    monkeypatch.setattr(dera, "ensure_quarters",
+                        lambda qs, cd, identity=None: calls.append(1) or [])
+    idx, missing = dera.load_index(str(tmp_path), ["2025q1", "2025q2"])
+    assert idx == {} and missing == 2
+    assert list(tmp_path.glob("index-*.json")) == []
+    dera.load_index(str(tmp_path), ["2025q1", "2025q2"])
+    assert len(calls) == 2, "a failed build must retry, never short-circuit on a cache"
+
+
+def test_a_non_zip_response_is_not_cached(tmp_path, monkeypatch):
+    """An SEC block page or edge-cache error body arrives as a 200. Cached, it would raise
+    BadZipFile on every later run with no self-healing."""
+    import io as _io
+
+    from shortlist.scout import dera
+
+    class _Resp(_io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(dera.urllib.request, "urlopen",
+                        lambda *a, **k: _Resp(b"<html>Request Rate Threshold Exceeded</html>"))
+    got = dera.ensure_quarters(["2025q1"], str(tmp_path))
+    assert got == []
+    assert list(tmp_path.glob("*.zip")) == [], "a non-ZIP payload must not be persisted"
+
+
+def test_one_corrupt_archive_degrades_only_its_own_quarter(tmp_path, monkeypatch):
+    """A valid ZIP missing the expected members must not take the whole index build down,
+    and must unlink itself so the next run re-downloads."""
+    import zipfile
+
+    from shortlist.scout import dera
+    good = _zip_at(tmp_path / "2025q1_form345.zip")
+    bad = tmp_path / "2025q2_form345.zip"
+    with zipfile.ZipFile(bad, "w") as z:
+        z.writestr("UNEXPECTED.tsv", "not what the parser wants")
+    monkeypatch.setattr(dera, "ensure_quarters", lambda qs, cd, identity=None: [good, bad])
+    idx, missing = dera.load_index(str(tmp_path), ["2025q1", "2025q2"])
+    assert idx, "the good quarter must still contribute"
+    assert missing == 1
+    assert not bad.exists(), "the corrupt archive must unlink itself for retry"
