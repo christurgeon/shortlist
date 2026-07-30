@@ -666,7 +666,7 @@ scout:
     caption_top_n: 3       # names listed in the photo caption
   signals:
     yahoo_screener: {enabled: true,  weight: 1.0}
-    edgar_form4:    {enabled: true,  weight: 1.5}
+    edgar_form4:    {enabled: true,  weight: 1.0}
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}
     quiver:         {enabled: false, weight: 1.0}

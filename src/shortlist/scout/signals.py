@@ -380,7 +380,7 @@ class EdgarForm4Signal:
         fetch = self._fetch or self._default_fetch
         load_idx = self._load_index or (lambda: self._default_index(session))
         try:
-            docs, used = fetch(session, self.max_filings)
+            docs, used, considered = fetch(session, self.max_filings)
             index = load_idx()
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
@@ -428,8 +428,18 @@ class EdgarForm4Signal:
         # complete scan. That must be visibly distinct from a quiet day that merely
         # happens to mention the same cap number in its status string (silent truncation
         # is exactly the coverage defect edgar_index_daily_cap: 2500 exists to minimize).
-        truncated = " TRUNCATED" if len(docs) >= self.max_filings else ""
-        self._status = (bool(docs) and not sec_failed,
+        # I-6: key the marker off filings CONSIDERED, not returned. fetch_form4_submissions
+        # drops filings that error, so len(docs) < max_filings even when the cap bound --
+        # and a >cap day almost certainly contains at least one error, so the marker used to
+        # vanish on exactly the days it exists for. Silent index-order truncation is the
+        # defect the cap raise was meant to remove.
+        truncated = " TRUNCATED" if considered >= self.max_filings else ""
+        # I-4: an empty index is not a quiet day -- every insider then classifies
+        # UNCLASSIFIED, nothing is dropped as routine (measured: 48.5% of the population),
+        # and the signal emits roughly double the names at 0.6 strength. That state is
+        # unambiguously broken, so it must not read as `ran`.
+        index_dead = self._index_missing is not None and not index
+        self._status = (bool(docs) and not sec_failed and not index_dead,
                         f"{len(ems)} insider buys from {len(docs)} Form 4s "
                         f"(cap {self.max_filings}{truncated}){joint}{over}{fail}"
                         f"{idx_note}{fallback}")

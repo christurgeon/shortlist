@@ -172,6 +172,15 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
                 req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
                 with urllib.request.urlopen(req, timeout=120) as r:
                     tmp.write_bytes(r.read())
+                # A 200 carrying an SEC block page or an edge-cache error body is NOT a
+                # ZIP. Without this check it is cached forever, and _index_from_zip then
+                # raises BadZipFile on every later run -- the same never-self-healing shape
+                # as the C-1 cache-poisoning bug. Atomic write guards truncation, not
+                # garbage-but-complete payloads.
+                if not zipfile.is_zipfile(tmp):
+                    warnings.warn(f"dera: {q} response was not a ZIP; discarding",
+                                  stacklevel=2)
+                    continue
                 os.replace(tmp, p)
             except Exception as exc:  # noqa: BLE001 -- absent quarter degrades history
                 warnings.warn(f"dera: {q} unavailable: {redact_secrets(str(exc))}",
@@ -202,8 +211,14 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
     here; both degrade the history the same way). Callers surface both numbers so an
     operator can tell "running on a thin history" from "the feature silently stopped."
 
-    C-1 FIX (2026-07-27): the cache is written ONLY when every requested quarter
-    contributed (`n_missing == 0`). A prior version wrote the cache unconditionally, so a
+    C-1 FIX (2026-07-27, REVISED 2026-07-30): the cache is written only when at least one
+    quarter contributed (`if contributed`). The first revision required EVERY requested
+    quarter, which was self-defeating: `quarters_back` yields the previous quarter first and
+    DERA publishes ~a quarter in arrears, so `n_missing >= 1` in the steady state (a live run
+    reported 15/16) and the cache therefore NEVER wrote -- rebuilding ~15 ZIPs at the ~288 MB
+    peak every single night. Requiring `contributed` is enough, because the key is derived
+    from the quarters that ACTUALLY contributed, so a late-arriving quarter mints its own
+    key rather than reusing a thinner index. A prior version wrote the cache unconditionally, so a
     single network blip on the very first run after deploy persisted an EMPTY (or partial)
     index to disk FOREVER -- every later run hit that cache and never retried the failed
     download, silently classifying every insider UNCLASSIFIED (measured 48.5% of the
@@ -229,23 +244,40 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
     list. This runs on a 1.9 GB VPS alongside the live daily scout.
     """
     paths = ensure_quarters(quarters, cache_dir, identity)
-    contributed = sorted(p.name.removesuffix("_form345.zip") for p in paths)
-    n_missing = len(quarters) - len(contributed)
+    downloaded = sorted(p.name.removesuffix("_form345.zip") for p in paths)
 
-    cache = Path(cache_dir) / f"index-{'-'.join(contributed) or 'empty'}.json"
-    if n_missing == 0 and cache.exists():
+    # Fast path: a cache keyed on exactly the quarters we have on disk.
+    probe = Path(cache_dir) / f"index-{'-'.join(downloaded)}.json"
+    if downloaded and probe.exists():
         try:
-            raw = json.loads(cache.read_text())
-            return {k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()}, 0
+            raw = json.loads(probe.read_text())
+            return ({k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()},
+                    len(quarters) - len(downloaded))
         except (json.JSONDecodeError, OSError):
-            cache.unlink(missing_ok=True)  # I-3: don't re-serve a corrupt cache forever
+            probe.unlink(missing_ok=True)  # I-3: don't re-serve a corrupt cache forever
 
+    # `contributed` is built from quarters that actually PARSED, not merely downloaded -- a
+    # corrupt archive must not be encoded into the cache key as though it had contributed.
     idx: dict[str, set] = {}
+    contributed: list[str] = []
     for p in paths:
-        for cik, months in build_trade_month_index(_index_from_zip(p)).items():
+        try:
+            quarter_idx = build_trade_month_index(_index_from_zip(p))
+        except Exception as exc:  # noqa: BLE001 -- one corrupt archive degrades ONE quarter
+            # Unlink so the next run re-downloads rather than failing identically forever.
+            warnings.warn(f"dera: {p.name} unreadable, discarding: "
+                          f"{redact_secrets(str(exc))}", stacklevel=2)
+            p.unlink(missing_ok=True)
+            continue
+        contributed.append(p.name.removesuffix("_form345.zip"))
+        for cik, months in quarter_idx.items():
             idx.setdefault(cik, set()).update(months)
 
-    if n_missing == 0:
+    contributed.sort()
+    n_missing = len(quarters) - len(contributed)
+    cache = Path(cache_dir) / f"index-{'-'.join(contributed)}.json"
+
+    if contributed:
         Path(cache_dir).mkdir(parents=True, exist_ok=True)
         tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
         try:

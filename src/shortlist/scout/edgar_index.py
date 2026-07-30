@@ -150,17 +150,20 @@ def fetch_form4_submissions(session: date, max_filings: int,
         filings, used = _walk_back_to_published(
             session, lookback=5,
             fetch_day=lambda d: list(get_filings(form="4", filing_date=d.isoformat())))
+        candidates = _dedup_by_accession(filings)[:max_filings]
         out: list[str] = []
-        for f in _dedup_by_accession(filings)[:max_filings]:
+        for f in candidates:
             try:
                 out.append(f.full_text_submission())
             except Exception:  # noqa: BLE001 -- skip one bad filing
                 continue
-        return out, used
+        # `considered` is the pre-error count: the caller needs it to know the cap BOUND,
+        # which len(out) cannot tell it once any filing errors (I-6).
+        return out, used, len(candidates)
     except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
         warnings.warn(f"scout: form4 submission fetch failed: {redact_secrets(str(exc))}",
                       stacklevel=2)
-        return [], None
+        return [], None, 0
 
 
 # --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---

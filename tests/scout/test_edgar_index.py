@@ -115,7 +115,7 @@ def test_fetch_form4_submissions_dedups_and_walks_back(monkeypatch):
     published = {"2026-06-02": [_FakeFiling("0001-26-000001", "<ownershipDocument>A</ownershipDocument>")]}
     _install_fake_edgar_module(monkeypatch, published)
 
-    docs, used = fetch_form4_submissions(date(2026, 6, 3), 400, "id@x.z")
+    docs, used, considered = fetch_form4_submissions(date(2026, 6, 3), 400, "id@x.z")
     assert used == date(2026, 6, 2)
     assert docs == ["<ownershipDocument>A</ownershipDocument>"]   # deduped, not doubled
 
@@ -127,7 +127,7 @@ def test_fetch_form4_submissions_outage_degrades_loudly(monkeypatch):
         # I-1: used=None is the hard-failure sentinel, distinct from a normal walk-back
         # exhaustion (used == session) -- the caller uses it to tell a real SEC outage
         # apart from a quiet day.
-        assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], None)
+        assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], None, 0)
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
 
@@ -142,6 +142,9 @@ def test_fetch_form4_submissions_skips_one_bad_filing(monkeypatch):
     ]}
     _install_fake_edgar_module(monkeypatch, published)
 
-    docs, used = fetch_form4_submissions(date(2026, 6, 2), 400, "id@x.z")
+    docs, used, considered = fetch_form4_submissions(date(2026, 6, 2), 400, "id@x.z")
+    # `considered` counts filings the cap admitted, BEFORE per-filing errors -- that is what
+    # lets the caller tell "the cap bound" from "some filings failed" (final review I-6).
+    assert considered > len(docs)
     assert used == date(2026, 6, 2)
     assert docs == ["<ownershipDocument>B</ownershipDocument>"]

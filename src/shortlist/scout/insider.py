@@ -104,7 +104,10 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             roles.add("tenpercent")
         t = rel.find("officerTitle")
         title = (t.text or "").strip() or None if t is not None else None
-    plan = _flag(getattr(root.find("aff10b5One"), "text", None))
+    # Use _val, not raw .text: every other scalar in this parser nests under <value>, and a
+    # filer agent emitting <aff10b5One><value>1</value></aff10b5One> would otherwise read as
+    # False and silently disable the 10b5-1 exclusion entirely.
+    plan = _flag(_val(root, "aff10b5One"))
 
     out: list[InsiderTxn] = []
     for tx in root.findall("nonDerivativeTable/nonDerivativeTransaction"):
@@ -212,12 +215,33 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     return v is not None and v >= float(cfg.get("min_value", 100_000))
 
 
+# Tokens filers put in <issuerTradingSymbol> when there is no listed symbol. They are all
+# TRUTHY, so a bare `if not ticker` check passes them straight through.
+#
+# DO NOT DELETE THIS GUARD. It previously lived in edgar_index._is_real_ticker, whose
+# docstring records the bug as observed in PRODUCTION: unresolved issuers collapse into a
+# phantom "NONE" candidate. That guard's Form 4 call sites were removed along with
+# cluster_buys_from_records and nothing re-owned it, which the final whole-branch review
+# caught. Measured on real SEC data (2025Q1, 57,797 Form 4 filings): 459 (0.79%) carry a
+# placeholder symbol -- NONE x305, N/A x91, "-" x42, NA x15, a bare CIK x6. Since
+# emissions_from_txns buckets by ticker, those 305 NONE rows would merge into ONE emission
+# across unrelated companies, summing dollars and pooling owner counts at near-max strength.
+_PLACEHOLDER_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
+
+
+def is_real_ticker(raw: str | None) -> bool:
+    """True when `raw` is a usable symbol. Rejects the placeholder tokens above and any
+    string with no alphabetic character (which also catches a bare CIK like '1314152')."""
+    t = (raw or "").strip().upper()
+    return bool(t) and t not in _PLACEHOLDER_TICKERS and any(c.isalpha() for c in t)
+
+
 def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emission]:
     """Qualifying transactions -> one Emission per ISSUER. Pure."""
     by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
     for t in txns:
         tier = classify_tier(t.owner_cik, index, as_of)
-        if not t.ticker or not qualifies(t, tier, cfg):
+        if not is_real_ticker(t.ticker) or not qualifies(t, tier, cfg):
             continue
         by_ticker.setdefault(t.ticker, []).append((t, tier))
 
@@ -227,14 +251,21 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
         buyers = {t.owner_cik for t, _ in rows}
         total = sum(t.value or 0.0 for t, _ in rows)
         best_tier = OPPORTUNISTIC if any(x == OPPORTUNISTIC for _, x in rows) else UNCLASSIFIED
-        tier_mult = float(strengths.get(best_tier, 0.6))
+        # Default per tier: collapsing OPPORTUNISTIC to 0.6 would erase the distinction the
+        # whole classification exists to draw whenever tier_strength is absent.
+        tier_mult = float(strengths.get(
+            best_tier, 1.0 if best_tier == OPPORTUNISTIC else 0.6))
         role_w = max(_title_weight(t.title) for t, _ in rows)
         size = min(0.30, total / 5_000_000.0)          # materiality, capped
         cluster = min(0.20, 0.10 * (len(buyers) - 1))  # cluster is a BONUS, not a gate
         strength = round(min(1.0, (0.50 + size + cluster) * role_w * tier_mult), 4)
-        # issuer CIK is the same for every row of a given ticker (one issuer); take it
-        # from whichever qualifying transaction has it.
-        issuer_cik = next((t.issuer_cik for t, _ in rows if t.issuer_cik), None)
+        # One symbol must map to one issuer. If the rows disagree, the bucket is incoherent
+        # -- abstain rather than pick one, because Emission.cik is persisted to the firehose
+        # as the PERMANENT measurement record and a wrong CIK there is unrecoverable.
+        ciks = {t.issuer_cik for t, _ in rows if t.issuer_cik}
+        if len(ciks) > 1:
+            continue
+        issuer_cik = next(iter(ciks), None)
         out.append(Emission(
             ticker, SIGNAL, strength,
             f"{len(buyers)} insider buy(s), ${total/1000:.0f}k ({best_tier})",

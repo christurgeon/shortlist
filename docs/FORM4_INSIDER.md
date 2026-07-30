@@ -331,7 +331,13 @@ opportunistic and unclassified be compared as evidence arrives.
   identical `InsiderTxn`. (§5 guard.)
 - **Index build:** an insider selling every March for 3 years classifies routine; the same
   insider with a gap year does not.
-- **Config invariance:** removing `scout.form4` reproduces pre-feature behaviour byte-identically.
+- **Config-absence contract (§8):** with no `scout.form4` block, `scan()` returns `[]`
+  without fetching or building the index, and `available()` is
+  `(False, "no scout.form4 config")`. The test must FAIL against a signal that still runs —
+  the earlier version injected an empty fetcher and would have passed against a deleted
+  implementation.
+- **Placeholder tickers:** `NONE`/`N/A`/`NA`/`-`/a bare CIK must produce ZERO emissions, not
+  one merged phantom bucket (0.79% of real Form 4s; see `insider.py:is_real_ticker`).
 - **No network in unit tests** — DERA and XML fixtures committed as small samples.
 
 ## 11. Known limits

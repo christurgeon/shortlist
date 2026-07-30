@@ -12,7 +12,7 @@ def test_signal_emits_from_injected_submissions_without_network():
         cfg={"min_value": 100000, "roles": ["officer", "director"],
              "exclude_10b5_1": True,
              "tier_strength": {"opportunistic": 1.0, "unclassified": 0.6}},
-        fetch_submissions=lambda session, cap: ([xml], session),
+        fetch_submissions=lambda session, cap: ([xml], session, 1),
         load_index=dict,          # empty history -> unclassified tier
     )
     ems = sig.scan(date(2025, 3, 31))
@@ -50,7 +50,7 @@ def test_default_index_threads_cfg_dera_settings_and_identity(monkeypatch):
     sig = EdgarForm4Signal(
         cfg={"dera": {"quarters": 4, "cache_dir": "/tmp/dera-test"}},
         identity="custom@x.z",
-        fetch_submissions=lambda session, cap: ([], session),
+        fetch_submissions=lambda session, cap: ([], session, 0),
     )
     assert sig.scan(date(2025, 3, 31)) == []
     assert calls["quarters_back"] == (date(2025, 3, 31), 4)
@@ -84,7 +84,7 @@ def test_present_but_empty_cfg_still_runs_on_code_defaults():
     same as cfg=None -- it must still fetch/build the index and qualify on the hardcoded
     fallbacks in insider.qualifies/emissions_from_txns."""
     xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
-    sig = EdgarForm4Signal(cfg={}, fetch_submissions=lambda s, c: ([xml], s),
+    sig = EdgarForm4Signal(cfg={}, fetch_submissions=lambda s, c: ([xml], s, 1),
                            load_index=dict)
     ems = sig.scan(date(2025, 3, 31))
     assert [e.ticker for e in ems] == ["OKLO"]   # ran, qualified on code defaults
@@ -97,7 +97,7 @@ def test_status_distinguishes_sec_failure_from_a_quiet_day():
     SEC outage -- it degrades honestly rather than raising, per its own contract. That must
     be visibly distinguishable in available() from a genuinely quiet day, which returns
     ([], session) instead (used == session)."""
-    sig = EdgarForm4Signal(cfg={}, fetch_submissions=lambda session, cap: ([], None),
+    sig = EdgarForm4Signal(cfg={}, fetch_submissions=lambda session, cap: ([], None, 0),
                            load_index=dict)
     assert sig.scan(date(2025, 3, 31)) == []
     ok, detail = sig.available()
@@ -114,7 +114,7 @@ def test_emission_overflow_past_daily_cap_is_named_not_dropped_silently():
     sig = EdgarForm4Signal(
         cfg={"min_value": 100000, "daily_cap": 1,
              "tier_strength": {"opportunistic": 1.0, "unclassified": 0.6}},
-        fetch_submissions=lambda session, cap: (xmls, session),
+        fetch_submissions=lambda session, cap: (xmls, session, len(xmls)),
         load_index=dict,
     )
     ems = sig.scan(date(2025, 3, 31))
@@ -135,7 +135,7 @@ def test_available_marks_truncation_when_fetch_count_reaches_the_cap():
     xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
     sig = EdgarForm4Signal(
         cfg={}, max_filings=3,
-        fetch_submissions=lambda session, cap: ([xml, xml, xml], session),
+        fetch_submissions=lambda session, cap: ([xml, xml, xml], session, 3),
         load_index=dict,
     )
     sig.scan(date(2025, 3, 31))
@@ -149,7 +149,7 @@ def test_available_does_not_mark_truncation_when_fetch_count_is_below_the_cap():
     xml = (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace")
     sig = EdgarForm4Signal(
         cfg={}, max_filings=100,
-        fetch_submissions=lambda session, cap: ([xml], session),
+        fetch_submissions=lambda session, cap: ([xml], session, 1),
         load_index=dict,
     )
     sig.scan(date(2025, 3, 31))

@@ -95,3 +95,51 @@ def test_emission_carries_issuer_cik():
     txns = [_t("A", "ZZZ", 200_000, issuer_cik="0001849056")]
     ems = emissions_from_txns(txns, _idx_opportunistic("A"), date(2025, 6, 3), CFG)
     assert ems[0].cik == "0001849056"
+
+
+# --- placeholder tickers must never form a phantom bucket (final review C-1) ----------
+# Regression for a bug observed in PRODUCTION and previously guarded by
+# edgar_index._is_real_ticker, whose Form 4 call sites were deleted with
+# cluster_buys_from_records. Verified against real SEC data: of 57,797 Form 4 filings in
+# 2025Q1, 459 (0.79%) carry a placeholder issuerTradingSymbol -- NONE x305, N/A x91,
+# "-" x42, NA x15, and a bare CIK x6. All are TRUTHY, so a `if not t.ticker` filter passes
+# them, and emissions_from_txns buckets by ticker -- merging unrelated companies into one
+# emission with summed dollars and pooled owner counts, at near-max strength.
+
+def _pt(owner, ticker, issuer_cik, value=200_000):
+    from datetime import date as _d
+    return InsiderTxn(owner_cik=owner, ticker=ticker, date=_d(2025, 6, 2), code="P",
+                      shares=value / 10.0, price=10.0, plan_10b5_1=False,
+                      roles=frozenset({"officer"}), title=None, joint_filing=False,
+                      issuer_cik=issuer_cik)
+
+
+def _opp(*owners):
+    return {o.strip().zfill(10): {(2024, 1), (2023, 5), (2022, 9)} for o in owners}
+
+
+def test_placeholder_tickers_do_not_form_a_phantom_bucket():
+    """NONE / N/A / NA / "-" / a bare CIK are all truthy and would otherwise merge."""
+    from datetime import date as _d
+    txns = [_pt("A", "NONE", "0000000001"), _pt("B", "N/A", "0000000002"),
+            _pt("C", "NA", "0000000003"), _pt("D", "-", "0000000004"),
+            _pt("E", "1314152", "0000000005")]
+    ems = emissions_from_txns(txns, _opp("A", "B", "C", "D", "E"), _d(2025, 6, 3), CFG)
+    assert ems == [], f"placeholder tickers leaked: {[e.ticker for e in ems]}"
+
+
+def test_a_real_ticker_alongside_placeholders_still_emits():
+    """The guard must not suppress legitimate names sharing the batch."""
+    from datetime import date as _d
+    txns = [_pt("A", "NONE", "0000000001"), _pt("B", "OKLO", "0001849056")]
+    ems = emissions_from_txns(txns, _opp("A", "B"), _d(2025, 6, 3), CFG)
+    assert [e.ticker for e in ems] == ["OKLO"]
+
+
+def test_one_ticker_with_conflicting_issuer_ciks_does_not_emit():
+    """Incoherent: same symbol, two different issuers. Abstain rather than pick one --
+    Emission.cik is persisted to the firehose as the permanent measurement record."""
+    from datetime import date as _d
+    txns = [_pt("A", "ZZZ", "0000000001"), _pt("B", "ZZZ", "0000000002")]
+    ems = emissions_from_txns(txns, _opp("A", "B"), _d(2025, 6, 3), CFG)
+    assert ems == []
