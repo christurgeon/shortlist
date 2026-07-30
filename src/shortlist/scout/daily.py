@@ -914,6 +914,7 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
     from .preregister import load_prereg, verify_untampered
     from .validate import (
         SignalVerdict,
+        attach_double_sort,
         calendar_time_portfolio,
         decide,
         double_sort,
@@ -1028,7 +1029,10 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
                 min_bucket_events=prereg.get("min_bucket_events", 5),
                 min_independent_blocks=prereg.get("min_independent_blocks", 2),
                 weighting=weighting)
-            scored_verdict.double_sort = ds_result
+            # Never `scored_verdict.double_sort = ds_result` directly: on a floor-suppressed
+            # verdict the helper blanks the ABSOLUTE per-bucket legs (high_ir/low_ir), which
+            # carry the same attrition bias the floor rejected (R-0f).
+            attach_double_sort(scored_verdict, ds_result)
             if ds_result is None:
                 # v2 §2's "insufficient_blocks marker in the run log" — a coarse WHY so a
                 # None double-sort never reads as "not attempted" vs "attempted and thin".
@@ -1056,8 +1060,12 @@ def _print_validate_table(verdicts: list) -> None:
     print(header)
     print("-" * len(header))
     for v in verdicts:
-        ir = f"{v.ir:.2f}" if v.ir is not None else "-"
-        alpha = f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-"
+        # A level the measurability floor rejected reads "SUPP", never a bare "-": "-" means
+        # "could not be computed", which invites re-deriving it by hand (validate.py R-0f).
+        suppressed = getattr(v, "alpha_suppressed", False)
+        ir = "SUPP" if suppressed else (f"{v.ir:.2f}" if v.ir is not None else "-")
+        alpha = "SUPP" if suppressed else (
+            f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-")
         row = (f"{v.signal:<28}{v.cohort_type:<14}{v.verdict:<14}{ir:>8}{alpha:>10}"
               f"{v.effective_blocks:>8}{v.n_selected:>7}{v.n_measurable:>8}"
               f"{v.measurable_fraction:>7.2f}{'Y' if v.sensitivity_flip else 'N':>6}")

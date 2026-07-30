@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 from shortlist.backtest.prices import PriceHistory
@@ -415,3 +416,128 @@ def test_negative_point_alpha_with_straddling_ci_is_insufficient_not_kill():
     assert v.alpha_ci[0] < 0 < v.alpha_ci[1]        # but the interval straddles zero
     assert v.verdict == "INSUFFICIENT"
     assert v.verdict != "KILL"
+
+
+# --- the level is SUPPRESSED whenever the measurable-fraction floor fails ---------------
+# Audit docs/audits/2026-07-26-funnel-composition-audit.md §5: a cohort that fails the floor
+# has outcome-correlated attrition, so its alpha LEVEL is uninterpretable -- yet the verdict
+# printed the level and the INSUFFICIENT verdict side by side, which is exactly how that
+# session quoted four successive levels the floor had already rejected. Make the guard
+# mechanical: a suppressed field cannot be read past.
+
+def _measurable_events(k_return, years=(2022, 2023, 2024, 2025), per_month=2):
+    evs = []
+    i = 0
+    for y in years:
+        for m in range(1, 13):
+            for _ in range(per_month):
+                evs.append(MeasuredEvent("s", f"T{i}", date(y, m, 10), k_return,
+                                         True, 0.5, False, 60.0))
+                i += 1
+    return evs
+
+
+def test_alpha_level_suppressed_when_pooled_measurable_fraction_below_floor():
+    """Control-vs-treatment on ONE set of events: the only difference is the cohort's
+    selected count, i.e. whether the floor passes. Both alpha and IR are genuinely
+    computable here, so the suppressed Nones cannot pass vacuously."""
+    from shortlist.scout.validate import calendar_time_portfolio
+    events = _dispersed_measurement().events
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+
+    control = decide(CohortMeasurement("s", len(events), len(events), events),
+                     ctp, ff3, k_months=3, prereg=prereg)
+    assert control.alpha_monthly is not None and control.ir is not None
+
+    # Same events, but only half the selected cohort was measurable -> 0.50 < 0.90 floor.
+    v = decide(CohortMeasurement("s", len(events) * 2, len(events), events),
+               ctp, ff3, k_months=3, prereg=prereg)
+
+    assert v.verdict == "INSUFFICIENT"
+    assert v.alpha_suppressed is True
+    assert v.alpha_monthly is None      # the level the floor rejected is not quotable
+    assert v.alpha_ci is None
+    assert v.ir is None
+    assert "suppressed" in " ".join(v.notes).lower()
+    # Sample diagnostics survive -- suppression hides the LEVEL, not why it was rejected.
+    assert v.measurable_fraction == 0.5
+    assert v.n_measurable == len(events)
+    assert v.effective_blocks == control.effective_blocks > 0
+
+
+def test_alpha_level_suppressed_when_a_vintage_bucket_fails_despite_pooled_pass():
+    from shortlist.scout.validate import calendar_time_portfolio
+    events = list(_dispersed_measurement().events)
+    # 2 of the 12 events in the 2025 vintage lose their price series: that bucket lands at
+    # 10/12 = 0.83 < floor while the pooled fraction (22/24 = 0.92) still clears.
+    for i in [i for i, e in enumerate(events) if e.event_date.year == 2025][:2]:
+        events[i] = replace(events[i], ret=None, measurable=False)
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+    meas = CohortMeasurement("s", len(events), len(events) - 2, events)
+    assert meas.measurable_fraction() >= 0.90            # only the VINTAGE floor fails
+
+    v = decide(meas, ctp, ff3, k_months=3, prereg=prereg)
+
+    assert v.verdict == "INSUFFICIENT"
+    assert "vintage" in " ".join(v.notes).lower()
+    assert v.alpha_suppressed is True
+    # All three are genuinely computable on this fixture (alpha ~ +0.067, IR ~ 8.7), so
+    # every None below is the suppression, not an unrelated abstention.
+    assert (v.alpha_monthly, v.alpha_ci, v.ir) == (None, None, None)
+
+
+def test_alpha_level_survives_when_the_floor_is_cleared():
+    from shortlist.scout.validate import calendar_time_portfolio
+    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
+    evs = _measurable_events(-0.2153)
+    meas = CohortMeasurement("s", len(evs), len(evs), evs)
+    ctp = calendar_time_portfolio(evs, k_months=12)
+
+    v = decide(meas, ctp, ff3, k_months=12, prereg=_PREREG)
+
+    assert v.verdict == "KILL"                  # unchanged: the floor-clearing path still kills
+    assert v.alpha_suppressed is False
+    assert v.alpha_monthly is not None
+    assert v.alpha_ci is not None
+    assert "suppressed" not in " ".join(v.notes).lower()
+
+
+def test_alpha_level_suppressed_on_the_unsupported_factor_model_path_too():
+    # The factor-model guard returns early, before the floor notes are appended -- the
+    # suppression must still apply there or a failing-floor cohort quotes its level.
+    from shortlist.scout.validate import calendar_time_portfolio
+    events = _dispersed_measurement().events        # alpha AND IR both computable here
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2,
+              "factor_model": "ff5"}
+
+    v = decide(CohortMeasurement("s", len(events) * 2, len(events), events),
+               ctp, ff3, k_months=3, prereg=prereg)
+
+    assert v.verdict == "INSUFFICIENT"
+    assert "factor_model" in " ".join(v.notes).lower()
+    assert v.alpha_suppressed is True
+    assert (v.alpha_monthly, v.alpha_ci, v.ir) == (None, None, None)
+
+
+def test_suppressed_verdict_omits_the_ir_bias_note():
+    # The "IR is upward-biased — display only" note describes a number that is no longer
+    # displayed; keeping it would advertise a suppressed field.
+    from shortlist.scout.validate import calendar_time_portfolio
+    events = _dispersed_measurement().events
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+
+    kept = decide(CohortMeasurement("s", len(events), len(events), events),
+                  ctp, ff3, k_months=3, prereg=prereg)
+    assert any("upward-biased" in n for n in kept.notes)     # the note exists when IR does
+
+    v = decide(CohortMeasurement("s", len(events) * 2, len(events), events),
+               ctp, ff3, k_months=3, prereg=prereg)
+    assert not any("upward-biased" in n for n in v.notes)
