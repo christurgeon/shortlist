@@ -43,6 +43,15 @@ Keep that honest, because the two failure modes both come from forgetting it:
   (NOT gitignored `docs/superpowers/specs/` — that's how two enablement artifacts already
   evaporated). Disabling a leg that can't earn its slot is a win, not a regression.
 
+- **A committed guard outranks your reading of the numbers.** When a pre-registered floor, a
+  test, or a documented rule disagrees with a story you have built from the data, **the guard
+  wins until you can state precisely why it is wrong.** On 2026-07-26 four successive
+  conclusions were retracted because `min_measurable_frac` was rejecting cohorts whose alphas
+  were being quoted anyway, and R-B5 ("the scored cohort is the decision surface, not the raw
+  firehose") was read past. Every one of those guards was already correct. Prefer making the
+  guard *mechanical* over documenting it harder — a rule can be read past, a suppressed field
+  cannot.
+
 ## One fetching layer: the data harness
 
 The async `httpx` **harness** (`shortlist.data.*`) is the sole production data layer:
@@ -433,6 +442,13 @@ digest shows a **prior-picks scoreboard** — return-since-selection vs SPY at f
 (`pick_performance`, **split-safe**: one fresh adjusted Yahoo series, never a
 fresh÷stored-scalar ratio) — so every report shows whether the signal catches winners.
 Gated picks are recorded too (raw-signal measurement). Tune `scout.picks`.
+
+**`as_of_price` is SPLIT-ADJUSTED — it is NOT a size or liquidity proxy** (live-verified
+2026-07-26; do not "fix" back). Serial reverse-splitters carry absurd retro-adjusted entry
+prices — `LGMK` at **$18,487.50/share**, `FMTOF` at $5,831 — so banding a backfill cohort on
+`as_of_price` selects *for* death-spiral microcaps instead of excluding them. It invalidated a
+whole experiment that day. For a point-in-time price a live observer actually saw, use
+`PriceHistory.nominal_close_asof`; for size, use real market cap.
 
 **Daily digest mode:** `scout.daily_push.research: false` runs the push as a
 **screen+gate+rank digest** (the scorer + a copy-paste **`/deep` block** of the non-gated

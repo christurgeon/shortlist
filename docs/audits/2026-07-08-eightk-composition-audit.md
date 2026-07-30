@@ -1,5 +1,17 @@
 # 8-K 1.01∧3.03 composition audit + pre-production gates (2026-07-08)
 
+> **Note added 2026-07-26 — verdict LABEL changed, evidence did NOT.** The evaluator's
+> confidence intervals were rebuilt on an event-level bootstrap
+> (`docs/audits/2026-07-26-funnel-composition-audit.md` §3a/§3b). On re-derivation the
+> `edgar:8k` scored cohort's alpha CI is **[−10.21%, −7.15%] — still entirely negative**, and
+> it *widened* under the honest bootstrap without approaching zero. This remains the
+> strongest negative evidence of any cohort measured.
+>
+> Its formal verdict nonetheless moved KILL → INSUFFICIENT for an **unrelated and fragile**
+> reason: a vintage-stratified measurability floor (2023 vintage 0.89 against a 0.90 floor;
+> `n_measurable` drifted 400 → 396 on price re-fetch). **This is not a rehabilitation of the
+> 8-K originator.** It stays `enabled: false`, and the substantive conclusions below stand.
+
 **Registered protocol:** TODO.md "8-K originator/veto — operator smoke + composition audit
 (pre-production) (2026-07-07)" (committed in #120) and design spec §5. **Implementation
 plan:** adversarially reviewed twice pre-execution (methodology + mechanics, both

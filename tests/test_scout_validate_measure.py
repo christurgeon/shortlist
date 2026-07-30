@@ -329,3 +329,29 @@ def test_measurable_fraction_by_vintage():
     assert n_sel_2024 == 4
     assert n_meas_2024 == 1
     assert abs(frac_2024 - 0.25) < 1e-9
+
+
+# --- monthly path population (audit 2026-07-26 §4) -------------------------------------
+
+def test_measure_cohort_populates_actual_monthly_returns():
+    """The calendar-time portfolio needs each name's REAL month-by-month path, not a
+    smooth one inferred from the total. A name that halves in month 1 and is flat after
+    must show [-0.5, 0.0, 0.0], never three equal steps."""
+    from datetime import date
+    from shortlist.backtest.prices import PriceHistory
+    from shortlist.scout.validate import measure_cohort
+
+    # month 0 -> 1: halves. months 1->2, 2->3: flat.
+    dates = [date(2025, 1, 15), date(2025, 2, 15), date(2025, 3, 15), date(2025, 4, 15)]
+    closes = [100.0, 50.0, 50.0, 50.0]
+    hist = PriceHistory("A", dates, closes, nominal_closes=list(closes))
+    ev = {"signal": "s", "ticker": "A", "event_date": "2025-01-15", "meta": {}}
+
+    m = measure_cohort([ev], "s", 3, {"A": hist}, None, as_of=date(2026, 1, 1))
+    e = m.events[0]
+    assert e.measurable and abs(e.ret - (-0.5)) < 1e-9
+    assert e.monthly_rets is not None, "monthly path not populated"
+    assert len(e.monthly_rets) == 3
+    assert abs(e.monthly_rets[0] - (-0.5)) < 1e-9
+    assert abs(e.monthly_rets[1] - 0.0) < 1e-9
+    assert abs(e.monthly_rets[2] - 0.0) < 1e-9

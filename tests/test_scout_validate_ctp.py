@@ -63,3 +63,37 @@ def test_ctp_dedups_repeat_events_same_ticker_within_k_window():
     r_apr, n_apr = by_month["2025-04"]
     assert n_apr == 1
     assert abs(r_apr - expected_feb) < 1e-9
+
+
+# --- real monthly paths, not an assumed constant one (audit 2026-07-26 §4) -------------
+# `calendar_time_portfolio` used to give every held name a CONSTANT monthly rate
+# `(1+ret)**(1/K)-1` for the whole holding window. A calendar-time portfolio is
+# equal-weighted and rebalanced monthly, so assuming a smooth path for a name that
+# actually collapsed in one month misstates every month's portfolio return: the crash
+# gets spread across K months and the rebalancing drag is applied to it K times.
+
+def _mp(ticker, d, ret, monthly):
+    return MeasuredEvent("s", ticker, d, ret, True, 0.5, False, 60.0, False, monthly)
+
+
+def test_ctp_month_return_uses_each_names_actual_month_return():
+    """Two names held together. A compounds smoothly, B loses 90% in the FIRST month and
+    is flat after. Month 0 must be the mean of (+10%, -90%); month 1 the mean of
+    (+10%, 0%). The old constant-path code reported -21.8% for BOTH."""
+    from datetime import date
+    a = _mp("A", date(2025, 1, 10), 0.331, [0.10, 0.10, 0.10])
+    b = _mp("B", date(2025, 1, 10), -0.90, [-0.90, 0.0, 0.0])
+    rows = calendar_time_portfolio([a, b], k_months=3, weighting="equal")
+    by_month = {mo: r for mo, r, _n in rows}
+    assert abs(by_month["2025-01"] - (-0.40)) < 1e-9, by_month
+    assert abs(by_month["2025-02"] - (+0.05)) < 1e-9, by_month
+    assert abs(by_month["2025-03"] - (+0.05)) < 1e-9, by_month
+
+
+def test_ctp_falls_back_to_flattened_rate_when_no_monthly_path():
+    """Events with no monthly path (old persisted cohorts) keep the previous behaviour."""
+    from datetime import date
+    ev = MeasuredEvent("s", "A", date(2025, 1, 15), 0.331, True, 0.5, False, 60.0)
+    rows = calendar_time_portfolio([ev], k_months=3, weighting="equal")
+    for _mo, r, _n in rows:
+        assert abs(r - 0.10) < 1e-6

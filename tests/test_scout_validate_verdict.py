@@ -58,18 +58,39 @@ def _ff3_varying(years):
     }
 
 
+def _consistent_measurement(k_return, years=(2022, 2023, 2024, 2025), per_month=2):
+    """Cohort whose EVENTS carry `k_return` over the horizon — so `measurement.events` and
+    any CTP built from them agree. `decide` derives alpha_ci from the events (audit §3a), so
+    a fixture that hand-builds ctp_rows contradicting its own events tests nothing coherent.
+    """
+    evs = []
+    i = 0
+    for y in years:
+        for m in range(1, 13):
+            for _ in range(per_month):
+                evs.append(MeasuredEvent("s", f"T{i}", date(y, m, 10), k_return,
+                                         True, 0.5, False, 60.0))
+                i += 1
+    return CohortMeasurement("s", len(evs), len(evs), evs)
+
+
 def test_kill_when_alpha_ci_entirely_negative():
-    # 48 months, K=12 -> 4 blocks; constant -2%/month excess (zero factor loading) -> CI < 0
+    # 48 months, K=12 -> 4 blocks; -21.5% over 12m == -2%/month compounded -> CI < 0
+    from shortlist.scout.validate import calendar_time_portfolio
     ff3 = _ff3_varying((2022, 2023, 2024, 2025))
-    ctp = [(mo, rf - 0.02, 1) for mo, (mkt, smb, hml, rf) in ff3.items()]
-    v = decide(_measurement(1.0, 60), ctp, ff3, k_months=12, prereg=_PREREG)
+    meas = _consistent_measurement(-0.2153)
+    ctp = calendar_time_portfolio(meas.events, k_months=12)
+    v = decide(meas, ctp, ff3, k_months=12, prereg=_PREREG)
     assert v.verdict == "KILL"
 
 
 def test_never_promotes_even_with_strong_positive_alpha():
+    from shortlist.scout.validate import calendar_time_portfolio
     ff3 = _ff3_varying((2022, 2023, 2024, 2025))
-    ctp = [(mo, rf + 0.05, 1) for mo, (mkt, smb, hml, rf) in ff3.items()]
-    v = decide(_measurement(1.0, 60), ctp, ff3, k_months=12, prereg=_PREREG)
+    meas = _consistent_measurement(0.7959)      # +79.6% over 12m == +5%/month compounded
+    ctp = calendar_time_portfolio(meas.events, k_months=12)
+    v = decide(meas, ctp, ff3, k_months=12, prereg=_PREREG)
+    assert v.alpha_monthly > 0.03                # genuinely strong positive alpha
     assert v.verdict in {"HOLD", "INSUFFICIENT"}     # PROMOTE is not a possible output
     assert v.verdict != "PROMOTE"
 
@@ -310,3 +331,87 @@ def test_h2_note_present_on_unsupported_factor_model_path_too():
     joined = " ".join(v.notes)
     assert "n_immature=2 excluded from the denominator (H2)" in joined
     assert v.n_immature == 2 and v.n_events == 7
+
+
+# --- alpha_ci must come from the EVENTS, not the flattened CTP months (audit §3a) -----
+
+def _dispersed_measurement(k_months=3, n=24):
+    """Events with a large spread in outcomes but a near-zero pooled mean."""
+    evs = []
+    for i in range(n):
+        y = 2025 + (i // 12)
+        mo = (i % 12) + 1
+        evs.append(MeasuredEvent("s", f"T{i}", date(y, mo, 10),
+                                 0.60 if i % 2 == 0 else -0.40, True, 0.5, False, 60.0))
+    return CohortMeasurement("s", n, n, evs)
+
+
+def _ff3_24():
+    out = {}
+    for i in range(24):
+        y = 2025 + (i // 12)
+        m = (i % 12) + 1
+        out[f"{y}-{m:02d}"] = (0.01 * ((m % 3) - 1), 0.001 * ((m % 2) - 1),
+                               0.002 * ((m % 4) - 1.5), 0.003)
+    return out
+
+
+def test_alpha_ci_reflects_event_dispersion_not_flattened_month_smoothness():
+    """The KILL rule reads alpha_ci. Built from the flattened CTP months it reported the
+    smoothness of a smoothed series (implied TE 0.32%/mo, IR -46.97 in the committed
+    verdicts); it must instead reflect which events the cohort happened to catch."""
+    from shortlist.scout.validate import (
+        calendar_time_portfolio, event_bootstrap_alpha, stationary_block_bootstrap_alpha,
+    )
+    meas = _dispersed_measurement()
+    ff3 = _ff3_24()
+    ctp = calendar_time_portfolio(meas.events, k_months=3)
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+
+    v = decide(meas, ctp, ff3, k_months=3, prereg=prereg)
+
+    month_ci = stationary_block_bootstrap_alpha(ctp, ff3, 3)
+    event_ci = event_bootstrap_alpha(meas.events, ff3, 3)
+    assert v.alpha_ci is not None
+    assert abs((v.alpha_ci[1] - v.alpha_ci[0]) - (event_ci[1] - event_ci[0])) < 1e-9
+    assert (v.alpha_ci[1] - v.alpha_ci[0]) > 3 * (month_ci[1] - month_ci[0])
+
+
+def test_alpha_ci_falls_back_to_month_bootstrap_when_cohort_carries_no_events():
+    """Hand-built CohortMeasurements (and old persisted cohorts) may carry no event list;
+    the verdict must still produce a CI rather than silently dropping to None."""
+    from shortlist.scout.validate import stationary_block_bootstrap_alpha
+    ff3 = _ff3_24()
+    ctp = [(mo, 0.01 + 0.02 * ((i % 5) - 2), 3) for i, mo in enumerate(sorted(ff3))]
+    prereg = {"k_months": 3, "min_measurable_frac": 0.90, "min_independent_blocks": 2}
+    meas = CohortMeasurement("s", 30, 30, [])
+
+    v = decide(meas, ctp, ff3, k_months=3, prereg=prereg)
+
+    assert v.alpha_ci == stationary_block_bootstrap_alpha(ctp, ff3, 3)
+
+
+def test_negative_point_alpha_with_straddling_ci_is_insufficient_not_kill():
+    """Operator decision 2026-07-26: a bare negative point estimate must no longer KILL.
+    Killing on `alpha <= 0` with no uncertainty test condemns ~half of all genuinely-null
+    signals by coin flip; an interval that straddles zero is inconclusive, not disproof."""
+    from shortlist.scout.validate import calendar_time_portfolio
+    ff3 = _ff3_varying((2022, 2023, 2024, 2025))
+    # Alternating large win/loss with a slightly negative mean: point alpha < 0, but the
+    # event-level CI must span zero.
+    evs = []
+    i = 0
+    for y in (2022, 2023, 2024, 2025):
+        for m in range(1, 13):
+            for r in (0.55, -0.40):
+                evs.append(MeasuredEvent("s", f"T{i}", date(y, m, 10), r, True, 0.5, False, 60.0))
+                i += 1
+    meas = CohortMeasurement("s", len(evs), len(evs), evs)
+    ctp = calendar_time_portfolio(meas.events, k_months=12)
+
+    v = decide(meas, ctp, ff3, k_months=12, prereg=_PREREG)
+
+    assert v.alpha_monthly < 0                      # point estimate genuinely negative
+    assert v.alpha_ci[0] < 0 < v.alpha_ci[1]        # but the interval straddles zero
+    assert v.verdict == "INSUFFICIENT"
+    assert v.verdict != "KILL"

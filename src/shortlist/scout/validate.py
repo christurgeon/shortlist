@@ -9,7 +9,7 @@ Proposal-only: never writes config.yaml.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from ..backtest.prices import PriceHistory, _add_months
@@ -30,6 +30,13 @@ class MeasuredEvent:
                                 # exists AND the series is not already known-terminated (B1).
                                 # A recent event with NO series / no entry price is NEVER
                                 # immature -- it is non-measurable-and-counted (survivorship).
+    # Appended AFTER `immature` to preserve that field's positional slot. Actual per-
+    # holding-month returns (month i spans event_date+i .. event_date+i+1), so the
+    # calendar-time portfolio can use what each name really DID each month rather than an
+    # assumed smooth path. None/empty -> `calendar_time_portfolio` falls back to the old
+    # constant `(1+ret)**(1/K)-1` rate (old persisted cohorts, hand-built test events).
+    # See docs/audits/2026-07-26-funnel-composition-audit.md §4.
+    monthly_rets: list[float] | None = None
 
 
 @dataclass
@@ -83,6 +90,30 @@ def _event_date(ev: dict) -> date | None:
         return date.fromisoformat(v)
     except (TypeError, ValueError):
         return None
+
+
+def _monthly_path(hist: PriceHistory | None, d: date | None,
+                  horizon_months: int) -> list[float] | None:
+    """Per-holding-month returns for one event: month i spans `d+i` .. `d+i+1` months.
+
+    The calendar-time portfolio rebalances monthly, so it needs what a name actually did
+    each month — inferring a smooth `(1+ret)**(1/K)-1` path spreads a one-month collapse
+    across the whole window and applies the rebalancing drag to it K times
+    (docs/audits/2026-07-26-funnel-composition-audit.md §4).
+
+    Returns None if any leg is unavailable, so the caller falls back to the old constant
+    rate rather than a partly-imputed path — a half-real path would be worse than either.
+    """
+    if hist is None or d is None or horizon_months <= 0:
+        return None
+    out: list[float] = []
+    for i in range(horizon_months):
+        a = hist.price_on(_add_months(d, i), tol_days=5) if i else hist.close_asof(d)
+        b = hist.price_on(_add_months(d, i + 1), tol_days=5)
+        if a is None or b is None or a <= 0:
+            return None
+        out.append(b / a - 1.0)
+    return out
 
 
 def measure_cohort(events: list[dict], signal: str, horizon_months: int,
@@ -154,6 +185,7 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
             measurable=ret is not None,
             strength=ev.get("strength"), gated=ev.get("gated"), composite=ev.get("composite"),
             immature=immature,
+            monthly_rets=_monthly_path(hist, d, horizon_months) if ret is not None else None,
         ))
     n_immature = sum(1 for m in measured if m.immature)
     n_meas = sum(1 for m in measured if m.measurable)
@@ -204,7 +236,20 @@ def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
             if cur is None or m.event_date > cur.event_date:
                 by_ticker[m.ticker] = m
         held = list(by_ticker.values())
-        contribs = [(1.0 + m.ret) ** (1.0 / k_months) - 1.0 for m in held]
+        # A calendar-time portfolio is equal-weighted and REBALANCED MONTHLY, so each
+        # month's return must be the mean of what the held names ACTUALLY did that month.
+        # The old code gave every name a constant `(1+ret)**(1/K)-1` rate for the whole
+        # window, which spreads a one-month collapse evenly across K months and then applies
+        # the rebalancing drag to it K times over. Fall back to that constant only when an
+        # event carries no path (audit 2026-07-26 §4).
+        contribs = []
+        for m in held:
+            i = _months_between(m.event_date, month_start)
+            path = m.monthly_rets
+            if path and 0 <= i < len(path) and path[i] is not None:
+                contribs.append(path[i])
+            else:
+                contribs.append((1.0 + m.ret) ** (1.0 / k_months) - 1.0)
         if weighting == "value":
             ws = [float(m.composite or 0.0) for m in held]     # placeholder weight source
             tot = sum(ws)
@@ -445,7 +490,19 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     eff = effective_blocks(n_months, k_months)
     ir = information_ratio(ctp_rows, ff3)
     alpha, _betas = ff3_alpha(ctp_rows, ff3)
-    ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
+    # The KILL rule reads `ci`, so it must reflect the dominant uncertainty — WHICH EVENTS
+    # this cohort caught — not the smoothness of the flattened CTP series (audit
+    # docs/audits/2026-07-26-funnel-composition-audit.md §3a). Fall back to the month
+    # bootstrap only when the cohort carries no event list (hand-built / old persisted
+    # measurements), so a CI is never silently dropped to None.
+    ci = event_bootstrap_alpha(getattr(measurement, "events", None) or [], ff3, k_months)
+    if ci is None:
+        ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
+    if ir is not None:
+        # `information_ratio` divides by the residual std of the flattened series, which is
+        # understated for the same reason. Display-only (no verdict reads it) but it must
+        # not be quoted as if it were a real risk-adjusted number.
+        notes.append("IR is upward-biased (flattened-CTP residual variance) — display only")
 
     # Enforce the pre-registered factor model. v1 only implements FF3; a CAPM/FF5 prereg must
     # fail loudly (INSUFFICIENT) rather than silently run FF3 and mislabel the result.
@@ -489,8 +546,13 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         verdict = "KILL"
         notes.append(f"alpha 90% CI entirely negative {ci}")
     elif verdict == "HOLD" and alpha is not None and alpha <= 0:
-        verdict = "KILL"
-        notes.append(f"point alpha {alpha:.4f}/mo <= 0 past min sample")
+        # Operator decision 2026-07-26: a bare negative point estimate is NOT disproof.
+        # This branch used to KILL, which condemns roughly half of all genuinely-null
+        # signals by coin flip and produced "KILL on evidence" audit wording that the
+        # interval never supported (see docs/audits/2026-07-26-funnel-composition-audit.md
+        # §3a). A negative point estimate whose CI still spans zero is inconclusive.
+        verdict = "INSUFFICIENT"
+        notes.append(f"point alpha {alpha:.4f}/mo <= 0 but CI spans zero — inconclusive")
     elif verdict == "HOLD":
         notes.append("no negative evidence; HOLD (promote requires live corroboration + factor verdict)")
 
@@ -506,6 +568,55 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         n_measurable=measurement.n_measurable, measurable_fraction=frac,
         sensitivity_flip=sensitivity_flip, cohort_type=cohort_type, notes=notes,
         n_immature=n_immature, n_events=n_events)
+
+
+def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
+                          n_boot: int = 500, min_obs: int = 6, seed: int = 12345,
+                          weighting: str = "equal"):
+    """Event-level bootstrap CI (5th/95th pct) of the FF3 alpha — resamples the EVENTS with
+    replacement, rebuilds the calendar-time portfolio inside each replicate, and refits.
+
+    Why not `stationary_block_bootstrap_alpha`: that one resamples MONTHS of an
+    already-flattened CTP series. `calendar_time_portfolio` replaces each event's K-month
+    path with a constant monthly rate and then averages across held names, so cross-sectional
+    dispersion in event outcomes is gone before the bootstrap runs. The resulting CI measures
+    the smoothness of a smoothed series, not the uncertainty in the cohort's mean — which is
+    how the committed verdicts reached an implied monthly tracking error of 0.32% and an IR of
+    -46.97 (audit docs/audits/2026-07-26-funnel-composition-audit.md §3a). The dominant
+    uncertainty is WHICH EVENTS the cohort happened to catch, so that is what we resample.
+
+    Each drawn event is relabelled with a unique ticker inside the replicate: the CTP's
+    same-ticker dedup is correct for a real repeat firer, but in a resample a twice-drawn
+    event MUST count twice or the bootstrap's reweighting is silently discarded.
+
+    Deterministic stdlib LCG (same generator as the block bootstrap) so the CI is
+    reproducible across runs.
+    """
+    live = [m for m in measured if m.measurable and m.ret is not None and m.event_date is not None]
+    n = len(live)
+    if n < min_obs or k_months <= 0:
+        return None
+    state = seed & 0xFFFFFFFF
+
+    def _rand():
+        nonlocal state
+        state = (1103515245 * state + 12345) & 0x7FFFFFFF
+        return state / 0x7FFFFFFF
+
+    alphas = []
+    for _ in range(n_boot):
+        draw = []
+        for j in range(n):
+            src = live[int(_rand() * n) % n]
+            draw.append(replace(src, ticker=f"{src.ticker}#{j}"))
+        rows = calendar_time_portfolio(draw, k_months, weighting=weighting)
+        a, _b = ff3_alpha(rows, ff3, min_obs=min_obs)
+        if a is not None:
+            alphas.append(a)
+    if len(alphas) < n_boot // 2:
+        return None
+    alphas.sort()
+    return (alphas[int(0.05 * len(alphas))], alphas[int(0.95 * len(alphas))])
 
 
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
