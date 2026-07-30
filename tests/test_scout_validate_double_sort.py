@@ -217,4 +217,9 @@ def test_signal_verdict_double_sort_field_is_optional_and_positionally_stable():
     assert d["double_sort"] is None
     names = [f.name for f in fields(SignalVerdict)]
     assert names.index("double_sort") == names.index("n_immature") - 1
-    assert names[-2:] == ["n_immature", "n_events"]
+    # Every later field is APPENDED (never inserted), so earlier positional slots survive:
+    # n_immature/n_events keep their order and slots, and `alpha_suppressed` (R-0f level
+    # suppression) sits after them at the very end.
+    assert names.index("n_immature") == names.index("n_events") - 1
+    assert names[-1] == "alpha_suppressed"
+    assert v.alpha_suppressed is False

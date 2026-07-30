@@ -1056,8 +1056,12 @@ def _print_validate_table(verdicts: list) -> None:
     print(header)
     print("-" * len(header))
     for v in verdicts:
-        ir = f"{v.ir:.2f}" if v.ir is not None else "-"
-        alpha = f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-"
+        # A level the measurability floor rejected reads "SUPP", never a bare "-": "-" means
+        # "could not be computed", which invites re-deriving it by hand (validate.py R-0f).
+        suppressed = getattr(v, "alpha_suppressed", False)
+        ir = "SUPP" if suppressed else (f"{v.ir:.2f}" if v.ir is not None else "-")
+        alpha = "SUPP" if suppressed else (
+            f"{v.alpha_monthly:.4f}" if v.alpha_monthly is not None else "-")
         row = (f"{v.signal:<28}{v.cohort_type:<14}{v.verdict:<14}{ir:>8}{alpha:>10}"
               f"{v.effective_blocks:>8}{v.n_selected:>7}{v.n_measurable:>8}"
               f"{v.measurable_fraction:>7.2f}{'Y' if v.sensitivity_flip else 'N':>6}")

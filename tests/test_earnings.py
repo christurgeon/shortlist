@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from shortlist.data.sources import _earnings, _normalize_finnhub
 from shortlist.data.models import TickerSnapshot, Earnings
@@ -85,11 +85,16 @@ def test_earnings_empty_inputs():
 
 
 def test_normalize_finnhub_populates_earnings():
-    raw = {"earnings": _rows(1.0, 2.0), "earnings_calendar": _cal(("2026-07-29", None))}
+    # `_normalize_finnhub` has no `ref` seam (unlike `_earnings` above) -- it reads
+    # date.today() -- so the unreported calendar entry must be future-dated RELATIVE TO NOW.
+    # A hardcoded date rots: this test went red on 2026-07-30 when the calendar passed the
+    # literal "2026-07-29" it used to pin.
+    future = (date.today() + timedelta(days=30)).isoformat()
+    raw = {"earnings": _rows(1.0, 2.0), "earnings_calendar": _cal((future, None))}
     snap = _normalize_finnhub("AAPL", raw)
     assert snap.earnings is not None
     assert snap.earnings.quarters == 2
-    assert snap.earnings.next_date == "2026-07-29"
+    assert snap.earnings.next_date == future
 
 
 def test_normalize_finnhub_no_earnings_key_leaves_none():

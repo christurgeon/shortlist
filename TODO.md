@@ -38,10 +38,10 @@ fix confirmed working in production.
   (e.g. `_TRUE` duplicated between `dera.py`/`insider.py`; `n_joint` counts tickers pre-filter
   and is labelled "filings"; `fetch_daily_records`/`fetch_recent_records` are now dead code
   plus tests pinning them).
-- **`tests/test_earnings.py::test_normalize_finnhub_populates_earnings` fails on `main`** — it
-  hardcodes `2026-07-29` as a *future* earnings date and the calendar passed it. Pre-existing,
-  unrelated, same hygiene class as the date-dependent `test_daily_demo.py`. Both should use
-  relative dates.
+- ~~**`tests/test_earnings.py::test_normalize_finnhub_populates_earnings` fails on `main`**~~ —
+  **FIXED 2026-07-30** (it hardcoded `2026-07-29` as a *future* earnings date and the calendar
+  passed it; now derived from `date.today()`). The sibling case, `test_daily_demo.py` reading
+  the live `state/scout_state.json`, is still open — see item 0d below.
 
 **Status:** DONE and deployed. Remaining work is the backfill leg (needs its own spec) and
 letting the ledger accumulate — deliberately no new signals until it says something.

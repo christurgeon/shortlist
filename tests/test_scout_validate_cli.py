@@ -430,6 +430,18 @@ def test_print_validate_table_omits_immature_suffix_when_zero(capsys):
     assert "(+4 immature)" not in out
 
 
+def test_print_validate_table_marks_a_suppressed_level_not_a_bare_dash(capsys):
+    """A level suppressed by the measurability floor must read differently from one that
+    could not be computed -- a bare '-' invites re-deriving it by hand."""
+    v = SignalVerdict(signal="s", verdict="INSUFFICIENT", ir=None, alpha_monthly=None,
+                      alpha_ci=None, effective_blocks=4, n_selected=100, n_measurable=62,
+                      measurable_fraction=0.62, sensitivity_flip=False, cohort_type="raw",
+                      alpha_suppressed=True)
+    daily._print_validate_table([v])
+    out = capsys.readouterr().out
+    assert "SUPP" in out
+
+
 def test_print_validate_table_double_sort_none_shows_note_not_ds_line(capsys):
     """When double_sort is None (gate failed), no compact double-sort line is printed --
     the explanatory note (already in .notes) is the only surfacing."""

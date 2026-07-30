@@ -738,6 +738,10 @@ class _ValidationScoreboard:
         ci = v.get("alpha_ci")   # asdict() turns the SignalVerdict tuple into a list
         if isinstance(ci, (list, tuple)) and len(ci) == 2:
             ir_s += f" ±[{ci[0]:.4f}, {ci[1]:.4f}]"
+        # The digest never renders `notes`, so a level blanked by the measurability floor
+        # would read exactly like one that could not be computed (validate.py R-0f).
+        if v.get("alpha_suppressed"):
+            ir_s = "level suppressed (measurability floor)"
         notes = v.get("notes") or []
         synthetic = " [SYNTHETIC]" if any("SYNTHETIC" in str(n) for n in notes) else ""
         # B2/I4: a young live cohort must read "0/0 (+350 immature)", never a bare "0/0".

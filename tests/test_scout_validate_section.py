@@ -164,3 +164,21 @@ def test_render_html_has_disclaimer_and_verdict_signal():
     assert "survivorship-biased" in html
     assert "edgar:activist_13d" in html
     assert "PROMOTE" not in html.upper()
+
+
+def test_render_text_marks_a_suppressed_level():
+    # The digest never renders notes, so without an explicit marker a floor-suppressed level
+    # is indistinguishable from one that simply could not be computed.
+    v = _verdict(alpha_suppressed=True, measurable_fraction=0.62)
+    data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
+    joined = "\n".join(_ValidationScoreboard().render_text(_vm(data), Detail.FULL))
+    assert "level suppressed" in joined
+
+
+def test_render_text_no_suppressed_marker_when_absent():
+    # Old persisted verdicts predate the field entirely -> must render exactly as before.
+    v = _verdict()
+    v.pop("alpha_suppressed", None)
+    data = {"as_of": "2026-07-01", "source": "live", "verdicts": [v]}
+    joined = "\n".join(_ValidationScoreboard().render_text(_vm(data), Detail.FULL))
+    assert "suppressed" not in joined

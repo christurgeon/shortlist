@@ -459,6 +459,54 @@ class SignalVerdict:
     # n_measurable / (n_selected + n_immature) == n_measurable / n_events.
     n_immature: int = 0                 # events excluded from n_selected/measurable_fraction (H2)
     n_events: int = 0                   # RAW count incl. immature -- full transparency
+    # True when the measurable-fraction floor (pooled or vintage) rejected this cohort, so
+    # `alpha_monthly`/`alpha_ci`/`ir` were BLANKED rather than reported (see `_suppress_level`).
+    # Distinguishes "the level exists but is not quotable" from "the level could not be
+    # computed" -- both render as None/"-" without it.
+    alpha_suppressed: bool = False
+
+
+_SUPPRESSION_NOTE = (
+    "alpha level SUPPRESSED — the measurable-fraction floor rejected this cohort, so its "
+    "level is not interpretable (attrition is outcome-correlated: names disappear via "
+    "acquisition/delisting, which removes winners non-randomly). The within-cohort "
+    "double-sort spread is unaffected — it cancels the common bias. "
+    "See docs/audits/2026-07-26-funnel-composition-audit.md §5."
+)
+
+
+def _floor_failures(measurement, prereg: dict):
+    """(pooled_below_floor, bad_vintages) — pure, appends no notes.
+
+    Computed BEFORE any verdict branch so the level suppression can be applied on every
+    return path (including the unsupported-factor-model early return), while `decide` keeps
+    appending its floor notes in the original order.
+    """
+    floor = prereg.get("min_measurable_frac", 0.90)
+    min_bucket_events = prereg.get("min_bucket_events", 5)
+    if measurement.measurable_fraction() < floor:
+        return True, []
+    by_vintage = measurement.measurable_fraction_by_vintage()
+    bad = [(yr, n_meas, n_sel, vfrac)
+           for yr, (n_meas, n_sel, vfrac) in sorted(by_vintage.items())
+           if n_sel >= min_bucket_events and vfrac < floor]
+    return False, bad
+
+
+def _suppress_level(verdict: SignalVerdict) -> SignalVerdict:
+    """Blank the cohort's alpha LEVEL (alpha, its CI, and the IR that scales it).
+
+    A committed floor outranks a reading of the numbers, and on 2026-07-26 four successive
+    conclusions were retracted because the evaluator printed the level and the INSUFFICIENT
+    verdict side by side and the level got quoted anyway. A suppressed field cannot be read
+    past; a caveat can (CLAUDE.md: "prefer making the guard mechanical").
+    """
+    verdict.alpha_monthly = None
+    verdict.alpha_ci = None
+    verdict.ir = None
+    verdict.alpha_suppressed = True
+    verdict.notes.append(_SUPPRESSION_NOTE)
+    return verdict
 
 
 def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
@@ -472,6 +520,13 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     vintage (e.g. still-immature 2024 events) that is nowhere near measurable, which would
     silently bias the measured cohort toward older, more-measured events.
 
+    R-0f: whenever EITHER floor fails, the cohort's alpha LEVEL (`alpha_monthly`,
+    `alpha_ci`, `ir`) is SUPPRESSED to None and `alpha_suppressed` is set — a rejected
+    cohort must not hand the reader a number to quote (`_suppress_level`). Sample
+    diagnostics (fractions, counts, blocks) and the within-cohort double-sort spread are
+    untouched: the spread is a difference between two identically-measured buckets, so the
+    attrition bias cancels there.
+
     R-B5: a KILL on a "raw" (undifferentiated firehose) cohort is framed as confirmatory,
     not fresh evidence -- the scored/double-sort cohort (post quality/gate filtering) is
     the decision-relevant one; a raw-cohort kill corroborates but doesn't by itself settle it.
@@ -483,8 +538,11 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
         # v2 design B2/H2-note: every verdict surface must show the exclusion explicitly,
         # so a reader can reconstruct the old pooled fraction (n_measurable/n_events).
         notes.append(f"n_immature={n_immature} excluded from the denominator (H2)")
-    floor = prereg.get("min_measurable_frac", 0.90)
-    min_bucket_events = prereg.get("min_bucket_events", 5)
+    # The floor decides two separate things: the verdict (below) and whether this cohort's
+    # alpha LEVEL may be reported at all (R-0f). Compute it once, up front, so the
+    # suppression also covers the factor-model early return.
+    pooled_below, bad_vintages = _floor_failures(measurement, prereg)
+    floor_failed = pooled_below or bool(bad_vintages)
     frac = measurement.measurable_fraction()
     n_months = len(ctp_rows)
     eff = effective_blocks(n_months, k_months)
@@ -498,37 +556,34 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     ci = event_bootstrap_alpha(getattr(measurement, "events", None) or [], ff3, k_months)
     if ci is None:
         ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
-    if ir is not None:
+    if ir is not None and not floor_failed:
         # `information_ratio` divides by the residual std of the flattened series, which is
         # understated for the same reason. Display-only (no verdict reads it) but it must
-        # not be quoted as if it were a real risk-adjusted number.
+        # not be quoted as if it were a real risk-adjusted number. Skipped when the level is
+        # about to be suppressed — a caveat about a blanked number only advertises it.
         notes.append("IR is upward-biased (flattened-CTP residual variance) — display only")
 
     # Enforce the pre-registered factor model. v1 only implements FF3; a CAPM/FF5 prereg must
     # fail loudly (INSUFFICIENT) rather than silently run FF3 and mislabel the result.
     factor_model = prereg.get("factor_model", "ff3")
     if factor_model != "ff3":
-        return SignalVerdict(
+        v = SignalVerdict(
             signal=measurement.signal, verdict="INSUFFICIENT", ir=ir, alpha_monthly=alpha,
             alpha_ci=ci, effective_blocks=eff, n_selected=measurement.n_selected,
             n_measurable=measurement.n_measurable, measurable_fraction=frac,
             sensitivity_flip=sensitivity_flip, cohort_type=cohort_type,
             notes=notes + [f"factor_model '{factor_model}' not supported in v1 (only ff3)"],
             n_immature=n_immature, n_events=n_events)
+        return _suppress_level(v) if floor_failed else v
 
     verdict = "HOLD"
-    if frac < floor:
+    if pooled_below:
         verdict = "INSUFFICIENT"
         notes.append(f"measurable fraction {frac:.2f} < floor")
-    else:
-        by_vintage = measurement.measurable_fraction_by_vintage()
-        bad_vintages = [(yr, n_meas, n_sel, vfrac)
-                        for yr, (n_meas, n_sel, vfrac) in sorted(by_vintage.items())
-                        if n_sel >= min_bucket_events and vfrac < floor]
-        if bad_vintages:
-            verdict = "INSUFFICIENT"
-            detail = ", ".join(f"{yr}: {vfrac:.2f} ({n_meas}/{n_sel})" for yr, n_meas, n_sel, vfrac in bad_vintages)
-            notes.append(f"vintage-stratified measurable fraction below floor for {detail}")
+    elif bad_vintages:
+        verdict = "INSUFFICIENT"
+        detail = ", ".join(f"{yr}: {vfrac:.2f} ({n_meas}/{n_sel})" for yr, n_meas, n_sel, vfrac in bad_vintages)
+        notes.append(f"vintage-stratified measurable fraction below floor for {detail}")
 
     if verdict == "HOLD" and eff < prereg.get("min_independent_blocks", 2):
         verdict = "INSUFFICIENT"
@@ -562,12 +617,13 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
             "cohort (post quality/gate filtering) is decision-relevant"
         )
 
-    return SignalVerdict(
+    out = SignalVerdict(
         signal=measurement.signal, verdict=verdict, ir=ir, alpha_monthly=alpha, alpha_ci=ci,
         effective_blocks=eff, n_selected=measurement.n_selected,
         n_measurable=measurement.n_measurable, measurable_fraction=frac,
         sensitivity_flip=sensitivity_flip, cohort_type=cohort_type, notes=notes,
         n_immature=n_immature, n_events=n_events)
+    return _suppress_level(out) if floor_failed else out
 
 
 def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
