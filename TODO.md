@@ -6,40 +6,45 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## Form 4 rebuild — final review applied; branch ready but UNMERGED, UNPUSHED (2026-07-30)
+## Form 4 opportunistic-insider originator — SHIPPED and deployed (2026-07-30)
 
-Branch `feat/form4-opportunistic-insider`, 23 commits, head `bf367c9`. All six tasks
-implemented and individually reviewed; whole-branch review returned **SHIP WITH FIXES** and
-every Critical/Important is now applied and verified. **ruff clean, 2177 passed.**
+Merged as #151 (evaluator fixes) + #152 (the originator) and **live on the VPS**. Verified
+against the running system, not just the files: `MemoryMax=629145600`,
+`EDGAR_RATE_LIMIT_PER_SEC=6`, `TimeoutStartUSec=30min`, timer + bot active, DERA cache warm
+(15 zips + prebuilt index).
 
-**Not done — pick up here:**
-1. **Push the branch and open the PR.** Nothing is pushed; nothing is deployed. The live
-   scout still runs the OLD cluster-count signal.
-2. **A scoped re-review of the fix-wave commit `bf367c9` was never run** — the subagent
-   budget was exhausted, so the fixes were applied in the controller session and reviewed
-   only by the author. That is the one process gap in this branch; treat `bf367c9` as
-   unreviewed by a second pair of eyes.
-3. **Deploy note:** `deploy/shortlist-scout.service` gained `RuntimeMaxSec=3600`,
-   `MemoryMax=600M` and `EDGAR_RATE_LIMIT_PER_SEC=6`. These take effect only after
-   `systemctl daemon-reload`.
-4. **First live run will be slow** — it cold-downloads ~15 DERA quarters (~192 MB) and
-   builds the index at ~288 MB peak RSS before caching.
+`edgar_form4` replaced: was a bare cluster count with **no dollar floor** (emissions read "2
+insiders bought $5k" — the bottom quartile) reading ~400 of a median-838 filing day. Now: raw
+Form 4 XML, CMP-2012 routine/opportunistic classification off a DERA trade-month index, $100k
+per-transaction floor, role weighting, 10b5-1 exclusion, joint-filing abstention, 2500/day.
+Ships at **weight 1.0**, not the retired signal's 1.5 — no live track record yet.
 
-**Highest-value finding, for the record:** the placeholder-ticker guard
-(`edgar_index._is_real_ticker`) protected against a bug seen in production, and its Form 4
-call sites were deleted with `cluster_buys_from_records` without anyone re-owning it.
-Measured on real data: **459 of 57,797 Form 4 filings in 2025Q1 (0.79%)** carry a placeholder
-`issuerTradingSymbol` — and because emissions bucket by ticker, 305 `NONE` rows from
-unrelated companies merged into a single high-strength phantom emission. Now guarded by
-`insider.is_real_ticker` with the provenance in a comment so it is not deleted a third time.
+Live-measured, not assumed: tier mix **routine 48.5% (dropped)** / opportunistic 19.3% /
+unclassified 32.2% (n=887), independently reproducing CMP-2012's "over half … are routine".
+Cold index build **26.9s, 68,499 entries, 295 MB peak**; warm read **0.5s** (54×) — the cache
+fix confirmed working in production.
 
-**Unrelated pre-existing failure:** `tests/test_earnings.py::test_normalize_finnhub_populates_earnings`
-hardcodes `2026-07-29` as a *future* earnings date; the calendar has passed it, so it now
-fails on clean HEAD too (verified via stash). Same hygiene class as the date-dependent
-`test_daily_demo.py`. Both should use relative dates.
+**Open follow-ups:**
+- **The backfill leg is NOT wired.** `preregister/edgar_form4.yaml` is committed (so the
+  anti-p-hacking guarantee holds) but no cohort has been run. It needs quarterly-ZIP fetching
+  plus a point-in-time `assemble_factory` — the index must be built only from quarters strictly
+  BEFORE each event's quarter, or future trading behaviour leaks into the classification.
+  Needs its own spec.
+- **Live measurement is the picks ledger.** Every emission carries its tier, so the
+  opportunistic-vs-unclassified comparison becomes possible as calendar time accrues. That
+  within-cohort spread is the statistic this data supports; absolute cohort levels are not
+  trustworthy (see the 2026-07-26 audit).
+- **Deferred minors** from the reviews are listed in the git history of the merged PRs
+  (e.g. `_TRUE` duplicated between `dera.py`/`insider.py`; `n_joint` counts tickers pre-filter
+  and is labelled "filings"; `fetch_daily_records`/`fetch_recent_records` are now dead code
+  plus tests pinning them).
+- **`tests/test_earnings.py::test_normalize_finnhub_populates_earnings` fails on `main`** — it
+  hardcodes `2026-07-29` as a *future* earnings date and the calendar passed it. Pre-existing,
+  unrelated, same hygiene class as the date-dependent `test_daily_demo.py`. Both should use
+  relative dates.
 
-**Status:** OPEN — branch complete and green but unmerged, unpushed, and `bf367c9` awaits an
-independent review.
+**Status:** DONE and deployed. Remaining work is the backfill leg (needs its own spec) and
+letting the ledger accumulate — deliberately no new signals until it says something.
 
 ---
 
