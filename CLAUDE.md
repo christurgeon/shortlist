@@ -662,6 +662,80 @@ populated `deny_list` — keep `deny_list` empty and `daily_cap` generous unless
 (the 8-K precedent). Tune `scout.buyback` + `scout.signals.edgar_buyback`. `scoring.score()`
 is untouched.
 
+## Opportunistic-insider Form 4 discovery (scout)
+
+`EdgarForm4Signal` (`scout/signals.py`, keyless, **VPS-safe** — pure SEC, no Yahoo WAF) was
+rebuilt 2026-07-27 (`docs/FORM4_INSIDER.md`) from a bare cluster-count heuristic (`≥2`
+insiders, **no dollar floor at all** — real emissions read "2 insiders bought $5k", the
+bottom quartile of insider buying by construction, capped at reading only ~400 of a
+**median 838 / p90 1,498** filing day, truncated in EDGAR index order) into a
+Cohen-Malloy-Pomorski (JF 2012) routine/opportunistic classifier. It ships **ENABLED at
+weight 1.5** (`scout.signals.edgar_form4`) — the joint-highest of any originator, the same
+tier as 13D — on the **established-positive** CMP/Lakonishok-Lee 2001 prior; it is drift
+capture, **not** an information edge (Form 4 is public T+2 and every vendor parses it
+instantly).
+
+**Two pure/IO leaves, one shared record:** `scout/insider.py` (pure — Form 4 XML parse,
+CMP classification, qualification/strength/emission) and `scout/dera.py` (I/O — SEC DERA
+bulk quarterly-ZIP fetch/cache + trade-month index). Both produce the same `InsiderTxn`
+from **raw fields only** (never edgartools' normalized `standard_concept` view — that layer
+drifted between versions and silently broke the accruals leg; see
+`docs/audits/2026-07-12-accruals-leg-disable.md`). Live reads raw Form 4 XML tags; history
+reads raw DERA TSV columns (`RPTOWNERCIK`, `TRANS_CODE`, `AFF10B5ONE`, …).
+
+**Live path is a full-coverage rewrite:** one request per filing via the complete-submission
+`.txt` (`Filing.full_text_submission()`, NOT `Filing.text()` — see landmine below),
+`edgar_index_daily_cap: 2500` (was 400) clears p90 of the measured daily volume. **A
+transaction qualifies** when `code == "P"` ∧ not a 10b5-1 plan ∧ role ∈ {officer, director}
+∧ tier != routine ∧ **that transaction's own value ≥ `min_value`** ($100k, **per-transaction,
+never an aggregate** — five routine-sized $20k trades summing past the floor would
+reintroduce exactly the noise it exists to remove). **Emission unit is the ISSUER, not the
+trade**; multiple qualifying buyers on one issuer collapse to one `Emission` and the old
+cluster-count signal survives only as a **strength bonus, not a gate**.
+
+**Joint filings (>1 `<reportingOwner>` block) are ABSTAINED**, not attributed to the first
+owner — neither the XML nor DERA joins a transaction to a *particular* owner in a joint
+filing, so `InsiderTxn.joint_filing` rejects them in `qualifies()` rather than guess.
+**Measured facts (2025Q1, do not "fix" back):** joint filings are 12.05% of Form 4s
+containing an open-market purchase, 9.5% of the v1 population (P ≥ $100k, officer/director,
+not 10b5-1) — a 7× concentration in exactly this signal's population, so ~1 in 10 emissions
+would otherwise carry a wrong `owner_cik` and hence a wrong CMP tier.
+
+**Tier mix, measured (not assumed) on the newest quarter's v1 population** (n=887,
+as-of 2026-03-31, index built from 15 published quarters / ~66–68k insiders, 288 MB peak
+RSS to build): **routine 48.5% (dropped)**, opportunistic 19.3% (`tier_strength` × 1.0),
+unclassified 32.2% (× 0.6) — independently reproducing CMP-2012's own headline ("over half …
+are routine") on a completely different sample two decades later.
+
+**Landmines (live-verified 2026-07-26/27; do not "fix" back):**
+- `aff10b5One` (10b5-1 plan flag) appears as BOTH `0`/`1` and `false`/`true` across real
+  filings — normalize case-insensitively, never assume one encoding.
+- `transactionPricePerShare` may carry only a `<footnoteId>` with no `<value>` child —
+  return `None`, never fabricate a price.
+- DERA rounds `TRANS_PRICEPERSHARE` to 2dp while the XML keeps full precision (`24.57` vs
+  `24.5686` on the fixture filing) — the cross-path identity test compares price with a
+  tolerance, never `==`, and the XML side is never rounded down to force agreement.
+- edgartools' `Filing.text()` round-trips XML-native forms (3/4/5) through an HTML renderer
+  and **destroys** the `<ownershipDocument>` tags the parser needs — use
+  `Filing.full_text_submission()` (one request, the raw `.txt`) instead.
+
+**Config-absence contract:** `cfg=None` (no `scout.form4` block) makes `scan()` fully inert
+— no fetch, no DERA index build/download (~205 MB) — distinct from `cfg={}` (present-but-
+empty), which still runs on `insider.py`'s code-level defaults. Pinned by
+`tests/test_scout_form4_signal.py::test_removing_the_form4_block_leaves_the_signal_inert`
+(raising fetch/index doubles, so the test only passes if `scan()` returns before either is
+ever called — the earlier version, an empty-return double, was a tautology that would have
+passed against a signal that still called both).
+
+Pre-registration committed at `scout/preregister/edgar_form4.yaml` (K=3m, window
+2022–2025, expected sign positive) **before any measurement run** — the anti-p-hacking
+guard. **The backfill cohort itself is deliberately NOT wired**: unlike the other EDGAR
+originators' pure per-chunk `assemble`, a Form 4 backfill needs its classification index
+built from quarters **strictly before** each event's quarter (a stateful `assemble_factory`,
+like the `13d-a` row) or future trading behaviour leaks into the classification — that needs
+its own spec (see `TODO.md`). `scoring.score()` is untouched. Tune `scout.form4` +
+`scout.signals.edgar_form4`.
+
 ## WSB social hype (harness + scout)
 
 `WsbSource` (keyless) and the scout `WsbHypeSignal` both read **ApeWisdom**

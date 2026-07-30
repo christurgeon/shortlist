@@ -323,34 +323,126 @@ register("wikipedia", WikipediaAttentionSignal)
 
 
 class EdgarForm4Signal:
-    """Insider cluster-buy discovery from the SEC Form 4 daily index."""
+    """Opportunistic-insider buy discovery from SEC Form 4 (docs/FORM4_INSIDER.md).
+
+    Drift capture, NOT an information edge: Form 4 is public T+2 and every vendor parses it
+    instantly. The edge, if any, is selectivity over a months-long post-filing drift, via the
+    Cohen-Malloy-Pomorski (JF 2012) routine/opportunistic split (scout/insider.py,
+    scout/dera.py) rather than the retired same-session same-issuer cluster heuristic.
+
+    `fetch_submissions`/`load_index` are injection points for tests (no network): the
+    default `fetch_submissions` fetches the live SEC Form 4 daily index
+    (edgar_index.fetch_form4_submissions), and the default `load_index` builds/loads the
+    DERA classification history (dera.load_index) from `cfg["dera"]`
+    (`quarters`/`cache_dir`, defaulting to 16 quarters / `.cache/dera`).
+
+    Config-absence contract (C-2, 2026-07-27): `cfg=None` (no `scout.form4` block) makes
+    `scan()` INERT -- no fetch, no DERA index build/download (~205 MB). This is distinct
+    from `cfg={}` (a present-but-empty block), which still runs on the code-level defaults
+    baked into `insider.qualifies`/`emissions_from_txns`. The two used to collapse to the
+    same thing (`cfg or {}`), which made "block removed" untestable against a signal that
+    still silently ran -- see docs/FORM4_INSIDER.md §8.
+    """
     name = "edgar_form4"
     is_discovery = True
 
-    def __init__(self, max_filings: int = 400, identity: str | None = None) -> None:
+    def __init__(self, cfg: dict | None = None, max_filings: int = 2000,
+                 identity: str | None = None,
+                 fetch_submissions=None, load_index=None) -> None:
+        self._config_present = cfg is not None
+        self.cfg = cfg or {}
         self.max_filings = max_filings
         self.identity = identity or "shortlist-scout turgechr@duck.com"
+        self._fetch = fetch_submissions
+        self._load_index = load_index
+        self._index_missing: int | None = None
         self._status = (False, "not run")
 
+    def _default_fetch(self, session: date, cap: int):
+        from .edgar_index import fetch_form4_submissions
+        return fetch_form4_submissions(session, cap, self.identity)
+
+    def _default_index(self, session: date) -> dict:
+        from .dera import load_index, quarters_back
+        dcfg = self.cfg.get("dera") or {}
+        quarters = quarters_back(session, int(dcfg.get("quarters", 16)))
+        index, n_missing = load_index(dcfg.get("cache_dir", ".cache/dera"), quarters,
+                                      self.identity)
+        self._index_missing = n_missing   # C-1: surfaced in available() below
+        return index
+
     def scan(self, session: date) -> list[Emission]:
-        from .edgar_index import cluster_buys_from_records, fetch_recent_records
+        if not self._config_present:
+            self._status = (False, "no scout.form4 config")
+            return []
+
+        from .insider import emissions_from_txns, parse_form4_xml
+        fetch = self._fetch or self._default_fetch
+        load_idx = self._load_index or (lambda: self._default_index(session))
         try:
-            # The SEC daily index for `session` isn't published until ~02:00 UTC, so at
-            # the after-close run time today's index is empty; fall back to the last
-            # published session rather than reporting a phantom "0 insider activity".
-            records, used = fetch_recent_records(session, self.max_filings, self.identity)
+            docs, used, considered = fetch(session, self.max_filings)
+            index = load_idx()
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
-        ems = cluster_buys_from_records(records)
-        # FIX 5: surface the per-day fetch cap so truncation is visible in coverage.
+
+        # I-1: fetch_form4_submissions' hard-failure sentinel is `used is None` (a real SEC
+        # outage / edgartools error, caught internally rather than raised) -- distinct from
+        # a normal walk-back exhaustion (`used == session`, "tried every lookback day,
+        # nothing published"). Without this a multi-day SEC outage and a quiet day both
+        # read as "0 insider buys from 0 Form 4s", indistinguishable.
+        sec_failed = used is None
+
+        txns = [t for doc in docs for t in parse_form4_xml(doc)]
+        # Spec §5.1: joint filings are abstained, and the count must be VISIBLE -- a silent
+        # 9.5% drop is exactly the kind of thing that hides a broken parser.
+        n_joint = len({t.ticker for t in txns if t.joint_filing and t.code == "P"})
+        ems = emissions_from_txns(txns, index, session, self.cfg)
+
+        # I-2: name the overflow, don't just drop it -- spec §5.1's "never dropped silently"
+        # rule and the buyback signal's overflow-naming precedent both apply here too.
+        cap = int(self.cfg.get("daily_cap", 25))
+        overflow: list[str] = []
+        if len(ems) > cap:
+            ems.sort(key=lambda e: e.strength, reverse=True)
+            overflow = [e.ticker for e in ems[cap:]]
+            ems = ems[:cap]
+
         # An empty index can mean "not yet published" (the common after-close case) OR a
         # genuinely quiet published session, so word the fallback honestly rather than
-        # asserting "unpublished".
-        fallback = "" if used == session else f"; {session} index empty, used {used}"
-        self._status = (bool(records),
-                        f"{len(ems)} clusters from {len(records)} txns "
-                        f"(cap {self.max_filings}){fallback}")
+        # asserting "unpublished". Suppressed when sec_failed -- `fail` below already covers it.
+        fallback = ("" if sec_failed or used == session
+                    else f"; {session} index empty, used {used}")
+        joint = f"; {n_joint} joint filings abstained" if n_joint else ""
+        over = (f"; {len(overflow)} emission(s) over daily_cap: {', '.join(overflow)}"
+                if overflow else "")
+        fail = "; SEC fetch failed (see logs)" if sec_failed else ""
+        # C-1: the DERA index's own size/completeness, so a permanently-empty or
+        # persistently-thin history (e.g. every download failing) is visible here too, not
+        # just silently downgrading everyone to UNCLASSIFIED at reduced strength.
+        idx_note = f"; DERA index {len(index)} owner(s)"
+        if self._index_missing:
+            idx_note += f" ({self._index_missing} quarter(s) missing)"
+        # Fetch volume genuinely reaching the daily cap means the day's filings were
+        # truncated in EDGAR index order -- an uncharacterizable sampling bias, not a
+        # complete scan. That must be visibly distinct from a quiet day that merely
+        # happens to mention the same cap number in its status string (silent truncation
+        # is exactly the coverage defect edgar_index_daily_cap: 2500 exists to minimize).
+        # I-6: key the marker off filings CONSIDERED, not returned. fetch_form4_submissions
+        # drops filings that error, so len(docs) < max_filings even when the cap bound --
+        # and a >cap day almost certainly contains at least one error, so the marker used to
+        # vanish on exactly the days it exists for. Silent index-order truncation is the
+        # defect the cap raise was meant to remove.
+        truncated = " TRUNCATED" if considered >= self.max_filings else ""
+        # I-4: an empty index is not a quiet day -- every insider then classifies
+        # UNCLASSIFIED, nothing is dropped as routine (measured: 48.5% of the population),
+        # and the signal emits roughly double the names at 0.6 strength. That state is
+        # unambiguously broken, so it must not read as `ran`.
+        index_dead = self._index_missing is not None and not index
+        self._status = (bool(docs) and not sec_failed and not index_dead,
+                        f"{len(ems)} insider buys from {len(docs)} Form 4s "
+                        f"(cap {self.max_filings}{truncated}){joint}{over}{fail}"
+                        f"{idx_note}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:

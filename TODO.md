@@ -6,6 +6,73 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Form 4 rebuild — final review applied; branch ready but UNMERGED, UNPUSHED (2026-07-30)
+
+Branch `feat/form4-opportunistic-insider`, 23 commits, head `bf367c9`. All six tasks
+implemented and individually reviewed; whole-branch review returned **SHIP WITH FIXES** and
+every Critical/Important is now applied and verified. **ruff clean, 2177 passed.**
+
+**Not done — pick up here:**
+1. **Push the branch and open the PR.** Nothing is pushed; nothing is deployed. The live
+   scout still runs the OLD cluster-count signal.
+2. **A scoped re-review of the fix-wave commit `bf367c9` was never run** — the subagent
+   budget was exhausted, so the fixes were applied in the controller session and reviewed
+   only by the author. That is the one process gap in this branch; treat `bf367c9` as
+   unreviewed by a second pair of eyes.
+3. **Deploy note:** `deploy/shortlist-scout.service` gained `RuntimeMaxSec=3600`,
+   `MemoryMax=600M` and `EDGAR_RATE_LIMIT_PER_SEC=6`. These take effect only after
+   `systemctl daemon-reload`.
+4. **First live run will be slow** — it cold-downloads ~15 DERA quarters (~192 MB) and
+   builds the index at ~288 MB peak RSS before caching.
+
+**Highest-value finding, for the record:** the placeholder-ticker guard
+(`edgar_index._is_real_ticker`) protected against a bug seen in production, and its Form 4
+call sites were deleted with `cluster_buys_from_records` without anyone re-owning it.
+Measured on real data: **459 of 57,797 Form 4 filings in 2025Q1 (0.79%)** carry a placeholder
+`issuerTradingSymbol` — and because emissions bucket by ticker, 305 `NONE` rows from
+unrelated companies merged into a single high-strength phantom emission. Now guarded by
+`insider.is_real_ticker` with the provenance in a comment so it is not deleted a third time.
+
+**Unrelated pre-existing failure:** `tests/test_earnings.py::test_normalize_finnhub_populates_earnings`
+hardcodes `2026-07-29` as a *future* earnings date; the calendar has passed it, so it now
+fails on clean HEAD too (verified via stash). Same hygiene class as the date-dependent
+`test_daily_demo.py`. Both should use relative dates.
+
+**Status:** OPEN — branch complete and green but unmerged, unpushed, and `bf367c9` awaits an
+independent review.
+
+---
+
+## Form 4 opportunistic-insider rebuild shipped; backfill leg deliberately deferred (2026-07-27)
+
+`edgar_form4` rebuild (item 2 of the funnel-composition-audit entry below) is **DONE** — all
+6 tasks of `.superpowers/sdd/PLAN_FORM4_INSIDER/` landed on
+`feat/form4-opportunistic-insider`: `scout/dera.py` + `scout/insider.py` (CMP
+routine/opportunistic classification off a SEC DERA bulk index), a rewritten
+`EdgarForm4Signal` (raw Form 4 XML, one request/filing via `full_text_submission()`, $100k
+per-transaction floor, role weighting, 10b5-1 exclusion, joint-filing abstention,
+`edgar_index_daily_cap` raised 400→2500), and `scout/preregister/edgar_form4.yaml` committed
+before any measurement run. Docs: `docs/FORM4_INSIDER.md` status flipped to IMPLEMENTED;
+CLAUDE.md gained a full section + the `aff10b5One`/`footnoteId`/DERA-rounding/`Filing.text()`
+landmines.
+
+**Deliberately NOT wired: the backfill cohort itself.** Every other EDGAR originator's
+backfill uses a pure per-chunk `assemble` (or, for `13d-a`, a stateful `assemble_factory`
+that only needs the *prior filing* in scope). A Form 4 backfill is a harder case: the CMP
+classification needs a trade-month index built from DERA quarters **strictly BEFORE** each
+event's quarter, or future trading behaviour leaks into the routine/opportunistic label —
+i.e. a point-in-time `assemble_factory` that walks quarterly ZIPs in order, not a single
+static index. That is a real design (fetch cadence, PiT index cost, cache shape), not an
+afternoon's row in `_BACKFILL_SPECS`, and needs its own spec before it's built. Until then
+the live signal accrues evidence only through the picks ledger + firehose (no cohort verdict
+possible).
+
+**Status:** Rebuild DONE, merged into `feat/form4-opportunistic-insider` (not yet merged to
+main/deployed at time of writing — see the branch's own PR when opened). Backfill leg is
+OPEN, blocked on a follow-up spec; not started.
+
+---
+
 ## Funnel composition audit — originator universe is the bottleneck, not the scorer (2026-07-26)
 
 Full evidence: **`docs/audits/2026-07-26-funnel-composition-audit.md`** (committed). Reviewed
@@ -128,7 +195,60 @@ Open work, in order:
    normalized view, pinned by a both-paths-parse-identically test; trade-month index built
    from ALL transaction codes; emission unit is the ISSUER with a PER-TRANSACTION $ floor;
    three tiers (routine dropped / opportunistic 1.0 / unclassified 0.6, tier logged).
-   Implementation plan not yet written. Background:
+   **PLAN → `docs/PLAN_FORM4_INSIDER.md`** (6 TDD tasks); execution started 2026-07-26 on
+   branch `feat/form4-opportunistic-insider` via subagent-driven development (ledger:
+   `.superpowers/sdd/PLAN_FORM4_INSIDER/progress.md`). **The `form4` backfill leg is
+   deliberately NOT in scope** — spec §3 defers the cohort, and a Form 4 leg needs
+   quarterly-ZIP fetching plus a point-in-time `assemble_factory` (index from quarters
+   strictly BEFORE each event's quarter, else future trading behaviour leaks into the
+   classification). That needs its own spec.
+   **Execution state — ALL 6 TASKS DONE (2026-07-27).** Tasks 1–4 **complete, each reviewed spec ✅ /
+   quality approved** — `scout/insider.py` (record + XML parser + CMP classification +
+   qualification/strength/emission) and `scout/dera.py` (bulk parser + trade-month index +
+   quarterly ZIP fetch/cache). **Task 5 (live wiring) implemented, fix round 1 in flight.
+   Task 6 (pre-registration + docs) DONE (2026-07-27, this entry).** Nothing merged; branch
+   `feat/form4-opportunistic-insider` is unpushed at time of writing. Ledger:
+   `.superpowers/sdd/PLAN_FORM4_INSIDER/progress.md`.
+   - **Task 5 finding, still open:** `config.yaml`'s `edgar_index_daily_cap` was still **400**,
+     and `daily.py` passes it as `max_filings` — so the live signal would still read ~400 of a
+     **median 838 / p90 1,498 / max 3,496** filing day, i.e. the coverage defect the rebuild
+     exists to fix. Fix in flight raises it to **2500** with the measured justification.
+   - **Two real bugs in the plan's pseudocode, caught by the Task 5 implementer:** a dangling
+     `_default_index` reference, and `edgartools' Filing.text()` round-tripping XML-native
+     forms through an HTML renderer, **destroying the `<ownershipDocument>` tags the parser
+     needs** — use `full_text_submission()` (one request, the raw `.txt`). Both would have
+     shipped a silently non-functional production path.
+   - **`daily.py:_signal_kwargs` edit approved** (outside the task's file list, correctly
+     flagged): without it the `scout.form4` block never reaches the signal and
+     `tier_strength.opportunistic` silently defaults to 0.6 instead of 1.0.
+   - **Memory measured, not assumed:** cold index build = **288 MB peak RSS**, 68,499 entries
+     from 15 real quarters (the 16th unpublished, skipped by design) — under the 400 MB stop
+     threshold set for this 1.9 GB VPS.
+   - **`issuer_cik` added to the record (spec §5.2)** so emissions set `Emission.cik`;
+     `edgar_13f` ships `cik=None` and CLAUDE.md records that as a known limit blocking
+     renamed-ticker re-resolution and CIK-based delisting classification. Retrofitting after
+     the ledger has entries is far more expensive.
+   - **TIER MIX MEASURED (2026-07-26) — the filter bites hard; spec §6 open question CLOSED.**
+     Index from 15 published quarters (66,337 insiders), evaluated on the newest quarter's v1
+     population (n=887, as-of 2026-03-31): **routine 430 (48.5%, DROPPED)** / opportunistic
+     171 (19.3%) / unclassified 286 (32.2%). Nearly half the qualifying population is
+     discarded as routine, independently reproducing CMP-2012's own "over half … are routine"
+     on a different sample two decades later. `unclassified` does **not** dominate, so the §6
+     deviation stands as chosen. Volume sanity: ~13 issuers/day with a ≥$100k buy, less 48.5%,
+     ≈ 6–7/day — matching the spec's expected 6–8. Reproduce: `scratchpad/tiermix.py`.
+   - **Spec amended mid-execution → `docs/FORM4_INSIDER.md` §5.1: joint filings are
+     ABSTAINED.** A Form 4 may carry several `<reportingOwner>` blocks and neither the XML nor
+     DERA joins a transaction to a *particular* owner. Measured 2025Q1: **1.72%** of all Form
+     4s, **12.05%** of those containing an open-market purchase, **9.5%** of the v1 population
+     — so ~1 in 10 emissions would carry a wrong `owner_cik` and hence a wrong CMP tier.
+     `InsiderTxn.joint_filing` + rejection in `qualifies()` + a surfaced count.
+   - **Also verified mid-execution:** DERA rounds `TRANS_PRICEPERSHARE` to 2dp while the XML
+     keeps full precision (`24.57` vs `24.5686`), so the cross-path guard compares price with
+     a tolerance — do NOT tighten it to `==`, and do NOT round the XML down to match.
+   - **Deferred minor (Task 1):** an `isinstance` assertion-of-convenience in
+     `tests/test_scout_insider_parse.py` exists only to satisfy ruff F401. Harmless; fold into
+     a real assertion next time that file is touched.
+   Background:
    1.5 (joint-highest) with **no prereg, no backfill spec, no audit** — while three
    lower-weighted originators were killed by measurement. Today it is a bare count heuristic
    (`min_buyers=2`, **no dollar floor** — real emissions read "2 insiders bought $5k", the
@@ -156,11 +276,13 @@ Open work, in order:
 **Status:** IN PROGRESS — but the analysis that framed this entry is PARTLY RETRACTED; item −1
 (fix `calendar_time_portfolio`) now precedes everything and no cohort alpha should be quoted
 until it lands. Items 0, 0b and 3(a) shipped (suite 2126 green, ruff clean, committed on
-`fix/validate-event-bootstrap-ci`, pushed). Items 0c, 0d, 1, 2, 3(b), 4 remain. Item 1 (size-band re-validation) is
-now unblocked and is the next step; item 2 (the `edgar_form4` rebuild) is the main build and
-has not been started. **All of it is UNCOMMITTED in the working tree** (7 files, ~379 lines;
-`validate.py` is the only production module touched) and nothing is deployed to
-`/opt/shortlist` — the daily push still runs the pre-change behaviour, WSB included.
+`fix/validate-event-bootstrap-ci`, pushed). **Item 2 (the `edgar_form4` rebuild) is now DONE**
+(2026-07-27, branch `feat/form4-opportunistic-insider`, not yet merged — see the standalone
+entry above for the deferred backfill-leg follow-up). Items 0c, 0d, 1, 3(b), 4 remain. Item 1
+(size-band re-validation) is next. **The rest of this entry's items are UNCOMMITTED in the
+working tree** (7 files, ~379 lines; `validate.py` is the only production module touched) and
+nothing is deployed to `/opt/shortlist` — the daily push still runs the pre-change behaviour,
+WSB included.
 
 ---
 

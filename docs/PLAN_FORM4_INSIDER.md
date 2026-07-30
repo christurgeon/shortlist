@@ -23,8 +23,11 @@ re-argue its decisions.
 
 - **Design spec is authoritative:** `docs/FORM4_INSIDER.md`. Deviations need a spec amendment.
 - **`scoring.score()` must be untouched.** This is discovery plumbing only.
-- **Config invariance:** removing the `scout.form4` block must reproduce pre-feature behaviour
-  byte-identically (the convention every block in this repo follows).
+- **Config-absence contract** (corrected 2026-07-26; the original "byte-identical to
+  pre-feature behaviour" is unsatisfiable once `cluster_buys_from_records` is retired):
+  with no `scout.form4` block, `scan()` returns `[]` **without fetching and without building
+  or downloading the DERA index**, and `available()` returns `(False, "no scout.form4
+  config")`. Pin it with a test that would FAIL against a signal that still runs.
 - **No network in unit tests.** All fixtures committed under `tests/fixtures/form4/`.
 - **CI gate, in this order:** `uv run ruff check src tests` then `uv run pytest -q`. A ruff
   finding is a hard gate, not a nit.
@@ -57,9 +60,23 @@ re-argue its decisions.
 7. **DERA URL:** `https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/<YYYYqQ>_form345.zip`,
    ~12.8 MB/quarter. `2026q1` published, `2026q2` not yet as of 2026-07-26.
 8. **Cross-path fixture pair (use exactly this):** accession `0001104659-25-030072` — issuer
-   OKLO (CIK 1849056), owner CIK 0002021774, relationship `Director`, `P` 6000 sh @ $24.57 on
+   OKLO (CIK 1849056), owner CIK 0002021774, relationship `Director`, `P` 6000 sh on
    2025-03-27, filed 2025-03-31, `aff10b5One` `0`. Present in the 2025q1 DERA ZIP **and**
    fetchable as XML.
+9. **Joint filings must be ABSTAINED, and they are NOT rare in this population.** A Form 4
+   can carry several `<reportingOwner>` blocks, and neither source joins a transaction to a
+   particular owner. Measured 2025Q1: **1.72%** of all Form 4s are joint, but **12.05%** of
+   those containing an open-market purchase are, and **9.5%** of the v1 population (P buys
+   ≥ $100k carrying officer/director) — so ~1 in 10 emissions would otherwise carry a wrong
+   `owner_cik` and therefore a wrong CMP tier. `InsiderTxn` carries `joint_filing: bool`;
+   `qualifies()` rejects it; the count is surfaced in `available()`, never dropped silently.
+   See `docs/FORM4_INSIDER.md` §5.1.
+10. **DERA rounds `TRANS_PRICEPERSHARE` to 2dp; the XML carries full precision.** This same
+   filing is **`24.5686` in the XML and `24.57` in DERA** (found by the Task 1 implementer,
+   confirmed 2026-07-26). Consequences: assert `24.5686` in XML-only tests, and the
+   cross-path guard must compare price with a tolerance, never `==`. Do not normalise the
+   XML down to 2dp to force agreement — that discards real precision from the live path.
+   The rounding is immaterial against a $100,000 floor.
 
 ## File Structure
 
@@ -123,7 +140,7 @@ def test_parses_a_real_open_market_purchase():
     assert t.ticker == "OKLO"
     assert t.date == date(2025, 3, 27)
     assert t.shares == 6000.0
-    assert t.price == 24.57
+    assert t.price == 24.5686   # XML full precision; DERA rounds this to 24.57
     assert t.plan_10b5_1 is False          # aff10b5One is "0" here, NOT "false"
     assert "director" in t.roles
 
@@ -232,6 +249,10 @@ class InsiderTxn:
     plan_10b5_1: bool
     roles: frozenset[str]
     title: str | None = None
+    # Appended LAST (positional back-compat). True when the filing has >1 reporting owner:
+    # neither source joins a transaction to a PARTICULAR owner, so any single attribution is
+    # a guess. qualifies() rejects these. 9.5% of the v1 population -- spec §5.1.
+    joint_filing: bool = False
 
     @property
     def value(self) -> float | None:
@@ -280,6 +301,8 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
         return []
 
     ticker = (_val(root, "issuer/issuerTradingSymbol") or "").upper()
+    owners = root.findall("reportingOwner")
+    joint = len(owners) > 1
     owner_cik = _val(root, "reportingOwner/reportingOwnerId/rptOwnerCik") or ""
     rel = root.find("reportingOwner/reportingOwnerRelationship")
     roles = set()
@@ -311,6 +334,7 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             shares=_num(tx, "transactionAmounts/transactionShares"),
             price=_num(tx, "transactionAmounts/transactionPricePerShare"),
             plan_10b5_1=plan, roles=frozenset(roles), title=title,
+            joint_filing=joint,
         ))
     return out
 ```
@@ -409,19 +433,33 @@ def test_parses_dera_ddmonyyyy_dates_and_flags():
     assert "director" in t.roles            # from "Director" comma-joined string
 
 
-def test_live_and_history_parse_to_identical_records():
-    """THE guard: one real filing, both paths, identical InsiderTxn.
+def test_live_and_history_agree_on_the_same_filing():
+    """THE guard: one real filing, both paths, same record.
 
-    The encodings genuinely differ -- DERA has 27-MAR-2025 / '0' / 'Director',
-    the XML has 2025-03-27 / '0' or 'false' / <isDirector> -- so this is not
-    trivially true. It is the defence against live-vs-history definitional drift,
-    the failure mode that broke the accruals leg.
+    The encodings genuinely differ -- DERA has 27-MAR-2025 / '0' / 'Director', the XML
+    has 2025-03-27 / '0' or 'false' / <isDirector> -- so this is not trivially true. It
+    is the defence against live-vs-history definitional drift, the failure mode that
+    broke the accruals leg.
+
+    Exact equality on the CATEGORICAL fields: those are what drift corrupts (wrong
+    column, wrong encoding, wrong sign). PRICE is compared with a tolerance because
+    **DERA rounds TRANS_PRICEPERSHARE to 2dp while the XML carries full precision** --
+    24.57 vs 24.5686 on this very filing (live-verified 2026-07-26).
+
+    Do NOT "tighten" this to `==`: it will be permanently red. And do NOT normalise the
+    XML down to 2dp to make it pass -- that discards real precision from the live path
+    to satisfy a test. The rounding is immaterial to a $100k floor.
     """
-    xml_txns = [t for t in parse_form4_xml(
+    xml_t = [t for t in parse_form4_xml(
         (FIX / "oklo_0001104659-25-030072.xml").read_text(errors="replace"))
-        if t.code == "P"]
-    dera_txns = [t for t in _dera() if t.code == "P"]
-    assert xml_txns == dera_txns
+        if t.code == "P"][0]
+    dera_t = [t for t in _dera() if t.code == "P"][0]
+
+    for field in ("owner_cik", "ticker", "date", "code", "roles", "title", "plan_10b5_1"):
+        assert getattr(xml_t, field) == getattr(dera_t, field), field
+    assert xml_t.shares == dera_t.shares
+    assert abs(xml_t.price - dera_t.price) < 0.01          # DERA 2dp rounding only
+    assert abs(xml_t.value - dera_t.value) / dera_t.value < 1e-3
 ```
 
 - [ ] **Step 3: Run the tests, verify they fail**
@@ -499,9 +537,9 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
     """The three DERA TSVs -> InsiderTxn records, matching parse_form4_xml exactly."""
     subs = {r["ACCESSION_NUMBER"]: r for r in csv.DictReader(sub_fh, delimiter="\t")
             if r.get("DOCUMENT_TYPE") == "4"}
-    owners: dict[str, dict] = {}
+    owners: dict[str, list[dict]] = {}
     for r in csv.DictReader(owner_fh, delimiter="\t"):
-        owners.setdefault(r["ACCESSION_NUMBER"], r)
+        owners.setdefault(r["ACCESSION_NUMBER"], []).append(r)
 
     out: list[InsiderTxn] = []
     for r in csv.DictReader(trans_fh, delimiter="\t"):
@@ -511,7 +549,8 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
         d = parse_dera_date(r.get("TRANS_DATE"))
         if d is None:
             continue
-        o = owners.get(r["ACCESSION_NUMBER"], {})
+        os_ = owners.get(r["ACCESSION_NUMBER"], [])
+        o = os_[0] if os_ else {}
         title = (o.get("RPTOWNER_TITLE") or "").strip() or None
         out.append(InsiderTxn(
             owner_cik=(o.get("RPTOWNERCIK") or "").strip(),
@@ -523,6 +562,9 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
             plan_10b5_1=str(s.get("AFF10B5ONE") or "").strip().lower() in _TRUE,
             roles=_roles(o.get("RPTOWNER_RELATIONSHIP")),
             title=title,
+            # >1 reporting owner: neither source joins a transaction to a PARTICULAR
+            # owner, so any single attribution is a guess. Abstain (spec §5.1).
+            joint_filing=len(os_) > 1,
         ))
     return out
 ```
@@ -816,6 +858,10 @@ def _title_weight(title: str | None) -> float:
 def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     if txn.code != "P" or tier == ROUTINE:
         return False
+    # Joint filings carry no per-transaction owner attribution, so owner_cik -- and every
+    # tier derived from it -- would be a guess. 9.5% of this population (spec §5.1).
+    if txn.joint_filing:
+        return False
     if cfg.get("exclude_10b5_1", True) and txn.plan_10b5_1:
         return False
     if not (txn.roles & set(cfg.get("roles") or ("officer", "director"))):
@@ -827,7 +873,6 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
 
 def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emission]:
     """Qualifying transactions -> one Emission per ISSUER. Pure."""
-    tiers = {t.tier_strength_key: None for t in ()}  # placeholder removed below
     by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
     for t in txns:
         tier = classify_tier(t.owner_cik, index, as_of)
@@ -855,10 +900,10 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
     return out
 ```
 
-**Note for the implementer:** delete the stray `tiers = ...` placeholder line above — it is
-not used. Check `scout/models.py:Emission` for the exact constructor signature and whether it
-accepts `meta=`; if it does not, add `meta: dict = field(default_factory=dict)` as the LAST
-field (positional back-compat, the convention this repo uses everywhere).
+**Note for the implementer:** check `scout/models.py:Emission` for the exact constructor
+signature and whether it accepts `meta=`; if it does not, add
+`meta: dict = field(default_factory=dict)` as the LAST field (positional back-compat, the
+convention this repo uses everywhere).
 
 - [ ] **Step 4: Run the tests, verify they pass**
 
@@ -935,6 +980,120 @@ def test_signal_degrades_quietly_when_the_fetch_fails():
 Run: `uv run pytest tests/test_scout_form4_signal.py -q`
 Expected: FAIL — `TypeError: __init__() got an unexpected keyword argument 'cfg'`
 
+- [ ] **Step 2b: Add the bulk fetch/cache + index loader to `scout/dera.py`**
+
+> **Gap fixed 2026-07-26:** the first draft of this plan referenced `ensure_quarters`,
+> `load_index` and `_default_load_index` without ever defining them. Code below.
+
+```python
+import json
+import urllib.request
+import warnings
+import zipfile
+from pathlib import Path
+
+from ..env import redact_secrets
+
+_UA = "shortlist-scout turgechr@duck.com"
+
+
+def quarters_back(as_of: date, n: int) -> list[str]:
+    """The `n` quarters ending with the one before `as_of`'s, newest first ('2025q1').
+
+    DERA publishes roughly a quarter in arrears, so the CURRENT quarter is normally absent
+    and `ensure_quarters` skips it rather than failing (verified 2026-07-26: 2026q1 was
+    published, 2026q2 was not).
+    """
+    y, q = as_of.year, (as_of.month - 1) // 3 + 1
+    out = []
+    for _ in range(n):
+        q -= 1
+        if q == 0:
+            y, q = y - 1, 4
+        out.append(f"{y}q{q}")
+    return out
+
+
+def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]:
+    """Download each quarterly ZIP to `cache_dir` if absent; return the paths that exist.
+
+    Cached FOREVER by filename -- a published quarter is immutable. A 404 means "not
+    published yet" and is SKIPPED, never raised: a missing recent quarter must degrade the
+    history, not abort the daily run.
+    """
+    d = Path(cache_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    out: list[Path] = []
+    for q in quarters:
+        p = d / f"{q}_form345.zip"
+        if not p.exists():
+            try:
+                req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    p.write_bytes(r.read())
+            except Exception as exc:  # noqa: BLE001 -- absent quarter degrades history
+                warnings.warn(f"dera: {q} unavailable: {redact_secrets(str(exc))}",
+                              stacklevel=2)
+                continue
+        out.append(p)
+    return out
+
+
+def _index_from_zip(path: Path) -> list:
+    with zipfile.ZipFile(path) as z:
+        with z.open("SUBMISSION.tsv") as s, z.open("REPORTINGOWNER.tsv") as o, \
+             z.open("NONDERIV_TRANS.tsv") as t:
+            return parse_dera_tsvs(
+                io.TextIOWrapper(s, "utf-8", errors="replace"),
+                io.TextIOWrapper(o, "utf-8", errors="replace"),
+                io.TextIOWrapper(t, "utf-8", errors="replace"))
+
+
+def load_index(cache_dir: str, quarters, identity: str = _UA) -> dict:
+    """Trade-month index across `quarters`, disk-cached as compact JSON.
+
+    Rebuilding from ~16 ZIPs on every daily run is wasteful, so the built index is persisted
+    keyed by the exact quarter list. Values are stored as `y*12+m` ints (far smaller than
+    [y, m] pairs) and rehydrated to the (year, month) tuples `classify_tier` expects.
+    """
+    key = "-".join(sorted(quarters))
+    cache = Path(cache_dir) / f"index-{key}.json"
+    if cache.exists():
+        raw = json.loads(cache.read_text())
+        return {k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()}
+    idx: dict[str, set] = {}
+    for p in ensure_quarters(quarters, cache_dir, identity):
+        for cik, months in build_trade_month_index(_index_from_zip(p)).items():
+            idx.setdefault(cik, set()).update(months)
+    cache.write_text(json.dumps(
+        {k: sorted(y * 12 + (m - 1) for (y, m) in vs) for k, vs in idx.items()}))
+    return idx
+```
+
+**Memory note — this runs on a 1.9 GB VPS.** Sixteen quarters is roughly 900k submissions.
+Build the index **one ZIP at a time** (the loop above does; do not read them all into a list
+first) and report the built index's entry count and the process's peak RSS in your task
+report. If peak RSS exceeds ~400 MB, stop and report rather than shipping something that
+will be OOM-killed alongside the daily scout.
+
+Tests for this step (no network — monkeypatch `ensure_quarters` to return a path to the
+committed `dera_2025q1_sample` TSVs zipped into a tmp file, or point `_index_from_zip` at a
+tmp ZIP you build in the test):
+
+```python
+def test_quarters_back_walks_backwards_from_the_previous_quarter():
+    from datetime import date
+    from shortlist.scout.dera import quarters_back
+    assert quarters_back(date(2026, 7, 26), 3) == ["2026q2", "2026q1", "2025q4"]
+
+
+def test_load_index_round_trips_through_its_json_cache(tmp_path):
+    """Second call must hit the cache and return an identical index."""
+    from shortlist.scout.dera import load_index
+    # build a one-quarter ZIP from the committed sample TSVs, monkeypatch ensure_quarters
+    # to return it, call load_index twice, assert equality and that the cache file exists.
+```
+
 - [ ] **Step 3: Add the live fetcher to `scout/edgar_index.py`**
 
 ```python
@@ -995,19 +1154,23 @@ class EdgarForm4Signal:
             from .edgar_index import fetch_form4_submissions as fetch
         try:
             docs, used = fetch(session, self.max_filings)
-            index = (self._load_index or _default_load_index)()
+            index = (self._load_index or self._default_index)()
         except Exception as e:  # noqa: BLE001
             self._status = (False, redact_secrets(str(e)))
             return []
         txns = [t for doc in docs for t in parse_form4_xml(doc)]
+        # Spec §5.1: joint filings are abstained, and the count must be VISIBLE -- a silent
+        # 9.5% drop is exactly the kind of thing that hides a broken parser.
+        n_joint = len({t.ticker for t in txns if t.joint_filing and t.code == "P"})
         ems = emissions_from_txns(txns, index, session, self.cfg)
         cap = int(self.cfg.get("daily_cap", 25))
         if len(ems) > cap:
             ems = sorted(ems, key=lambda e: e.strength, reverse=True)[:cap]
         fallback = "" if used == session else f"; {session} index empty, used {used}"
+        joint = f"; {n_joint} joint filings abstained" if n_joint else ""
         self._status = (bool(docs),
                         f"{len(ems)} insider buys from {len(docs)} Form 4s "
-                        f"(cap {self.max_filings}){fallback}")
+                        f"(cap {self.max_filings}){joint}{fallback}")
         return ems
 
     def available(self) -> tuple[bool, str]:
@@ -1053,17 +1216,27 @@ Form 4 flow (measured median 838/day, p90 1,498)."
 
 ---
 
-### Task 6: Pre-registration, backfill spec row, and docs
+### Task 6: Pre-registration and docs
+
+> **Scope note (pre-flight, 2026-07-26):** an earlier draft of this task also wired a
+> `_BACKFILL_SPECS["form4"]` row. That is **removed** — it contradicted the spec, whose §3
+> explicitly defers the backfill cohort from v1. It is also genuinely under-designed: every
+> existing leg fetches by date window from an EDGAR/EFTS index, whereas a Form 4 leg walks
+> quarterly DERA ZIPs, and its assembler must build the classification index from quarters
+> **strictly before** each event's quarter or future trading behaviour leaks into a
+> point-in-time classification (a stateful `assemble_factory`, like the `13d-a` row, not the
+> pure `assemble` the other three use). That deserves its own spec and plan, not an
+> improvised row here. Committing the pre-registration now still preserves the
+> anti-p-hacking guarantee: the parameters are fixed and git-timestamped before any run.
 
 **Files:**
 - Create: `src/shortlist/scout/preregister/edgar_form4.yaml`
-- Modify: `src/shortlist/scout/backfill.py` (add the `form4` spec row)
 - Modify: `CLAUDE.md`, `docs/FORM4_INSIDER.md` (status), `TODO.md`
 - Test: `tests/test_scout_form4_backcompat.py`
 
 **Interfaces:**
 - Consumes: `SIGNAL = "edgar:form4_insider_buy"` from Task 4.
-- Produces: a `_BACKFILL_SPECS["form4"]` row and a committed pre-registration.
+- Produces: a committed pre-registration. No backfill wiring.
 
 - [ ] **Step 1: Write the config-invariance test**
 
@@ -1106,37 +1279,30 @@ regime_down_rule: spy_trailing_3m_negative
 expected_sign: positive          # Cohen-Malloy-Pomorski 2012; Lakonishok-Lee 2001
 ```
 
-- [ ] **Step 4: Add the backfill spec row**
-
-Open `src/shortlist/scout/backfill.py`, find `_BACKFILL_SPECS`, and add a `"form4"` row
-following the existing `"13d"` row's shape (`signal`, `slug`, `fetch_factory`, `assemble`).
-The fetcher walks DERA quarters rather than an EDGAR index; the assembler reuses
-`emissions_from_txns` with the point-in-time index built from quarters strictly BEFORE each
-event's quarter — **never the full index**, which would leak future trading behaviour into the
-classification.
-
-- [ ] **Step 5: Update the docs**
+- [ ] **Step 4: Update the docs**
 
 - `docs/FORM4_INSIDER.md` — change the status line to `IMPLEMENTED <date>`.
 - `CLAUDE.md` — replace the `edgar_form4` description with the new behaviour; add a one-line
   landmine: *"`aff10b5One` appears as BOTH `0|1` and `false|true`; `transactionPricePerShare`
   may carry only a `footnoteId`."*
-- `TODO.md` — mark item 2 done; note the backfill cohort has not been RUN, only wired.
+- `TODO.md` — mark item 2 done; add a follow-up: **the `form4` backfill leg is NOT wired**
+  (needs its own spec — quarterly-ZIP fetching plus a point-in-time `assemble_factory`).
 
-- [ ] **Step 6: Full gate and commit**
+- [ ] **Step 5: Full gate and commit**
 
 ```bash
 uv run ruff check src tests && uv run pytest -q
 git add -A
-git commit -m "feat(form4): pre-registration, backfill spec row, docs
+git commit -m "feat(form4): pre-registration and docs
 
 Prereg is committed BEFORE any run. Its min_measurable_frac 0.90 must be
 checked BEFORE reading any alpha -- that floor was firing correctly all through
 the 2026-07-26 analysis while the levels it rejected were being quoted.
 
-The backfill assembler builds the classification index from quarters strictly
-BEFORE each event's quarter; using the full index would leak future trading
-behaviour into a point-in-time classification."
+The backfill leg is deliberately NOT wired: spec §3 defers the cohort, and a
+Form 4 leg needs quarterly-ZIP fetching plus a point-in-time assemble_factory
+(index from quarters strictly BEFORE each event's quarter, or future trading
+behaviour leaks into the classification). That needs its own spec."
 ```
 
 ---
@@ -1148,10 +1314,12 @@ behaviour into a point-in-time classification."
 measurement → Task 6. §10 testing → distributed across every task. §11 known limits →
 documented in code comments and `docs/FORM4_INSIDER.md`, no code required.
 
-**Placeholder scan:** one deliberate instruction-rather-than-code step remains — Task 6
-Step 4 (the backfill spec row), because its shape depends on the existing `_BACKFILL_SPECS`
-structure which the implementer must read. The point-in-time constraint is stated explicitly.
-Task 4 Step 3 contains a stray placeholder line flagged for deletion in the note beneath it.
+**Placeholder scan:** clean after the 2026-07-26 pre-flight pass, which removed two defects —
+a stray unused line in Task 4 Step 3, and Task 6's `_BACKFILL_SPECS` row (prose rather than
+code, and contradicting spec §3, which defers the cohort). Every remaining code step contains
+the code to write. Task 5 Step 3 and Task 4 Step 3 carry implementer notes to verify two
+existing signatures (`_walk_back_to_published`, `Emission`) against the codebase rather than
+trusting the plan's rendering of them — that is verification, not a placeholder.
 
 **Type consistency:** `InsiderTxn` fields are identical across Tasks 1, 2, 3, 4.
 `classify_tier(owner_cik, index, as_of)` is called with that signature in Task 4.

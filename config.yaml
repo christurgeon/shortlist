@@ -489,7 +489,28 @@ scout:
   cooldown_days: 7
   # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
-  edgar_index_daily_cap: 400
+  edgar_index_daily_cap: 2500   # Form 4 filings FETCHED/session (edgar_form4 max_filings).
+                                # Measured SEC DERA 2025Q1 daily volume: median 838, p90 1,498,
+                                # max 3,496 -- 2500 clears p90 with headroom, binding only on rare
+                                # spike days (silent truncation in EDGAR index order would be an
+                                # uncharacterizable sampling bias, exactly the coverage defect this
+                                # signal exists to fix). At <=6 req/s that's ~7min worst case, which
+                                # the daily run can absorb.
+  form4:                     # EdgarForm4Signal -- opportunistic-insider buys.
+                             # DRIFT CAPTURE, not an information edge: Form 4 is public T+2
+                             # and every vendor parses it instantly. UNFITTED PRIORS below.
+                             # Design: docs/FORM4_INSIDER.md
+    min_value: 100000        # PER-TRANSACTION $ floor, never an aggregate (spec §7).
+                             # Measured 2025Q1: median buy $23.7k; 31% clear $100k.
+    roles: [officer, director]   # tenpercent excluded in v1 (often funds/PE)
+    exclude_10b5_1: true
+    tier_strength: {opportunistic: 1.0, unclassified: 0.6}   # routine is dropped outright
+    daily_cap: 25            # EMISSIONS/session (post-qualification) -- LIVE-ONLY knob, a
+                             # backfill cohort must run UNCAPPED (the 8-K precedent: a live
+                             # truncation the cohort never applied)
+    dera:
+      quarters: 16           # ~4y of history, ~205 MB
+      cache_dir: .cache/dera
   activist_13d:              # EdgarActivist13DSignal — initial SCHEDULE 13D stakes (UNFITTED priors)
     daily_cap: 300          # max 13D filings fetched/session (surfaced in coverage)
     include_amendments: false   # v1: initial 13D only (SCHEDULE 13D/A spam — verified ~20-46/day)
@@ -645,7 +666,7 @@ scout:
     caption_top_n: 3       # names listed in the photo caption
   signals:
     yahoo_screener: {enabled: true,  weight: 1.0}
-    edgar_form4:    {enabled: true,  weight: 1.5}
+    edgar_form4:    {enabled: true,  weight: 1.0}
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}
     quiver:         {enabled: false, weight: 1.0}

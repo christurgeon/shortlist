@@ -4,9 +4,21 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# I-1: Type=oneshot DISABLES systemd's default start timeout, so a hanging SEC endpoint
+# would stall the run forever -- and because a timer skips a firing while the unit is still
+# active, the feature would simply stop running with nothing reporting it.
+RuntimeMaxSec=3600
+# ~300 MB nightly peak for the DERA index build, on a 1.9 GB box shared with oracle-bot.
+# Kill the scout rather than let the OOM killer choose its neighbour.
+MemoryMax=600M
 Type=oneshot
 User=oracle
 WorkingDirectory=/opt/shortlist
+# edgartools defaults to 9 req/s; the Form 4 originator's live fetch (edgar_index.py:
+# fetch_form4_submissions) now budgets up to edgar_index_daily_cap=2500 filings/day at one
+# request each, so pin the SEC fair-access rate explicitly rather than relying on the
+# library default (which nothing else in this repo sets).
+Environment=EDGAR_RATE_LIMIT_PER_SEC=6
 ExecStart=/opt/shortlist/.venv/bin/shortlist-scout
 # To alert on failure, add: OnFailure=oracle-alert-failure@%n.service (see deploy/README.md)
 # Do NOT add Restart= / auto-retry: the run is marked complete only after delivery, so an
