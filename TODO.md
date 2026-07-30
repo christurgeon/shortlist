@@ -6,6 +6,80 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Statements-merge fix IN FLIGHT — spec + plan committed, implementation dispatched (2026-07-30)
+
+Actioning the 2026-07-20 data-audit item 1 ("FMP-won statements silently drop every
+EDGAR-only field"). Branch `fix/statements-merge`, cut from `origin/main` `31e9764`.
+
+**Verified before designing** (all three still true on main at time of writing):
+`data/models.py:508` `_FLAT` excludes `statements` → it merges via whole-source
+`_pick_first`; `config.yaml:332` ranks `fmp` above `edgar`; `sources/fmp.py:113` leaves
+`diluted_shares`/`diluted_eps`/`fiscal_period_end`/`total_assets`/`asset_growth`/`accruals`
++ the four §5 financing legs empty. Consequence chain traced end to end: `bridge.py:161`
+derives `share_count_cagr` from `st.diluted_shares` → `scoring.py:673` gates the
+**ON-by-default `dilution` flag** on it, so that flag is structurally incapable of firing on
+exactly the best-covered (non-402) names. Cost compounds daily — `shortlist-accumulate`
+persists the degraded snapshots nightly and there is no retroactive repair.
+
+**Committed:** `docs/STATEMENTS_MERGE.md` (design) + `docs/PLAN_STATEMENTS_MERGE.md`
+(3-task TDD plan). Both on **tracked** paths deliberately — `docs/superpowers/{specs,plans}/`
+are gitignored (`.gitignore:37-38`) and have already eaten two artifacts.
+
+Design in one line: replace `_pick_first` for `statements` with a bespoke, priority-ordered
+`_merge_statements` that keeps the winner as the spine and backfills the fields it left
+empty **re-indexed by fiscal YEAR, never by list position** (every consumer —
+`piotroski_f`, `bridge._financial_series`, `cagr`, `[0]`-as-latest — aligns by index, and
+FMP carries 5 fiscal years to EDGAR's ~3). Six pre-computed latest-FY scalars copy only on a
+newest-year match.
+
+**State at session end:** spec + plan committed (`2354ca2`, `5c0a18c`); **Tasks 1+2 DONE**
+— `fed86a4` (the three pure fiscal-year join helpers) + `75f7ab2` (`_merge_statements` +
+routing in `merge_snapshots`). Suite **2217 passed / 6 skipped / 19 deselected / 0 failed**,
+ruff clean at both commits. **Task review PASSED** — spec compliant, quality approved; it
+verified the year-join against the real consumers (`bridge._financial_series`,
+`piotroski_f`), not merely against the new tests. One Important finding (below) was fixed in
+round 1 (`bd863d6`) and the scoped re-review confirmed it ADDRESSED with no new breakage, so
+**Tasks 1+2 are COMPLETE** (`5c0a18c..bd863d6`, review clean). Task 3
+(end-to-end `dilution` regression, live before/after `--json` run, CLAUDE.md + TODO.md
+updates) NOT started. Final whole-branch review NOT started. Nothing pushed, no PR, **not
+deployed** — `/opt/shortlist` keeps running the old merge until `git pull` +
+`install_opt_shortlist.sh`, and the accumulate timer only starts capturing the recovered
+fields after that.
+
+**The "no existing test moved" question is ANSWERED — and it was worth asking.** Baseline
+2198 → 2217 is exactly the 19 new tests. The reason no assertion broke is that
+`tests/test_sources_leverage.py::test_pick_first_merge_carries_leverage_fields` uses a
+fixture where the EDGAR donor supplies nothing the FMP spine lacks, so it is compatible with
+BOTH the old wholesale-pick and the new year-join semantics. But its docstring still claims
+*"Statements merges wholesale (pick-first)"*, which this change makes false — the same
+comment-drift class as the stale `edgar.py` comment this fix was cleaning up. That is the
+Important finding in fix round 1. The reviewer separately confirmed two new tests
+(`test_reindex_aligns_by_year_not_position`, `test_a_donor_year_outside_the_spine_is_dropped_not_shifted`)
+would genuinely FAIL under a positional copy, so the year-join property is really tested.
+
+**Parked minor, for the final whole-branch review to triage:** `models.py:105`
+`_usable_years` does not reject an all-`None` `fiscal_years` list. Net observable behaviour
+is identical to rejection (`_newest_year` → None short-circuits the scalar guard;
+`_reindex_by_year` → `[]` so no backfill), so it is a docstring-vs-contract self-consistency
+gap, not a wrong output.
+
+**Defect found in the plan, not the code:** `docs/PLAN_STATEMENTS_MERGE.md` Task 1's test
+file lists imports that only Task 2's tests use, which trips ruff `F401` (this repo does
+**not** exempt `tests/**`). The implementer trimmed then restored the list; the final test
+file is correct. Fix the plan text if it is ever re-run.
+
+**Incidental finding, not fixed:** `tests/scout/test_daily_demo.py` (TODO item 0d, below)
+**passes today** — GOOGL's 2026-07-20 pick aged out of its 7-day cooldown. The test still
+reads the live `state/scout_state.json`, so it is dormant, not fixed, and will fail again
+the next time a pick lands inside that window. Baseline for this branch was clean: 2198
+passed, 6 skipped, 19 deselected (`-m 'not live'`), 0 failures.
+
+**Status:** IN PROGRESS — resume by reading the SDD ledger at
+`.superpowers/sdd/PLAN_STATEMENTS_MERGE/progress.md` (git-ignored; `git log` is the backup
+record), then continue the plan from the first task without a `complete` line.
+
+---
+
 ## Form 4 opportunistic-insider originator — SHIPPED and deployed (2026-07-30)
 
 Merged as #151 (evaluator fixes) + #152 (the originator) and **live on the VPS**. Verified
