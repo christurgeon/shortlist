@@ -467,6 +467,49 @@ def _has_data(obj: Any) -> bool:
     return any(_is_present(getattr(obj, f.name)) for f in fields(obj))
 
 
+# --- statements merge helpers --------------------------------------------
+# `statements` is the one list-bearing section merged across sources. Every
+# consumer aligns its parallel series by LIST POSITION (piotroski_f,
+# bridge._financial_series, cagr, `[0]`-as-latest), so a backfill must join on
+# the fiscal YEAR key or it silently pairs one source's 2022 revenue with
+# another's 2023 share count.
+
+def _newest_year(years: list[Optional[int]]) -> Optional[int]:
+    """Newest real fiscal year in a spine, ignoring None holes. None if there
+    are no usable years (never assumes newest-first ordering)."""
+    real = [y for y in years if y is not None]
+    return max(real) if real else None
+
+
+def _usable_years(st: "Statements") -> Optional[list[Optional[int]]]:
+    """A Statements' fiscal-year spine, or None when it cannot serve as a join
+    key: empty (nothing to key on) or containing duplicates (ambiguous — a
+    52/53-week fiscal can put two period ends in one calendar year)."""
+    years = st.fiscal_years
+    if not years:
+        return None
+    real = [y for y in years if y is not None]
+    if len(set(real)) != len(real):
+        return None
+    return years
+
+
+def _reindex_by_year(donor_years: list[Optional[int]],
+                     donor_values: list, spine_years: list[Optional[int]]) -> list:
+    """Re-index a donor series onto the spine's fiscal-year keys: the returned
+    list is spine-length and spine-ordered, with None wherever the donor has no
+    row for that year. A None year is NOT a key (an unparseable date on both
+    sides must not join to itself). Returns [] when nothing lands, so
+    `_is_present` still reads the field as absent rather than as a list of
+    Nones. Ragged inputs are tolerated, never raised on."""
+    by_year: dict[int, object] = {}
+    for y, v in zip(donor_years, donor_values, strict=False):
+        if y is not None:
+            by_year[y] = v
+    out = [by_year.get(y) if y is not None else None for y in spine_years]
+    return out if any(v is not None for v in out) else []
+
+
 # The transaction facts in Insider are one accounting derived from a single set
 # of Form 4 trades; they must come from ONE source or the dollar figure and the
 # counts could describe different trades. `sentiment_mspr` is an independent
