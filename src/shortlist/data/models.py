@@ -510,6 +510,75 @@ def _reindex_by_year(donor_years: list[Optional[int]],
     return out if any(v is not None for v in out) else []
 
 
+# Pre-computed latest-fiscal-year scalars. The SOURCE aligns their inputs by its
+# own statement dates (the bridge can't), so they carry no positional risk — but
+# a latest-FY scalar attached to a NEWER spine would read as current in
+# --json/CSV with nothing marking the vintage. Copied only on a newest-year
+# match; abstain otherwise.
+_STATEMENTS_LATEST_FY_SCALARS = (
+    "asset_growth", "accruals", "dividends_paid", "repurchases",
+    "debt_repayments", "debt_issuance",
+)
+
+
+def _merge_statements(
+    instances: list[tuple[str, Optional["Statements"]]],
+) -> tuple[Optional["Statements"], list[str]]:
+    """Priority-ordered, fiscal-year-joined merge of the one list-bearing
+    section. The highest-priority source with data wins the object outright and
+    its `fiscal_years` becomes the join key — so the spine's own series (and
+    every growth leg derived from them) are byte-identical to the old
+    whole-source pick. Fields the spine left EMPTY are then backfilled from
+    lower-priority sources, re-indexed onto that spine by YEAR, never by list
+    position: every consumer of Statements reads its parallel series by index,
+    so a positional backfill would pair one source's 2022 revenue with another's
+    2023 share count with no test failing. Source-agnostic: it composes whatever
+    `harness_sources` order is configured.
+
+    Abstains (leaves a field empty) rather than guessing: a spine with no or
+    duplicate fiscal years disables backfill entirely; an individual donor with
+    the same problem is skipped without vetoing the donors after it."""
+    present = [(s, o) for s, o in instances if o is not None and _has_data(o)]
+    if not present:
+        return None, []
+    spine_src, spine = present[0]
+    merged = dataclasses.replace(spine)      # copy: never alias SourceResult.partial
+    contributors = [spine_src]
+
+    spine_years = _usable_years(spine)
+    if spine_years is None:
+        return merged, contributors          # no join key -> pre-change behaviour
+
+    spine_newest = _newest_year(spine_years)
+    list_fields = [f.name for f in fields(merged)
+                   if f.name != "fiscal_years"
+                   and isinstance(getattr(merged, f.name), list)]
+
+    for src, donor in present[1:]:
+        donor_years = _usable_years(donor)
+        if donor_years is None:
+            continue
+        used = False
+        for name in list_fields:
+            if _is_present(getattr(merged, name)):
+                continue                     # the spine already supplied it
+            donor_vals = getattr(donor, name)
+            if not _is_present(donor_vals):
+                continue
+            filled = _reindex_by_year(donor_years, donor_vals, spine_years)
+            if filled:
+                setattr(merged, name, filled)
+                used = True
+        if spine_newest is not None and _newest_year(donor_years) == spine_newest:
+            for name in _STATEMENTS_LATEST_FY_SCALARS:
+                if getattr(merged, name) is None and getattr(donor, name) is not None:
+                    setattr(merged, name, getattr(donor, name))
+                    used = True
+        if used and src not in contributors:
+            contributors.append(src)
+    return merged, contributors
+
+
 # The transaction facts in Insider are one accounting derived from a single set
 # of Form 4 trades; they must come from ONE source or the dollar figure and the
 # counts could describe different trades. `sentiment_mspr` is an independent
@@ -546,8 +615,8 @@ def _merge_insider(instances: list[tuple[str, Optional["Insider"]]]) -> tuple[Op
     return merged, contributors
 
 
-# Flat objects merge field-by-field; `insider` has a bespoke merger (above);
-# remaining list-bearing objects (statements) take the best whole source.
+# Flat objects merge field-by-field; `insider` and `statements` have bespoke
+# mergers (above); the aux sections take the best whole source.
 _FLAT = {"profile", "fundamentals", "analyst", "price"}
 
 
@@ -560,6 +629,8 @@ def merge_snapshots(ticker: str, results: list[SourceResult], priority: list[str
         instances = [(r.source, getattr(r.partial, name)) for r in ordered if r.partial]
         if name == "insider":
             merger = _merge_insider
+        elif name == "statements":
+            merger = _merge_statements
         elif name in _FLAT:
             merger = _merge_flat
         else:

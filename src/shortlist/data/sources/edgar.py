@@ -213,7 +213,8 @@ class EdgarSource(Source):
                 debt_repayments=ef.debt_repayments,
                 debt_issuance=ef.debt_issuance,
             )
-        # gross_profit/total_equity aren't in EdgarFinancials; the merge layer fills them from FMP when available.
+        # gross_profit/total_equity aren't in EdgarFinancials; _merge_statements
+        # year-joins them back in from FMP when available (docs/STATEMENTS_MERGE.md).
         return snap
 
     def _fetch_sic(self, ticker: str) -> Optional[str]:
