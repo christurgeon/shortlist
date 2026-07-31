@@ -250,6 +250,65 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
     return out
 
 
+# Authoritative raw us-gaap tags. Matched on `concept`, NOT `label` (filer
+# presentation text: MSFT/COST/ORCL/PEP label the share-count row just "Diluted",
+# IBM "Assuming dilution (in shares)", VZ omits "diluted" — 7 of 42 production
+# tickers extracted EMPTY on labels alone) and NOT `standard_concept` (bucket names
+# drift across edgartools releases — docs/audits/2026-07-12-accruals-leg-disable.md).
+_DILUTED_SHARES_CONCEPTS = ("us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",)
+_DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
+
+
+def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
+    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`.
+    Exact equality, never substring: a prefix match would let
+    IncomeLossFromContinuingOperationsPerDilutedShare pose as total EPS.
+
+    Returns only rows at the MINIMUM `level` — the same preference as
+    `_row_by_standard_concept`, which exists because iloc[0] grabbed a nested child
+    on real MSFT/GOOGL filings. Deeper children are dropped, NOT kept as later
+    candidates: a sparse total must fall through to the label scan and ultimately
+    ABSTAIN, never be silently replaced by a complete-but-wrong child line. Abstain
+    rather than guess — a wrong-but-complete share series would feed
+    `share_count_cagr` and the `dilution` flag with no signal that it is wrong.
+
+    Indexing is POSITIONAL (`.iloc` + argsort). `.loc` with a sorted index is wrong
+    here: on a duplicated index it silently returns the cartesian expansion AND
+    inverts the ordering (measured: index [7,7], levels [4,2] -> 4 rows, child
+    first), reintroducing the exact bug the min-level rule prevents."""
+    if "concept" not in df.columns:
+        return []
+    rows = df
+    if "dimension" in rows.columns:
+        rows = rows[rows["dimension"] != True]      # noqa: E712 — drop breakdowns
+    col = rows["concept"].astype(str)
+    out: list[pd.Series] = []
+    for c in concepts:
+        hit = rows[col == c]
+        if hit.empty:
+            continue
+        if "level" in hit.columns:
+            lvl = pd.to_numeric(hit["level"], errors="coerce")
+            if lvl.notna().any():
+                hit = hit.iloc[(lvl.to_numpy() == lvl.min()).nonzero()[0]]
+        out.extend(hit.iloc[i] for i in range(len(hit)))
+    return out
+
+
+def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
+                                label_picker, fy_cols: list[tuple[str, str]]) -> list[float]:
+    """VALUE-AWARE pick. A concept row wins only if it yields a COMPLETE series;
+    otherwise we fall through to the next candidate and finally to the label scan.
+    Keying the fallback on row-presence instead would let a sparse or all-NaN
+    concept row SHADOW a label row that works today, turning a populated series
+    into [] (`_series` is all-or-nothing) — a regression, not a no-op."""
+    for row in _rows_by_concept(df, concepts):
+        series = _series(row, fy_cols)
+        if series:
+            return series
+    return _series(label_picker(df), fy_cols)
+
+
 def extract_financials(
     income_df: pd.DataFrame,
     cashflow_df: pd.DataFrame,
@@ -279,11 +338,12 @@ def extract_financials(
     fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)
     fin.net_income = _series(_row_net_income(income_df), inc_fy)
 
-    eps = _series(_row_diluted_eps(income_df), inc_fy)
+    eps = _series_by_concept_or_label(income_df, _DILUTED_EPS_CONCEPTS, _row_diluted_eps, inc_fy)
     if not eps and fin.net_income and shares_diluted:
         eps = [ni / shares_diluted for ni in fin.net_income]
     fin.diluted_eps = eps
-    fin.diluted_shares = _series(_row_diluted_shares(income_df), inc_fy)
+    fin.diluted_shares = _series_by_concept_or_label(
+        income_df, _DILUTED_SHARES_CONCEPTS, _row_diluted_shares, inc_fy)
 
     # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept names
     # below are edgartools' OWN normalized buckets (NOT raw us-gaap) — verified against a
