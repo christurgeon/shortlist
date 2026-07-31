@@ -85,10 +85,19 @@ same ticker's EDGAR-won statements through the actual `merge_snapshots`, then th
   attaching a 2026 figure to a 2025 spine. That disagreement was hypothetical when designed;
   it is now observed.
 - **NEW follow-up (upstream, not this fix):** EDGAR's own `diluted_shares` is `[]` for
-  MSFT/GOOGL/COST while `diluted_eps` populates — an extraction gap in
-  `providers/_edgar_facts.py` (`get_shares_outstanding_diluted`). The merge correctly
-  abstained; the ceiling on this fix's yield is EDGAR-side coverage, ~5/8 here. Worth its
-  own look.
+  MSFT/GOOGL/COST while `diluted_eps` populates. The merge correctly abstained; the ceiling
+  on this fix's yield is EDGAR-side coverage, ~5/8 here.
+  **CORRECTION (2026-07-31): this was first attributed to
+  `providers/_edgar_facts.py:get_shares_outstanding_diluted`. That is WRONG** — `diluted_shares`
+  never comes from that function. `extract_financials:286` sources it from
+  `_row_diluted_shares(income_df)`, a **label-string** matcher; `get_shares_outstanding_diluted()`
+  is only an EPS fallback input (`:283-284`). Root-caused live and planned in
+  `docs/PLAN_EDGAR_DILUTED_SHARES.md` (signed off): prevalence is **16/42 = 38%**, splitting
+  into label-mismatch (7, fixable by matching the raw us-gaap `concept`) and
+  concept-genuinely-absent (9, deferred). A third defect surfaced: the same label bug on
+  `_row_diluted_eps` silently substitutes a **computed** EPS (each year's net income ÷ TODAY's
+  share scalar) for 9 issuers — including MCD, whose `diluted_eps[0]` is **11,952,819.65** and
+  whose live `pe_ttm` is therefore `2.25e-05` on a scored surface.
 
 **Live CLI wiring smoke — PASSED 2026-07-31, keyless (no FMP quota).**
 `uv run shortlist --tickers AAPL --json --provider yahoo,edgar,finnhub` runs the full
