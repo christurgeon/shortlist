@@ -2,9 +2,25 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Revision 2** — rewritten after adversarial plan review found three Critical defects in
-revision 1 (a regression the design would have introduced, an understated blast radius, and
-a mandated-but-missing test). Changes are marked **[R2]**.
+**Revision 3 — SIGNED OFF.** Revision 2 was rewritten after adversarial review found three
+Critical defects in revision 1 (a regression the design would have introduced, an understated
+blast radius, and a mandated-but-missing test); those changes are marked **[R2]**. A second
+review of revision 2 verified all three ADDRESSED — running the proposed tests against the
+real code (14/14 green after, 27 existing EDGAR tests still green) — and found five smaller
+defects, two of them in the new code. Those are fixed here and marked **[R3]**:
+
+1. `_rows_by_concept` used `.loc` with a sorted index, which on a **duplicated index** silently
+   returns the cartesian expansion *and inverts the ordering* — reintroducing the child-row bug
+   the min-level rule exists to prevent. Now positional.
+2. Walking level-sorted candidates could **trade abstention for a wrong-but-complete child
+   row**. Now only minimum-level rows are candidates, so a sparse total abstains instead.
+3. QCOM was wrongly listed as a value-leg mover (its EPS is already as-reported); DIS and VZ
+   were unexplained.
+4. The Step 2 expected-fail partition and test count were wrong (7/7, 14 tests).
+5. The module-docstring correction had no commit path.
+
+Plus the reviewer's residual-risk item: the go/no-go now hand-checks recovered **values**, not
+just their presence.
 
 **Goal:** Recover `diluted_shares` for the 38% of EDGAR-covered issuers where extraction
 silently yields `[]`, and replace computed-EPS approximations with as-reported values, by
@@ -100,7 +116,7 @@ only fire when `m.pe_ttm is None`, i.e. when FMP did **not** supply a PE.
 |---|---|---|
 | `diluted_shares` `[]` → populated | 7 (COST IBM MSFT ORCL PEP QCOM VZ) | `share_count_cagr` → **`dilution` flag** (ON); `quality.dilution` leg (OFF); JSON/CSV (`screen.py:262,330`) |
 | `diluted_eps` computed → as-reported | 9 (COST DIS IBM MCD MSFT ORCL PEP UNH VZ) | `eps_cagr_ps`; research QUANT CONTEXT |
-| …of which the **value leg actually moves** | **FMP-gated subset**: IBM MCD ORCL PEP UNH QCOM (COST/MSFT had FMP PE on the captured day) | `pe_ttm`/`pe_median_5y` → **scored `pe_vs_history`** → `composite`, ranking |
+| …of which the **value leg actually moves** | **FMP-gated subset of the EPS-change set: IBM MCD ORCL PEP UNH (5)** — COST, MSFT, DIS and VZ all carried an FMP `pe_ttm` on the captured day (47.92 / 25.06 / 15.36 / 12.01), so the EDGAR fallback was dormant for them. QCOM is NOT a mover: its EPS is already as-reported | `pe_ttm`/`pe_median_5y` → **scored `pe_vs_history`** → `composite`, ranking |
 
 Additional surfaces, all previously unnamed:
 
@@ -128,7 +144,7 @@ populated `pe_ttm`/`pe_median_5y`, so no leg changes presence. Revision 1 wrongl
 
 | File | Change |
 |---|---|
-| `src/shortlist/providers/_edgar_facts.py` | `_rows_by_concept` + `_series_by_concept_or_label`; call them from `extract_financials` | Modify |
+| `src/shortlist/providers/_edgar_facts.py` | `_rows_by_concept` + `_series_by_concept_or_label`; call them from `extract_financials`; **[R3]** correct the falsified "ABSOLUTE, no scaling" module docstring (:7-10) | Modify |
 | `tests/test_edgar_facts_concept_match.py` | Create |
 | `docs/audits/2026-07-31-edgar-concept-match.md` | Create (evidence of record) |
 | `CLAUDE.md`, `TODO.md` | Modify |
@@ -315,11 +331,24 @@ def test_continuing_operations_eps_row_never_displaces_the_total_eps_row():
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q`
-Expected FAIL: the three root-cause-A recovery tests, `test_dimensional_breakdown_rows_are_ignored`,
-`test_nested_child_row_loses_to_the_min_level_row`, and
-`test_bare_diluted_eps_label_uses_reported_values_not_the_computed_fallback`.
-Expected PASS already: the value-aware guards, the label-path tests, the basic-row test, and
-the continuing-ops test (all are regression pins).
+**[R3] Measured partition: 7 FAIL, 7 PASS (14 tests total).**
+
+Expected **FAIL** (7 — new behaviour): the three root-cause-A recovery tests
+(`msft_style`, `ibm_style`, `vz_style`), `test_dimensional_breakdown_rows_are_ignored`,
+`test_nested_child_row_loses_to_the_min_level_row`,
+`test_bare_diluted_eps_label_uses_reported_values_not_the_computed_fallback`, **and
+`test_continuing_operations_eps_row_never_displaces_the_total_eps_row`** — revision 2 wrongly
+listed that last one as an existing pass. It fails today with `[12.857…] != [5.0, 4.0, 3.0]`,
+because neither the `'Continuing operations'` nor the `'Diluted'` label contains "per share",
+so both miss and the computed fallback fires. It is a new-behaviour test, not a regression pin.
+
+Expected **PASS** already (7 — genuine regression pins): the two value-aware shadowing guards,
+`test_label_scan_still_works_with_no_concept_column`, `test_aapl_style_label_still_works_no_regression`,
+`test_basic_share_row_is_never_used`, `test_computed_fallback_still_fires_when_no_eps_row_exists_at_all`,
+`test_reported_eps_label_path_still_works`.
+
+A test asserted GREEN that runs RED reads as a broken plan at the first checkpoint — if the
+observed partition is not 7/7, stop and reconcile before implementing.
 
 - [ ] **Step 3: Implement**
 
@@ -336,11 +365,22 @@ _DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
 
 
 def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
-    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`, in
-    concept order then ascending `level` — the same min-level preference as
-    `_row_by_standard_concept`, which exists because iloc[0] picked a nested child
-    row on real MSFT/GOOGL filings. Exact equality, never substring: a prefix match
-    would let IncomeLossFromContinuingOperationsPerDilutedShare pose as total EPS."""
+    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`.
+    Exact equality, never substring: a prefix match would let
+    IncomeLossFromContinuingOperationsPerDilutedShare pose as total EPS.
+
+    Returns only rows at the MINIMUM `level` — the same preference as
+    `_row_by_standard_concept`, which exists because iloc[0] grabbed a nested child
+    on real MSFT/GOOGL filings. Deeper children are dropped, NOT kept as later
+    candidates: a sparse total must fall through to the label scan and ultimately
+    ABSTAIN, never be silently replaced by a complete-but-wrong child line. Abstain
+    rather than guess — a wrong-but-complete share series would feed
+    `share_count_cagr` and the `dilution` flag with no signal that it is wrong.
+
+    Indexing is POSITIONAL (`.iloc` + argsort). `.loc` with a sorted index is wrong
+    here: on a duplicated index it silently returns the cartesian expansion AND
+    inverts the ordering (measured: index [7,7], levels [4,2] -> 4 rows, child
+    first), reintroducing the exact bug the min-level rule prevents."""
     if "concept" not in df.columns:
         return []
     rows = df
@@ -355,7 +395,7 @@ def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Ser
         if "level" in hit.columns:
             lvl = pd.to_numeric(hit["level"], errors="coerce")
             if lvl.notna().any():
-                hit = hit.loc[lvl.sort_values(kind="stable").index]
+                hit = hit.iloc[(lvl.to_numpy() == lvl.min()).nonzero()[0]]
         out.extend(hit.iloc[i] for i in range(len(hit)))
     return out
 
@@ -389,7 +429,7 @@ Then in `extract_financials`, replace lines 282 and 286 only (leave 283-285 inta
 
 - [ ] **Step 4: Verify they pass**
 
-Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q` → PASS (15 tests)
+Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q` → PASS (14 tests)
 
 - [ ] **Step 5: Full suite**
 
@@ -447,6 +487,15 @@ an FY2026 column, so a partial extra column would still yield `[]`):
 - The 9 computed-EPS tickers must go long-float → 2-dp as-reported.
 - **Every other ticker must be byte-identical. If any name not on those lists changes, STOP** —
   that is the shadowing regression or the continuing-ops swap, and the plan is wrong.
+- **[R3] Hand-check the recovered values, not just their presence.** For all 7 root-cause-A
+  tickers, verify `diluted_shares[0]` against the filed 10-K's own weighted-average diluted
+  share count (the EPS note or income-statement face). "Recovered" and "recovered *correct*"
+  are different claims, and only this check separates them: an `iloc[0]`-style pick of a
+  nested child or a component line yields a complete, plausible-looking, WRONG series that the
+  byte-identical rule above cannot catch — it is on the expected-to-change list. This is the
+  same failure that bit `_row_by_standard_concept` twice on real filings (MSFT OCF child,
+  GOOGL non-cash capex), which is why the min-level rule exists. Record the 7 comparisons in
+  the audit doc.
 
 - [ ] **Step 2: [R2] Commit the evidence to `docs/audits/`**
 
@@ -472,7 +521,8 @@ Close the EDGAR-extraction follow-up with the measured before/after. Record root
 
 ```bash
 uv run ruff check src tests && uv run pytest -q
-git add CLAUDE.md TODO.md docs/audits/2026-07-31-edgar-concept-match.md
+git add CLAUDE.md TODO.md src/shortlist/providers/_edgar_facts.py \
+    docs/audits/2026-07-31-edgar-concept-match.md
 git commit -m "docs(edgar): concept-first row matching evidence + close the diluted-shares gap"
 ```
 
