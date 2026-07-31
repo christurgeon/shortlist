@@ -447,7 +447,14 @@ any age" labeled `net_value_6m`, and an all-stale list built a zero-valued `Insi
 would claim the txn group over EDGAR in `_merge_insider`); (4) CLAUDE.md `daily_push`
 doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
 
-1. **FMP-won statements silently drop every EDGAR-only field** — `statements` is a
+1. ~~**FMP-won statements silently drop every EDGAR-only field**~~ — **FIXED 2026-07-30.**
+   Resolved by option (b): a bespoke `_merge_statements` (`data/models.py`) year-joins the
+   EDGAR-only fields onto the FMP-won spine instead of discarding them. Design +
+   verified consequence chain: `docs/STATEMENTS_MERGE.md`; plan:
+   `docs/PLAN_STATEMENTS_MERGE.md`. The `dilution` flag can now fire on FMP-covered names.
+   **Residual:** already-persisted accumulation snapshots stay degraded — there is no
+   retroactive repair, so the store is complete only from the deploy date forward.
+   Original text: `statements` is a
    whole-source pick-first merge and `fmp` precedes `edgar`, so for exactly the
    well-covered (non-402) names the merged snapshot loses `diluted_shares`,
    `diluted_eps`, `fiscal_period_end`, `total_assets`, `asset_growth`, `accruals`, and
@@ -477,8 +484,8 @@ doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
    `Statements.total_equity` are extracted but consumed nowhere on the harness path;
    WSB `upvotes`/`rank_24h_ago` are captured but unused.
 
-**Status:** open — fixes await operator push/PR; item 1 is the highest-value build
-(pure data recovery, no new scoring surface); item 2 is one backtest command per universe.
+**Status:** item 1 shipped 2026-07-30 (`docs/STATEMENTS_MERGE.md`); item 2 (the
+`net_debt_to_ebitda` re-measure) is what remains — one backtest command per universe.
 
 ---
 

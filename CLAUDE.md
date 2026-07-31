@@ -372,6 +372,23 @@ they stay coherent; `sentiment_mspr` is filled independently. **Don't move `insi
 the `_FLAT` set** — field-by-field merge there can glue one source's dollar figure to
 another source's trade counts (silent incoherence).
 
+## Statements merge (harness)
+
+`statements` is the other bespoke merger (`data/models.py:_merge_statements`) — it is
+**not** `_pick_first` and **not** in `_FLAT`. The highest-priority source with data wins
+the object and its `fiscal_years` becomes a **join key**; fields it left empty are
+backfilled from lower-priority sources **re-indexed by fiscal YEAR, never by list
+position**. This is load-bearing: every consumer (`piotroski_f`, `bridge._financial_series`,
+`cagr`, `[0]`-as-latest) reads the parallel series by index, and FMP typically carries 5
+fiscal years to EDGAR's ~3 — so a positional backfill pairs mismatched years silently.
+The six pre-computed latest-FY scalars (`asset_growth`, `accruals`, and the four §5
+financing legs) copy **only when the donor's newest fiscal year matches the spine's**.
+Abstains rather than guesses: no/duplicate `fiscal_years` on the spine disables backfill;
+a donor with the same problem is skipped without vetoing later donors. Before this
+existed, FMP won `statements` wholesale for every non-402 name and **every EDGAR-only
+field was discarded** — which made the ON-by-default `dilution` flag structurally
+incapable of firing on exactly the best-covered names. Design: `docs/STATEMENTS_MERGE.md`.
+
 ## EDGAR in the harness
 
 `EdgarSource` wraps synchronous `edgartools` in `asyncio.to_thread` and rate-limits via a

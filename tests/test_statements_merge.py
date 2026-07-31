@@ -227,3 +227,53 @@ def test_every_statements_field_is_covered_by_the_merger():
     blank = Statements()
     lists = {f.name for f in fields(blank) if isinstance(getattr(blank, f.name), list)}
     assert lists | set(_STATEMENTS_LATEST_FY_SCALARS) == {f.name for f in fields(blank)}
+
+
+# --- end-to-end: the live behaviour this fix restores ---------------------
+
+def _shipped_config() -> dict:
+    import yaml
+    from pathlib import Path
+    return yaml.safe_load((Path(__file__).parents[1] / "config.yaml").read_text())
+
+
+def test_dilution_flag_can_now_fire_on_an_fmp_covered_name():
+    from shortlist.data.bridge import snapshot_to_metrics
+    from shortlist.scoring import score
+
+    cfg = _shipped_config()
+    # Self-documenting precondition: the flag ships ON, and the fixture's 5%/yr
+    # issuance must clear whatever floor is configured.
+    assert cfg["flags"]["dilution"]["min_share_cagr"] <= 0.05
+
+    snap = _merged()                       # fmp wins the spine, edgar backfills
+    m = snapshot_to_metrics(snap)
+    # cagr over [1102.5, 1050.0, 1000.0] newest-first = 5%/yr net issuance.
+    assert m.share_count_cagr is not None
+    assert abs(m.share_count_cagr - 0.05) < 1e-9
+
+    assert "dilution" in score(m, cfg).flags
+
+
+def test_dilution_flag_could_not_fire_before_the_fix():
+    # The same FMP snapshot WITHOUT edgar in the chain: share_count_cagr stays
+    # None, so the flag is structurally unreachable. This is what every
+    # non-402 name looked like before this change.
+    from shortlist.data.bridge import snapshot_to_metrics
+    from shortlist.scoring import score
+
+    snap = merge_snapshots("X", [_sr("fmp", _fmp_st())], priority=["fmp", "edgar"])
+    m = snapshot_to_metrics(snap)
+    assert m.share_count_cagr is None
+
+    assert "dilution" not in score(m, _shipped_config()).flags
+
+
+def test_measurement_inputs_reach_the_metrics():
+    # The §3/§5 measurement inputs the accumulation store was persisting empty.
+    from shortlist.data.bridge import snapshot_to_metrics
+
+    m = snapshot_to_metrics(_merged())
+    assert m.asset_growth == 0.0714
+    assert m.accruals == -0.02
+    assert m.eps_cagr_ps is not None       # from the recovered diluted_eps
