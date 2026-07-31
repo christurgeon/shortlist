@@ -76,6 +76,20 @@ keyless, before/after diffed programmatically against pre-fix `29f170f`):
   Cached research briefs are accession-cached and will NOT auto-regenerate; `--refresh` to
   pick up the corrected value.
 
+- **The `_row_by_standard_concept` duplicate-index fix has NO live repro.** None of the 42
+  tracked tickers hits that path; the pre-fix crash was reproduced only on a synthetic frame,
+  and coverage rests solely on the new unit test. It was fixed on consequence severity (a
+  raise there degrades a ticker's ENTIRE statements payload to `None` via EdgarSource's
+  failure isolation, and EDGAR now supplies 100% of production statements), not on observed
+  frequency. Stated plainly so nobody later reads it as a fix for something we had seen.
+- **Parked, from the final re-review:** `docs/PLAN_EDGAR_DILUTED_SHARES.md`'s historical
+  "Step 2"/"Step 3" code blocks still quote the ORIGINAL signed-off text — the old test name
+  and the pre-correction docstring, including the false "ultimately ABSTAIN" safety claim and
+  the "argsort" wording. That is deliberate revision-log history and each block is followed by
+  its `[R…]` correction, so it is not contradictory for a linear reader — but someone skimming
+  and copying from those blocks would pick up stale text. Annotate them "superseded" next time
+  that file is touched.
+
 **Status:** SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2236 tests green,
 ruff clean, 42-ticker live before/after with the revised 14-ticker distinct go/no-go
 passing). A final whole-branch review found a vacuous test, three doc-count errors, a
