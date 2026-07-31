@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 
@@ -136,7 +136,13 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     if "level" in hit.columns:
         lvl = pd.to_numeric(hit["level"], errors="coerce")
         if lvl.notna().any():
-            return hit.loc[lvl.idxmin()]
+            # Positional, NOT `.loc[lvl.idxmin()]`: on a duplicated index `.loc[label]`
+            # returns every row sharing that label as a DataFrame (not a Series), which
+            # later blows up in `_series()` (`ValueError: truth value of a Series is
+            # ambiguous`) and silently degrades the ticker's ENTIRE statements payload
+            # to None (EdgarSource failure-isolates the section). Same fix as
+            # `_rows_by_concept`.
+            return hit.iloc[int((lvl.to_numpy() == lvl.min()).nonzero()[0][0])]
     return hit.iloc[0]
 
 
@@ -265,21 +271,33 @@ _DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
 
 def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
     """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`.
-    Exact equality, never substring: a prefix match would let
-    IncomeLossFromContinuingOperationsPerDilutedShare pose as total EPS.
+    Exact equality guards against a genuine suffix-extension tag posing as its
+    parent — NOT the JNJ/QCOM continuing-ops case: neither
+    `us-gaap_EarningsPerShareDiluted` nor
+    `us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare` is a substring of
+    the other, so a prefix match would not have let one pose as the other there.
+    What protects THAT case is matching `concept` (the raw tag) at all instead of
+    `label` (filer presentation text) — real JNJ/QCOM filings label BOTH rows
+    identically ("Diluted (in dollars per share)"), so only the `concept` column
+    tells them apart.
 
     Returns only rows at the MINIMUM `level` — the same preference as
     `_row_by_standard_concept`, which exists because iloc[0] grabbed a nested child
     on real MSFT/GOOGL filings. Deeper children are dropped, NOT kept as later
-    candidates: a sparse total must fall through to the label scan and ultimately
-    ABSTAIN, never be silently replaced by a complete-but-wrong child line. Abstain
-    rather than guess — a wrong-but-complete share series would feed
-    `share_count_cagr` and the `dilution` flag with no signal that it is wrong.
+    candidates. A sparse min-level total then falls through to the label scan next
+    — but that scan is LEVEL-BLIND (`_row_diluted_eps`/`_row_diluted_shares` never
+    consult `level`), so its result is row-order-dependent: with a sparse min-level
+    total and a complete deeper child listed first, the label picker CAN return the
+    child. That is pre-existing label-scan behaviour, not something this function
+    fixes or guarantees against — concept matching only narrows the candidate SET
+    passed to `_series_by_concept_or_label`; it does not make the label-scan
+    fallback level-aware.
 
-    Indexing is POSITIONAL (`.iloc` + argsort). `.loc` with a sorted index is wrong
-    here: on a duplicated index it silently returns the cartesian expansion AND
-    inverts the ordering (measured: index [7,7], levels [4,2] -> 4 rows, child
-    first), reintroducing the exact bug the min-level rule prevents."""
+    Indexing is POSITIONAL (`.iloc` + a boolean mask via `.nonzero()`, no argsort).
+    `.loc` with a sorted index is wrong here: on a duplicated index it silently
+    returns the cartesian expansion AND inverts the ordering (measured: index
+    [7,7], levels [4,2] -> 4 rows, child first), reintroducing the exact bug the
+    min-level rule prevents."""
     if "concept" not in df.columns:
         return []
     rows = df
@@ -300,7 +318,8 @@ def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Ser
 
 
 def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
-                                label_picker, fy_cols: list[tuple[str, str]]) -> list[float]:
+                                label_picker: Callable[[pd.DataFrame], Optional[pd.Series]],
+                                fy_cols: list[tuple[str, str]]) -> list[float]:
     """VALUE-AWARE pick. A concept row wins only if it yields a COMPLETE series;
     otherwise we fall through to the next candidate and finally to the label scan.
     Keying the fallback on row-presence instead would let a sparse or all-NaN

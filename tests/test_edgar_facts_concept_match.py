@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from shortlist.providers._edgar_facts import extract_financials
+from shortlist.providers._edgar_facts import (
+    _row_by_standard_concept,
+    _series,
+    extract_financials,
+)
 
 SHARES = "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding"
 BASIC = "us-gaap_WeightedAverageNumberOfSharesOutstandingBasic"
@@ -141,11 +145,43 @@ def test_reported_eps_label_path_still_works():
 
 # --- [R2] Important 6: discontinued-operations row ordering ---------------
 
-def test_continuing_operations_eps_row_never_displaces_the_total_eps_row():
-    # A filer with discontinued ops carries BOTH tags. Only EarningsPerShareDiluted
-    # is the total; picking the continuing-ops row would silently move a scored leg.
+def test_concept_match_beats_a_competing_label_match_on_continuing_ops():
+    # Real JNJ/QCOM shape (docs/audits/2026-07-31-edgar-concept-match.md, class E):
+    # BOTH rows are labelled IDENTICALLY "Diluted (in dollars per share)" -- only the
+    # `concept` column distinguishes the continuing-ops row from the total. A label
+    # scan can't tell them apart at all (it would return whichever row comes first);
+    # only matching `concept` first picks the true total. Labelling the continuing-ops
+    # row "Continuing operations" (as an earlier revision of this test did) is a
+    # vacuous pin: that string never matched the old "diluted" + "per share" label
+    # regex either, so the test passed even against a label-first implementation.
     ef = _extract([
-        _row("Continuing operations", [6.0, 5.0, 4.0], concept=EPS_CONTINUING),
-        _row("Diluted", [5.0, 4.0, 3.0], concept=EPS),
+        _row("Diluted (in dollars per share)", [6.0, 5.0, 4.0], concept=EPS_CONTINUING),
+        _row("Diluted (in dollars per share)", [5.0, 4.0, 3.0], concept=EPS),
     ])
     assert ef.diluted_eps == [5.0, 4.0, 3.0]
+
+
+# --- _row_by_standard_concept: duplicated-index crash ----------------------
+
+def test_row_by_standard_concept_survives_a_duplicated_index_with_the_min_level_row_not_first():
+    # Real edgartools frames can carry a duplicated pandas index (measured: index
+    # [7, 7], levels [4, 2]). `.loc[lvl.idxmin()]` on a duplicated index returns
+    # EVERY row sharing that label as a DataFrame, not a Series -- `_series()` then
+    # raises `ValueError: truth value of a Series is ambiguous` on `row.get(col)`,
+    # which EdgarSource's failure isolation turns into a silent total loss of the
+    # ticker's statements. The min-level row (level 2, value 7.0) is placed SECOND
+    # here specifically so a `.loc`-based fix can't pass by accident.
+    df = pd.DataFrame(
+        [
+            {"standard_concept": "NetCashFromOperatingActivities", "level": 4,
+             "2025-06-30 (FY)": 1.0},
+            {"standard_concept": "NetCashFromOperatingActivities", "level": 2,
+             "2025-06-30 (FY)": 7.0},
+        ],
+        index=[7, 7],
+    )
+    row = _row_by_standard_concept(df, "NetCashFromOperatingActivities")
+    assert row is not None
+    assert isinstance(row, pd.Series)
+    assert row["2025-06-30 (FY)"] == 7.0
+    assert _series(row, [("2025-06-30", "2025-06-30 (FY)")]) == [7.0]

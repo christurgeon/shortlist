@@ -28,25 +28,28 @@ keyless, before/after diffed programmatically against pre-fix `29f170f`):
   ORCL PEP UNH VZ): the old fallback divided every year's net income by TODAY's share count
   scalar (MCD's `diluted_eps[0]` was **11,952,819.65** — a live garbage value feeding
   `pe_vs_history`; `pe_ttm` computed to `2.25e-05`). Now as-reported 2-dp values.
-- **The go/no-go's clause 3 (byte-identical outside the above 16) FAILED on the first pass**
-  and correctly caught a blast-radius undercount the plan's own detection heuristic (">2
-  decimal places" — finds only *computed* EPS) could not see: 5 more tickers changed. **HON,
-  MRK, XOM** had `diluted_eps = []` in production (the fallback's `and shares_diluted` guard
-  never fired because `get_shares_outstanding_diluted()` returns `None` for them) — now
+- **The go/no-go's clause 3 (byte-identical outside the 10 distinct tickers above — 7 shares
+  ∪ 9 EPS, union not sum) FAILED on the first pass** and correctly caught a blast-radius
+  undercount the plan's own detection heuristic (">2 decimal places" — finds only *computed*
+  EPS) could not see: 4 more tickers changed, plus a correction to a 5th already in the 10.
+  **HON, MRK, XOM** had `diluted_eps = []` in production (the fallback's `and shares_diluted`
+  guard never fired because `get_shares_outstanding_diluted()` returns `None` for them) — now
   correctly recovered via concept match, a pure improvement. **JNJ and QCOM carried a
   pre-existing, live-in-production wrong-row EPS bug**, independent of and predating this
   branch: the label matcher picked `IncomeLossFromContinuingOperationsPerDilutedShare`
   (continuing ops) instead of the total `EarningsPerShareDiluted`. Both rows are
   byte-identical in years with zero discontinued-ops impact (masking the bug on spot-checks),
-  and diverge sharply otherwise — **JNJ's FY2023 stored `diluted_eps=5.20` vs true `13.72`**
-  (net income $35.2B ÷ 2,560.4M shares), because the stored figure excludes the one-time
+  and diverge sharply otherwise — **JNJ's FY2023 stored `diluted_eps=5.20` vs as-reported
+  `13.72`** (the value the code actually stores post-fix; an independent cross-check,
+  net income $35.2B ÷ 2,560.4M shares = $13.75, corroborates the order of magnitude and sign
+  but is NOT the stored figure), because the pre-fix value excludes the one-time
   Kenvue spin-off gain booked as discontinued operations. Consequence: `eps_cagr_ps` on JNJ
-  read **+45.6%/yr in production** when the true series computes **−10.4%/yr** — a sign
+  read **+45.6%/yr in production** when the corrected series computes **−10.3%/yr** — a sign
   inversion on a growth input. Plan owner adjudicated (`docs/PLAN_EDGAR_DILUTED_SHARES.md`
   §[R4], `491b6a1`): not a Task 1 code defect (the picker is correct and consistent on all
-  five; exact-`concept`-equality is precisely what prevents this class of bug), a
-  blast-radius **measurement** failure — the revised 21-ticker expected-change set passed
-  clause 3 on re-run. Full before/after table + repro:
+  five; matching `concept` instead of `label` is precisely what prevents this class of bug), a
+  blast-radius **measurement** failure — the revised 14-ticker distinct expected-change set
+  passed clause 3 on re-run. Full before/after table + repro:
   `docs/audits/2026-07-31-edgar-concept-match.md`.
 - **Methodological lesson, recorded so it doesn't get relearned:** a "looks like a real
   number" detection heuristic (rounding/decimal-place patterns) cannot catch a *wrong-row*
@@ -73,9 +76,12 @@ keyless, before/after diffed programmatically against pre-fix `29f170f`):
   Cached research briefs are accession-cached and will NOT auto-regenerate; `--refresh` to
   pick up the corrected value.
 
-**Status:** SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2235 tests green,
-ruff clean, 42-ticker live before/after with the revised 21-ticker go/no-go passing). Not
-yet merged to `main` or deployed to `/opt/shortlist`.
+**Status:** SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2236 tests green,
+ruff clean, 42-ticker live before/after with the revised 14-ticker distinct go/no-go
+passing). A final whole-branch review found a vacuous test, three doc-count errors, a
+duplicate-index crash in `_row_by_standard_concept`, and other doc corrections — all fixed on
+this branch (see the code review fix commit). Not yet merged to `main` or deployed to
+`/opt/shortlist`.
 
 ---
 

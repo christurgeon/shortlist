@@ -116,7 +116,7 @@ only fire when `m.pe_ttm is None`, i.e. when FMP did **not** supply a PE.
 |---|---|---|
 | `diluted_shares` `[]` → populated | 7 (COST IBM MSFT ORCL PEP QCOM VZ) | `share_count_cagr` → **`dilution` flag** (ON); `quality.dilution` leg (OFF); JSON/CSV (`screen.py:262,330`) |
 | `diluted_eps` computed → as-reported | 9 (COST DIS IBM MCD MSFT ORCL PEP UNH VZ) | `eps_cagr_ps`; research QUANT CONTEXT |
-| …of which the **value leg actually moves** | **FMP-gated subset of the EPS-change set: IBM MCD ORCL PEP UNH (5)** — COST, MSFT, DIS and VZ all carried an FMP `pe_ttm` on the captured day (47.92 / 25.06 / 15.36 / 12.01), so the EDGAR fallback was dormant for them. QCOM is NOT a mover: its EPS is already as-reported | `pe_ttm`/`pe_median_5y` → **scored `pe_vs_history`** → `composite`, ranking |
+| …of which the **value leg actually moves** | **[R5, corrected] FMP-gated subset: IBM MCD ORCL PEP UNH JNJ QCOM HON MRK XOM (10, not 5)** — live-verified against `/opt/shortlist/state/snapshots/*/2026-07-30.json.gz`: all 10 carry `fundamentals.pe_ttm = None` (no FMP PE), so the EDGAR fallback is live for every one of them; COST, MSFT, DIS and VZ carried an FMP `pe_ttm` on the captured day (47.92 / 25.06 / 15.36 / 12.01), so the fallback stays dormant for those 4. The original row undercounted this two ways: it predates the [R4] finding (JNJ/HON/MRK/XOM weren't in scope yet), and it wrongly called **QCOM NOT a mover** ("its EPS is already as-reported") — [R4] below shows QCOM's EPS *was* wrong-row (continuing-ops) pre-fix, so it is a mover too | `pe_ttm`/`pe_median_5y` → **scored `pe_vs_history`** → `composite`, ranking |
 
 Additional surfaces, all previously unnamed:
 
@@ -169,12 +169,33 @@ correctly on all five. It is a blast-radius documentation failure, the third in 
 The expected-change set for the go/no-go is therefore **7 shares + 9 EPS + these 5 = 21
 tickers**, and clause 3 governs the remaining 21. Proceed on that basis; do not change code.
 
+**[R5, corrected] "21" above is a multiset sum, not the distinct ticker count.** 7-shares
+(A) and 9-EPS (C) overlap on 6 tickers (COST IBM MSFT ORCL PEP VZ), and QCOM is counted once
+in A and again in the 5 [R4] tickers — the true distinct union is **14** (COST DIS HON IBM
+JNJ MCD MRK MSFT ORCL PEP QCOM UNH VZ XOM), re-derived from the audit doc's own 42-row table
+(14 changed, 28 byte-identical). Clause 3 governs everything outside those 14, not 21.
+
 **Explicitly NOT affected** (verified by the reviewer, and the `extract_financials` hint is a
 red herring): `asset_growth`/`accruals` (`:327-333`) and the §5 financing legs (`:338-341`)
 never call these pickers. **Coverage is unaffected** — both fields are in `_NON_SIGNAL_FIELDS`
 (`data/models.py:302`). **[R2] `confidence`/`scored` do NOT move** — computed EPS already
 populated `pe_ttm`/`pe_median_5y`, so no leg changes presence. Revision 1 wrongly claimed
 `confidence` moves.
+
+**[R5, corrected] The `[R2]` claim above is right in conclusion but wrong in its stated
+reason for 3 of the 10 movers.** For IBM/MCD/ORCL/PEP/UNH/JNJ/QCOM, `pe_ttm` was already
+non-`None` pre-fix (an EDGAR fallback computed off the WRONG pre-fix EPS still populated it
+— "computed EPS already populated `pe_ttm`" is accurate for these 7). It is **false as stated
+for HON/MRK/XOM**: they had NO EPS at all pre-fix (root cause D), so `pe_vs_history`
+genuinely moves `None` → populated for them — a real leg-presence change, not just a value
+change. `confidence`/`scored` still don't move for HON/MRK/XOM, but for two different
+reasons: (a) `confidence` is computed at **component** granularity
+(`scoring.py:783-786` — the `value` component, not its `pe_vs_history` sub-leg, is what
+enters `appl_w`/`pres_w`), and (b) HON/MRK/XOM already have `fcf_yield` derivable from EDGAR
+FCF, so the `value` component itself was already non-`None` both before and after — a second
+present leg inside an already-present component can't move `confidence`. **Near miss:** any
+ticker whose `value` had ZERO present legs pre-fix and gains `pe_vs_history` post-fix WOULD
+move `confidence`, and potentially `scored`, in a known (unmasked) sector bucket.
 
 ## File Structure
 

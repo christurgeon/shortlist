@@ -425,11 +425,15 @@ runs still need caching.
 only wins when it yields a *complete* series (`_series_by_concept_or_label`,
 `_edgar_facts.py`), so a sparse or all-`NaN` concept row can never shadow a working label
 row and silently turn a populated series into `[]`. The label scan (`_row_diluted_shares`/
-`_row_diluted_eps`, unchanged) is the fallback when no concept row is present. **Exact
-concept equality is what prevents a continuing-operations row from posing as total EPS** —
-`us-gaap_EarningsPerShareDiluted` (the total) and `us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare`
-(continuing ops only) are different raw tags, so they can never be confused by concept
-match, whereas both satisfy the old label regex ("Diluted" + "per share"); this live-fixed a
+`_row_diluted_eps`, unchanged) is the fallback when no concept row is present. **Matching
+`concept` (the raw tag) at all instead of `label` (filer presentation text) is what prevents
+a continuing-operations row from posing as total EPS** — real JNJ/QCOM filings label BOTH
+rows identically ("Diluted (in dollars per share)"), so only the underlying `concept` column
+distinguishes `us-gaap_EarningsPerShareDiluted` (the total) from
+`us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare` (continuing ops only); exact
+equality itself is a different guard (a genuine suffix-extension tag posing as its parent —
+not the mechanism at work here, since neither of those two tag strings is a substring of the
+other, so a prefix match would not have confused them either). This live-fixed a
 pre-existing wrong-row bug on JNJ/QCOM where the two rows are byte-identical in some fiscal
 years (no discontinued-ops impact that year) and diverge sharply in others — see
 `docs/audits/2026-07-31-edgar-concept-match.md` (full 42-ticker before/after,

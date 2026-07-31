@@ -8,10 +8,15 @@ complete series), falling back to the existing label scan. Design: `docs/PLAN_ED
 record per `CLAUDE.md`'s measure-first doctrine — this is the tracked surface, not a commit
 message or a gitignored `docs/superpowers/specs/` artifact.
 
-**Verdict: GO**, on the revised (21-ticker) expected-change set. The original 16-ticker
-blast-radius estimate (7 shares + 9 EPS) was incomplete; the live before/after found 5 more
-issuers changing (HON, MRK, XOM, JNJ, QCOM), all genuine improvements, none a code defect.
-Clause 3 was re-run against the corrected 21-ticker set and passes: no ticker outside it moved.
+**Verdict: GO**, on the revised (14-ticker distinct) expected-change set. **[final-review,
+corrected]** Earlier drafts of this doc quoted "21" (a multiset sum: 7 shares + 9 EPS + 5
+[R4], double-counting a 6-ticker A∩C overlap and QCOM appearing in both A and [R4]) and "16"
+for the original estimate (a sum, not a union) — the distinct-ticker counts, re-derived from
+the 42-row table below, are **14** changed / **28** byte-identical, and the original (pre-[R4])
+estimate was **10** distinct tickers (7 shares ∪ 9 EPS), not 16. The live before/after found 4
+tickers genuinely new to that 10 (HON, MRK, XOM, JNJ) plus a correction to a 5th already in it
+(QCOM), all genuine improvements, none a code defect. Clause 3 was re-run against the
+corrected 14-ticker set and passes: no ticker outside it moved.
 
 ## Method
 
@@ -146,11 +151,16 @@ recovery, `C` = EPS computed→as-reported, `D` = EPS silently-empty→as-report
 | WMT | - | [8.022e9,8.081e9,8.108e9] | same | [2.73,2.41,1.91] | same |
 | **XOM** | **D (B)** | [] | [] | `[]` | **`6.70, 7.84, 8.89`** |
 
-32 tickers byte-identical. 10 on the original plan's list (7 A, 9 C — COST/IBM/MSFT/ORCL/PEP/VZ
-overlap A+C; DIS/MCD/UNH are C-only; QCOM is A+E). 5 changed outside the original plan (HON,
-MRK, XOM = D; JNJ, QCOM = E — QCOM appears in both A and E).
+**28 tickers byte-identical, 14 changed** (42-row table above; counted directly from the
+`class` column, not summed from the root-cause groups below — the groups overlap). 10 of the
+14 are on the original plan's list (7 A ∪ 9 C, union not sum — COST/IBM/MSFT/ORCL/PEP/VZ
+overlap A+C; DIS/MCD/UNH are C-only; QCOM is A-only here). The [R4] sweep found 5 findings
+(HON, MRK, XOM = class D; JNJ, QCOM = class E), but QCOM was already in the 10 via class A —
+so [R4] contributes **4 net-new** tickers (HON, MRK, XOM, JNJ), bringing the distinct total to
+10 + 4 = **14**, not the naive 10 + 5 = 15 or the "7+9+5=21" multiset sum quoted in earlier
+drafts of this doc and in `PLAN_EDGAR_DILUTED_SHARES.md`.
 
-## Go/no-go — all four clauses (revised 21-ticker expected-change set)
+## Go/no-go — all four clauses (revised 14-ticker distinct expected-change set)
 
 **Clause 1 — 7 root-cause-A tickers `shares=[]` → three real values.** **PASS.** COST, IBM,
 MSFT, ORCL, PEP, QCOM, VZ.
@@ -158,9 +168,10 @@ MSFT, ORCL, PEP, QCOM, VZ.
 **Clause 2 — 9 computed-EPS tickers, long-float → 2-dp as-reported.** **PASS.** COST, DIS,
 IBM, MCD, MSFT, ORCL, PEP, UNH, VZ.
 
-**Clause 3 (revised) — every ticker outside the 21 (7 A ∪ 9 C ∪ 5 [R4]) byte-identical.**
+**Clause 3 (revised) — every ticker outside the 14 distinct tickers (7 A ∪ 9 C ∪ the 5 [R4]
+findings, QCOM's [R4] finding already counted via A) byte-identical.**
 **PASS.** All 5 [R4] findings are accounted for by name (HON, MRK, XOM, JNJ, QCOM); no
-sixth ticker moved.
+ticker outside the 14 moved.
 
 **Clause 4 — hand-check the recovered VALUES via `net_income / diluted_eps ≈ diluted_shares`.**
 **PASS**, cleanly, all 7 root-cause-A tickers × 3 years (21 data points), max deviation 0.58%:
@@ -195,6 +206,17 @@ common-shareholder NCI/preferred-dividend noise. **The 7 recovered `diluted_shar
 correct, not `iloc[0]`-style mispicks.** Result stated plainly: this is a strong, clean pass —
 every recovered share count reconciles with independently-sourced net income and the
 independently-picked EPS to well under a percent.
+
+**Caveat on what this tolerance can and can't discriminate.** A ≤0.58% band **cannot**
+distinguish a genuinely diluted share count from a basic (undiluted) one — the two typically
+differ by well under 1% for large, moderately-dilutive issuers, so a mispick of `diluted` for
+`basic` could pass this same cross-check undetected. The reason clause 4's PASS is still
+trustworthy is that **exact concept matching rules that class of error out by construction**:
+`_DILUTED_SHARES_CONCEPTS` matches only `us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding`,
+never `...SharesOutstandingBasic`, so a basic-vs-diluted confusion cannot occur regardless of
+how close the two values happen to sit numerically. The conclusion is safe, but it rests more
+on that concept-level guarantee than on the 0.58% arithmetic cross-check, which functions here
+as corroboration, not the primary safeguard.
 
 ## [R4] The five findings outside the original plan
 
@@ -233,19 +255,30 @@ not have surfaced the defect. Only the year with a real discontinued-ops swing (
 Kenvue spin-off gain; QCOM's FY2024/23) exposes the mismatch.
 
 **JNJ is not just "one wrong number" — it is a sign-flipped scored growth input, live in
-production before this branch.** FY2023 net income $35.2B ÷ 2,560.4M diluted shares = **$13.75**
-per share (matches the concept-matched $13.72 to rounding), not the stored $5.20 — the stored
-value is 2.6× too low because it is continuing-operations-only, missing the one-time Kenvue
-separation gain booked as discontinued operations. The series therefore **mixes two different
-measures across fiscal years** (continuing-ops for FY2023, total for FY2024/25), which is worse
-than being uniformly wrong in one direction:
+production before this branch.** Two distinct FY2023 EPS figures need distinguishing:
+**as-reported** (what the code actually extracts and stores, concept-matched) = **$13.72**,
+per JNJ's own filed `EarningsPerShareDiluted` tag; a **derived cross-check estimate**
+(independent, NOT what's stored) = FY2023 net income $35.2B ÷ 2,560.4M diluted shares =
+**$13.75** — close to, but not identical to, the as-reported figure (the ~0.2% gap is
+ordinary consolidated-vs-common-shareholder NCI/preferred-dividend noise, the same effect
+Clause 4 measures at up to 0.58% elsewhere). Either way, both are far from the stored
+pre-fix $5.20 — that value is 2.6× too low because it is continuing-operations-only, missing
+the one-time Kenvue separation gain booked as discontinued operations. The series therefore
+**mixes two different measures across fiscal years** (continuing-ops for FY2023, total for
+FY2024/25), which is worse than being uniformly wrong in one direction. `eps_cagr_ps` computed
+from the two candidate FY2023 values (`stats.cagr` over `[11.03, 5.79, X]`, most-recent-first)
+diverges only in the third decimal:
 
 ```
-eps_cagr_ps, stored (production, pre-fix) : +0.4564   (+45.6%/yr)
-eps_cagr_ps, true (post-fix)              : -0.1044   (-10.4%/yr)
+eps_cagr_ps, stored (production, pre-fix)           : +0.4564   (+45.6%/yr)
+eps_cagr_ps, post-fix, as-reported (what code stores): -0.1034   (-10.3%/yr)  [FY2023 = 13.72]
+eps_cagr_ps, post-fix, derived-estimate cross-check  : -0.1043   (-10.4%/yr)  [FY2023 = 13.75]
 ```
 
-The sign inverts. `eps_cagr_ps` feeds `quality.dilution`'s growth leg (currently OFF — see
+The sign inverts either way; the **as-reported -0.1034 figure is the one that actually ships**
+in `StockMetrics.eps_cagr_ps` post-fix, not -0.1044 (an earlier draft of this doc quoted the
+derived-estimate cagr instead of the stored one — close, but not the number the code emits).
+`eps_cagr_ps` feeds `quality.dilution`'s growth leg (currently OFF — see
 below) and the research QUANT CONTEXT; the corruption was live for as long as the label
 matcher has existed, independent of this branch or the signed-off plan. This branch corrects
 it as a side effect of matching on the exact-equality `concept` column: `EarningsPerShareDiluted`
@@ -263,6 +296,14 @@ by that test alone. Only the `net_income / diluted_shares` arithmetic cross-chec
 above) or a raw-row inspection surfaces this class. Record this methodological lesson so it is
 not relearned: **a "looks like a real number" heuristic cannot detect a wrong-row pick; only an
 independent cross-check against a value derived from a *different* filed tag can.**
+
+**Corroboration (final-review, verified live): the XBRL backtest panel never had this bug.**
+`src/shortlist/providers/_xbrl_facts.py:116` (`DILUTED_EPS = ["EarningsPerShareDiluted"]`) and
+`:132` (`WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]`) already matched
+these exact two raw us-gaap tags — never the continuing-ops tag — before this branch existed.
+So `--source xbrl` has been reading JNJ's correct total EPS all along, while the harness read
+continuing-operations; this branch closes a silent **harness-vs-backtest disagreement** on the
+same company that predates it, not just a harness-only bug.
 
 ## Files touched
 
