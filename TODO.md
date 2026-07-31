@@ -55,6 +55,43 @@ covered by unit RED evidence only (see below). Re-run on AAPL/MSFT/LMT on a fres
 day and record the actual values. Treat "recovered fields still null on a non-402 name" as
 a bug report against the fiscal-year join key, not a config problem.
 
+**LARGELY CLOSED 2026-07-31 — verified on REAL production data with ZERO FMP calls.** The
+live CLI run is still owed, but its central unknown (do FMP and EDGAR agree on the fiscal-year
+join key for real issuers?) is now answered empirically. Method: the accumulation store at
+`/opt/shortlist/state/snapshots` holds 1,008 real snapshots; **17 of them are FMP-won**
+(`provenance.statements == ['fmp']`, all 2026-07-07) and the rest EDGAR-won — so the store
+already contains both sources' real spines. Re-merging the FMP-won statements against the
+same ticker's EDGAR-won statements through the actual `merge_snapshots`, then through
+`snapshot_to_metrics`:
+
+| ticker | FMP years | EDGAR years | `share_count_cagr` before → after |
+|---|---|---|---|
+| AAPL | 2025–2021 | 2025–2023 | None → **−0.0259** |
+| AMZN | 2025–2021 | 2025–2023 | None → **+0.0158** |
+| CSCO | 2025–2021 | 2025–2023 | None → **−0.0131** |
+| ADBE | 2025–2021 | 2025–2023 | None → **−0.0356** |
+| DIS  | 2025–2021 | 2025–2023 | None → **−0.0052** |
+| MSFT | 2025–2021 | **2026**–2024 | None → None (EDGAR `diluted_shares` empty) |
+| GOOGL| 2025–2021 | 2025–2023 | None → None (EDGAR `diluted_shares` empty) |
+| COST | 2025–2021 | 2025–2023 | None → None (EDGAR `diluted_shares` empty) |
+
+- **The join key agrees on real data**, including non-calendar fiscal years (AAPL/DIS Sept,
+  MSFT June, COST Aug, ADBE Nov) — the case most likely to break a year-label join.
+- **Signs are right**: AAPL/ADBE/CSCO negative (buybacks), AMZN positive (SBC issuance).
+- `diluted_eps` recovered **8/8** (0 → 5 rows), so the `pe_vs_history` reactivation is real
+  and broad, not a corner case.
+- **MSFT is the vintage guard earning its slot on real data**: EDGAR carries FY**2026**
+  while FMP's newest is FY2025, so the latest-FY scalars correctly abstained rather than
+  attaching a 2026 figure to a 2025 spine. That disagreement was hypothetical when designed;
+  it is now observed.
+- **NEW follow-up (upstream, not this fix):** EDGAR's own `diluted_shares` is `[]` for
+  MSFT/GOOGL/COST while `diluted_eps` populates — an extraction gap in
+  `providers/_edgar_facts.py` (`get_shares_outstanding_diluted`). The merge correctly
+  abstained; the ceiling on this fix's yield is EDGAR-side coverage, ~5/8 here. Worth its
+  own look.
+
+Still owed for completeness: the end-to-end CLI run exercising the live HTTP fetch path.
+
 **WHEN to retry — measured 2026-07-31 00:42 UTC, second attempt, still blocked.** A direct
 FMP probe still returned `"Limit Reach"`. Root cause is **our own nightly timers**:
 `shortlist-accumulate` (21:30 UTC) and `shortlist-scout` (22:30 UTC) had run 3h12m and
