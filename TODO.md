@@ -90,7 +90,14 @@ same ticker's EDGAR-won statements through the actual `merge_snapshots`, then th
   abstained; the ceiling on this fix's yield is EDGAR-side coverage, ~5/8 here. Worth its
   own look.
 
-Still owed for completeness: the end-to-end CLI run exercising the live HTTP fetch path.
+**Live CLI wiring smoke — PASSED 2026-07-31, keyless (no FMP quota).**
+`uv run shortlist --tickers AAPL --json --provider yahoo,edgar,finnhub` runs the full
+CLI → collector → merge → bridge → scoring → JSON path against real HTTP and emits
+`share_count_cagr -0.0259`, `asset_growth -0.0157`, `accruals 0.0015`. The
+`share_count_cagr` value is **identical** to the store-based offline merge above, so the two
+independent paths cross-validate. (Note the CLI flag is `--tickers AAPL`, NOT positional.)
+Together with the FMP-spine branch verified offline on real FMP data, the only thing never
+exercised is the FMP-wins branch *under a live fetch* — logic and wiring are each covered.
 
 **WHEN to retry — measured 2026-07-31 00:42 UTC, second attempt, still blocked.** A direct
 FMP probe still returned `"Limit Reach"`. Root cause is **our own nightly timers**:
