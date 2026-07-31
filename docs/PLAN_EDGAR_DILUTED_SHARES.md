@@ -133,6 +133,42 @@ Additional surfaces, all previously unnamed:
 - **[R2] The exposure is FMP-quota-dependent and therefore non-deterministic.** On a day when
   FMP 429s (recorded in `TODO.md`), COST/MSFT route through the EDGAR fallback too.
 
+## [R4] Blast radius was STILL incomplete — 5 more issuers, found by the go/no-go
+
+The Task 2 live 42-ticker before/after **failed clause 3** (nothing outside the documented
+sets may change). Five tickers changed that this plan never named. All five changes are
+improvements, but the plan's measurement missed them, so the go/no-go did its job.
+
+**Why the measurement missed them — a methodological failure, not bad luck.** Root cause C
+was detected by a `>2 decimal places` heuristic, which finds *computed* EPS. It is
+structurally blind to **wrong-row** EPS: a continuing-operations figure is a clean, plausible
+2-dp number, indistinguishable from a total by that test. Detecting the class below required
+comparing against `net_income / diluted_shares`, which is what the Part B cross-check does.
+
+| ticker | before | after | class |
+|---|---|---|---|
+| HON, MRK, XOM | `diluted_eps = []` | as-reported | New recovery. Their `diluted_shares` concept is absent (root cause B) **and** `get_shares_outstanding_diluted()` returns `None`, so the computed fallback could not fire either — they had NO EPS at all. Strictly better. |
+| JNJ, QCOM | continuing-operations EPS | total EPS | **Pre-existing wrong-row bug, live in production.** The plan's claim "QCOM is NOT a mover" is false on real data. |
+
+**JNJ is a live, sign-flipping corruption of a scored input.** Production carries
+`diluted_eps = [11.03, 5.79, 5.20]`, but FY2023 net income $35.2B ÷ 2,560.4M shares =
+**$13.75** — the stored 5.20 is post-Kenvue-spinoff *continuing operations*, 2.6× too low.
+FY2024/25 are correct, so the series **mixes two different measures**, which is worse than
+being uniformly wrong:
+
+```
+eps_cagr_ps stored (production) : +0.4564   (+45.6%/yr)
+eps_cagr_ps true                : -0.1044   (-10.4%/yr)
+```
+
+The sign is inverted. This branch fixes it as a side effect; exact-equality concept matching
+cannot select `IncomeLossFromContinuingOperationsPerDilutedShare`.
+
+**Adjudication (controller):** this is NOT a Task 1 code defect — the picker behaves
+correctly on all five. It is a blast-radius documentation failure, the third in this project.
+The expected-change set for the go/no-go is therefore **7 shares + 9 EPS + these 5 = 21
+tickers**, and clause 3 governs the remaining 21. Proceed on that basis; do not change code.
+
 **Explicitly NOT affected** (verified by the reviewer, and the `extract_financials` hint is a
 red herring): `asset_growth`/`accruals` (`:327-333`) and the §5 financing legs (`:338-341`)
 never call these pickers. **Coverage is unaffected** — both fields are in `_NON_SIGNAL_FIELDS`
