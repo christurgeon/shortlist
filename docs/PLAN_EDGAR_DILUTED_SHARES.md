@@ -1,380 +1,518 @@
 # EDGAR diluted-shares/EPS extraction — concept-matching fix
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Recover `diluted_shares` (and as-reported `diluted_eps`) for the ~38% of EDGAR-covered issuers where extraction silently yields `[]`, by matching the authoritative raw us-gaap `concept` instead of the filer-chosen `label` text.
+**Revision 2** — rewritten after adversarial plan review found three Critical defects in
+revision 1 (a regression the design would have introduced, an understated blast radius, and
+a mandated-but-missing test). Changes are marked **[R2]**.
 
-**Architecture:** `providers/_edgar_facts.py` picks statement rows by scanning the human-readable `label` column. Labels are filer presentation text and vary wildly; the raw `concept` column is the authoritative XBRL tag and is stable. Add a concept-first lookup, keep the existing label scan as a fallback so no currently-working issuer regresses.
+**Goal:** Recover `diluted_shares` for the 38% of EDGAR-covered issuers where extraction
+silently yields `[]`, and replace computed-EPS approximations with as-reported values, by
+matching the authoritative raw us-gaap `concept` instead of filer-chosen `label` text.
 
-**Tech Stack:** Python 3.11+, pandas (already a dep via edgartools), pytest, uv.
+**Architecture:** Row selection scans the human-readable `label` column. Labels are filer
+presentation text and vary wildly; raw `concept` is the authoritative XBRL tag. Add a
+**value-aware** concept-first lookup that falls back to the label scan, so no working issuer
+regresses.
 
-## Evidence — measured, not assumed (2026-07-31)
+**Tech Stack:** Python 3.11+, pandas (already present via edgartools), pytest, uv.
 
-Prevalence, from the 42 EDGAR-won tickers in the production accumulation store
-(`/opt/shortlist/state/snapshots`, latest snapshot each):
+## Evidence — measured, reproduced twice (2026-07-31)
 
-- **`diluted_shares` empty for 16/42 = 38%**: CMCSA COST CVX GOOGL HON IBM LMT MO MRK MSFT ORCL PEP PG QCOM VZ XOM
+From the 42 EDGAR-won tickers in `/opt/shortlist/state/snapshots` (latest snapshot each).
+Both figures below were independently reproduced by the plan reviewer.
 
-Classified against live EDGAR income statements, those 16 split into **two distinct root causes**:
+**Gap 1 — `diluted_shares` empty for 16/42 (38%)**: CMCSA COST CVX GOOGL HON IBM LMT MO MRK
+MSFT ORCL PEP PG QCOM VZ XOM. Live-classified into two disjoint root causes:
 
-**Root cause A — label mismatch (7 of 16). THIS PLAN FIXES THIS.**
-The concept `us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding` is present with
-complete values for every fiscal-year column, but `_row_diluted_shares` requires the label
-to contain both `"diluted"` and `"shares"`:
+- **Root cause A — label mismatch (7). THIS PLAN FIXES.** `us-gaap_WeightedAverage
+  NumberOfDilutedSharesOutstanding` is present with complete values, but `_row_diluted_shares`
+  requires both `"diluted"` and `"shares"` in the label:
 
-| ticker | actual label | why the matcher misses |
-|---|---|---|
-| COST, MSFT, ORCL, PEP, QCOM | `'Diluted'` | no `"shares"` |
-| IBM | `'Assuming dilution (in shares)'` | no `"diluted"` — it says *dilution* |
-| VZ | `'Weighted-average shares outstanding (in shares)'` | no `"diluted"` |
+  | ticker | actual label | miss |
+  |---|---|---|
+  | COST MSFT ORCL PEP QCOM | `'Diluted'` | no "shares" |
+  | IBM | `'Assuming dilution (in shares)'` | says *dilution* |
+  | VZ | `'Weighted-average shares outstanding (in shares)'` | no "diluted" |
 
-Compare AAPL, which works: `'Diluted (in shares)'`. The distinguishing context for MSFT-style
-filers lives in a separate abstract parent row (`'Weighted average shares outstanding:'`,
-concept `…SharesOutstandingAbstract`, all-`NaN`) that the flat dataframe does not associate
-with its children.
+  AAPL works because its label is `'Diluted (in shares)'`. The disambiguating context for
+  MSFT-style filers sits in a separate all-`NaN` abstract parent row that the flat dataframe
+  does not associate with its children.
 
-**Root cause B — concept genuinely absent (9 of 16). OUT OF SCOPE, see §Deferred.**
-CMCSA CVX GOOGL HON LMT MO MRK PG XOM. Probed GOOGL/LMT/XOM: the only share-related concepts
-in the income statement are `us-gaap_EarningsPerShareBasic` and `…Diluted`. No share-count
-tag at any label. edgartools' income-statement view simply does not carry it for these filers.
+- **Root cause B — concept genuinely absent (9). OUT OF SCOPE, see §Deferred.** CMCSA CVX
+  GOOGL HON LMT MO MRK PG XOM — probed GOOGL/LMT/XOM: only `EarningsPerShareBasic`/`Diluted`
+  exist. No share-count tag at any label.
 
-**Root cause C — the same label bug in `_row_diluted_eps` (4 issuers), with a worse
-consequence.** `_row_diluted_eps` requires `"per share"` in the label. COST/MSFT/ORCL/PEP
-label their EPS row just `'Diluted'`, so it misses and `extract_financials` falls through to
-its computed fallback (`_edgar_facts.py:283-284`):
+**Gap 2 — root cause C: the same label bug on EPS. [R2] NINE issuers, not four.**
+`_row_diluted_eps` requires `"per share"`; COST/MSFT/ORCL/PEP label theirs `'Diluted'`. On a
+miss, `extract_financials:283-284` computes:
 
 ```python
 if not eps and fin.net_income and shares_diluted:
     eps = [ni / shares_diluted for ni in fin.net_income]
 ```
 
-`shares_diluted` is a **single scalar** (today's count from `get_shares_outstanding_diluted()`)
-divided into **every** year's net income — so historical EPS is computed against the current
-share count. Confirmed in the store: MSFT's persisted `diluted_eps[0]` is
-`17.94565946598685` (computed) where the filing reports `17.95`; AAPL's is the exact reported
-`7.46`. Error scales with buyback/issuance drift over the window.
+`shares_diluted` is a **single scalar** (today's count) divided into **every** year's net
+income. Detected in the store as any `diluted_eps` with >2 decimal places:
 
-**This is now higher-stakes than before.** The just-merged statements fix (#154) makes
-`diluted_eps` reach `pe_ttm`/`pe_median_5y` via the EDGAR PE fallback (`bridge.py:241,:243`),
-feeding the scored `pe_vs_history` value leg. A computed-EPS series now moves `composite`.
+```
+COST 18.208060647072973   DIS 6.849254555494202    IBM 11.166097403357094
+MCD  11952819.65382468    MSFT 17.94565946598685   ORCL 5.863761153054221
+PEP  6.001456664238893    UNH 13.233809001097695   VZ 4.059087686126212
+```
+
+**[R2] DIS, MCD and UNH were never examined in revision 1** — their `diluted_shares` extract
+fine, so they never appeared in Gap 1.
+
+**[R2] MCD is a live garbage value on a scored surface.** `diluted_eps[0] = 11,952,819.65`,
+because `get_shares_outstanding_diluted()` returns MCD's count in **millions** (~716) while
+`net_income` is absolute dollars. `bridge.py:242` then yields `pe_ttm = 268.44 / 1.195e7 =
+2.25e-05`, which renders in the scout digest and feeds `pe_vs_history`. Fixing the EPS row
+pick removes the fallback for MCD and repairs this. **Note the residual:** the units hazard in
+`get_shares_outstanding_diluted()` itself is NOT fixed here — see §Deferred.
+
+**[R2] This also falsifies `_edgar_facts.py:7-10`** ("ABSOLUTE USD … No scaling here or
+downstream"): MCD's `diluted_shares` series is `[716.4, 721.9, 732.3]`.
 
 ## Global Constraints
 
-- **Match the raw `concept` column, never `standard_concept`.** Established repo rule:
-  `_concept_family_latest` in this same file already does exactly this, and
-  `docs/audits/2026-07-12-accruals-leg-disable.md` records `standard_concept` bucket names
-  drifting across edgartools releases and silently breaking a leg.
-- **No new fetch, no new dependency, no new config block.** The `concept` column is already
-  in the dataframes being parsed.
-- **No currently-working issuer may regress.** The label scan stays as a fallback.
-- **`_series` stays all-or-nothing.** Do not relax it — a half-filled series would silently
-  corrupt `cagr`.
-- **LANDMINE:** a pandas `Series` in a boolean context raises
-  `ValueError: The truth value of a Series is ambiguous`. Never write
-  `row = _row_by_concept(...) or _label_scan(...)`. Use explicit `if row is not None:`.
-- Drop `dimension == True` rows before matching (dimensional breakdowns double-count), the
-  same guard `_concept_family_latest` uses.
-- CI, in order: `uv run ruff check src tests`, then `uv run pytest -q`. Line length 110.
+- **Match raw `concept`, never `standard_concept`** — the repo rule
+  (`_concept_family_latest` already does this; `docs/audits/2026-07-12-accruals-leg-disable.md`
+  records bucket-name drift silently breaking a leg).
+- **No new fetch, no new dependency, no new config block.**
+- **[R2] No currently-working issuer may regress — and this must be enforced by VALUE, not by
+  row presence.** See Critical 1 below.
+- **`_series` stays all-or-nothing.** A half-filled series would corrupt `cagr`.
+- **LANDMINE:** a `pd.Series` in a boolean context raises `ValueError: The truth value of a
+  Series is ambiguous` (verified, pandas 3.0.3). Never `row = _by_concept(...) or _by_label(...)`.
+- Drop `dimension == True` rows before matching (the `_concept_family_latest:186` guard).
+- **[R2] Mirror `_row_by_standard_concept`'s min-`level` tie-break** (`_edgar_facts.py:132-137`)
+  — that logic exists because `iloc[0]` picked a nested child row twice on real filings.
+- CI, in order: `uv run ruff check src tests`, then `uv run pytest -q`. (`E501` is ignored in
+  `pyproject.toml`, so line length is not a CI gate.)
 
-## Blast radius — declare it up front
+## [R2] Blast radius — rebuilt from the store scan
 
-This repo's rule is that live scoring-surface changes are named before shipping (the #154
-review caught me omitting one). This change has **two**:
+Two distinct effects. **Note "EPS value changes" ≠ "the value leg moves"**: `bridge.py:241,243`
+only fire when `m.pe_ttm is None`, i.e. when FMP did **not** supply a PE.
 
-| Effect | Path | Surface |
+| Effect | Issuers | Surface |
 |---|---|---|
-| `diluted_shares` populates for 7 issuers | → `share_count_cagr` | `dilution` **flag** (ON); `quality.dilution` leg (OFF) |
-| `diluted_eps` switches from **computed** to **as-reported** for 4 issuers | → `eps_cagr_ps`, and → `pe_ttm`/`pe_median_5y` → **`pe_vs_history`** | **scored `value` leg — moves `composite`, `confidence`, ranking** |
+| `diluted_shares` `[]` → populated | 7 (COST IBM MSFT ORCL PEP QCOM VZ) | `share_count_cagr` → **`dilution` flag** (ON); `quality.dilution` leg (OFF); JSON/CSV (`screen.py:262,330`) |
+| `diluted_eps` computed → as-reported | 9 (COST DIS IBM MCD MSFT ORCL PEP UNH VZ) | `eps_cagr_ps`; research QUANT CONTEXT |
+| …of which the **value leg actually moves** | **FMP-gated subset**: IBM MCD ORCL PEP UNH QCOM (COST/MSFT had FMP PE on the captured day) | `pe_ttm`/`pe_median_5y` → **scored `pe_vs_history`** → `composite`, ranking |
 
-The second is a value *correction* (as-reported beats a stale-share-count approximation), but
-it changes existing numbers for COST/MSFT/ORCL/PEP and must be pinned by a test.
+Additional surfaces, all previously unnamed:
+
+- **`value_trap` flag** (`scoring.py:800`) keys off the `value` sub-score, so a `pe_vs_history`
+  change can flip it — a second-order flag effect.
+- **Research briefs are accession-cached**, so existing briefs will NOT regenerate; those
+  tickers keep an LLM screening call reasoned over the old `dEPS`/`shrs` numbers
+  (`research/assess.py:294-315`) until `--refresh`.
+- **Scout digest** prints "PE (ttm)" (`scout/report/sections.py:148`) — MCD's `2.25e-05`
+  becomes a real PE.
+- **`eps_cagr_ps` is currently DEGENERATE** for all 9: dividing every year's NI by one constant
+  makes `cagr(diluted_eps) == cagr(net_income) == eps_cagr`. Not a regression, but any prior
+  measurement of `eps_cagr_ps` on harness data for these names was tautological. Record it.
+- **[R2] The exposure is FMP-quota-dependent and therefore non-deterministic.** On a day when
+  FMP 429s (recorded in `TODO.md`), COST/MSFT route through the EDGAR fallback too.
+
+**Explicitly NOT affected** (verified by the reviewer, and the `extract_financials` hint is a
+red herring): `asset_growth`/`accruals` (`:327-333`) and the §5 financing legs (`:338-341`)
+never call these pickers. **Coverage is unaffected** — both fields are in `_NON_SIGNAL_FIELDS`
+(`data/models.py:302`). **[R2] `confidence`/`scored` do NOT move** — computed EPS already
+populated `pe_ttm`/`pe_median_5y`, so no leg changes presence. Revision 1 wrongly claimed
+`confidence` moves.
 
 ## File Structure
 
-| File | Responsibility | Change |
-|---|---|---|
-| `src/shortlist/providers/_edgar_facts.py` | `_row_by_concept` helper; concept-first `_row_diluted_shares` / `_row_diluted_eps` | Modify |
-| `tests/test_edgar_facts_concept_match.py` | Label-shape fixtures from the 4 real patterns | Create |
-| `docs/PLAN_EDGAR_DILUTED_SHARES.md` | This plan | — |
-| `CLAUDE.md`, `TODO.md` | Document the rule + close the follow-up | Modify |
+| File | Change |
+|---|---|
+| `src/shortlist/providers/_edgar_facts.py` | `_rows_by_concept` + `_series_by_concept_or_label`; call them from `extract_financials` | Modify |
+| `tests/test_edgar_facts_concept_match.py` | Create |
+| `docs/audits/2026-07-31-edgar-concept-match.md` | Create (evidence of record) |
+| `CLAUDE.md`, `TODO.md` | Modify |
 
 ---
 
-### Task 1: Concept-first row matching
+### Task 1: Value-aware concept-first extraction
 
-**Files:**
-- Modify: `src/shortlist/providers/_edgar_facts.py`
-- Test: `tests/test_edgar_facts_concept_match.py` (create)
+**[R2] Design changed.** Revision 1 modified `_row_diluted_shares`/`_row_diluted_eps` to
+return a concept row when found. That is **wrong**: `_series` is all-or-nothing, so a sparse
+or all-`NaN` concept row would *shadow* a label row that works today and turn a populated
+series into `[]`. The reviewer demonstrated it (`[7.453e9, …]` → `[]`). Selection must be
+**value-aware**: a concept row wins only if it yields a complete series.
+
+The `_row_*` pickers are therefore left **untouched** (every existing fixture keeps passing),
+and a new series-level function owns the choice.
+
+**Files:** Modify `src/shortlist/providers/_edgar_facts.py`; create `tests/test_edgar_facts_concept_match.py`
 
 **Interfaces produced:**
-- `_row_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> Optional[pd.Series]`
-- `_row_diluted_shares` / `_row_diluted_eps` — unchanged signatures, concept-first behaviour
+- `_rows_by_concept(df, concepts) -> list[pd.Series]`
+- `_series_by_concept_or_label(df, concepts, label_picker, fy_cols) -> list[float]`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `tests/test_edgar_facts_concept_match.py`. The label strings are **verbatim from live
-EDGAR filings on 2026-07-31** — do not "tidy" them.
+Create `tests/test_edgar_facts_concept_match.py`. Label strings are **verbatim from live
+EDGAR filings, 2026-07-31** — do not tidy them. Tests target `extract_financials`, because
+that is where the computed-EPS fallback lives and where the behaviour actually materialises.
 
 ```python
 from __future__ import annotations
 
 import pandas as pd
 
-from shortlist.providers._edgar_facts import _row_diluted_eps, _row_diluted_shares
+from shortlist.providers._edgar_facts import extract_financials
 
 SHARES = "us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding"
 BASIC = "us-gaap_WeightedAverageNumberOfSharesOutstandingBasic"
 ABSTRACT = "us-gaap_WeightedAverageNumberOfSharesOutstandingAbstract"
 EPS = "us-gaap_EarningsPerShareDiluted"
+EPS_CONTINUING = "us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare"
+REVENUE_SC, NI_SC = "Revenue", "NetIncomeLoss"
 
 FY = ["2025-06-30 (FY)", "2024-06-30 (FY)", "2023-06-30 (FY)"]
+NI = [90e9, 88e9, 72e9]
 
 
-def _df(rows: list[dict]) -> pd.DataFrame:
-    return pd.DataFrame(rows)
-
-
-def _row(label, concept, vals, dimension=False):
-    d = {"label": label, "concept": concept, "dimension": dimension}
+def _row(label, vals, concept=None, standard_concept=None, dimension=False, level=1):
+    d = {"label": label, "concept": concept, "standard_concept": standard_concept,
+         "dimension": dimension, "level": level}
     d.update(dict(zip(FY, vals, strict=True)))
     return d
 
 
-def test_msft_style_bare_diluted_label_is_matched_by_concept():
-    # MSFT/COST/ORCL/PEP/QCOM label the share-count row just 'Diluted' — the
-    # label scan requires "shares" and misses it. The concept is authoritative.
-    df = _df([
-        _row("Diluted", EPS, [17.95, 13.64, 11.80]),
-        _row("Weighted average shares outstanding:", ABSTRACT, [None, None, None]),
-        _row("Basic", BASIC, [7_430e6, 7_440e6, 7_450e6]),
-        _row("Diluted", SHARES, [7_453e6, 7_465e6, 7_469e6]),
+def _income(rows: list[dict]) -> pd.DataFrame:
+    base = [_row("Revenue", [200e9, 190e9, 180e9], standard_concept=REVENUE_SC),
+            _row("Net income", NI, standard_concept=NI_SC)]
+    return pd.DataFrame(base + rows)
+
+
+_EMPTY = pd.DataFrame()
+
+
+def _extract(income_rows, shares_scalar=7_000e6):
+    return extract_financials(_income(income_rows), _EMPTY, _EMPTY,
+                              shares_diluted=shares_scalar)
+
+
+# --- root cause A: share-count label misses, concept hits -----------------
+
+def test_msft_style_bare_diluted_label_recovers_shares():
+    ef = _extract([
+        _row("Diluted", [17.95, 13.64, 11.80], concept=EPS),
+        _row("Weighted average shares outstanding:", [None, None, None], concept=ABSTRACT),
+        _row("Basic", [7_430e6, 7_440e6, 7_450e6], concept=BASIC),
+        _row("Diluted", [7_453e6, 7_465e6, 7_469e6], concept=SHARES),
     ])
-    row = _row_diluted_shares(df)
-    assert row is not None
-    assert row["concept"] == SHARES          # the COUNT row, not the EPS row
-    assert row[FY[0]] == 7_453e6
+    assert ef.diluted_shares == [7_453e6, 7_465e6, 7_469e6]
 
 
-def test_ibm_style_assuming_dilution_label_is_matched_by_concept():
-    # IBM: 'Assuming dilution (in shares)' — contains neither "diluted" nor a
-    # canonical keyword the label scan looks for.
-    df = _df([
-        _row("Assuming dilution (in shares)", SHARES, [920e6, 925e6, 930e6]),
-    ])
-    row = _row_diluted_shares(df)
-    assert row is not None and row[FY[0]] == 920e6
+def test_ibm_style_assuming_dilution_label_recovers_shares():
+    ef = _extract([_row("Assuming dilution (in shares)", [920e6, 925e6, 930e6], concept=SHARES)])
+    assert ef.diluted_shares == [920e6, 925e6, 930e6]
 
 
-def test_vz_style_label_without_the_word_diluted_is_matched_by_concept():
-    df = _df([
-        _row("Weighted-average shares outstanding (in shares)", SHARES, [4_2e8, 4_2e8, 4_2e8]),
-    ])
-    assert _row_diluted_shares(df) is not None
+def test_vz_style_label_without_the_word_diluted_recovers_shares():
+    ef = _extract([_row("Weighted-average shares outstanding (in shares)",
+                        [4.2e9, 4.2e9, 4.2e9], concept=SHARES)])
+    assert ef.diluted_shares == [4.2e9, 4.2e9, 4.2e9]
 
 
-def test_aapl_style_label_still_works_no_regression():
-    # AAPL already worked via the label scan; it must keep working.
-    df = _df([
-        _row("Diluted (in shares)", SHARES, [15.0e9, 15.4e9, 15.8e9]),
-    ])
-    row = _row_diluted_shares(df)
-    assert row is not None and row[FY[0]] == 15.0e9
-
-
-def test_label_scan_still_works_when_no_concept_column_exists():
-    # Older/other dataframes may lack `concept` entirely -> fall back to labels.
-    df = pd.DataFrame([{"label": "Weighted average diluted shares", **dict(zip(FY, [1.0, 2.0, 3.0], strict=True))}])
-    row = _row_diluted_shares(df)
-    assert row is not None and row[FY[0]] == 1.0
-
-
-def test_basic_share_row_is_never_returned():
-    df = _df([_row("Basic (in shares)", BASIC, [1.0, 2.0, 3.0])])
-    assert _row_diluted_shares(df) is None
-
-
-def test_all_nan_abstract_parent_row_is_never_returned():
-    df = _df([_row("Weighted average shares outstanding:", ABSTRACT, [None, None, None])])
-    assert _row_diluted_shares(df) is None
+def test_basic_share_row_is_never_used():
+    ef = _extract([_row("Basic (in shares)", [1.0, 2.0, 3.0], concept=BASIC)])
+    assert ef.diluted_shares == []
 
 
 def test_dimensional_breakdown_rows_are_ignored():
-    df = _df([
-        _row("Diluted", SHARES, [99.0, 99.0, 99.0], dimension=True),
-        _row("Diluted", SHARES, [7.0, 8.0, 9.0]),
+    ef = _extract([
+        _row("Diluted", [99.0, 99.0, 99.0], concept=SHARES, dimension=True),
+        _row("Diluted", [7.0, 8.0, 9.0], concept=SHARES),
     ])
-    row = _row_diluted_shares(df)
-    assert row is not None and row[FY[0]] == 7.0
+    assert ef.diluted_shares == [7.0, 8.0, 9.0]
 
 
-def test_msft_style_bare_diluted_eps_label_is_matched_by_concept():
-    # Root cause C: same bug on EPS. Without this the computed fallback
-    # (net_income / TODAY's share scalar) silently replaces reported EPS.
-    df = _df([
-        _row("Diluted", EPS, [17.95, 13.64, 11.80]),
-        _row("Diluted", SHARES, [7_453e6, 7_465e6, 7_469e6]),
+def test_nested_child_row_loses_to_the_min_level_row():
+    # Mirrors the MSFT OCF failure that motivated _row_by_standard_concept's
+    # min-level tie-break: iloc[0] would grab the level-4 child.
+    ef = _extract([
+        _row("Diluted (child)", [1.0, 2.0, 3.0], concept=SHARES, level=4),
+        _row("Diluted", [7.0, 8.0, 9.0], concept=SHARES, level=2),
     ])
-    row = _row_diluted_eps(df)
-    assert row is not None
-    assert row["concept"] == EPS and row[FY[0]] == 17.95
+    assert ef.diluted_shares == [7.0, 8.0, 9.0]
 
 
-def test_diluted_eps_label_path_still_works():
-    df = pd.DataFrame([{"label": "Diluted (in dollars per share)",
-                        **dict(zip(FY, [7.46, 6.08, 6.13], strict=True))}])
-    row = _row_diluted_eps(df)
-    assert row is not None and row[FY[0]] == 7.46
+# --- [R2] Critical 1: value-aware fallback (regression guards) ------------
+
+def test_sparse_concept_row_does_not_shadow_a_working_label_row():
+    # _series is all-or-nothing. A concept row with a NaN must NOT beat a
+    # complete label-matched row, or a populated series silently becomes [].
+    ef = _extract([
+        _row("Diluted", [7_453e6, None, 7_469e6], concept=SHARES),
+        _row("Weighted average diluted shares", [1e9, 2e9, 3e9]),
+    ])
+    assert ef.diluted_shares == [1e9, 2e9, 3e9]
+
+
+def test_all_nan_concept_row_does_not_shadow_a_working_label_row():
+    ef = _extract([
+        _row("Weighted average shares outstanding:", [None, None, None], concept=SHARES),
+        _row("Weighted average diluted shares", [1e9, 2e9, 3e9]),
+    ])
+    assert ef.diluted_shares == [1e9, 2e9, 3e9]
+
+
+def test_label_scan_still_works_with_no_concept_column():
+    df = pd.DataFrame([
+        {"label": "Revenue", "standard_concept": REVENUE_SC, **dict(zip(FY, [1.0, 1.0, 1.0], strict=True))},
+        {"label": "Weighted average diluted shares", **dict(zip(FY, [1e9, 2e9, 3e9], strict=True))},
+    ])
+    ef = extract_financials(df, _EMPTY, _EMPTY, shares_diluted=None)
+    assert ef.diluted_shares == [1e9, 2e9, 3e9]
+
+
+def test_aapl_style_label_still_works_no_regression():
+    ef = _extract([_row("Diluted (in shares)", [15.0e9, 15.4e9, 15.8e9], concept=SHARES)])
+    assert ef.diluted_shares == [15.0e9, 15.4e9, 15.8e9]
+
+
+# --- [R2] Critical 3: the EPS provenance flip, pinned ---------------------
+
+def test_bare_diluted_eps_label_uses_reported_values_not_the_computed_fallback():
+    scalar = 7_000e6
+    ef = _extract([
+        _row("Diluted", [17.95, 13.64, 11.80], concept=EPS),
+        _row("Diluted", [7_453e6, 7_465e6, 7_469e6], concept=SHARES),
+    ], shares_scalar=scalar)
+    assert ef.diluted_eps == [17.95, 13.64, 11.80]          # as-reported
+    assert ef.diluted_eps != [ni / scalar for ni in NI]     # NOT the fallback
+
+
+def test_computed_fallback_still_fires_when_no_eps_row_exists_at_all():
+    scalar = 7_000e6
+    ef = _extract([], shares_scalar=scalar)
+    assert ef.diluted_eps == [ni / scalar for ni in NI]
+
+
+def test_reported_eps_label_path_still_works():
+    ef = _extract([_row("Diluted (in dollars per share)", [7.46, 6.08, 6.13], concept=EPS)])
+    assert ef.diluted_eps == [7.46, 6.08, 6.13]
+
+
+# --- [R2] Important 6: discontinued-operations row ordering ---------------
+
+def test_continuing_operations_eps_row_never_displaces_the_total_eps_row():
+    # A filer with discontinued ops carries BOTH tags. Only EarningsPerShareDiluted
+    # is the total; picking the continuing-ops row would silently move a scored leg.
+    ef = _extract([
+        _row("Continuing operations", [6.0, 5.0, 4.0], concept=EPS_CONTINUING),
+        _row("Diluted", [5.0, 4.0, 3.0], concept=EPS),
+    ])
+    assert ef.diluted_eps == [5.0, 4.0, 3.0]
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q`
-Expected: FAIL — the MSFT/IBM/VZ share tests return `None` (label scan misses), and
-`test_msft_style_bare_diluted_eps_label_is_matched_by_concept` returns `None`.
+Expected FAIL: the three root-cause-A recovery tests, `test_dimensional_breakdown_rows_are_ignored`,
+`test_nested_child_row_loses_to_the_min_level_row`, and
+`test_bare_diluted_eps_label_uses_reported_values_not_the_computed_fallback`.
+Expected PASS already: the value-aware guards, the label-path tests, the basic-row test, and
+the continuing-ops test (all are regression pins).
 
 - [ ] **Step 3: Implement**
 
-In `src/shortlist/providers/_edgar_facts.py`, add above `_row_diluted_eps`:
+Add to `src/shortlist/providers/_edgar_facts.py`, above `extract_financials`:
 
 ```python
-# Authoritative raw us-gaap tags. Matched on the `concept` column, NOT `label`
-# (filer presentation text: MSFT/COST/ORCL/PEP label the share-count row just
-# "Diluted", IBM "Assuming dilution (in shares)", VZ omits "diluted" entirely —
-# 7 of 42 production tickers extracted EMPTY on labels alone) and NOT
-# `standard_concept` (bucket names drift across edgartools releases and have
-# silently broken a leg before — docs/audits/2026-07-12-accruals-leg-disable.md).
+# Authoritative raw us-gaap tags. Matched on `concept`, NOT `label` (filer
+# presentation text: MSFT/COST/ORCL/PEP label the share-count row just "Diluted",
+# IBM "Assuming dilution (in shares)", VZ omits "diluted" — 7 of 42 production
+# tickers extracted EMPTY on labels alone) and NOT `standard_concept` (bucket names
+# drift across edgartools releases — docs/audits/2026-07-12-accruals-leg-disable.md).
 _DILUTED_SHARES_CONCEPTS = ("us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",)
 _DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
 
 
-def _row_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> Optional[pd.Series]:
-    """First non-dimensional row whose raw `concept` exactly equals one of
-    `concepts`, in the order given. None when the column or the tag is absent."""
+def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
+    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`, in
+    concept order then ascending `level` — the same min-level preference as
+    `_row_by_standard_concept`, which exists because iloc[0] picked a nested child
+    row on real MSFT/GOOGL filings. Exact equality, never substring: a prefix match
+    would let IncomeLossFromContinuingOperationsPerDilutedShare pose as total EPS."""
     if "concept" not in df.columns:
-        return None
+        return []
     rows = df
     if "dimension" in rows.columns:
         rows = rows[rows["dimension"] != True]      # noqa: E712 — drop breakdowns
     col = rows["concept"].astype(str)
+    out: list[pd.Series] = []
     for c in concepts:
         hit = rows[col == c]
-        if not hit.empty:
-            return hit.iloc[0]
-    return None
+        if hit.empty:
+            continue
+        if "level" in hit.columns:
+            lvl = pd.to_numeric(hit["level"], errors="coerce")
+            if lvl.notna().any():
+                hit = hit.loc[lvl.sort_values(kind="stable").index]
+        out.extend(hit.iloc[i] for i in range(len(hit)))
+    return out
+
+
+def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
+                                label_picker, fy_cols: list[tuple[str, str]]) -> list[float]:
+    """VALUE-AWARE pick. A concept row wins only if it yields a COMPLETE series;
+    otherwise we fall through to the next candidate and finally to the label scan.
+    Keying the fallback on row-presence instead would let a sparse or all-NaN
+    concept row SHADOW a label row that works today, turning a populated series
+    into [] (`_series` is all-or-nothing) — a regression, not a no-op."""
+    for row in _rows_by_concept(df, concepts):
+        series = _series(row, fy_cols)
+        if series:
+            return series
+    return _series(label_picker(df), fy_cols)
 ```
 
-Then make each row-picker concept-first. **Do not use `or` between them** — a `Series` in a
-boolean context raises `ValueError: The truth value of a Series is ambiguous`:
+Then in `extract_financials`, replace lines 282 and 286 only (leave 283-285 intact):
 
 ```python
-def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
-    """...<keep the existing docstring, and add:>...
-
-    Concept-first: the raw us-gaap tag is authoritative and stable; the label
-    scan below is the fallback for dataframes without a `concept` column."""
-    row = _row_by_concept(df, _DILUTED_SHARES_CONCEPTS)
-    if row is not None:
-        return row
-    # ... existing label-scan body unchanged ...
+    eps = _series_by_concept_or_label(income_df, _DILUTED_EPS_CONCEPTS, _row_diluted_eps, inc_fy)
+    if not eps and fin.net_income and shares_diluted:
+        eps = [ni / shares_diluted for ni in fin.net_income]
+    fin.diluted_eps = eps
+    fin.diluted_shares = _series_by_concept_or_label(
+        income_df, _DILUTED_SHARES_CONCEPTS, _row_diluted_shares, inc_fy)
 ```
 
-Apply the identical concept-first prelude to `_row_diluted_eps` with `_DILUTED_EPS_CONCEPTS`.
+`_row_diluted_shares` and `_row_diluted_eps` are **not modified**.
 
 - [ ] **Step 4: Verify they pass**
 
-Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q` → PASS (10 tests)
+Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q` → PASS (15 tests)
 
 - [ ] **Step 5: Full suite**
 
-Run: `uv run pytest -q`
-Expected: green. `tests/test_edgar_leverage_live.py` is `-m live`-marked and deselected by
-default; do not run it (it hits SEC).
+Run: `uv run pytest -q` → green. `tests/test_edgar_leverage_live.py` is `-m live`-marked and
+deselected by default; do not run it (it hits SEC).
 
 - [ ] **Step 6: Commit**
 
 ```bash
 uv run ruff check src tests
 git add src/shortlist/providers/_edgar_facts.py tests/test_edgar_facts_concept_match.py
-git commit -m "fix(edgar): match diluted share/EPS rows by raw concept, not filer label"
+git commit -m "fix(edgar): value-aware concept-first matching for diluted share/EPS rows"
 ```
 
 ---
 
-### Task 2: Live verification + docs
+### Task 2: Full-universe live verification + evidence + docs
 
-**Files:** `CLAUDE.md`, `TODO.md`
+- [ ] **Step 1: [R2] Live before/after across ALL 42 store tickers — mandatory, keyless**
 
-- [ ] **Step 1: Live before/after — mandatory, keyless, no FMP quota needed**
+Revision 1 checked 9 tickers against a universe-wide constraint. Enumerate the real universe
+instead (`set -a && . ./.env && set +a` first for `SEC_IDENTITY`; no FMP quota needed):
 
-Run against real EDGAR (needs `SEC_IDENTITY` from `.env`; `set -a && . ./.env && set +a`):
-
-```bash
-uv run --extra edgar python -c "
-import os,sys; sys.path.insert(0,'src')
+```python
+# scratch script; writes before/after JSON for diffing
+import glob, gzip, json, os, sys
+sys.path.insert(0, "src")
 from edgar import Company, set_identity
-set_identity(os.environ['SEC_IDENTITY'])
+set_identity(os.environ["SEC_IDENTITY"])
 from shortlist.providers._edgar_facts import extract_financials
-for tk in ['MSFT','COST','ORCL','PEP','QCOM','IBM','VZ','AAPL','AMZN']:
-    f=Company(tk).get_financials()
-    try: sh=f.get_shares_outstanding_diluted()
-    except Exception: sh=None
-    ef=extract_financials(f.income_statement().to_dataframe(),
-                          f.cashflow_statement().to_dataframe(),
-                          f.balance_sheet().to_dataframe(), shares_diluted=sh)
-    print(tk, 'shares=', ef.diluted_shares[:3], 'eps=', ef.diluted_eps[:3])
-"
+
+tickers = sorted({os.path.basename(os.path.dirname(p))
+                  for p in glob.glob("/opt/shortlist/state/snapshots/*/*.json.gz")})
+out = {}
+for tk in tickers:
+    try:
+        f = Company(tk).get_financials()
+        try: sh = f.get_shares_outstanding_diluted()
+        except Exception: sh = None
+        ef = extract_financials(f.income_statement().to_dataframe(),
+                                f.cashflow_statement().to_dataframe(),
+                                f.balance_sheet().to_dataframe(), shares_diluted=sh)
+        out[tk] = {"shares": ef.diluted_shares[:3], "eps": ef.diluted_eps[:3]}
+    except Exception as e:
+        out[tk] = {"error": f"{type(e).__name__}: {e}"}
+print(json.dumps(out, indent=1))
 ```
 
-Expected: the 7 root-cause-A tickers go from `shares=[]` to three real values; AAPL/AMZN
-(already working) are **unchanged**; COST/MSFT/ORCL/PEP `eps` become the as-reported
-2-decimal values rather than long computed floats. Record the actual output in the commit
-message. If AAPL or AMZN changes, STOP — that is a regression.
+Run it on `main` and on the branch, diff the two JSONs.
 
-- [ ] **Step 2: CLAUDE.md**
+**Go/no-go — this is the one premise unit tests cannot cover** (root cause A assumes the
+concept row has complete values across every `inc_fy` column; `TODO.md` records MSFT carrying
+an FY2026 column, so a partial extra column would still yield `[]`):
+- The 7 root-cause-A tickers must go `shares=[]` → three real values.
+- The 9 computed-EPS tickers must go long-float → 2-dp as-reported.
+- **Every other ticker must be byte-identical. If any name not on those lists changes, STOP** —
+  that is the shadowing regression or the continuing-ops swap, and the plan is wrong.
 
-In the EDGAR section that documents `_edgar_facts.py`, add: row selection matches the **raw
-`concept`** column first (label text is filer presentation and varies — `'Diluted'`,
-`'Assuming dilution (in shares)'`, `'Weighted-average shares outstanding (in shares)'` all
-denote the same tag), with the label scan as fallback; and that `standard_concept` must not
-be used (release drift).
+- [ ] **Step 2: [R2] Commit the evidence to `docs/audits/`**
 
-- [ ] **Step 3: TODO.md**
+`CLAUDE.md` requires reproducible verdicts on the tracked audits tree ("that's how two
+enablement artifacts already evaporated"); a commit message is not that surface. Write
+`docs/audits/2026-07-31-edgar-concept-match.md` with the before/after table for all 42, the
+root-cause A/B/C split, and the repro command.
 
-Close the EDGAR-extraction follow-up recorded in the statements-merge entry, citing the
-measured before/after. Record root cause B (9 tickers, concept absent) as still open.
+- [ ] **Step 3: CLAUDE.md**
 
-- [ ] **Step 4: Commit**
+In the EDGAR section: row selection matches the raw `concept` column first and is
+**value-aware** (a concept row wins only if it yields a complete series, so it can never
+shadow a working label row), with the label scan as fallback; `standard_concept` must not be
+used. **[R2]** Also correct the "ABSOLUTE USD, no scaling" claim at `_edgar_facts.py:7-10` —
+MCD's `diluted_shares` are in millions.
+
+- [ ] **Step 4: TODO.md**
+
+Close the EDGAR-extraction follow-up with the measured before/after. Record root cause B
+(9 tickers) and the `get_shares_outstanding_diluted()` units hazard as still open.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 uv run ruff check src tests && uv run pytest -q
-git add CLAUDE.md TODO.md && git commit -m "docs(edgar): document concept-first row matching; close the diluted-shares gap"
+git add CLAUDE.md TODO.md docs/audits/2026-07-31-edgar-concept-match.md
+git commit -m "docs(edgar): concept-first row matching evidence + close the diluted-shares gap"
 ```
 
 ---
 
-## Deferred — root cause B (9 of 16), needs its own investigation
+## Deferred
 
-CMCSA CVX GOOGL HON LMT MO MRK PG XOM carry **no** share-count concept in edgartools'
-income-statement view (probed: only `EarningsPerShareBasic`/`Diluted`). Two candidate routes,
-neither in scope here:
+**Root cause B (9 tickers, concept absent).** Disjoint from A/C: the concept-first path
+returns no rows, so these land on today's exact behaviour. Coverage goes 26/42 → 33/42 with no
+half-fixed state. **[R2] Caveat: the residual absence is non-random** — CMCSA/CVX/GOOGL/HON/
+LMT/MO/MRK/PG/XOM skew to old-line industrials, energy and pharma. Harmless for an advisory
+flag; a selection bias for a scored leg. **Do not enable `quality.dilution` until B is closed.**
 
-1. **Raw companyfacts.** `_xbrl_facts.py` already reads
-   `WeightedAverageNumberOfDilutedSharesOutstanding` from companyfacts for the backtest path,
-   so the data very likely exists at source. Cost: a new per-ticker fetch (~2.5 MB/CIK
-   cached), which the harness deliberately avoids on the hot path.
-2. **Derive `shares = net_income / diluted_eps`.** Both are present for this group, and the
-   2-dp EPS rounding implies ~0.05% error — negligible against the 3%/yr `dilution` threshold.
-   **Hard prerequisite:** only valid when `diluted_eps` came from the *reported row*. If EPS
-   itself fell through to the computed fallback, deriving shares from it is **circular** and
-   would fabricate a flat share count. `extract_financials` does not currently track EPS
-   provenance, so this route needs that flag first.
+1. **Raw companyfacts.** `_xbrl_facts.py` already reads this tag for the backtest path, so the
+   data likely exists at source. Cost: a per-ticker fetch (~2.5 MB/CIK) the harness avoids on
+   the hot path. **Measure its real coverage first** — this is the route to try.
+2. **Derive `shares = net_income / diluted_eps`.** **Circularity hazard:** valid only when EPS
+   came from the reported row; deriving from a computed EPS would fabricate a flat share count
+   and silently satisfy the `dilution` flag. The provenance flag falls out of Task 1 cheaply,
+   and all 9 B-tickers currently carry as-reported EPS, so it is applicable today.
+   **[R2] Error budget is larger than rounding.** `NetIncomeLoss` is consolidated, while
+   diluted EPS is computed on income attributable to *common* shareholders (after
+   noncontrolling interests and preferred dividends). A constant NCI fraction cancels in a
+   CAGR; a **drifting** one does not — and CMCSA, XOM and MO are the NCI-heavy names in this
+   list. Quantify NCI drift, not just 2-dp rounding (which is 0.5% on a $1 EPS, not 0.05%).
 
-Recommend measuring route 1's real coverage on companyfacts before building either.
+**[R2] `get_shares_outstanding_diluted()` units hazard.** Returns MCD's count in millions.
+This plan removes MCD's dependence on it but does not fix the function. Any future consumer
+inherits the bug.
+
+**[R2] Adjacent cheap win.** The computed fallback divides by a *scalar*; `fin.diluted_shares`
+is keyed on the same `inc_fy` axis and could be hoisted above it, giving a per-year divisor.
+Strictly better, and it would already have saved DIS/MCD/UNH. It is route 2 in reverse, so
+the two decisions inform each other.
 
 ## Done When
 
 - `uv run ruff check src tests` clean; `uv run pytest -q` green.
-- The live before/after in Task 2 Step 1 shows 7 tickers recovering and AAPL/AMZN unchanged,
-  with the actual output recorded.
-- `CLAUDE.md`/`TODO.md` state the concept-first rule and the still-open root cause B.
-- **Not done here:** deployment, and root cause B.
+- The 42-ticker before/after shows exactly the expected sets changing and nothing else.
+- `docs/audits/2026-07-31-edgar-concept-match.md` committed.
+- `CLAUDE.md`/`TODO.md` state the value-aware concept-first rule, root cause B, and the units
+  hazard.
+- **Not done here:** deployment, root cause B, the units bug in `get_shares_outstanding_diluted()`.
