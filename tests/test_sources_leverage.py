@@ -11,7 +11,7 @@ def test_statements_has_leverage_fields():
     assert st.cash_and_equivalents[0] == 120.0
 
 
-def test_pick_first_merge_carries_leverage_fields():
+def test_statements_merge_carries_leverage_fields():
     """Statements now year-joins backfill (`_merge_statements`); this fixture's EDGAR
     donor has nothing new beyond what FMP's spine already supplies, so it still exercises
     only the priority-pick path, not the backfill. Both builders populate the leverage

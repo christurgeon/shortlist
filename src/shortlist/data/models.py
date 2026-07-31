@@ -57,7 +57,13 @@ class Fundamentals:
 
 @dataclass
 class Statements:
-    """Up to 5 fiscal years, most-recent-first, for trend/stability signals."""
+    """Up to 5 fiscal years, most-recent-first, for trend/stability signals.
+
+    A MERGED instance (`_merge_statements`) may carry `None` holes in a
+    backfilled series where a lower-priority donor had no row for one of the
+    spine's fiscal years (year-joined, not truncated) — every consumer
+    (`piotroski_f`, `bridge._financial_series`, `cagr`, `[0]`-as-latest) is
+    already `None`-tolerant, so this is part of the class contract, not a bug."""
     fiscal_years: list[int] = field(default_factory=list)
     revenue: list[float] = field(default_factory=list)
     gross_profit: list[float] = field(default_factory=list)
@@ -543,6 +549,11 @@ def _merge_statements(
         return None, []
     spine_src, spine = present[0]
     merged = dataclasses.replace(spine)      # copy: never alias SourceResult.partial
+    # NOTE: dataclasses.replace() is a SHALLOW copy — any list attribute this loop
+    # does not `setattr` stays the SAME object as the spine's (i.e. the source's
+    # SourceResult.partial). Safe only under the repo-wide invariant that Statements
+    # series are never mutated in place — always rebound wholesale (`setattr`/`=`),
+    # never `.append()`/`[i] =` on an existing list.
     contributors = [spine_src]
 
     spine_years = _usable_years(spine)

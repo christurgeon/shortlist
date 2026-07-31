@@ -277,3 +277,44 @@ def test_measurement_inputs_reach_the_metrics():
     assert m.asset_growth == 0.0714
     assert m.accruals == -0.02
     assert m.eps_cagr_ps is not None       # from the recovered diluted_eps
+
+
+def test_pe_vs_history_reactivates_on_an_fmp_covered_name():
+    # A SECOND live scoring-surface change, found during the final whole-branch review,
+    # not anticipated by the original design (docs/STATEMENTS_MERGE.md §4): recovering
+    # diluted_eps + fiscal_period_end also re-activates a dormant EDGAR PE fallback at
+    # bridge.py:241/243. Scenario: FMP's income statement wins the statements spine but
+    # its own ratios-ttm call failed (fundamentals stays None, so m.pe_ttm/pe_median_5y
+    # start unset), EDGAR donates diluted_eps + fiscal_period_end via the year-join, and
+    # Yahoo supplies monthly closes near each period end. pe_vs_history is a SCORED
+    # `value` leg (scoring.py:107), so this moves composite/confidence, not just a flag.
+    from shortlist.data.bridge import snapshot_to_metrics
+    from shortlist.data.models import Price, SourceResult, TickerSnapshot, merge_snapshots
+
+    fmp_price = Price(price=90.0, monthly_closes=[
+        ["2025-09-28", 90.0], ["2024-09-28", 63.0], ["2023-09-28", 60.0],
+    ])
+    fmp_sr = SourceResult(source="fmp", partial=TickerSnapshot(
+        ticker="X", statements=_fmp_st(), price=fmp_price))
+    edgar_sr = _sr("edgar", _edgar_st())
+
+    # WITH the EDGAR donor: diluted_eps == [4.5, 4.2, 4.0, None, None] and
+    # fiscal_period_end == ["2025-09-28", "2024-09-28", "2023-09-28", None, None]
+    # backfill onto the FMP spine (already pinned by
+    # test_edgar_only_fields_survive_an_fmp_won_merge), which is exactly what the
+    # dormant fallback needs.
+    snap = merge_snapshots("X", [fmp_sr, edgar_sr], priority=["fmp", "edgar"])
+    m = snapshot_to_metrics(snap)
+    assert m.pe_ttm is not None
+    assert abs(m.pe_ttm - 20.0) < 1e-9            # 90.0 (price) / 4.5 (diluted_eps[0])
+    assert m.pe_median_5y is not None
+    assert abs(m.pe_median_5y - 15.0) < 1e-9       # median([90/4.5, 63/4.2, 60/4.0]) = median([20, 15, 15])
+
+    # WITHOUT EDGAR in the chain: diluted_eps/fiscal_period_end stay [] (FMP's own
+    # Statements never carries them), so both fallback guards short-circuit on the
+    # falsy `eps`/`ends` check and pe_ttm/pe_median_5y stay None -- this is what every
+    # FMP-covered, ratios-ttm-gated name looked like before the year-join backfill.
+    snap_no_edgar = merge_snapshots("X", [fmp_sr], priority=["fmp", "edgar"])
+    m_no_edgar = snapshot_to_metrics(snap_no_edgar)
+    assert m_no_edgar.pe_ttm is None
+    assert m_no_edgar.pe_median_5y is None

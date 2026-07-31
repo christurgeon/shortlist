@@ -387,7 +387,22 @@ Abstains rather than guesses: no/duplicate `fiscal_years` on the spine disables 
 a donor with the same problem is skipped without vetoing later donors. Before this
 existed, FMP won `statements` wholesale for every non-402 name and **every EDGAR-only
 field was discarded** — which made the ON-by-default `dilution` flag structurally
-incapable of firing on exactly the best-covered names. Design: `docs/STATEMENTS_MERGE.md`.
+incapable of firing on exactly the best-covered names. **Two live scoring-surface changes,
+not one:** (1) the `dilution` flag, the intended fix; (2) recovering `diluted_eps` +
+`fiscal_period_end` also re-activates a dormant EDGAR PE fallback (`bridge.py:241,243`) —
+`pe_ttm`/`pe_median_5y` now populate whenever FMP won the spine but its own `ratios-ttm`
+call didn't supply them, feeding `pe_vs_history`, a **scored `value` leg**
+(`scoring.py:107`), so composite/ranking move too, not merely a flag. Both are correct
+fixes (data recovery reaching cases it was written for), not new bugs. **Known, kept
+limitation:** `_is_present` treats a same-length all-`None` list as *present*, and
+`FMPSource` (`sources/fmp.py:113`) produces exactly that shape when a cash-flow/
+balance-sheet sub-call 402s/429s — so `free_cash_flow`/`total_debt` etc. commonly do NOT
+backfill from EDGAR even though EDGAR has real values (not a regression — `_pick_first`
+discarded them too). **Deliberately not fixed**: relaxing the presence check would let
+EDGAR backfill `free_cash_flow` on FMP-cash-flow-gated names, which would make the
+**`negative_fcf` hard gate** newly evaluable on an unmeasured population — expanding a
+bounded data-recovery change into a gate-eligibility change violates measure-first.
+Design + the reasoning above: `docs/STATEMENTS_MERGE.md` §4/§6.
 
 ## EDGAR in the harness
 
