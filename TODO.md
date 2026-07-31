@@ -6,6 +6,138 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Statements-merge fix — spec + plan + all three tasks + final review DONE, not yet merged (2026-07-31)
+
+Actioned the 2026-07-20 data-audit item 1 ("FMP-won statements silently drop every
+EDGAR-only field"). Branch `fix/statements-merge`, cut from `origin/main` `31e9764`.
+
+**The defect:** `data/models.py` routed `statements` through whole-source `_pick_first`
+while `config.yaml` ranked `fmp` above `edgar`, so for every non-402 name FMP won the
+entire `Statements` object and every EDGAR-only field (`diluted_shares`, `diluted_eps`,
+`fiscal_period_end`, `total_assets`, `asset_growth`, `accruals`, the §5 financing legs) was
+fetched and discarded. Consequence: `bridge.py` derives `share_count_cagr` from
+`st.diluted_shares`, and the ON-by-default `dilution` flag gates on it — structurally
+incapable of firing on exactly the best-covered names. `shortlist-accumulate` was
+persisting the degraded snapshots nightly with no retroactive repair.
+
+**The fix (shipped):** `_merge_statements` (`data/models.py`) replaces `_pick_first` for
+`statements` — the highest-priority source with data stays the spine (so revenue/growth
+legs are untouched), and fields it left empty are backfilled from lower-priority sources
+**re-indexed by fiscal YEAR, never by list position** (every consumer — `piotroski_f`,
+`bridge._financial_series`, `cagr`, `[0]`-as-latest — aligns by index). Six pre-computed
+latest-FY scalars copy only on a newest-year match. Design: `docs/STATEMENTS_MERGE.md`.
+Plan: `docs/PLAN_STATEMENTS_MERGE.md`.
+
+**All three tasks complete and reviewed.** `fed86a4` (pure fiscal-year join helpers) +
+`75f7ab2` (`_merge_statements` + routing) + `bd863d6` (stale-docstring fix from round-1
+review) + `cd481a0` (Task 3: end-to-end `dilution` regression test, CLAUDE.md +
+`docs/STATEMENTS_MERGE.md` updates). A final whole-branch review then found a SECOND live
+scoring-surface change the original design missed — recovering `diluted_eps` +
+`fiscal_period_end` also re-activates a dormant EDGAR PE fallback (`bridge.py:241,243`)
+feeding `pe_vs_history`, a **scored `value` leg** — and a merge-layer limitation worth
+documenting (an all-`None` FMP column reads as "present" and silently blocks backfill for
+that field, deliberately NOT fixed because relaxing it would make the `negative_fcf` hard
+gate newly evaluable on an unmeasured population). Both are now recorded in
+`docs/STATEMENTS_MERGE.md` §4/§6 and `CLAUDE.md`, with a regression test pinning the
+`pe_vs_history` reactivation (`tests/test_statements_merge.py`). Suite green
+(`uv run ruff check src tests` clean, `uv run pytest -q` passing) with the new test added.
+Branch is **merge-ready. Not pushed, no PR, not deployed** — `/opt/shortlist` keeps running
+the old merge until `git pull` + `sudo bash deploy/install_opt_shortlist.sh`, and the
+accumulate timer only starts capturing the recovered fields after that.
+
+**Open verification gap — exists nowhere else in the repo, read before touching this
+branch again.** The plan's "Done When" required a live before/after `shortlist --json` run
+on a real FMP-covered ticker showing `share_count_cagr`/`asset_growth`/`accruals`
+populated where `main` returns null. **This did not happen.** FMP's daily quota was
+exhausted, so both runs 429'd; with FMP absent, EDGAR won `statements` wholesale under
+BOTH old and new merge logic, making the comparison uninformative. The mechanism is
+covered by unit RED evidence only (see below). Re-run on AAPL/MSFT/LMT on a fresh-quota
+day and record the actual values. Treat "recovered fields still null on a non-402 name" as
+a bug report against the fiscal-year join key, not a config problem.
+
+**LARGELY CLOSED 2026-07-31 — verified on REAL production data with ZERO FMP calls.** The
+live CLI run is still owed, but its central unknown (do FMP and EDGAR agree on the fiscal-year
+join key for real issuers?) is now answered empirically. Method: the accumulation store at
+`/opt/shortlist/state/snapshots` holds 1,008 real snapshots; **17 of them are FMP-won**
+(`provenance.statements == ['fmp']`, all 2026-07-07) and the rest EDGAR-won — so the store
+already contains both sources' real spines. Re-merging the FMP-won statements against the
+same ticker's EDGAR-won statements through the actual `merge_snapshots`, then through
+`snapshot_to_metrics`:
+
+| ticker | FMP years | EDGAR years | `share_count_cagr` before → after |
+|---|---|---|---|
+| AAPL | 2025–2021 | 2025–2023 | None → **−0.0259** |
+| AMZN | 2025–2021 | 2025–2023 | None → **+0.0158** |
+| CSCO | 2025–2021 | 2025–2023 | None → **−0.0131** |
+| ADBE | 2025–2021 | 2025–2023 | None → **−0.0356** |
+| DIS  | 2025–2021 | 2025–2023 | None → **−0.0052** |
+| MSFT | 2025–2021 | **2026**–2024 | None → None (EDGAR `diluted_shares` empty) |
+| GOOGL| 2025–2021 | 2025–2023 | None → None (EDGAR `diluted_shares` empty) |
+| COST | 2025–2021 | 2025–2023 | None → None (EDGAR `diluted_shares` empty) |
+
+- **The join key agrees on real data**, including non-calendar fiscal years (AAPL/DIS Sept,
+  MSFT June, COST Aug, ADBE Nov) — the case most likely to break a year-label join.
+- **Signs are right**: AAPL/ADBE/CSCO negative (buybacks), AMZN positive (SBC issuance).
+- `diluted_eps` recovered **8/8** (0 → 5 rows), so the `pe_vs_history` reactivation is real
+  and broad, not a corner case.
+- **MSFT is the vintage guard earning its slot on real data**: EDGAR carries FY**2026**
+  while FMP's newest is FY2025, so the latest-FY scalars correctly abstained rather than
+  attaching a 2026 figure to a 2025 spine. That disagreement was hypothetical when designed;
+  it is now observed.
+- **NEW follow-up (upstream, not this fix):** EDGAR's own `diluted_shares` is `[]` for
+  MSFT/GOOGL/COST while `diluted_eps` populates — an extraction gap in
+  `providers/_edgar_facts.py` (`get_shares_outstanding_diluted`). The merge correctly
+  abstained; the ceiling on this fix's yield is EDGAR-side coverage, ~5/8 here. Worth its
+  own look.
+
+**Live CLI wiring smoke — PASSED 2026-07-31, keyless (no FMP quota).**
+`uv run shortlist --tickers AAPL --json --provider yahoo,edgar,finnhub` runs the full
+CLI → collector → merge → bridge → scoring → JSON path against real HTTP and emits
+`share_count_cagr -0.0259`, `asset_growth -0.0157`, `accruals 0.0015`. The
+`share_count_cagr` value is **identical** to the store-based offline merge above, so the two
+independent paths cross-validate. (Note the CLI flag is `--tickers AAPL`, NOT positional.)
+Together with the FMP-spine branch verified offline on real FMP data, the only thing never
+exercised is the FMP-wins branch *under a live fetch* — logic and wiring are each covered.
+
+**WHEN to retry — measured 2026-07-31 00:42 UTC, second attempt, still blocked.** A direct
+FMP probe still returned `"Limit Reach"`. Root cause is **our own nightly timers**:
+`shortlist-accumulate` (21:30 UTC) and `shortlist-scout` (22:30 UTC) had run 3h12m and
+2h12m earlier and drained the free-tier quota. UTC midnight had passed 42 min before the
+probe **without** a reset, so FMP's free window is **NOT calendar-UTC-day aligned** (rolling
+24h, or a non-UTC boundary). So "just try again tomorrow" at a similar hour will collide
+again. Retry in the **mid-day UTC window** — after the reset and well before the 21:30
+accumulate timer — and never shortly after 22:30 UTC. Budget ~26 calls (1 ticker × 2 runs,
+~13 calls/ticker, 250/day free limit); the constraint is timing, not budget.
+
+**Unit RED evidence for the mechanism (in lieu of the missing live run).** For the
+`pe_vs_history` reactivation specifically: `_pick_first([('fmp', fmp_statements),
+('edgar', edgar_statements)])` returns the FMP object byte-identical to a plain
+`_fmp_st()` fixture (`diluted_eps == []`) — i.e. under the OLD merge logic EDGAR
+contributes nothing even when present in the source list, which is exactly the
+"single-source FMP-only" branch `test_pe_vs_history_reactivates_on_an_fmp_covered_name`
+already exercises and asserts `pe_ttm`/`pe_median_5y` stay `None`. Live-verified with the
+old `_pick_first` helper directly against the test fixtures during this session.
+
+**Renamed for accuracy:** `tests/test_sources_leverage.py::test_pick_first_merge_carries_leverage_fields`
+→ `test_statements_merge_carries_leverage_fields` (docstring was already correct; only the
+name still referenced `_pick_first`, which no longer merges statements).
+
+**Parked minor, still open, low priority:** `models.py` `_usable_years` does not reject an
+all-`None` `fiscal_years` list. Net observable behaviour is identical to rejection
+(`_newest_year` → None short-circuits the scalar guard; `_reindex_by_year` → `[]` so no
+backfill), so it is a docstring-vs-contract self-consistency gap, not a wrong output.
+
+**Incidental finding, not fixed:** `tests/scout/test_daily_demo.py` (TODO item 0d, below)
+was passing as of the prior session — GOOGL's 2026-07-20 pick had aged out of its 7-day
+cooldown. The test still reads the live `state/scout_state.json`, so it is dormant, not
+fixed, and will fail again the next time a pick lands inside that window.
+
+**Status:** DONE, pending merge. Before merging: run the live before/after verification
+above on a fresh-quota day and fold the actual values into this entry or close it out;
+until then this branch's data-path claim rests on unit tests only.
+
+---
+
 ## Form 4 opportunistic-insider originator — SHIPPED and deployed (2026-07-30)
 
 Merged as #151 (evaluator fixes) + #152 (the originator) and **live on the VPS**. Verified
@@ -373,7 +505,14 @@ any age" labeled `net_value_6m`, and an all-stale list built a zero-valued `Insi
 would claim the txn group over EDGAR in `_merge_insider`); (4) CLAUDE.md `daily_push`
 doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
 
-1. **FMP-won statements silently drop every EDGAR-only field** — `statements` is a
+1. ~~**FMP-won statements silently drop every EDGAR-only field**~~ — **FIXED 2026-07-30.**
+   Resolved by option (b): a bespoke `_merge_statements` (`data/models.py`) year-joins the
+   EDGAR-only fields onto the FMP-won spine instead of discarding them. Design +
+   verified consequence chain: `docs/STATEMENTS_MERGE.md`; plan:
+   `docs/PLAN_STATEMENTS_MERGE.md`. The `dilution` flag can now fire on FMP-covered names.
+   **Residual:** already-persisted accumulation snapshots stay degraded — there is no
+   retroactive repair, so the store is complete only from the deploy date forward.
+   Original text: `statements` is a
    whole-source pick-first merge and `fmp` precedes `edgar`, so for exactly the
    well-covered (non-402) names the merged snapshot loses `diluted_shares`,
    `diluted_eps`, `fiscal_period_end`, `total_assets`, `asset_growth`, `accruals`, and
@@ -403,8 +542,8 @@ doc drift (armed 2026-06-29, docs said OFF). Deferred follow-ups, by impact:
    `Statements.total_equity` are extracted but consumed nowhere on the harness path;
    WSB `upvotes`/`rank_24h_ago` are captured but unused.
 
-**Status:** open — fixes await operator push/PR; item 1 is the highest-value build
-(pure data recovery, no new scoring surface); item 2 is one backtest command per universe.
+**Status:** item 1 shipped 2026-07-30 (`docs/STATEMENTS_MERGE.md`); item 2 (the
+`net_debt_to_ebitda` re-measure) is what remains — one backtest command per universe.
 
 ---
 
