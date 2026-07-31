@@ -55,6 +55,16 @@ covered by unit RED evidence only (see below). Re-run on AAPL/MSFT/LMT on a fres
 day and record the actual values. Treat "recovered fields still null on a non-402 name" as
 a bug report against the fiscal-year join key, not a config problem.
 
+**WHEN to retry — measured 2026-07-31 00:42 UTC, second attempt, still blocked.** A direct
+FMP probe still returned `"Limit Reach"`. Root cause is **our own nightly timers**:
+`shortlist-accumulate` (21:30 UTC) and `shortlist-scout` (22:30 UTC) had run 3h12m and
+2h12m earlier and drained the free-tier quota. UTC midnight had passed 42 min before the
+probe **without** a reset, so FMP's free window is **NOT calendar-UTC-day aligned** (rolling
+24h, or a non-UTC boundary). So "just try again tomorrow" at a similar hour will collide
+again. Retry in the **mid-day UTC window** — after the reset and well before the 21:30
+accumulate timer — and never shortly after 22:30 UTC. Budget ~26 calls (1 ticker × 2 runs,
+~13 calls/ticker, 250/day free limit); the constraint is timing, not budget.
+
 **Unit RED evidence for the mechanism (in lieu of the missing live run).** For the
 `pe_vs_history` reactivation specifically: `_pick_first([('fmp', fmp_statements),
 ('edgar', edgar_statements)])` returns the FMP object byte-identical to a plain
