@@ -6,6 +6,79 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## EDGAR diluted-shares/EPS concept-first matching — SHIPPED, verified on all 42 store tickers (2026-07-31)
+
+Closes the "NEW follow-up" opened in the Statements-merge entry below (`diluted_shares`
+empty for MSFT/GOOGL/COST). Branch `fix/edgar-diluted-shares`, `docs/PLAN_EDGAR_DILUTED_SHARES.md`
+(revision 4, signed off). Root cause: `_row_diluted_shares`/`_row_diluted_eps` matched
+filer-presentation `label` text (which varies wildly — MSFT/COST/ORCL/PEP/QCOM label the
+diluted-share row just `'Diluted'`, IBM `'Assuming dilution (in shares)'`, VZ omits the word
+"diluted" entirely), not the authoritative raw us-gaap `concept`. Fix: `_rows_by_concept` +
+`_series_by_concept_or_label` (`_edgar_facts.py`) match `concept` first, value-aware (a
+concept row only wins if it yields a complete series, so it can never shadow a working label
+row), falling back to the label scan. `db79d2f`.
+
+**Verified live on all 42 real production tickers** (`/opt/shortlist/state/snapshots`,
+keyless, before/after diffed programmatically against pre-fix `29f170f`):
+- **7 tickers recovered `diluted_shares`** (COST IBM MSFT ORCL PEP QCOM VZ): `[]` → three
+  real values, each independently cross-checked against `net_income / diluted_eps` — all 21
+  data points (7×3yr) deviate ≤0.58% from the reported share count, confirming correct rows,
+  not `iloc[0]`-style mispicks.
+- **9 tickers flipped a computed EPS approximation to as-reported** (COST DIS IBM MCD MSFT
+  ORCL PEP UNH VZ): the old fallback divided every year's net income by TODAY's share count
+  scalar (MCD's `diluted_eps[0]` was **11,952,819.65** — a live garbage value feeding
+  `pe_vs_history`; `pe_ttm` computed to `2.25e-05`). Now as-reported 2-dp values.
+- **The go/no-go's clause 3 (byte-identical outside the above 16) FAILED on the first pass**
+  and correctly caught a blast-radius undercount the plan's own detection heuristic (">2
+  decimal places" — finds only *computed* EPS) could not see: 5 more tickers changed. **HON,
+  MRK, XOM** had `diluted_eps = []` in production (the fallback's `and shares_diluted` guard
+  never fired because `get_shares_outstanding_diluted()` returns `None` for them) — now
+  correctly recovered via concept match, a pure improvement. **JNJ and QCOM carried a
+  pre-existing, live-in-production wrong-row EPS bug**, independent of and predating this
+  branch: the label matcher picked `IncomeLossFromContinuingOperationsPerDilutedShare`
+  (continuing ops) instead of the total `EarningsPerShareDiluted`. Both rows are
+  byte-identical in years with zero discontinued-ops impact (masking the bug on spot-checks),
+  and diverge sharply otherwise — **JNJ's FY2023 stored `diluted_eps=5.20` vs true `13.72`**
+  (net income $35.2B ÷ 2,560.4M shares), because the stored figure excludes the one-time
+  Kenvue spin-off gain booked as discontinued operations. Consequence: `eps_cagr_ps` on JNJ
+  read **+45.6%/yr in production** when the true series computes **−10.4%/yr** — a sign
+  inversion on a growth input. Plan owner adjudicated (`docs/PLAN_EDGAR_DILUTED_SHARES.md`
+  §[R4], `491b6a1`): not a Task 1 code defect (the picker is correct and consistent on all
+  five; exact-`concept`-equality is precisely what prevents this class of bug), a
+  blast-radius **measurement** failure — the revised 21-ticker expected-change set passed
+  clause 3 on re-run. Full before/after table + repro:
+  `docs/audits/2026-07-31-edgar-concept-match.md`.
+- **Methodological lesson, recorded so it doesn't get relearned:** a "looks like a real
+  number" detection heuristic (rounding/decimal-place patterns) cannot catch a *wrong-row*
+  pick — a continuing-operations EPS is a clean, plausible 2-dp value indistinguishable from
+  the total by inspection. Only an independent arithmetic cross-check against a value derived
+  from a *different* filed tag (here, `net_income / diluted_shares`) surfaces it.
+
+**Still open / deferred (unchanged from the plan, not touched by this branch):**
+- **Root cause B (9 tickers, concept genuinely absent):** CMCSA CVX GOOGL HON LMT MO MRK PG
+  XOM — no `WeightedAverageNumberOfDilutedSharesOutstanding` tag at any label; `diluted_shares`
+  correctly stays `[]`. Skews to old-line industrials/energy/pharma (non-random) — harmless
+  for the advisory `dilution` flag, a selection bias for a scored leg. **Do not enable
+  `quality.dilution` until this is closed.** Candidate routes (raw companyfacts fetch;
+  `net_income / diluted_eps` derivation, gated on EPS provenance to avoid circularity) in
+  `docs/PLAN_EDGAR_DILUTED_SHARES.md` §Deferred.
+- **`get_shares_outstanding_diluted()` units hazard:** returns MCD's count in millions, not
+  absolute shares (`[716.4, 721.9, 732.3]`). This branch removes MCD's *dependence* on it
+  (the EPS fallback that consumed it is dead for MCD now) but does not fix the function
+  itself — any future consumer inherits the bug. Module docstring corrected
+  (`_edgar_facts.py:7-10`) to stop claiming universal absolute-USD/share units.
+- **JNJ/QCOM's pre-fix `eps_cagr_ps` was wrong in production until this branch deploys** —
+  any prior measurement, backtest, or research brief that read `eps_cagr_ps` for these two
+  names before this date used a sign-flipped (JNJ) or understated (QCOM) growth figure.
+  Cached research briefs are accession-cached and will NOT auto-regenerate; `--refresh` to
+  pick up the corrected value.
+
+**Status:** SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2235 tests green,
+ruff clean, 42-ticker live before/after with the revised 21-ticker go/no-go passing). Not
+yet merged to `main` or deployed to `/opt/shortlist`.
+
+---
+
 ## Statements-merge fix — spec + plan + all three tasks + final review DONE, not yet merged (2026-07-31)
 
 Actioned the 2026-07-20 data-audit item 1 ("FMP-won statements silently drop every

@@ -413,10 +413,30 @@ shared module-level semaphore (`_EDGAR_MAX_CONCURRENCY`, default 3 — SEC fair-
 
 It supplies **two failure-isolated sections**: Form 4 insider trades (shared
 `providers/_form4.py`) and **10-K financial statements** (revenue, net income, OCF, FCF,
-diluted EPS; latest ~3 fiscal years; absolute USD). Symbols with no XBRL financials
-(Form 20-F foreign issuers, recent spin-offs) degrade statements to `None` without
-touching insider data. `get_financials()` roughly doubles per-ticker EDGAR requests — the
-concurrency semaphore bounds SEC load, but full-universe runs still need caching.
+diluted EPS; latest ~3 fiscal years; mostly absolute USD — **not universally**, see below).
+Symbols with no XBRL financials (Form 20-F foreign issuers, recent spin-offs) degrade
+statements to `None` without touching insider data. `get_financials()` roughly doubles
+per-ticker EDGAR requests — the concurrency semaphore bounds SEC load, but full-universe
+runs still need caching.
+
+**`diluted_shares`/`diluted_eps` row selection matches the raw `concept` column FIRST, never
+`standard_concept`** (bucket names drift across edgartools releases —
+`docs/audits/2026-07-12-accruals-leg-disable.md`) — and is **value-aware**: a concept row
+only wins when it yields a *complete* series (`_series_by_concept_or_label`,
+`_edgar_facts.py`), so a sparse or all-`NaN` concept row can never shadow a working label
+row and silently turn a populated series into `[]`. The label scan (`_row_diluted_shares`/
+`_row_diluted_eps`, unchanged) is the fallback when no concept row is present. **Exact
+concept equality is what prevents a continuing-operations row from posing as total EPS** —
+`us-gaap_EarningsPerShareDiluted` (the total) and `us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare`
+(continuing ops only) are different raw tags, so they can never be confused by concept
+match, whereas both satisfy the old label regex ("Diluted" + "per share"); this live-fixed a
+pre-existing wrong-row bug on JNJ/QCOM where the two rows are byte-identical in some fiscal
+years (no discontinued-ops impact that year) and diverge sharply in others — see
+`docs/audits/2026-07-31-edgar-concept-match.md` (full 42-ticker before/after,
+`PLAN_EDGAR_DILUTED_SHARES.md` design). **`diluted_shares` is NOT always absolute** despite
+the module claiming "no scaling" — MCD's series is `[716.4, 721.9, 732.3]` (millions,
+filer-presentation-scaled); a consumer must not assume absolute-share-count units
+universally.
 
 ## Short interest (harness)
 

@@ -5,10 +5,14 @@ Dependency-isolated leaf (sibling of _form4.py). Imports pandas (a transitive
 edgartools dep) but NOT edgar/httpx, so it is unit-testable with synthetic
 DataFrames and never reached unless the `edgar` extra is installed.
 
-UNITS: values are passed through verbatim. edgartools to_dataframe() returns
-ABSOLUTE USD (verified: AAPL revenue 416_161_000_000.0), matching FMP statements
-and market_cap. No scaling here or downstream. All series are NEWEST-FIRST to
-match the existing Statements convention."""
+UNITS: values are passed through verbatim, but "verbatim" is NOT always absolute
+USD/shares. edgartools to_dataframe() returns ABSOLUTE USD for most issuers
+(verified: AAPL revenue 416_161_000_000.0), matching FMP statements and
+market_cap -- but NOT universally: MCD's diluted_shares series is
+[716.4, 721.9, 732.3] (MILLIONS, filer-presentation-scaled), not absolute
+share count. No scaling is applied here or downstream, so a per-issuer scale
+drift passes through uncaught (docs/audits/2026-07-31-edgar-concept-match.md).
+All series are NEWEST-FIRST to match the existing Statements convention."""
 from __future__ import annotations
 
 import re
