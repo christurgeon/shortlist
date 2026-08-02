@@ -34,6 +34,9 @@ from ._gaap_tags import (
     DEBT_REPAYMENT_TAGS as _DEBT_REPAYMENT_TAGS,
 )
 from ._gaap_tags import (
+    DILUTED_SHARES_TAG,
+)
+from ._gaap_tags import (
     DIVIDEND_TAGS as _DIVIDEND_TAGS,
 )
 from ._gaap_tags import (
@@ -266,7 +269,7 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
 # IBM "Assuming dilution (in shares)", VZ omits "diluted" — 7 of 42 production
 # tickers extracted EMPTY on labels alone) and NOT `standard_concept` (bucket names
 # drift across edgartools releases — docs/audits/2026-07-12-accruals-leg-disable.md).
-_DILUTED_SHARES_CONCEPTS = ("us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",)
+_DILUTED_SHARES_CONCEPTS = (f"us-gaap_{DILUTED_SHARES_TAG}",)
 _DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
 
 
@@ -460,10 +463,22 @@ def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> 
         10-K/A (LMT 3, PG 3; values identical today). Both drops are deliberate.
       - `filed` is present on 100% of rows across all 8 payloads and is ISO YYYY-MM-DD, so
         lexicographic ordering == chronological (measured 2026-08-02).
-    Never raises: malformed input yields []."""
+      - TAG ECHO: the live audit's structural guarantee (the check the NI/EPS
+        arithmetic cross-check can't give) is that the requested concept URL's
+        response echoes its own `tag` -- enforced here too, not just in the
+        one-off audit script: a payload whose `tag` field is present and
+        doesn't match `DILUTED_SHARES_TAG` abstains rather than trusting rows
+        that may belong to a different concept entirely.
+    Never raises: malformed input (including a non-list `units.shares`) yields []."""
+    payload = payload or {}
     try:
-        rows = ((payload or {}).get("units") or {}).get("shares") or []
+        tag = payload.get("tag")
+        if tag is not None and tag != DILUTED_SHARES_TAG:
+            return []
+        rows = (payload.get("units") or {}).get("shares") or []
     except AttributeError:
+        return []
+    if not isinstance(rows, list):
         return []
     best: dict[str, tuple[str, float]] = {}
     for r in rows:

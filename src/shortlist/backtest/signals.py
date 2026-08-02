@@ -105,6 +105,18 @@ class SnapshotSignalSource:
     emitting composite + every sub-score. Valid ONLY for organically-accumulated
     daily captures (never backfilled/restated data). Produces nothing until the
     store has history; the CLI guards activation (see fit/cli).
+
+    CAVEAT (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): from the
+    fix/edgar-companyconcept-fallback deploy date, `store.py` snapshots for
+    CMCSA/CVX/GOOGL/HON/LMT/MO/MRK/PG carry a populated `diluted_shares`;
+    snapshots before it carry `[]` -- a mid-panel field-presence break
+    concentrated in 8 large caps. Currently LATENT: this class emits no
+    `share_count` axis (only composite + quality/moat/growth/value/momentum/
+    insider + sue), so nothing here reads `diluted_shares` today. If a future
+    `share_count` axis is added to this source, date-gate or exclude those 8
+    tickers before fitting on it, or compute the break date from the store
+    itself (first date under state/snapshots/ where CMCSA/HON diluted_shares
+    is non-empty) rather than trusting a hand-recorded date.
     """
     name = "composite"
 

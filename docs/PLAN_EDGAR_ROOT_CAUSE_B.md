@@ -9,16 +9,28 @@
 Plan review measured the live effect and it is smaller than revision 1 implied. **State this up
 front so nobody mistakes it for #156-class work.**
 
-All eight recovered series are *shrinking* share counts (2y `share_count_cagr`): CMCSA −5.5%,
-CVX −0.6%, GOOGL −1.9%, HON −1.9%, LMT −3.6%, MO −2.7%, MRK −0.8%, PG −0.6%.
+All eight recovered series are *shrinking* share counts (2y `share_count_cagr`): CMCSA −5.4%,
+CVX −0.6%, GOOGL −1.9%, HON −1.9%, LMT −3.6%, MO −2.7%, MRK −0.8%, PG −0.6% (rounded to 1dp;
+the live-measured, more precise figures are in
+`docs/audits/2026-08-02-edgar-companyconcept-fallback.md`'s `flags.dilution` table, e.g. CMCSA
+−5.440%).
 `flags.dilution.min_share_cagr` is **+0.03** (`config.yaml:177`) — **none is within 6 pp of
 tripping** — and `quality.dilution` is commented out (`config.yaml:262-264`) so
 `scoring.py:498-499` never reads the field. `pe_ttm`/`pe_median_5y` read `diluted_eps` only
 (`bridge.py:240-249`), untouched.
 
-**Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, flag,
-ranking or selection changes.** #156 by contrast was correcting live corruption (JNJ's
-sign-flipped `eps_cagr_ps`, MCD's `pe_ttm = 2.25e-05`).
+**Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, ranking or
+selection changes. On the 42 measured tickers, no flag changes either — all 8 recovered CAGRs
+are negative.** That is a UNIVERSE-scoped claim, not a population-scoped one: outside the 42
+(scout discovery, `/screen`, `/portfolio` — all through `EdgarSource`) the ON-by-default
+advisory `dilution` flag becomes newly **evaluable** for names that previously abstained
+(`flags.dilution`, `min_share_cagr: 0.03`); it stays advisory-only and never affects
+`passed`/`composite`/`scored`. One more widening, live in the code: `_edgar_facts.py`'s
+`fiscal_period_end=[d for d, _ in (inc_fy or cf_fy)]` means the fallback can fire even for an
+issuer with NO income statement at all (cash-flow FY columns only) — the join is still by
+explicit `end` date so values stay correct, but that class was never in the measured 42.
+#156 by contrast was correcting live corruption (JNJ's sign-flipped `eps_cagr_ps`, MCD's
+`pe_ttm = 2.25e-05`).
 
 **The real justification is path parity.** `_xbrl_facts.py:132` already reads
 `WeightedAverageNumberOfDilutedSharesOutstanding` from companyfacts, and companyconcept is a

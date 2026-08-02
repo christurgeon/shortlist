@@ -6,6 +6,26 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## EDGAR companyconcept fallback — deploy date not yet recorded (2026-08-02)
+
+`fix/edgar-companyconcept-fallback` (`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`,
+`docs/audits/2026-08-02-edgar-companyconcept-fallback.md`) has **not** been deployed to
+`/opt/shortlist` as of this entry (`/opt/shortlist` is still at `f0dd2cd`). Once
+`deploy/install_opt_shortlist.sh` has been run for this branch, fill in the actual deploy date
+in the audit's "Accumulation-store discontinuity" section — it dates the mid-panel
+`diluted_shares` field-presence break in the accumulation store for CMCSA/CVX/GOOGL/HON/LMT/
+MO/MRK/PG (pre-deploy snapshots carry `[]`, post-deploy snapshots carry real values).
+
+Not load-bearing if this gets skimmed past: the date is also directly computable from the
+store itself (first date under `state/snapshots/` with a non-empty CMCSA/HON `diluted_shares`),
+and both trigger points (`backtest/signals.py:SnapshotSignalSource`, the commented-out
+`quality.dilution` block in `config.yaml`) now carry their own caveat pointing back to the
+audit — this entry is belt-and-braces, not the only guard.
+
+**Status:** OPEN — fill in the deploy date after this branch is merged and deployed.
+
+---
+
 ## Session close — both fixes MERGED and DEPLOYED, production validated (2026-08-02)
 
 `#154` (statements year-joined merge), `#155` (plan), `#156` (EDGAR concept-first matching)
@@ -75,9 +95,13 @@ moved.**
    on recent 10-Ks is the *basic* count (4,305,000,000), which is deliberately NOT substituted.
    Sized as **hygiene, not an edge change**: all 8 recovered series are shrinking share counts,
    none within 6pp of `flags.dilution.min_share_cagr`, and `quality.dilution` stays OFF — no
-   score/gate/flag/ranking/selection changed. The prior "do not enable `quality.dilution` until
-   B is closed" objection is now **narrower (1 residual ticker, XOM, not 9)** — this does
-   **not** itself justify enabling that leg, which remains a separate evidence-gated decision.
+   score/gate/ranking/selection changed, and on these 42 measured tickers no flag changed
+   either. That's universe-scoped, not population-scoped — outside the 42 (scout, `/screen`,
+   `/portfolio`) the ON-by-default `dilution` flag becomes newly evaluable for names that
+   previously abstained (still advisory-only; see CLAUDE.md / the audit for the full caveat).
+   The prior "do not enable `quality.dilution` until B is closed" objection is now **narrower
+   (1 residual ticker, XOM, not 9)** — this does **not** itself justify enabling that leg,
+   which remains a separate evidence-gated decision.
 4. **Widen the go/no-go** beyond the store's 42 tickers — keyless, costs only time, and it is
    the only thing that further reduces residual risk (another code review would not).
 5. `get_shares_outstanding_diluted()` still returns MCD's count in millions.

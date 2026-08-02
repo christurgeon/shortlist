@@ -156,6 +156,38 @@ def test_units_shares_wrong_type_abstains():
     assert diluted_shares_from_concept({"units": {"shares": "not-a-list"}}, SPINE) == []
 
 
+def test_units_shares_non_iterable_abstains():
+    """Demonstrated bug (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 3): unlike a
+    string (iterable, caught per-row by the malformed-row guard), a non-iterable
+    `units.shares` (e.g. a bare int) used to blow past the docstring's "Never
+    raises" claim with a TypeError on `for r in rows`. Must abstain, not raise."""
+    assert diluted_shares_from_concept({"units": {"shares": 5}}, SPINE) == []
+
+
+def test_tag_mismatch_abstains():
+    """A payload whose own `tag` field doesn't echo the requested concept must
+    abstain -- the structural guarantee the live audit leaned on (payload `cik`/
+    `tag` echoing the request) is enforced here, not just checked ad hoc."""
+    payload = _payload([
+        _row("2025-12-31", 643_000_000.0),
+        _row("2024-12-31", 655_000_000.0),
+        _row("2023-12-31", 668_000_000.0),
+    ])
+    payload["tag"] = "SomeOtherConcept"
+    assert diluted_shares_from_concept(payload, SPINE) == []
+
+
+def test_tag_present_and_matching_still_works():
+    payload = _payload([
+        _row("2025-12-31", 643_000_000.0),
+        _row("2024-12-31", 655_000_000.0),
+        _row("2023-12-31", 668_000_000.0),
+    ])
+    payload["tag"] = "WeightedAverageNumberOfDilutedSharesOutstanding"
+    assert diluted_shares_from_concept(payload, SPINE) == [
+        643_000_000.0, 655_000_000.0, 668_000_000.0]
+
+
 def test_malformed_row_entries_are_skipped_not_raised():
     payload = _payload([
         "not-a-dict",
@@ -245,15 +277,16 @@ def _concept_payload_matching_spine():
     ])
 
 
-def _raise_if_called(self, ticker):
+def _raise_if_called(self, ticker, *args, **kwargs):
     raise AssertionError(f"_fetch_diluted_shares_concept must not be called for {ticker!r}")
 
 
 def test_fallback_fires_and_populates_diluted_shares(monkeypatch):
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"
-    monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept",
-                        lambda self, ticker: _concept_payload_matching_spine(), raising=False)
+    monkeypatch.setattr(
+        EdgarSource, "_fetch_diluted_shares_concept",
+        lambda self, ticker, *a, **kw: _concept_payload_matching_spine(), raising=False)
 
     fin = _FakeFinancials(_income_no_share_row())
     snap = src._build_financials_snapshot("HON", fin)
@@ -287,8 +320,9 @@ def test_fallback_partial_spine_coverage_abstains_at_the_wiring_level(monkeypatc
     stay intact (this is not a failure-isolation path -- nothing raises)."""
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"
-    monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept",
-                        lambda self, ticker: _concept_payload_partial_spine(), raising=False)
+    monkeypatch.setattr(
+        EdgarSource, "_fetch_diluted_shares_concept",
+        lambda self, ticker, *a, **kw: _concept_payload_partial_spine(), raising=False)
 
     fin = _FakeFinancials(_income_no_share_row())
     snap = src._build_financials_snapshot("HON", fin)
@@ -329,7 +363,7 @@ def test_seam_raising_leaves_diluted_shares_empty_and_rest_of_statements_intact(
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"
 
-    def _boom(self, ticker):
+    def _boom(self, ticker, *a, **kw):
         raise RuntimeError("SEC 503")
 
     monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept", _boom, raising=False)
@@ -341,6 +375,50 @@ def test_seam_raising_leaves_diluted_shares_empty_and_rest_of_statements_intact(
     assert snap.statements.diluted_shares == []
     # C1: a raising fallback must never reduce the REST of statements' coverage.
     assert snap.statements.revenue == [100.0, 90.0, 80.0]
+
+
+def test_seam_failure_appends_a_diagnostic_when_an_errors_list_is_supplied(monkeypatch):
+    """Fix-wave item 4: unlike a bare `contextlib.suppress`, a failure in the
+    recovery path must be visible somewhere (`res.errors`, mirroring the
+    `edgar-sic:` pattern), not silently degrade forever with no trace -- while
+    staying non-fatal (statements stay intact, nothing raises to the caller)."""
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+
+    def _boom(self, ticker, *a, **kw):
+        raise RuntimeError("SEC 503")
+
+    monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept", _boom, raising=False)
+
+    fin = _FakeFinancials(_income_no_share_row())
+    errors: list[str] = []
+    snap = src._build_financials_snapshot("HON", fin, errors)
+
+    assert snap.statements is not None
+    assert snap.statements.diluted_shares == []
+    assert snap.statements.revenue == [100.0, 90.0, 80.0]     # still isolated (C1)
+    assert len(errors) == 1
+    assert errors[0].startswith("edgar-diluted-shares-concept:")
+    assert "SEC 503" in errors[0]
+
+
+def test_no_errors_list_supplied_is_still_non_fatal(monkeypatch):
+    """Back-compat: callers that don't pass `errors` (the pre-existing 2-arg
+    call shape) keep working -- the failure is swallowed exactly as before,
+    just with nowhere to record it."""
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+
+    def _boom(self, ticker, *a, **kw):
+        raise RuntimeError("SEC 503")
+
+    monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept", _boom, raising=False)
+
+    fin = _FakeFinancials(_income_no_share_row())
+    snap = src._build_financials_snapshot("HON", fin)   # no errors list -> must not raise
+
+    assert snap.statements is not None
+    assert snap.statements.diluted_shares == []
     assert snap.statements.net_income == [10.0, 9.0, 8.0]
     assert snap.statements.diluted_eps == [1.5, 1.4, 1.3]
 
@@ -421,3 +499,64 @@ def test_seam_never_raises_on_http_failure(monkeypatch):
     src.identity = "test test@example.com"
 
     assert src._fetch_diluted_shares_concept("XOM") == {}
+
+
+def test_seam_http_failure_appends_a_diagnostic_when_errors_list_supplied(monkeypatch):
+    """Fix-wave item 4: the seam itself -- not just the wiring in
+    _build_financials_snapshot -- records a diagnostic on a genuine network
+    failure when given somewhere to put it, following the `_fetch_sic` /
+    `edgar-sic:` pattern (redact_secrets included)."""
+    class _FakeCompany:
+        def __init__(self, ticker):
+            self.cik = 34088
+
+    monkeypatch.setattr("edgar.Company", _FakeCompany)
+
+    def _fake_get(url, **kw):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr("httpx.get", _fake_get)
+
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+    src.identity = "test test@example.com"
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("XOM", errors) == {}
+    assert len(errors) == 1
+    assert errors[0].startswith("edgar-diluted-shares-concept:")
+    assert "connection reset" in errors[0]
+
+
+def test_seam_http_status_error_via_raise_for_status_returns_empty(monkeypatch):
+    """Fix-wave item 6: live-verified, a missing companyconcept tag returns a
+    real 404 with an XML body, so `raise_for_status()` fires BEFORE `.json()`
+    is ever called. No prior test exercised a response object whose own
+    `raise_for_status` actually raises (the other never-raises test raises
+    from `httpx.get` itself, and `test_seam_resolves_cik_off_the_company_object`'s
+    fake `raise_for_status` is a no-op)."""
+    import httpx
+
+    class _FakeCompany:
+        def __init__(self, ticker):
+            self.cik = 34088
+
+    monkeypatch.setattr("edgar.Company", _FakeCompany)
+
+    class _FakeErrorResponse:
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("404 Not Found", request=None, response=self)
+
+        def json(self):
+            raise AssertionError(".json() must not be reached past raise_for_status()")
+
+    monkeypatch.setattr("httpx.get", lambda url, **kw: _FakeErrorResponse())
+
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+    src.identity = "test test@example.com"
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("XOM", errors) == {}
+    assert len(errors) == 1
+    assert "404" in errors[0]

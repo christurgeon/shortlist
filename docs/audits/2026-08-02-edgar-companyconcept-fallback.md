@@ -15,8 +15,20 @@ This is **hygiene / harness-vs-backtest path parity, not an edge improvement**. 
 series are *shrinking* share counts (2y CAGR, see the cross-check table below) — none within 6
 points of `flags.dilution.min_share_cagr` (+0.03) — and `quality.dilution` is OFF, so
 `scoring.py` never reads the field. `pe_ttm`/`pe_median_5y` read `diluted_eps` only, untouched.
-**Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, flag,
-ranking or selection changes.**
+**Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, ranking or
+selection changes. On the 42 measured tickers, no flag changes either — all 8 recovered CAGRs
+are negative.** That is a UNIVERSE-scoped claim, not a population-scoped one: outside the 42
+(scout discovery, `/screen`, `/portfolio` — all through `EdgarSource`, which skew small-cap and
+recently-listed, exactly where issuance is more common) the ON-by-default advisory `dilution`
+flag becomes newly **evaluable** for names that previously abstained; advisory-only, it never
+affects `passed`/`composite`/`scored`. One more widening, confirmed in the code:
+`_edgar_facts.py`'s `fin = EdgarFinancials(fiscal_period_end=[d for d, _ in (inc_fy or cf_fy)])`
+means the fallback fires whenever the income statement has no FY columns at all (the widest
+case: `diluted_shares` and every income-statement series go `[]`, but `fiscal_period_end` still
+resolves from the cash-flow statement's own FY columns) — so this path can populate
+`diluted_shares` for issuers with NO income statement extraction whatsoever. Values stay
+correct (the join onto `fiscal_period_end` is by explicit `end` date, never position), but that
+class was never exercised by the measured 42.
 
 The real justification is path parity: `_xbrl_facts.py:132` already reads
 `WeightedAverageNumberOfDilutedSharesOutstanding` from companyfacts for the XBRL backtest
@@ -197,8 +209,9 @@ matching `stats.cagr`'s convention — newest-first input, reversed internally):
 | MRK | −0.788% | no |
 | PG | −0.596% | no |
 
-All 8 match the plan's own declared 2y CAGRs (CMCSA −5.5%, CVX −0.6%, GOOGL −1.9%, HON −1.9%,
-LMT −3.6%, MO −2.7%, MRK −0.8%, PG −0.6%) within rounding. **None crosses the +0.03 flag
+All 8 match the plan's own declared 2y CAGRs (CMCSA −5.4%, CVX −0.6%, GOOGL −1.9%, HON −1.9%,
+LMT −3.6%, MO −2.7%, MRK −0.8%, PG −0.6%, reconciled to this audit's more precise figures)
+within rounding. **None crosses the +0.03 flag
 threshold** — all are shrinking (buybacks), so `flags.dilution` never fires on this change even
 if it were enabled (it isn't; `quality.dilution` is OFF too).
 
@@ -211,10 +224,22 @@ exactly the kind of non-random presence change that biases a walk-forward fit if
 snapshot-replay backtest axis reads `diluted_shares`/`share_count_cagr` across the full stored
 history without accounting for the break.
 
+**The hazard is currently LATENT — verified, not assumed:** `SnapshotSignalSource`
+(`backtest/signals.py`) emits only `composite` + six sub-axes (quality, moat, growth, value,
+momentum, insider) + `sue` — read the class: there is no `share_count` axis on the guarded
+snapshot-replay path today — and `quality.dilution` (`config.yaml:255-266`) ships OFF, so
+nothing currently reads `diluted_shares` off an accumulated snapshot. It bites only if someone
+later adds a `share_count` axis to that source or enables `quality.dilution` against
+accumulated history. Both trigger points (`SnapshotSignalSource`'s docstring and the
+`quality.dilution` config block) now carry a one-line caveat pointing back here.
+
 **Deploy date: not yet deployed as of this audit** (`/opt/shortlist` is at `f0dd2cd`, i.e.
-`#156` only — this branch has not been merged/deployed). **A future evaluator must fill in the
-actual deploy date here** once `deploy/install_opt_shortlist.sh` has been run for this branch,
-so the break is dateable in the accumulation store.
+`#156` only — this branch has not been merged/deployed). Filling this in is tracked in
+`TODO.md` ("EDGAR companyconcept fallback — deploy date not yet recorded") rather than left as
+an unowned note here. **Mechanical fallback, so a blank date is never load-bearing:** the break
+date is also directly computable from the store itself — the first date under
+`state/snapshots/` where CMCSA or HON carries a non-empty `diluted_shares` — no bookkeeping
+discipline is actually required to date the break.
 
 ## Go/no-go — all five clauses
 

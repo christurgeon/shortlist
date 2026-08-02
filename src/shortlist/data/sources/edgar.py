@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import dataclasses
 import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
 from ...env import redact_secrets
+from ...providers._gaap_tags import DILUTED_SHARES_TAG
 from ..models import (
     Events,
     FilingEvent,
@@ -175,12 +175,18 @@ class EdgarSource(Source):
         from edgar import Company
         return Company(ticker).get_financials()
 
-    def _build_financials_snapshot(self, ticker: str, fin: Any) -> TickerSnapshot:
+    def _build_financials_snapshot(
+        self, ticker: str, fin: Any, errors: Optional[list[str]] = None,
+    ) -> TickerSnapshot:
         """Map an edgartools Financials onto a Statements-only snapshot. Values are
         absolute USD (no scaling). Mostly pure given `fin`, but ALSO fires the
         companyconcept diluted-share fallback (a network seam) when the statement
         view has no share-count row at all -- root cause B
-        (docs/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
+        (docs/PLAN_EDGAR_ROOT_CAUSE_B.md). `errors` is optional (callers that don't
+        pass one get the pre-existing silent-degrade behavior); `_fetch_sync` passes
+        `res.errors` so a systemic fallback failure (SEC renames the tag, blocks the
+        UA, changes the URL) is diagnosable instead of degrading forever with no
+        trace, matching the `_fetch_sic` pattern below."""
         from ...providers._edgar_facts import diluted_shares_from_concept, extract_financials
         try:
             shares = fin.get_shares_outstanding_diluted()
@@ -196,10 +202,14 @@ class EdgarSource(Source):
             # Own try/except: never let a RECOVERY path reduce coverage. If this
             # raises, `res.partial.statements` in `_fetch_sync` would otherwise
             # never be assigned and the ticker loses ALL statements, not just
-            # diluted_shares (C1, docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort.
-            with contextlib.suppress(Exception):
+            # diluted_shares (C1, docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort,
+            # but -- unlike a bare `contextlib.suppress` -- record what happened.
+            try:
                 ef.diluted_shares = diluted_shares_from_concept(
-                    self._fetch_diluted_shares_concept(ticker), ef.fiscal_period_end)
+                    self._fetch_diluted_shares_concept(ticker, errors), ef.fiscal_period_end)
+            except Exception as e:
+                if errors is not None:
+                    errors.append(f"edgar-diluted-shares-concept: {redact_secrets(e)}")
         snap = TickerSnapshot(ticker=ticker)
         if ef.fiscal_period_end:
             snap.statements = Statements(
@@ -239,10 +249,15 @@ class EdgarSource(Source):
         from ...sectors import extract_sic
         return extract_sic(Company(ticker))
 
-    def _fetch_diluted_shares_concept(self, ticker: str) -> dict:
+    def _fetch_diluted_shares_concept(
+        self, ticker: str, errors: Optional[list[str]] = None,
+    ) -> dict:
         """Network seam (mockable): SEC companyconcept for the weighted-average
         diluted share count. ~35 KB (vs ~4 MB for companyfacts — measured), fired
-        only when the statement view lacks the row. Never raises; {} on any error.
+        only when the statement view lacks the row. Never RAISES -- {} on any
+        error -- but, when `errors` is given, records a diagnostic first (the
+        `_fetch_sic` pattern: non-fatal failure isolation must still be visible
+        in `res.errors`, not degrade silently forever).
 
         Resolves the CIK off a fresh edgartools `Company(ticker)` (mirroring
         `_fetch_sic` above), NOT the raw `company_tickers.json` first-occurrence
@@ -253,17 +268,21 @@ class EdgarSource(Source):
 
         try:
             cik = int(Company(ticker).cik)
-        except Exception:
+        except Exception as e:
+            if errors is not None:
+                errors.append(f"edgar-diluted-shares-concept: {redact_secrets(e)}")
             return {}
         url = (
             f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
-            "/us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding.json"
+            f"/us-gaap/{DILUTED_SHARES_TAG}.json"
         )
         try:
             r = httpx.get(url, headers={"User-Agent": self.identity}, timeout=10.0)
             r.raise_for_status()
             return r.json()
-        except Exception:
+        except Exception as e:
+            if errors is not None:
+                errors.append(f"edgar-diluted-shares-concept: {redact_secrets(e)}")
             return {}
 
     def _raw_filings(self, ticker: str) -> Any:
@@ -308,7 +327,8 @@ class EdgarSource(Source):
             res.errors.append(f"edgar-sic: {redact_secrets(e)}")
         # Financials are isolated: a failure here must never drop the insider result.
         try:
-            fin_snap = self._build_financials_snapshot(ticker, self._fetch_financials_object(ticker))
+            fin_snap = self._build_financials_snapshot(
+                ticker, self._fetch_financials_object(ticker), res.errors)
             if fin_snap.statements is not None:
                 res.partial.statements = fin_snap.statements
         except Exception as e:

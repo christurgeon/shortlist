@@ -456,47 +456,24 @@ the module claiming "no scaling" — MCD's series is `[716.4, 721.9, 732.3]` (mi
 filer-presentation-scaled); a consumer must not assume absolute-share-count units
 universally.
 
-**`diluted_shares` companyconcept FALLBACK, hygiene not an edge improvement**
-(`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`):
-9 issuers (CMCSA CVX GOOGL HON LMT MO MRK PG XOM) carry no share-count concept at any label —
-their income statement has only `EarningsPerShareBasic`/`Diluted`, so the concept-first match
-above still yields `[]`. `_edgar_facts.diluted_shares_from_concept` (pure) plus
-`EdgarSource._fetch_diluted_shares_concept` (network seam, beside `_fetch_sic`) recover 8 of
-the 9 from SEC's single-tag `companyconcept` API
-(`us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding`, ~35 KB vs ~4 MB for the full
-companyfacts payload the route was originally deferred over). **Fallback only** — it fires
-**only** when `extract_financials` already returned `diluted_shares == []` **and**
-`fiscal_period_end` is non-empty, so it can never override a working extraction; wrapped in
-its own `contextlib.suppress(Exception)` inside `_build_financials_snapshot` so a failure here
-never drops the rest of `Statements` (a *recovery* path must never reduce coverage). **Abstains
-over guesses**: `diluted_shares_from_concept` is all-or-nothing — every `fiscal_period_end`
-year must be present in the payload (annual-duration, `form == "10-K"` only, restatement dedup
-by latest `filed`) or the result is `[]`, matching the statement-side `_series` contract (never
-a partial/holed series).
-
-**CIK resolution is the landmine.** The seam resolves `Company(ticker).cik` itself — mirroring
-`_fetch_sic` — and must **never** go through the raw `company_tickers.json` first-occurrence
-map: that map sends **XOM → CIK 2115436** ("ExxonMobil Holdings Corp"), a 1,061-byte
-fee-filing shell, not the operating company (CIK **34088**, what `Company("XOM").cik` actually
-resolves to). **XOM is a genuine, permanent residual** — it last tagged
-`WeightedAverageNumberOfDilutedSharesOutstanding` in FY2013; every recent us-gaap `shares`-unit
-tag was enumerated and the only weighted-average one left is
-`WeightedAverageNumberOfSharesOutstandingBasic` (4,305,000,000) — **never substitute basic for
-diluted**, silently conflating them would corrupt `share_count_cagr`. `diluted_shares` stays
-`[]` for XOM; that is correct, not a bug to chase.
-
-**Mixed units, unchanged caveat.** Companyconcept values are absolute shares (HON
-`642,800,000`), while the statement path is sometimes filer-scaled (MCD `[716.4, 721.9,
-732.3]` = millions) — `share_count_cagr` is scale-invariant so the scored/flag surface is
-safe, but `financial_series` display mixes conventions across tickers; this predates the
-fallback and is not "fixed" by it.
-
-**Sizing:** all 8 recovered series are *shrinking* share counts (buybacks, −0.6% to −5.5%
-2y CAGR), none near `flags.dilution.min_share_cagr` (0.03), and `quality.dilution` stays OFF —
-so this is a JSON/CSV field going `null`→populated for 8 tickers, **no score, gate, flag,
-ranking or selection change**. It is NOT a step toward enabling `quality.dilution` (that
-remains a separate, evidence-gated decision) — closing this residual only narrows the prior
-"non-random skew" objection from 9 tickers to 1 (XOM).
+**`diluted_shares` companyconcept FALLBACK** — hygiene, not an edge improvement
+(`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`).
+9 issuers (CMCSA CVX GOOGL HON LMT MO MRK PG XOM) tag no share-count concept anywhere on the
+income statement; `_edgar_facts.diluted_shares_from_concept` +
+`EdgarSource._fetch_diluted_shares_concept` (seam beside `_fetch_sic`) recover 8/9 from SEC's
+single-tag `companyconcept` API. **Fallback-only** (fires only when the statement view
+already yielded `[]`) and
+**abstains over guessing** (all-or-nothing re-index onto `fiscal_period_end`). Resolves the CIK
+via `Company(ticker).cik` — **never** the raw `company_tickers.json` map, which sends XOM to a
+fee-filing shell (CIK 2115436) instead of the real one (34088); XOM stays a permanent residual
+(last tagged FY2013, only *basic* shares remain — never substituted). Values are absolute
+shares, unlike the sometimes filer-scaled statement path (MCD in millions) —
+`share_count_cagr` is scale-invariant so scoring is unaffected, but `financial_series` display
+mixes conventions. **Sizing is UNIVERSE-, not population-, scoped**: byte-for-byte proven only
+on the 42-ticker accumulation store (no score/gate/ranking/selection/flag change there — all 8
+recovered 2y CAGRs are −0.6% to −5.4%, negative); outside it (scout, `/screen`, `/portfolio`)
+the ON-by-default `dilution` flag becomes newly evaluable for names that previously abstained
+(still advisory-only). Not a step toward enabling `quality.dilution` (OFF, separate decision).
 
 ## Short interest (harness)
 
