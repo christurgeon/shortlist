@@ -6,10 +6,11 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## EDGAR companyconcept fallback — deploy date not yet recorded (2026-08-02)
+## EDGAR companyconcept fallback — MERGED (#157), deploy date not yet recorded (2026-08-02)
 
-`fix/edgar-companyconcept-fallback` (`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`,
-`docs/audits/2026-08-02-edgar-companyconcept-fallback.md`) has **not** been deployed to
+**MERGED to `main` as `641e94e` (#157, squash) on 2026-08-02; branch deleted.**
+`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`.
+It has **not** been deployed to
 `/opt/shortlist` as of this entry (`/opt/shortlist` is still at `f0dd2cd`). Once
 `deploy/install_opt_shortlist.sh` has been run for this branch, fill in the actual deploy date
 in the audit's "Accumulation-store discontinuity" section — it dates the mid-panel
@@ -195,7 +196,9 @@ keyless, before/after diffed programmatically against pre-fix `29f170f`):
   and copying from those blocks would pick up stale text. Annotate them "superseded" next time
   that file is touched.
 
-**Status:** SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2236 tests green,
+**Status:** MERGED as `bfb9796`… superseded — see below; shipped as **#156** and DEPLOYED
+(`/opt/shortlist` at `f0dd2cd`, live-validated: JNJ FY2023 EPS now 13.72). Branch deleted.
+Original note: SHIPPED on `fix/edgar-diluted-shares`, verified end-to-end (2236 tests green,
 ruff clean, 42-ticker live before/after with the revised 14-ticker distinct go/no-go
 passing). A final whole-branch review found a vacuous test, three doc-count errors, a
 duplicate-index crash in `_row_by_standard_concept`, and other doc corrections — all fixed on
@@ -204,7 +207,7 @@ this branch (see the code review fix commit). Not yet merged to `main` or deploy
 
 ---
 
-## Statements-merge fix — spec + plan + all three tasks + final review DONE, not yet merged (2026-07-31)
+## Statements-merge fix — MERGED (#154) and DEPLOYED (2026-07-31)
 
 Actioned the 2026-07-20 data-audit item 1 ("FMP-won statements silently drop every
 EDGAR-only field"). Branch `fix/statements-merge`, cut from `origin/main` `31e9764`.
@@ -239,9 +242,9 @@ gate newly evaluable on an unmeasured population). Both are now recorded in
 `docs/STATEMENTS_MERGE.md` §4/§6 and `CLAUDE.md`, with a regression test pinning the
 `pe_vs_history` reactivation (`tests/test_statements_merge.py`). Suite green
 (`uv run ruff check src tests` clean, `uv run pytest -q` passing) with the new test added.
-Branch is **merge-ready. Not pushed, no PR, not deployed** — `/opt/shortlist` keeps running
-the old merge until `git pull` + `sudo bash deploy/install_opt_shortlist.sh`, and the
-accumulate timer only starts capturing the recovered fields after that.
+**UPDATE 2026-08-02: merged as #154 (`bfb9796`) and DEPLOYED** — `/opt/shortlist` reached it
+via `git pull` + `install_opt_shortlist.sh`; the accumulate timer has been capturing the
+recovered fields since. Branch deleted.
 
 **Open verification gap — exists nowhere else in the repo, read before touching this
 branch again.** The plan's "Done When" required a live before/after `shortlist --json` run
@@ -339,9 +342,10 @@ was passing as of the prior session — GOOGL's 2026-07-20 pick had aged out of 
 cooldown. The test still reads the live `state/scout_state.json`, so it is dormant, not
 fixed, and will fail again the next time a pick lands inside that window.
 
-**Status:** DONE, pending merge. Before merging: run the live before/after verification
-above on a fresh-quota day and fold the actual values into this entry or close it out;
-until then this branch's data-path claim rests on unit tests only.
+**Status:** MERGED (#154) and DEPLOYED. The live FMP before/after was never run — FMP's
+quota is structurally exhausted (see the FMP over-subscription item), so the data-path claim
+still rests on unit tests plus the store-based offline verification. Re-run if the quota is
+ever fixed.
 
 ---
 
