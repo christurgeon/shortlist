@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Callable, Optional
 
 import pandas as pd
@@ -423,3 +424,68 @@ def extract_financials(
     fin.debt_repayments = _concept_family_latest(cashflow_df, _DEBT_REPAYMENT_TAGS, cf_fy)
     fin.debt_issuance = _concept_family_latest(cashflow_df, _DEBT_ISSUANCE_TAGS, cf_fy)
     return fin
+
+
+# --- companyconcept fallback (root cause B) ---------------------------------
+# Recovers diluted_shares for issuers whose income-statement view carries NO
+# share-count tag at all (CMCSA CVX GOOGL HON LMT MO MRK PG — XOM genuinely has
+# none since 2013). Fallback ONLY, fired from EdgarSource only when the
+# statement-level extraction above already returned []. See
+# docs/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.
+
+# Measured across all 8 issuers' 10-K rows (2026-08-02): observed durations are exactly
+# {364, 365}. The 350-380 band also admits 52-week (363) and 53-week (370) filers, so a
+# COST-style retail calendar passes if it ever reaches this path.
+_ANNUAL_MIN_DAYS, _ANNUAL_MAX_DAYS = 350, 380
+
+
+def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> list[float]:
+    """Weighted-average diluted share counts from an SEC `companyconcept` payload,
+    re-indexed onto `fiscal_period_end`. Fallback ONLY — the statement view is
+    authoritative when it has the row.
+
+    Guards, each from a live-probed failure mode (docs/PLAN_EDGAR_ROOT_CAUSE_B.md):
+      - ANNUAL only: a 10-K payload also carries quarterly durations, so a fact is
+        used only when end-start is ~1 year.
+      - RESTATEMENTS: the same `end` recurs across filings with different values;
+        the most recently `filed` wins.
+      - ALL-OR-NOTHING: any spine year without a fact -> [] (never a partial series,
+        matching _series' contract, so `cagr` can't span a hole). NOTE the cost: an extra or
+        partial `inc_fy` column (the "MSFT FY2026" hazard the prior plan named) silently
+        yields []. Verified 3 columns for HON/PG/GOOGL/CMCSA and the audit's 42-row table
+        shows 3 everywhere, so risk is low — but this is the likeliest partial failure of
+        go/no-go clause 1.
+      - form == "10-K" ONLY: these payloads carry 8-K recast rows (measured: CMCSA 3, HON 3,
+        PG 12) whose `filed` can POSTDATE the 10-K and would win the dedup. It also drops
+        10-K/A (LMT 3, PG 3; values identical today). Both drops are deliberate.
+      - `filed` is present on 100% of rows across all 8 payloads and is ISO YYYY-MM-DD, so
+        lexicographic ordering == chronological (measured 2026-08-02).
+    Never raises: malformed input yields []."""
+    try:
+        rows = ((payload or {}).get("units") or {}).get("shares") or []
+    except AttributeError:
+        return []
+    best: dict[str, tuple[str, float]] = {}
+    for r in rows:
+        try:
+            if r.get("form") != "10-K":
+                continue
+            start, end = r.get("start"), r.get("end")
+            if not start or not end:
+                continue
+            days = (date.fromisoformat(end) - date.fromisoformat(start)).days
+            if not (_ANNUAL_MIN_DAYS <= days <= _ANNUAL_MAX_DAYS):
+                continue
+            filed = str(r.get("filed") or "")
+            val = float(r["val"])
+        except (TypeError, ValueError, KeyError, AttributeError):
+            continue
+        prev = best.get(end)
+        if prev is None or filed >= prev[0]:
+            best[end] = (filed, val)
+    if not fiscal_period_end:
+        return []
+    out = [best.get(e) for e in fiscal_period_end]
+    if any(v is None for v in out):
+        return []
+    return [v[1] for v in out]
