@@ -163,6 +163,20 @@ edgar`, unit (re)install, `systemctl daemon-reload`, `enable --now` the timer, a
 `try-restart` of `shortlist-bot.service` (which otherwise keeps running the OLD code after an
 rsync). Then optionally one real run: `sudo systemctl start shortlist-scout.service`.
 
+**GOTCHA — running the installer FROM `/opt/shortlist` is a silent no-op deploy.** `SRC` is
+derived from the script's own path (`install_opt_shortlist.sh:19`:
+`dirname(readlink -f $0)/..`), so `cd /opt/shortlist && sudo bash deploy/install_opt_shortlist.sh`
+sets `SRC == DEST` and rsyncs the directory **onto itself** — copying nothing. It still runs
+`uv sync` (regenerating `src/shortlist.egg-info/`, so mtimes look fresh), reinstalls units and
+restarts the bot, so **it looks like a successful deploy and reports no error**. This happened
+2026-08-02: `/opt/shortlist` stayed on the previous commit while everything else said "done".
+`/opt/shortlist` is itself a git checkout of `main`, so the two working routes are:
+`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh` (what the
+box actually uses), or run the installer from a **separate** up-to-date checkout
+(e.g. `/home/chris/shortlist`) so `SRC != DEST`.
+**Always verify after deploying** — `git -C /opt/shortlist log --oneline -1` plus a grep for a
+symbol you just added. Do not trust the installer's exit code as evidence the code moved.
+
 **GOTCHA — the installer GENERATES its unit files inline; it does NOT read `deploy/*.service`.**
 `deploy/shortlist-{scout,accumulate}.{service,timer}` are only used by the *manual* route in
 `deploy/README.md`. Both routes are supported, so **a `[Service]` setting added to one must be

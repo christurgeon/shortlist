@@ -6,6 +6,51 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Session close — both fixes MERGED and DEPLOYED, production validated (2026-08-02)
+
+`#154` (statements year-joined merge), `#155` (plan), `#156` (EDGAR concept-first matching)
+are all merged to `main`; `/opt/shortlist` is at **`f0dd2cd`** and validated against live
+EDGAR **from the deployed venv**, not just by file inspection:
+
+| ticker | deployed `diluted_eps` | verdict |
+|---|---|---|
+| JNJ | `[11.03, 5.79, **13.72**]` | FY2023 corrected from 5.20 — the sign-flipped `eps_cagr_ps` (+45.6%/yr vs −10.3%/yr true) is gone |
+| QCOM | `[5.01, 8.97, 6.42]` | continuing-ops → total; shares recovered (1.105B) |
+| MSFT | `[17.95, 13.64, 11.8]` | computed → as-reported; shares recovered (7.453B) |
+| HON | `[7.36, 8.71, 8.47]` | EPS recovered from nothing; shares still `[]` (root cause B, expected) |
+| AAPL | `[7.46, 6.08, 6.13]` | **unchanged** — no regression on a working name |
+
+**DEPLOY TRAP FOUND THE HARD WAY (now in CLAUDE.md).** The first redeploy attempt silently
+did nothing: running `sudo bash deploy/install_opt_shortlist.sh` **from `/opt/shortlist`**
+makes `SRC == DEST` (`install_opt_shortlist.sh:19` derives `SRC` from the script's own path),
+so the rsync copies the directory onto itself. It still runs `uv sync`, reinstalls units and
+restarts the bot — **so it reports success and refreshes mtimes while deploying nothing.**
+Only a post-deploy `git -C /opt/shortlist log --oneline -1` caught it. Fix was `git pull`
+inside `/opt/shortlist` first. **Never treat the installer's exit code as evidence the code
+moved.**
+
+**Open, in priority order:**
+1. **`--refresh` the cached research briefs for IBM and MSFT** — both are in the corrected-EPS
+   set and their briefs are accession-cached, so they still reason over the old computed EPS.
+   (JNJ/QCOM have no cached brief; nothing to refresh there.) 23 briefs cached total.
+2. **FMP quota is ~2.7× over-subscribed** — accumulate (42 tickers) + scout (10) ≈ 676 calls/day
+   against a 250/day free limit, which is why **23 of 24 store dates have ZERO fmp-won
+   statements** and EDGAR supplies 100% of production statements. Options: drop `--max-tickers`
+   to ~18, remove `fmp` from the accumulate chain (it contributes nothing today), or the paid
+   Starter tier (~$14–20/mo, the only one that also unblocks the live FMP verification that
+   stayed blocked all session). **A config-or-money decision, not a build.**
+3. **Root cause B (9 tickers)** — CMCSA CVX GOOGL HON LMT MO MRK PG XOM have no share-count
+   concept at all. Two costed routes in the plan. **Do not enable `quality.dilution` until
+   B is closed** — the residual is non-random (old-line industrials/energy/pharma).
+4. **Widen the go/no-go** beyond the store's 42 tickers — keyless, costs only time, and it is
+   the only thing that further reduces residual risk (another code review would not).
+5. `get_shares_outstanding_diluted()` still returns MCD's count in millions.
+
+**Status:** CLOSED — both features shipped, deployed and validated in production. Items 1–5
+are follow-ups; item 1 is the only one with a stale artifact sitting in production.
+
+---
+
 ## EDGAR diluted-shares/EPS concept-first matching — SHIPPED, verified on all 42 store tickers (2026-07-31)
 
 Closes the "NEW follow-up" opened in the Statements-merge entry below (`diluted_shares`
