@@ -473,7 +473,10 @@ mixes conventions. **Sizing is UNIVERSE-, not population-, scoped**: byte-for-by
 on the 42-ticker accumulation store (no score/gate/ranking/selection/flag change there — all 8
 recovered 2y CAGRs are −0.6% to −5.4%, negative); outside it (scout, `/screen`, `/portfolio`)
 the ON-by-default `dilution` flag becomes newly evaluable for names that previously abstained
-(still advisory-only). Not a step toward enabling `quality.dilution` (OFF, separate decision).
+(still advisory-only). One further widening: `fiscal_period_end` falls back to the CASH-FLOW
+columns (`inc_fy or cf_fy`), so the fallback can fire for an issuer with **no income statement
+at all** — values stay correct (the join is by explicit `end` date), but that class was never
+in the measured 42. Not a step toward enabling `quality.dilution` (OFF, separate decision).
 
 ## Short interest (harness)
 
