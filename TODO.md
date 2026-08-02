@@ -30,9 +30,31 @@ inside `/opt/shortlist` first. **Never treat the installer's exit code as eviden
 moved.**
 
 **Open, in priority order:**
-1. **`--refresh` the cached research briefs for IBM and MSFT** — both are in the corrected-EPS
-   set and their briefs are accession-cached, so they still reason over the old computed EPS.
-   (JNJ/QCOM have no cached brief; nothing to refresh there.) 23 briefs cached total.
+1. ~~**`--refresh` the cached research briefs**~~ — **RESOLVED 2026-08-02, and the premise was
+   WRONG: NO cached brief was ever contaminated by #156.** Measured rather than reasoned:
+   - Of 23 cached briefs, only IBM and MSFT belong to the corrected-EPS set. MSFT's brief
+     mentions EPS nowhere (its buyback figures are filing-quoted dollar amounts, not derived
+     from `share_count_cagr`).
+   - IBM's brief quotes "EPS CAGR of 18.8%", which I took as the stale computed
+     `eps_cagr_ps`. It is not. It is **`eps_cagr = cagr(net_income)` = +0.1883**, the
+     net-income proxy the growth leg uses while `quality.dilution` stays OFF — and
+     `net_income` was never touched by #156. The corrected per-share figure is
+     `eps_cagr_ps = +0.1714`, which **no brief quotes**.
+   - **Why the wrong conclusion looked confirmed:** pre-fix EPS was computed as
+     `net_income / constant_scalar`, which makes `cagr(eps) ≡ cagr(net_income)` *identically*.
+     So the stale `eps_cagr_ps` and the honest `eps_cagr` were the same number, and matching
+     18.8% to +0.1883 "verified" the wrong metric. This is the `eps_cagr_ps` degeneracy the
+     2026-07-31 audit already recorded, biting from the other direction.
+   - **Lesson (same class as the four blast-radius misses):** reasoning "field X changed, so
+     anything mentioning X is stale" is not verification. Trace which metric the consumer
+     actually reads. `eps_cagr` and `eps_cagr_ps` are different fields with confusingly
+     similar names.
+   - IBM was refreshed anyway ($0.47); not wasted, since it picked up a newer 10-Q (cache key
+     `…+0000051143-26-000078` vs `…-000038`), but the stated justification was wrong. The
+     superseded brief file remains on disk beside the new one — harmless (the cache key is
+     accession-composite so it is never served), but it is clutter.
+   - Independent confirmation that #156 works in production: this run emitted
+     `share_count_cagr = 0.0143` for IBM, where pre-fix it was `None`.
 2. **FMP quota is ~2.7× over-subscribed** — accumulate (42 tickers) + scout (10) ≈ 676 calls/day
    against a 250/day free limit, which is why **23 of 24 store dates have ZERO fmp-won
    statements** and EDGAR supplies 100% of production statements. Options: drop `--max-tickers`
