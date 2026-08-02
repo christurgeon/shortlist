@@ -6,6 +6,26 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## EDGAR companyconcept fallback — deploy date not yet recorded (2026-08-02)
+
+`fix/edgar-companyconcept-fallback` (`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`,
+`docs/audits/2026-08-02-edgar-companyconcept-fallback.md`) has **not** been deployed to
+`/opt/shortlist` as of this entry (`/opt/shortlist` is still at `f0dd2cd`). Once
+`deploy/install_opt_shortlist.sh` has been run for this branch, fill in the actual deploy date
+in the audit's "Accumulation-store discontinuity" section — it dates the mid-panel
+`diluted_shares` field-presence break in the accumulation store for CMCSA/CVX/GOOGL/HON/LMT/
+MO/MRK/PG (pre-deploy snapshots carry `[]`, post-deploy snapshots carry real values).
+
+Not load-bearing if this gets skimmed past: the date is also directly computable from the
+store itself (first date under `state/snapshots/` with a non-empty CMCSA/HON `diluted_shares`),
+and both trigger points (`backtest/signals.py:SnapshotSignalSource`, the commented-out
+`quality.dilution` block in `config.yaml`) now carry their own caveat pointing back to the
+audit — this entry is belt-and-braces, not the only guard.
+
+**Status:** OPEN — fill in the deploy date after this branch is merged and deployed.
+
+---
+
 ## Session close — both fixes MERGED and DEPLOYED, production validated (2026-08-02)
 
 `#154` (statements year-joined merge), `#155` (plan), `#156` (EDGAR concept-first matching)
@@ -30,18 +50,58 @@ inside `/opt/shortlist` first. **Never treat the installer's exit code as eviden
 moved.**
 
 **Open, in priority order:**
-1. **`--refresh` the cached research briefs for IBM and MSFT** — both are in the corrected-EPS
-   set and their briefs are accession-cached, so they still reason over the old computed EPS.
-   (JNJ/QCOM have no cached brief; nothing to refresh there.) 23 briefs cached total.
+1. ~~**`--refresh` the cached research briefs**~~ — **RESOLVED 2026-08-02, and the premise was
+   WRONG: NO cached brief was ever contaminated by #156.** Measured rather than reasoned:
+   - Of 23 cached briefs, only IBM and MSFT belong to the corrected-EPS set. MSFT's brief
+     mentions EPS nowhere (its buyback figures are filing-quoted dollar amounts, not derived
+     from `share_count_cagr`).
+   - IBM's brief quotes "EPS CAGR of 18.8%", which I took as the stale computed
+     `eps_cagr_ps`. It is not. It is **`eps_cagr = cagr(net_income)` = +0.1883**, the
+     net-income proxy the growth leg uses while `quality.dilution` stays OFF — and
+     `net_income` was never touched by #156. The corrected per-share figure is
+     `eps_cagr_ps = +0.1714`, which **no brief quotes**.
+   - **Why the wrong conclusion looked confirmed:** pre-fix EPS was computed as
+     `net_income / constant_scalar`, which makes `cagr(eps) ≡ cagr(net_income)` *identically*.
+     So the stale `eps_cagr_ps` and the honest `eps_cagr` were the same number, and matching
+     18.8% to +0.1883 "verified" the wrong metric. This is the `eps_cagr_ps` degeneracy the
+     2026-07-31 audit already recorded, biting from the other direction.
+   - **Lesson (same class as the four blast-radius misses):** reasoning "field X changed, so
+     anything mentioning X is stale" is not verification. Trace which metric the consumer
+     actually reads. `eps_cagr` and `eps_cagr_ps` are different fields with confusingly
+     similar names.
+   - IBM was refreshed anyway ($0.47); not wasted, since it picked up a newer 10-Q (cache key
+     `…+0000051143-26-000078` vs `…-000038`), but the stated justification was wrong. The
+     superseded brief file remains on disk beside the new one — harmless (the cache key is
+     accession-composite so it is never served), but it is clutter.
+   - Independent confirmation that #156 works in production: this run emitted
+     `share_count_cagr = 0.0143` for IBM, where pre-fix it was `None`.
 2. **FMP quota is ~2.7× over-subscribed** — accumulate (42 tickers) + scout (10) ≈ 676 calls/day
    against a 250/day free limit, which is why **23 of 24 store dates have ZERO fmp-won
    statements** and EDGAR supplies 100% of production statements. Options: drop `--max-tickers`
    to ~18, remove `fmp` from the accumulate chain (it contributes nothing today), or the paid
    Starter tier (~$14–20/mo, the only one that also unblocks the live FMP verification that
    stayed blocked all session). **A config-or-money decision, not a build.**
-3. **Root cause B (9 tickers)** — CMCSA CVX GOOGL HON LMT MO MRK PG XOM have no share-count
-   concept at all. Two costed routes in the plan. **Do not enable `quality.dilution` until
-   B is closed** — the residual is non-random (old-line industrials/energy/pharma).
+3. ~~**Root cause B (9 tickers)**~~ — **RESOLVED 2026-08-02** (`fix/edgar-companyconcept-fallback`,
+   `docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`).
+   A pure aggregator (`_edgar_facts.diluted_shares_from_concept`) plus a network seam on
+   `EdgarSource` (`_fetch_diluted_shares_concept`) recover `diluted_shares` for **8 of the 9**
+   via SEC's single-tag `companyconcept` API (CMCSA CVX GOOGL HON LMT MO MRK PG), fallback-only
+   and abstain-over-guess (fires only when the statement view already yielded `[]`; all-or-
+   nothing re-index onto the spine). All 5 go/no-go clauses passed live on the 42-ticker store
+   universe: the 8 match the plan's probe table exactly, byte-identical elsewhere, and the raw
+   payload's own `cik`/`tag` fields were asserted to echo the request (the structural guarantee
+   the NI/EPS arithmetic cross-check alone can't give). **XOM is a permanent residual** — it
+   last tagged the diluted-shares concept in FY2013; the only weighted-average share tag left
+   on recent 10-Ks is the *basic* count (4,305,000,000), which is deliberately NOT substituted.
+   Sized as **hygiene, not an edge change**: all 8 recovered series are shrinking share counts,
+   none within 6pp of `flags.dilution.min_share_cagr`, and `quality.dilution` stays OFF — no
+   score/gate/ranking/selection changed, and on these 42 measured tickers no flag changed
+   either. That's universe-scoped, not population-scoped — outside the 42 (scout, `/screen`,
+   `/portfolio`) the ON-by-default `dilution` flag becomes newly evaluable for names that
+   previously abstained (still advisory-only; see CLAUDE.md / the audit for the full caveat).
+   The prior "do not enable `quality.dilution` until B is closed" objection is now **narrower
+   (1 residual ticker, XOM, not 9)** — this does **not** itself justify enabling that leg,
+   which remains a separate evidence-gated decision.
 4. **Widen the go/no-go** beyond the store's 42 tickers — keyless, costs only time, and it is
    the only thing that further reduces residual risk (another code review would not).
 5. `get_shares_outstanding_diluted()` still returns MCD's count in millions.

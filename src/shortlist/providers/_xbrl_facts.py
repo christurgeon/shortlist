@@ -44,6 +44,7 @@ from ..stats import (
 from ._gaap_tags import (
     DEBT_ISSUANCE_TAGS,
     DEBT_REPAYMENT_TAGS,
+    DILUTED_SHARES_TAG,
     DIVIDEND_TAGS,
     REPURCHASE_TAGS,
 )
@@ -129,7 +130,7 @@ PRETAX = ["IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItems
           "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"]
 INCOME_TAX = ["IncomeTaxExpenseBenefit"]
 SHARES_OUT = ["EntityCommonStockSharesOutstanding"]                   # dei, instant, unit="shares"
-WTD_DIL_SHARES = ["WeightedAverageNumberOfDilutedSharesOutstanding"]  # us-gaap, unit="shares"; feeds share_count_cagr
+WTD_DIL_SHARES = [DILUTED_SHARES_TAG]  # us-gaap, unit="shares"; feeds share_count_cagr; single-sourced in _gaap_tags.py
 ASSETS = ["Assets"]   # us-gaap, instant balance-sheet total; feeds asset_growth + accruals (PREDICTIVE_SIGNALS §3)
 # Cash-flow financing FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS §5).
 # Raw us-gaap, ANNUAL flow, POSITIVE magnitudes (companyfacts reports PaymentsOf* /

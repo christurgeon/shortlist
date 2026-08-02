@@ -259,6 +259,11 @@ fmp:
 # share_count_cagr leg (serial diluters score below buyback compounders) and the
 # growth eps_cagr leg switches from the net-income proxy to genuine per-share
 # diluted-EPS CAGR. UNFITTED priors — backtest before trusting.
+# CAVEAT (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): pre-deploy accumulation
+# snapshots lack `diluted_shares` for 8 large caps (CMCSA CVX GOOGL HON LMT MO MRK
+# PG) recovered by the companyconcept fallback -- date-gate or exclude them before
+# fitting/enabling this leg against accumulated history, or the mid-panel
+# field-presence break will bias a walk-forward fit.
 # quality:
 #   dilution:
 #     enabled: true

@@ -456,6 +456,28 @@ the module claiming "no scaling" — MCD's series is `[716.4, 721.9, 732.3]` (mi
 filer-presentation-scaled); a consumer must not assume absolute-share-count units
 universally.
 
+**`diluted_shares` companyconcept FALLBACK** — hygiene, not an edge improvement
+(`docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`).
+9 issuers (CMCSA CVX GOOGL HON LMT MO MRK PG XOM) tag no share-count concept anywhere on the
+income statement; `_edgar_facts.diluted_shares_from_concept` +
+`EdgarSource._fetch_diluted_shares_concept` (seam beside `_fetch_sic`) recover 8/9 from SEC's
+single-tag `companyconcept` API. **Fallback-only** (fires only when the statement view
+already yielded `[]`) and
+**abstains over guessing** (all-or-nothing re-index onto `fiscal_period_end`). Resolves the CIK
+via `Company(ticker).cik` — **never** the raw `company_tickers.json` map, which sends XOM to a
+fee-filing shell (CIK 2115436) instead of the real one (34088); XOM stays a permanent residual
+(last tagged FY2013, only *basic* shares remain — never substituted). Values are absolute
+shares, unlike the sometimes filer-scaled statement path (MCD in millions) —
+`share_count_cagr` is scale-invariant so scoring is unaffected, but `financial_series` display
+mixes conventions. **Sizing is UNIVERSE-, not population-, scoped**: byte-for-byte proven only
+on the 42-ticker accumulation store (no score/gate/ranking/selection/flag change there — all 8
+recovered 2y CAGRs are −0.6% to −5.4%, negative); outside it (scout, `/screen`, `/portfolio`)
+the ON-by-default `dilution` flag becomes newly evaluable for names that previously abstained
+(still advisory-only). One further widening: `fiscal_period_end` falls back to the CASH-FLOW
+columns (`inc_fy or cf_fy`), so the fallback can fire for an issuer with **no income statement
+at all** — values stay correct (the join is by explicit `end` date), but that class was never
+in the measured 42. Not a step toward enabling `quality.dilution` (OFF, separate decision).
+
 ## Short interest (harness)
 
 `FinraSource` (keyless) pulls **`ConsolidatedShortInterest`** — NOT `EquityShortInterest`
