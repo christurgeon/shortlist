@@ -2,7 +2,36 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans.
 
-**Goal:** Recover `diluted_shares` for 8 of the 9 issuers whose share-count concept is absent from edgartools' income-statement view, by falling back to SEC's single-tag `companyconcept` API. Take production coverage from 34/42 to 42/42 minus XOM (41/42).
+**Goal:** Recover `diluted_shares` for 8 of the 9 issuers whose share-count concept is absent from edgartools' income-statement view, by falling back to SEC's single-tag `companyconcept` API. Production coverage **33/42 → 41/42** (XOM cannot be recovered).
+
+## [R2] Size this honestly: HYGIENE / PATH PARITY, not an edge improvement
+
+Plan review measured the live effect and it is smaller than revision 1 implied. **State this up
+front so nobody mistakes it for #156-class work.**
+
+All eight recovered series are *shrinking* share counts (2y `share_count_cagr`): CMCSA −5.5%,
+CVX −0.6%, GOOGL −1.9%, HON −1.9%, LMT −3.6%, MO −2.7%, MRK −0.8%, PG −0.6%.
+`flags.dilution.min_share_cagr` is **+0.03** (`config.yaml:177`) — **none is within 6 pp of
+tripping** — and `quality.dilution` is commented out (`config.yaml:262-264`) so
+`scoring.py:498-499` never reads the field. `pe_ttm`/`pe_median_5y` read `diluted_eps` only
+(`bridge.py:240-249`), untouched.
+
+**Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, flag,
+ranking or selection changes.** #156 by contrast was correcting live corruption (JNJ's
+sign-flipped `eps_cagr_ps`, MCD's `pe_ttm = 2.25e-05`).
+
+**The real justification is path parity.** `_xbrl_facts.py:132` already reads
+`WeightedAverageNumberOfDilutedSharesOutstanding` from companyfacts, and companyconcept is a
+slice of the same data — so **the backtest panel already covered all 8**. The residual-9 skew
+therefore never biased the `share_count` *measurement* axis; it biased only the production
+harness. Revision 1's "unlock `quality.dilution`" framing was **wrong**: closing B does not
+de-bias the evidence for that leg, it merely lets the harness act on a verdict the panel could
+already produce — and the largecap XBRL run already measured that axis weak. **This is not a
+step toward enabling `quality.dilution`.**
+
+Against `CLAUDE.md`'s design premise: it adds no leg, no flag, no config block, and leaves
+`scoring.py` untouched — it improves *what feeds* the funnel on the path that supplies 100% of
+production statements. That clears the bar, at one pure function + one seam + ≤9 requests/run.
 
 **Architecture:** A pure aggregator in `providers/_edgar_facts.py` plus one mockable network seam on `EdgarSource`, invoked **only** when statement-level extraction already yielded `[]`. Date-keyed join onto the existing `fiscal_period_end` spine — never positional.
 
@@ -19,7 +48,7 @@ income statement carries only `EarningsPerShareBasic`/`Diluted`, no share-count 
 | CVX | ✅ | 1.856B / 1.817B / 1.880B |
 | GOOGL | ✅ | 12.230B / 12.447B / 12.722B |
 | HON | ✅ | 0.643B / 0.655B / 0.668B |
-| LMT | ✅ | 0.234B / 0.239B / 0.251B |
+| LMT | ✅ | 233.5M / 0.239B / 0.251B |
 | MO | ✅ | 1.683B / 1.718B / 1.777B |
 | MRK | ✅ | 2.507B / 2.541B / 2.547B |
 | PG | ✅ | 2.454B / 2.472B / 2.484B |
@@ -58,8 +87,11 @@ join lands 1:1.
 1. **CIK resolution via `company_tickers.json` is unsafe for this.** It maps **XOM → 2115436
    ("ExxonMobil Holdings Corp")**, a fee-filing shell whose entire companyfacts payload is
    **1,061 bytes** (`ffd` fee facts from a POSASR). The operating company is **34088**. Using
-   that map would silently query the wrong entity. **Use the CIK from the edgartools `Company`
-   object the source already holds** — same resolution the rest of `EdgarSource` uses.
+   that map would silently query the wrong entity. **[R2] But the trap is the RAW MAP, not
+   lookup in general:** `Company("XOM").cik` → **34088**, verified live — edgartools does not
+   use that first-occurrence row. The source does **not** hold a reusable `Company` handle
+   (`_fetch_financials_object` constructs and discards one), so the seam resolves
+   `Company(ticker).cik` itself, exactly as `_fetch_sic` already does. See Task 2 §C2.
 2. **The same `end` appears multiple times across filings** (restatements / comparatives): HON's
    `2024-12-31` appears under both `fy=2025` (filed 2026-02-17) and its original filing. **Dedup
    by `end`, preferring the most recent `filed`.**
@@ -96,6 +128,9 @@ join lands 1:1.
 | JSON/CSV `share_count_cagr` | populated |
 | `pe_ttm` / `pe_median_5y` / `pe_vs_history` | **unaffected** — those read `diluted_eps`, which this does not touch |
 | `confidence` / `scored` | **unaffected** — no component changes presence |
+| **[R2] `_merge_statements` donor path** (`models.py:568-586`) | `_is_present` reads `[]` as absent, so EDGAR's empty `diluted_shares` is never backfilled today. Once populated, on any day FMP wins the spine EDGAR becomes a donor and the field is year-re-indexed onto FMP's 5-year spine → **a series with `None` holes**. `cagr` drops `None`s (`stats.py:55`) so it is safe, but the field's shape changes from "never present" to "present with holes" on that path. Rare (FMP won 1 of 24 store dates) — and rare paths are how the last four blast radii went wrong. |
+| **[R2] Accumulation-store discontinuity** | From deploy day, `store.py` snapshots for these 8 carry `diluted_shares`; the ~24 prior dates do not. A future snapshot-replay backtest sees a **mid-panel field-presence break concentrated in 8 large caps** — exactly the non-random presence change that biases a walk-forward fit. Not a bug; **record the deploy date in the audit doc** so a future evaluator can see the seam. |
+| **[R2] Cached research briefs** | `_financial_series` (`bridge.py:61-84`) gains a `shrs` cell, rendered by `assess.py:307-308`, but briefs are accession-cached and keep the old table until `--refresh`. |
 
 **Verify at implementation time** whether any of the 8 crosses `flags.dilution.min_share_cagr`
 (0.03). From the probe values none is close (all are shrinking share counts — buybacks), so no
@@ -130,6 +165,9 @@ evidence-gated decision, not part of this change.
 - [ ] **Step 3: Implement.**
 
 ```python
+# Measured across all 8 issuers' 10-K rows (2026-08-02): observed durations are exactly
+# {364, 365}. The 350-380 band also admits 52-week (363) and 53-week (370) filers, so a
+# COST-style retail calendar passes if it ever reaches this path.
 _ANNUAL_MIN_DAYS, _ANNUAL_MAX_DAYS = 350, 380
 
 
@@ -144,7 +182,16 @@ def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> 
       - RESTATEMENTS: the same `end` recurs across filings with different values;
         the most recently `filed` wins.
       - ALL-OR-NOTHING: any spine year without a fact -> [] (never a partial series,
-        matching _series' contract, so `cagr` can't span a hole).
+        matching _series' contract, so `cagr` can't span a hole). NOTE the cost: an extra or
+        partial `inc_fy` column (the "MSFT FY2026" hazard the prior plan named) silently
+        yields []. Verified 3 columns for HON/PG/GOOGL/CMCSA and the audit's 42-row table
+        shows 3 everywhere, so risk is low — but this is the likeliest partial failure of
+        go/no-go clause 1.
+      - form == "10-K" ONLY: these payloads carry 8-K recast rows (measured: CMCSA 3, HON 3,
+        PG 12) whose `filed` can POSTDATE the 10-K and would win the dedup. It also drops
+        10-K/A (LMT 3, PG 3; values identical today). Both drops are deliberate.
+      - `filed` is present on 100% of rows across all 8 payloads and is ISO YYYY-MM-DD, so
+        lexicographic ordering == chronological (measured 2026-08-02).
     Never raises: malformed input yields []."""
     try:
         rows = ((payload or {}).get("units") or {}).get("shares") or []
@@ -163,7 +210,7 @@ def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> 
                 continue
             filed = str(r.get("filed") or "")
             val = float(r["val"])
-        except (TypeError, ValueError, KeyError):
+        except (TypeError, ValueError, KeyError, AttributeError):
             continue
         prev = best.get(end)
         if prev is None or filed >= prev[0]:
@@ -209,15 +256,46 @@ Add a network seam beside `_fetch_sic` (same docstring convention, "Network seam
         only when the statement view lacks the row. Never raises; {} on any error."""
 ```
 
-Use `httpx` with the existing `SEC_IDENTITY` User-Agent, bounded by the module's existing
-`_EDGAR_MAX_CONCURRENCY` semaphore. In `_build_financials_snapshot`, after `extract_financials`:
+**[R2] C2 — the seam takes the TICKER and resolves the CIK itself.** Revision 1 proposed
+reading the CIK off `fin`, else changing `_fetch_financials_object`'s return type. Both are
+wrong, probed live:
+- `Financials` exposes **no** `.cik`/`.company`/`._company`/`.entity` — `vars(f) == {'xb': …}`.
+  The only route is `fin.xb.entity_info["identifier"]`, an undocumented nested internal in the
+  exact library layer that silently broke the accruals leg — and its sibling
+  `entity_info["ticker"]` returns garbage (`'XOM39A'`). Do not build on it.
+- Changing the return type breaks three existing seams: `tests/test_edgar_events.py:181`
+  (subclass override), `tests/test_harness_sic.py:40` and
+  `tests/test_edgar_source_financials.py:80` (both `monkeypatch.setattr`). Avoidable.
+- **`Company("XOM").cik` → 34088**, verified live: edgartools does **not** use
+  `company_tickers.json`'s first-occurrence row. So "a fresh lookup" is NOT the fee-shell trap
+  — reading the **raw ticker map** yourself is. Revision 1's prohibition was over-broad.
+
+So mirror `_fetch_sic` (`edgar.py:220-228`) exactly: `_fetch_diluted_shares_concept(self,
+ticker: str) -> dict` resolves `Company(ticker).cik` internally. No signature changes, no test
+breakage, documented public attribute.
+
+**[R2] I1 — do NOT acquire the semaphore inside the seam.** `_edgar_semaphore()`
+(`edgar.py:38-42`) calls `asyncio.get_running_loop()`, and the seam runs inside
+`asyncio.to_thread` where there is no running loop → `RuntimeError`. `_fetch_sync` already runs
+while `fetch()` holds the semaphore (`edgar.py:131-133`), so the seam is transitively bounded.
+Use `httpx` with the `SEC_IDENTITY` User-Agent and an **explicit `timeout=`** — nothing else
+bounds it, and a hung SEC connection stalls a collector slot.
+
+**[R2] C1 — the fallback MUST be wrapped in its own try/except.** `_build_financials_snapshot`
+is called inside `_fetch_sync`'s single try/except (`edgar.py:272-276`); on any exception
+`res.partial.statements` is never assigned and the ticker loses **all** statements — revenue,
+FCF, leverage, everything. Revision 1's snippet had three paths that could raise (a raising
+seam, `int(cik)`, and `AttributeError` escaping the aggregator), which violated this plan's own
+"must never reduce coverage" constraint and made its own Task-2 raising-double test
+unsatisfiable. Do not rely on the seam's "never raises" docstring as the only guard:
 
 ```python
         if not ef.diluted_shares and ef.fiscal_period_end:
-            cik = getattr(company, "cik", None)   # from the edgartools Company, NOT a ticker map
-            if cik:
+            try:                                    # never let a RECOVERY path reduce coverage
                 ef.diluted_shares = diluted_shares_from_concept(
-                    self._fetch_diluted_shares_concept(int(cik)), ef.fiscal_period_end)
+                    self._fetch_diluted_shares_concept(ticker), ef.fiscal_period_end)
+            except Exception:                       # noqa: BLE001 — fallback is best-effort
+                pass
 ```
 
 **Note (verified 2026-08-02):** `_fetch_financials_object` is
@@ -243,15 +321,29 @@ what you found.
 - [ ] **Step 1: Live before/after over all 42 store tickers** (keyless; `set -a && . ./.env`).
       Run on `main` and on the branch, diff programmatically.
 
+      **[R2] The script MUST drive `EdgarSource`, not `extract_financials` directly.** The
+      obvious script to reuse — the Method block in
+      `docs/audits/2026-07-31-edgar-concept-match.md` — calls `extract_financials` directly,
+      which **never exercises the new fallback**. It would report zero diffs across all 42,
+      reading as "clause 3 passes, clause 1 fails", and burn a full re-run to diagnose. Drive
+      `EdgarSource._build_financials_snapshot` (or `_fetch_sync`) and read
+      `snapshot.statements.diluted_shares`.
+
       **Go/no-go:**
       1. The 8 covered tickers go `diluted_shares = []` → 3 real values matching the probe table
-         above (CMCSA 3.709B, CVX 1.856B, GOOGL 12.230B, HON 0.643B, LMT 0.234B, MO 1.683B,
-         MRK 2.507B, PG 2.454B).
+         above (CMCSA 3.709B, CVX 1.856B, GOOGL 12.230B, HON 0.643B, LMT 233.5M, MO 1.683B,
+         MRK 2.507B, PG 2.4544B).
       2. **XOM stays `[]`.** If XOM gains a value, STOP — something substituted basic shares.
       3. **Every other ticker byte-identical.** Any other change is a STOP.
       4. **Cross-check the recovered values**: `net_income / diluted_eps ≈ diluted_shares` per
          year for the 8. Expect a few percent (consolidated NI vs income to common); flag >5%,
          and an order-of-magnitude miss means a units or wrong-tag problem.
+         **[R2] Be honest about what this proves.** A 5% tolerance CANNOT discriminate a diluted
+         count from a basic one — they differ by well under 1% for these issuers (the 2026-07-31
+         audit says exactly this). It is corroboration, not the guarantee. The real guarantee is
+         structural: the seam requests one named concept URL. So **also assert the returned
+         payload's own `cik` and `tag` fields echo what was requested** — that is the check the
+         arithmetic cannot give.
       5. Record whether any of the 8 crosses `flags.dilution.min_share_cagr` (0.03).
 
 - [ ] **Step 2:** write `docs/audits/2026-08-02-edgar-companyconcept-fallback.md` — the probe
