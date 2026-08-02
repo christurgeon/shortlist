@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import os
 from datetime import date, timedelta
@@ -175,9 +176,12 @@ class EdgarSource(Source):
         return Company(ticker).get_financials()
 
     def _build_financials_snapshot(self, ticker: str, fin: Any) -> TickerSnapshot:
-        """Map an edgartools Financials onto a Statements-only snapshot. Pure given
-        `fin`. Values are absolute USD (no scaling)."""
-        from ...providers._edgar_facts import extract_financials
+        """Map an edgartools Financials onto a Statements-only snapshot. Values are
+        absolute USD (no scaling). Mostly pure given `fin`, but ALSO fires the
+        companyconcept diluted-share fallback (a network seam) when the statement
+        view has no share-count row at all -- root cause B
+        (docs/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
+        from ...providers._edgar_facts import diluted_shares_from_concept, extract_financials
         try:
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
@@ -188,6 +192,14 @@ class EdgarSource(Source):
             fin.balance_sheet().to_dataframe(),
             shares_diluted=shares,
         )
+        if not ef.diluted_shares and ef.fiscal_period_end:
+            # Own try/except: never let a RECOVERY path reduce coverage. If this
+            # raises, `res.partial.statements` in `_fetch_sync` would otherwise
+            # never be assigned and the ticker loses ALL statements, not just
+            # diluted_shares (C1, docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort.
+            with contextlib.suppress(Exception):
+                ef.diluted_shares = diluted_shares_from_concept(
+                    self._fetch_diluted_shares_concept(ticker), ef.fiscal_period_end)
         snap = TickerSnapshot(ticker=ticker)
         if ef.fiscal_period_end:
             snap.statements = Statements(
@@ -226,6 +238,33 @@ class EdgarSource(Source):
 
         from ...sectors import extract_sic
         return extract_sic(Company(ticker))
+
+    def _fetch_diluted_shares_concept(self, ticker: str) -> dict:
+        """Network seam (mockable): SEC companyconcept for the weighted-average
+        diluted share count. ~35 KB (vs ~4 MB for companyfacts — measured), fired
+        only when the statement view lacks the row. Never raises; {} on any error.
+
+        Resolves the CIK off a fresh edgartools `Company(ticker)` (mirroring
+        `_fetch_sic` above), NOT the raw `company_tickers.json` first-occurrence
+        map -- that map sends XOM to a 1,061-byte fee-filing shell (CIK 2115436);
+        `Company("XOM").cik` correctly resolves the operating company (34088)."""
+        import httpx
+        from edgar import Company
+
+        try:
+            cik = int(Company(ticker).cik)
+        except Exception:
+            return {}
+        url = (
+            f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
+            "/us-gaap/WeightedAverageNumberOfDilutedSharesOutstanding.json"
+        )
+        try:
+            r = httpx.get(url, headers={"User-Agent": self.identity}, timeout=10.0)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return {}
 
     def _raw_filings(self, ticker: str) -> Any:
         """Network seam (mockable): the filtered edgartools filings object."""
