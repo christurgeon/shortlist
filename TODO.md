@@ -61,9 +61,23 @@ moved.**
    to ~18, remove `fmp` from the accumulate chain (it contributes nothing today), or the paid
    Starter tier (~$14–20/mo, the only one that also unblocks the live FMP verification that
    stayed blocked all session). **A config-or-money decision, not a build.**
-3. **Root cause B (9 tickers)** — CMCSA CVX GOOGL HON LMT MO MRK PG XOM have no share-count
-   concept at all. Two costed routes in the plan. **Do not enable `quality.dilution` until
-   B is closed** — the residual is non-random (old-line industrials/energy/pharma).
+3. ~~**Root cause B (9 tickers)**~~ — **RESOLVED 2026-08-02** (`fix/edgar-companyconcept-fallback`,
+   `docs/PLAN_EDGAR_ROOT_CAUSE_B.md`, `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`).
+   A pure aggregator (`_edgar_facts.diluted_shares_from_concept`) plus a network seam on
+   `EdgarSource` (`_fetch_diluted_shares_concept`) recover `diluted_shares` for **8 of the 9**
+   via SEC's single-tag `companyconcept` API (CMCSA CVX GOOGL HON LMT MO MRK PG), fallback-only
+   and abstain-over-guess (fires only when the statement view already yielded `[]`; all-or-
+   nothing re-index onto the spine). All 5 go/no-go clauses passed live on the 42-ticker store
+   universe: the 8 match the plan's probe table exactly, byte-identical elsewhere, and the raw
+   payload's own `cik`/`tag` fields were asserted to echo the request (the structural guarantee
+   the NI/EPS arithmetic cross-check alone can't give). **XOM is a permanent residual** — it
+   last tagged the diluted-shares concept in FY2013; the only weighted-average share tag left
+   on recent 10-Ks is the *basic* count (4,305,000,000), which is deliberately NOT substituted.
+   Sized as **hygiene, not an edge change**: all 8 recovered series are shrinking share counts,
+   none within 6pp of `flags.dilution.min_share_cagr`, and `quality.dilution` stays OFF — no
+   score/gate/flag/ranking/selection changed. The prior "do not enable `quality.dilution` until
+   B is closed" objection is now **narrower (1 residual ticker, XOM, not 9)** — this does
+   **not** itself justify enabling that leg, which remains a separate evidence-gated decision.
 4. **Widen the go/no-go** beyond the store's 42 tickers — keyless, costs only time, and it is
    the only thing that further reduces residual risk (another code review would not).
 5. `get_shares_outstanding_diluted()` still returns MCD's count in millions.

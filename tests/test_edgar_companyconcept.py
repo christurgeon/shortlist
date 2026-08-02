@@ -265,6 +265,42 @@ def test_fallback_fires_and_populates_diluted_shares(monkeypatch):
     assert snap.statements.net_income == [10.0, 9.0, 8.0]
 
 
+def _concept_payload_partial_spine():
+    """Covers only 2 of the 3 spine years (2023-12-31 is deliberately absent). A
+    WELL-FORMED payload -- no exception anywhere in the seam or the aggregator --
+    but the all-or-nothing contract means the result must still be []."""
+    return _payload([
+        _row("2025-12-31", 643_000_000.0),
+        _row("2024-12-31", 655_000_000.0),
+        # 2023-12-31 missing entirely
+    ])
+
+
+def test_fallback_partial_spine_coverage_abstains_at_the_wiring_level(monkeypatch):
+    """[task-3 review] The 'valid payload, partial spine coverage -> abstain' path
+    was pinned only in the aggregator's own unit tests
+    (test_partial_coverage_two_of_three_years_abstains in this file) plus an ad hoc
+    live check on XOM -- never at the EdgarSource wiring level. This IS the XOM
+    kill-switch shape end to end: the seam succeeds and returns real, well-formed
+    data, but that data doesn't cover every spine year, so diluted_shares must stay
+    [] rather than surface a partial/holed series, and the rest of Statements must
+    stay intact (this is not a failure-isolation path -- nothing raises)."""
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+    monkeypatch.setattr(EdgarSource, "_fetch_diluted_shares_concept",
+                        lambda self, ticker: _concept_payload_partial_spine(), raising=False)
+
+    fin = _FakeFinancials(_income_no_share_row())
+    snap = src._build_financials_snapshot("HON", fin)
+
+    assert snap.statements is not None
+    assert snap.statements.diluted_shares == []
+    # rest of Statements is untouched -- this is abstention, not failure isolation
+    assert snap.statements.revenue == [100.0, 90.0, 80.0]
+    assert snap.statements.net_income == [10.0, 9.0, 8.0]
+    assert snap.statements.diluted_eps == [1.5, 1.4, 1.3]
+
+
 def test_fallback_does_not_fire_when_extraction_already_has_values(monkeypatch):
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"
