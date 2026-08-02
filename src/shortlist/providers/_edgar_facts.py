@@ -5,15 +5,19 @@ Dependency-isolated leaf (sibling of _form4.py). Imports pandas (a transitive
 edgartools dep) but NOT edgar/httpx, so it is unit-testable with synthetic
 DataFrames and never reached unless the `edgar` extra is installed.
 
-UNITS: values are passed through verbatim. edgartools to_dataframe() returns
-ABSOLUTE USD (verified: AAPL revenue 416_161_000_000.0), matching FMP statements
-and market_cap. No scaling here or downstream. All series are NEWEST-FIRST to
-match the existing Statements convention."""
+UNITS: values are passed through verbatim, but "verbatim" is NOT always absolute
+USD/shares. edgartools to_dataframe() returns ABSOLUTE USD for most issuers
+(verified: AAPL revenue 416_161_000_000.0), matching FMP statements and
+market_cap -- but NOT universally: MCD's diluted_shares series is
+[716.4, 721.9, 732.3] (MILLIONS, filer-presentation-scaled), not absolute
+share count. No scaling is applied here or downstream, so a per-issuer scale
+drift passes through uncaught (docs/audits/2026-07-31-edgar-concept-match.md).
+All series are NEWEST-FIRST to match the existing Statements convention."""
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 
@@ -132,7 +136,13 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     if "level" in hit.columns:
         lvl = pd.to_numeric(hit["level"], errors="coerce")
         if lvl.notna().any():
-            return hit.loc[lvl.idxmin()]
+            # Positional, NOT `.loc[lvl.idxmin()]`: on a duplicated index `.loc[label]`
+            # returns every row sharing that label as a DataFrame (not a Series), which
+            # later blows up in `_series()` (`ValueError: truth value of a Series is
+            # ambiguous`) and silently degrades the ticker's ENTIRE statements payload
+            # to None (EdgarSource failure-isolates the section). Same fix as
+            # `_rows_by_concept`.
+            return hit.iloc[int((lvl.to_numpy() == lvl.min()).nonzero()[0][0])]
     return hit.iloc[0]
 
 
@@ -250,6 +260,78 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
     return out
 
 
+# Authoritative raw us-gaap tags. Matched on `concept`, NOT `label` (filer
+# presentation text: MSFT/COST/ORCL/PEP label the share-count row just "Diluted",
+# IBM "Assuming dilution (in shares)", VZ omits "diluted" — 7 of 42 production
+# tickers extracted EMPTY on labels alone) and NOT `standard_concept` (bucket names
+# drift across edgartools releases — docs/audits/2026-07-12-accruals-leg-disable.md).
+_DILUTED_SHARES_CONCEPTS = ("us-gaap_WeightedAverageNumberOfDilutedSharesOutstanding",)
+_DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
+
+
+def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
+    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`.
+    Exact equality guards against a genuine suffix-extension tag posing as its
+    parent — NOT the JNJ/QCOM continuing-ops case: neither
+    `us-gaap_EarningsPerShareDiluted` nor
+    `us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare` is a substring of
+    the other, so a prefix match would not have let one pose as the other there.
+    What protects THAT case is matching `concept` (the raw tag) at all instead of
+    `label` (filer presentation text) — real JNJ/QCOM filings label BOTH rows
+    identically ("Diluted (in dollars per share)"), so only the `concept` column
+    tells them apart.
+
+    Returns only rows at the MINIMUM `level` — the same preference as
+    `_row_by_standard_concept`, which exists because iloc[0] grabbed a nested child
+    on real MSFT/GOOGL filings. Deeper children are dropped, NOT kept as later
+    candidates. A sparse min-level total then falls through to the label scan next
+    — but that scan is LEVEL-BLIND (`_row_diluted_eps`/`_row_diluted_shares` never
+    consult `level`), so its result is row-order-dependent: with a sparse min-level
+    total and a complete deeper child listed first, the label picker CAN return the
+    child. That is pre-existing label-scan behaviour, not something this function
+    fixes or guarantees against — concept matching only narrows the candidate SET
+    passed to `_series_by_concept_or_label`; it does not make the label-scan
+    fallback level-aware.
+
+    Indexing is POSITIONAL (`.iloc` + a boolean mask via `.nonzero()`, no argsort).
+    `.loc` with a sorted index is wrong here: on a duplicated index it silently
+    returns the cartesian expansion AND inverts the ordering (measured: index
+    [7,7], levels [4,2] -> 4 rows, child first), reintroducing the exact bug the
+    min-level rule prevents."""
+    if "concept" not in df.columns:
+        return []
+    rows = df
+    if "dimension" in rows.columns:
+        rows = rows[rows["dimension"] != True]      # noqa: E712 — drop breakdowns
+    col = rows["concept"].astype(str)
+    out: list[pd.Series] = []
+    for c in concepts:
+        hit = rows[col == c]
+        if hit.empty:
+            continue
+        if "level" in hit.columns:
+            lvl = pd.to_numeric(hit["level"], errors="coerce")
+            if lvl.notna().any():
+                hit = hit.iloc[(lvl.to_numpy() == lvl.min()).nonzero()[0]]
+        out.extend(hit.iloc[i] for i in range(len(hit)))
+    return out
+
+
+def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
+                                label_picker: Callable[[pd.DataFrame], Optional[pd.Series]],
+                                fy_cols: list[tuple[str, str]]) -> list[float]:
+    """VALUE-AWARE pick. A concept row wins only if it yields a COMPLETE series;
+    otherwise we fall through to the next candidate and finally to the label scan.
+    Keying the fallback on row-presence instead would let a sparse or all-NaN
+    concept row SHADOW a label row that works today, turning a populated series
+    into [] (`_series` is all-or-nothing) — a regression, not a no-op."""
+    for row in _rows_by_concept(df, concepts):
+        series = _series(row, fy_cols)
+        if series:
+            return series
+    return _series(label_picker(df), fy_cols)
+
+
 def extract_financials(
     income_df: pd.DataFrame,
     cashflow_df: pd.DataFrame,
@@ -279,11 +361,12 @@ def extract_financials(
     fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)
     fin.net_income = _series(_row_net_income(income_df), inc_fy)
 
-    eps = _series(_row_diluted_eps(income_df), inc_fy)
+    eps = _series_by_concept_or_label(income_df, _DILUTED_EPS_CONCEPTS, _row_diluted_eps, inc_fy)
     if not eps and fin.net_income and shares_diluted:
         eps = [ni / shares_diluted for ni in fin.net_income]
     fin.diluted_eps = eps
-    fin.diluted_shares = _series(_row_diluted_shares(income_df), inc_fy)
+    fin.diluted_shares = _series_by_concept_or_label(
+        income_df, _DILUTED_SHARES_CONCEPTS, _row_diluted_shares, inc_fy)
 
     # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept names
     # below are edgartools' OWN normalized buckets (NOT raw us-gaap) — verified against a
