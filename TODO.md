@@ -1044,65 +1044,6 @@ commit found 12 more half-closed gaps, all fixed in `52b979c`. Follow-ups, by ur
 **Status:** open — item 1 is the standard deploy flow; 2 is a one-command measurement gate;
 3 is future work.
 
-## Deploy to /opt/shortlist done (code side) — bot restart + Telegram smoke pending (2026-07-09)
-
-The pending deploy carrying #128 (/explain), #130 (VFLEX non-registrant skip), and #132
-(SUE decay anchor) is synced: `/opt/shortlist` rsynced to `9e34ee5` (installer excludes
-replicated exactly; `deploy/` units unchanged in the jump, no deletions/renames so no
-`rm -rf src` needed), `uv sync --extra scout --extra edgar` audited clean, offline
-`shortlist-scout --demo` smoke OK, and the deployed venv resolves the new
-`scout/glossary.py` (`lookup("sue")` returns the SUE entry). The 21:30/22:30 timers pick
-the code up automatically (editable install). Also verified: the accumulate unit's
-ExecStart **already carries `--sources fmp,finnhub,edgar`** — the 2026-07-07 item-1
-`SHORTLIST_ACCUMULATE=1` installer re-run is DONE (marked below).
-
-Remaining (operator — needs root, session couldn't sudo):
-1. `sudo systemctl restart shortlist-bot.service` — the long-running bot still has the
-   OLD modules loaded until bounced; /explain and the VFLEX skip are NOT live in the bot
-   until then.
-2. After the restart, live Telegram smoke: `/explain sue` (glossary) and `/deep VFLEX`
-   (expect the friendly non-registrant skip, not the raw edgartools error).
-
-**Status:** code deployed 2026-07-09 ~04:05 UTC; bot restart + 2 smoke checks pending.
-
-## SUE decay anchor fixed — EDGAR 10-Q filed date; free-tier calendar is empty (2026-07-09)
-
-The systematically-fast SUE decay (2026-07-07 item 6) is fixed, but NOT by the planned
-calendar-window widening alone — live probing showed **Finnhub's free tier returns zero
-historical `calendar/earnings` entries** (even a full past year is empty), so a past
-announcement date can never come from Finnhub on this plan. The shipped fix is a
-three-tier anchor (CLAUDE.md → SUE section): true calendar date (paid-tier only; the
-request now reaches back ~120d so it activates on a paid key) → **EDGAR 10-Q/10-K filed
-date** (new `Events.last_report_filed`, exact forms only, `max(quarter_end, filed)` and
-only when `Earnings.last_report_date_estimated`) → quarter-end fallback. Live-verified:
-AAPL anchor 100d → 69d (10-Q filed 2026-05-01, print 2026-04-30 — ~1d error); NVO (20-F,
-no 10-Qs) degrades cleanly to the fallback. `config.yaml: edgar_events.forms` gained
-`10-Q`/`10-K` (config overrides the code default — a bare-code fix silently no-ops).
-Replay note: old persisted snapshots default `last_report_date_estimated: true` on
-`from_dict`, so accumulated pre-fix dates get the tier-2 anchor retroactively **where
-the snapshot has EDGAR events** — one more reason the `SHORTLIST_ACCUMULATE=1` installer
-re-run (2026-07-07 item 1) matters.
-
-**Status:** merged pending PR; VPS picks it up on the next deploy (`git pull` →
-`install_opt_shortlist.sh` → restart) — same flow as the pending /explain deploy.
-
-## /explain glossary command shipped — deploy pending (2026-07-08)
-
-PR #128 merged: `/explain [term]` bot command (static 60-entry financial glossary in
-`scout/glossary.py`; scoring gains declarative `KNOWN_GATES`/`KNOWN_FLAGS` bound by an
-AST-scan test — new gates/flags now fail CI until documented in glossary + theme legend).
-The live bot at `/opt/shortlist` doesn't have it until the usual deploy flow runs
-(`git pull` → `install_opt_shortlist.sh` → restart `shortlist-bot`). Content note: entries
-are semantics-only (no config thresholds quoted) so config tuning never stales them.
-
-**Status:** merged; VPS deploy + a quick live `/explain` smoke on Telegram pending. Same
-deploy also picks up #130 (friendly `/deep` skip for non-SEC-registrant tickers like
-VFLEX — was leaking the raw edgartools "Company not found / Tip:" error); re-run
-`/deep VFLEX` after deploy to confirm the new copy. **Update 2026-07-09:** code deployed
-(top entry) — only the bot restart + the two smokes remain.
-
----
-
 ## Session follow-ups — breadth fix (#119) + 8-K stack (#120) shipped (2026-07-07)
 
 Both features merged and deployed (editable install picks the code up; effect from tonight's
@@ -1457,19 +1398,6 @@ pre-registered gate). The only remaining step is the OPERATOR one: fire the paus
 production backfill run (entry at top), then `validate --backfill` for the first real
 verdict, which will now also flow into the nightly digest automatically.
 
-## Verified: first FMP-free digest ran clean (2026-06-30) — item below resolved
-
-The `shortlist-scout` timer fired 2026-06-30 22:30 UTC on `/opt/shortlist` (the deployed repo;
-`/home/chris/shortlist` is a stale dev checkout — ignore its `state/`). Confirmed **0 FMP calls**
-(`PEG` + `Target upside` null on every name incl. AMD/NKE; all 7 axes still scored, `value`
-recovered from EDGAR/Yahoo), the "Free-source screen — /deep for PEG + analyst targets" caveat +
-`/deep` block + prior-picks-vs-SPY scoreboard all rendered, `research: false` honored (no Claude
-burn), picks recorded (`runs`/`picks` include 06-30), no delivery errors. **Delivery not
-positively logged** (the gap the new `feat/scout-delivery-log` branch fixes) — 06-30 push itself
-unconfirmed; check Telegram. Paid-FMP flip below remains a deferred decision.
-
----
-
 ## FMP-free daily digest shipped + deployed — verify first run / paid-plan flip (2026-06-30)
 
 `scout.daily_push.include_fmp: false` (#100) makes the unattended digest screen on free
@@ -1486,21 +1414,6 @@ heavy filers like WDC). Two follow-ups:
   digest uses the identical full chain as the bot, no code change.
 
 **Status:** Done + live. Only the first-run verification and the conditional paid-plan flip remain.
-
-## Daily scout push armed in config — VPS deploy + first run pending (2026-06-29)
-
-`scout.daily_push.enabled` is now `true` (#95; lean digest, `research: false`) — but the flag
-alone does nothing until the **VPS** runs it. Remaining operator steps: sync the repo to the box
-and enable the `shortlist-scout` systemd timer (`deploy/shortlist-scout.timer`, or
-`deploy/install_opt_shortlist.sh`), with `.env` present (`SEC_IDENTITY` ±
-`TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`; without the Telegram pair it journals to `scout/<date>/`
-+ stdout and still records picks). Don't read `enabled: true` as "live" — verify the timer on the
-box. Until it runs nightly, no picks accumulate, so the selection-ledger forward-return analysis
-(item 1 of the next section) stays blocked.
-
-**Status:** config armed (#95); VPS deployment + first nightly run pending (operator action).
-
----
 
 ## Activist 13D discovery + selection ledger — Phase 2 follow-ups (2026-06-29)
 
