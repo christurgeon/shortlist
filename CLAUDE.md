@@ -1079,6 +1079,45 @@ fire the remaining screens), and `daily.py` persists a rest-of-day cooldown in `
 must stay a subset of what httpx can decode (no `br`/`zstd` without the dep, or `.json()`
 fails). `query2` is a manual escape hatch only — no auto-failover.
 
+## Signal-validation evaluator — pre-registration + bootstrap contracts
+
+`scout/validate.py` turns a cohort into a KILL/HOLD/INSUFFICIENT verdict; `scout/preregister.py`
+is the anti-p-hacking gate. Three contracts are load-bearing (design + evidence:
+`docs/EVALUATOR_CORRECTNESS.md`):
+
+- **`load_prereg` parses `git show HEAD:<path>`, NOT the working tree.** Editing a prereg YAML
+  locally therefore has **no effect until you commit it** — that is the point, not a bug. Until
+  2026-08-03 the loader read the worktree while the gate only checked the path's last commit
+  time, so an *uncommitted* threshold edit passed as pre-registered (demonstrated: 0.90 → 0.10
+  read as `(True, 'ok')`). Don't "fix" it back to `read_text()`. A `git status`-based divergence
+  *detector* was tried and is bypassed by `git update-index --assume-unchanged`.
+  `verify_untampered` dates the **content** — `--first-parent --follow`, **parsed-YAML** equality
+  (so comment churn doesn't re-register a file), oldest **contiguous** match (so an A→B→A revert
+  can't launder a tamper). Non-git deployments fall back to disk **and** the gate returns False,
+  so unverifiable bytes are always labelled.
+- **Bootstraps resample ISSUERS, relabelled per issuer-copy** (`_resample_by_issuer`), never
+  events per draw-index. These cohorts are 48–57% multi-event issuers and the composite is
+  largely firm-level. Per-draw relabelling disabled `calendar_time_portfolio`'s same-ticker
+  dedup (+19.6%/+23.7% held-set inflation), i.e. it bootstrapped a **different estimator than it
+  reported**. The month grid is **anchored** to the original cohort (a resample loses the
+  earliest event ~37% of the time and can only contract the window). `median_split` is shared by
+  the point estimate and every replicate so the two cannot drift apart.
+- **Abstain, never substitute a different model.** When events exist and the issuer bootstrap
+  can't compute, the CI is `None` (`spread_ci_method: "unavailable"`) — it does **not** fall back
+  to `stationary_block_bootstrap_alpha`, which fails on exactly the thin cohorts where its
+  interval is most artificially tight. The month bootstrap is used only when there is no event
+  list at all (hand-built/old persisted measurements), where it is the only model available.
+
+**Do not quote a double-sort spread CI from a committed audit.** #151's `monthly_rets` fix
+already invalidated them: the 13D spread the audits call "the one survivor" reads
++2.41%/mo CI [−1.51%, +6.74%] on current code — **it spans zero**, against the quoted
++2.97%/mo CI [+2.73%, +3.17%]. 8-K still excludes zero. Re-derivation is an open TODO.
+
+`double_sort` also reports `high_frac`/`low_frac` (per-bucket measurable fractions over ALL
+composite-defined events). They exist because "attrition cancels in the spread" holds only if
+both buckets are measured alike — and 8k-neg reads **high 0.527 vs low 0.647**, a 12pp
+asymmetry. Enforcing a tolerance needs a pre-registered threshold; v1 discloses only.
+
 ## Scale / rate limits (the honest catch)
 
 Free tiers fit individual names or a small watchlist, not a full universe. The harness makes
