@@ -34,8 +34,16 @@ def _ranked_cohort(n_months):
         d = date(y, m, 15)
         hi_ret = 0.05 + 0.002 * ((i % 3) - 1)
         lo_ret = -0.02 + 0.001 * ((i % 4) - 1.5)
-        events.append(MeasuredEvent("s", f"H{i}", d, hi_ret, True, 0.9, False, 80.0))
-        events.append(MeasuredEvent("s", f"L{i}", d, lo_ret, True, 0.9, False, 20.0))
+        # Composites are JITTERED rather than a flat 80/20. A two-point composite is
+        # degenerate under a re-splitting bootstrap: the replicate median lands ON the tied
+        # value about half the time, which sends every drawn event to the HIGH side and
+        # empties LOW, so ~51% of replicates are discarded and the CI correctly abstains
+        # (measured: 102/200 discarded). That abstention is right for a genuinely degenerate
+        # cohort but it is an artifact of the fixture, not of the signal being tested here --
+        # real cohorts carry 0.4-1.2% ties at the median. The jitter keeps every HIGH strictly
+        # above every LOW, so the median split and both bucket sizes are unchanged.
+        events.append(MeasuredEvent("s", f"H{i}", d, hi_ret, True, 0.9, False, 80.0 + i * 0.1))
+        events.append(MeasuredEvent("s", f"L{i}", d, lo_ret, True, 0.9, False, 20.0 + i * 0.1))
     return events
 
 
@@ -174,11 +182,23 @@ def test_double_sort_excludes_months_where_only_one_side_holds():
     assert full_result["months"] < full_result["n_high"]
 
     # The excluded high-only month contributed NOTHING to the spread: with it entirely absent
-    # from the cohort, every spread statistic is unchanged.
+    # from the cohort, every POINT-ESTIMATE spread statistic is unchanged.
     assert full_result["months"] == control_result["months"]
     assert full_result["effective_blocks"] == control_result["effective_blocks"]
     assert full_result["spread_alpha_monthly"] == control_result["spread_alpha_monthly"]
-    assert full_result["spread_ci"] == control_result["spread_ci"]
+
+    # This test used to also assert `spread_ci` equality. That held only because the CI came
+    # from resampling MONTHS of an already-common-months-only series, so a 13-event and a
+    # 12-event cohort bootstrapped literally the same row sequence. The CI now resamples
+    # ISSUERS, under which these are genuinely different populations and the intervals are
+    # not required to match -- the equality was a property of the old estimator, not of the
+    # invariant this test exists to pin. Asserting it again would be vacuous here anyway:
+    # a 7-month cohort is below the bootstrap's `min_obs`, so BOTH sides abstain and
+    # `None == None` would pass without testing anything. Pin the abstention EXPLICITLY
+    # instead, so a thin cohort can never silently ship a number from a different model.
+    for r in (full_result, control_result):
+        assert r["spread_ci"] is None
+        assert r["spread_ci_method"] == "unavailable"
 
 
 def test_double_sort_none_when_no_eligible_events():
@@ -287,3 +307,104 @@ def test_attach_double_sort_tolerates_none():
     from shortlist.scout.validate import attach_double_sort
 
     assert attach_double_sort(_verdict(alpha_suppressed=True), None).double_sort is None
+
+
+# --- Issuer-clustered bootstrap + ds floor check (docs/EVALUATOR_CORRECTNESS.md §2-§3) ----
+
+def _multi_event_issuer_cohort(n_months, events_per_issuer=3):
+    """Cohort where each ISSUER fires several times — the structure the real cohorts have
+    (48-57% of events sit on a multi-event issuer) and the one that distinguishes an
+    issuer-clustered resample from an i.i.d.-event one."""
+    events = []
+    for i in range(n_months):
+        y, m = _month(i)
+        d = date(y, m, 15)
+        for r in range(events_per_issuer):
+            events.append(MeasuredEvent("s", f"H{i % 7}", d, 0.05 + 0.002 * ((i + r) % 3 - 1),
+                                        True, 0.9, False, 80.0 + i * 0.1 + r * 0.01))
+            events.append(MeasuredEvent("s", f"L{i % 7}", d, -0.02 + 0.001 * ((i + r) % 4 - 1.5),
+                                        True, 0.9, False, 20.0 + i * 0.1 + r * 0.01))
+    return events
+
+
+def test_replicates_keep_same_issuer_dedup_active():
+    """The estimator being bootstrapped must be the estimator being reported.
+
+    The old resample relabelled every drawn event with a unique DRAW index, which did not
+    merely un-dedup repeat draws — it disabled calendar_time_portfolio's same-ticker dedup for
+    genuinely distinct events of the SAME issuer (measured held-set inflation +19.6% on 13d,
+    +23.7% on 8k-neg). Relabelling per ISSUER-COPY keeps dedup active inside a copy.
+    """
+    from shortlist.scout.validate import _resample_by_issuer
+
+    live = _multi_event_issuer_cohort(12)
+    def rand():
+        return 0.0                                               # always draw issuer 0
+
+    draw = _resample_by_issuer(live, rand)
+    # Every drawn event belongs to one issuer, drawn n_issuers times -> exactly n_issuers
+    # distinct labels, NOT one label per event (which is what per-draw relabelling gave).
+    n_issuers = len({m.ticker for m in live})
+    assert len({m.ticker for m in draw}) == n_issuers
+    assert len(draw) > n_issuers          # each copy carries ALL that issuer's events
+
+
+def test_spread_ci_abstains_rather_than_falling_back_to_the_month_bootstrap():
+    """A thin cohort must yield no CI at all, never a month-bootstrap number wearing the
+    event bootstrap's label. The month bootstrap is most artificially tight exactly on thin
+    cohorts, so falling back would be anti-conservative where the data is weakest."""
+    thin = _ranked_cohort(7)
+    result = double_sort(thin, k_months=1, ff3=_ff3_for_months(7), min_bucket_events=1,
+                         min_independent_blocks=1, n_boot=100)
+    assert result is not None
+    assert result["spread_ci"] is None
+    assert result["spread_ci_method"] == "unavailable"
+
+
+def test_spread_ci_is_stable_across_seeds():
+    """A same-seed-same-output check would only prove an LCG is an LCG. What matters is that
+    the Monte-Carlo error is small enough that the reported endpoints mean something."""
+    measured = _ranked_cohort(30)
+    ff3 = _ff3_for_months(30)
+    cis = [double_sort(measured, k_months=1, ff3=ff3, min_bucket_events=10,
+                       min_independent_blocks=5, n_boot=300, seed=s)["spread_ci"]
+           for s in (12345, 777, 999)]
+    assert all(c is not None for c in cis)
+    width = sum(c[1] - c[0] for c in cis) / 3.0
+    for lo, hi in cis:
+        assert abs(lo - cis[0][0]) < 0.25 * width
+        assert abs(hi - cis[0][1]) < 0.25 * width
+
+
+def test_per_bucket_fractions_are_not_tautologically_one():
+    """`eligible` is already filtered on `measurable`, so splitting THAT reports 1.0/1.0 and
+    the disclosure is worthless. The fractions must be computed over ALL composite-defined
+    events, including the non-measurable ones."""
+    measured = _ranked_cohort(30)
+    # Add composite-defined but NON-measurable events, all on the LOW side.
+    for i in range(20):
+        y, m = _month(i)
+        measured.append(MeasuredEvent("s", f"X{i}", date(y, m, 15), None, False, 0.9,
+                                      False, 20.0 + i * 0.1))
+    result = double_sort(measured, k_months=1, ff3=_ff3_for_months(30), min_bucket_events=10,
+                         min_independent_blocks=5, n_boot=100)
+    assert result["high_frac"] == 1.0                     # no unmeasurable events up here
+    assert result["low_frac"] < 1.0                       # ... but plenty down there
+    assert result["high_frac"] > result["low_frac"]       # the asymmetry is now visible
+
+
+def test_ds_floor_failure_blanks_absolute_legs_but_never_the_spread():
+    """TODO 0g: the ds cohort is a different population from the one decide() floored, so it
+    can fail a floor its parent passes. The SPREAD survives (it is a difference between two
+    buckets measured the same way); the ABSOLUTE per-bucket legs do not."""
+    from shortlist.scout.validate import attach_double_sort
+
+    ds = _ds()
+    v = attach_double_sort(_verdict(verdict="HOLD"), ds, ds_floor_failed=True)
+    assert v.alpha_suppressed is False                     # the PARENT still cleared its floor
+    assert v.double_sort["high_ir"] is None
+    assert v.double_sort["low_ir"] is None
+    assert v.double_sort["level_suppressed"] is True
+    assert v.double_sort["spread_alpha_monthly"] == ds["spread_alpha_monthly"]
+    assert v.double_sort["spread_ci"] == ds["spread_ci"]
+    assert any("double-sort" in n and "SUPPRESSED" in n for n in v.notes)

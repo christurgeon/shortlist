@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field, replace
 from datetime import date
+from statistics import NormalDist
 
 from ..backtest.prices import PriceHistory, _add_months
 
@@ -204,7 +205,9 @@ def _months_between(a: date, b: date) -> int:
 
 
 def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
-                            weighting: str = "equal") -> list[tuple[str, float, int]]:
+                            weighting: str = "equal",
+                            month_span: tuple[date, date] | None = None,
+                            ) -> list[tuple[str, float, int]]:
     """Monthly calendar-time portfolio: each month, hold every name whose event fired in the
     trailing k_months; the month's return is the (equal- or value-) weighted mean of held
     names' monthly-equivalent returns. Collapsing contemporaneous events into one monthly
@@ -213,12 +216,22 @@ def calendar_time_portfolio(measured: list[MeasuredEvent], k_months: int,
     K-vs-cycle dedup: if the same ticker has more than one qualifying event inside a single
     month's trailing-K window, it is counted ONCE that month (the most-recent qualifying
     event) -- otherwise the independent-block accounting double-weights a repeat firer.
+
+    `month_span` pins the calendar grid to an explicit (first, last) event date instead of
+    deriving it from `measured`. Bootstrap replicates MUST pass the original cohort's span:
+    a resample loses the earliest event ~37% of the time ((1-1/n)^n -> 1/e), and the derived
+    window can only ever CONTRACT, so re-deriving it per replicate would make the FF3 fit run
+    on a randomly shortened sample and understate the interval. Default None reproduces the
+    pre-existing derive-from-events behaviour exactly.
     """
     live = [m for m in measured if m.measurable and m.event_date is not None and m.ret is not None]
     if not live:
         return []
-    lo = min(m.event_date for m in live)
-    hi = max(m.event_date for m in live)
+    if month_span is not None:
+        lo, hi = month_span
+    else:
+        lo = min(m.event_date for m in live)
+        hi = max(m.event_date for m in live)
     n_months = _months_between(lo, hi) + k_months          # cover the last cohort's holding tail
     rows: list[tuple[str, float, int]] = []
     for i in range(n_months):
@@ -397,14 +410,7 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
     if not eligible:
         return None
 
-    composites = sorted(m.composite for m in eligible)
-    n = len(composites)
-    if n % 2 == 1:
-        median = composites[n // 2]
-    else:
-        median = (composites[n // 2 - 1] + composites[n // 2]) / 2.0
-    high = [m for m in eligible if m.composite >= median]     # ties -> high side
-    low = [m for m in eligible if m.composite < median]
+    high, low, median = median_split(eligible)                # ties -> high side
     if len(high) < min_bucket_events or len(low) < min_bucket_events:
         return None
 
@@ -423,9 +429,29 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
         return None
 
     alpha, _betas = ff3_alpha(spread_rows, ff3)
-    ci = stationary_block_bootstrap_alpha(spread_rows, ff3, k_months, n_boot=n_boot, seed=seed)
+    # The CI resamples ISSUERS, not months. `stationary_block_bootstrap_alpha` answers "how
+    # smooth is this monthly series?" while the parent verdict's `alpha_ci` answers "which
+    # events did this cohort catch?" -- one verdict object was shipping both, one key apart.
+    # There is deliberately NO fallback to the month bootstrap: it fails on THIN cohorts,
+    # which is exactly where the month bootstrap's interval is most artificially tight, so
+    # falling back would substitute the known-too-tight estimator precisely where the data is
+    # weakest. Abstain instead, as `ols`/`_monthly_path`/`measure_cohort` all do.
+    ci, z0, n_fit, n_discarded = event_bootstrap_spread_alpha(
+        eligible, ff3, k_months, min_bucket_events=min_bucket_events,
+        n_boot=n_boot, seed=seed, weighting=weighting)
     high_ir = information_ratio(ctp_high, ff3)
     low_ir = information_ratio(ctp_low, ff3)
+
+    # Per-bucket measurable fractions. These must be computed over ALL composite-defined
+    # events -- `eligible` already filtered on `m.measurable`, so splitting THAT would report
+    # a tautological 1.0/1.0 and the disclosure would be worthless. Partitioning `measured`
+    # by the same median is what makes the "attrition cancels in the spread" assumption
+    # checkable rather than asserted (docs/EVALUATOR_CORRECTNESS.md §3.4).
+    def _frac(side_pred):
+        pool = [m for m in measured if m.composite is not None and side_pred(m.composite)]
+        if not pool:
+            return None
+        return sum(1 for m in pool if m.measurable) / len(pool)
 
     return {
         "n_high": len(high),
@@ -434,8 +460,15 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
         "effective_blocks": eff,
         "spread_alpha_monthly": alpha,
         "spread_ci": ci,
+        "spread_ci_method": "issuer_bootstrap" if ci is not None else "unavailable",
+        "level_suppressed": False,
+        "z0": z0,
+        "n_boot_fitted": n_fit,
+        "n_boot_discarded": n_discarded,
         "high_ir": high_ir,
         "low_ir": low_ir,
+        "high_frac": _frac(lambda c: c >= median),
+        "low_frac": _frac(lambda c: c < median),
     }
 
 
@@ -509,27 +542,49 @@ def _suppress_level(verdict: SignalVerdict) -> SignalVerdict:
     return verdict
 
 
-# The double-sort's SPREAD legs are differences between two identically-measured buckets, so
-# the attrition bias cancels and they survive suppression. `high_ir`/`low_ir` are ABSOLUTE
-# per-bucket levels -- they carry exactly the bias the floor rejected, so they must not.
+# The double-sort's SPREAD legs are differences between two buckets measured the same way, so
+# a common attrition bias LARGELY cancels and they survive suppression. `high_ir`/`low_ir` are
+# ABSOLUTE per-bucket levels -- they carry exactly the bias the floor rejected, so they must
+# not. "Largely" is the audit's own word (§4.4) and is load-bearing: cancellation is exact
+# only if both buckets lose names at the same rate AND the missing names' outcome gap is the
+# same on both sides, neither of which is established -- and the spread is an FF3 intercept
+# fitted on a data-dependent common-month subset, not a difference of means. `high_frac` /
+# `low_frac` are reported so that assumption is checkable rather than asserted; enforcing a
+# tolerance on their gap needs a PRE-REGISTERED threshold and is deliberately not done here
+# (docs/EVALUATOR_CORRECTNESS.md §3.5).
 _ABSOLUTE_DOUBLE_SORT_LEGS = ("high_ir", "low_ir")
 
 
-def attach_double_sort(verdict: SignalVerdict, ds: dict | None) -> SignalVerdict:
+def attach_double_sort(verdict: SignalVerdict, ds: dict | None, *,
+                       ds_floor_failed: bool = False) -> SignalVerdict:
     """Attach a double-sort result to `verdict`, blanking its ABSOLUTE per-bucket legs when
-    the verdict's level is suppressed.
+    the verdict's level is suppressed OR the double-sort cohort fails its own floor.
 
     Assignment goes through this helper rather than `verdict.double_sort = ds` so a
     suppressed verdict can never ship a quotable level one key down from the ones R-0f just
     blanked (the raw `--json` / `scout/validate-latest.json` surface, which is where audits
     are actually written from). `spread_alpha_monthly`/`spread_ci` and every count are left
     alone -- the spread is the statistic this data supports.
+
+    `ds_floor_failed` closes TODO 0g: the double-sort cohort is composite-defined and
+    GATE-AGNOSTIC, a strict superset of the gate-filtered cohort the parent verdict measures,
+    so it is a different population whose measurable fraction was never tested against the
+    floor. Measured on all four committed cohorts it is measured BETTER than the parent on
+    both the pooled and the vintage branch, so this guard is PREVENTIVE -- it has never fired,
+    and must not be described as correcting an active bias. It ships because a floor added
+    only once it has already bitten is worth nothing.
     """
-    if ds is not None and verdict.alpha_suppressed:
+    if ds is not None and (verdict.alpha_suppressed or ds_floor_failed):
         ds = dict(ds)
         for leg in _ABSOLUTE_DOUBLE_SORT_LEGS:
             if leg in ds:
                 ds[leg] = None
+        ds["level_suppressed"] = True
+        if ds_floor_failed and not verdict.alpha_suppressed:
+            verdict.notes.append(
+                "double-sort per-bucket levels SUPPRESSED — the double-sort cohort "
+                "(composite-defined, gate-agnostic) failed the measurable-fraction floor "
+                "even though the parent cohort cleared it. The SPREAD is unaffected.")
     verdict.double_sort = ds
     return verdict
 
@@ -580,8 +635,15 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     # docs/audits/2026-07-26-funnel-composition-audit.md §3a). Fall back to the month
     # bootstrap only when the cohort carries no event list (hand-built / old persisted
     # measurements), so a CI is never silently dropped to None.
-    ci = event_bootstrap_alpha(getattr(measurement, "events", None) or [], ff3, k_months)
-    if ci is None:
+    # The month bootstrap is used ONLY when there is no event list at all (hand-built or old
+    # persisted CohortMeasurements) -- there, it is the only model the data supports, not a
+    # substitute for a better one. When events DO exist and the issuer bootstrap still can't
+    # compute, abstain: falling back would swap in the known-too-tight estimator on exactly
+    # the thinnest cohorts. A None CI routes to INSUFFICIENT below, which is the honest read.
+    _events = getattr(measurement, "events", None) or []
+    if _events:
+        ci = event_bootstrap_alpha(_events, ff3, k_months)
+    else:
         ci = stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months)
     if ir is not None and not floor_failed:
         # `information_ratio` divides by the residual std of the flattened series, which is
@@ -653,53 +715,205 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     return _suppress_level(out) if floor_failed else out
 
 
-def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
-                          n_boot: int = 500, min_obs: int = 6, seed: int = 12345,
-                          weighting: str = "equal"):
-    """Event-level bootstrap CI (5th/95th pct) of the FF3 alpha — resamples the EVENTS with
-    replacement, rebuilds the calendar-time portfolio inside each replicate, and refits.
+def median_split(events: list[MeasuredEvent]):
+    """(high, low, median) — split at the median composite, ties to the HIGH side.
 
-    Why not `stationary_block_bootstrap_alpha`: that one resamples MONTHS of an
-    already-flattened CTP series. `calendar_time_portfolio` replaces each event's K-month
-    path with a constant monthly rate and then averages across held names, so cross-sectional
-    dispersion in event outcomes is gone before the bootstrap runs. The resulting CI measures
-    the smoothness of a smoothed series, not the uncertainty in the cohort's mean — which is
-    how the committed verdicts reached an implied monthly tracking error of 0.32% and an IR of
-    -46.97 (audit docs/audits/2026-07-26-funnel-composition-audit.md §3a). The dominant
-    uncertainty is WHICH EVENTS the cohort happened to catch, so that is what we resample.
+    Shared by `double_sort`'s point estimate and by every bootstrap replicate, so the
+    statistic being resampled is the statistic being reported BY CONSTRUCTION rather than by
+    two copies of the same arithmetic staying in sync.
 
-    Each drawn event is relabelled with a unique ticker inside the replicate: the CTP's
-    same-ticker dedup is correct for a real repeat firer, but in a resample a twice-drawn
-    event MUST count twice or the bootstrap's reweighting is silently discarded.
-
-    Deterministic stdlib LCG (same generator as the block bootstrap) so the CI is
-    reproducible across runs.
+    Known degeneracy, by design rather than oversight: on a composite distribution with heavy
+    tie mass at the median (a synthetic two-point fixture, say) the median can equal the tied
+    value, sending every event to the HIGH side and emptying LOW. Callers treat that as a
+    discarded replicate. On the real cohorts, ties at the median run 0.4-1.2% (9/2400 for 13d,
+    4/1344 for 8k, 5/535 for buyback, 42/7546 for 8k-neg), so it does not bite in production.
     """
-    live = [m for m in measured if m.measurable and m.ret is not None and m.event_date is not None]
-    n = len(live)
-    if n < min_obs or k_months <= 0:
-        return None
+    comps = sorted(m.composite for m in events)
+    n = len(comps)
+    if n == 0:
+        return [], [], None
+    median = comps[n // 2] if n % 2 else (comps[n // 2 - 1] + comps[n // 2]) / 2.0
+    high = [m for m in events if m.composite >= median]
+    low = [m for m in events if m.composite < median]
+    return high, low, median
+
+
+def _live_events(measured: list[MeasuredEvent]) -> list[MeasuredEvent]:
+    return [m for m in measured
+            if m.measurable and m.ret is not None and m.event_date is not None]
+
+
+def _lcg(seed: int):
+    """Deterministic stdlib LCG — same generator as the block bootstrap, so every CI in this
+    module is reproducible across runs and comparable across paths."""
     state = seed & 0xFFFFFFFF
 
     def _rand():
         nonlocal state
         state = (1103515245 * state + 12345) & 0x7FFFFFFF
         return state / 0x7FFFFFFF
+    return _rand
 
+
+def _resample_by_issuer(live: list[MeasuredEvent], rand) -> list[MeasuredEvent]:
+    """One bootstrap replicate: resample ISSUERS with replacement (issuer count preserved),
+    taking ALL of a drawn issuer's events, relabelled per ISSUER-COPY.
+
+    Two things are load-bearing and were both wrong in the first implementation:
+
+    1. **Resample issuers, not events.** These cohorts are heavily clustered by issuer
+       (48-57% of events sit on a multi-event issuer) and the composite is largely a
+       FIRM-level attribute (within-issuer composite sd ~1/4 of cross-sectional), so a firm's
+       events share a bucket and a firm-level return shock. An i.i.d.-event resample treats
+       them as independent.
+    2. **Relabel per issuer-COPY, not per draw index.** The old code relabelled every drawn
+       event uniquely (`f"{ticker}#{j}"` with j the draw index), which does not merely
+       un-dedup repeat DRAWS -- it disables `calendar_time_portfolio`'s same-ticker dedup for
+       genuinely distinct events of the same issuer. Measured held-set inflation: +19.6%
+       (13d), +23.7% (8k-neg). The bootstrap was therefore applying a different function to
+       the resample than the one that produced the reported point estimate, which is not
+       consistent for that estimate's sampling distribution. Suffixing by issuer-copy keeps
+       dedup active INSIDE a copy while still letting a twice-drawn issuer count twice.
+
+    See docs/EVALUATOR_CORRECTNESS.md §2.2-§2.3.
+    """
+    by_issuer: dict[str, list[MeasuredEvent]] = {}
+    for m in live:
+        by_issuer.setdefault(m.ticker, []).append(m)
+    keys = list(by_issuer)
+    nk = len(keys)
+    draw: list[MeasuredEvent] = []
+    for copy_idx in range(nk):
+        tk = keys[int(rand() * nk) % nk]
+        draw.extend(replace(m, ticker=f"{m.ticker}#{copy_idx}") for m in by_issuer[tk])
+    return draw
+
+
+def _bias_corrected_interval(alphas: list[float], theta_hat: float | None,
+                             lo: float = 0.05, hi: float = 0.95):
+    """(interval, z0) — bias-corrected percentile interval.
+
+    The spread statistic re-splits at each replicate's own median, which introduces a small
+    known-signed UPWARD bias (the high-minus-low spread is minimised at the median, so
+    E[S(m*)] >= S(m) by Jensen). A naive percentile interval shifts TOWARD that bias, i.e. it
+    would be systematically optimistic about the composite's sorting power -- precisely the
+    wrong direction for the one statistic this project still leans on. The BC adjustment
+    costs one extra pass and no jackknife.
+
+    Abstains to the naive percentile (z0 = 0.0) when z0 is undefined -- every replicate on
+    one side of the point estimate -- rather than producing an infinite adjustment.
+    """
+    b = len(alphas)
+    naive = (alphas[int(lo * b)], alphas[int(hi * b)])
+    if theta_hat is None:
+        return naive, 0.0
+    n_less = sum(1 for a in alphas if a < theta_hat)
+    if n_less == 0 or n_less == b:
+        return naive, 0.0
+    nd = NormalDist()
+    z0 = nd.inv_cdf(n_less / b)
+    i_lo = int(nd.cdf(2 * z0 + nd.inv_cdf(lo)) * b)
+    i_hi = int(nd.cdf(2 * z0 + nd.inv_cdf(hi)) * b)
+    i_lo = min(max(i_lo, 0), b - 1)
+    i_hi = min(max(i_hi, 0), b - 1)
+    if i_hi <= i_lo:
+        return naive, z0
+    return (alphas[i_lo], alphas[i_hi]), z0
+
+
+def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
+                          n_boot: int = 500, min_obs: int = 6, seed: int = 12345,
+                          weighting: str = "equal"):
+    """Issuer-clustered bootstrap CI (5th/95th pct) of the FF3 alpha — resamples ISSUERS with
+    replacement, rebuilds the calendar-time portfolio inside each replicate, and refits.
+
+    Why not `stationary_block_bootstrap_alpha`: that one resamples MONTHS of an aggregated
+    CTP series, so it measures the smoothness of that series rather than the uncertainty in
+    which events the cohort happened to catch — which is how the committed verdicts reached
+    an implied monthly tracking error of 0.32% and an IR of -46.97 (audit
+    docs/audits/2026-07-26-funnel-composition-audit.md §3a). With ~500-2000 events against
+    ~50 months, the dominant uncertainty is cross-sectional.
+
+    Clustering + relabelling rationale: see `_resample_by_issuer`. The month grid is anchored
+    to the ORIGINAL cohort so replicates cannot silently shorten the calendar window.
+    """
+    live = _live_events(measured)
+    n = len(live)
+    if n < min_obs or k_months <= 0:
+        return None
+    rand = _lcg(seed)
+    span = (min(m.event_date for m in live), max(m.event_date for m in live))
     alphas = []
     for _ in range(n_boot):
-        draw = []
-        for j in range(n):
-            src = live[int(_rand() * n) % n]
-            draw.append(replace(src, ticker=f"{src.ticker}#{j}"))
-        rows = calendar_time_portfolio(draw, k_months, weighting=weighting)
+        rows = calendar_time_portfolio(_resample_by_issuer(live, rand), k_months,
+                                       weighting=weighting, month_span=span)
         a, _b = ff3_alpha(rows, ff3, min_obs=min_obs)
         if a is not None:
             alphas.append(a)
     if len(alphas) < n_boot // 2:
         return None
     alphas.sort()
-    return (alphas[int(0.05 * len(alphas))], alphas[int(0.95 * len(alphas))])
+    point, _betas = ff3_alpha(
+        calendar_time_portfolio(live, k_months, weighting=weighting, month_span=span),
+        ff3, min_obs=min_obs)
+    interval, _z0 = _bias_corrected_interval(alphas, point)
+    return interval
+
+
+def event_bootstrap_spread_alpha(eligible: list[MeasuredEvent], ff3, k_months: int, *,
+                                 min_bucket_events: int, n_boot: int = 500,
+                                 min_obs: int = 6, seed: int = 12345,
+                                 weighting: str = "equal"):
+    """(interval, z0, n_fitted, n_discarded) for the high-minus-low composite SPREAD alpha —
+    or (None, ...) when it cannot be computed.
+
+    Per replicate: resample issuers (`_resample_by_issuer`), RE-SPLIT at that replicate's own
+    median composite, rebuild both calendar-time portfolios on the anchored month grid, take
+    the spread over common months, refit.
+
+    **Joint resample + re-split, not a stratified within-bucket resample.** The median split
+    is part of the estimator, so the bootstrap has to repeat it; conditioning on a split that
+    itself carries sampling error understates the interval. Measured, that choice is worth
+    only ~2% of interval width — it is defensible rather than decisive, and the re-split's
+    Jensen bias is what `_bias_corrected_interval` exists to absorb.
+
+    A replicate whose re-split violates `min_bucket_events` is DISCARDED AND COUNTED, never
+    silently tolerated: `n_discarded` ships in the double-sort dict so selection on the
+    resample is visible.
+    """
+    live = _live_events(eligible)
+    if len(live) < min_obs or k_months <= 0:
+        return None, 0.0, 0, 0
+    rand = _lcg(seed)
+    span = (min(m.event_date for m in live), max(m.event_date for m in live))
+
+    def _spread_rows(events):
+        high, low, _med = median_split(events)
+        if len(high) < min_bucket_events or len(low) < min_bucket_events:
+            return None
+        hi = {mo: (r, held) for mo, r, held in
+              calendar_time_portfolio(high, k_months, weighting=weighting, month_span=span)}
+        lo = {mo: (r, held) for mo, r, held in
+              calendar_time_portfolio(low, k_months, weighting=weighting, month_span=span)}
+        return [(mo, hi[mo][0] - lo[mo][0], min(hi[mo][1], lo[mo][1]))
+                for mo in sorted(set(hi) & set(lo))]
+
+    alphas, discarded = [], 0
+    for _ in range(n_boot):
+        rows = _spread_rows(_resample_by_issuer(live, rand))
+        if rows is None:
+            discarded += 1
+            continue
+        a, _b = ff3_alpha(rows, ff3, min_obs=min_obs)
+        if a is not None:
+            alphas.append(a)
+    if len(alphas) < n_boot // 2:
+        return None, 0.0, len(alphas), discarded
+    alphas.sort()
+    base = _spread_rows(live)
+    point = ff3_alpha(base, ff3, min_obs=min_obs)[0] if base else None
+    interval, z0 = _bias_corrected_interval(alphas, point)
+    return interval, z0, len(alphas), discarded
 
 
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
