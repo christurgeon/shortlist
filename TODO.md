@@ -56,8 +56,12 @@ the sentence.
    to all six files would reset all six content-registration clocks under the new §1.3 rule.
    Reversible choice, recorded rather than silent.
 
-**Status:** SHIPPED on `fix/evaluator-correctness`, not yet merged or deployed. Item 1 is the
-one that matters — a committed audit currently overstates its evidence.
+**Status:** MERGED to `main` (fast-forward, 8 commits, `f798149`) on 2026-08-03; branch
+retained. **NOT deployed** — `/opt/shortlist` is still at `f0dd2cd` and is now two features
+behind (#157 EDGAR companyconcept + this). Deploying is safe but not required: `validate` is
+an operator-run CLI, no systemd unit invokes it, and the nightly digest only reads a static
+`validate-latest.json`. Item 1 is the one that matters — a committed audit currently
+overstates its evidence.
 
 ---
 
