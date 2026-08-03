@@ -42,9 +42,16 @@ caught. Same failure as the 2026-07-26 retractions; same mitigation — measure 
 the sentence.
 
 **Open follow-ups:**
-1. **Re-derive the four cohort audits** under the corrected evaluator and strike the 13D
-   spread claim. Compute, not code. This is the same "re-derive" half that item −1 below has
-   been carrying since 2026-07-26.
+1. ~~**Re-derive the four cohort audits.**~~ — **DONE 2026-08-03**,
+   `docs/audits/2026-08-03-evaluator-rederivation.md`. All five cohorts replayed under both
+   code vintages on identical data. **Point estimates bit-identical; 0 verdict flips; two
+   spread claims RETRACTED** (13D +2.97%→+2.42% CI [−1.93%, +8.06%]; 13D/A +1.61%→**+0.07%**
+   CI [−3.40%, +4.58%] — both span zero). **8-K survives** (+4.71%, CI [+1.89%, +7.97%]).
+   Both retractions trace to **#151**, not to the bootstrap change.
+   **Residual:** `8k-neg` (50% price-covered) and `13d-a` (79%) could not be measured from the
+   cached snapshot. A fresh-price re-run needs a **throttle on `fetch_history`** (an
+   unthrottled serial loop; ~6k Yahoo requests would risk the IP the nightly scout depends on)
+   or an off-hours window that cannot collide with the 22:30 UTC timer. Small, tracked.
 2. **Pre-register a `|high_frac − low_frac|` tolerance**, then enforce it. v1 discloses only,
    deliberately (0g).
 3. **`random.Random` instead of the hand-rolled LCG** (`validate.py`). Real — glibc's LCG has
@@ -603,13 +610,16 @@ Open work, in order:
    scored one on **both** the pooled and the vintage branch (13d ds 0.940 vs scored 0.919
    with a bad 2025 vintage; 8k ds 0.958 vs scored 0.932 with a bad 2023 vintage). It has never
    fired — do not describe it as fixing an active bias.
-   **The disclosure added alongside it is the part that paid off.** Per-bucket measurable
-   fractions (computed over ALL composite-defined events — splitting the already-filtered
-   `eligible` list would report a tautological 1.0) show **8k-neg at high 0.527 vs low 0.647,
-   a 12pp asymmetry**. The sentence struck through above — "a difference between two
-   *identically-measured* buckets cancels the common bias" — is exactly the premise that fails
-   there, and it was invisible until now. The audit's own wording is "**largely** cancels";
-   `validate.py` had dropped the hedge and it is now restored.
+   **Disclosure added alongside it:** per-bucket measurable fractions (computed over ALL
+   composite-defined events — splitting the already-filtered `eligible` list would report a
+   tautological 1.0), so "a difference between two *identically-measured* buckets cancels the
+   common bias" is checkable rather than asserted. The audit's own wording is "**largely**
+   cancels"; `validate.py` had dropped the hedge and it is now restored.
+   **CORRECTION (2026-08-03):** this entry first reported a **12pp asymmetry on 8k-neg** as
+   evidence the cancellation premise fails. **That was wrong** — 8k-neg is only 50%
+   price-covered in the cached snapshot, so the gap measured which tickers were cached. On
+   every ≥95%-covered cohort the buckets are measured alike (≤3.3pp), which *supports*
+   cancellation. See `docs/audits/2026-08-03-evaluator-rederivation.md` §4.
    **Follow-up (open):** enforcing a tolerance on `|high_frac − low_frac|` needs a
    PRE-REGISTERED threshold — inventing one post-measurement is the exact sin pre-registration
    exists to prevent, so v1 discloses and does not enforce.

@@ -1,5 +1,14 @@
 # 13D/A stake-increase originator (`edgar:13d_stake_increase`) — backfill verdict
 
+> **⚠ SUPERSEDED IN PART — 2026-08-03.** The within-cohort double-sort claim below
+> (**spread +1.61%/mo, CI [+0.11%, +2.93%]**, read as "ranking carries some info") is
+> **RETRACTED**. Re-derived under the current evaluator the spread is **+0.07%/mo, CI
+> [−3.40%, +4.58%]** — the point estimate collapses to ~zero, not merely a wider interval.
+> Caveat both ways: this cohort is only 79% price-covered in the replay snapshot, so read it
+> as *unmeasured-to-weak*, not a demonstrated null. The INSUFFICIENT verdict and the signal's
+> disabled status are UNCHANGED.
+> Full re-derivation: `docs/audits/2026-08-03-evaluator-rederivation.md`.
+
 **Date:** 2026-07-19 (validate completed 2026-07-20) · **Signal:**
 `edgar:13d_stake_increase` (scout `edgar_13d_stake_increase`) ·
 **Verdict: `INSUFFICIENT` on both cohorts — KILL-shaped, stays `enabled: false`.**

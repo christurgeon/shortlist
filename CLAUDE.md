@@ -1108,15 +1108,24 @@ is the anti-p-hacking gate. Three contracts are load-bearing (design + evidence:
   interval is most artificially tight. The month bootstrap is used only when there is no event
   list at all (hand-built/old persisted measurements), where it is the only model available.
 
-**Do not quote a double-sort spread CI from a committed audit.** #151's `monthly_rets` fix
-already invalidated them: the 13D spread the audits call "the one survivor" reads
-+2.41%/mo CI [−1.51%, +6.74%] on current code — **it spans zero**, against the quoted
-+2.97%/mo CI [+2.73%, +3.17%]. 8-K still excludes zero. Re-derivation is an open TODO.
+**Two committed double-sort spread claims are RETRACTED** (`docs/audits/2026-08-03-evaluator-rederivation.md`):
+13D "+2.97%/mo CI [+2.73%, +3.17%]" → **+2.42%, CI [−1.93%, +8.06%]** and 13D/A "+1.61%/mo
+CI [+0.11%, +2.93%]" → **+0.07%, CI [−3.40%, +4.58%]** — both now span zero. Caused by #151's
+`monthly_rets` fix, not by the bootstrap change (the pre-change code already spans zero).
+**8-K still excludes zero** (+4.71%, CI [+1.89%, +7.97%]), so "the composite orders winners
+inside a cohort" keeps a well-measured instance — only its two headline instances are gone.
 
 `double_sort` also reports `high_frac`/`low_frac` (per-bucket measurable fractions over ALL
-composite-defined events). They exist because "attrition cancels in the spread" holds only if
-both buckets are measured alike — and 8k-neg reads **high 0.527 vs low 0.647**, a 12pp
-asymmetry. Enforcing a tolerance needs a pre-registered threshold; v1 discloses only.
+composite-defined events) so "attrition cancels in the spread" is checkable rather than
+asserted. On every ≥95%-price-covered cohort the buckets are measured alike (≤3.3pp), which
+*supports* the cancellation assumption. **A 12pp gap on 8k-neg was published 2026-08-03 and is
+WRONG** — that cohort is only 50% price-covered in the cached snapshot, so the gap measured
+which tickers were cached. Enforcing a tolerance needs a pre-registered threshold; v1
+discloses only.
+
+**When replaying a cohort offline, check `.cache/famafrench` coverage FIRST.** Coverage is
+non-uniform (99% for 13d/8k/buyback, 50% for 8k-neg), and a low-coverage cohort produces
+plausible-looking fractions and spreads that are pure artifact.
 
 ## Scale / rate limits (the honest catch)
 

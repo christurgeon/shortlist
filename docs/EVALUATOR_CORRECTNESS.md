@@ -458,7 +458,15 @@ All four committed cohorts replayed, raw + scored/gated, old vs new bootstrap. E
 stayed `INSUFFICIENT`. The only cohort whose `alpha_ci` is not floor-suppressed (buyback
 scored) moved [−0.01058, …] → [−0.01214, …] — slightly wider, no rule crossed.
 
-### 8.3 Item C — the disclosure earned its slot on day one
+### 8.3 Item C — the disclosure, and a wrong claim it produced
+
+> **CORRECTED 2026-08-03 — see `docs/audits/2026-08-03-evaluator-rederivation.md` §4.**
+> The 8k-neg row below is an ARTIFACT: that cohort is only 49.9% price-covered in the
+> cached snapshot, so the gap measures which tickers were cached, not which bucket lost
+> names. On every >=95%-covered cohort the buckets are measured alike (<=3.3pp), which
+> SUPPORTS the cancellation assumption — the opposite of what this section claimed.
+> The cohort was already failing the measurable-fraction floor at 0.548; the guard was
+> firing correctly and the number got quoted anyway.
 
 Per-bucket measurable fractions, first time ever computed:
 

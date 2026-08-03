@@ -1,5 +1,15 @@
 # Daily-scan funnel audit — the scorer works, the originators feed it junk (2026-07-26)
 
+> **⚠ SUPERSEDED IN PART — 2026-08-03.** This document's double-sort SPREAD claim
+> (**+2.97%/mo, CI [+2.73%, +3.17%]**), described here as the one surviving claim, is
+> **RETRACTED**. Re-derived on identical data under the current evaluator it is
+> **+2.42%/mo, CI [−1.93%, +8.06%]** — it **spans zero** and is inconclusive. The old
+> interval's 0.0044 width is the very artifact §3a of this document diagnoses; the cause is
+> **#151** (`monthly_rets`), not any later change. **8-K's spread still excludes zero**, so
+> the general proposition (the composite orders winners inside a cohort) keeps a
+> well-measured instance. Everything else here stands.
+> Full re-derivation: `docs/audits/2026-08-03-evaluator-rederivation.md`.
+
 **What this is:** a review of 21 committed daily scout sessions (2026-06-03 → 2026-07-24),
 the 141-row selection ledger, and the four existing backfill cohorts, run to answer one
 question: *what is the highest-impact change to the discovery layer?*
