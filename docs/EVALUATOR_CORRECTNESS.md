@@ -1,6 +1,7 @@
 # Evaluator correctness pack — design (revision 2)
 
-**Status:** design signed off after two adversarial reviews; implementation pending.
+**Status:** IMPLEMENTED 2026-08-03 (`f36c94c` Item A, `02beaf6` Items B+C). Suite 2280 green,
+ruff clean, verdict-impact gate passed with **0 flips**. Results in §8.
 **Date:** 2026-08-02, revised 2026-08-03 after review.
 **Scope:** defects in the signal-validation evaluator (`scout/validate.py`,
 `scout/preregister.py`) and its wiring (`scout/daily.py`).
@@ -432,3 +433,63 @@ Kept because §0's own premise is that a confidently-argued claim is not evidenc
 plausible mechanism and then contradicted by measurement. Two survived into a committed spec
 before being caught. This is the same failure the 2026-07-26 retractions record, and the
 mitigation is the same — measure the thing, then write the sentence.
+
+---
+
+## 8. Implementation results (2026-08-03)
+
+### 8.1 Item A — verified against the real prereg files
+
+| slug | declared `as_of` | old (path-based) | new (content-based) |
+|---|---|---|---|
+| `edgar_13d_stake_increase` | 2026-07-18 | 2026-07-18 | 2026-07-18 |
+| `edgar_8k` | 2026-07-07 | 2026-07-06 | 2026-07-06 |
+| `edgar_8k_negative` | 2026-07-07 | 2026-07-06 | 2026-07-06 |
+| `edgar_activist_13d` | 2026-07-06 | 2026-07-06 | 2026-07-06 |
+| **`edgar_buyback_auth`** | **2026-07-09** | **2026-07-12** (the `git mv`) | **2026-07-09** ✅ |
+| `edgar_form4` | 2026-07-26 | 2026-07-29 | 2026-07-29 |
+
+All six verify `ok` for a run today. The A-1 hole is closed: with the worktree edited to
+`min_measurable_frac: 0.10`, `load_prereg` now returns the committed **0.9**.
+
+### 8.2 Item B — verdict-impact gate (§2.5): **0 flips**
+
+All four committed cohorts replayed, raw + scored/gated, old vs new bootstrap. Every verdict
+stayed `INSUFFICIENT`. The only cohort whose `alpha_ci` is not floor-suppressed (buyback
+scored) moved [−0.01058, …] → [−0.01214, …] — slightly wider, no rule crossed.
+
+### 8.3 Item C — the disclosure earned its slot on day one
+
+Per-bucket measurable fractions, first time ever computed:
+
+| cohort | `high_frac` | `low_frac` | gap |
+|---|---|---|---|
+| **8k-neg** | **0.527** | **0.647** | **12.0pp** |
+| 13d | 0.805 | 0.838 | 3.3pp |
+| 8k | 0.964 | 0.954 | 1.0pp |
+| buyback | 0.971 | 0.970 | 0.1pp |
+
+**The 8-K-negative cohort's high-composite bucket is measured 12pp worse than its low
+bucket.** That is exactly the condition under which §3.5's cancellation argument fails, and
+it was invisible before this change. It does not invalidate anything today (both 8k-neg
+cohorts are already floor-suppressed at ~0.55 pooled), but it is direct evidence that the
+"identically-measured buckets" premise cannot be assumed per-cohort — and it is the concrete
+case a future pre-registered asymmetry tolerance (§3.5) should be calibrated against.
+
+Note the asymmetry runs in the *harmful* direction for a long-book reading: the bucket the
+composite likes is the one losing more names.
+
+### 8.4 A fixture degeneracy worth knowing about
+
+`median_split` can empty the LOW bucket when composite ties sit at the median. The
+`_ranked_cohort` test fixture used a two-point composite (80/20), under which ~51% of
+re-split replicates degenerate (measured: 102/200 discarded) and the CI correctly abstains.
+Real cohorts carry 0.4–1.2% ties at the median and fitted 1000/1000, so this is a fixture
+artifact, not a production concern — the fixture now jitters composites and says why.
+
+One existing test needed amending rather than breaking:
+`test_double_sort_excludes_months_where_only_one_side_holds` asserted `spread_ci` equality
+between a 13-event and a 12-event cohort. Under issuer resampling those are different
+populations. Worse, after the change the assertion would have passed **vacuously**
+(`None == None`, since a 7-month cohort is below `min_obs` and both sides abstain). It now
+pins the point-estimate invariants plus the explicit abstention.
