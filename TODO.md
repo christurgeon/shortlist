@@ -6,6 +6,61 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Evaluator correctness pack — SHIPPED; 13D "one survivor" claim must be RETRACTED (2026-08-03)
+
+Branch `fix/evaluator-correctness`. Closes **0c**, **0g** and the 2026-07-11 **item 4** below.
+Design + full evidence: **`docs/EVALUATOR_CORRECTNESS.md`** (tracked). Suite 2280 green, ruff
+clean, verdict-impact gate **0 flips**.
+
+**Read this first — a committed audit claim is now wrong, and it predates this branch.**
+The audits and this file call the 13D double-sort spread "the one survivor" / "the strongest
+evidence in either direction so far", quoting **+2.97%/mo, CI [+2.73%, +3.17%]**. Replaying
+that cohort on current `main` gives **α +2.41%/mo, CI [−1.51%, +6.74%]** — **the interval
+spans zero.** The old width (0.0044) is the artifact audit §3a diagnosed, and **#151 already
+invalidated it**; this branch moves it again but did not cause it. **8-K still excludes zero**
+(CI [+0.019, +0.080]), so the composite's sorting power is not retracted in general — only its
+flagship instance. Until the audits are re-derived, **quote no double-sort spread CI from a
+committed audit.**
+
+**Three things shipped:**
+1. **Pre-registration gate actually gates.** See item 4 below — the recorded `git mv` bug was
+   the minor half; the unrecorded half let an *uncommitted* edit to a threshold pass.
+2. **One corrected bootstrap** for both the spread CI and the verdict-bearing parent CI:
+   resample ISSUERS, relabel per issuer-copy. The old per-draw relabelling disabled
+   `calendar_time_portfolio`'s same-ticker dedup, so it bootstrapped a *different estimator*
+   than it reported. Also: anchored month grid, bias-corrected percentile, and **no fallback**
+   to the month bootstrap (it fails on thin cohorts, which is exactly where its interval is
+   most artificially tight — abstain instead).
+3. **ds-cohort floor check + per-bucket disclosure.** See 0g.
+
+**Method note worth keeping.** Five directional claims were argued from plausible mechanism
+and then contradicted by measurement — three of mine (spread CIs "widen"; `git status` proves
+the file is registered; the ds cohort measures worse), and two from the adversarial reviews
+(issuer clustering "makes intervals 21% too narrow"; a named test would fail — it went
+*vacuous* instead, `None == None`). Two of mine survived into a committed spec before being
+caught. Same failure as the 2026-07-26 retractions; same mitigation — measure it, then write
+the sentence.
+
+**Open follow-ups:**
+1. **Re-derive the four cohort audits** under the corrected evaluator and strike the 13D
+   spread claim. Compute, not code. This is the same "re-derive" half that item −1 below has
+   been carrying since 2026-07-26.
+2. **Pre-register a `|high_frac − low_frac|` tolerance**, then enforce it. v1 discloses only,
+   deliberately (0g).
+3. **`random.Random` instead of the hand-rolled LCG** (`validate.py`). Real — glibc's LCG has
+   known lattice structure in successive tuples, and successive draws are used as indices —
+   but cross-cutting to every seeded path and would churn existing fixtures, so it was kept
+   out of a correctness PR.
+4. **`min_measurable_frac_ds`** was deliberately NOT added to the prereg YAMLs: the ds floor
+   reuses the parent's registered value. It gates only display-only fields, and adding a key
+   to all six files would reset all six content-registration clocks under the new §1.3 rule.
+   Reversible choice, recorded rather than silent.
+
+**Status:** SHIPPED on `fix/evaluator-correctness`, not yet merged or deployed. Item 1 is the
+one that matters — a committed audit currently overstates its evidence.
+
+---
+
 ## EDGAR companyconcept fallback — MERGED (#157), deploy date not yet recorded (2026-08-02)
 
 **MERGED to `main` as `641e94e` (#157, squash) on 2026-08-02; branch deleted.**
@@ -466,13 +521,22 @@ re-derived today). The double-sort SPREAD survives — it is a difference betwee
 measured identically, so the common bias cancels. The directly-observed funnel facts (items 2
 and 3) are untouched.
 
-**NEW ITEM −1, ahead of everything: fix `calendar_time_portfolio`.** A month's portfolio
-return must be the mean of held names' ACTUAL month-t returns, not the mean of their
-compounded-then-flattened ones. Needs monthly price paths per event (available — the price
-histories are already fetched and day-cached in `.cache/famafrench`). Then re-derive all four
-cohorts and rewrite the audits. Until that lands, quote NO cohort alpha, and treat the
-`edgar_8k` / `edgar_buyback_auth` / `edgar_activist_13d` verdicts as unmeasured rather than
-negative.
+~~**NEW ITEM −1, ahead of everything: fix `calendar_time_portfolio`.**~~ — **RESOLVED, and
+this entry was STALE for a week.** Shipped in **#151 (`7398ef2`)**: `MeasuredEvent.monthly_rets`
++ `_monthly_path()` give the CTP each name's ACTUAL month-t return, falling back to the old
+constant rate only when an event carries no path. Verified 2026-08-03 by reading
+`validate.py:239-252`, not by trusting this entry.
+
+**This mattered:** the text below said "quote NO cohort alpha … treat the verdicts as
+unmeasured", i.e. it told any reader that every measurement in the project was void, long
+after the fix had landed. If you are skimming for what blocks work, a stale blocker at the top
+of the file is worse than no entry. Original text: *a month's portfolio return must be the
+mean of held names' ACTUAL month-t returns, not the mean of their compounded-then-flattened
+ones … then re-derive all four cohorts and rewrite the audits.*
+
+**The re-derivation half is still OPEN and now has a concrete consequence** — see the
+2026-08-03 entry at the top of this file: the 13D double-sort spread the audits call "the one
+survivor" **no longer excludes zero** under the fixed code.
 
 Open work, in order:
 0. **DONE (2026-07-26) — event-level bootstrap CI.** `alpha_ci` now comes from
@@ -517,17 +581,34 @@ Open work, in order:
    decision-relevant scored ones already measure; revisit only if a future signal's scored
    cohort fails the floor; (e) KILL requires an entirely-negative CI on a floor-clearing
    SCORED cohort.
-0c. **Remaining gap:** `double_sort`'s `spread_ci` still uses the month-resampled bootstrap,
-   so the spread CIs are still too tight. Display-only (no verdict reads it) but the digest
-   shows it. Needs a per-bucket event resample.
-0g. **Remaining gap, surfaced by the 0f review:** the **double-sort cohort is never
-   measurability-floor-checked at all.** `daily.py` builds it from `ds_evs` (gate-agnostic,
-   composite-defined) — a different population from the scored cohort whose floor `decide()`
-   tests. 0f blanks the absolute legs (`high_ir`/`low_ir`) whenever the PARENT verdict is
-   suppressed, which closes the leak that mattered, but a ds cohort could still fail a floor
-   its parent passes and nobody would know. Wants its own `measure_cohort`-side floor check
-   before any ds level is read as evidence. The SPREAD is unaffected either way (a difference
-   between two identically-measured buckets cancels the common bias).
+0c. ~~**Remaining gap:** `double_sort`'s `spread_ci` still uses the month-resampled
+   bootstrap.~~ — **RESOLVED 2026-08-03** (`02beaf6`, `docs/EVALUATOR_CORRECTNESS.md` §2).
+   Note the framing here ("the spread CIs are still too tight") was **not confirmed**: measured
+   at B=1000 the event bootstrap widens 1.22× (13d) and 1.18× (buyback) but is 0.97× on 8k —
+   the justification is model *consistency*, not conservatism. Fixing it surfaced a larger
+   defect in the **verdict-bearing** `event_bootstrap_alpha`: per-draw relabelling disabled
+   `calendar_time_portfolio`'s same-ticker dedup (+19.6%/+23.7% held-set inflation), so it
+   bootstrapped a different estimator than it reported. Both now use an issuer-clustered
+   resample with issuer-copy relabelling. Verdict-impact gate: **0 flips** across all four
+   cohorts, raw + scored.
+0g. ~~**Remaining gap:** the double-sort cohort is never measurability-floor-checked.~~ —
+   **RESOLVED 2026-08-03** (`02beaf6`, `docs/EVALUATOR_CORRECTNESS.md` §3).
+   `attach_double_sort(..., ds_floor_failed=)` now blanks the absolute legs when the ds cohort
+   fails its OWN floor, not only when the parent is suppressed. **The guard is PREVENTIVE:**
+   measured on all four committed cohorts the ds population is measured *better* than the
+   scored one on **both** the pooled and the vintage branch (13d ds 0.940 vs scored 0.919
+   with a bad 2025 vintage; 8k ds 0.958 vs scored 0.932 with a bad 2023 vintage). It has never
+   fired — do not describe it as fixing an active bias.
+   **The disclosure added alongside it is the part that paid off.** Per-bucket measurable
+   fractions (computed over ALL composite-defined events — splitting the already-filtered
+   `eligible` list would report a tautological 1.0) show **8k-neg at high 0.527 vs low 0.647,
+   a 12pp asymmetry**. The sentence struck through above — "a difference between two
+   *identically-measured* buckets cancels the common bias" — is exactly the premise that fails
+   there, and it was invisible until now. The audit's own wording is "**largely** cancels";
+   `validate.py` had dropped the hedge and it is now restored.
+   **Follow-up (open):** enforcing a tolerance on `|high_frac − low_frac|` needs a
+   PRE-REGISTERED threshold — inventing one post-measurement is the exact sin pre-registration
+   exists to prevent, so v1 discloses and does not enforce.
 0d. **Flaky, unrelated:** `tests/scout/test_daily_demo.py` fails on clean HEAD — it reads the
    live `state/scout_state.json`, so GOOGL falls inside the 7-day cooldown from its
    2026-07-20 pick. Date-dependent; should use a fixture state, not production state.
@@ -919,16 +1000,20 @@ Follow-ups, by urgency:
    entries below).
 3. Consider a `dilution`-flag threshold review instead of the share_count scored leg
    (the payoff is tail-concentrated, which suits a flag/screen better than a ranker).
-4. **Prereg tamper-check is path-based, not content-based** (surfaced by the code review
-   of this branch): `preregister.verify_untampered` reads `git log -1 --format=%cI` at the
-   file's current path, so a pure `git mv` (as done here for `edgar_buyback.yaml` →
-   `edgar_buyback_auth.yaml`) resets the machine-visible commit time to the rename date.
-   Live validation is unaffected (rename ≤ today), and `git log --follow` + the content-
-   pinned `as_of: 2026-07-09` preserve the real audit trail, but a *historical* reproduction
-   (`run_validate` with a past `today`) would append a spurious "NOT PRE-REGISTERED" note.
-   Proper fix = verify prereg *content* was committed ≤ as_of (affects all four signals) —
-   its own PR. Evidence for the buyback KILL is committed at
-   `docs/audits/2026-07-11-buyback-backfill-kill.md`.
+4. ~~**Prereg tamper-check is path-based, not content-based.**~~ — **RESOLVED 2026-08-03**
+   (`f36c94c`, `docs/EVALUATOR_CORRECTNESS.md` §1). `verify_untampered` now walks
+   `--first-parent --follow` and compares **parsed YAML**, taking the oldest contiguous match;
+   `edgar_buyback_auth.yaml` correctly dates to **2026-07-09** again (was 2026-07-12, its
+   `git mv`), matching its own `as_of:`.
+   **A far more serious defect was found while fixing this one, and it was NOT recorded
+   anywhere:** `load_prereg` read the **working tree** while `verify_untampered` only checked
+   the path's last commit time, so **an uncommitted edit to a pre-registered threshold passed
+   the gate**. Demonstrated live — editing `min_measurable_frac` 0.90 → 0.10 on disk gave
+   `load_prereg -> 0.1` and `verify_untampered -> (True, 'ok')`. The entire anti-p-hacking
+   guarantee was defeatable by not committing. `load_prereg` now parses
+   `git show HEAD:<path>`, so there is no worktree gap to detect at all. (An intermediate
+   design that *detected* divergence with `git status` was defeated in review by
+   `git update-index --assume-unchanged` — detection was the wrong shape.)
 
 **Status:** open — items are follow-ups; the session's builds/measurements themselves are done.
 
