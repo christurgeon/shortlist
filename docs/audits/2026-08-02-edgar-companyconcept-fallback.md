@@ -217,7 +217,19 @@ if it were enabled (it isn't; `quality.dilution` is OFF too).
 
 ## Accumulation-store discontinuity
 
-From the deploy date forward, `store.py` daily snapshots for these 8 tickers (CMCSA CVX GOOGL
+**DEPLOYED 2026-08-03 ~22:51 UTC** (`/opt/shortlist` `f0dd2cd` → `92f3f6d`, verified by
+grepping the deployed tree for `diluted_shares_from_concept` / `_fetch_diluted_shares_concept`,
+not by the installer's exit code).
+
+**The break date is 2026-08-04, NOT the deploy date — an off-by-one worth stating explicitly.**
+`shortlist-accumulate.timer` fires at **21:30 UTC**, so the 2026-08-03 snapshot was written
+~80 minutes BEFORE the deploy and still carries the old values. Verified directly rather than
+inferred: `state/snapshots/{CMCSA,HON}/2026-08-03.json.gz` both read
+`diluted_shares=[]`. The first snapshot carrying recovered values is the
+**2026-08-04 21:30 UTC** run. Anyone splitting the panel on the deploy date would put the
+boundary one day early and mislabel a full day of old-format snapshots as new-format.
+
+From 2026-08-04 forward, `store.py` daily snapshots for these 8 tickers (CMCSA CVX GOOGL
 HON LMT MO MRK PG) will carry a populated `diluted_shares`, while the ~24 prior accumulated
 dates carry `[]`. This is a **mid-panel field-presence break concentrated in 8 large caps** —
 exactly the kind of non-random presence change that biases a walk-forward fit if a future

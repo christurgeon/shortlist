@@ -89,7 +89,13 @@ and both trigger points (`backtest/signals.py:SnapshotSignalSource`, the comment
 `quality.dilution` block in `config.yaml`) now carry their own caveat pointing back to the
 audit — this entry is belt-and-braces, not the only guard.
 
-**Status:** OPEN — fill in the deploy date after this branch is merged and deployed.
+**Status:** CLOSED 2026-08-03. Deployed ~22:51 UTC (`/opt/shortlist` `f0dd2cd` → `92f3f6d`,
+symbols grep-verified in the deployed tree). The audit now records the date — **and the
+off-by-one this entry existed to catch**: `shortlist-accumulate.timer` runs 21:30 UTC, so the
+2026-08-03 snapshot predates the deploy by ~80 min and still reads `diluted_shares=[]`
+(verified on CMCSA/HON, not inferred). **The field-presence break is 2026-08-04.** Residual:
+the bot needs one `systemctl try-restart shortlist-bot.service` — the timers pick the code up
+on their own, but the long-running bot does not.
 
 ---
 
