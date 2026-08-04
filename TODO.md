@@ -40,8 +40,8 @@ reason ad-hoc callers exist.
 **Open:** extract `backfill.py`'s eight-reason classifier into a shared leaf + per-bucket
 reason counts (reporting-only; the mechanical guard is already in).
 
-**Status:** on branch `fix/evaluator-guards`, rebased onto `origin/main` (post-#158), PR pending.
-Not deployed (`/opt/shortlist` is at `92f3f6d`).
+**Status:** MERGED as **#160** (`4aa6249`), branch deleted. **NOT deployed** — `/opt/shortlist`
+is at `92f3f6d`, now three merges behind (#157 is live there; #158 and #160 are not).
 
 ---
 
