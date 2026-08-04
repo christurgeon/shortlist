@@ -776,3 +776,29 @@ def test_as_of_flag_parses_and_defaults_to_none():
     assert ap.parse_args(["validate"]).as_of is None
     from datetime import date
     assert ap.parse_args(["validate", "--as-of", "2026-07-26"]).as_of == date(2026, 7, 26)
+
+
+def test_as_of_pins_the_measurement_date_and_labels_the_artifact(tmp_path, monkeypatch):
+    """The load-bearing half of `--as-of`: the pinned date must reach `run_validate` (which
+    threads it into the price-cache day key via `_fetch_validate_data(..., today.isoformat())`),
+    and the artifact must be labelled so the digest can refuse it."""
+    import json
+    from datetime import date
+
+    from shortlist.scout import daily
+
+    seen = {}
+
+    def _fake_run_validate(cfg, *, today, lookback_days, events_override=None):
+        seen["today"] = today
+        return []
+    monkeypatch.setattr(daily, "run_validate", _fake_run_validate)
+    monkeypatch.chdir(tmp_path)
+    rc = daily._run_validate_cli({}, today=date(2026, 8, 4), lookback_days=1,
+                                 as_json=False, replay_as_of=date(2026, 7, 26))
+    assert rc == 0
+    assert seen["today"] == date(2026, 7, 26), "the pinned as-of must reach run_validate"
+
+    payload = json.loads((tmp_path / "scout" / "validate-latest.json").read_text())
+    assert payload["source"] == "replay:2026-07-26"
+    assert payload["as_of"] == "2026-07-26"

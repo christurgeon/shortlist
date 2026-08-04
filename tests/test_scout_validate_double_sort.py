@@ -495,3 +495,24 @@ def test_ci_mc_error_shrinks_as_one_over_sqrt_B():
         errs[b] = r["ci_mc_error"]
     assert errs[100] is not None and errs[400] is not None
     assert errs[400] < errs[100]                     # 4x the replicates -> ~half the error
+
+
+def test_quantile_se_matches_the_closed_form_on_a_known_distribution():
+    """Direct check of the estimator, not just its scaling. For B draws from Uniform(0,1) the
+    density at the median is 1, so sd(q̂_0.5) = √(0.25/B). At B=2000 that is ~0.0112."""
+    from shortlist.scout.validate import _quantile_se
+
+    alphas = [i / 2000.0 for i in range(2000)]          # exactly Uniform(0,1) by construction
+    se = _quantile_se(alphas, 1000, 0.5)
+    expected = (0.25 / 2000) ** 0.5
+    assert se is not None
+    assert abs(se - expected) / expected < 0.10          # within 10% of the analytic value
+
+
+def test_quantile_se_abstains_on_a_degenerate_replicate_set():
+    """A constant replicate array has zero spread, so the density is undefined. Returning 0.0
+    would claim perfect precision; abstain instead."""
+    from shortlist.scout.validate import _quantile_se
+
+    assert _quantile_se([1.0] * 500, 250, 0.5) is None
+    assert _quantile_se([0.1, 0.2], 1, 0.5) is None      # below the minimum sample size

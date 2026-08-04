@@ -1150,6 +1150,12 @@ def _persist_validate_latest(verdicts: list, *, today: date, source: str,
 def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
                       as_json: bool, backfill_path: str | None = None,
                       replay_as_of: date | None = None) -> int:
+    # A pinned replay date IS the measurement date. Reconcile here rather than relying on
+    # the caller to pass both consistently: two parameters that must agree, with nothing
+    # enforcing it, is a bug waiting for its first non-CLI caller — and it would fail
+    # silently, pinning only the ARTIFACT LABEL while measuring against today.
+    if replay_as_of is not None:
+        today = replay_as_of
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
     lb = lookback_days if lookback_days is not None else val_cfg.get("lookback_days", 365)
@@ -1296,7 +1302,7 @@ def main(argv: list[str] | None = None) -> int:
     subcommand = getattr(args, "subcommand", None)
     if subcommand == "validate":
         try:
-            return _run_validate_cli(config, today=args.as_of or today,
+            return _run_validate_cli(config, today=today,
                                      lookback_days=args.lookback_days,
                                      as_json=args.json, backfill_path=args.backfill,
                                      replay_as_of=args.as_of)
