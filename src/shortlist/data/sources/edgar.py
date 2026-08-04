@@ -91,7 +91,8 @@ def build_events_section(records: list[dict], lookback_days: int,
             continue
         kept.append((attr, FilingEvent(
             form=form, filed=filed,
-            accession=r.get("accession"), url=r.get("url"))))
+            accession=r.get("accession"), url=r.get("url"),
+            items=r.get("items") or None)))
     if not kept and report_filed is None:
         return None
     kept.sort(key=lambda p: p[1].filed, reverse=True)   # newest-first
@@ -305,6 +306,10 @@ class EdgarSource(Source):
                 "filed": fd.isoformat() if hasattr(fd, "isoformat") else (fd or ""),
                 "accession": getattr(f, "accession_no", None),
                 "url": getattr(f, "url", None),
+                # Already in the edgartools filings index (an `items` column); dropping
+                # it made an Item 4.02 non-reliance restatement indistinguishable from a
+                # routine 8-K in the brief. Costs no additional request.
+                "items": getattr(f, "items", None) or None,
             })
         return out
 

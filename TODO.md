@@ -6,6 +6,60 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## `/deep` brief assessment — 6 fixes shipped, rest deferred (2026-08-04)
+
+Full audit: **`docs/audits/2026-08-04-deep-brief-assessment.md`**. Shipped on
+`feat/deep-brief-improvements`: `_norm` typographic fold (recovers 73% of false
+`_(unverified)_` marks), a `Valuation:` line in the quant context (previously **1/35** briefs
+cited any multiple), 8-K item codes on `FilingEvent` (already fetched, were discarded),
+`ScreeningCall.confidence` persisted, `research.macro` context line, `research.fallback_model`.
+
+**Deferred — worth building:**
+- Replace the count caps with a materiality bar. Measured saturation: `risks` 33/35,
+  `what_would_change_my_mind` 34/35, `reconciliation` 25/35 (the last *against* an explicit
+  "this list is sparse" prompt instruction). The tail is **not** boilerplate — don't justify
+  this as "removing filler"; the case is false precision + attention dilution.
+- Close the `red_flags` enumeration (only 24% of 214 red flags match its own listed
+  categories) and forbid cross-section quote reuse (31/35 briefs reuse ≥1 evidence quote).
+- Debt maturity ladder via `companyconcept` (`LongTermDebtMaturitiesRepaymentsOfPrincipalIn
+  Year{One..Five}`) — verified live on Boeing, 1,636 filers tag the 1-yr concept. Reuses the
+  existing `_edgar_facts.py` pattern; cheapest real new data in the survey.
+- Prompt the model to **do the arithmetic** (normalized EPS ex-one-offs, cash runway,
+  refinancing coverage). All three briefs read end-to-end assembled the inputs and stopped.
+
+**Deferred — needs measurement:**
+- Model upgrade off `claude-sonnet-4-6`. Sonnet 5's new tokenizer makes it non-obviously
+  cheaper than Opus 5 on a ~127K-char prompt; run `count_tokens` on a real prompt against all
+  three before choosing. Needs an API key or `ant` — neither is on this box.
+- Segment revenue/margin via `Filing.xbrl().query().with_dimensions()` — proven live on GE,
+  but **225MB peak RSS** on the 1.9GB VPS and concepts aren't standardized across filers
+  (search by dimension-member presence, not a concept whitelist). Gate it like `proxy.py`.
+- Two-pass generation: **weaker than it looked.** Its case rested on the 17% tainted-findings
+  figure, which is ~73% normalization artifact. Re-measure the residual after the D1 fix.
+
+**Rejected on evidence:** earnings-call transcripts (no free ToS-clean small-cap source in
+2026; FMP gates them to Ultimate at $149/mo — **update `ASSESSMENT_GAPS.md` §3.1, which still
+calls them "the single biggest win" and implies they're merely deferred**); ticker-side 13F
+(all free APIs gate it); numeric sell-side estimates (premium on Finnhub).
+
+**Known residual, not fixed:** filing-*extraction* artifacts break grounding independently of
+Unicode — bare page numbers bled inline in CRWD's 10-K, a `|`-delimited page header in AAPL's
+`markdown=True` 10-Q MD&A. Filer/template-dependent (absent in JPM/AXON/BMI/CRWD `tenq_mda`).
+Folding cannot fix these; they need extraction-side cleanup.
+
+**Status:** OPEN — the six fixes are written and CI-green (ruff clean, 2315 pass) but
+**UNCOMMITTED**: they are working-tree changes on local branch `feat/deep-brief-improvements`,
+which is **0 commits ahead of `main`**. Nothing is committed, merged, pushed, or deployed;
+`/opt/shortlist` is untouched and still runs the old code. Next session must commit + PR
+before anything else, or the work is one `git checkout` from gone. After merge, deploy per
+CLAUDE.md (`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh`
+— never run the installer *from* `/opt/shortlist`) and verify with
+`git -C /opt/shortlist log --oneline -1` plus a grep for `_FOLD`. Existing briefs are cached
+by accession and will NOT pick up the new prompt sections without `--refresh`. The
+`worth-building` / `needs-measurement` items above are deliberately unstarted.
+
+---
+
 ## Evaluator guards made unbypassable — SHIPPED (2026-08-04)
 
 Post-mortem fix for the retracted 12pp claim. Design + adversarial review:

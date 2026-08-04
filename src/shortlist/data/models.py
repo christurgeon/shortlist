@@ -292,6 +292,10 @@ class FilingEvent:
     filed: str                         # ISO date (filing date)
     accession: Optional[str] = None
     url: Optional[str] = None          # public SEC index URL — carries no key
+    # Comma-separated 8-K item codes ("2.02,9.01") as edgartools' filings index
+    # supplies them; None for forms that carry no items. Defaulted, so snapshots
+    # persisted before this field load unchanged (from_dict filters to known names).
+    items: Optional[str] = None
 
 
 @dataclass

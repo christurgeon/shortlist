@@ -30,7 +30,8 @@ def is_available() -> bool:
     return shutil.which("claude") is not None
 
 
-def run(prompt: str, system: str, model: str, timeout_s: float) -> CliResult:
+def run(prompt: str, system: str, model: str, timeout_s: float,
+        fallback_model: Optional[str] = None) -> CliResult:
     """Invoke the headless `claude` CLI for a single structured-extraction turn.
 
     Locked down so it behaves as a stateless model call, not an agent: no tools,
@@ -53,6 +54,11 @@ def run(prompt: str, system: str, model: str, timeout_s: float) -> CliResult:
         "--strict-mcp-config",
         "--max-turns", "1",
     ]
+    # An overloaded primary otherwise fails all of assess()'s attempts identically and
+    # the brief is dropped. Omitted entirely when unset, so the invocation stays
+    # byte-identical to the pre-feature form.
+    if fallback_model:
+        argv += ["--fallback-model", fallback_model]
     try:
         proc = subprocess.Popen(
             argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -97,5 +103,22 @@ def run(prompt: str, system: str, model: str, timeout_s: float) -> CliResult:
         text=envelope.get("result", ""),
         cost_usd=envelope.get("total_cost_usd"),
         stop_reason=envelope.get("stop_reason"),
-        model=model,
+        model=_answering_model(envelope, model),
     )
+
+
+def _answering_model(envelope: dict, requested: str) -> str:
+    """The model that actually produced the answer. With --fallback-model that need not
+    be the one requested, and this value is printed in the brief header — echoing the
+    request would silently mislabel a fallback-produced brief. The CLI envelope keys
+    `modelUsage` by the model that ran; when several did (primary attempted, fallback
+    answered) the answering one is the one with output tokens. Falls back to the
+    requested model if the envelope says nothing."""
+    usage = envelope.get("modelUsage")
+    if not isinstance(usage, dict) or not usage:
+        return requested
+
+    def _out(entry) -> int:
+        return entry.get("outputTokens", 0) if isinstance(entry, dict) else 0
+
+    return max(usage, key=lambda name: _out(usage[name]))

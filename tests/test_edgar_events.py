@@ -250,8 +250,10 @@ def test_bridge_copies_events_when_present():
     m = snapshot_to_metrics(snap)
     assert m.activist_13d is True
     assert m.recent_8k is False
+    # `items` joined the payload with the 8-K item-code fix; None for non-8-K forms.
     assert m.filing_events == [
-        {"form": "SC 13D", "filed": "2026-05-26", "accession": "0000-1", "url": "https://sec.gov/x"}]
+        {"form": "SC 13D", "filed": "2026-05-26", "accession": "0000-1",
+         "url": "https://sec.gov/x", "items": None}]
 
 
 def test_bridge_leaves_events_none_when_absent():
@@ -352,3 +354,37 @@ def test_live_edgar_events_returns_event_forms():
     forms = {r["form"] for r in records}
     assert any(f.startswith("8-K") for f in forms)
     assert any("13" in f for f in forms)   # a 13D or 13G should appear over 10y
+
+
+def test_filing_event_carries_8k_item_codes():
+    """D5: edgartools' filings index already has an `items` column; dropping it made a
+    non-reliance restatement (4.02) indistinguishable from a routine 8-K in the brief."""
+    ev = build_events_section(
+        [{"form": "8-K", "filed": "2026-07-23", "accession": "0000-9",
+          "url": "https://sec.gov/x", "items": "4.02,9.01"}],
+        lookback_days=90, today=date(2026, 7, 24))
+    assert ev is not None
+    assert ev.recent[0].items == "4.02,9.01"
+
+
+def test_filing_event_without_items_is_none_not_empty():
+    """Non-8-K forms carry no items; abstain rather than render an empty item list."""
+    ev = build_events_section(
+        [{"form": "SC 13D", "filed": "2026-07-23", "accession": "0000-9"}],
+        lookback_days=90, today=date(2026, 7, 24))
+    assert ev is not None and ev.recent[0].items is None
+
+
+def test_filing_event_items_survive_snapshot_roundtrip():
+    """Old persisted snapshots predate `items`; _build must tolerate its absence and
+    new ones must round-trip it."""
+    snap = TickerSnapshot(ticker="AAPL")
+    snap.events = Events(recent=[FilingEvent(form="8-K", filed="2026-07-23",
+                                             accession="0000-9", items="2.02,9.01")],
+                         recent_8k=True)
+    rebuilt = TickerSnapshot.from_dict(snap.to_dict())
+    assert rebuilt.events.recent[0].items == "2.02,9.01"
+    # a pre-feature payload (no `items` key at all) must still load
+    legacy = snap.to_dict()
+    del legacy["events"]["recent"][0]["items"]
+    assert TickerSnapshot.from_dict(legacy).events.recent[0].items is None

@@ -368,6 +368,10 @@ research:
                                # failure is transient, so retry instead of dropping the brief.
                                # Worst case ~ max_attempts x timeout_s of wall-clock per ticker —
                                # keep <= scout.research_phase_budget_s.
+  fallback_model: claude-sonnet-5   # --fallback-model on the claude CLI. Without it an
+                               # overloaded primary fails all max_attempts identically
+                               # and the brief is dropped ("research unavailable").
+                               # Remove the key for the byte-identical pre-feature argv.
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 12
   max_red_flags: 12
@@ -428,6 +432,15 @@ research:
                                # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
     enabled: true              # flip false for a byte-identical no-op (line omitted)
     max_items: 6               # cap recent trades listed (newest-first)
+
+  macro:                       # run-level macro backdrop line (research-only; prompt-only,
+                               # NOT the grounding haystack, NOT a scored signal). The
+                               # MacroContext is already fetched per run — this only
+                               # threads it into the brief, which previously reasoned about
+                               # a discount rate and leverage with no rate/credit context.
+                               # Fixed template, not free text: the bar is "changes how THIS
+                               # company's numbers read", not market-timing prose.
+    enabled: true              # flip false (or remove the block) for a byte-identical no-op
 
   proxy:                       # DEF 14A compensation & governance context line (research-only;
                                # prompt-only, NOT a scored signal — see 2026-06-27-def14a-proxy-reader).

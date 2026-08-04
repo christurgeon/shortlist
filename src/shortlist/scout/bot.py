@@ -343,7 +343,7 @@ class TelegramBot:
         if present:
             _briefs, assessments, researched, note, skipped = self._research_fn()(
                 present, self.config, self.scout_cfg,
-                require_passed=False, top_n=len(present))
+                require_passed=False, top_n=len(present), macro=macro)
             manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
             if note:
                 manifest.notes.append(note)

@@ -167,7 +167,26 @@ def _salvage_json(text: str) -> Optional[str]:
     return None   # unbalanced / truncated object -> let the caller retry
 
 
+# Typographic characters SEC filings use where a model transcribing "verbatim" emits
+# ASCII. Applied to BOTH the quote and the haystack, so folding can only recover a real
+# match — it can never manufacture one (a stitched or fabricated quote still fails).
+# Measured: folding recovers 73% of unverified findings, the dominant single character
+# being U+2019 in the FILING text. Does NOT fix filing-extraction artifacts (bare page
+# numbers / bullet markers bled inline) — see the audit doc, D1.
+_FOLD = str.maketrans({
+    "’": "'", "‘": "'",            # curly single quotes
+    "“": '"', "”": '"',            # curly double quotes
+    "–": "-", "—": "-", "−": "-",   # en/em dash, minus sign
+    " ": " ", " ": " ", " ": " ",   # non-breaking / figure spaces
+    "­": "",                            # soft hyphen
+})
+_LIGATURES = (("ﬁ", "fi"), ("ﬂ", "fl"), ("ﬀ", "ff"))
+
+
 def _norm(s: str) -> str:
+    s = s.translate(_FOLD)
+    for lig, plain in _LIGATURES:
+        s = s.replace(lig, plain)
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
@@ -241,10 +260,30 @@ def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
             + "; ".join(items) + ".")
 
 
+def _macro_line(macro, cfg: Optional[dict]) -> str:
+    """One run-level macro context line, or '' to omit (disabled / no macro fetched).
+    Prompt context only — never the grounding haystack. Deliberately a fixed template
+    of rate/credit levels rather than free text: the bar is 'changes how THIS company's
+    numbers should be read' (discount rate, financing cost, cyclicality), not an
+    invitation to write market-timing prose."""
+    if not cfg or not cfg.get("enabled", False) or macro is None:
+        return ""
+    parts = [(lbl, getattr(macro, attr, None)) for lbl, attr in
+             (("10y Treasury", "dgs10"), ("10y-2y", "t10y2y"),
+              ("HY OAS", "hy_oas"), ("VIX", "vix"), ("fed funds", "fedfunds"))]
+    body = ", ".join(f"{lbl} {v:.2f}" for lbl, v in parts if v is not None)
+    if not body:
+        return ""
+    regime = getattr(macro, "regime", None) or "unknown"
+    return ("\n\nMacro backdrop (context only — run-level, NOT company data; weigh it "
+            "only where it changes how THIS company's numbers read — discount rate, "
+            f"financing cost, cyclicality): {body}; regime {regime}.")
+
+
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None,
                        insider_recent: Optional[list] = None,
-                       proxy_facts=None) -> str:
+                       proxy_facts=None, macro=None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
@@ -254,7 +293,15 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                            rcfg.get("earnings"))
     events_line = ""
     if filing_events:
-        items = "; ".join(f"{e['form']} filed {e['filed']}" for e in filing_events[:6])
+        # 8-K item codes ride along free (already in the edgartools filings index).
+        # An Item 4.02 non-reliance restatement is the most decision-relevant 8-K
+        # there is and previously rendered as a bare form label.
+        parts = []
+        for e in filing_events[:6]:
+            codes = e.get("items")
+            label = e["form"] + (f" (items {codes})" if codes else "")
+            parts.append(f"{label} filed {e['filed']}")
+        items = "; ".join(parts)
         events_line = (
             "\n\nRecent SEC filings (context only — do not treat as 10-K text): "
             f"{items}.")
@@ -263,6 +310,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     # (a computed/interpretive proxy claim must not pass quote-verification).
     proxy_ctx_line = proxy_ctx.context_line(proxy_facts, rcfg.get("proxy"))
     proxy_section = f"\n\n{proxy_ctx_line}" if proxy_ctx_line else ""
+    macro_section = _macro_line(macro, rcfg.get("macro"))
     tenq_section = ""
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
@@ -288,6 +336,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{events_line}"
         f"{insider_line}"
         f"{proxy_section}"
+        f"{macro_section}"
     )
 
 
@@ -356,6 +405,22 @@ def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=N
         present = ", ".join(f"{k}={v:.3g}" for k, v in scalars if v is not None)
         if present:
             lines.append(f"Fundamentals: {present}.")
+        # Valuation. Without these the model reconciles the `value` sub-score against
+        # an opaque 0-100 number and cannot state what the company costs (measured:
+        # 1/35 briefs cited any multiple). All already on StockMetrics — no new fetch.
+        val = [("price", getattr(m, "price", None)),
+               ("pe_ttm", getattr(m, "pe_ttm", None)),
+               ("pe_median_5y", getattr(m, "pe_median_5y", None)),
+               ("fcf_yield", getattr(m, "fcf_yield", None)),
+               ("peg", getattr(m, "peg", None))]
+        val_parts = [f"{k}={v:.3g}" for k, v in val if v is not None]
+        # market_cap is absolute dollars and would render as '3.2e+12' under %g;
+        # plain $B keeps it comparable to the $M financial series above.
+        mcap = getattr(m, "market_cap", None)
+        if mcap is not None:
+            val_parts.insert(1, f"market_cap=${mcap / 1e9:.0f}B")
+        if val_parts:
+            lines.append("Valuation: " + ", ".join(val_parts) + ".")
         if m.short_pct_outstanding is not None and m.days_to_cover is not None:
             trend = "rising" if m.short_interest_rising else "not rising"
             lines.append(f"Short interest: {m.short_pct_outstanding * 100:.1f}% of "
@@ -434,6 +499,9 @@ def apply_guards(assessment, card, config: dict) -> None:
     call.decided_without, call.not_applicable = coverage_caveats(card)
     m = getattr(card, "metrics", None)
     call.as_of_price = getattr(m, "price", None) if m is not None else None
+    # Snapshot the guard INPUT alongside the guard OUTPUT (conviction_capped), so a
+    # later retrospective can attribute a conviction to a rule instead of inferring it.
+    call.confidence = getattr(card, "confidence", None)
 
     orig_conv = call.conviction
 
@@ -473,7 +541,8 @@ def apply_guards(assessment, card, config: dict) -> None:
 
 
 def assess(card, bundle: FilingBundle, config: dict,
-           runner: Callable[..., CliResult] = claude_cli.run) -> Optional[QualitativeAssessment]:
+           runner: Callable[..., CliResult] = claude_cli.run,
+           macro=None) -> Optional[QualitativeAssessment]:
     """Produce a grounded QualitativeAssessment for one FilingBundle, or None if the
     model call fails, truncates, or returns unparseable JSON after one retry.
     `card` is the ScoreCard; its metrics and sub-scores supply the quant-context
@@ -482,6 +551,9 @@ def assess(card, bundle: FilingBundle, config: dict,
     rcfg = config.get("research", {})
     scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-4-6")
+    # Passed to the runner only when set, so the many injected test doubles that take
+    # the pre-feature signature keep working on the default path.
+    fallback = rcfg.get("fallback_model")
     timeout = rcfg.get("timeout_s", 180)
     vs = default_valid_signals()
     max_conflicts = rcfg.get("max_conflicts", 3)
@@ -501,7 +573,8 @@ def assess(card, bundle: FilingBundle, config: dict,
         except Exception:
             proxy_facts = None
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
-                                     insider_recent=ir, proxy_facts=proxy_facts)
+                                     insider_recent=ir, proxy_facts=proxy_facts,
+                                     macro=macro)
     system = (SYSTEM_PROMPT
               + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
               + (PROXY_SYSTEM_ADDENDUM if pcfg.get("enabled", False) else ""))
@@ -514,7 +587,9 @@ def assess(card, bundle: FilingBundle, config: dict,
     total_cost = 0.0
     for attempt in range(1, max_attempts + 1):
         t0 = time.monotonic()
-        res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout)
+        kwargs = {"fallback_model": fallback} if fallback else {}
+        res = runner(prompt=prompt, system=system, model=model, timeout_s=timeout,
+                     **kwargs)
         dur = time.monotonic() - t0
         total_cost += res.cost_usd or 0.0     # accumulate so a reparse retry's cost isn't lost
         if res.error:

@@ -121,7 +121,7 @@ def test_assess_threads_card_metrics_insider_recent_into_prompt(monkeypatch):
     captured = {}
 
     def fake_build(bundle, config, card=None, filing_events=None, insider_recent=None,
-                   proxy_facts=None):
+                   proxy_facts=None, macro=None):
         captured["insider_recent"] = insider_recent
         return "PROMPT"
 
