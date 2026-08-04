@@ -479,3 +479,19 @@ def test_per_bucket_fractions_are_mature_only_like_the_floor_they_are_tested_aga
                     min_independent_blocks=5, n_boot=100)
     assert r["high_frac"] == 1.0             # immature events excluded, not counted as lost
     assert r["n_high_pool"] == 30
+
+
+def test_ci_mc_error_shrinks_as_one_over_sqrt_B():
+    """A deterministic scaling assertion, not a stochastic comparison. The split-half
+    estimator considered first would have made this a coin flip: it is biased ~1.6x and has a
+    coefficient of variation near 0.76, so it returns a reassuringly small value roughly one
+    time in three. The closed-form order-statistic SE scales exactly as 1/sqrt(B)."""
+    measured = _ranked_cohort(30)
+    ff3 = _ff3_for_months(30)
+    errs = {}
+    for b in (100, 400):
+        r = double_sort(measured, k_months=1, ff3=ff3, min_bucket_events=10,
+                        min_independent_blocks=5, n_boot=b)
+        errs[b] = r["ci_mc_error"]
+    assert errs[100] is not None and errs[400] is not None
+    assert errs[400] < errs[100]                     # 4x the replicates -> ~half the error

@@ -437,7 +437,7 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
     # which is exactly where the month bootstrap's interval is most artificially tight, so
     # falling back would substitute the known-too-tight estimator precisely where the data is
     # weakest. Abstain instead, as `ols`/`_monthly_path`/`measure_cohort` all do.
-    ci, z0, n_fit, n_discarded = event_bootstrap_spread_alpha(
+    ci, z0, n_fit, n_discarded, ci_mc_error = event_bootstrap_spread_alpha(
         eligible, ff3, k_months, min_bucket_events=min_bucket_events,
         n_boot=n_boot, seed=seed, weighting=weighting)
     high_ir = information_ratio(ctp_high, ff3)
@@ -497,6 +497,9 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
         "z0": z0,
         "n_boot_fitted": n_fit,
         "n_boot_discarded": n_discarded,
+        # Monte-Carlo SE of the interval endpoints. A difference between two intervals that is
+        # within this is not evidence -- the 2026-08-03 B=60 comparison was exactly that.
+        "ci_mc_error": ci_mc_error,
         "high_ir": high_ir,
         "low_ir": low_ir,
         "high_frac": high_frac,
@@ -828,6 +831,40 @@ def _resample_by_issuer(live: list[MeasuredEvent], rand) -> list[MeasuredEvent]:
     return draw
 
 
+def _quantile_se(alphas: list[float], i: int, p: float) -> float | None:
+    """Monte-Carlo standard error of the p-th sample quantile: sd(q̂_p) ≈ √(p(1−p)/B) / f(q_p),
+    with the density f estimated by a finite difference over the already-sorted replicates.
+
+    Deterministic and free — it reads the array the bootstrap just produced. The alternative
+    considered (splitting the replicates in half and reporting the endpoint discrepancy) is
+    BIASED: two independent halves each carry ~√2 the SD of the full sample, so the difference
+    has SD ≈ 2·sd and E|diff| ≈ 1.6·sd, with a coefficient of variation near 0.76 — it would
+    return a reassuringly small number roughly one time in three. A noise diagnostic that
+    falsely reassures is worse than none in a codebase whose failure mode is quoting numbers
+    that looked safe. It would also have been the most lattice-exposed partition of the LCG.
+    """
+    b = len(alphas)
+    if b < 10 or not (0.0 < p < 1.0):
+        return None
+    h = max(1, int(0.05 * b))
+    lo_i, hi_i = max(0, i - h), min(b - 1, i + h)
+    span = alphas[hi_i] - alphas[lo_i]
+    if span <= 0:
+        return None
+    density = (hi_i - lo_i) / (b * span)          # f(q_p) ≈ Δ(rank fraction) / Δ(value)
+    if density <= 0:
+        return None
+    return math.sqrt(p * (1.0 - p) / b) / density
+
+
+def _max_se(*errs):
+    """Worst endpoint SE, abstaining to None when no endpoint could be estimated.
+    `_quantile_se` returns None on a degenerate replicate set, so this must not `max()` over
+    Nones -- reporting 0.0 there would claim a precision that was never measured."""
+    vals = [e for e in errs if e is not None]
+    return max(vals) if vals else None
+
+
 def _bias_corrected_interval(alphas: list[float], theta_hat: float | None,
                              lo: float = 0.05, hi: float = 0.95):
     """(interval, z0) — bias-corrected percentile interval.
@@ -844,20 +881,23 @@ def _bias_corrected_interval(alphas: list[float], theta_hat: float | None,
     """
     b = len(alphas)
     naive = (alphas[int(lo * b)], alphas[int(hi * b)])
+    naive_err = _max_se(_quantile_se(alphas, int(lo * b), lo),
+                        _quantile_se(alphas, int(hi * b), hi))
     if theta_hat is None:
-        return naive, 0.0
+        return naive, 0.0, naive_err
     n_less = sum(1 for a in alphas if a < theta_hat)
     if n_less == 0 or n_less == b:
-        return naive, 0.0
+        return naive, 0.0, naive_err
     nd = NormalDist()
     z0 = nd.inv_cdf(n_less / b)
-    i_lo = int(nd.cdf(2 * z0 + nd.inv_cdf(lo)) * b)
-    i_hi = int(nd.cdf(2 * z0 + nd.inv_cdf(hi)) * b)
-    i_lo = min(max(i_lo, 0), b - 1)
-    i_hi = min(max(i_hi, 0), b - 1)
+    p_lo = nd.cdf(2 * z0 + nd.inv_cdf(lo))
+    p_hi = nd.cdf(2 * z0 + nd.inv_cdf(hi))
+    i_lo = min(max(int(p_lo * b), 0), b - 1)
+    i_hi = min(max(int(p_hi * b), 0), b - 1)
     if i_hi <= i_lo:
-        return naive, z0
-    return (alphas[i_lo], alphas[i_hi]), z0
+        return naive, z0, naive_err
+    err = _max_se(_quantile_se(alphas, i_lo, p_lo), _quantile_se(alphas, i_hi, p_hi))
+    return (alphas[i_lo], alphas[i_hi]), z0, err
 
 
 def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
@@ -895,7 +935,7 @@ def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
     point, _betas = ff3_alpha(
         calendar_time_portfolio(live, k_months, weighting=weighting, month_span=span),
         ff3, min_obs=min_obs)
-    interval, _z0 = _bias_corrected_interval(alphas, point)
+    interval, _z0, _err = _bias_corrected_interval(alphas, point)
     return interval
 
 
@@ -922,7 +962,7 @@ def event_bootstrap_spread_alpha(eligible: list[MeasuredEvent], ff3, k_months: i
     """
     live = _live_events(eligible)
     if len(live) < min_obs or k_months <= 0:
-        return None, 0.0, 0, 0
+        return None, 0.0, 0, 0, None
     rand = _lcg(seed)
     span = (min(m.event_date for m in live), max(m.event_date for m in live))
 
@@ -947,12 +987,12 @@ def event_bootstrap_spread_alpha(eligible: list[MeasuredEvent], ff3, k_months: i
         if a is not None:
             alphas.append(a)
     if len(alphas) < n_boot // 2:
-        return None, 0.0, len(alphas), discarded
+        return None, 0.0, len(alphas), discarded, None
     alphas.sort()
     base = _spread_rows(live)
     point = ff3_alpha(base, ff3, min_obs=min_obs)[0] if base else None
-    interval, z0 = _bias_corrected_interval(alphas, point)
-    return interval, z0, len(alphas), discarded
+    interval, z0, mc_err = _bias_corrected_interval(alphas, point)
+    return interval, z0, len(alphas), discarded, mc_err
 
 
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,
