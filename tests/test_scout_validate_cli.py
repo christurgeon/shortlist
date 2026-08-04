@@ -741,3 +741,38 @@ def test_suppressed_verdict_survives_the_persist_round_trip_with_no_leaked_level
     assert got["double_sort"]["spread_alpha_monthly"] == 0.0244      # the spread survives
     # Nothing anywhere in the artifact reads as a quotable per-cohort level.
     assert "1.0438" not in json.dumps(got)
+
+
+# --- --as-of replay pinning + digest refusal (docs/EVALUATOR_GUARDS.md §2) ----------------
+
+def test_digest_refuses_a_replay_artifact(tmp_path, monkeypatch):
+    """THE live-safety test for `--as-of`. A replay's `as_of` IS the pinned date, so the
+    14-day staleness gate cannot catch it — a replay pinned to yesterday looks FRESHER than a
+    genuine run from last week. Without a source check, a backdated audit reproduction renders
+    in the Telegram digest as a current verdict."""
+    import json
+    from datetime import date
+
+    from shortlist.scout.daily import _load_validation_digest
+
+    p = tmp_path / "validate-latest.json"
+    payload = {"as_of": "2026-08-03", "verdicts": [{"signal": "s", "verdict": "KILL"}]}
+
+    p.write_text(json.dumps({**payload, "source": "live"}))
+    assert _load_validation_digest({}, today=date(2026, 8, 4), path=str(p)) is not None
+
+    p.write_text(json.dumps({**payload, "source": "replay:2026-07-26"}))
+    assert _load_validation_digest({}, today=date(2026, 8, 4), path=str(p)) is None
+
+    # a backfill artifact is SYNTHETIC but not backdated — it still renders (marked)
+    p.write_text(json.dumps({**payload, "source": "backfill:13d.jsonl"}))
+    assert _load_validation_digest({}, today=date(2026, 8, 4), path=str(p)) is not None
+
+
+def test_as_of_flag_parses_and_defaults_to_none():
+    from shortlist.scout.daily import build_arg_parser
+
+    ap = build_arg_parser()
+    assert ap.parse_args(["validate"]).as_of is None
+    from datetime import date
+    assert ap.parse_args(["validate", "--as-of", "2026-07-26"]).as_of == date(2026, 7, 26)

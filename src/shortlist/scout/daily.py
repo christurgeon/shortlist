@@ -396,6 +396,11 @@ def _load_validation_digest(config: dict, *, today: date,
         as_of = date.fromisoformat(str(data.get("as_of")))
         if (today - as_of).days > max_age:
             return None
+        # A `replay:` artifact is a deliberately backdated reproduction. Its `as_of` is the
+        # pinned date, so the staleness gate above CANNOT catch it -- a replay pinned to
+        # yesterday looks fresher than a real run from last week. Refuse by source.
+        if str(data.get("source", "")).startswith("replay:"):
+            return None
         return data
     except Exception:  # noqa: BLE001 — best-effort read, never blocks the digest
         return None
@@ -1143,7 +1148,8 @@ def _persist_validate_latest(verdicts: list, *, today: date, source: str,
 
 
 def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
-                      as_json: bool, backfill_path: str | None = None) -> int:
+                      as_json: bool, backfill_path: str | None = None,
+                      replay_as_of: date | None = None) -> int:
     scout_cfg = config.get("scout", {})
     val_cfg = scout_cfg.get("validate", {})
     lb = lookback_days if lookback_days is not None else val_cfg.get("lookback_days", 365)
@@ -1153,6 +1159,11 @@ def _run_validate_cli(config: dict, *, today: date, lookback_days: int | None,
         from .backfill import load_backfill_events
         events_override = load_backfill_events(backfill_path)
         source = f"backfill:{Path(backfill_path).name}"
+    if replay_as_of is not None:
+        # A pinned run is NOT a current verdict. Label it so `_load_validation_digest` can
+        # refuse it: without this a backdated replay satisfies the staleness gate (its as_of
+        # is simply whatever date was pinned) and renders in the Telegram digest as live.
+        source = f"replay:{replay_as_of.isoformat()}" + (f" {source}" if backfill_path else "")
     verdicts = run_validate(config, today=today, lookback_days=lb,
                             events_override=events_override)
     _persist_validate_latest(verdicts, today=today, source=source)
@@ -1238,6 +1249,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     vp.add_argument("--lookback-days", type=int, default=None,
                     help="firehose lookback window in days "
                          "(default: config scout.validate.lookback_days, else 365)")
+    vp.add_argument("--as-of", default=None, type=date.fromisoformat, metavar="ISO",
+                    help="pin the measurement as-of date AND the price-cache day key, for "
+                         "reproducible audit replays. Artifacts are labelled 'replay:<iso>' "
+                         "and are REFUSED by the daily digest (a backdated run must never "
+                         "render as a current verdict).")
     vp.add_argument("--backfill", default=None, metavar="PATH",
                     help="evaluate a batch-backfill JSONL cohort (shortlist-scout backfill "
                          "output) INSTEAD of the live ScoutState firehose; verdicts are labeled "
@@ -1280,8 +1296,10 @@ def main(argv: list[str] | None = None) -> int:
     subcommand = getattr(args, "subcommand", None)
     if subcommand == "validate":
         try:
-            return _run_validate_cli(config, today=today, lookback_days=args.lookback_days,
-                                     as_json=args.json, backfill_path=args.backfill)
+            return _run_validate_cli(config, today=args.as_of or today,
+                                     lookback_days=args.lookback_days,
+                                     as_json=args.json, backfill_path=args.backfill,
+                                     replay_as_of=args.as_of)
         except Exception as e:  # noqa: BLE001
             print(f"scout: validate failed: {redact_secrets(str(e))}", file=sys.stderr)
             return 1
