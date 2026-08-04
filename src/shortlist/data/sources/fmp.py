@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from ..._util import first as _first
 from ..._util import pct as _pct
-from ...providers._fmp_insider import is_buy, tx_value
+from ...providers._fmp_insider import classify_tx, tx_value
 from ...stats import avg_roic, median_pe
 from ..models import (
     Analyst,
@@ -161,9 +161,14 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         if insiders:
             net = buys = sells = 0
             recent = []
+            found = False
             for tx in insiders[:60]:
+                classification = classify_tx(tx)
+                if classification == "other":
+                    continue
+                found = True
                 val = tx_value(tx)
-                buy = is_buy(tx)
+                buy = classification == "buy"
                 net += val if buy else -val
                 buys += buy
                 sells += not buy
@@ -173,7 +178,8 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
                         role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
                         shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
                     ))
-            snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
+            if found:
+                snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
     return snap
 
 
