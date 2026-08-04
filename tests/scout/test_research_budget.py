@@ -137,3 +137,19 @@ def test_research_phase_surfaces_per_ticker_skip_reasons():
                           _is_available=lambda: True, _enrich=fake_enrich)
     skipped = out[4]          # 5th element
     assert skipped == {"NVDA": "assessment failed"}
+
+
+def test_research_phase_forwards_macro_to_enrich():
+    """The daily run fetches MacroContext and threads it into run_harness and
+    build_report; the research phase must get it too, or daily auto-research briefs
+    lack the macro line that /deep briefs have (the D8 bug, other code path)."""
+    captured = {}
+
+    def fake_enrich(cards, config, *, top_n, refresh, require_passed=True, macro=None):
+        captured["macro"] = macro
+        return []
+
+    sentinel = object()
+    _research_phase([], {}, {"research_top_n": 1}, macro=sentinel,
+                    _is_available=lambda: True, _enrich=fake_enrich)
+    assert captured["macro"] is sentinel

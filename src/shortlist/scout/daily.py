@@ -632,7 +632,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     research_enabled = scout_cfg.get("daily_push", {}).get("research", True)
     if not demo and research_enabled:
         briefs, assessments, researched, note, skipped = _research_phase(
-            cards, config, scout_cfg)
+            cards, config, scout_cfg, macro=macro)
         if note:
             notes.append(note)
         for t, why in skipped.items():
