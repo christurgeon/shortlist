@@ -111,14 +111,67 @@ def test_unpriced_trades_alone_leave_section_absent():
     assert _normalize_fmp("TEST", raw).insider is None
 
 
-def test_one_priced_trade_still_admits_its_unpriced_siblings():
-    # The unpriced row can't make the section present, but once a priced trade has,
-    # the unpriced one still counts toward the (price-free) buy/sell counts.
+def test_a_priced_trade_does_not_admit_its_unpriced_siblings():
+    # REPLACES an earlier test that asserted the opposite ("the unpriced one still
+    # counts toward the price-free buy/sell counts"). That test passed both before and
+    # after the guard it was written for, so it bound nothing — and what it pinned as
+    # intended was the small version of the partial-pricing clobber above: an unpriced
+    # sale silently valued at $0 while still inflating sell_count. The record must
+    # describe exactly the trades it valued, so the unpriced sibling is dropped.
     raw = {"insider": [
-        _tx(5, "P-Purchase", 100, 10.0),   # +1000, vouches for the section
-        _tx(6, "S-Sale", 1000, None),      # unpriced: counted, contributes 0 value
+        _tx(5, "P-Purchase", 100, 10.0),   # +1000, valued
+        _tx(6, "S-Sale", 1000, None),      # unpriced: dropped, not counted at zero
     ]}
     ins = _normalize_fmp("TEST", raw).insider
     assert ins is not None
     assert ins.net_value_6m == 1000.0
-    assert ins.buy_count == 1 and ins.sell_count == 1
+    assert ins.buy_count == 1 and ins.sell_count == 0
+
+
+def test_partial_pricing_does_not_let_one_priced_row_vouch_for_the_rest():
+    # THE ADJACENT CASE to test_unpriced_trades_alone_leave_section_absent. Presence was
+    # batch-level, so ONE priced row vouched for arbitrarily many unpriced ones, and the
+    # emitted record was internally incoherent: sell_count counted 59 transactions whose
+    # value was deliberately excluded from net_value_6m, and `recent` (which feeds the
+    # research.insider_detail line) carried nine value=0 rows. Unvalued rows are now
+    # dropped, so the record describes exactly the trades it valued.
+    # NOTE the scored net is +1.0 either way, and FMP still wins the merge here — that
+    # is the separate fmp-vs-edgar priority question (TODO.md), not this test's subject.
+    raw = {"insider": [_tx(5, "P-Purchase", 1, 1.0)]
+                      + [_tx(6, "S-Sale", 1000, None) for _ in range(59)]}
+    ins = _normalize_fmp("TEST", raw).insider
+    assert ins is not None
+    assert ins.net_value_6m == 1.0
+    assert ins.buy_count == 1
+    assert ins.sell_count == 0          # the 59 unvalued sales are NOT counted
+    assert len(ins.recent) == 1         # nor do they pollute the research context line
+    assert all(t.value for t in ins.recent)
+
+
+def test_negative_transaction_values_never_invert_the_net():
+    # tx_value is shares*price with no sign handling, so a negative securitiesTransacted
+    # made `val` negative: it failed the `val > 0` presence check yet was STILL netted
+    # with the buy/sell sign applied, so a SALE increased net insider buying by $10,000.
+    # Unvaluable rows are dropped, so the sign can no longer invert.
+    raw = {"insider": [
+        _tx(5, "P-Purchase", 100, 10.0),      # a real +1000 buy
+        _tx(6, "S-Sale", -1000, 10.0),        # negative shares: unvaluable, dropped
+    ]}
+    ins = _normalize_fmp("TEST", raw).insider
+    assert ins is not None
+    assert ins.net_value_6m == 1000.0     # was 11000.0 — a sale ADDING to net buying
+    assert ins.buy_count == 1 and ins.sell_count == 0
+
+
+def test_all_unvaluable_rows_abstain_even_when_codes_are_real():
+    # REGRESSION GUARD, not a binding test — stated plainly because the previous round
+    # shipped a test that looked binding and was not. This passes both before and after
+    # the change; it exists so a future refactor of the valued-trade filter cannot
+    # quietly start emitting a fabricated zero for a batch with no usable row at all.
+    # (Generalises the all-unpriced case to negative and zero-share rows.)
+    raw = {"insider": [
+        _tx(5, "S-Sale", -1000, 10.0),
+        _tx(6, "P-Purchase", 0, 10.0),
+        _tx(7, "S-Sale", 1000, None),
+    ]}
+    assert _normalize_fmp("TEST", raw).insider is None

@@ -22,6 +22,21 @@ from .base import _fetch_sections, _KeyedHttpSource
 
 # --- FMP: primary, broad coverage ----------------------------------------
 
+# Cap on insider transactions netted into net_value_6m. Since the non-trade and
+# unvaluable filters now run BEFORE it, this bounds REAL TRADES (it used to bound raw
+# rows, most of which could be awards). Restored as a named constant when the old
+# `_fmp_insider._WINDOW` was deleted with its dead netting helper — a bare `60` in the
+# loop left the magnitude unexplained.
+#
+# KNOWN, UNVERIFIED ASSUMPTION: truncation keeps whichever rows FMP returned first, so
+# it is only safe if the endpoint really is "most recent N" as its docs imply. We have
+# no recorded payload to confirm that ordering (fetch_insider ships false, so nothing is
+# cached) — same class of assumption, and same blast radius, as classify_tx's
+# `<CODE>-<Description>` split. On a reversed feed the retained set would be the OLDEST
+# trades. The 183-day window bounds the damage; re-check before trusting FMP insider
+# data on a paid tier. Truncation past this cap is currently silent.
+_MAX_TRADES = 60
+
 class FMPSource(_KeyedHttpSource):
     name = "fmp"
     # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
@@ -158,25 +173,42 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         cutoff = (date.today() - timedelta(days=183)).isoformat()
         insiders = [tx for tx in insiders
                     if (tx.get("transactionDate") or "") >= cutoff]
-        # Drop non-trades (awards/exercises/gifts/tax-withholding/conversions) BEFORE
-        # the 60-row window, not inside it. They carry no insider signal, and leaving
-        # them in the slice lets a burst of RSU vesting starve real purchases out of
-        # the window entirely (59 award rows + 5 purchases => 4 purchases silently lost).
-        trades = [(tx, c) for tx in insiders if (c := classify_tx(tx)) != "other"]
+        # Keep only VALUED TRADES — one predicate, applied BEFORE the cap.
+        #
+        # Non-trades (awards/exercises/gifts/tax-withholding/conversions) carry no
+        # insider signal. A row we cannot value (missing/zero/negative price or share
+        # count) is dropped ENTIRELY rather than counted at zero. Two reasons:
+        #
+        # 1. COHERENCE. Counting an unvalued row lets `sell_count` describe transactions
+        #    deliberately excluded from `net_value_6m`, and pollutes `recent` — which
+        #    feeds the research.insider_detail context line — with value=0 rows. The
+        #    emitted record now describes exactly the trades it valued.
+        # 2. THE FABRICATED-ZERO CLOBBER. An all-unvaluable batch used to emit
+        #    net_value_6m == 0, and `_is_present(0)` is True, so that fabricated zero won
+        #    _merge_insider wholesale (fmp precedes edgar) and discarded EDGAR's real
+        #    aggregate. Such a batch now abstains, and EDGAR wins.
+        #
+        # SCOPE — do not over-read this. It does NOT stop FMP outranking EDGAR when FMP
+        # can value only a little: 1 priced $1 buy + 59 unpriced sales still emits
+        # net_value_6m == +1.0 and still wins the merge over EDGAR's −$4M. That figure is
+        # now at least HONEST (it describes exactly one valued trade, with sell_count 0
+        # rather than 59) instead of incoherent, and the scored net is unchanged either
+        # way — but "should fmp outrank edgar for the insider txn group at all?" is a
+        # separate, already-logged design question (TODO.md 2026-08-04), deliberately not
+        # smuggled in here as a coverage heuristic.
+        #
+        # `> 0` (not `is not None`) is load-bearing: tx_value is shares*price with no
+        # sign handling, so a negative share count would otherwise net WITH the buy/sell
+        # sign applied — making a sale ADD to net insider buying.
+        #
+        # Filtering before the cap also stops a burst of RSU vesting from starving real
+        # purchases out of it (59 award rows + 5 purchases => 4 purchases silently lost).
+        trades = [(tx, c, v) for tx in insiders
+                  if (c := classify_tx(tx)) != "other" and (v := tx_value(tx)) > 0]
         if trades:
             net = buys = sells = 0
             recent = []
-            found = False
-            for tx, classification in trades[:60]:
-                val = tx_value(tx)
-                # A row with no usable price cannot make the section "present" on its
-                # own: `_is_present(0)` is True, so an all-unpriced batch would emit a
-                # FABRICATED net_value_6m == 0 that wins _merge_insider wholesale and
-                # discards EDGAR's real aggregate — the same clobber `found` exists to
-                # stop, one step further in. Such a row still counts toward buy/sell
-                # counts (a count needs no price); it just can't vouch for the section.
-                if val > 0:
-                    found = True
+            for tx, classification, val in trades[:_MAX_TRADES]:
                 buy = classification == "buy"
                 net += val if buy else -val
                 buys += buy
@@ -187,8 +219,9 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
                         role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
                         shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
                     ))
-            if found:
-                snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
+            # No separate presence flag: every kept row is a valued trade, so a
+            # non-empty `trades` IS the abstain guard.
+            snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
     return snap
 
 
