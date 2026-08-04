@@ -47,16 +47,15 @@ Unicode — bare page numbers bled inline in CRWD's 10-K, a `|`-delimited page h
 `markdown=True` 10-Q MD&A. Filer/template-dependent (absent in JPM/AXON/BMI/CRWD `tenq_mda`).
 Folding cannot fix these; they need extraction-side cleanup.
 
-**Status:** OPEN — the six fixes are written and CI-green (ruff clean, 2315 pass) but
-**UNCOMMITTED**: they are working-tree changes on local branch `feat/deep-brief-improvements`,
-which is **0 commits ahead of `main`**. Nothing is committed, merged, pushed, or deployed;
-`/opt/shortlist` is untouched and still runs the old code. Next session must commit + PR
-before anything else, or the work is one `git checkout` from gone. After merge, deploy per
-CLAUDE.md (`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh`
-— never run the installer *from* `/opt/shortlist`) and verify with
+**Status:** OPEN — raised as **PR #161** (`a98fbe2`, branch
+`feat/deep-brief-improvements`); ruff clean, 2318 tests pass locally. **NOT merged and NOT
+deployed** — `/opt/shortlist` still runs the old code. After merge, deploy per CLAUDE.md
+(`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh` — never
+run the installer *from* `/opt/shortlist`, that is a silent no-op) and verify with
 `git -C /opt/shortlist log --oneline -1` plus a grep for `_FOLD`. Existing briefs are cached
-by accession and will NOT pick up the new prompt sections without `--refresh`. The
-`worth-building` / `needs-measurement` items above are deliberately unstarted.
+by accession and will NOT pick up the new prompt sections without `--refresh` — re-run 2-3
+tickers to see them. The `worth-building` / `needs-measurement` items above are deliberately
+unstarted.
 
 ---
 
