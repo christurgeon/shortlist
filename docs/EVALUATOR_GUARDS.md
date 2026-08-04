@@ -1,7 +1,8 @@
 # Making the evaluator's guards unbypassable — design (revision 2)
 
-**Status:** reviewed adversarially 2026-08-04 → **SIGN OFF WITH CHANGES**; revised accordingly.
-Pending operator go-ahead to implement.
+**Status:** IMPLEMENTED 2026-08-04. Suite **2293 green**, ruff clean.
+`642e264` (C1′+C2″) · `fda7c15` (C4′) · `2afa0a9` (C5) · this commit (C3′ core).
+**C2′ was CUT** as disproportionate — see §4. **C3′ shipped as its load-bearing slice** — §5.
 **Scope:** `scout/validate.py`, its `daily.py` call site, one `report/sections.py` render fix.
 No verdict-rule changes.
 
@@ -113,6 +114,16 @@ in a floor-passing measurement and a floor-failing event list. Derive the floor 
 splits the "single choke point" invariant that helper's docstring asserts.
 
 ## 5. C3′ — reuse the existing reason taxonomy (replaces C3)
+
+> **SHIPPED AS A SLICE.** The load-bearing half landed: `MeasuredEvent.no_price_series` uses
+> the CORRECTED predicate (`hist is None or not hist.dates`), `CohortMeasurement` carries
+> `n_no_price_series`, and the floor note now names the split — *"of the N unmeasured, X had
+> NO price series (COVERAGE, nothing cancels it) and Y had a series but no return at the
+> horizon (attrition). A coverage shortfall does NOT inherit attrition's double-sort
+> exemption."* That is the sentence whose absence let the 12pp claim through.
+> **Deferred:** extracting `backfill.py`'s full eight-reason classifier into a shared leaf and
+> reporting per-bucket reason counts. Reporting-only refinement; the mechanical guard is
+> already carried by the per-bucket floor (§3).
 
 Revision 1's `absent_series = (hist is None)` predicate is **inverted**. Verified at
 `prices.py:178-196`: a genuinely delisted/unknown symbol gets a real `PriceHistory` with

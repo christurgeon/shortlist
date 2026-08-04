@@ -38,6 +38,13 @@ class MeasuredEvent:
     # constant `(1+ret)**(1/K)-1` rate (old persisted cohorts, hand-built test events).
     # See docs/audits/2026-07-26-funnel-composition-audit.md §4.
     monthly_rets: list[float] | None = None
+    # Appended last (positional back-compat). True when the ticker had NO usable price series
+    # at all -- `hist is None OR not hist.dates`. BOTH halves are load-bearing: a genuinely
+    # delisted/unknown symbol comes back as a real PriceHistory with EMPTY dates (Yahoo's
+    # definitive answer, deliberately day-cached -- backtest/prices.py), while `hist is None`
+    # means the fetch RAISED. Testing only `hist is None` would label true survivorship as
+    # attrition, the exact inversion this field exists to prevent.
+    no_price_series: bool = False
 
 
 @dataclass
@@ -51,6 +58,12 @@ class CohortMeasurement:
     # CohortMeasurements in tests are trusted, not re-derived from `events`).
     n_immature: int = 0        # events excluded from n_selected/measurable_fraction (H2)
     n_events: int = 0          # RAW count incl. immature -- full transparency
+    # Of the non-measurable events, how many had NO price series at all. This splits a
+    # COVERAGE failure from an ATTRITION failure, which the floor note previously conflated:
+    # it said "measurable fraction < floor", which reads as survivorship -- the failure the
+    # double-sort spread is claimed to survive -- so a coverage shortfall silently inherited
+    # attrition's exemption. That is how the 2026-08-03 12pp claim was published.
+    n_no_price_series: int = 0
 
     def measurable_fraction(self) -> float:
         return (self.n_measurable / self.n_selected) if self.n_selected else 0.0
@@ -187,12 +200,16 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
             strength=ev.get("strength"), gated=ev.get("gated"), composite=ev.get("composite"),
             immature=immature,
             monthly_rets=_monthly_path(hist, d, horizon_months) if ret is not None else None,
+            no_price_series=(hist is None or not hist.dates),
         ))
     n_immature = sum(1 for m in measured if m.immature)
     n_meas = sum(1 for m in measured if m.measurable)
+    n_no_series = sum(1 for m in measured
+                      if m.no_price_series and not m.measurable and not m.immature)
     return CohortMeasurement(signal=signal, n_selected=len(measured) - n_immature,
                              n_measurable=n_meas, events=measured,
-                             n_immature=n_immature, n_events=len(measured))
+                             n_immature=n_immature, n_events=len(measured),
+                             n_no_price_series=n_no_series)
 
 
 def _month_iso(d: date) -> str:
@@ -710,7 +727,13 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     verdict = "HOLD"
     if pooled_below:
         verdict = "INSUFFICIENT"
-        notes.append(f"measurable fraction {frac:.2f} < floor")
+        n_gap = measurement.n_selected - measurement.n_measurable
+        n_cov = getattr(measurement, "n_no_price_series", 0)
+        notes.append(
+            f"measurable fraction {frac:.2f} < floor — of the {n_gap} unmeasured, "
+            f"{n_cov} had NO price series (COVERAGE, nothing cancels it) and "
+            f"{n_gap - n_cov} had a series but no return at the horizon (attrition). "
+            f"A coverage shortfall does NOT inherit attrition's double-sort exemption.")
     elif bad_vintages:
         verdict = "INSUFFICIENT"
         detail = ", ".join(f"{yr}: {vfrac:.2f} ({n_meas}/{n_sel})" for yr, n_meas, n_sel, vfrac in bad_vintages)

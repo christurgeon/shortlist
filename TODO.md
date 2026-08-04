@@ -6,6 +6,44 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Evaluator guards made unbypassable — SHIPPED (2026-08-04)
+
+Post-mortem fix for the retracted 12pp claim. Design + adversarial review:
+**`docs/EVALUATOR_GUARDS.md`** (revision 2, SIGN OFF WITH CHANGES). Suite 2293 green.
+
+**A guard already existed and fired correctly; the number was quoted anyway.** Four
+mechanical causes, all now closed:
+1. **Per-bucket floor suppresses the SPREAD** (`642e264`). The first draft blanked
+   `high_frac`/`low_frac` — rejected in review as inverted: it deletes the diagnostic and
+   keeps the statistic whose validity that diagnostic tests. Now the fractions are never
+   suppressed (a measurable fraction is not biased by attrition, it IS the measurement of it)
+   and the registered `min_measurable_frac` applied per bucket suppresses the spread instead.
+   Verified: `8k-neg` (high 0.527 / low 0.646) → `spread_ci` is now `None`.
+   Also fixed a denominator bug shipped 2026-08-03 (`_frac` counted immature while the floor
+   is mature-only) — corrected gaps are 0.1–0.7pp, not ≤3.3pp; the audit is amended.
+2. **`level_suppressed` no longer hard-codes `False`** — it was asserting a decision nobody
+   had made, so an ad-hoc caller got a dict claiming it was cleared.
+3. **Closed-form Monte-Carlo error** on bootstrap intervals (`fda7c15`), so a width
+   comparison inside its own noise is visible. The split-half estimator drafted first is
+   biased ~1.6× and falsely reassures ~1/3 of the time.
+4. **`validate --as-of`** (`2afa0a9`) — the retracted number came from an ad-hoc script that
+   existed *because* validate hardcoded `date.today()`. Includes the safety obligation it
+   creates: replay artifacts are labelled and **refused by the digest**, since a replay's
+   `as_of` is the pinned date and the staleness gate cannot catch it.
+5. **Coverage vs attrition split** in the floor note, with the corrected predicate
+   (`hist is None or not hist.dates` — a dead symbol returns an EMPTY series, not `None`).
+
+**CUT as disproportionate:** the reviewer's full C2 (mandatory `prereg`, 13 call sites).
+Production always routes through `attach_double_sort`, and `--as-of` removes most of the
+reason ad-hoc callers exist.
+
+**Open:** extract `backfill.py`'s eight-reason classifier into a shared leaf + per-bucket
+reason counts (reporting-only; the mechanical guard is already in).
+
+**Status:** SHIPPED on `main`, not deployed (`/opt/shortlist` is at `92f3f6d`).
+
+---
+
 ## TECH-DEBT.md retired — 1 open item fixed, 3 inherited here (2026-08-04)
 
 `TECH-DEBT.md` (the 2026-06-14 fleet review's deferral list) is **deleted**. Of its **13**
