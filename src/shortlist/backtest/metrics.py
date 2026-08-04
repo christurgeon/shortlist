@@ -126,6 +126,14 @@ def quantile_spread(pairs: list[tuple[float, float]], n_buckets: int = 5) -> Opt
         lo = int(round(b * size))
         hi = int(round((b + 1) * size)) if b < nb - 1 else len(clean)
         rets = [f for _, f in clean[lo:hi]]
+        # The `else 0.0` is UNREACHABLE, not a fabricated imputation — verified
+        # 2026-06-26, re-verified 2026-08-04 (incl. a brute-force search for an empty
+        # bucket). `len(clean) < 4` returns early above, and the collapse loop exits
+        # with either `nb == 2` or `len(clean) // nb >= 2`, so
+        # `size >= 2` always; each bucket then spans `round((b+1)*size) - round(b*size)
+        # >= size - 1 >= 1` rows (the last runs to `len(clean)`). Kept as a belt-and-
+        # suspenders guard — removing it changes no output. Do not "fix" it into an
+        # abstention on the theory that an empty bucket silently scores 0.
         bucket_means.append(mean(rets) if rets else 0.0)
     spread = bucket_means[-1] - bucket_means[0]
     monotonic = all(bucket_means[i] <= bucket_means[i + 1] for i in range(nb - 1)) or \

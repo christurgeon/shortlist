@@ -151,6 +151,22 @@ class Price:
     ma200: Optional[float] = None
     year_high: Optional[float] = None
     year_low: Optional[float] = None
+    # The four ret_* horizons feed NO SCORING LEG — set by FMP (sources/fmp.py) and mock,
+    # plus Yahoo for ret_6m only; the bridge, scorer and every backtest source ignore them
+    # (`momentum_score` is `price_vs_200dma` + `rel_strength_6m`). Do not wire a leg to
+    # them assuming they are populated everywhere; only `rel_strength_6m` is load-bearing.
+    #
+    # They are NOT inert, though, and deleting them is NOT cosmetic: they are absent from
+    # _NON_SIGNAL_FIELDS, so `coverage()`/`missing()` count all four in the Price
+    # denominator (4 of 13). Removing them would shift every snapshot's coverage ratio and
+    # therefore the accumulate.py GATED / THIN / CAPTURED classification — measured
+    # 2026-08-04 against the 1,432-snapshot store: +0.016 mean coverage, flipping
+    # THIN/CAPTURED for 233 snapshots (16%). `ret_6m` is populated in ~700 of them, so it
+    # is a filled numerator entry, not denominator padding.
+    #
+    # That, and NOT store back-compat, is why they stay: `from_dict` drops unknown keys by
+    # design, so old persisted snapshots would read back fine. If you want them gone, move
+    # them to _NON_SIGNAL_FIELDS deliberately and re-baseline coverage — never silently delete.
     ret_1m: Optional[float] = None
     ret_3m: Optional[float] = None
     ret_6m: Optional[float] = None
