@@ -388,7 +388,8 @@ def information_ratio(ctp_rows, ff3, min_obs: int = 6):
 def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
                 min_bucket_events: int, min_independent_blocks: int,
                 weighting: str = "equal", n_boot: int = 2000,
-                seed: int = 12345) -> dict | None:
+                seed: int = 12345,
+                min_measurable_frac: float | None = None) -> dict | None:
     """High-vs-low composite double-sort (design B1 + v2 resolution 2): does the scorer's
     composite sort winners INSIDE a cohort? Gate-agnostic (tests the composite's ORDERING
     power, not `gated`) — split events with a non-None composite at the median (ties -> the
@@ -442,34 +443,72 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
     high_ir = information_ratio(ctp_high, ff3)
     low_ir = information_ratio(ctp_low, ff3)
 
-    # Per-bucket measurable fractions. These must be computed over ALL composite-defined
-    # events -- `eligible` already filtered on `m.measurable`, so splitting THAT would report
-    # a tautological 1.0/1.0 and the disclosure would be worthless. Partitioning `measured`
-    # by the same median is what makes the "attrition cancels in the spread" assumption
-    # checkable rather than asserted (docs/EVALUATOR_CORRECTNESS.md §3.4).
-    def _frac(side_pred):
-        pool = [m for m in measured if m.composite is not None and side_pred(m.composite)]
+    # Per-bucket measurable fractions, computed over ALL composite-defined events -- NOT over
+    # `eligible`, which already filtered on `m.measurable` and would therefore report a
+    # tautological 1.0/1.0. `immature` events are excluded, matching
+    # `CohortMeasurement.measurable_fraction()`'s mature-only (H2) denominator: without that
+    # filter these are OLD-STYLE POOLED fractions and are not comparable to the floor they are
+    # about to be tested against, to the pooled fraction the digest prints, or to the vintage
+    # buckets. That mismatch is the trap `backfill.py`'s `fraction_note` already exists to
+    # prevent; it shipped here on 2026-08-03 and is fixed now.
+    def _bucket(side_pred):
+        pool = [m for m in measured
+                if m.composite is not None and not m.immature and side_pred(m.composite)]
         if not pool:
-            return None
-        return sum(1 for m in pool if m.measurable) / len(pool)
+            return None, 0
+        return sum(1 for m in pool if m.measurable) / len(pool), len(pool)
 
-    return {
+    high_frac, n_high_pool = _bucket(lambda c: c >= median)
+    low_frac, n_low_pool = _bucket(lambda c: c < median)
+
+    # Per-bucket floor. The spread's whole claim to survive cohort-level suppression is that
+    # it differences two buckets measured THE SAME WAY, so a common attrition bias cancels.
+    # When a bucket falls below the floor the operator already pre-registered, that premise is
+    # untestable and the SPREAD -- not the fractions -- is what must stop being quotable.
+    #
+    # The fractions are never suppressed: `_suppress_level` exists because attrition biases
+    # RETURNS, and a measurable fraction is not biased by attrition, it IS the measurement of
+    # it. (The cohort's pooled fraction is likewise printed unsuppressed in the digest.)
+    # Blanking the diagnostic while keeping the statistic whose validity it tests was the
+    # first draft of this change and was rejected in review.
+    #
+    # `min_measurable_frac` is the ALREADY-REGISTERED parameter applied to a new population --
+    # the same adjudication made for the ds floor -- NOT a post-hoc `|high-low|` tolerance,
+    # which would need its own pre-registration.
+    bucket_below_floor = None
+    if min_measurable_frac is not None:
+        bucket_below_floor = any(
+            f is not None and f < min_measurable_frac for f in (high_frac, low_frac))
+
+    out = {
         "n_high": len(high),
         "n_low": len(low),
+        "n_high_pool": n_high_pool,      # denominators of high_frac/low_frac -- a DIFFERENT
+        "n_low_pool": n_low_pool,        # population from n_high/n_low (measurable-only)
         "months": len(spread_rows),
         "effective_blocks": eff,
         "spread_alpha_monthly": alpha,
         "spread_ci": ci,
         "spread_ci_method": "issuer_bootstrap" if ci is not None else "unavailable",
-        "level_suppressed": False,
+        # None = NOT ADJUDICATED. Previously hard-coded False, which asserted a decision no
+        # one had made: a caller that never reached `attach_double_sort` got a dict claiming
+        # it had been cleared. An unadjudicated result must look unadjudicated.
+        "level_suppressed": None,
         "z0": z0,
         "n_boot_fitted": n_fit,
         "n_boot_discarded": n_discarded,
         "high_ir": high_ir,
         "low_ir": low_ir,
-        "high_frac": _frac(lambda c: c >= median),
-        "low_frac": _frac(lambda c: c < median),
+        "high_frac": high_frac,
+        "low_frac": low_frac,
     }
+    if bucket_below_floor is not None:
+        out["bucket_below_floor"] = bucket_below_floor
+        out["level_suppressed"] = False
+        if bucket_below_floor:
+            out.update(spread_alpha_monthly=None, spread_ci=None,
+                       spread_ci_method="suppressed_bucket_floor", level_suppressed=True)
+    return out
 
 
 @dataclass
