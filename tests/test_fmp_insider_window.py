@@ -175,3 +175,17 @@ def test_all_unvaluable_rows_abstain_even_when_codes_are_real():
         _tx(7, "S-Sale", 1000, None),
     ]}
     assert _normalize_fmp("TEST", raw).insider is None
+
+
+def test_one_malformed_row_never_costs_the_whole_fmp_snapshot():
+    # End-to-end companion to test_tx_value_is_total_and_never_raises_on_junk: a junk
+    # row must be dropped as unvaluable, NOT propagate out of _normalize_fmp (which the
+    # collector would turn into an errored-empty SourceResult for all of FMP).
+    raw = {"insider": [
+        _tx(5, "P-Purchase", 100, 10.0),        # a real +1000 buy
+        _tx(6, "S-Sale", "not-a-number", 10.0),  # junk: dropped, must not raise
+    ]}
+    ins = _normalize_fmp("TEST", raw).insider    # must not raise
+    assert ins is not None
+    assert ins.net_value_6m == 1000.0
+    assert ins.buy_count == 1 and ins.sell_count == 0

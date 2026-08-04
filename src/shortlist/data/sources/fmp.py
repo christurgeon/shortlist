@@ -37,6 +37,7 @@ from .base import _fetch_sections, _KeyedHttpSource
 # data on a paid tier. Truncation past this cap is currently silent.
 _MAX_TRADES = 60
 
+
 class FMPSource(_KeyedHttpSource):
     name = "fmp"
     # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
