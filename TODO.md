@@ -63,9 +63,9 @@ the sentence.
    to all six files would reset all six content-registration clocks under the new §1.3 rule.
    Reversible choice, recorded rather than silent.
 
-**Status:** MERGED to `main` (fast-forward, 8 commits, `f798149`) on 2026-08-03; branch
-retained. **NOT deployed** — `/opt/shortlist` is still at `f0dd2cd` and is now two features
-behind (#157 EDGAR companyconcept + this). Deploying is safe but not required: `validate` is
+**Status:** MERGED to `main` and **PUSHED** to `origin/main` (`718dc37`) on 2026-08-04.
+**NOT deployed** — `/opt/shortlist` is at `92f3f6d` — #157 is deployed and live, but this
+pack is not (it lands with the next `git pull` there). Deploying is safe but not required: `validate` is
 an operator-run CLI, no systemd unit invokes it, and the nightly digest only reads a static
 `validate-latest.json`. Item 1 is the one that matters — a committed audit currently
 overstates its evidence.
@@ -93,9 +93,9 @@ audit — this entry is belt-and-braces, not the only guard.
 symbols grep-verified in the deployed tree). The audit now records the date — **and the
 off-by-one this entry existed to catch**: `shortlist-accumulate.timer` runs 21:30 UTC, so the
 2026-08-03 snapshot predates the deploy by ~80 min and still reads `diluted_shares=[]`
-(verified on CMCSA/HON, not inferred). **The field-presence break is 2026-08-04.** Residual:
-the bot needs one `systemctl try-restart shortlist-bot.service` — the timers pick the code up
-on their own, but the long-running bot does not.
+(verified on CMCSA/HON, not inferred). **The field-presence break is 2026-08-04.** Bot restarted 2026-08-04 02:35:01 UTC
+(26s SIGTERM drain for the in-flight long-poll, inside the 50s stop timeout), so the live bot
+is running #157 rather than stale modules. **Fully deployed and live.**
 
 ---
 
