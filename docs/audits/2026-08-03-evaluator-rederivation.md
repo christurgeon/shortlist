@@ -129,6 +129,20 @@ bucket lost names. Corrected picture, restricted to cohorts with ≥95% coverage
 | 8k | 99.6% | 0.964 | 0.954 | 1.0pp |
 | buyback | 99.7% | 0.971 | 0.970 | 0.1pp |
 
+> **CORRECTED 2026-08-04.** The fractions above use a POOLED denominator (immature events
+> counted as unmeasurable), while the floor they are compared against is MATURE-ONLY (the H2
+> fix) — they were not comparable. Recomputed mature-only, the gaps are **tighter**, and the
+> conclusion is unchanged and strengthened:
+>
+> | cohort | high_frac | low_frac | gap |
+> |---|---|---|---|
+> | 13d | 0.938 | 0.942 | **0.4pp** |
+> | 8k | 0.961 | 0.954 | **0.7pp** |
+> | buyback | 0.971 | 0.970 | **0.1pp** |
+>
+> Fixed in `docs/EVALUATOR_GUARDS.md` §3. `8k-neg`'s spread is now suppressed outright by the
+> per-bucket floor (0.527 / 0.646 against a registered 0.90), so it can no longer be quoted.
+
 **On every well-covered cohort the two buckets are measured alike (≤3.3pp).** That *supports*
 the cancellation assumption rather than undermining it — the opposite of what was published.
 The disclosure is still worth having (it is what made this checkable at all, and it is what

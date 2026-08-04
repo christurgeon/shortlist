@@ -38,6 +38,13 @@ class MeasuredEvent:
     # constant `(1+ret)**(1/K)-1` rate (old persisted cohorts, hand-built test events).
     # See docs/audits/2026-07-26-funnel-composition-audit.md §4.
     monthly_rets: list[float] | None = None
+    # Appended last (positional back-compat). True when the ticker had NO usable price series
+    # at all -- `hist is None OR not hist.dates`. BOTH halves are load-bearing: a genuinely
+    # delisted/unknown symbol comes back as a real PriceHistory with EMPTY dates (Yahoo's
+    # definitive answer, deliberately day-cached -- backtest/prices.py), while `hist is None`
+    # means the fetch RAISED. Testing only `hist is None` would label true survivorship as
+    # attrition, the exact inversion this field exists to prevent.
+    no_price_series: bool = False
 
 
 @dataclass
@@ -51,6 +58,12 @@ class CohortMeasurement:
     # CohortMeasurements in tests are trusted, not re-derived from `events`).
     n_immature: int = 0        # events excluded from n_selected/measurable_fraction (H2)
     n_events: int = 0          # RAW count incl. immature -- full transparency
+    # Of the non-measurable events, how many had NO price series at all. This splits a
+    # COVERAGE failure from an ATTRITION failure, which the floor note previously conflated:
+    # it said "measurable fraction < floor", which reads as survivorship -- the failure the
+    # double-sort spread is claimed to survive -- so a coverage shortfall silently inherited
+    # attrition's exemption. That is how the 2026-08-03 12pp claim was published.
+    n_no_price_series: int = 0
 
     def measurable_fraction(self) -> float:
         return (self.n_measurable / self.n_selected) if self.n_selected else 0.0
@@ -187,12 +200,16 @@ def measure_cohort(events: list[dict], signal: str, horizon_months: int,
             strength=ev.get("strength"), gated=ev.get("gated"), composite=ev.get("composite"),
             immature=immature,
             monthly_rets=_monthly_path(hist, d, horizon_months) if ret is not None else None,
+            no_price_series=(hist is None or not hist.dates),
         ))
     n_immature = sum(1 for m in measured if m.immature)
     n_meas = sum(1 for m in measured if m.measurable)
+    n_no_series = sum(1 for m in measured
+                      if m.no_price_series and not m.measurable and not m.immature)
     return CohortMeasurement(signal=signal, n_selected=len(measured) - n_immature,
                              n_measurable=n_meas, events=measured,
-                             n_immature=n_immature, n_events=len(measured))
+                             n_immature=n_immature, n_events=len(measured),
+                             n_no_price_series=n_no_series)
 
 
 def _month_iso(d: date) -> str:
@@ -388,7 +405,8 @@ def information_ratio(ctp_rows, ff3, min_obs: int = 6):
 def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
                 min_bucket_events: int, min_independent_blocks: int,
                 weighting: str = "equal", n_boot: int = 2000,
-                seed: int = 12345) -> dict | None:
+                seed: int = 12345,
+                min_measurable_frac: float | None = None) -> dict | None:
     """High-vs-low composite double-sort (design B1 + v2 resolution 2): does the scorer's
     composite sort winners INSIDE a cohort? Gate-agnostic (tests the composite's ORDERING
     power, not `gated`) — split events with a non-None composite at the median (ties -> the
@@ -436,40 +454,81 @@ def double_sort(measured: list[MeasuredEvent], k_months: int, ff3: dict, *,
     # which is exactly where the month bootstrap's interval is most artificially tight, so
     # falling back would substitute the known-too-tight estimator precisely where the data is
     # weakest. Abstain instead, as `ols`/`_monthly_path`/`measure_cohort` all do.
-    ci, z0, n_fit, n_discarded = event_bootstrap_spread_alpha(
+    ci, z0, n_fit, n_discarded, ci_mc_error = event_bootstrap_spread_alpha(
         eligible, ff3, k_months, min_bucket_events=min_bucket_events,
         n_boot=n_boot, seed=seed, weighting=weighting)
     high_ir = information_ratio(ctp_high, ff3)
     low_ir = information_ratio(ctp_low, ff3)
 
-    # Per-bucket measurable fractions. These must be computed over ALL composite-defined
-    # events -- `eligible` already filtered on `m.measurable`, so splitting THAT would report
-    # a tautological 1.0/1.0 and the disclosure would be worthless. Partitioning `measured`
-    # by the same median is what makes the "attrition cancels in the spread" assumption
-    # checkable rather than asserted (docs/EVALUATOR_CORRECTNESS.md §3.4).
-    def _frac(side_pred):
-        pool = [m for m in measured if m.composite is not None and side_pred(m.composite)]
+    # Per-bucket measurable fractions, computed over ALL composite-defined events -- NOT over
+    # `eligible`, which already filtered on `m.measurable` and would therefore report a
+    # tautological 1.0/1.0. `immature` events are excluded, matching
+    # `CohortMeasurement.measurable_fraction()`'s mature-only (H2) denominator: without that
+    # filter these are OLD-STYLE POOLED fractions and are not comparable to the floor they are
+    # about to be tested against, to the pooled fraction the digest prints, or to the vintage
+    # buckets. That mismatch is the trap `backfill.py`'s `fraction_note` already exists to
+    # prevent; it shipped here on 2026-08-03 and is fixed now.
+    def _bucket(side_pred):
+        pool = [m for m in measured
+                if m.composite is not None and not m.immature and side_pred(m.composite)]
         if not pool:
-            return None
-        return sum(1 for m in pool if m.measurable) / len(pool)
+            return None, 0
+        return sum(1 for m in pool if m.measurable) / len(pool), len(pool)
 
-    return {
+    high_frac, n_high_pool = _bucket(lambda c: c >= median)
+    low_frac, n_low_pool = _bucket(lambda c: c < median)
+
+    # Per-bucket floor. The spread's whole claim to survive cohort-level suppression is that
+    # it differences two buckets measured THE SAME WAY, so a common attrition bias cancels.
+    # When a bucket falls below the floor the operator already pre-registered, that premise is
+    # untestable and the SPREAD -- not the fractions -- is what must stop being quotable.
+    #
+    # The fractions are never suppressed: `_suppress_level` exists because attrition biases
+    # RETURNS, and a measurable fraction is not biased by attrition, it IS the measurement of
+    # it. (The cohort's pooled fraction is likewise printed unsuppressed in the digest.)
+    # Blanking the diagnostic while keeping the statistic whose validity it tests was the
+    # first draft of this change and was rejected in review.
+    #
+    # `min_measurable_frac` is the ALREADY-REGISTERED parameter applied to a new population --
+    # the same adjudication made for the ds floor -- NOT a post-hoc `|high-low|` tolerance,
+    # which would need its own pre-registration.
+    bucket_below_floor = None
+    if min_measurable_frac is not None:
+        bucket_below_floor = any(
+            f is not None and f < min_measurable_frac for f in (high_frac, low_frac))
+
+    out = {
         "n_high": len(high),
         "n_low": len(low),
+        "n_high_pool": n_high_pool,      # denominators of high_frac/low_frac -- a DIFFERENT
+        "n_low_pool": n_low_pool,        # population from n_high/n_low (measurable-only)
         "months": len(spread_rows),
         "effective_blocks": eff,
         "spread_alpha_monthly": alpha,
         "spread_ci": ci,
         "spread_ci_method": "issuer_bootstrap" if ci is not None else "unavailable",
-        "level_suppressed": False,
+        # None = NOT ADJUDICATED. Previously hard-coded False, which asserted a decision no
+        # one had made: a caller that never reached `attach_double_sort` got a dict claiming
+        # it had been cleared. An unadjudicated result must look unadjudicated.
+        "level_suppressed": None,
         "z0": z0,
         "n_boot_fitted": n_fit,
         "n_boot_discarded": n_discarded,
+        # Monte-Carlo SE of the interval endpoints. A difference between two intervals that is
+        # within this is not evidence -- the 2026-08-03 B=60 comparison was exactly that.
+        "ci_mc_error": ci_mc_error,
         "high_ir": high_ir,
         "low_ir": low_ir,
-        "high_frac": _frac(lambda c: c >= median),
-        "low_frac": _frac(lambda c: c < median),
+        "high_frac": high_frac,
+        "low_frac": low_frac,
     }
+    if bucket_below_floor is not None:
+        out["bucket_below_floor"] = bucket_below_floor
+        out["level_suppressed"] = False
+        if bucket_below_floor:
+            out.update(spread_alpha_monthly=None, spread_ci=None,
+                       spread_ci_method="suppressed_bucket_floor", level_suppressed=True)
+    return out
 
 
 @dataclass
@@ -668,7 +727,13 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     verdict = "HOLD"
     if pooled_below:
         verdict = "INSUFFICIENT"
-        notes.append(f"measurable fraction {frac:.2f} < floor")
+        n_gap = measurement.n_selected - measurement.n_measurable
+        n_cov = getattr(measurement, "n_no_price_series", 0)
+        notes.append(
+            f"measurable fraction {frac:.2f} < floor — of the {n_gap} unmeasured, "
+            f"{n_cov} had NO price series (COVERAGE, nothing cancels it) and "
+            f"{n_gap - n_cov} had a series but no return at the horizon (attrition). "
+            f"A coverage shortfall does NOT inherit attrition's double-sort exemption.")
     elif bad_vintages:
         verdict = "INSUFFICIENT"
         detail = ", ".join(f"{yr}: {vfrac:.2f} ({n_meas}/{n_sel})" for yr, n_meas, n_sel, vfrac in bad_vintages)
@@ -789,6 +854,40 @@ def _resample_by_issuer(live: list[MeasuredEvent], rand) -> list[MeasuredEvent]:
     return draw
 
 
+def _quantile_se(alphas: list[float], i: int, p: float) -> float | None:
+    """Monte-Carlo standard error of the p-th sample quantile: sd(q̂_p) ≈ √(p(1−p)/B) / f(q_p),
+    with the density f estimated by a finite difference over the already-sorted replicates.
+
+    Deterministic and free — it reads the array the bootstrap just produced. The alternative
+    considered (splitting the replicates in half and reporting the endpoint discrepancy) is
+    BIASED: two independent halves each carry ~√2 the SD of the full sample, so the difference
+    has SD ≈ 2·sd and E|diff| ≈ 1.6·sd, with a coefficient of variation near 0.76 — it would
+    return a reassuringly small number roughly one time in three. A noise diagnostic that
+    falsely reassures is worse than none in a codebase whose failure mode is quoting numbers
+    that looked safe. It would also have been the most lattice-exposed partition of the LCG.
+    """
+    b = len(alphas)
+    if b < 10 or not (0.0 < p < 1.0):
+        return None
+    h = max(1, int(0.05 * b))
+    lo_i, hi_i = max(0, i - h), min(b - 1, i + h)
+    span = alphas[hi_i] - alphas[lo_i]
+    if span <= 0:
+        return None
+    density = (hi_i - lo_i) / (b * span)          # f(q_p) ≈ Δ(rank fraction) / Δ(value)
+    if density <= 0:
+        return None
+    return math.sqrt(p * (1.0 - p) / b) / density
+
+
+def _max_se(*errs):
+    """Worst endpoint SE, abstaining to None when no endpoint could be estimated.
+    `_quantile_se` returns None on a degenerate replicate set, so this must not `max()` over
+    Nones -- reporting 0.0 there would claim a precision that was never measured."""
+    vals = [e for e in errs if e is not None]
+    return max(vals) if vals else None
+
+
 def _bias_corrected_interval(alphas: list[float], theta_hat: float | None,
                              lo: float = 0.05, hi: float = 0.95):
     """(interval, z0) — bias-corrected percentile interval.
@@ -805,20 +904,23 @@ def _bias_corrected_interval(alphas: list[float], theta_hat: float | None,
     """
     b = len(alphas)
     naive = (alphas[int(lo * b)], alphas[int(hi * b)])
+    naive_err = _max_se(_quantile_se(alphas, int(lo * b), lo),
+                        _quantile_se(alphas, int(hi * b), hi))
     if theta_hat is None:
-        return naive, 0.0
+        return naive, 0.0, naive_err
     n_less = sum(1 for a in alphas if a < theta_hat)
     if n_less == 0 or n_less == b:
-        return naive, 0.0
+        return naive, 0.0, naive_err
     nd = NormalDist()
     z0 = nd.inv_cdf(n_less / b)
-    i_lo = int(nd.cdf(2 * z0 + nd.inv_cdf(lo)) * b)
-    i_hi = int(nd.cdf(2 * z0 + nd.inv_cdf(hi)) * b)
-    i_lo = min(max(i_lo, 0), b - 1)
-    i_hi = min(max(i_hi, 0), b - 1)
+    p_lo = nd.cdf(2 * z0 + nd.inv_cdf(lo))
+    p_hi = nd.cdf(2 * z0 + nd.inv_cdf(hi))
+    i_lo = min(max(int(p_lo * b), 0), b - 1)
+    i_hi = min(max(int(p_hi * b), 0), b - 1)
     if i_hi <= i_lo:
-        return naive, z0
-    return (alphas[i_lo], alphas[i_hi]), z0
+        return naive, z0, naive_err
+    err = _max_se(_quantile_se(alphas, i_lo, p_lo), _quantile_se(alphas, i_hi, p_hi))
+    return (alphas[i_lo], alphas[i_hi]), z0, err
 
 
 def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
@@ -856,7 +958,7 @@ def event_bootstrap_alpha(measured: list[MeasuredEvent], ff3, k_months: int,
     point, _betas = ff3_alpha(
         calendar_time_portfolio(live, k_months, weighting=weighting, month_span=span),
         ff3, min_obs=min_obs)
-    interval, _z0 = _bias_corrected_interval(alphas, point)
+    interval, _z0, _err = _bias_corrected_interval(alphas, point)
     return interval
 
 
@@ -883,7 +985,7 @@ def event_bootstrap_spread_alpha(eligible: list[MeasuredEvent], ff3, k_months: i
     """
     live = _live_events(eligible)
     if len(live) < min_obs or k_months <= 0:
-        return None, 0.0, 0, 0
+        return None, 0.0, 0, 0, None
     rand = _lcg(seed)
     span = (min(m.event_date for m in live), max(m.event_date for m in live))
 
@@ -908,12 +1010,12 @@ def event_bootstrap_spread_alpha(eligible: list[MeasuredEvent], ff3, k_months: i
         if a is not None:
             alphas.append(a)
     if len(alphas) < n_boot // 2:
-        return None, 0.0, len(alphas), discarded
+        return None, 0.0, len(alphas), discarded, None
     alphas.sort()
     base = _spread_rows(live)
     point = ff3_alpha(base, ff3, min_obs=min_obs)[0] if base else None
-    interval, z0 = _bias_corrected_interval(alphas, point)
-    return interval, z0, len(alphas), discarded
+    interval, z0, mc_err = _bias_corrected_interval(alphas, point)
+    return interval, z0, len(alphas), discarded, mc_err
 
 
 def stationary_block_bootstrap_alpha(ctp_rows, ff3, k_months: int,

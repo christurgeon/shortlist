@@ -408,3 +408,111 @@ def test_ds_floor_failure_blanks_absolute_legs_but_never_the_spread():
     assert v.double_sort["spread_alpha_monthly"] == ds["spread_alpha_monthly"]
     assert v.double_sort["spread_ci"] == ds["spread_ci"]
     assert any("double-sort" in n and "SUPPRESSED" in n for n in v.notes)
+
+
+# --- per-bucket floor + adjudication state (docs/EVALUATOR_GUARDS.md §3, §4) --------------
+
+def _cohort_with_unmeasurable_low(n_months=30, n_bad=25):
+    """Well-measured HIGH bucket, badly-measured LOW bucket — the asymmetry under which
+    'attrition cancels between two identically-measured buckets' stops holding."""
+    measured = _ranked_cohort(n_months)
+    for i in range(n_bad):
+        y, m = _month(i % n_months)
+        measured.append(MeasuredEvent("s", f"X{i}", date(y, m, 15), None, False, 0.9,
+                                      False, 20.0 + i * 0.01))
+    return measured
+
+
+def test_a_bucket_below_the_floor_suppresses_the_SPREAD_not_the_fractions():
+    """The fix that replaced the first draft. The spread's claim to survive cohort-level
+    suppression is that it differences two identically-measured buckets; when one bucket is
+    below the registered floor that premise is untestable, so the SPREAD stops being quotable.
+    The fractions are NOT suppressed — they are the measurement of the problem, not a
+    statistic biased by it."""
+    r = double_sort(_cohort_with_unmeasurable_low(), k_months=1, ff3=_ff3_for_months(30),
+                    min_bucket_events=10, min_independent_blocks=5, n_boot=100,
+                    min_measurable_frac=0.90)
+    assert r["bucket_below_floor"] is True
+    assert r["level_suppressed"] is True
+    assert r["spread_alpha_monthly"] is None
+    assert r["spread_ci"] is None
+    assert r["spread_ci_method"] == "suppressed_bucket_floor"
+    # the diagnostic survives, and shows WHY
+    assert r["high_frac"] == 1.0
+    assert r["low_frac"] < 0.90
+    assert r["n_high_pool"] > 0 and r["n_low_pool"] > 0
+
+
+def test_both_buckets_above_the_floor_leaves_the_spread_quotable():
+    r = double_sort(_ranked_cohort(30), k_months=1, ff3=_ff3_for_months(30),
+                    min_bucket_events=10, min_independent_blocks=5, n_boot=100,
+                    min_measurable_frac=0.90)
+    assert r["bucket_below_floor"] is False
+    assert r["level_suppressed"] is False
+    assert r["spread_alpha_monthly"] is not None
+
+
+def test_unadjudicated_result_does_not_claim_to_be_cleared():
+    """`level_suppressed` used to be hard-coded False, so a caller that never reached
+    `attach_double_sort` got a dict asserting a decision nobody had made — which is how an
+    ad-hoc replay script produced 'cleared'-looking numbers off a rejected cohort. Absent an
+    adjudication input, the field must read None, not False."""
+    r = double_sort(_ranked_cohort(30), k_months=1, ff3=_ff3_for_months(30),
+                    min_bucket_events=10, min_independent_blocks=5, n_boot=100)
+    assert r["level_suppressed"] is None
+    assert "bucket_below_floor" not in r
+
+
+def test_per_bucket_fractions_are_mature_only_like_the_floor_they_are_tested_against():
+    """`measurable_fraction()` divides by a MATURE-ONLY denominator (the H2 fix). If the
+    per-bucket fractions counted immature events they would be old-style pooled numbers,
+    incomparable to the floor, the digest's pooled fraction, and the vintage buckets — the
+    trap `backfill.py`'s `fraction_note` already exists to prevent."""
+    measured = _ranked_cohort(30)
+    for i in range(20):                      # immature: not yet resolvable, not a data gap
+        y, m = _month(i)
+        ev = MeasuredEvent("s", f"I{i}", date(y, m, 15), None, False, 0.9, False,
+                           80.0 + i * 0.01)
+        ev.immature = True
+        measured.append(ev)
+    r = double_sort(measured, k_months=1, ff3=_ff3_for_months(30), min_bucket_events=10,
+                    min_independent_blocks=5, n_boot=100)
+    assert r["high_frac"] == 1.0             # immature events excluded, not counted as lost
+    assert r["n_high_pool"] == 30
+
+
+def test_ci_mc_error_shrinks_as_one_over_sqrt_B():
+    """A deterministic scaling assertion, not a stochastic comparison. The split-half
+    estimator considered first would have made this a coin flip: it is biased ~1.6x and has a
+    coefficient of variation near 0.76, so it returns a reassuringly small value roughly one
+    time in three. The closed-form order-statistic SE scales exactly as 1/sqrt(B)."""
+    measured = _ranked_cohort(30)
+    ff3 = _ff3_for_months(30)
+    errs = {}
+    for b in (100, 400):
+        r = double_sort(measured, k_months=1, ff3=ff3, min_bucket_events=10,
+                        min_independent_blocks=5, n_boot=b)
+        errs[b] = r["ci_mc_error"]
+    assert errs[100] is not None and errs[400] is not None
+    assert errs[400] < errs[100]                     # 4x the replicates -> ~half the error
+
+
+def test_quantile_se_matches_the_closed_form_on_a_known_distribution():
+    """Direct check of the estimator, not just its scaling. For B draws from Uniform(0,1) the
+    density at the median is 1, so sd(q̂_0.5) = √(0.25/B). At B=2000 that is ~0.0112."""
+    from shortlist.scout.validate import _quantile_se
+
+    alphas = [i / 2000.0 for i in range(2000)]          # exactly Uniform(0,1) by construction
+    se = _quantile_se(alphas, 1000, 0.5)
+    expected = (0.25 / 2000) ** 0.5
+    assert se is not None
+    assert abs(se - expected) / expected < 0.10          # within 10% of the analytic value
+
+
+def test_quantile_se_abstains_on_a_degenerate_replicate_set():
+    """A constant replicate array has zero spread, so the density is undefined. Returning 0.0
+    would claim perfect precision; abstain instead."""
+    from shortlist.scout.validate import _quantile_se
+
+    assert _quantile_se([1.0] * 500, 250, 0.5) is None
+    assert _quantile_se([0.1, 0.2], 1, 0.5) is None      # below the minimum sample size

@@ -753,6 +753,15 @@ class _ValidationScoreboard:
 
     @staticmethod
     def _double_sort_line(ds: dict) -> str:
+        # A suppressed spread must render as "—", not as a number. Suppression blanks the
+        # JSON fields, but this renderer previously never read `level_suppressed`, so a
+        # guard that blanked `spread_ci` in the artifact could still have printed a stale
+        # value here had the keys diverged. Read it explicitly (docs/EVALUATOR_GUARDS.md §3).
+        if ds.get("level_suppressed") and ds.get("spread_alpha_monthly") is None:
+            return (f"double-sort: spread SUPPRESSED (a bucket is below the pre-registered "
+                    f"measurable-fraction floor: high={ds.get('high_frac')}, "
+                    f"low={ds.get('low_frac')}), "
+                    f"n={ds.get('n_high', '—')}/{ds.get('n_low', '—')}")
         alpha = ds.get("spread_alpha_monthly")
         alpha_s = f"{alpha:.4f}" if isinstance(alpha, (int, float)) else "—"
         ci = ds.get("spread_ci")   # asdict() turns the tuple into a list

@@ -355,3 +355,45 @@ def test_measure_cohort_populates_actual_monthly_returns():
     assert abs(e.monthly_rets[0] - (-0.5)) < 1e-9
     assert abs(e.monthly_rets[1] - 0.0) < 1e-9
     assert abs(e.monthly_rets[2] - 0.0) < 1e-9
+
+
+# --- coverage vs attrition split (docs/EVALUATOR_GUARDS.md §5) ----------------------------
+
+def test_a_dead_symbol_is_coverage_not_attrition():
+    """The predicate must be `hist is None OR not hist.dates`, never `hist is None` alone.
+
+    A genuinely delisted/unknown symbol comes back from `fetch_history` as a REAL
+    PriceHistory with EMPTY dates (Yahoo's definitive answer, deliberately day-cached);
+    `hist is None` means the fetch RAISED. Testing only for None would classify true
+    survivorship as attrition — the exact inversion this field exists to prevent.
+    """
+    from datetime import date
+
+    from shortlist.backtest.prices import PriceHistory
+    from shortlist.scout.validate import measure_cohort
+
+    evs = [
+        {"signal": "s", "ticker": "DEAD", "event_date": "2022-01-05"},   # empty-dates series
+        {"signal": "s", "ticker": "GONE", "event_date": "2022-01-05"},   # fetch raised -> absent
+    ]
+    hists = {"DEAD": PriceHistory("DEAD", [], [], nominal_closes=[])}
+    m = measure_cohort(evs, "s", 3, hists, None, as_of=date(2026, 1, 1))
+
+    assert m.n_no_price_series == 2, "an empty-dates series must count as COVERAGE, not attrition"
+    assert all(e.no_price_series for e in m.events)
+
+
+def test_a_real_series_with_no_horizon_return_is_attrition_not_coverage():
+    from datetime import date, timedelta
+
+    from shortlist.backtest.prices import PriceHistory
+    from shortlist.scout.validate import measure_cohort
+
+    start = date(2022, 1, 3)
+    dates = [start + timedelta(days=i) for i in range(20)]      # series ends long before +3m
+    hists = {"STOP": PriceHistory("STOP", dates, [10.0] * 20, nominal_closes=[10.0] * 20)}
+    m = measure_cohort([{"signal": "s", "ticker": "STOP", "event_date": "2022-01-05"}],
+                       "s", 3, hists, None, as_of=date(2026, 1, 1))
+
+    assert m.n_no_price_series == 0                              # it HAD a series
+    assert m.n_measurable == 0                                   # ...just no return at horizon
