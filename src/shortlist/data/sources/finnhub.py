@@ -170,10 +170,14 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         # `roiTTM` is Return on *Investment*, mapped here as a deliberate ROIC proxy.
         # It only surfaces on the FMP-gated fallback path (FMP leads the fundamentals
         # merge); whether to keep the proxy or drop it to None shifts quality/moat scores
-        # and is still open — see TODO.md (2026-08-04). Note the obvious gate ("backtest
-        # the quality/moat axes with the proxy on vs off") is UNSATISFIABLE as stated:
-        # `--source xbrl` derives ROIC from SEC companyfacts and never exercises this
-        # fallback, so no available backtest can measure this proxy. Re-scope first.
+        # and is still open — see TODO.md (2026-08-04).
+        # On measuring it: `--source xbrl` CANNOT — it derives ROIC from SEC companyfacts
+        # and never exercises this fallback. The SNAPSHOT-REPLAY path can in principle:
+        # SnapshotSignalSource re-scores stored merged snapshots through the production
+        # scorer and emits quality/moat axes, and the store already holds Finnhub-provenance
+        # `roic` for FMP-gated names (~706 snapshots over 43 capture days as of 2026-08-04).
+        # What blocks it is the hard-coded `--source snapshot` refusal in backtest/cli.py
+        # plus the absence of an on/off replay harness — code work, not an impossibility.
         snap.fundamentals = Fundamentals(
             roe=_pct(m.get("roeTTM")), roic=_pct(m.get("roiTTM")),
             gross_margin=_pct(m.get("grossMarginTTM")),

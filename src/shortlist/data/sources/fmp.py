@@ -158,16 +158,25 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         cutoff = (date.today() - timedelta(days=183)).isoformat()
         insiders = [tx for tx in insiders
                     if (tx.get("transactionDate") or "") >= cutoff]
-        if insiders:
+        # Drop non-trades (awards/exercises/gifts/tax-withholding/conversions) BEFORE
+        # the 60-row window, not inside it. They carry no insider signal, and leaving
+        # them in the slice lets a burst of RSU vesting starve real purchases out of
+        # the window entirely (59 award rows + 5 purchases => 4 purchases silently lost).
+        trades = [(tx, c) for tx in insiders if (c := classify_tx(tx)) != "other"]
+        if trades:
             net = buys = sells = 0
             recent = []
             found = False
-            for tx in insiders[:60]:
-                classification = classify_tx(tx)
-                if classification == "other":
-                    continue
-                found = True
+            for tx, classification in trades[:60]:
                 val = tx_value(tx)
+                # A row with no usable price cannot make the section "present" on its
+                # own: `_is_present(0)` is True, so an all-unpriced batch would emit a
+                # FABRICATED net_value_6m == 0 that wins _merge_insider wholesale and
+                # discards EDGAR's real aggregate — the same clobber `found` exists to
+                # stop, one step further in. Such a row still counts toward buy/sell
+                # counts (a count needs no price); it just can't vouch for the section.
+                if val > 0:
+                    found = True
                 buy = classification == "buy"
                 net += val if buy else -val
                 buys += buy

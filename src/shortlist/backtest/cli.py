@@ -160,14 +160,16 @@ async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict
 
 
 async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
-    # SERIAL BY DESIGN — do not "optimize" into a concurrent gather. This is pure
-    # latency, not correctness, and serial requests are the intended politeness choice
-    # against Yahoo's edge WAF (see "Yahoo screener WAF gotcha" in CLAUDE.md: a burst of
-    # concurrent requests risks the cold-start fingerprint block the cooldown machinery
-    # exists to avoid). SPY goes first, which also seeds IP reputation. Backtest runs are
-    # offline-batch and not latency-sensitive. Revisit only if a full-universe run's
-    # wall-clock becomes a real bottleneck — then bound it with an asyncio.Semaphore(3-5),
-    # still SPY-first. Reviewed 2026-06-26, re-verified 2026-08-04.
+    # SERIAL BY DESIGN — do not "optimize" into a concurrent gather. This is pure latency,
+    # not correctness, and a backtest is offline-batch with nothing to gain from parallelism.
+    # Be precise about WHY, because the obvious citation is a misread: CLAUDE.md's "Yahoo
+    # screener WAF gotcha" describes a HEADER-SHAPE fingerprint block "not throttling", and
+    # it concerns the SCREENER endpoint — this function calls the CHART endpoint with
+    # UA-only headers. So concurrency is not a documented trigger. Serial is kept as the
+    # conservative default against an unofficial endpoint (see prices.py's own "baits the
+    # WAF" note), not because a burst is known to be unsafe. Revisit only if a full-universe
+    # run's wall-clock becomes a real bottleneck — then bound it with an
+    # asyncio.Semaphore(3-5). Reviewed 2026-06-26, re-verified + corrected 2026-08-04.
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
         try:
             spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)

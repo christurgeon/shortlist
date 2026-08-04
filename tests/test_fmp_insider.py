@@ -1,6 +1,13 @@
-"""Unit tests for the shared FMP insider-transaction primitives."""
+"""Unit tests for the shared FMP insider-transaction primitives.
 
-from shortlist.providers._fmp_insider import classify_tx, is_buy, net_value, tx_value
+The `"P-Purchase"` / `"S-Sale"` strings below are the REAL-FORMAT CONTRACT: FMP's
+`transactionType` is an enriched `<CODE>-<Description>` string, not edgartools' bare
+single-letter code. Do not "simplify" these fixtures to bare letters to make some
+other classifier pass — that is the exact confusion `classify_tx` exists to prevent.
+(They assert the assumption rather than evidencing it; see `classify_tx`'s docstring.)
+"""
+
+from shortlist.providers._fmp_insider import classify_tx, tx_value
 
 
 def _tx(shares, price, kind):
@@ -16,24 +23,6 @@ def test_tx_value_tolerates_missing_fields():
     assert tx_value({"securitiesTransacted": 10}) == 0  # no price
 
 
-def test_is_buy_only_for_p_prefixed_codes():
-    assert is_buy(_tx(1, 1, "P-Purchase")) is True
-    assert is_buy(_tx(1, 1, "p-purchase")) is True  # case-insensitive
-    assert is_buy(_tx(1, 1, "S-Sale")) is False
-    assert is_buy(_tx(1, 1, "")) is False
-    assert is_buy({}) is False
-
-
-def test_net_value_signs_purchases_positive_sales_negative():
-    txns = [_tx(100, 10, "P-Purchase"), _tx(40, 10, "S-Sale")]
-    assert net_value(txns) == 1000.0 - 400.0
-
-
-def test_net_value_caps_at_trailing_window():
-    txns = [_tx(1, 1, "P-Purchase")] * 100
-    assert net_value(txns, limit=60) == 60.0
-
-
 def test_classify_tx_buy_and_sell():
     assert classify_tx(_tx(1, 1, "P-Purchase")) == "buy"
     assert classify_tx(_tx(1, 1, "p-purchase")) == "buy"  # case-insensitive
@@ -43,13 +32,14 @@ def test_classify_tx_buy_and_sell():
 
 
 def test_classify_tx_other_for_non_trade_codes():
+    # Awards, option exercises, gifts, tax-withholding and conversions are NOT sales.
+    # Treating them as such is the bug this module was rewritten to fix.
     for code in ("A-Award", "M-Exercise", "G-Gift", "F-TaxWithholding", "C-Conversion", ""):
         assert classify_tx(_tx(1, 1, code)) == "other", code
     assert classify_tx({}) == "other"  # missing transactionType key
 
 
-def test_net_value_ignores_other_codes_entirely():
-    # A 1000 buy plus a 5000 "award" must net to +1000, NOT -4000 (the award is
-    # not a sale and must not subtract from the net).
-    txns = [_tx(100, 10, "P-Purchase"), _tx(500, 10, "A-Award")]
-    assert net_value(txns) == 1000.0
+def test_classify_tx_splits_only_on_the_first_dash():
+    # A hyphenated description must not confuse the leading-code match.
+    assert classify_tx(_tx(1, 1, "S-Sale-Multiple")) == "sell"
+    assert classify_tx(_tx(1, 1, "P - Purchase")) == "buy"  # spaces tolerated

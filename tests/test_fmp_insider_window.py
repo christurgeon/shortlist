@@ -84,3 +84,41 @@ def test_all_other_coded_rows_leave_section_absent():
         _tx(2, "G-Gift", 50, 10.0),
     ]}
     assert _normalize_fmp("TEST", raw).insider is None
+
+
+def test_non_trades_are_dropped_before_the_60_row_window():
+    # Window starvation: awards/exercises carry no insider signal, so they must be
+    # filtered BEFORE the 60-row slice. Left inside it, a burst of RSU vesting pushes
+    # real purchases out of the window and silently understates the net.
+    raw = {"insider": [_tx(5, "A-Award", 500, 10.0) for _ in range(59)]
+                      + [_tx(6, "P-Purchase", 100, 10.0) for _ in range(5)]}
+    ins = _normalize_fmp("TEST", raw).insider
+    assert ins is not None
+    assert ins.buy_count == 5                 # all five survive, not just the one
+    assert ins.net_value_6m == 5000.0
+    assert ins.sell_count == 0
+
+
+def test_unpriced_trades_alone_leave_section_absent():
+    # A real P/S row with no usable price cannot vouch for the section on its own:
+    # tx_value is 0, so the record would carry a FABRICATED net_value_6m == 0, and
+    # `_is_present(0)` is True — it would win _merge_insider wholesale and discard
+    # EDGAR's real aggregate. Abstain instead, exactly as for an all-award batch.
+    raw = {"insider": [
+        _tx(5, "S-Sale", 1000, None),
+        _tx(6, "P-Purchase", 500, None),
+    ]}
+    assert _normalize_fmp("TEST", raw).insider is None
+
+
+def test_one_priced_trade_still_admits_its_unpriced_siblings():
+    # The unpriced row can't make the section present, but once a priced trade has,
+    # the unpriced one still counts toward the (price-free) buy/sell counts.
+    raw = {"insider": [
+        _tx(5, "P-Purchase", 100, 10.0),   # +1000, vouches for the section
+        _tx(6, "S-Sale", 1000, None),      # unpriced: counted, contributes 0 value
+    ]}
+    ins = _normalize_fmp("TEST", raw).insider
+    assert ins is not None
+    assert ins.net_value_6m == 1000.0
+    assert ins.buy_count == 1 and ins.sell_count == 1

@@ -6,12 +6,17 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
-## TECH-DEBT.md retired — 1 of 3 open items fixed, 2 inherited here (2026-08-04)
+## TECH-DEBT.md retired — 1 open item fixed, 3 inherited here (2026-08-04)
 
-`TECH-DEBT.md` (the 2026-06-14 fleet review's deferral list) is **deleted**. Of its 14
-entries, 11 were already closed (7 RESOLVED, 4 INVESTIGATED-no-op) — it was a historical
-record, not a backlog. All three of its still-open items are accounted for below. Audit:
-`docs/audits/2026-08-04-tech-debt-burndown.md`.
+`TECH-DEBT.md` (the 2026-06-14 fleet review's deferral list) is **deleted**. Of its **13**
+entries, **10** were already closed — 7 RESOLVED plus 3 investigated/by-design no-op
+verdicts (~77%, and only about half the file by line volume). It was largely a historical
+record. Audit: `docs/audits/2026-08-04-tech-debt-burndown.md`.
+
+**Counting correction:** an earlier draft of this entry said "14 entries, 11 closed (~90%)".
+That double-booked the FMP-insider item — its long review blockquote was counted as a closed
+entry while its parent heading was counted as open, even though the blockquote's own first
+sentence says "stays deferred". Corrected on review.
 
 **Fixed and gone:** FMP insider treated every non-`P` code as a sale (awards `A`, exercises
 `M`, gifts `G`, tax-withholding `F`, conversions `C` all subtracted from `net_value_6m` and
@@ -30,25 +35,48 @@ Stage 1 plan; rises toward 1.0 → **stop**, momentum at 0.08 is a near-zero mov
 (EV/EBIT-style "measured, not shipped") and the only remaining lever is the value/momentum
 weight split, a separate question. Drop `mom_6m` either way (τ 0.995 vs the incumbent
 `rel_strength_6m`, zero churn — fully redundant).
-**Why it is blocked:** `prize_bound.run_live` is Yahoo-dependent and `oracle-prod` is
-Yahoo-IP-blocked; there is no `FMP_API_KEY` in `.env`; and an 80-name screen costs ~1040 FMP
-calls against a 250/day free cap. This needs a non-VPS host with a paid FMP tier. It is a
-**measurement**, not a code change.
+**Why it is hard — and what is NOT the reason.** The real cost is FMP quota: ~12–13 calls ×
+80 names ≈ **1,000 against the free 250/day cap**, so it needs a paid Starter tier or ~5 days
+of split quota. Two blockers asserted in an earlier draft were **live-probed and are false**
+(2026-08-04): an `FMP_API_KEY` *is* present in `.env` (an earlier check used a grep that
+skipped `export `-prefixed lines; the key currently returns `429 Limit Reach`, i.e. quota
+spent, not key missing), and Yahoo *is* reachable from `oracle-prod` — `v8/finance/chart/SPY`
+returned **200 on 3/3 attempts** with the project's own `_UA`, and the scout's
+`yahoo_blocked_until` was an expired self-clearing cooldown, not a standing IP ban. (A
+generic Chrome UA got 429 on the same host, which is the header-shape fingerprint effect.)
+So this is a **scheduling/quota** problem, not a host problem. It is a **measurement**, not
+a code change.
 
-**Item 2 — Finnhub `roiTTM` mapped to `roic` (INHERITED, gate is unsatisfiable as scoped).**
+**Item 2 — Finnhub `roiTTM` mapped to `roic` (INHERITED, needs re-scoping).**
 `data/sources/finnhub.py` maps Return on *Investment* into the snapshot's `roic` (Return on
 Invested *Capital*). The documentation half is already done — the mapping carries an inline
 comment marking it a deliberate proxy on the FMP-gated fallback path. The numerics half
 (keep the proxy vs. drop it to `None`) shifts quality/moat scores and was deferred pending a
 quality/moat backtest.
-**Why it is blocked:** that gate cannot be satisfied by any backtest we have. `--source
-xbrl` derives ROIC from SEC companyfacts and never touches the Finnhub fallback, so it
-structurally cannot measure this proxy; and the path itself needs a Finnhub key plus an
-FMP-gated symbol to fire at all. Re-scoping it (e.g. measuring `roiTTM` vs computed ROIC on
-a keyed host before deciding) is the prerequisite, not another backtest run.
+**How it could be measured.** `--source xbrl` **cannot** — it derives ROIC from SEC
+companyfacts and never exercises this fallback. But an earlier draft's stronger claim ("no
+available backtest can measure it") is **too strong**: the **snapshot-replay** path can in
+principle. `SnapshotSignalSource` re-scores stored merged snapshots through the production
+scorer and emits `quality`/`moat` axes, both of which read `roic`; and the store already
+holds **~706 Finnhub-provenance `roic` snapshots across 43 capture days** — past the ≥24
+threshold, and exactly the FMP-gated population at issue. A proxy-on-vs-off replay (null the
+`roic` where `provenance['fundamentals'] == ['finnhub']`, compare rank IC) is constructible.
+What actually blocks it is **code work**: `backtest/cli.py` hard-codes a `--source snapshot`
+refusal whose message ("needs >= 24 daily captures") never inspects the store and is now
+stale, plus there is no on/off replay harness.
 
-**Status:** OPEN — items 1 and 2 only, both externally blocked (host/keys/quota), neither
-actionable on `oracle-prod`. Item 3 is closed. Do not re-file these against a deleted file.
+**Item 3 — should `fmp` outrank `edgar` for the insider transaction group? (INHERITED).**
+Carried over from the FMP-insider review note; it would otherwise have been deleted with the
+file. `config.yaml`'s `harness_sources` orders `fmp` before `edgar`, and `_merge_insider`
+takes the coupled txn facts **wholesale** from the first source with a present field — yet
+CLAUDE.md calls EDGAR "the free authoritative source" for insider data. So enabling a paid
+FMP Starter tier would silently override EDGAR's insider numbers. A priority/intent
+question, deliberately not resolved inside the classification fix.
+
+**Status:** OPEN — items 1, 2 and 3. None is externally blocked in the way an earlier draft
+claimed: item 1 needs FMP quota (or a paid tier), item 2 needs a snapshot-replay harness,
+item 3 is a design decision. The classification bug that was item 3 of the old file is
+closed. Do not re-file these against a deleted file.
 
 ---
 
