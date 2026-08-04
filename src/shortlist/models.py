@@ -111,7 +111,8 @@ class StockMetrics:
     activist_13d: Optional[bool] = None
     passive_13g: Optional[bool] = None
     planned_insider_sale_144: Optional[bool] = None
-    filing_events: Optional[list[dict]] = None   # list of {form, filed, accession, url} dicts
+    # list of {form, filed, accession, url, items} dicts (items = 8-K item codes, else None)
+    filing_events: Optional[list[dict]] = None
 
     # Recent open-market insider Form-4 trades (enrichment only; NOT scored). Set by the
     # bridge from snap.insider.recent — a compact {date, name, role, kind, value} per trade

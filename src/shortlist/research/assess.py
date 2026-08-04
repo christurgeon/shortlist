@@ -192,10 +192,12 @@ def _norm(s: str) -> str:
 
 def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -> None:
     """Mark each risk/red_flag/added_risk finding verified iff its evidence quote is
-    a substring of the text shown to the model (bundle.haystack(), whitespace-
-    normalized). The prior-year 10-K (diff baseline) is excluded from the haystack,
-    so a quote only present there is correctly counted unverified. Reconciliation
-    handled as before."""
+    a substring of the text shown to the model (bundle.haystack()), compared under
+    `_norm` — whitespace-normalized AND typographic-punctuation-folded, so a curly
+    apostrophe in the filing still matches an ASCII one in the quote. Folding is
+    symmetric, so it never verifies a stitched or fabricated quote. The prior-year
+    10-K (diff baseline) is excluded from the haystack, so a quote only present there
+    is correctly counted unverified. Reconciliation handled as before."""
     haystack = _norm(bundle.haystack())
     unverified = 0
     for finding in (*assessment.risks, *assessment.red_flags, *assessment.added_risks):
@@ -368,6 +370,29 @@ def _render_series(series) -> str:
             + "\n".join(rows))
 
 
+def _fmt_num(v: float) -> str:
+    """Fixed-point, never scientific. `%g` renders a BRK.A-class share price as
+    7.12e+05 and a thin FCF yield as 3.1e-05, leaving the model to decode them."""
+    a = abs(v)
+    if a >= 1000:
+        return f"{v:,.0f}"
+    decimals = 2 if a >= 1 else 6
+    return f"{v:.{decimals}f}".rstrip("0").rstrip(".") or "0"
+
+
+def _fmt_mcap(v: float) -> str:
+    """Market cap at magnitude-appropriate scale. A fixed $B scale prints a $490M
+    company as '$0B' — a confidently WRONG number, worse than the scientific notation
+    it replaced, and sub-$1B names DO get briefs (the /deep path passes
+    require_passed=False, so gated small caps are researched on request)."""
+    a = abs(v)
+    if a >= 1e12:
+        return f"${v / 1e12:,.2f}T"
+    if a >= 1e9:
+        return f"${v / 1e9:,.1f}B"
+    return f"${v / 1e6:,.0f}M"
+
+
 def _fcf_col(series) -> list:
     """Newest-first free_cash_flow column from a financial_series, None-safe."""
     return [row.get("free_cash_flow") for row in (series or [])]
@@ -413,12 +438,10 @@ def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=N
                ("pe_median_5y", getattr(m, "pe_median_5y", None)),
                ("fcf_yield", getattr(m, "fcf_yield", None)),
                ("peg", getattr(m, "peg", None))]
-        val_parts = [f"{k}={v:.3g}" for k, v in val if v is not None]
-        # market_cap is absolute dollars and would render as '3.2e+12' under %g;
-        # plain $B keeps it comparable to the $M financial series above.
+        val_parts = [f"{k}={_fmt_num(v)}" for k, v in val if v is not None]
         mcap = getattr(m, "market_cap", None)
         if mcap is not None:
-            val_parts.insert(1, f"market_cap=${mcap / 1e9:.0f}B")
+            val_parts.insert(1, f"market_cap={_fmt_mcap(mcap)}")
         if val_parts:
             lines.append("Valuation: " + ", ".join(val_parts) + ".")
         if m.short_pct_outstanding is not None and m.days_to_cover is not None:
@@ -491,7 +514,8 @@ def _high_corroborated(assessment, card, scfg: dict) -> bool:
 
 def apply_guards(assessment, card, config: dict) -> None:
     """Mutate assessment.screening_call in place: fill the authoritative gap lists,
-    snapshot price, then clamp stance / cap conviction. No-op if no call."""
+    snapshot price and confidence, then clamp stance / cap conviction. No-op if no
+    call."""
     call = getattr(assessment, "screening_call", None)
     if call is None:
         return

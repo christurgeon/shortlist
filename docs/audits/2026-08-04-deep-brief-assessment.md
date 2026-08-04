@@ -233,7 +233,10 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 ```
 
-**Not applied — awaiting your go-ahead.**
+**Applied** (PR #161). Post-review addition: `_fmt_num` / `_fmt_mcap` were added alongside,
+because the first version of the valuation line rendered a $490M cap as `$0B` — a
+confidently wrong number, worse than the `3.2e+12` it replaced (sub-$1B names are
+researched: the `/deep` path passes `require_passed=False`).
 
 ### D2 — The brief never sees a price (**new**)
 

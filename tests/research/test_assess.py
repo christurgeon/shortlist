@@ -524,25 +524,24 @@ def test_macro_absent_leaves_prompt_byte_identical():
     assert base == with_macro_key_but_no_macro
 
 
-def test_market_cap_renders_readably_not_in_scientific_notation():
-    """`%.3g` turns a $3.2T cap into '3.2e+12'. The model has to reason about size and
-    compare it to the reverse-DCF's FCF base, so render it in plain $B."""
-    from shortlist.research.assess import _quant_context
+def test_valuation_scalars_never_render_in_scientific_notation():
+    """`%g` renders a BRK.A-class share price as 7.12e+05 and a thin FCF yield as
+    3.1e-05; the model then has to decode them."""
+    from shortlist.research.assess import _fmt_num
+    assert _fmt_num(712000.0) == "712,000"
+    assert _fmt_num(5000.0) == "5,000"
+    assert _fmt_num(214.5) == "214.5"
+    assert _fmt_num(0.031) == "0.031"
+    assert _fmt_num(0.000031) == "0.000031"
+    assert "e" not in _fmt_num(3.2e12)
 
-    class _M:
-        revenue_cagr = fcf_cagr = eps_cagr = revenue_growth_persistence = None
-        gross_margin = net_margin = roic = debt_to_equity = interest_coverage = None
-        short_pct_outstanding = days_to_cover = short_interest_rising = None
-        financial_series = None
-        pe_ttm = pe_median_5y = fcf_yield = peg = None
-        price = 214.5
-        market_cap = 3.2e12
 
-    class _C:
-        metrics = _M(); composite = None; confidence = None
-        quality = moat = growth = momentum = value = insider = risk = None
-        gates: list = []; flags: list = []; sic_bucket = None
-
-    out = _quant_context(_C())
-    assert "e+" not in out
-    assert "market_cap=$3200B" in out
+def test_market_cap_is_never_reported_as_zero_for_a_small_cap():
+    """A sub-$1B cap under `$%.0fB` prints '$0B' — a confidently WRONG number, worse
+    than the scientific notation it replaced. RBKB/TACT are sub-$1B and get briefs
+    (the /deep path researches gated names: require_passed=False)."""
+    from shortlist.research.assess import _fmt_mcap
+    assert _fmt_mcap(150e6) == "$150M"
+    assert _fmt_mcap(490e6) == "$490M"
+    assert _fmt_mcap(5e9) == "$5.0B"
+    assert _fmt_mcap(3.2e12) == "$3.20T"

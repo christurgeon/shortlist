@@ -293,7 +293,7 @@ class EdgarSource(Source):
 
     def _fetch_filings_index(self, ticker: str) -> list[dict]:
         """Normalize the edgartools result (None | single EntityFiling | collection)
-        into a plain list of {form, filed, accession, url} dicts."""
+        into a plain list of {form, filed, accession, url, items} dicts."""
         res = self._raw_filings(ticker)
         if res is None:
             return []
