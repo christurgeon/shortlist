@@ -6,6 +6,52 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## TECH-DEBT.md retired — 1 of 3 open items fixed, 2 inherited here (2026-08-04)
+
+`TECH-DEBT.md` (the 2026-06-14 fleet review's deferral list) is **deleted**. Of its 14
+entries, 11 were already closed (7 RESOLVED, 4 INVESTIGATED-no-op) — it was a historical
+record, not a backlog. All three of its still-open items are accounted for below. Audit:
+`docs/audits/2026-08-04-tech-debt-burndown.md`.
+
+**Fixed and gone:** FMP insider treated every non-`P` code as a sale (awards `A`, exercises
+`M`, gifts `G`, tax-withholding `F`, conversions `C` all subtracted from `net_value_6m` and
+inflated `sell_count`). `_fmp_insider.classify_tx` now three-ways them like the EDGAR
+`_form4.classify_code` sibling, and `sources/fmp.py` **abstains** when a batch contains no
+real P/S trade — without that guard an all-awards batch built `Insider(net_value_6m=0, …)`,
+and `_is_present(0) is True` would let that all-zero record win `_merge_insider` and discard
+EDGAR's authoritative data.
+
+**Item 1 — momentum Stage 0 prize-bound re-run (INHERITED, blocked on host + quota).**
+Re-run `uv run python -m shortlist.backtest.prize_bound` on the full **80-name** largecap
+basket (the 2026-06-14 marginal PROCEED was a 28-name subset; a quota-starved run inflates
+momentum's effective weight and overstates churn). **Decision rule:** compare `mom_12_1`'s
+full-basket τ to the recorded **0.947** — holds or drops → the prize is real, write the
+Stage 1 plan; rises toward 1.0 → **stop**, momentum at 0.08 is a near-zero mover
+(EV/EBIT-style "measured, not shipped") and the only remaining lever is the value/momentum
+weight split, a separate question. Drop `mom_6m` either way (τ 0.995 vs the incumbent
+`rel_strength_6m`, zero churn — fully redundant).
+**Why it is blocked:** `prize_bound.run_live` is Yahoo-dependent and `oracle-prod` is
+Yahoo-IP-blocked; there is no `FMP_API_KEY` in `.env`; and an 80-name screen costs ~1040 FMP
+calls against a 250/day free cap. This needs a non-VPS host with a paid FMP tier. It is a
+**measurement**, not a code change.
+
+**Item 2 — Finnhub `roiTTM` mapped to `roic` (INHERITED, gate is unsatisfiable as scoped).**
+`data/sources/finnhub.py` maps Return on *Investment* into the snapshot's `roic` (Return on
+Invested *Capital*). The documentation half is already done — the mapping carries an inline
+comment marking it a deliberate proxy on the FMP-gated fallback path. The numerics half
+(keep the proxy vs. drop it to `None`) shifts quality/moat scores and was deferred pending a
+quality/moat backtest.
+**Why it is blocked:** that gate cannot be satisfied by any backtest we have. `--source
+xbrl` derives ROIC from SEC companyfacts and never touches the Finnhub fallback, so it
+structurally cannot measure this proxy; and the path itself needs a Finnhub key plus an
+FMP-gated symbol to fire at all. Re-scoping it (e.g. measuring `roiTTM` vs computed ROIC on
+a keyed host before deciding) is the prerequisite, not another backtest run.
+
+**Status:** OPEN — items 1 and 2 only, both externally blocked (host/keys/quota), neither
+actionable on `oracle-prod`. Item 3 is closed. Do not re-file these against a deleted file.
+
+---
+
 ## Evaluator correctness pack — SHIPPED; 13D "one survivor" claim must be RETRACTED (2026-08-03)
 
 Branch `fix/evaluator-correctness`. Closes **0c**, **0g** and the 2026-07-11 **item 4** below.

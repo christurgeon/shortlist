@@ -160,6 +160,14 @@ async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict
 
 
 async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
+    # SERIAL BY DESIGN — do not "optimize" into a concurrent gather. This is pure
+    # latency, not correctness, and serial requests are the intended politeness choice
+    # against Yahoo's edge WAF (see "Yahoo screener WAF gotcha" in CLAUDE.md: a burst of
+    # concurrent requests risks the cold-start fingerprint block the cooldown machinery
+    # exists to avoid). SPY goes first, which also seeds IP reputation. Backtest runs are
+    # offline-batch and not latency-sensitive. Revisit only if a full-universe run's
+    # wall-clock becomes a real bottleneck — then bound it with an asyncio.Semaphore(3-5),
+    # still SPY-first. Reviewed 2026-06-26, re-verified 2026-08-04.
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
         try:
             spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)

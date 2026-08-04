@@ -151,6 +151,12 @@ class Price:
     ma200: Optional[float] = None
     year_high: Optional[float] = None
     year_low: Optional[float] = None
+    # The four ret_* horizons are WRITE-ONLY — set by FMP/Yahoo/mock, read by nothing
+    # (verified 2026-06-15, re-verified 2026-08-04). `momentum_score` is sourced entirely
+    # from `price_vs_200dma` + `rel_strength_6m`. They are kept, not deleted, because they
+    # are serialized TickerSnapshot state read back by the accumulation store — removing
+    # them is cosmetic with a real back-compat surface. Do not wire a scoring leg to them
+    # on the assumption they are populated everywhere; only `rel_strength_6m` is load-bearing.
     ret_1m: Optional[float] = None
     ret_3m: Optional[float] = None
     ret_6m: Optional[float] = None

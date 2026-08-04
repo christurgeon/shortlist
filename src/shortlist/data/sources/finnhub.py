@@ -169,8 +169,11 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     if m:
         # `roiTTM` is Return on *Investment*, mapped here as a deliberate ROIC proxy.
         # It only surfaces on the FMP-gated fallback path (FMP leads the fundamentals
-        # merge); whether to keep the proxy or drop it to None is an open TECH-DEBT
-        # item gated on a quality/moat backtest.
+        # merge); whether to keep the proxy or drop it to None shifts quality/moat scores
+        # and is still open — see TODO.md (2026-08-04). Note the obvious gate ("backtest
+        # the quality/moat axes with the proxy on vs off") is UNSATISFIABLE as stated:
+        # `--source xbrl` derives ROIC from SEC companyfacts and never exercises this
+        # fallback, so no available backtest can measure this proxy. Re-scope first.
         snap.fundamentals = Fundamentals(
             roe=_pct(m.get("roeTTM")), roic=_pct(m.get("roiTTM")),
             gross_margin=_pct(m.get("grossMarginTTM")),
