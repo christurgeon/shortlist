@@ -18,8 +18,24 @@ and was removed 2026-08-04 rather than left as a trap.
 
 
 def tx_value(tx: dict) -> float:
-    """Dollar value of one FMP insider transaction (shares * price)."""
-    return (tx.get("securitiesTransacted") or 0) * (tx.get("price") or 0)
+    """Dollar value of one FMP insider transaction (shares * price).
+
+    TOTAL BY DESIGN — returns 0.0 rather than raising on a malformed row. This is
+    load-bearing, not defensive habit: `_normalize_fmp` has no try/except of its own,
+    and `collector` degrades a source that raises to an errored-empty SourceResult — so
+    ONE bad insider row would otherwise cost the ticker its entire FMP snapshot
+    (profile, quote, statements included), not merely its insider section. Returning
+    0.0 instead feeds the caller's `> 0` valued-trade predicate, which drops just that row.
+
+    Numeric strings are COERCED (JSON APIs commonly emit numbers as strings), so a
+    string-encoded row is recovered as a real trade rather than discarded; genuinely
+    non-numeric values fall through to 0.0. Without the coercion, `"1000" * 10` silently
+    produced a 40-character STRING that then raised on the `> 0` comparison.
+    """
+    try:
+        return float(tx.get("securitiesTransacted") or 0) * float(tx.get("price") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def classify_tx(tx: dict) -> str:

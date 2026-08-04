@@ -187,8 +187,17 @@ any of them** — every one was a claim about the world, not about behaviour.
 ## Validation
 
 `uv run ruff check src tests` clean; `uv run pytest -q` → **2291 passed, 3 skipped, 0
-failures**; `uv run shortlist --demo --json` byte-identical to `main`.
+failures**.
 
-Net test count is +2 vs `main` (2289): four tests covering the now-deleted `is_buy`/
-`net_value` were removed, six added (`classify_tx` behaviour, the first-dash split, window
-starvation, the unpriced-row abstain, and its priced-sibling companion).
+> **CORRECTION (2026-08-04, follow-up review).** This section originally read "Net test
+> count is +2 vs `main` (2289): four tests removed, six added." Every number was wrong, and
+> it mixed units — `2289` is `main`'s *collected* count while `2291` is HEAD's *passed*
+> count. Against `94426d6`: **3** tests removed (the 4th, `test_net_value_ignores_other_
+> codes_entirely`, was added *and* removed inside the branch and was never on `main`), **8**
+> added, **net +5**. `main` collects 2289 = 2286 passed → 2291 passed.
+>
+> It also cited `shortlist --demo --json` being byte-identical as evidence. It is true but
+> proves nothing here: `--demo` runs off `mockdata.py` and never enters `_normalize_fmp`, so
+> the changed block cannot affect it. That is precisely the "a green check proved nothing
+> about the claim" pattern this document names above — committed one paragraph after naming
+> it.
