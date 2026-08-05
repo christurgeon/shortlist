@@ -46,12 +46,12 @@ def _ok_envelope(result_text):
 
 def test_run_success_extracts_result_and_cost(monkeypatch):
     _patch_popen(monkeypatch, _FakePopen(_ok_envelope('{"x":1}')))
-    res = claude_cli.run(prompt="hi", system="sys", model="claude-sonnet-4-6", timeout_s=5)
+    res = claude_cli.run(prompt="hi", system="sys", model="claude-sonnet-5", timeout_s=5)
     assert res.error is None
     assert res.text == '{"x":1}'
     assert res.cost_usd == 0.02
     assert res.stop_reason == "end_turn"
-    assert res.model == "claude-sonnet-4-6"
+    assert res.model == "claude-sonnet-5"
 
 
 def test_run_locks_down_invocation(monkeypatch):
@@ -195,11 +195,11 @@ def test_fallback_model_is_passed_when_configured(monkeypatch):
     captured = {}
     proc = _FakePopen(stdout=json.dumps({"result": "{}", "total_cost_usd": 0.01}))
     _patch_popen(monkeypatch, proc, captured)
-    claude_cli.run(prompt="p", system="s", model="claude-opus-5", timeout_s=5,
-                   fallback_model="claude-sonnet-5")
+    claude_cli.run(prompt="p", system="s", model="claude-sonnet-5", timeout_s=5,
+                   fallback_model="claude-opus-5")
     argv = captured["argv"]
     assert "--fallback-model" in argv
-    assert argv[argv.index("--fallback-model") + 1] == "claude-sonnet-5"
+    assert argv[argv.index("--fallback-model") + 1] == "claude-opus-5"
 
 
 def test_fallback_model_omitted_when_not_configured(monkeypatch):
@@ -216,22 +216,22 @@ def test_result_reports_the_model_that_actually_ran(monkeypatch):
     brief header prints this value, so echoing the request would mislabel the brief.
     The CLI envelope keys `modelUsage` by the model that actually ran."""
     envelope = {"result": "{}", "total_cost_usd": 0.01, "stop_reason": "end_turn",
-                "modelUsage": {"claude-sonnet-5": {"outputTokens": 900}}}
+                "modelUsage": {"claude-opus-5": {"outputTokens": 900}}}
     _patch_popen(monkeypatch, _FakePopen(stdout=json.dumps(envelope)))
-    res = claude_cli.run(prompt="p", system="s", model="claude-sonnet-4-6", timeout_s=5,
-                         fallback_model="claude-sonnet-5")
-    assert res.model == "claude-sonnet-5"
+    res = claude_cli.run(prompt="p", system="s", model="claude-sonnet-5", timeout_s=5,
+                         fallback_model="claude-opus-5")
+    assert res.model == "claude-opus-5"
 
 
 def test_result_picks_the_answering_model_when_several_ran(monkeypatch):
     """A fallback run reports usage for both models; the one that produced the answer
     is the one with output tokens."""
     envelope = {"result": "{}", "total_cost_usd": 0.01, "stop_reason": "end_turn",
-                "modelUsage": {"claude-sonnet-4-6": {"outputTokens": 0},
-                               "claude-sonnet-5": {"outputTokens": 1200}}}
+                "modelUsage": {"claude-sonnet-5": {"outputTokens": 0},
+                               "claude-opus-5": {"outputTokens": 1200}}}
     _patch_popen(monkeypatch, _FakePopen(stdout=json.dumps(envelope)))
-    res = claude_cli.run(prompt="p", system="s", model="claude-sonnet-4-6", timeout_s=5)
-    assert res.model == "claude-sonnet-5"
+    res = claude_cli.run(prompt="p", system="s", model="claude-sonnet-5", timeout_s=5)
+    assert res.model == "claude-opus-5"
 
 
 def test_result_falls_back_to_requested_model_when_envelope_is_silent(monkeypatch):

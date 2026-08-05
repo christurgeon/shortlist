@@ -357,17 +357,17 @@ research:
                                # NOTE: tracks the latest snapshot in the family, not a frozen
                                # date-pinned build; brief reproducibility is anchored by
                                # accession-keyed caching (research/), not the model string.
-                               # Moved off claude-sonnet-4-6 on 2026-08-05 as a DELIBERATE
-                               # JUDGMENT CALL, not a measurement — see the audit doc D9 and
-                               # TODO.md. Two consequences to keep in mind:
-                               #   1. Sonnet 5 tokenizes the same text to ~30% more tokens, so
-                               #      per-brief cost rises even though the sticker price is the
-                               #      same. A 2-sample uncontrolled CLI probe showed $0.217
-                               #      (4.6) vs $0.292 (5) on a trivial prompt — suggestive of
-                               #      the documented ratio, NOT a controlled measurement.
-                               #   2. The SYSTEM_PROMPT was tuned against 4.6. Sonnet 5 follows
-                               #      instructions more literally, so watch the first refreshed
-                               #      briefs for over-applied length/scope directives.
+                               # Set 2026-08-05 as a DELIBERATE JUDGMENT CALL, not a
+                               # measurement — see the audit doc D9 and TODO.md. Two
+                               # consequences worth keeping in mind:
+                               #   1. Sonnet 5 tokenizes the same text to ~30% more tokens than
+                               #      the prior generation, so per-brief cost rises even though
+                               #      the sticker price is unchanged. Not yet measured on a real
+                               #      ~127K-char brief prompt.
+                               #   2. The SYSTEM_PROMPT was tuned against the prior generation.
+                               #      Sonnet 5 follows instructions more literally, so watch the
+                               #      first refreshed briefs for over-applied length/scope
+                               #      directives.
   timeout_s: 900               # generous ceiling; NVDA ~246s, CVX ~400s on the VPS, but a HEAVY
                                # filer (WDC: 178K-char prompt) measured ~490s and intermittently
                                # spilled past the old 600s ceiling (all 3 attempts timed out
@@ -379,14 +379,16 @@ research:
                                # failure is transient, so retry instead of dropping the brief.
                                # Worst case ~ max_attempts x timeout_s of wall-clock per ticker —
                                # keep <= scout.research_phase_budget_s.
-  fallback_model: claude-sonnet-4-6  # --fallback-model on the claude CLI. Without it an
-                               # overloaded primary fails all max_attempts identically
-                               # and the brief is dropped ("research unavailable").
-                               # 4.6 is the previous primary — known-good on this prompt
-                               # across 35 briefs, so an availability fallback degrades to a
-                               # measured model rather than an unknown one. A fallback-produced
-                               # brief is labelled with the model that actually ran
-                               # (claude_cli._answering_model), so the corpus stays auditable.
+  fallback_model: claude-opus-5   # --fallback-model on the claude CLI. Without it an
+                               # overloaded primary fails all max_attempts identically and the
+                               # brief is dropped ("research unavailable"). Must differ from
+                               # `model` above to do anything — falling back to the same model
+                               # just retries something unavailable, which max_attempts already
+                               # does. Opus 5 is the deliberate choice: it only fires when
+                               # Sonnet 5 is unavailable (rare), and a costlier brief beats no
+                               # brief. A fallback-produced brief is labelled with the model
+                               # that actually ran (claude_cli._answering_model), so the corpus
+                               # stays auditable.
                                # Remove the key for the byte-identical pre-feature argv.
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 12

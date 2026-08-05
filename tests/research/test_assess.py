@@ -11,7 +11,7 @@ def _wrap(ft):
                         cache_key=ft.accession, filing_date=ft.filing_date)
 
 
-CONFIG = {"research": {"model": "claude-sonnet-4-6", "timeout_s": 30,
+CONFIG = {"research": {"model": "claude-sonnet-5", "timeout_s": 30,
                        "max_risks": 8, "max_red_flags": 8}}
 
 FILING = FilingText(
@@ -95,7 +95,7 @@ def test_assess_happy_path_and_grounding():
     a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
     assert a is not None
     assert a.synthesis == "High-quality franchise."
-    assert a.cost_usd == 0.02 and a.model == "claude-sonnet-4-6"
+    assert a.cost_usd == 0.02 and a.model == "claude-sonnet-5"
     # grounded risk verifies True; fabricated red flag verifies False
     assert a.risks[0].verified is True
     assert a.red_flags[0].verified is False
