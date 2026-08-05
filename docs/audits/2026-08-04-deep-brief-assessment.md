@@ -14,13 +14,12 @@
 > the installer *from* `/opt/shortlist` — that is a silent no-op). Existing briefs are cached
 > by accession and will not show the new sections without `--refresh`.
 >
-> **This doc is now the sole record of the remaining work** — the TODO.md entry was removed on
-> merge. Everything in §7 `worth-building`, `needs-measurement`, and `rejected-and-why` is
-> unbuilt and deliberately unstarted. Verified end-to-end against the real AAPL 10-K: the production `_norm`
-> now recovers **8 of 11** persisted-unverified findings (the other 3 are 10-Q-sourced and
+> D1 was verified end-to-end against the real AAPL 10-K before merge: the production `_norm`
+> recovers **8 of 11** persisted-unverified findings (the other 3 are 10-Q-sourced and
 > untestable — that 10-Q has been superseded), matching the independent measurement in D1.
-> **Everything in `worth-building` / `needs-measurement` is NOT built.** Briefs are cached by
-> accession, so existing briefs are unchanged until re-run with `--refresh`.
+>
+> **This doc is now the sole record of the remaining work** — the TODO.md entry was removed on
+> merge. Everything in §7 is unbuilt and deliberately unstarted.
 
 **Date:** 2026-08-04 · **Scope:** the `/deep` brief — documents assembled, prompt, guards, rendered output.
 **Out of scope:** the scorer, composite legs, discovery signals (see `CLAUDE.md` → "Design premise").
@@ -585,72 +584,67 @@ demotion 0/32; **net conviction changes 0/32.**
 
 ---
 
-## 7. Ranked recommendations
+## 7. Remaining work
 
-### `cheap-and-certain`
-
-1. **Add valuation to `_quant_context`** (D2). Append `pe_ttm`, `pe_median_5y`, `fcf_yield`, `peg`,
-   `market_cap`, `price` to the `scalars` list in `assess.py:350`. No new feed, no new fetch, no
-   latency. Largest decision-impact-per-line change in this report.
-2. **Fold typographic punctuation in `_norm`** (D1). Diff in §3, tests checked. Recovers ~73% of false
-   unverified marks and makes the residual — including two fabricated composite quotes — legible.
-3. **Carry 8-K item codes into `filing_events`** (D5). Add `items` to `FilingEvent`, read it in
-   `_fetch_filings_index`, render it at `assess.py:257`. Zero additional requests.
-4. **Persist `confidence` on the brief JSON** (D4). One field; the only reason §6 had to reason
-   indirectly about the guards.
-5. **Add `--fallback-model` to the CLI invocation** (D10).
-6. **Thread `macro` into `_research_fn`** (D8) and render one line — rate regime, HY OAS, curve. Keep
-   it to facts that change how *this company's* numbers read (financing cost, discount rate,
-   cyclicality); do not let it invite market-timing prose. Guard by making the line a fixed template
-   rather than free text.
+The six `cheap-and-certain` items shipped in **PR #161** (`9b6ed0d`) and have been removed from
+this list — they are now described by the code and its tests (see the status banner above).
+Everything below is unbuilt. Numbering restarts; cross-references are updated.
 
 ### `worth-building`
 
-7. **Materiality bar instead of a count cap** (D3) — prompt edit in §5, plus the same treatment for
-   `reconciliation`, which saturates *against an explicit instruction*.
-8. **Close the `red_flags` enumeration** (D7) and **forbid cross-section quote reuse** (D6). Both are
+1. **Materiality bar instead of a count cap** (D3) — prompt edit in §5, plus the same treatment for
+   `reconciliation`, which saturates *against an explicit instruction*. Do **not** justify this as
+   "removing filler": §3 measured the tail as company-specific. The case is false precision
+   ("exactly 12 material risks" every time is not credible) and attention dilution.
+2. **Close the `red_flags` enumeration** (D7) and **forbid cross-section quote reuse** (D6). Both are
    prompt-only.
-9. **Debt maturity ladder** (§4 #3) — reuses the proven `companyconcept` pattern in
+3. **Debt maturity ladder** (§4 #3) — reuses the proven `companyconcept` pattern in
    `_edgar_facts.py`; 1,636 filers tag the 1-year concept in a single quarter; verified live on
    Boeing ($8,351M due within 12mo). Turns an abstract leverage gate into a dated obligation.
-10. **Ask the model to do the arithmetic.** The most consistent qualitative gap: normalized earnings
-    ex-one-offs, cash runway, refinancing coverage. All three briefs assembled the inputs and stopped.
-    Prompt-only.
-11. **Guidance issued vs delivered** (§4 #4) — unlocked by #3 above, since Item 2.02 is the marker.
-12. **Peer multiples via `frames`** (§4 #5) — the brief's only current valuation lens is a company's
-    own history; this adds the cross-section.
+4. **Ask the model to do the arithmetic.** The most consistent qualitative gap: normalized earnings
+   ex-one-offs, cash runway, refinancing coverage. All three briefs assembled the inputs and stopped.
+   Prompt-only.
+5. **Guidance issued vs delivered** (§4 #4) — unlocked by the now-shipped 8-K item codes (D5), since
+   Item 2.02 is the marker for the earnings press release carrying the guidance table.
+6. **Peer multiples via `frames`** (§4 #5) — the brief's only current valuation lens is a company's
+   own history; this adds the cross-section.
 
 ### `needs-measurement`
 
-13. **Upgrade the model** (D9). `claude-opus-5` is the capability answer; `claude-sonnet-5` is the
-    nominal cost answer but its new tokenizer makes that non-obvious on a 178K-char prompt. **Measure
-    before choosing:** run `count_tokens` on one real prompt against `claude-sonnet-4-6`,
-    `claude-sonnet-5`, and `claude-opus-5`. Then re-run 3–5 cached tickers with `--refresh` and diff
-    the briefs. Note this needs an API key or `ant`, neither of which is on this box.
-14. **Segment revenue/margin via raw XBRL** (§4 #7). Real and retrievable — proven live on GE
-    (Commercial Engines $33,252M revenue / $8,861M op income). But 225MB peak RSS on a 1.9GB box, and
-    segment concepts are not standardized across filers (GE mixes `ge:` extensions with `us-gaap` +
-    axis), so extraction must search by dimension-member presence, not a concept whitelist. Gate it
-    the way `proxy.py` is gated: per-deep-dive only, never on the harness path, failure-isolated.
-15. **Two-pass generation.** Deferred, not rejected — re-evaluate once D1 lands and the true residual
-    error rate is known. The current case for it rests on a 17% figure that is ~73% artifact.
+7. **Quantify the model change** (D9). The change itself was **made by operator decision on
+   2026-08-05** — primary `claude-sonnet-5`, fallback `claude-opus-5` — and was explicitly **not
+   measured**; do not cite it as evidence. Still open: `count_tokens` on a real ~127K-char brief
+   prompt across the candidates to size the tokenizer cost delta, and a close read of the first
+   `--refresh`ed briefs to check whether the `SYSTEM_PROMPT` (tuned against the prior generation)
+   over-applies under Sonnet 5's more literal instruction following. Needs an API key or `ant`,
+   neither of which is on this box.
+8. **Segment revenue/margin via raw XBRL** (§4 #7). Real and retrievable — proven live on GE
+   (Commercial Engines $33,252M revenue / $8,861M op income). But 225MB peak RSS on a 1.9GB box, and
+   segment concepts are not standardized across filers (GE mixes `ge:` extensions with `us-gaap` +
+   axis), so extraction must search by dimension-member presence, not a concept whitelist. Gate it
+   the way `proxy.py` is gated: per-deep-dive only, never on the harness path, failure-isolated.
+9. **Two-pass generation.** Deferred, not rejected — and materially weaker than it first looked. Its
+   case rested on the 17% tainted-findings figure, which turned out to be ~73% normalization
+   artifact. D1 has now shipped, so the honest residual is finally measurable: re-measure it before
+   reconsidering.
 
 ### `rejected-and-why`
 
-16. **Earnings-call transcripts.** No free, ToS-clean, small-cap-covering source in 2026. Cheapest
-    legitimate path is FMP Ultimate at $149/mo — 7× your stated ceiling for one input. Update
-    `ASSESSMENT_GAPS.md` §3.1 to record this rather than leaving it as "deferred."
-17. **Ticker-side 13F ownership.** All free APIs gate it; the DIY path needs the full-universe
+10. **Earnings-call transcripts.** No free, ToS-clean, small-cap-covering source in 2026. Cheapest
+    legitimate path is FMP Ultimate at $149/mo — 7× the stated ceiling for one input. **Still to do:**
+    update `ASSESSMENT_GAPS.md` §3.1, which calls transcripts "the single biggest win" and implies
+    they are merely deferred rather than unobtainable.
+11. **Ticker-side 13F ownership.** All free APIs gate it; the DIY path needs the full-universe
     quarterly parse the existing curated-fund design exists to avoid.
-18. **Numeric sell-side estimates / price targets.** Premium on Finnhub; not confirmed reachable on
-    FMP Starter. Only free recommendation-trend counts survive, and those are ranked 8th for a
+12. **Numeric sell-side estimates / price targets.** Premium on Finnhub; not confirmed reachable on
+    FMP Starter. Only free recommendation-trend counts survive, and those rank 8th in §4 for a
     reason.
-19. **Relaxing "ONLY a JSON object" to allow a reasoning preamble** (finding E). Free to do, but the
+13. **Relaxing "ONLY a JSON object" to allow a reasoning preamble** (finding E). Free to do, but the
     justification was the 17% tainted-findings figure, which is mostly artifact. Leave the instruction
-    as-is; `_salvage_json` already provides the safety margin. Revisit with #15.
-20. **Raising the context caps.** The 178K-char prompt is already near the useful limit and the
-    briefs' weakness is not missing text — it is missing *numbers* (D2) and missing arithmetic. Every
-    recommendation above adds tens of characters, not tens of thousands. Do not spend budget here.
+    as-is; `_salvage_json` already provides the safety margin. Revisit with #9.
+14. **Raising the context caps.** The prompt is already near the useful limit and the briefs' weakness
+    is not missing text — it is missing *numbers* (D2, now shipped) and missing arithmetic (#4). Every
+    remaining recommendation adds tens of characters, not tens of thousands. Do not spend budget here.
 
 ---
 
