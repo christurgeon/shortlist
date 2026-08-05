@@ -53,3 +53,29 @@ def apply_veto(candidates: list[Candidate],
     for c in candidates:
         (vetoed if c.ticker.upper() in veto_map else kept).append(c)
     return kept, vetoed
+
+
+def apply_quality_floor(candidates: list[Candidate],
+                        verdicts: dict) -> tuple[list[Candidate], list[tuple]]:
+    """Drop candidates whose fundamentals make the deep-screen slot a waste
+    (`quality_floor.assess`). Runs BETWEEN the veto and select, the same seam as
+    `apply_veto`, so a dropped name never consumes one of the ~10 slots and the next-ranked
+    candidate backfills it.
+
+    `verdicts` is UPPER ticker -> `quality_floor.Verdict`. An empty map is the identity —
+    the byte-identical pre-feature funnel — and so is a ticker absent from the map, because
+    missing fundamentals must abstain rather than drop. Returns
+    `(kept, [(candidate, verdict), ...])`; the CALLER names each drop in manifest.notes, so
+    this stage stays pure (no state, no I/O), exactly like `apply_veto`.
+    """
+    if not verdicts:
+        return list(candidates), []
+    kept: list[Candidate] = []
+    dropped: list[tuple] = []
+    for c in candidates:
+        v = verdicts.get(c.ticker.upper())
+        if v is not None and not v.keep:
+            dropped.append((c, v))
+        else:
+            kept.append(c)
+    return kept, dropped

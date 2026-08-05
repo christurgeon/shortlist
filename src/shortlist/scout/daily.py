@@ -20,7 +20,7 @@ from ._caption import _caption
 from .budget import select
 from .calendar import last_session
 from .firehose import CohortEvent, cohort_events_from_emissions
-from .funnel import aggregate, apply_veto, prefilter
+from .funnel import aggregate, apply_quality_floor, apply_veto, prefilter
 from .models import Candidate, Emission, RunManifest, SignalStatus
 from .sec_throttle import sec_throttle
 from .signals import build_signals
@@ -233,6 +233,77 @@ def _log_firehose(state: ScoutState, emissions: list[Emission], session: date,
         import warnings
         warnings.warn(f"scout: firehose logging failed (non-fatal): {exc}", stacklevel=2)
         return []
+
+
+def _fetch_universe_fundamentals(*, identity: str, session: date, cache_dir: str,
+                                 quarters: int, years: int) -> dict:
+    """`{ticker -> Fundamentals}` for the WHOLE listed universe via SEC `frames`.
+
+    ~12 requests total (one per tag per period), all through the shared SEC budget. Frames
+    are merged NEWEST-FIRST so fresh data wins and older periods only backfill filers the
+    newest frame does not yet carry — a frame keeps filling as filers report.
+
+    LIVE ONLY. `frames` has no filing date, so this must never feed a backfill; history
+    comes from the DERA archive (docs/audits/2026-08-05-standing-screen-data-source.md §3).
+    """
+    from ..data.secframes import annual_frames, fetch_family, instant_frames, merge_family
+    from ..providers._xbrl_facts import ASSETS, EQUITY, NET_INCOME, OCF, REVENUE
+    from .cik_tickers import load_cik_to_ticker
+    from .quality_floor import fundamentals_from_frames
+
+    kw = {"identity": identity, "cache_dir": cache_dir, "today": session}
+    inst, ann = instant_frames(session, quarters), annual_frames(session, years)
+
+    def across(tags, periods, **extra):
+        return merge_family([fetch_family(tags, p, **kw, **extra) for p in periods])
+
+    return fundamentals_from_frames(
+        cik_to_ticker=load_cik_to_ticker(identity),
+        revenue=across(REVENUE, ann),
+        net_income=across(NET_INCOME, ann),
+        equity=across(EQUITY, inst),
+        assets=across(ASSETS, inst),
+        ocf=across(OCF, ann),
+    )
+
+
+def _quality_floor_verdicts(scout_cfg: dict, session: date,
+                            _fetch=None) -> tuple[dict, list[str]]:
+    """Deep-screen slot hygiene (`quality_floor`): drop candidates whose fundamentals make
+    the slot a waste, before `select` allocates the ~10 FMP slots.
+
+    Returns `(verdicts, notes)`. Gated by `scout.quality_floor.enabled` — **absent or
+    disabled returns ({}, []) with ZERO fetches**, the byte-identical pre-feature funnel.
+    Never raises: a failed universe fetch degrades to inert plus a LOUD note, because
+    screening unprotected must not be silent (the veto-sweep precedent).
+    """
+    cfg = scout_cfg.get("quality_floor") or {}
+    if not cfg.get("enabled"):
+        return {}, []
+    from .quality_floor import verdicts_from_fundamentals
+    fetch = _fetch or _fetch_universe_fundamentals
+    try:
+        funds = fetch(identity=os.environ.get("SEC_IDENTITY")
+                      or "shortlist-scout turgechr@duck.com",
+                      session=session,
+                      cache_dir=cfg.get("cache_dir", ".cache/sec_frames"),
+                      quarters=cfg.get("lookback_quarters", 3),
+                      years=cfg.get("lookback_years", 2))
+    except Exception as exc:  # noqa: BLE001 — degrade, but never quietly
+        return {}, [f"quality floor UNAVAILABLE ({redact_secrets(str(exc))}) — "
+                    "candidates were not fundamentals-checked this run"]
+    verdicts = verdicts_from_fundamentals(funds)
+    notes = [f"quality floor: {len(funds):,} listed filers checked"] if funds else []
+    return verdicts, notes
+
+
+def _quality_floor_notes(dropped: list) -> list[str]:
+    """One manifest note per candidate the floor dropped, naming the ticker AND the reason.
+
+    Observability parity with the 8-K veto: anything that costs a name its deep-screen slot
+    must be attributable in the manifest, never a bare count.
+    """
+    return [f"QUALITY FLOOR: {c.ticker} dropped — {v.reason}" for c, v in dropped]
 
 
 def _negative_veto_sweep(state: ScoutState, scout_cfg: dict,
@@ -611,6 +682,15 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     veto_map, veto_notes = ({}, []) if demo else _negative_veto_sweep(state, scout_cfg, session)
     kept, vetoed_cands = apply_veto(kept, veto_map)
     veto_notes.extend(_veto_notes(state, vetoed_cands, veto_map))
+
+    # 1a-ii. Deep-screen slot hygiene (scout.quality_floor, ships OFF): drop candidates whose
+    # universe fundamentals make the slot a waste, before select() allocates the ~10 FMP
+    # slots. Same seam as the veto, so the next-ranked candidate backfills. Demo is offline;
+    # an absent/disabled block returns ({}, []) with zero fetches -> byte-identical funnel.
+    floor_verdicts, floor_notes = ({}, []) if demo else _quality_floor_verdicts(scout_cfg, session)
+    kept, floor_dropped = apply_quality_floor(kept, floor_verdicts)
+    veto_notes.extend(floor_notes)
+    veto_notes.extend(_quality_floor_notes(floor_dropped))
 
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
     _run_boosters(boosters, kept, session=session, sig_cfg=sig_cfg, statuses=statuses)

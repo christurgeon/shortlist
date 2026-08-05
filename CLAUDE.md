@@ -720,6 +720,47 @@ suffixes, EXACT equality only — ambiguous names abstain); (3) **None** (abstai
 `available()` detail). Every sec.gov request (submissions, index, infotable, FTD zips) goes
 through the **process-wide `sec_throttle()`** (below).
 
+## Deep-screen slot hygiene — the quality floor (scout)
+
+The binding constraint in this funnel is **not candidate volume — it is the ~10 FMP
+deep-screen slots/day** (`scout.daily_x`). `budget.select` orders purely by signal weight and
+knows nothing about the business, because assessing fundamentals used to require the very
+per-ticker screen being allocated.
+
+**`data/secframes.py` breaks that circularity.** SEC XBRL `frames`
+(`data.sec.gov/api/xbrl/frames/{ns}/{tag}/{unit}/{frame}.json`) returns one concept across
+EVERY filer in ONE request: ~12 requests buys fundamentals for the whole 7,999-ticker listed
+universe in ~8 MB / ~5 s, all through the shared SEC budget. **Tag families are priority
+unions, never sums** (`merge_family`) — CY2025 revenue is 2,663/2,191/643/0 across the four
+tags but **4,605 as a union**. Frames are merged **newest-first** across periods so fresh data
+wins and older ones only backfill.
+
+**`frames` is LIVE-ONLY.** It carries no filing date (`accn, cik, end, entityName, loc, val`),
+so it returns the current best value and a restatement silently overwrites what was knowable.
+**History must come from the DERA archive**, which has `filed` per row — and a DERA backfill
+must use the point-in-time `symbology.Symbology`, never a current-day `cik_tickers` join
+(that re-excludes delisted filers). Mixing the two would import restatement look-ahead into
+every verdict. Full reasoning: `docs/audits/2026-08-05-standing-screen-data-source.md`.
+
+`scout/quality_floor.py` is **a FLOOR, not a ranker, deliberately** — a full-universe
+fundamental *ranking* is the existing composite at S&P-1500 scale, the add-scoring-surface
+move this repo has killed four times. Two rules, both abstaining on missing data: **no
+revenue** (present and ≤0), and **negative equity AND negative earnings AND negative OCF**.
+
+**Both conjunctions are load-bearing guards, each validated against a real ledger name:**
+negative equity alone must never drop a name (buyback compounders — the `over_leveraged`
+trap), and the **OCF condition exists because REITs** carry negative book equity and negative
+GAAP earnings from depreciation while generating real cash (`GIPR`, OCF +$929k, was a false
+positive without it). That guard is structural precisely because SIC is **not** available at
+this stage — `sectors.masked_legs` runs later.
+
+Runs between `apply_veto` and `select` (`funnel.apply_quality_floor`), so a dropped name never
+consumes a slot and the next-ranked candidate backfills. Ships **OFF**
+(`scout.quality_floor`); absent/disabled = byte-identical funnel with **zero fetches**, pinned
+by `tests/test_scout_quality_floor.py`. Measured on the live ledger: **7 of 135 (5.2%)** past
+picks were slot-wasting, **6 of 7 from `edgar:activist_13d`** — corroborating the 2026-07-26
+composition audit's $50M median. Evidence: `docs/audits/2026-08-05-quality-floor-evidence.md`.
+
 ## The shared sec.gov throttle
 
 `scout/sec_throttle.py` owns a **process-wide ~6 req/s min-interval budget**

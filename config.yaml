@@ -643,6 +643,28 @@ scout:
                              # byte-identical pre-feature funnel.
       enabled: true
       lookback_days: 30      # veto horizon + state prune window (matches the drift window)
+  # Deep-screen slot hygiene. The binding constraint in this funnel is NOT candidate volume,
+  # it is the ~10 FMP deep-screen slots/day (daily_x): budget.select orders purely by signal
+  # weight and knows nothing about the business. SEC `frames` breaks that circularity —
+  # ~12 requests buys fundamentals for the WHOLE listed universe, so a candidate can be
+  # checked BEFORE it consumes a slot (docs/audits/2026-08-05-standing-screen-data-source.md).
+  #
+  # Deliberately a FLOOR, not a ranker. A full-universe fundamental RANKING is the existing
+  # quality/value composite run at S&P-1500 scale — the add-scoring-surface move this repo
+  # has killed four times (buyback, leverage tilt, accruals, EV/EBIT). Dropping the
+  # structurally unfit needs no return study, only the observation that the slot buys
+  # nothing. Anything stronger (re-ordering, weighting, originating) needs a pre-registered
+  # cohort FIRST.
+  #
+  # Ships OFF. Remove the block (or leave enabled:false) for the byte-identical pre-feature
+  # funnel with ZERO fetches — pinned by tests/test_scout_quality_floor.py.
+  quality_floor:
+    enabled: false
+    cache_dir: .cache/sec_frames
+    lookback_quarters: 3     # instant (balance-sheet) frames merged newest-first; a frame
+                             # keeps filling as filers report, so older ones backfill gaps
+    lookback_years: 2        # annual (duration) frames for revenue / net income
+
   thirteenf:                 # EdgarThirteenFSignal — marquee-fund new-position cloning from
                              # SEC 13F information tables. A DEFENSIBLE, established-positive
                              # prior (Martin-Puthenpurackal 2008; Cohen-Polk-Silli 2010 "best
