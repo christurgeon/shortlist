@@ -15,6 +15,7 @@ import httpx
 
 from ..env import redact_secrets
 from .models import Emission
+from .sec_throttle import sec_throttle
 
 
 class SignalSource(Protocol):
@@ -837,15 +838,15 @@ class EdgarThirteenFSignal:
         self.resolver_cache_dir = resolver_cache_dir
         self.ftd_cache_dir = ftd_cache_dir
         self._resolver = None
-        self._throttle = None
+        # The PROCESS-WIDE budget, not a private one: a per-signal throttle cannot bound the
+        # process's SEC request rate (audit §4).
+        self._throttle = sec_throttle()
         self.processed_accessions: list[str] = []   # daily.py persists these into ScoutState
         self._status = (False, "not run")
 
     def scan(self, session: date) -> list[Emission]:
         from . import thirteenf as tf
         from .cusip_map import load_cusip_resolver
-        if self._throttle is None:
-            self._throttle = tf.SecThrottle()
         try:
             if self._resolver is None:
                 self._resolver = load_cusip_resolver(

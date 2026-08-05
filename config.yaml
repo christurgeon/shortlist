@@ -701,7 +701,14 @@ scout:
     attach_html: true      # send the HTML deep-dive as a document
     caption_top_n: 3       # names listed in the photo caption
   signals:
-    yahoo_screener: {enabled: true,  weight: 1.0}
+    # DISABLED 2026-08-05. Yahoo's edge WAF rejects the predefined-screener endpoint from
+    # this datacenter IP on EVERY run (100% failure across every logged session; the chart/
+    # price endpoint still works — see the CLAUDE.md "Yahoo WAF gotcha"). It has never
+    # contributed a candidate here, so turning it off is OUTPUT-NEUTRAL. Left enabled it
+    # made run_health() report "⚠ DEGRADED" every single day, which destroys the value of an
+    # alert that exists to catch a REAL originator failure (audit §5d/§9). Re-enable only
+    # from an IP where the screener actually answers 200.
+    yahoo_screener: {enabled: false, weight: 1.0}
     edgar_form4:    {enabled: true,  weight: 1.0}
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}

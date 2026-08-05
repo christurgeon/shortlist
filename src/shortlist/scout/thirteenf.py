@@ -2,9 +2,11 @@
 originator (scout). See docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md §1.
 
 Fetch and pure aggregation are separated (the shared-leaf pattern) so the whole diff runs
-offline in tests. Live SEC requests carry an explicit ~3 req/s min-interval throttle
-(`SecThrottle`) — there is NO shared *.sec.gov throttle to inherit (the EFTS one is buried
-in efts._page and EFTS-specific).
+offline in tests. Live SEC requests go through the PROCESS-WIDE `sec_throttle()`
+(`scout/sec_throttle.py`) — this module used to own a private `SecThrottle`, which meant its
+~3 req/s ran on top of the Form 4 sweep's rate rather than inside one shared ceiling; see
+`docs/audits/2026-08-05-discovery-funnel-audit.md` §4. `SecThrottle` is re-exported here for
+back-compat.
 
 Marquee-fund new positions clone an established-positive academic prior (Martin &
 Puthenpurackal 2008; Cohen-Polk-Silli 2010 "best ideas"), measured from the FILING date
@@ -13,39 +15,18 @@ scoring.score() is byte-identical, the downstream scorer + gates remain the skep
 """
 from __future__ import annotations
 
-import threading
-import time
 import xml.etree.ElementTree as ET
 from typing import Callable, Optional
 
 from .eightk import _junk_suffix
 from .models import Emission
+from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottle re-exported
 
 SIGNAL = "edgar:13f_new_position"
 
 # Emission strength = within-book conviction, capped at 1.0 (design §1.8): a 5%-of-book new
 # position is a full-conviction bet. Below the 13D/Form-4 marquee tier only via the smaller
 # default weight the signal ships at (the information is up to 45 days stale).
-
-
-class SecThrottle:
-    """Process-wide min-interval throttle for every sec.gov request this signal makes
-    (submissions, filing index, infotable XML, FTD zips). ~3 req/s default, comfortably
-    under the SEC ~10 req/s fair-access ceiling. Thread-safe (the scan runs on one worker,
-    but a shared instance across signals stays polite)."""
-
-    def __init__(self, min_interval_s: float = 0.34) -> None:
-        self.min_interval_s = min_interval_s
-        self._lock = threading.Lock()
-        self._last = 0.0
-
-    def __call__(self) -> None:
-        with self._lock:
-            now = time.monotonic()
-            wait = self.min_interval_s - (now - self._last)
-            if wait > 0:
-                time.sleep(wait)
-            self._last = time.monotonic()
 
 
 # --- submissions -> latest/prior 13F-HR selection --------------------------------------

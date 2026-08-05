@@ -1,5 +1,6 @@
 from datetime import date
 from shortlist.scout.edgar_index import (
+    fetch_activist_records,
     fetch_form4_submissions,
     fetch_recent_records,
     _is_real_ticker,
@@ -89,6 +90,35 @@ def test_fetch_activist_records_outage_degrades_loudly(monkeypatch):
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
 
+class _FakeCompanyInfo:
+    def __init__(self, cik, name):
+        self.cik, self.name = cik, name
+
+
+class _FakeSubject:
+    def __init__(self, cik, name):
+        self.company_information = _FakeCompanyInfo(cik, name)
+
+
+class _FakeHeader:
+    def __init__(self, cik, name):
+        self.subject_companies = [_FakeSubject(cik, name)]
+        self.filers = [_FakeSubject(999, "Activist LP")]
+
+
+class _FakeActivistFiling:
+    """`.header` is a NETWORK access in edgartools — the throttle must precede it."""
+
+    def __init__(self, accession_no, cik, form="SCHEDULE 13D"):
+        self.accession_no = accession_no
+        self.form = form
+        self._cik = cik
+
+    @property
+    def header(self):
+        return _FakeHeader(self._cik, "Target Co")
+
+
 class _FakeFiling:
     def __init__(self, accession_no, submission_text):
         self.accession_no = accession_no
@@ -129,6 +159,32 @@ def test_fetch_form4_submissions_outage_degrades_loudly(monkeypatch):
         # apart from a quiet day.
         assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], None, 0)
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
+
+
+def test_fetch_form4_submissions_throttles_every_filing(monkeypatch):
+    """The 2500-filing sweep is the process's heaviest SEC consumer; every per-filing
+    request must pass the shared throttle or it 429s the rest of the run (audit §4)."""
+    published = {"2026-06-02": [
+        _FakeFiling("0001-26-00000%d" % i, "<ownershipDocument>x</ownershipDocument>")
+        for i in range(1, 4)
+    ]}
+    _install_fake_edgar_module(monkeypatch, published)
+    calls = []
+    docs, used, considered = fetch_form4_submissions(
+        date(2026, 6, 2), 400, "id@x.z", _throttle=lambda: calls.append(1))
+    assert len(docs) == 3
+    assert len(calls) == 3           # one throttle acquisition per filing fetched
+
+
+def test_fetch_activist_records_throttles_every_header_fetch(monkeypatch):
+    """13D discovery fetches a header per filing to read the SUBJECT company — same budget."""
+    published = {"2026-06-02": [_FakeActivistFiling("0009-26-00000%d" % i, cik=320193 + i)
+                                for i in range(1, 3)]}
+    _install_fake_edgar_module(monkeypatch, published)
+    calls = []
+    fetch_activist_records(date(2026, 6, 2), 300, "id@x.z",
+                           lambda cik: "AAPL", _throttle=lambda: calls.append(1))
+    assert len(calls) == 2
 
 
 def test_fetch_form4_submissions_skips_one_bad_filing(monkeypatch):

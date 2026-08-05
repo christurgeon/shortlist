@@ -537,7 +537,9 @@ def _run_boosters(boosters: list, kept: list, *, session: date, sig_cfg: dict,
             if em.ticker in kept_by_ticker:  # only fold into existing candidates
                 kept_by_ticker[em.ticker].add(em, w)
         ran, detail = booster.available()
-        statuses.append(SignalStatus(booster.name, ran, detail))
+        # discovery=False: a booster's `ran=False` ("checked 0 tickers") is a CONSEQUENCE of
+        # an empty funnel, never a broken originator — run_health must not count it.
+        statuses.append(SignalStatus(booster.name, ran, detail, False))
 
 
 def run(config: dict, *, demo: bool, today: date) -> int:

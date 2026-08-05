@@ -47,6 +47,32 @@ class SignalStatus:
     name: str
     ran: bool
     detail: str            # "42 hits" or "rate-limited" — the coverage line
+    discovery: bool = True  # False for enrichment signals (finnhub_news, wikipedia) that
+                            # annotate already-found tickers and can never raise `raw`.
+                            # LAST field with a default — every existing 3-arg construction
+                            # stays valid (same rule as RunManifest.vetoed).
+
+
+def run_health(signals: list["SignalStatus"], raw: int) -> tuple[str, list[str]]:
+    """Classify a run as `healthy` / `degraded` / `quiet`, plus the failed originators.
+
+    A DEGRADED run and a genuinely QUIET one both produce `0 raw`, and until now they
+    rendered identically — which is how the 13D originator stayed dead for two sessions
+    (docs/audits/2026-08-05-discovery-funnel-audit.md §5d).
+
+    - `degraded`: an ENABLED discovery signal did not run. Takes precedence even when other
+      originators still found candidates — a partial failure must not hide behind `raw > 0`.
+    - `quiet`: nothing failed and nothing was found. A real, unremarkable filing day.
+    - `healthy`: nothing failed and candidates were found.
+
+    Disabled signals are never failures (six ship disabled on evidence), and neither are
+    enrichment signals, whose `ran=False` means the funnel handed them nothing to check.
+    """
+    failed = [s.name for s in signals
+              if s.discovery and not s.ran and not s.detail.startswith("disabled")]
+    if failed:
+        return "degraded", failed
+    return ("quiet" if raw == 0 else "healthy"), []
 
 
 @dataclass

@@ -718,8 +718,43 @@ settlement wins** on symbol churn; (2) **exact-normalized-issuer-name** fallback
 `company_tickers.json` titles (uppercase, strip punctuation + INC/CORP/CO/LTD/PLC-style
 suffixes, EXACT equality only — ambiguous names abstain); (3) **None** (abstain, counted in
 `available()` detail). Every sec.gov request (submissions, index, infotable, FTD zips) goes
-through the signal's own **~3 req/s min-interval throttle** (`SecThrottle`) — there is NO
-shared sec.gov throttle to reuse.
+through the **process-wide `sec_throttle()`** (below).
+
+## The shared sec.gov throttle
+
+`scout/sec_throttle.py` owns **one process-wide ~6 req/s min-interval budget**
+(`sec_throttle()`, `DEFAULT_MIN_INTERVAL_S = 0.167`) that every scout SEC consumer draws on —
+SEC fair access is ~10 req/s, and we sit at 60% of it (not higher) because this IP has a
+**recent 429 history**. **Do not give a signal its own `SecThrottle`**: a per-signal
+throttle cannot bound the *process's* request rate, which is exactly how this broke. The
+Form 4 sweep (`edgar_index.fetch_form4_submissions`, up to `edgar_index_daily_cap` = 2500
+filings, one request each) ran unthrottled and 429'd SEC for the rest of the run; the 13D
+originator, the DERA quarterly index and `company_tickers.json` all failed behind it and the
+funnel delivered **zero candidates on 2026-08-04**
+(`docs/audits/2026-08-05-discovery-funnel-audit.md` §4). `SecThrottle` used to live in
+`thirteenf.py`, which still re-exports it for back-compat.
+
+**Cost of throttling, measured 2026-08-05:** 6.19 req/s. A 930-filing day (real, 08-05) costs
+~2.6 min, p90 (~1,498) ~4.2 min, the 2500 cap ~7.0 min, against `TimeoutStartSec=1800`. The
+harness `EdgarSource` is async and bounded by its own `_EDGAR_MAX_CONCURRENCY` semaphore —
+it is **outside** this budget (it runs after discovery, so they don't overlap, but nothing
+enforces that), which is part of why the interval keeps headroom.
+
+**Don't reach for concurrency here.** `full_text_submission()` latency is ~17 ms, so one
+serial worker already sustains ~57 req/s — the rate limit is the entire constraint and a
+thread pool buys nothing. Two volume "optimisations" have been tried and **both were wrong**:
+filtering on whether the daily-index `cik` resolves to a ticker deletes ~80% of real
+large-cap emissions (the index row's CIK is the **filer**, often the reporting *owner* — a
+person — and the ticker comes from the document's `<issuerTradingSymbol>`, not the resolver);
+and the `[:max_filings]` cap truncates a **structured, not random** prefix, so any
+time-budget cutoff added later must shuffle or relevance-sort first or it introduces
+selection bias. Details: `docs/audits/2026-08-05-discovery-funnel-audit.md` §10.
+
+`cik_tickers.load_raw_company_tickers` **retries** (3 attempts, linear backoff) and then
+falls back to the **newest cached index within 7 days** rather than abstaining; the built
+index is **memoised per (identity, cache_dir, day)** so all five resolver call sites in a run
+share one map (`reset_resolver_cache()` drops it). Before this, one transient 429 returned
+`{}` and bailed 13D / 13D-A / 8-K / buyback / 13F-symbology for the whole session.
 
 **Seen-accession semantics** (`ScoutState.thirteenf_seen_accessions`, `_append_capped`,
 forward-compatible): a fund's latest 13F-HR is marked **processed even when the diff yields
