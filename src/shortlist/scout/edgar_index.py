@@ -19,6 +19,7 @@ from ..env import redact_secrets
 from .calendar import is_trading_day
 from .models import Emission
 from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
+from .sec_throttle import sec_throttle
 
 # Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
 # foreign filers). They are NOT real symbols — left unfiltered they bucket together
@@ -119,8 +120,8 @@ def fetch_recent_records(session: date, max_filings: int, identity: str,
     return _walk_back_to_published(session, lookback, lambda d: fetch(d, max_filings, identity))
 
 
-def fetch_form4_submissions(session: date, max_filings: int,
-                            identity: str) -> tuple[list[str], date | None]:
+def fetch_form4_submissions(session: date, max_filings: int, identity: str,
+                            _throttle=None) -> tuple[list[str], date | None]:
     """Form 4 complete-submission texts for `session` (walk-back to the last published
     index, same rule as fetch_recent_records).
 
@@ -152,8 +153,10 @@ def fetch_form4_submissions(session: date, max_filings: int,
             fetch_day=lambda d: list(get_filings(form="4", filing_date=d.isoformat())))
         candidates = _dedup_by_accession(filings)[:max_filings]
         out: list[str] = []
+        throttle = _throttle or sec_throttle()
         for f in candidates:
             try:
+                throttle()      # the heaviest SEC consumer in the process -- audit §4
                 out.append(f.full_text_submission())
             except Exception:  # noqa: BLE001 -- skip one bad filing
                 continue
@@ -256,17 +259,19 @@ def _get_13d_index_rows(session: date, identity: str) -> list:
 
 
 def fetch_activist_records(session: date, max_filings: int, identity: str,
-                           resolve_ticker_fn) -> list[dict]:
+                           resolve_ticker_fn, _throttle=None) -> list[dict]:
     """Live: pull the SCHEDULE 13D (+ legacy SC 13D) daily index for `session`, dedup the
     doubled rows, parse each header into a record. `resolve_ticker_fn(cik)->ticker|None`
     maps the SUBJECT company's CIK to its ticker. Never raises (degrades to [])."""
     try:
         rows = _get_13d_index_rows(session, identity)
         records: list[dict] = []
+        throttle = _throttle or sec_throttle()
         for f in _dedup_by_accession(rows)[:max_filings]:
             try:
                 if not is_initial_13d(getattr(f, "form", "")):
                     continue  # exclude /A amendments (prefix match returns them)
+                throttle()    # `.header` is a network fetch -- share the SEC budget
                 hdr = f.header
                 subs = getattr(hdr, "subject_companies", None)
                 if not subs:

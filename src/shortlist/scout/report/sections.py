@@ -9,6 +9,7 @@ from __future__ import annotations
 import enum
 from typing import Protocol
 
+from ..models import run_health
 from .html import HtmlBuilder
 from .theme import (
     FLAG_DESCRIPTIONS,
@@ -375,6 +376,11 @@ class _Footer:
     def render_html(self, vm, h):
         inner = ""
         if vm.signals:   # autonomous run; interactive sets signals=[] -> coverage hidden
+            health = self._health_line(vm)
+            if health:
+                status, _ = run_health(list(vm.signals), vm.funnel.raw)
+                inner += h.tag("div", health,
+                               _class=f"health {'bad' if status == 'degraded' else 'ok'}")
             chips = "".join(
                 h.raw("span", f'{h.esc(s.name)} {"✓" if s.ran else "✗"} '
                       f'<span class="muted">({h.esc(s.detail)})</span>',
@@ -384,9 +390,23 @@ class _Footer:
         inner += "".join(h.tag("div", n, _class="note") for n in vm.notes)
         return h.raw("div", inner, _class="cov")
 
+    def _health_line(self, vm):
+        """One line telling a BROKEN run from a genuinely quiet one — they produce the same
+        `0 raw` otherwise, which is how 13D stayed dead for two sessions (audit §5d)."""
+        status, failed = run_health(list(vm.signals), vm.funnel.raw)
+        if status == "degraded":
+            return (f"⚠ DEGRADED — {len(failed)} originator(s) failed: {', '.join(failed)}. "
+                    "Candidate count is NOT a read on the market.")
+        if status == "quiet":
+            return "✓ All enabled originators ran — a genuinely quiet day, nothing broke."
+        return None
+
     def render_text(self, vm, detail):
         out = [""]
         if vm.signals:
+            health = self._health_line(vm)
+            if health:
+                out.append(health)
             out += [f"Signals: {self._sig(vm)}", f"Funnel: {self._funnel(vm)}"]
         out += [f"Note: {n}" for n in vm.notes]
         return out

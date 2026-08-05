@@ -91,6 +91,8 @@ class SignalStatusVM:
     name: str
     ran: bool
     detail: str
+    discovery: bool = True   # mirrors SignalStatus.discovery; run_health needs it to tell a
+                             # failed ORIGINATOR from a booster with nothing to enrich
 
 
 @dataclass
@@ -230,7 +232,8 @@ def build_view_model(cards, manifest: RunManifest, *,
     return ReportVM(
         session=manifest.session,
         leaders=leaders,
-        signals=[SignalStatusVM(s.name, s.ran, s.detail) for s in manifest.signals],
+        signals=[SignalStatusVM(s.name, s.ran, s.detail, getattr(s, "discovery", True))
+                 for s in manifest.signals],
         funnel=FunnelVM(manifest.raw, manifest.after_dedup, manifest.after_prefilter,
                         manifest.screened, manifest.dropped_for_budget),
         notes=list(manifest.notes),

@@ -1,7 +1,7 @@
 import json
 
 from shortlist.scout.cik_tickers import (build_cik_to_ticker, load_cik_to_ticker,
-                                         resolve_ticker)
+                                         reset_resolver_cache, resolve_ticker)
 
 
 def _raw(rows):
@@ -113,8 +113,94 @@ def test_load_never_raises_on_failure(tmp_path):
             raise RuntimeError("SEC 503 ?apikey=SECRET")
 
     idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 6, 28),
-                             _client=_BoomClient())
+                             _client=_BoomClient(), _sleep=lambda s: None)
     assert idx == {}
+
+
+class _FlakyClient:
+    """Fails `fail_times` times, then serves `payload`. Records attempt count."""
+
+    def __init__(self, payload, fail_times):
+        self._payload = payload
+        self._fail_times = fail_times
+        self.attempts = 0
+
+    def get(self, url):
+        self.attempts += 1
+        if self.attempts <= self._fail_times:
+            raise RuntimeError("SEC 429 Too Many Requests")
+        return _FakeResp(self._payload)
+
+
+def test_load_falls_back_to_the_newest_cached_index_when_the_fetch_fails(tmp_path):
+    """The 2026-08-04 outage: one transient SEC 429 returned {} and bailed EVERY
+    resolver-backed originator for the session, while a valid 24h-old index sat unread on
+    disk. A recent cached index must be preferred over abstaining."""
+    (tmp_path / "company_tickers-2026-08-03.json").write_text(
+        json.dumps(_raw([(320193, "AAPL")])))
+    idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                             _client=_FlakyClient({}, fail_times=99), _sleep=lambda s: None)
+    assert resolve_ticker(320193, idx) == "AAPL"
+
+
+def test_load_picks_the_most_recent_stale_index_not_just_any(tmp_path):
+    (tmp_path / "company_tickers-2026-07-30.json").write_text(
+        json.dumps(_raw([(1, "OLD")])))
+    (tmp_path / "company_tickers-2026-08-03.json").write_text(
+        json.dumps(_raw([(1, "NEWER")])))
+    idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                             _client=_FlakyClient({}, fail_times=99), _sleep=lambda s: None)
+    assert resolve_ticker(1, idx) == "NEWER"
+
+
+def test_load_ignores_a_cached_index_older_than_the_staleness_ceiling(tmp_path):
+    """An index stale by months can mis-resolve renamed/delisted symbols — past the ceiling
+    abstaining is correct again."""
+    (tmp_path / "company_tickers-2026-01-02.json").write_text(
+        json.dumps(_raw([(320193, "AAPL")])))
+    idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                             _client=_FlakyClient({}, fail_times=99), _sleep=lambda s: None)
+    assert idx == {}
+
+
+def test_load_retries_a_transient_failure_before_giving_up(tmp_path):
+    client = _FlakyClient(_raw([(320193, "AAPL")]), fail_times=2)
+    idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                             _client=client, _sleep=lambda s: None)
+    assert resolve_ticker(320193, idx) == "AAPL"
+    assert client.attempts == 3          # two failures retried, third served
+
+
+def test_every_call_site_in_a_run_sees_one_consistent_index(tmp_path):
+    """signals.py loads the resolver at 5 independent call sites. Without an in-process
+    memo they can DISAGREE inside one session: an early site fetches fresh, then SEC starts
+    429ing and a later site silently falls back to an older index — so 13D and 8-K resolve
+    the same CIK against different maps. The disk day-cache does not cover this (it is the
+    thing that goes missing here); only a shared in-process result does."""
+    reset_resolver_cache()
+    client = _FlakyClient(_raw([(320193, "AAPL")]), fail_times=0)
+    first = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path),
+                               _today=date(2026, 8, 4), _client=client)
+    assert resolve_ticker(320193, first) == "AAPL"
+
+    # SEC now fails AND the day-cache is gone — a second call site must still see `first`.
+    (tmp_path / "company_tickers-2026-08-04.json").unlink()
+    later = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                               _client=_FlakyClient({}, fail_times=99), _sleep=lambda s: None)
+    assert later == first
+    assert client.attempts == 1
+
+
+def test_an_empty_result_is_never_memoised(tmp_path):
+    """Caching a failure would pin the whole session to {} — the exact 08-04 outage."""
+    reset_resolver_cache()
+    boom = _FlakyClient({}, fail_times=99)
+    assert load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                              _client=boom, _sleep=lambda s: None) == {}
+    ok = _FlakyClient(_raw([(320193, "AAPL")]), fail_times=0)
+    idx = load_cik_to_ticker("me@x.com", cache_dir=str(tmp_path), _today=date(2026, 8, 4),
+                             _client=ok)
+    assert resolve_ticker(320193, idx) == "AAPL"   # retried, not served from a cached {}
 
 
 def test_load_never_raises_on_truthy_but_malformed_payload(tmp_path):

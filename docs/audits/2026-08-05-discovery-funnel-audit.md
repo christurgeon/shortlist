@@ -12,8 +12,9 @@ filings is *structurally* empty, not incidentally empty.
 Committed here (not under the gitignored `docs/superpowers/specs/`) per the CLAUDE.md
 "commit the evidence" rule.
 
-**Status: DIAGNOSIS ONLY. Nothing in §6 is implemented.** No code, config, or production
-state was changed by this audit.
+**Status (updated 2026-08-05): §6 items 1, 2, 3 and 6 are now IMPLEMENTED** — see §9. Items
+4 and 5 (retire the Yahoo screener; add a standing non-event screen) remain open, pending the
+source-breadth research. No config or production state was changed by the diagnosis itself.
 
 ---
 
@@ -73,8 +74,16 @@ Three separate weaknesses compound:
 2. **No retry.** SEC's own guidance is to back off and retry; a single 429 is treated as
    terminal.
 3. **Five independent call sites** (`signals.py:487, 583, 753, 1024`, `symbology.py:215`)
-   each load the resolver separately. One upstream failure blanks 13D, 13D/A, 8-K, buyback
-   and 13F symbology together — and in the healthy case they can issue redundant fetches.
+   each load the resolver separately, so one upstream failure blanks 13D, 13D/A, 8-K,
+   buyback and 13F symbology together.
+
+   > **Correction (2026-08-05, during implementation).** An earlier revision of this section
+   > also claimed the five sites "can issue redundant fetches" in the healthy case. **That is
+   > wrong** — the first call writes the day-cache file and the rest read it, so only one
+   > fetch ever happens. A test written against that claim passed without the fix and had to
+   > be retargeted. The real defect is narrower: the sites can **disagree within one session**
+   > (an early site resolves against a fresh index, a later one falls back to an older cached
+   > index once SEC starts failing mid-run). That inconsistency is what the memo fixes.
 
 SEC returned `HTTP 200` (795,660 B) to the exact call the code makes when probed during this
 audit, confirming 08-04 was transient. The failure is **not** identity/UA shape — both the
@@ -224,3 +233,40 @@ Recorded so a future session does not re-investigate these:
 - No claim is made here about whether any *new* source would carry alpha. Per the repo's
   design premise, a new originator earns its slot through a pre-registered cohort, not
   through this document.
+
+---
+
+## 9. What was implemented (2026-08-05)
+
+Remedies #1, #2, #3 and #6. TDD throughout; full suite **2346 passed**, `ruff check src
+tests` clean. `scoring.score()` is untouched — this is discovery plumbing only.
+
+**#1 Shared sec.gov throttle** — `scout/sec_throttle.py` owns one process-wide ~3 req/s
+budget (`sec_throttle()`). `SecThrottle` moved out of `thirteenf.py` (which re-exports it);
+`EdgarThirteenFSignal` no longer builds a private instance; `edgar_index.fetch_form4_submissions`
+throttles **every** per-filing fetch and `fetch_activist_records` every header fetch.
+
+> **Behaviour change worth knowing: the daily run gets slower.** Measured 2.99 req/s. The
+> observed ~366-filing day adds **~2 min** (runs were ~2 min, so ~4 min total); p90 (~1,498)
+> adds ~8.5 min; the 2500 cap adds ~14.2 min. `TimeoutStartSec=1800` accommodates all three,
+> but the margin at the cap is no longer generous. If Form 4 volume grows, lower
+> `edgar_index_daily_cap` rather than raising the request rate.
+
+**#2 Resolver hardening** — `load_raw_company_tickers` retries 3× with linear backoff, then
+falls back to the newest cached index **within 7 days**; past that it abstains again (a
+months-old map can mis-resolve renamed symbols). **Verified against the real production
+cache**: replaying 2026-08-04 with SEC failing now yields **8,000 CIKs** (AAPL/NVDA/LMT all
+resolve) where production got 0; the same replay six months on correctly returns 0.
+
+**#3 Shared resolver** — the built index is memoised per `(identity, cache_dir, day)`, so all
+five call sites share one map. **Empty results are never memoised** (caching the failure
+would pin the session to `{}` — the very outage this fixes). `reset_resolver_cache()` drops it.
+
+**#6 Degraded ≠ quiet** — `models.run_health(signals, raw)` returns
+`degraded` / `quiet` / `healthy` plus the failed originators, and the report leads with it in
+both text and HTML: *"⚠ DEGRADED — 1 originator(s) failed: edgar_activist_13d. Candidate
+count is NOT a read on the market."* vs *"✓ All enabled originators ran — a genuinely quiet
+day, nothing broke."* Disabled signals never count as failures, and neither do the enrichment
+signals (`finnhub_news` / `wikipedia`), whose `ran=False` is a *consequence* of an empty
+funnel — `SignalStatus.discovery` (new last field, defaulted for back-compat) carries that
+distinction from the manifest through `SignalStatusVM` to the renderer.

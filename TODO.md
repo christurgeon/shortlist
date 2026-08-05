@@ -41,8 +41,19 @@ screener and the Nasdaq Trader halts RSS both returned keyless `200`s from the V
 the WAF IP-wide and the `v8/finance/chart` price endpoint 429'd for minutes. Production was
 unaffected, but that endpoint feeds the entire scorer.
 
-**Status:** diagnosis committed; no fix applied. Remedies #1–#3 in the audit are defect fixes
-and could ship independently of the (larger) standing-screen decision.
+**Status:** remedies #1, #2, #3, #6 SHIPPED on branch `harden/sec-access` (audit §9; suite
+2346 green, ruff clean). Verified against the real production cache: replaying 08-04 with SEC
+failing now resolves **8,000 CIKs** instead of 0. **Not yet deployed to `/opt/shortlist`.**
+
+Still open, both gated on the source-breadth research: **#4** retire/replace
+`YahooScreenerSignal` (100% failure rate on this box), **#5** a standing non-event screen so
+empty days stop being structural. Also open: an instrumented run to *prove* the §4 cascade
+(the causal link is still inferred), and the §5c composition problem — new originators must
+be judged on landing names in the $0.3–10B band, not on row count.
+
+⚠ **The run is now slower**: throttling adds ~2 min on a typical day, up to ~14 min at the
+2500-filing cap, against `TimeoutStartSec=1800`. If Form 4 volume grows, lower
+`edgar_index_daily_cap` rather than raising the request rate.
 
 ---
 
