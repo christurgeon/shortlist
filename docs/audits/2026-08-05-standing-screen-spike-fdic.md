@@ -89,6 +89,13 @@ cross-universe rank IC."*
 
 ## 5. What was NOT compared
 
+> **RESOLVED 2026-08-05 — see `docs/audits/2026-08-05-standing-screen-spike-dera.md`.**
+> DERA was spiked like-for-like and **wins**: 4,620 listed tickers vs 196, CIK crosswalk at
+> 88.3% (no name matching), natively point-in-time, all-sector, 52 MB peak RSS. FDIC keeps
+> the higher in-band *percentage* (59.0% vs 50.3%) but DERA yields ~20× more in-band names in
+> absolute terms — the percentage gap is an artefact of FDIC's narrowness, exactly as
+> suspected below. **FDIC is not adopted, as primary or fallback.**
+
 The plan called for choosing between FDIC, DERA financial-statement data sets, and the
 Nasdaq screener **on spike evidence**. Only FDIC was spiked. Given §4, **DERA may well be the
 better standing screen despite being heavier** — it is all-sector, so it neither concentrates
