@@ -16,10 +16,19 @@ from __future__ import annotations
 import threading
 import time
 
-# SEC fair access is ~10 req/s. 0.34 s (~3 req/s) is the interval thirteenf.py already ran
-# at in production without complaint, and leaves headroom for the harness EdgarSource,
-# which fetches on its own asyncio semaphore outside this budget.
-DEFAULT_MIN_INTERVAL_S = 0.34
+# SEC fair access is ~10 req/s. We run at ~6 (0.167 s) — 60% of the ceiling, NOT the 80%
+# that pure throughput would argue for, because this IP has a RECENT throttling history
+# (real DERA 429s on 2026-08-03/04). The headroom also covers the harness EdgarSource, which
+# fetches on its own asyncio semaphore OUTSIDE this budget — it runs after discovery
+# (`daily.py`: `_scan_discovery` completes before `run_harness`), so the two do not overlap,
+# but nothing enforces that.
+#
+# Sizing (measured 2026-08-05): `full_text_submission()` latency is ~17 ms median, so a
+# serial unthrottled loop reaches ~57 req/s — 5.7x over the ceiling. That is what made the
+# Form 4 sweep starve every other SEC consumer in the run. Serialisation is NOT the
+# bottleneck at this latency, so a thread pool would buy nothing; the interval is the whole
+# constraint. See `docs/audits/2026-08-05-discovery-funnel-audit.md` §4/§9.
+DEFAULT_MIN_INTERVAL_S = 0.167
 
 
 class SecThrottle:

@@ -246,11 +246,13 @@ budget (`sec_throttle()`). `SecThrottle` moved out of `thirteenf.py` (which re-e
 `EdgarThirteenFSignal` no longer builds a private instance; `edgar_index.fetch_form4_submissions`
 throttles **every** per-filing fetch and `fetch_activist_records` every header fetch.
 
-> **Behaviour change worth knowing: the daily run gets slower.** Measured 2.99 req/s. The
-> observed ~366-filing day adds **~2 min** (runs were ~2 min, so ~4 min total); p90 (~1,498)
-> adds ~8.5 min; the 2500 cap adds ~14.2 min. `TimeoutStartSec=1800` accommodates all three,
-> but the margin at the cap is no longer generous. If Form 4 volume grows, lower
-> `edgar_index_daily_cap` rather than raising the request rate.
+> **Behaviour change worth knowing: the daily run gets slower.** Measured **6.19 req/s** at
+> `DEFAULT_MIN_INTERVAL_S = 0.167`. A real 930-filing day costs ~2.6 min, p90 (~1,498)
+> ~4.2 min, the 2500 cap ~7.0 min, against `TimeoutStartSec=1800`.
+>
+> The rate is deliberately **60% of SEC's ~10 req/s ceiling, not 80%**: this IP has a recent
+> 429 history (§4), so throughput is not the only thing being optimised. An initial 0.34 s
+> (2.94 req/s) was over-tuned — it doubled the cap-case cost for no safety benefit.
 
 **#2 Resolver hardening** — `load_raw_company_tickers` retries 3× with linear backoff, then
 falls back to the newest cached index **within 7 days**; past that it abstains again (a
@@ -270,3 +272,46 @@ day, nothing broke."* Disabled signals never count as failures, and neither do t
 signals (`finnhub_news` / `wikipedia`), whose `ran=False` is a *consequence* of an empty
 funnel — `SignalStatus.discovery` (new last field, defaulted for back-compat) carries that
 distinction from the manifest through `SignalStatusVM` to the renderer.
+
+**Yahoo screener DISABLED** (`config.yaml: scout.signals.yahoo_screener.enabled: false`) —
+remedy #4, brought forward because #6 exposed it. The signal has a **100% failure rate** on
+this box, so disabling it is **output-neutral**; left enabled it made every single run report
+`⚠ DEGRADED`, which destroys an alert that exists to catch a *real* originator failure. This
+does not close #5 — the funnel still has no standing non-event originator.
+
+**Live verification (2026-08-05, isolated state/artifact dir, production state untouched):**
+`raw: 21` (08-04 was 0). `edgar_activist_13d` resolved **7 activist 13Ds from 9 filings**
+where it had reported "resolver empty"; `edgar_form4` found **6 insider buys from 930 Form
+4s**; `edgar_13f` picked up the Q2 burst (**8 new positions from 3 filings**, carry-over cap
+hit). `run_health` on those real statuses returns `('healthy', [])`.
+
+---
+
+## 10. Two volume "optimisations" that were tried and are WRONG
+
+Both looked like free wins and were killed by measurement. Recorded so they are not
+re-proposed.
+
+**(a) Filtering the Form 4 sweep on whether the daily-index `cik` resolves to a ticker.**
+Premise: 447 of 930 filings (48.1%) have a non-resolving CIK, so they "can never emit".
+**Both halves are false.** The index row's `cik` is the **filer**, which for Form 4 is
+frequently the reporting *owner* — a natural person (`Soderstrom Gustav`, `HUDSON DENNIS S
+III`) — not the issuer. And the signal never uses that CIK for the ticker anyway:
+`insider.py:91` reads `<issuerTradingSymbol>` from the document. Sampling 40 of the 447,
+**32 (80%) declare a real ticker**, including SPOT, INCY, SYY, IPGP, LE, IRTC, SBCF. The
+filter would have silently deleted large-cap emissions — precisely the §5c cap band the
+funnel is starved of.
+
+**(b) Adding a wall-clock budget that truncates the sweep.** Safe *only* with a shuffle or a
+relevance sort first. `get_filings()` returns a **structured, non-random** order
+(alphabetical head, unsorted tail), so `[:max_filings]` takes a systematic prefix. Today's
+930 is far under the 2500 cap so nothing truncates now — but a time budget would start
+cutting that prefix and introduce a selection bias that does not currently exist. (It also
+means 08-04's "46 Form 4s" was a **partial fetch**, not the cap binding — consistent with the
+§4 429 story.)
+
+**Not tried, and the most promising remaining lever:** many index rows are keyed by *owner*
+CIK, and the DERA index already classifies 68,499 owners with **48.5% routine** — which are
+always dropped downstream. Skipping routine owners *pre-fetch* could be output-neutral. It is
+the same shape as (a), so it needs its own validation first: does the index owner CIK match
+DERA's `RPTOWNERCIK`, and does a pre-fetch tier lookup agree with post-fetch classification?
