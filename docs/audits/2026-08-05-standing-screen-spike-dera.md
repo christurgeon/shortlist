@@ -8,6 +8,17 @@ was easiest to win with.
 **Verdict: DERA, decisively.** It beats FDIC on every axis that matters except raw in-band
 percentage, and the percentage gap is an artefact of FDIC's narrowness.
 
+> **⚠ CORRECTED 2026-08-05 — see `2026-08-05-standing-screen-data-source.md` §5.**
+> Two claims below are wrong as stated. (1) **"survivorship-free" applies to the ARCHIVE, not
+> to this measurement**: the crosswalk resolved CIK→ticker against *today's*
+> `company_tickers.json`, so filers that have since delisted silently fail to resolve — the
+> 4,620/88.3% figures are "currently-listed filers". A DERA backfill must use the
+> point-in-time `scout/symbology.py:Symbology`, as `backfill.py:784` already does.
+> (2) **`filed` alone does not make it point-in-time**: a period reappears as a comparative in
+> later quarterly ZIPs and can carry RESTATED values, so facts must be pinned to the filing
+> whose own `filed` matches the evaluation point.
+> Separately, DERA is **127–215 days stale** and is NOT adopted as a live source.
+
 **Still a spike. NO production wiring.** Scripts: scratchpad `dera_spike.py`,
 `dera_num_spike.py`. No Yahoo; caps sampled from Finnhub.
 

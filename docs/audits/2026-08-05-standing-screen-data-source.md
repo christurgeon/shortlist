@@ -87,13 +87,78 @@ verdict.
   surface, so it remains a scoring-surface change requiring a committed pre-registration
   before it can influence the digest.
 
-## 5. What this changes about the plan
+## 5. Adversarial review — two corrections to this document, and a reframing
+
+An independent adversarial review of §1–§4 landed four hits. Two are **errors in what was
+already committed** and are corrected here rather than quietly edited.
+
+### 5a. CORRECTION — "survivorship-free" was wrong as applied
+
+§3 and the DERA spike called DERA "survivorship-free". **The archive is; the crosswalk used
+to measure it was not.** `dera_spike.py` resolved CIK→ticker with
+`cik_tickers.build_cik_to_ticker` against **today's** `company_tickers.json`. A company that
+delisted in 2016 is retained in the historical ZIP but has since dropped out of that file, so
+it silently fails to resolve — **re-excluding exactly the failures a point-in-time backtest
+exists to capture.**
+
+The 88.3% / 4,620-ticker figures are therefore "currently-listed filers", not "filers as of
+the period". For 2026q1 the distortion is small (recent delistings are few); **for historical
+quarters it is the whole problem.**
+
+The repo already has the right tool: **`scout/symbology.py:Symbology.resolve_ticker(cik,
+as_of)`**, the point-in-time resolver `backfill.py:784` already uses for the 8-K/buyback
+cohorts. Any DERA backfill MUST use it. A current-day join is a survivorship bug wearing a
+point-in-time costume.
+
+### 5b. CORRECTION — restatement leakage across quarters
+
+§3 justified DERA-for-backtest on `filed` being present. That is necessary but **not
+sufficient**: the same fiscal period reappears as a *comparative* in every subsequent
+quarterly ZIP, and later appearances can carry **restated** values. A backtest that joins
+`num.txt` across quarters can therefore pick up a figure that did not exist at the evaluation
+point — the as-originally-reported vs. most-recently-available trap.
+
+**Rule: pin every fact to the filing whose own `filed` date matches the evaluation point.
+Never take a period's value from a later quarter's comparative column.**
+
+### 5c. REFRAMING — §1's stated reason was the wrong one
+
+§1 rejected DERA-as-originator because the information is "long since priced". For a
+**triage funnel that explicitly is not return-predicting**, that is the wrong test — triage
+does not require unpriced information, and 127 days barely matters for ranking slow-moving
+business *quality*. The conclusion survives, but on two better grounds:
+
+1. **It is strictly worse than an equally-available alternative.** `frames` is current and
+   costs ~12 requests (§2). The choice was never "stale data vs. nothing".
+2. **A quarterly source has no daily refresh cadence.** A standing screen fed by a quarterly
+   snapshot emits the *same* ranked list for ~13 weeks. That does not fix "a quiet day
+   produced nothing new" — it produces a static work queue, not discovery. This is the
+   sharper objection and §1 missed it entirely.
+
+### 5d. The review's strongest point — build it as a FILTER, not an originator
+
+A full-universe fundamental *ranking* is "the existing quality/value composite run at
+S&P-1500 scale" — precisely the add-scoring-surface move this repo has already killed four
+times (buyback, leverage tilt, accruals, EV/EBIT). Used **defensively** it is not: the
+binding constraint is that only ~10 names/day can be deep-screened, so the highest-value
+question is *which already-surfaced event candidates deserve those slots*.
+
+## 6. What this changes about the plan
 
 Phase 2's substrate question is now answered on evidence:
 
-1. **Live standing screen → SEC `frames`** (~12 requests, ~8 MB, current, whole universe).
-2. **Measurement/backfill substrate → DERA** (PiT, survivorship-free, 2009Q2→present).
-3. **FDIC → not adopted** (banks-only; every quiet-day digest would be banks, in the sector
-   where the scorer masks the most legs).
-4. **Per-ticker companyfacts → not needed** for this purpose. `frames` obtains the same
-   currency at ~0.3% of the request count and ~0.2% of the disk.
+1. **Do NOT build a standing full-universe originator.** §5d: as a ranking it is added
+   scoring surface; the repo has killed that move four times. The empty-day symptom does not
+   justify it, and a quarterly source cannot fix a *daily* gap anyway (§5c.2).
+2. **Build it as a FILTER on existing originators' output instead.** The binding constraint
+   is the ~10/day deep-screen quota. The valuable question is *which already-surfaced 13D /
+   Form 4 / 13F / 8-K candidates deserve those slots* — especially in the $0.3–10B band the
+   composition audit says we miss.
+3. **Measure that on DERA before building anything live** — free, offline, no price feed for
+   the selection step, and it reuses the existing evaluator + pre-registration machinery.
+   Subject to **§5a (PiT `Symbology`, never a current-day join)** and **§5b (pin facts to the
+   matching filing, never a later comparative)**.
+4. **Only if it clears a pre-registered bar**, make it live on `frames` (~12 requests,
+   current) — as a filter, refreshed quarterly, never a tenth originator.
+5. **FDIC → not adopted.** **Per-ticker companyfacts → not needed**; `frames` gets the same
+   currency at ~0.3% of the requests and ~0.2% of the disk.
