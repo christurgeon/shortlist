@@ -172,8 +172,25 @@ async def fetch_history(symbol: str, client, *, cache_dir: str, today: str,
             headers={"User-Agent": _UA},
             timeout=30.0,
         )
-        resp.raise_for_status()
-        raw = resp.json()
+        try:
+            resp.raise_for_status()
+        except Exception as exc:  # noqa: BLE001 — status is inspected, non-404 re-raised
+            # ONLY 404 is a definitive answer about the SYMBOL (Yahoo's reply for a
+            # delisted/unknown ticker) — synthesize the empty envelope so it takes the
+            # same day-cache path as an empty-but-200 body. Previously this raised BEFORE
+            # the caching block, so every dead ticker was re-fetched on every run, baiting
+            # the WAF on exactly the delisted population a survivorship-corrected cohort
+            # is full of (docs/audits/2026-08-05-cohort-price-coverage.md §5).
+            #
+            # Everything else — 429 WAF blocks, 5xx, timeouts — is a statement about the
+            # CONNECTION, not the symbol, and MUST propagate uncached. Caching a block as
+            # "empty" would fabricate a full day of no-data for every ticker fetched
+            # during it, silently zeroing price history instead of failing loudly.
+            if getattr(getattr(exc, "response", None), "status_code", None) != 404:
+                raise
+            raw = {"chart": {"result": None, "error": {"code": "Not Found"}}}
+        else:
+            raw = resp.json()
         fetched = True
     dates, closes, nominal = parse_chart(raw)
     if fetched:

@@ -145,6 +145,74 @@ def test_fetch_history_never_caches_malformed_payload(tmp_path, capsys):
     assert client.calls == 2                          # the soft failure was not cached
 
 
+class _StatusClient:
+    """Client whose response raises like httpx does, carrying a real status code."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        self.calls = 0
+
+    async def get(self, url, *a, **k):
+        self.calls += 1
+        import httpx
+        req = httpx.Request("GET", "https://query1.finance.yahoo.com/v8/finance/chart/X")
+        resp = httpx.Response(self.status_code, request=req)
+        return _RaisingResp(resp)
+
+
+class _RaisingResp:
+    def __init__(self, resp): self._r = resp
+    @property
+    def status_code(self): return self._r.status_code
+    def raise_for_status(self): self._r.raise_for_status()
+    def json(self): return {}
+
+
+def test_fetch_history_caches_a_404_so_delisted_tickers_are_not_refetched(tmp_path, capsys):
+    """Yahoo answers a delisted/unknown symbol with 404, which `raise_for_status()` raised
+    BEFORE the caching block — so dead tickers were re-fetched on every run forever, exactly
+    the WAF-baiting the empty-payload branch already guards against. A survivorship-corrected
+    cohort is full of delisted names, so this fired constantly."""
+    client = _StatusClient(404)
+    h = asyncio.run(fetch_history("DEAD", client,
+                                  cache_dir=str(tmp_path), today="2026-07-10"))
+    assert h.dates == [] and h.closes == []
+    assert len(list(tmp_path.iterdir())) == 1          # 404 is definitive -> cached
+    assert "DEAD" in capsys.readouterr().err
+    asyncio.run(fetch_history("DEAD", client,
+                              cache_dir=str(tmp_path), today="2026-07-10"))
+    assert client.calls == 1                            # re-run served from the day-cache
+
+
+def test_fetch_history_never_caches_a_429_waf_block(tmp_path):
+    """LOAD-BEARING. A 429 is a WAF block, NOT an answer about the symbol. Caching it as an
+    empty history would silently zero out price history for every ticker fetched during a
+    block — turning a transient outage into a day of fabricated 'no data'. It must still
+    raise, and write nothing."""
+    import httpx
+    client = _StatusClient(429)
+    try:
+        asyncio.run(fetch_history("AAPL", client,
+                                  cache_dir=str(tmp_path), today="2026-07-10"))
+        raise AssertionError("a 429 must propagate, not be swallowed")
+    except httpx.HTTPStatusError:
+        pass
+    assert list(tmp_path.iterdir()) == []               # nothing cached
+
+
+def test_fetch_history_never_caches_a_5xx(tmp_path):
+    """A server error is transient — same reasoning as the 429."""
+    import httpx
+    client = _StatusClient(503)
+    try:
+        asyncio.run(fetch_history("AAPL", client,
+                                  cache_dir=str(tmp_path), today="2026-07-10"))
+        raise AssertionError("a 5xx must propagate")
+    except httpx.HTTPStatusError:
+        pass
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_fetch_history_caches_good_payload(tmp_path):
     raw = _chart([(86400, 100.0), (172800, 101.0)])
     client = _FakeClient(raw)
