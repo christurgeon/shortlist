@@ -47,9 +47,13 @@ Unicode — bare page numbers bled inline in CRWD's 10-K, a `|`-delimited page h
 `markdown=True` 10-Q MD&A. Filer/template-dependent (absent in JPM/AXON/BMI/CRWD `tenq_mda`).
 Folding cannot fix these; they need extraction-side cleanup.
 
-**Status:** OPEN — raised as **PR #161** (`a98fbe2`, branch
-`feat/deep-brief-improvements`); ruff clean, 2318 tests pass locally. **NOT merged and NOT
-deployed** — `/opt/shortlist` still runs the old code. After merge, deploy per CLAUDE.md
+**Status:** OPEN — raised as **PR #161** (branch `feat/deep-brief-improvements`); ruff clean,
+2321 tests pass, CI green. Code-reviewed; the review caught two real defects, both fixed in
+`733fd0e`: the valuation line rendered a sub-$1B market cap as **`$0B`** (a confidently wrong
+number — worse than the `3.2e+12` it replaced — and reachable, since `/deep` researches gated
+names with `require_passed=False`), and four doc comments were left stale by the change,
+including `_verify_grounding`'s docstring, which is the single place stating the grounding
+match contract. **NOT merged and NOT deployed** — `/opt/shortlist` still runs the old code. After merge, deploy per CLAUDE.md
 (`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh` — never
 run the installer *from* `/opt/shortlist`, that is a silent no-op) and verify with
 `git -C /opt/shortlist log --oneline -1` plus a grep for `_FOLD`. Existing briefs are cached
