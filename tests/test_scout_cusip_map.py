@@ -58,6 +58,36 @@ def test_normalize_issuer_name_strips_suffixes_and_punctuation():
     assert normalize_issuer_name("") == ""
 
 
+def test_normalize_strips_the_sec_state_of_incorporation_marker():
+    """SEC issuer titles carry the state/country of incorporation as a trailing `/XX/`.
+    Tokenising left a stray state token ('TJX DE', 'WELLS FARGO MN') that can never match a
+    counterparty's name, so the CUSIP->ticker NAME fallback silently failed for 821 of
+    10,398 issuers (7.9%) — Costco, Applied Materials, Qualcomm, TJX, Wells Fargo among
+    them. Measured 2026-08-05 on the live company_tickers.json."""
+    assert normalize_issuer_name("TJX COMPANIES INC /DE/") == "TJX"
+    assert normalize_issuer_name("WELLS FARGO & COMPANY/MN") == "WELLS FARGO"   # no trailing /
+    assert normalize_issuer_name("QUALCOMM INC/DE") == "QUALCOMM"
+    assert normalize_issuer_name("COSTCO WHOLESALE CORP /NEW") == "COSTCO WHOLESALE"
+    assert normalize_issuer_name("APPLIED MATERIALS INC /DE") == "APPLIED MATERIALS"
+
+
+def test_normalize_only_strips_a_TRAILING_slash_marker():
+    """A slash inside the name is part of the name, not an incorporation marker — stripping
+    it would silently truncate a legitimate issuer."""
+    assert normalize_issuer_name("A/B Testing Corp") == "A B TESTING"
+    assert normalize_issuer_name("Smith/Jones Industries Inc") == "SMITH JONES INDUSTRIES"
+
+
+def test_state_marker_stripping_never_guesses_on_a_new_collision():
+    """Stripping the marker can make two DIFFERENT issuers normalise alike. That must
+    abstain, exactly as any other cross-CIK collision does — never a wrong-ticker guess."""
+    raw = {
+        "0": {"cik_str": 1, "ticker": "FBPA", "title": "First Bancorp /PR/"},
+        "1": {"cik_str": 2, "ticker": "FBNC", "title": "First Bancorp /NC/"},
+    }
+    assert "FIRST BANCORP" not in build_name_to_ticker(raw)
+
+
 def test_name_to_ticker_drops_ambiguous_and_keeps_unique():
     raw = {
         "0": {"cik_str": 1, "ticker": "AAA", "title": "Alpha Inc"},
