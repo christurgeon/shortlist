@@ -1,10 +1,22 @@
 # Adversarial assessment of the `/deep` research brief
 
-> **STATUS (2026-08-04): the six `cheap-and-certain` items in §7 are WRITTEN BUT UNCOMMITTED** —
-> working-tree changes on local branch `feat/deep-brief-improvements` (0 commits ahead of
-> `main`; not merged, not pushed, not deployed). D1 (`_norm` fold), D2 (valuation line), D4
-> (persist `confidence`), D5 (8-K item codes), D8 (macro line), D10 (`--fallback-model`).
-> Ruff clean, 2315 tests pass. Verified end-to-end against the real AAPL 10-K: the production `_norm`
+> **STATUS (2026-08-05): the six `cheap-and-certain` items in §7 are MERGED** as **PR #161**
+> (`9b6ed0d` on `main`) — D1 (`_norm` fold), D2 (valuation line), D4 (persist `confidence`),
+> D5 (8-K item codes), D8 (macro line), D10 (`--fallback-model`). Ruff clean, 2321 tests pass,
+> CI green. Code-reviewed before merge; the review caught two real defects, both fixed in the
+> merged branch — the valuation line rendered a sub-$1B market cap as `$0B` (worse than the
+> `3.2e+12` it replaced, and reachable since `/deep` researches gated names), and four doc
+> comments were left stale, including `_verify_grounding`'s docstring, the single place
+> stating the grounding match contract.
+>
+> **NOT DEPLOYED** — `/opt/shortlist` still runs the old code until
+> `cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh` (never run
+> the installer *from* `/opt/shortlist` — that is a silent no-op). Existing briefs are cached
+> by accession and will not show the new sections without `--refresh`.
+>
+> **This doc is now the sole record of the remaining work** — the TODO.md entry was removed on
+> merge. Everything in §7 `worth-building`, `needs-measurement`, and `rejected-and-why` is
+> unbuilt and deliberately unstarted. Verified end-to-end against the real AAPL 10-K: the production `_norm`
 > now recovers **8 of 11** persisted-unverified findings (the other 3 are 10-Q-sourced and
 > untestable — that 10-Q has been superseded), matching the independent measurement in D1.
 > **Everything in `worth-building` / `needs-measurement` is NOT built.** Briefs are cached by
@@ -370,8 +382,9 @@ with no rate or credit context.
 > **$0.217 on 4.6 vs $0.292 on 5**, directionally consistent with the documented ~30% token
 > increase but *not* a controlled result. The real measurement — `count_tokens` on an actual
 > ~127K-char brief prompt across both — still needs an API key or `ant`, neither of which is
-> on this box. `research.fallback_model` is now `claude-sonnet-4-6` (the previous primary,
-> known-good across 35 briefs), and `claude_cli._answering_model` labels each brief with the
+> on this box. `research.fallback_model` is `claude-opus-5` — it must differ from the primary
+> to do anything (falling back to the same model just retries something unavailable, which
+> `max_attempts` already does), and `claude_cli._answering_model` labels each brief with the
 > model that actually ran, so a mixed corpus stays auditable.
 > **Watch on the first refreshed briefs:** the `SYSTEM_PROMPT` was tuned against 4.6, and
 > Sonnet 5 follows instructions more literally — length and scope directives may over-apply.
