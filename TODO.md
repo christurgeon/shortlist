@@ -6,6 +6,46 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Discovery funnel delivered zero candidates — DIAGNOSED, UNFIXED (2026-08-05)
+
+Full evidence: **`docs/audits/2026-08-05-discovery-funnel-audit.md`**. Research prompt for a
+breadth pass on new sources: `docs/audits/2026-08-05-discovery-sources-research-prompt.md`.
+**Nothing was fixed** — this session was diagnosis only, by request.
+
+The 2026-08-04 digest was empty because `raw = 0`. Three independent causes:
+
+1. **`wsb_hype`'s demotion (#151, 2026-07-26) removed 10–15 of ~16–21 raw candidates/day.**
+   Correct decision (it was 60% of picks at a $310B median cap), but no replacement
+   origination was added, so it exposed how thin the rest of the funnel already was.
+2. **`load_raw_company_tickers` (`cik_tickers.py`) has a same-day-only cache key, no retry,
+   and no stale fallback.** One transient SEC 429 → `{}` → `signals.py:96` bails 13D, 13D/A,
+   8-K, buyback and 13F symbology for the whole session. A valid 24h-old index sat unread on
+   disk. `.cache/sec_tickers/` proves it: files through 08-03, none for 08-04. The
+   top-weight originator (weight 1.5) was dead two sessions running.
+3. **`edgar_index.py:155` fetches up to 2500 filings unthrottled** (`edgar_index_daily_cap`
+   400 → 2500 in #152). Only `thirteenf.py` has a `SecThrottle`; there is no shared sec.gov
+   throttle. Strongly correlated with cause 2 (DERA 429s appear in the 08-03/08-04 runs and
+   only those) but the causal link is **inferred, not proven**.
+
+Structural, beyond the defects: **every originator is event-triggered.** The only standing
+screen, `YahooScreenerSignal`, has a 100% failure rate on this box (WAF). So empty days are
+structural — there is no `min_candidates` or fallback universe anywhere in `daily.py`.
+`edgar_13f` is dormant-by-design (4 bursts/year), not broken. Composition is still the
+2026-07-26 problem: survivors skew nano-cap, so more volume ≠ better.
+
+Ranked remedies are in §6 of the audit; user preference recorded is that the report should
+**always surface something**, which implies a standing non-event screen. `api.nasdaq.com`
+screener and the Nasdaq Trader halts RSS both returned keyless `200`s from the VPS.
+
+⚠ **Do not hand-probe the Yahoo screener from the VPS** — doing so during this audit tripped
+the WAF IP-wide and the `v8/finance/chart` price endpoint 429'd for minutes. Production was
+unaffected, but that endpoint feeds the entire scorer.
+
+**Status:** diagnosis committed; no fix applied. Remedies #1–#3 in the audit are defect fixes
+and could ship independently of the (larger) standing-screen decision.
+
+---
+
 ## Evaluator guards made unbypassable — SHIPPED (2026-08-04)
 
 Post-mortem fix for the retracted 12pp claim. Design + adversarial review:
