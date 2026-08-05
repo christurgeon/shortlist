@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ..env import redact_secrets
 from .insider import InsiderTxn
+from .sec_throttle import sec_throttle
 
 _BASE = ("https://www.sec.gov/files/structureddata/data/"
          "insider-transactions-data-sets")
@@ -169,6 +170,10 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
         if not p.exists():
             tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
             try:
+                # www.sec.gov — draws on the shared budget. DERA is few requests but very
+                # large ones, and a DERA 429 is the evidence the 2026-08-04 cascade was
+                # diagnosed from, so it must be paced and counted with everything else.
+                sec_throttle()("dera")
                 req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
                 with urllib.request.urlopen(req, timeout=120) as r:
                     tmp.write_bytes(r.read())

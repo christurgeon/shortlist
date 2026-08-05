@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 
 from shortlist.data.sources import (
     YahooSource, _closes_from_chart, _normalize_yahoo,
@@ -152,6 +153,53 @@ def test_yahoo_source_error_is_non_fatal(tmp_path, monkeypatch):
     res = asyncio.run(src.fetch("AAA"))
     assert res.partial.price is None
     assert res.errors and "yahoo" in res.errors[0]
+    asyncio.run(src.aclose())
+
+
+class _StatusOnlyClient:
+    """Async client whose response raises like httpx, carrying a real status code."""
+
+    def __init__(self, status_code):
+        self.status_code = status_code
+        self.calls = 0
+
+    async def get(self, url, **kwargs):
+        import httpx
+        self.calls += 1
+        req = httpx.Request("GET", url)
+        return httpx.Response(self.status_code, request=req)
+
+    async def aclose(self):
+        return None
+
+
+def test_yahoo_source_caches_a_404_so_dead_symbols_are_not_refetched(tmp_path, monkeypatch):
+    """Same bug class as backtest/prices.py: `raise_for_status()` ran BEFORE
+    `write_json_cache`, so Yahoo's 404 for a delisted/unknown symbol was never cached and
+    every run re-fetched it — baiting the WAF on the production path that feeds the scorer."""
+    src = YahooSource(cache_dir=str(tmp_path))
+    client = _StatusOnlyClient(404)
+    monkeypatch.setattr(src, "_client", client)
+
+    res = asyncio.run(src.fetch("DEADCO"))
+    assert res.partial.price is None                  # degrades, never raises
+    asyncio.run(src.fetch("DEADCO"))
+    # DEADCO fetched once; the repeat is served from the day-cache. (SPY may add calls.)
+    assert client.calls <= 3, f"dead symbol re-fetched: {client.calls} calls"
+    assert (tmp_path / f"DEADCO-{date.today().isoformat()}.json").exists()
+    asyncio.run(src.aclose())
+
+
+def test_yahoo_source_never_caches_a_429_waf_block(tmp_path, monkeypatch):
+    """LOAD-BEARING. A 429 is a WAF block, not an answer about the symbol. Caching it as
+    empty would fabricate a day of 'no price data' for a live ticker — which would silently
+    null out price/momentum/risk for the whole run instead of failing loudly."""
+    src = YahooSource(cache_dir=str(tmp_path))
+    monkeypatch.setattr(src, "_client", _StatusOnlyClient(429))
+
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.partial.price is None
+    assert not (tmp_path / f"AAPL-{date.today().isoformat()}.json").exists()
     asyncio.run(src.aclose())
 
 

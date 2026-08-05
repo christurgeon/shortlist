@@ -6,6 +6,36 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## SEC request budget is now measured — and two consumers were outside it (2026-08-05)
+
+Plan Phase 1.1 (`/home/chris/.claude/plans/sunny-shimmying-parasol.md`). The 2026-08-04
+cascade (Form 4 sweep starving 13D/DERA) was fixed on an **inferred** cause; this makes it
+measurable.
+
+- **`sec_throttle()` now counts per consumer**, and every call passes a label. An unlabelled
+  call still counts (`unattributed`) so nothing vanishes from the budget. Totals land in
+  **`RunManifest.sec_requests`**, zeroed at run start — a durable artifact, because a number
+  living only in an overwritten log cannot settle the question afterwards.
+- **`cik_tickers` and `dera` were NOT routed through the shared throttle** — neither paced nor
+  counted. CLAUDE.md claimed every scout SEC consumer drew on it; that was wrong (I wrote it
+  the same day). Both are now routed. Still outside, deliberately: the harness `EdgarSource`
+  (own asyncio semaphore) and `data/efts.py` (own throttle, different host).
+- **Same 404 bug fixed on the PRODUCTION Yahoo path** (`data/sources/yahoo.py`) as in
+  `backtest/prices.py`: `raise_for_status()` ran before `write_json_cache`, so a delisted
+  symbol was re-fetched every run. Both fixes cache **only** 404; 429/5xx still propagate
+  uncached, pinned by explicit tests — caching a WAF block as "empty" would fabricate a day of
+  no-price-data for live tickers, far worse than the bug.
+
+Offline check with today's real volumes: form4 = **98.7%** of the run's SEC draw (930 of 942).
+Tonight's 22:30 run produces the first measured figure.
+
+**Status:** SHIPPED. Next measurement: read `sec_requests` from
+`scout/<date>/manifest.json` after the next few runs; if form4's share holds near 99%, the
+cascade is confirmed and `edgar_index_daily_cap` is the lever. Phase 0.3 (form4 backfill
+cohort) remains PARKED pending the paid price feed.
+
+---
+
 ## Discovery funnel delivered zero candidates — DIAGNOSED, UNFIXED (2026-08-05)
 
 Full evidence: **`docs/audits/2026-08-05-discovery-funnel-audit.md`**. Research prompt for a

@@ -171,9 +171,11 @@ def test_fetch_form4_submissions_throttles_every_filing(monkeypatch):
     _install_fake_edgar_module(monkeypatch, published)
     calls = []
     docs, used, considered = fetch_form4_submissions(
-        date(2026, 6, 2), 400, "id@x.z", _throttle=lambda: calls.append(1))
+        date(2026, 6, 2), 400, "id@x.z", _throttle=lambda c=None: calls.append(c))
     assert len(docs) == 3
     assert len(calls) == 3           # one throttle acquisition per filing fetched
+    # labelled, so RunManifest.sec_requests can attribute the run's SEC draw
+    assert set(calls) == {"edgar_form4"}
 
 
 def test_fetch_activist_records_throttles_every_header_fetch(monkeypatch):
@@ -183,8 +185,9 @@ def test_fetch_activist_records_throttles_every_header_fetch(monkeypatch):
     _install_fake_edgar_module(monkeypatch, published)
     calls = []
     fetch_activist_records(date(2026, 6, 2), 300, "id@x.z",
-                           lambda cik: "AAPL", _throttle=lambda: calls.append(1))
+                           lambda cik: "AAPL", _throttle=lambda c=None: calls.append(c))
     assert len(calls) == 2
+    assert set(calls) == {"edgar_activist_13d"}
 
 
 def test_fetch_form4_submissions_skips_one_bad_filing(monkeypatch):

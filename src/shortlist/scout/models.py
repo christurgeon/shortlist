@@ -87,8 +87,12 @@ class RunManifest:
     dropped_for_budget: int
     researched: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
-    vetoed: int = 0        # names dropped by the negative-8-K veto this run (LAST field —
-                            # every existing keyword/positional constructor stays valid)
+    vetoed: int = 0        # names dropped by the negative-8-K veto this run
+    # Per-consumer sec.gov request counts for the run, from the shared `sec_throttle()`.
+    # LAST field with a default — every existing keyword/positional constructor stays valid.
+    # Durable on purpose: the 2026-08-04 cascade was diagnosed from timing correlation
+    # alone, and a count that lives only in an overwritten log cannot settle it afterwards.
+    sec_requests: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -101,4 +105,5 @@ class RunManifest:
                        "vetoed": self.vetoed},
             "researched": self.researched,
             "notes": self.notes,
+            "sec_requests": dict(self.sec_requests),
         }

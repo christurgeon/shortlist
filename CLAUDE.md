@@ -722,10 +722,27 @@ through the **process-wide `sec_throttle()`** (below).
 
 ## The shared sec.gov throttle
 
-`scout/sec_throttle.py` owns **one process-wide ~6 req/s min-interval budget**
-(`sec_throttle()`, `DEFAULT_MIN_INTERVAL_S = 0.167`) that every scout SEC consumer draws on —
-SEC fair access is ~10 req/s, and we sit at 60% of it (not higher) because this IP has a
-**recent 429 history**. **Do not give a signal its own `SecThrottle`**: a per-signal
+`scout/sec_throttle.py` owns a **process-wide ~6 req/s min-interval budget**
+(`sec_throttle()`, `DEFAULT_MIN_INTERVAL_S = 0.167`) — SEC fair access is ~10 req/s, and we
+sit at 60% of it (not higher) because this IP has a **recent 429 history**.
+
+**It does NOT cover every sec.gov consumer — know which side of the line you are on.**
+Routed through it (paced *and* counted): `edgar_index` (`edgar_form4`,
+`edgar_activist_13d`), `thirteenf`, `cusip_map`, `cik_tickers`, `dera`. **Outside it:** the
+harness `EdgarSource` (async, its own `_EDGAR_MAX_CONCURRENCY` semaphore) and `data/efts.py`
+(own throttle, and a different host — `efts.sec.gov`). An earlier revision of this file
+claimed *every* scout SEC consumer drew on it; that was wrong, and `cik_tickers`/`dera` were
+silently unbudgeted until 2026-08-05 — which matters because a **DERA 429 is the evidence the
+cascade was diagnosed from**.
+
+**Each call passes a consumer label** (`throttle("edgar_form4")`); an unlabelled call is
+still counted, as `unattributed`, so no request can vanish from the budget. Per-run totals
+land in **`RunManifest.sec_requests`** (in the manifest JSON), zeroed at run start by
+`daily.py`. That artifact is what settles whether one consumer starves the others — the
+2026-08-04 cascade is still **inferred from timing correlation**, and a count that lives only
+in an overwritten log cannot confirm it after the fact.
+
+**Do not give a signal its own `SecThrottle`**: a per-signal
 throttle cannot bound the *process's* request rate, which is exactly how this broke. The
 Form 4 sweep (`edgar_index.fetch_form4_submissions`, up to `edgar_index_daily_cap` = 2500
 filings, one request each) ran unthrottled and 429'd SEC for the rest of the run; the 13D

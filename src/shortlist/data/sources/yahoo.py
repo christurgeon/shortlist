@@ -52,8 +52,20 @@ class YahooSource(Source):
             return cached
         r = await self._client.get(
             f"{self.BASE}/{symbol}", params={"range": "5y", "interval": "1d"})
-        r.raise_for_status()
-        raw = r.json()
+        try:
+            r.raise_for_status()
+        except Exception as exc:  # noqa: BLE001 — status inspected, non-404 re-raised
+            # ONLY 404 is a definitive answer about the SYMBOL (Yahoo's reply for a
+            # delisted/unknown ticker): day-cache the empty envelope so a dead name costs
+            # one request per DAY instead of one per run. Everything else — 429 WAF blocks
+            # above all — is a statement about the CONNECTION and must propagate uncached,
+            # or a block would fabricate "no price data" for a live ticker and silently
+            # null out price/momentum/risk for the whole run.
+            if getattr(getattr(exc, "response", None), "status_code", None) != 404:
+                raise
+            raw = {"chart": {"result": None, "error": {"code": "Not Found"}}}
+        else:
+            raw = r.json()
         write_json_cache(cp, raw)
         return raw
 

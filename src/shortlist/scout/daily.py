@@ -22,6 +22,7 @@ from .calendar import last_session
 from .firehose import CohortEvent, cohort_events_from_emissions
 from .funnel import aggregate, apply_veto, prefilter
 from .models import Candidate, Emission, RunManifest, SignalStatus
+from .sec_throttle import sec_throttle
 from .signals import build_signals
 from .state import ScoutState
 
@@ -553,6 +554,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         print("scout: daily_push disabled (scout.daily_push.enabled=false); nothing to do")
         return 0
 
+    # Zero the sec.gov request accounting for this run (pacing state is untouched). The
+    # counts land in RunManifest.sec_requests so a later session can settle whether one
+    # consumer is starving the others (audit 2026-08-05 §4, still inferred).
+    sec_throttle().reset_counts()
+
     # Honour the config cache block (enabled/path/ttl) on the scout path too — it calls
     # run_harness directly, so without this the operator's kill-switch / TTL tuning in
     # config.yaml would be silently ignored (the lazy default would use hardcoded TTLs).
@@ -645,7 +651,12 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     manifest = RunManifest(
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
-        researched=researched, notes=notes, vetoed=len(vetoed_cands))
+        researched=researched, notes=notes, vetoed=len(vetoed_cands),
+        # Read AFTER discovery + deep-screen so the manifest records the whole run's
+        # sec.gov draw. NOTE this counts only consumers routed through sec_throttle():
+        # the harness EdgarSource (own asyncio semaphore) and EFTS (own throttle, and a
+        # different host) are OUTSIDE it — see CLAUDE.md.
+        sec_requests=sec_throttle().counts)
 
     # 4a. Demo: print the GLANCE text and stop — never touches Pillow / network.
     if demo:

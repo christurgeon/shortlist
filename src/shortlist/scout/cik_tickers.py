@@ -17,6 +17,8 @@ from pathlib import Path
 
 import httpx
 
+from .sec_throttle import sec_throttle
+
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 # unit/warrant/right suffixes whose base, IF also a ticker of the same CIK, is the common
 _UNIT_SUFFIX = re.compile(r"^(?P<base>[A-Z]{2,})(?:U|W|R|WS)$")
@@ -111,7 +113,7 @@ def _newest_cached_payload(cache_dir: str, today: date, max_stale_days: int) -> 
 def load_raw_company_tickers(identity: str, *, cache_dir: str = ".cache/sec_tickers",
                              _today: date | None = None,
                              _client: httpx.Client | None = None,
-                             _sleep=None) -> dict:
+                             _sleep=None, _throttle=None) -> dict:
     """Day-cached raw company_tickers.json payload. SEC blocks UA-less GETs, so a
     contact-email User-Agent is mandatory. Never raises: returns {} on any failure. The
     raw payload carries the issuer `title` the CUSIP name-fallback resolver needs, which
@@ -129,9 +131,11 @@ def load_raw_company_tickers(identity: str, *, cache_dir: str = ".cache/sec_tick
     except (OSError, json.JSONDecodeError):
         pass                             # a corrupt same-day file falls through to the fetch
     client = _client or httpx.Client(timeout=30.0, headers={"User-Agent": identity})
+    throttle = _throttle if _throttle is not None else sec_throttle()
     try:
         for attempt in range(_MAX_ATTEMPTS):
             try:
+                throttle("cik_tickers")   # www.sec.gov — draws on the shared budget
                 resp = client.get(_TICKERS_URL)
                 resp.raise_for_status()
                 raw = resp.json()
@@ -152,7 +156,7 @@ def load_raw_company_tickers(identity: str, *, cache_dir: str = ".cache/sec_tick
 
 def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
                        _today: date | None = None, _client: httpx.Client | None = None,
-                       _sleep=None) -> dict[str, str]:
+                       _sleep=None, _throttle=None) -> dict[str, str]:
     """Day-cached company_tickers.json -> resolver index. SEC blocks UA-less GETs, so a
     contact-email User-Agent is mandatory. Never raises: returns {} on any failure.
 
@@ -164,7 +168,7 @@ def load_cik_to_ticker(identity: str, *, cache_dir: str = ".cache/sec_tickers",
     if hit is not None:
         return hit
     raw = load_raw_company_tickers(identity, cache_dir=cache_dir, _today=_today,
-                                   _client=_client, _sleep=_sleep)
+                                   _client=_client, _sleep=_sleep, _throttle=_throttle)
     if not raw:
         return {}
     try:

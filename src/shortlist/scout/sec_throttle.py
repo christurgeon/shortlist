@@ -32,21 +32,46 @@ DEFAULT_MIN_INTERVAL_S = 0.167
 
 
 class SecThrottle:
-    """Min-interval throttle. Thread-safe: the scout runs signals on one worker thread, but
-    the bot and the harness can call in concurrently."""
+    """Min-interval throttle + per-consumer request accounting. Thread-safe: the scout runs
+    signals on one worker thread, but the bot and the harness can call in concurrently.
+
+    Counting exists because the 2026-08-04 cascade (the Form 4 sweep starving 13D and DERA)
+    is still INFERRED from timing correlation. Per-consumer counts turn that into evidence
+    and size how much of the budget a new originator can safely take."""
 
     def __init__(self, min_interval_s: float = DEFAULT_MIN_INTERVAL_S) -> None:
         self.min_interval_s = min_interval_s
         self._lock = threading.Lock()
         self._last = 0.0
+        self._counts: dict[str, int] = {}
 
-    def __call__(self) -> None:
+    def __call__(self, consumer: str | None = None) -> None:
+        """Acquire one slot. `consumer` labels the caller for the budget report; an
+        unlabelled call is still COUNTED (as `unattributed`) so no request can vanish from
+        the budget just because a call site predates the label."""
         with self._lock:
+            key = consumer or "unattributed"
+            self._counts[key] = self._counts.get(key, 0) + 1
             now = time.monotonic()
             wait = self.min_interval_s - (now - self._last)
             if wait > 0:
                 time.sleep(wait)
             self._last = time.monotonic()
+
+    @property
+    def counts(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counts)
+
+    @property
+    def total(self) -> int:
+        with self._lock:
+            return sum(self._counts.values())
+
+    def reset_counts(self) -> None:
+        """Zero the accounting (not the pacing). Called once at the start of a daily run."""
+        with self._lock:
+            self._counts.clear()
 
 
 _shared = SecThrottle()
