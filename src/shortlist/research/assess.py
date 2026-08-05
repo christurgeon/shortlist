@@ -574,7 +574,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     into the prompt."""
     rcfg = config.get("research", {})
     scfg = rcfg.get("screening_call") or {}
-    model = rcfg.get("model", "claude-sonnet-4-6")
+    model = rcfg.get("model", "claude-sonnet-5")
     # Passed to the runner only when set, so the many injected test doubles that take
     # the pre-feature signature keep working on the default path.
     fallback = rcfg.get("fallback_model")

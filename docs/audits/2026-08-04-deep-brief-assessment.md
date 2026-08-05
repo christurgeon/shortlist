@@ -359,7 +359,23 @@ threads it into `_screen_fn` (`:341`) and `_report_fn` (`:350`) — but `_resear
 called without it. The brief reasons about a reverse-DCF discount rate, leverage, and cyclicality
 with no rate or credit context.
 
-### D9 — The model is a generation behind (**new**)
+### D9 — The model is a generation behind (**new**) — RESOLVED BY DECISION, NOT MEASUREMENT (2026-08-05)
+
+> **Update:** the primary is now `claude-sonnet-5` (`config.yaml`, `assess.py` default).
+> This was an **operator judgment call, explicitly made without the measurement this section
+> asks for** — do not cite it as evidence that Sonnet 5 was measured better here. The
+> reasoning: capability on long-context structured extraction is the binding constraint, and
+> at **$22.76 total across 35 briefs** cost is not. The tokenizer question below remains
+> unmeasured; a 2-sample uncontrolled CLI probe (trivial prompt, differing cache state) showed
+> **$0.217 on 4.6 vs $0.292 on 5**, directionally consistent with the documented ~30% token
+> increase but *not* a controlled result. The real measurement — `count_tokens` on an actual
+> ~127K-char brief prompt across both — still needs an API key or `ant`, neither of which is
+> on this box. `research.fallback_model` is now `claude-sonnet-4-6` (the previous primary,
+> known-good across 35 briefs), and `claude_cli._answering_model` labels each brief with the
+> model that actually ran, so a mixed corpus stays auditable.
+> **Watch on the first refreshed briefs:** the `SYSTEM_PROMPT` was tuned against 4.6, and
+> Sonnet 5 follows instructions more literally — length and scope directives may over-apply.
+
 
 `config.yaml: research.model: claude-sonnet-4-6`. Current models are `claude-sonnet-5` and
 `claude-opus-5`; the `claude` CLI's `--model` accepts both full IDs and aliases, so this is a

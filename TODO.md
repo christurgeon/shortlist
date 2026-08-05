@@ -28,9 +28,13 @@ cited any multiple), 8-K item codes on `FilingEvent` (already fetched, were disc
   refinancing coverage). All three briefs read end-to-end assembled the inputs and stopped.
 
 **Deferred — needs measurement:**
-- Model upgrade off `claude-sonnet-4-6`. Sonnet 5's new tokenizer makes it non-obviously
-  cheaper than Opus 5 on a ~127K-char prompt; run `count_tokens` on a real prompt against all
-  three before choosing. Needs an API key or `ant` — neither is on this box.
+- ~~Model upgrade off `claude-sonnet-4-6`.~~ **DONE BY DECISION (2026-08-05), NOT BY
+  MEASUREMENT** — primary is now `claude-sonnet-5`, fallback `claude-sonnet-4-6`. Do not cite
+  this as a measured result. Still open and worth doing: `count_tokens` on a real ~127K-char
+  brief prompt across 4.6 / Sonnet 5 / Opus 5 to quantify the tokenizer cost delta (needs an
+  API key or `ant`, neither on this box), and a read of the first refreshed briefs to check
+  whether the 4.6-tuned `SYSTEM_PROMPT` over-applies under Sonnet 5's more literal
+  instruction following.
 - Segment revenue/margin via `Filing.xbrl().query().with_dimensions()` — proven live on GE,
   but **225MB peak RSS** on the 1.9GB VPS and concepts aren't standardized across filers
   (search by dimension-member presence, not a concept whitelist). Gate it like `proxy.py`.

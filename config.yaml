@@ -353,10 +353,21 @@ cache:
 
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 research:
-  model: claude-sonnet-4-6     # pinned to the 4.6 family (not the cross-version "sonnet" alias).
-                               # NOTE: tracks the latest 4.6 snapshot, not a frozen date-pinned
-                               # build; brief reproducibility is anchored by accession-keyed caching
-                               # (research/), not the model string.
+  model: claude-sonnet-5       # pinned to a family, not the cross-version "sonnet" alias.
+                               # NOTE: tracks the latest snapshot in the family, not a frozen
+                               # date-pinned build; brief reproducibility is anchored by
+                               # accession-keyed caching (research/), not the model string.
+                               # Moved off claude-sonnet-4-6 on 2026-08-05 as a DELIBERATE
+                               # JUDGMENT CALL, not a measurement — see the audit doc D9 and
+                               # TODO.md. Two consequences to keep in mind:
+                               #   1. Sonnet 5 tokenizes the same text to ~30% more tokens, so
+                               #      per-brief cost rises even though the sticker price is the
+                               #      same. A 2-sample uncontrolled CLI probe showed $0.217
+                               #      (4.6) vs $0.292 (5) on a trivial prompt — suggestive of
+                               #      the documented ratio, NOT a controlled measurement.
+                               #   2. The SYSTEM_PROMPT was tuned against 4.6. Sonnet 5 follows
+                               #      instructions more literally, so watch the first refreshed
+                               #      briefs for over-applied length/scope directives.
   timeout_s: 900               # generous ceiling; NVDA ~246s, CVX ~400s on the VPS, but a HEAVY
                                # filer (WDC: 178K-char prompt) measured ~490s and intermittently
                                # spilled past the old 600s ceiling (all 3 attempts timed out
@@ -368,9 +379,14 @@ research:
                                # failure is transient, so retry instead of dropping the brief.
                                # Worst case ~ max_attempts x timeout_s of wall-clock per ticker —
                                # keep <= scout.research_phase_budget_s.
-  fallback_model: claude-sonnet-5   # --fallback-model on the claude CLI. Without it an
+  fallback_model: claude-sonnet-4-6  # --fallback-model on the claude CLI. Without it an
                                # overloaded primary fails all max_attempts identically
                                # and the brief is dropped ("research unavailable").
+                               # 4.6 is the previous primary — known-good on this prompt
+                               # across 35 briefs, so an availability fallback degrades to a
+                               # measured model rather than an unknown one. A fallback-produced
+                               # brief is labelled with the model that actually ran
+                               # (claude_cli._answering_model), so the corpus stays auditable.
                                # Remove the key for the byte-identical pre-feature argv.
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
   max_risks: 12
