@@ -119,3 +119,46 @@ def test_successful_delivery_logs_confirmation_line(tmp_path, monkeypatch, capsy
     assert rc == 0
     err = capsys.readouterr().err
     assert "delivered 2026-05-29 report to telegram" in err
+
+
+def test_daily_run_threads_macro_into_the_research_phase(tmp_path, monkeypatch):
+    """daily.run() fetches MacroContext and passes it to run_harness and build_report;
+    the research phase must get it too, or daily auto-research briefs silently lack the
+    macro context that /deep briefs carry (the D8 bug, in the other code path)."""
+    import shortlist.data.macro as macro_mod
+    import shortlist.scout.daily as daily_mod
+    import shortlist.scout.notify as notify_mod
+    import shortlist.screen as screen_mod
+
+    from shortlist.data.macro import MacroContext
+    # a real MacroContext (build_report reads .regime), used as an identity sentinel
+    sentinel = MacroContext(as_of="2026-05-29", dgs10=4.2, t10y2y=0.3, hy_oas=2.9,
+                            vix=15.0, fedfunds=4.3, regime="neutral", risk_off=False)
+    seen = {}
+
+    def spy_research(cards, config, scout_cfg, **kwargs):
+        seen["macro"] = kwargs.get("macro", "NOT PASSED")
+        return {}, {}, [], None, {}
+
+    monkeypatch.setattr(daily_mod, "_research_phase", spy_research)
+    monkeypatch.setattr(daily_mod, "build_signals",
+                        lambda names, kwargs_by_name=None: [_StubDiscovery()])
+    monkeypatch.setattr(screen_mod, "run_harness",
+                        lambda tickers, sources, config, macro=None: [_card(t) for t in tickers])
+    monkeypatch.setattr(notify_mod, "TelegramNotifier", lambda: _FakeNotifier())
+    monkeypatch.setattr(macro_mod, "fetch_macro", lambda config: sentinel)
+
+    config = {
+        "scout": {
+            "state_path": str(tmp_path / "scout_state.json"),
+            "artifact_dir": str(tmp_path / "scout"),
+            "daily_x": 15, "cooldown_days": 7,
+            "deep_screen_sources": ["mock"],
+            "daily_push": {"enabled": True, "research": True},
+            "picks": {"enabled": True},
+            "signals": {"edgar_activist_13d": {"enabled": True, "weight": 1.5}},
+        },
+        "scoring": {}, "gates": {},
+    }
+    assert daily_mod.run(config, demo=False, today=date(2026, 5, 29)) == 0
+    assert seen["macro"] is sentinel

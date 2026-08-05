@@ -14,7 +14,7 @@ def _assessment():
     return QualitativeAssessment(
         ticker="AAPL", as_of="2026-05-31T00:00:00+00:00",
         filing_accession="0000320193-25-000123", filing_date="2025-10-31",
-        model="claude-sonnet-4-6", cost_usd=0.03, stop_reason="end_turn",
+        model="claude-sonnet-5", cost_usd=0.03, stop_reason="end_turn",
         business_model_summary="Sells devices.",
         moat=Moat(summary="Ecosystem.", sources=["brand"], trajectory="stable"),
         risks=[Finding("Outsourced manufacturing", "outsourcing partners", verified=True)],

@@ -24,7 +24,7 @@ def _bundle(ticker, key=None):
 def _assessment(ticker, key=None):
     return QualitativeAssessment(
         ticker=ticker, as_of="t", filing_accession=f"acc-{ticker}", filing_date="2025-10-31",
-        model="claude-sonnet-4-6", cost_usd=0.05, moat=Moat(),
+        model="claude-sonnet-5", cost_usd=0.05, moat=Moat(),
         thesis=Thesis(takeaway=f"{ticker} read."), cache_key=key or f"acc-{ticker}")
 
 

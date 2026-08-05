@@ -632,7 +632,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     research_enabled = scout_cfg.get("daily_push", {}).get("research", True)
     if not demo and research_enabled:
         briefs, assessments, researched, note, skipped = _research_phase(
-            cards, config, scout_cfg)
+            cards, config, scout_cfg, macro=macro)
         if note:
             notes.append(note)
         for t, why in skipped.items():
@@ -710,6 +710,7 @@ def _research_phase(
     *,
     require_passed=True,
     top_n=None,
+    macro=None,
     _is_available=None,
     _enrich=None,
 ) -> tuple[dict, dict, list, str | None, dict]:
@@ -757,7 +758,7 @@ def _research_phase(
         # shutdown(wait=False) so we abandon the hung thread immediately.
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = pool.submit(_enrich, cards, config, top_n=n, refresh=False,
-                             require_passed=require_passed)
+                             require_passed=require_passed, macro=macro)
         try:
             results = future.result(timeout=budget_s)
         except concurrent.futures.TimeoutError:

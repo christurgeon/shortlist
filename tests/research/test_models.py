@@ -32,14 +32,14 @@ def test_assessment_from_payload_builds_nested_types():
     a = assessment_from_payload(
         PAYLOAD, ticker="AAPL", as_of="2026-05-31T00:00:00+00:00",
         accession="0000320193-25-000123", filing_date="2025-10-31",
-        model="claude-sonnet-4-6", cost_usd=0.03, stop_reason="end_turn")
+        model="claude-sonnet-5", cost_usd=0.03, stop_reason="end_turn")
     assert a.ticker == "AAPL"
     assert isinstance(a.moat, Moat) and a.moat.trajectory == "stable"
     assert a.moat.sources == ["brand", "switching costs"]
     assert len(a.risks) == 1 and isinstance(a.risks[0], Finding)
     assert a.risks[0].verified is False        # grounding not run yet
     assert a.red_flags == []
-    assert a.model == "claude-sonnet-4-6" and a.cost_usd == 0.03
+    assert a.model == "claude-sonnet-5" and a.cost_usd == 0.03
     assert a.synthesis == "High quality, fully valued."   # property → thesis.takeaway
     assert a.thesis.bull_case == "Strong brand."
     assert a.reconciliation[0].signal == "value"

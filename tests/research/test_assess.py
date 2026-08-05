@@ -11,7 +11,7 @@ def _wrap(ft):
                         cache_key=ft.accession, filing_date=ft.filing_date)
 
 
-CONFIG = {"research": {"model": "claude-sonnet-4-6", "timeout_s": 30,
+CONFIG = {"research": {"model": "claude-sonnet-5", "timeout_s": 30,
                        "max_risks": 8, "max_red_flags": 8}}
 
 FILING = FilingText(
@@ -95,7 +95,7 @@ def test_assess_happy_path_and_grounding():
     a = assess(card=None, bundle=BUNDLE, config=CONFIG, runner=runner)
     assert a is not None
     assert a.synthesis == "High-quality franchise."
-    assert a.cost_usd == 0.02 and a.model == "claude-sonnet-4-6"
+    assert a.cost_usd == 0.02 and a.model == "claude-sonnet-5"
     # grounded risk verifies True; fabricated red flag verifies False
     assert a.risks[0].verified is True
     assert a.red_flags[0].verified is False
@@ -425,3 +425,123 @@ def test_reverse_dcf_line_excluded_from_haystack():
     bundle = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                           filing_date="2025-10-31")
     assert "perpetual FCF growth" not in bundle.haystack()
+
+
+# --- 2026-08-04 deep-brief assessment fixes (docs/audits/2026-08-04-deep-brief-assessment.md) ---
+
+def test_typographic_punctuation_in_filing_does_not_break_grounding():
+    """D1: SEC filings use curly apostrophes/dashes and NBSP; models transcribe ASCII.
+    A faithful verbatim quote must verify despite that skew, or the _(unverified)_
+    marker is noise (measured: 73% of unverified findings recover under folding)."""
+    from shortlist.research.models import FilingText
+    filing = FilingText(
+        ticker="AAPL", accession="acc-1", filing_date="2025-10-31",
+        business="", mda="",
+        # curly apostrophe (U+2019), em dashes (U+2014), non-breaking space (U+00A0)
+        risk_factors="A significant majority of the Company’s manufacturing "
+                     "is performed — in whole or in part — by outsourcing partners.",
+    )
+    payload = dict(GOOD)
+    payload["risks"] = [{"claim": "Manufacturing is outsourced",
+                         "evidence": "A significant majority of the Company's manufacturing "
+                                     "is performed - in whole or in part - by outsourcing partners."}]
+    payload["red_flags"] = []
+    a = assess(card=None, bundle=_wrap(filing), config=CONFIG,
+               runner=_runner_returning(json.dumps(payload)))
+    assert a is not None
+    assert a.risks[0].verified is True
+    assert a.unverified_count == 0
+
+
+def test_quant_context_includes_valuation_inputs():
+    """D2: the model is asked to reconcile a `value` sub-score; without a multiple it
+    can only infer meaning from the score. Measured: 1/35 briefs cited any multiple."""
+    from shortlist.research.assess import _quant_context
+
+    class _M:
+        revenue_cagr = fcf_cagr = eps_cagr = revenue_growth_persistence = None
+        gross_margin = net_margin = roic = debt_to_equity = interest_coverage = None
+        short_pct_outstanding = days_to_cover = short_interest_rising = None
+        financial_series = None
+        pe_ttm, pe_median_5y, fcf_yield, peg = 28.4, 24.1, 0.031, 2.2
+        market_cap, price = 3.2e12, 214.5
+
+    class _C:
+        metrics = _M(); composite = 70.0; confidence = 0.9
+        quality = moat = growth = momentum = value = insider = risk = None
+        gates: list = []; flags: list = []; sic_bucket = None
+
+    out = _quant_context(_C())
+    assert "pe_ttm=28.4" in out
+    assert "fcf_yield=0.031" in out
+    assert "peg=2.2" in out
+    assert "price=214" in out or "price=215" in out    # 3sig-fig formatting
+
+
+def test_apply_guards_persists_card_confidence():
+    """D4: confidence is the input to two of three conviction guards but was never
+    persisted, so no retrospective could attribute a conviction to a rule."""
+    from shortlist.research.assess import apply_guards
+    from shortlist.research.models import QualitativeAssessment, ScreeningCall
+
+    class _C:
+        metrics = None; confidence = 0.83
+        gates: list = []; flags: list = []; abstentions: list = []; coverage = None
+
+    a = QualitativeAssessment(ticker="X", as_of="", filing_accession="", filing_date="",
+                              model="m")
+    a.screening_call = ScreeningCall(stance="HOLD", conviction="MEDIUM", rationale="r")
+    apply_guards(a, _C(), {"research": {"screening_call": {"enabled": True}}})
+    assert a.screening_call.confidence == 0.83
+
+
+def test_filing_events_line_includes_8k_item_codes():
+    """D5: edgartools already returns 8-K item codes and the repo discards them, so a
+    non-reliance restatement (4.02) renders as an undated form label."""
+    from shortlist.research.assess import _build_user_prompt
+    events = [{"form": "8-K", "filed": "2026-07-23", "items": "4.02,9.01"}]
+    prompt = _build_user_prompt(BUNDLE, CONFIG, None, filing_events=events)
+    assert "4.02" in prompt
+
+
+def test_macro_line_rendered_when_enabled():
+    """D8: MacroContext is fetched in _do_deep and threaded to score() and the report,
+    but never to the brief — which reasons about a discount rate and leverage."""
+    from shortlist.data.macro import MacroContext
+    from shortlist.research.assess import _build_user_prompt
+    macro = MacroContext(as_of="2026-08-04", dgs10=4.21, t10y2y=0.35, hy_oas=2.87,
+                         vix=15.2, fedfunds=4.33, regime="neutral", risk_off=False)
+    cfg = {"research": {**CONFIG["research"], "macro": {"enabled": True}}}
+    prompt = _build_user_prompt(BUNDLE, cfg, None, macro=macro)
+    assert "4.21" in prompt and "2.87" in prompt and "neutral" in prompt
+
+
+def test_macro_absent_leaves_prompt_byte_identical():
+    """Repo-wide convention: a new config block is a byte-identical no-op when absent."""
+    from shortlist.research.assess import _build_user_prompt
+    base = _build_user_prompt(BUNDLE, CONFIG, None)
+    with_macro_key_but_no_macro = _build_user_prompt(BUNDLE, CONFIG, None, macro=None)
+    assert base == with_macro_key_but_no_macro
+
+
+def test_valuation_scalars_never_render_in_scientific_notation():
+    """`%g` renders a BRK.A-class share price as 7.12e+05 and a thin FCF yield as
+    3.1e-05; the model then has to decode them."""
+    from shortlist.research.assess import _fmt_num
+    assert _fmt_num(712000.0) == "712,000"
+    assert _fmt_num(5000.0) == "5,000"
+    assert _fmt_num(214.5) == "214.5"
+    assert _fmt_num(0.031) == "0.031"
+    assert _fmt_num(0.000031) == "0.000031"
+    assert "e" not in _fmt_num(3.2e12)
+
+
+def test_market_cap_is_never_reported_as_zero_for_a_small_cap():
+    """A sub-$1B cap under `$%.0fB` prints '$0B' — a confidently WRONG number, worse
+    than the scientific notation it replaced. RBKB/TACT are sub-$1B and get briefs
+    (the /deep path researches gated names: require_passed=False)."""
+    from shortlist.research.assess import _fmt_mcap
+    assert _fmt_mcap(150e6) == "$150M"
+    assert _fmt_mcap(490e6) == "$490M"
+    assert _fmt_mcap(5e9) == "$5.0B"
+    assert _fmt_mcap(3.2e12) == "$3.20T"

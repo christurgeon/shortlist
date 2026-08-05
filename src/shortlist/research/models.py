@@ -147,6 +147,10 @@ class ScreeningCall:
     stance_clamped: bool = False
     clamp_note: str = ""                  # e.g. "tripped negative_fcf gate"
     as_of_price: Optional[float] = None   # snapshot for future hit-rate
+    # ScoreCard.confidence at decision time. It drives two of the three conviction
+    # guards, so without it a retrospective cannot tell whether a conviction was the
+    # model's own or a rule's (see docs/audits/2026-08-04-deep-brief-assessment.md D4).
+    confidence: Optional[float] = None
 
 
 def _screening_call(payload: dict) -> Optional[ScreeningCall]:

@@ -37,7 +37,7 @@ def is_available() -> bool:
 
 def _enrich_card(card, config: dict, root: str, refresh: bool,
                  fetch: Callable, assess_fn: Callable,
-                 reason_fn: Callable = _no_10k_reason) -> ResearchResult:
+                 reason_fn: Callable = _no_10k_reason, macro=None) -> ResearchResult:
     """Research a single card. Never raises — failures become a skipped result."""
     try:
         bundle = fetch(card.ticker, config=config)
@@ -61,7 +61,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     try:
         from .filings import cap_bundle
         bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
-        assessment = assess_fn(card, bundle, config)
+        assessment = assess_fn(card, bundle, config, macro=macro)
         if assessment is None:
             return ResearchResult(card.ticker, skipped="assessment failed")
         bp = report.write(assessment, root, config)
@@ -75,7 +75,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            require_passed: bool = True,
            fetch: Callable = _fetch_bundle, assess_fn: Callable = _assess,
-           reason_fn: Callable = _no_10k_reason) -> list[ResearchResult]:
+           reason_fn: Callable = _no_10k_reason, macro=None) -> list[ResearchResult]:
     """Enrich the top-N cards. Sorts by `rank_key` (scored, composite, confidence)
     before selecting — the caller need not pre-sort. By default only `passed`
     (not-gated AND scored) cards are eligible; `require_passed=False` selects the
@@ -87,5 +87,6 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     ranked = sorted(cards, key=rank_key, reverse=True)
     eligible = ranked if not require_passed else [c for c in ranked if c.passed]
     selected = eligible[:top_n]
-    return [_enrich_card(card, config, root, refresh, fetch, assess_fn, reason_fn)
+    return [_enrich_card(card, config, root, refresh, fetch, assess_fn, reason_fn,
+                         macro=macro)
             for card in selected]

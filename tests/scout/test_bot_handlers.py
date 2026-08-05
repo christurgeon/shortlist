@@ -101,7 +101,7 @@ def test_screen_soft_cap_truncates_and_warns():
 def test_deep_researches_with_require_passed_false():
     seen = {}
     def screen_fn(tickers, sources, config, macro=None): return [FakeCard(t) for t in tickers]
-    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
         seen["require_passed"] = require_passed; seen["top_n"] = top_n
         return ({}, {"TSLA": {"synthesis": "ok"}}, ["TSLA"], None, {})
     def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
@@ -232,7 +232,7 @@ def test_deep_filters_malformed_and_researches_present_only():
     def screen_fn(tickers, sources, config, macro=None):
         seen["tickers"] = tickers
         return [FakeCard(t) for t in tickers]
-    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
         seen["research_cards"] = [c.ticker for c in cards]; seen["top_n"] = top_n
         return ({}, {}, [c.ticker for c in cards], None, {})
     def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
@@ -255,7 +255,7 @@ def test_deep_researching_message_names_capped_tickers():
     # Two well-formed names, cap=1: the "Researching…" pre-ack must name the
     # post-cap `kept` (AAPL), NOT the pre-cap `good` (AAPL, MSFT).
     def screen_fn(tickers, sources, config, macro=None): return [FakeCard(t) for t in tickers]
-    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
         return ({}, {}, [c.ticker for c in cards], None, {})
     def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
@@ -272,7 +272,7 @@ def test_deep_sends_skip_reason_when_assessment_missing():
     # /deep must surface the reason LOUDLY rather than silently omitting analysis.
     def screen_fn(tickers, sources, config, macro=None):
         return [FakeCard("NVDA")]
-    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
         return ({}, {}, [], None, {"NVDA": "assessment failed"})
     def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         return type("A", (), {"png": b"P", "html": "", "text": ""})()
@@ -288,7 +288,7 @@ def test_deep_all_no_data_skips_research_and_report():
     seen = {"research": False, "report": False, "deliver": False}
     def screen_fn(tickers, sources, config, macro=None):
         return [FakeCard("ZZZZ", empty=True)]
-    def research_fn(cards, config, scout_cfg, *, require_passed, top_n):
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
         seen["research"] = True; return ({}, {}, [], None, {})
     def report_fn(cards, manifest, *, assessments, macro=None, portfolio=None):
         seen["report"] = True
