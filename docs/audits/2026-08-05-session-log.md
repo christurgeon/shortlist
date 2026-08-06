@@ -1,9 +1,20 @@
 # Session log — 2026-08-05/06 discovery-layer work
 
-Single tracker for the whole session: what shipped, what was measured, what was **retracted**,
-and what remains. Plan: `/home/chris/.claude/plans/sunny-shimmying-parasol.md`.
+**START HERE if you are picking this up cold.** Single tracker for the whole workstream: what
+shipped, what was measured, what was **retracted**, and what remains (§6). Plan:
+`/home/chris/.claude/plans/sunny-shimmying-parasol.md`.
 
 **Trigger:** the daily digest delivered **zero candidates** on 2026-08-04.
+
+**State as of 2026-08-06 02:40 UTC:** `main` = `c7b8b2f`, `/opt/shortlist` = `50be4ed` (the
+difference is docs-only, so production has every code change). Suite **2400 passing**, ruff
+clean, working tree clean, nothing unpushed.
+
+**The two things gating almost everything else:**
+1. **Tonight's 22:30 run produces the first `sec_requests`** — the measurement that confirms
+   or refutes the Form-4 cascade and gates every Phase 3 originator. Read
+   `scout/<date>/manifest.json`.
+2. **The paid price feed** (approved, not purchased) gates all cohort measurement.
 
 ---
 
@@ -14,11 +25,13 @@ and what remains. Plan: `/home/chris/.claude/plans/sunny-shimmying-parasol.md`.
 | `11c6006` (PR #162) | Shared sec.gov throttle; resolver stale-fallback + retry; shared resolver memo; `run_health()` degraded-vs-quiet | ✅ |
 | `7ed7eef` | `backtest/prices.py` caches Yahoo 404s (delisted tickers stopped being re-fetched every run) | ❌ not needed |
 | `3744612` | Per-consumer SEC budget into `RunManifest.sec_requests`; routed `cik_tickers` + `dera` into the shared throttle; same 404 fix on the **production** Yahoo path | ✅ |
-| `46b4cd2` | `cusip_map` strips SEC's `/DE/` state-of-incorporation marker (821 of 10,398 issuers) | ❌ pending |
-| `c6406a2`, `1cab195`, `d0c8879`, `7c97fd4` | Standing-screen audits + adversarial-review corrections | docs |
-| *(this commit)* | **Deep-screen quality floor** — `data/secframes.py`, `scout/quality_floor.py`, `funnel.apply_quality_floor`, wiring. Ships **OFF** | ❌ pending |
+| `46b4cd2` | `cusip_map` strips SEC's `/DE/` state-of-incorporation marker (821 of 10,398 issuers) | ✅ |
+| `a38add3` | **Deep-screen quality floor** — `data/secframes.py`, `scout/quality_floor.py`, `funnel.apply_quality_floor`, wiring. Ships **OFF** | ✅ (disabled) |
+| `17be9ec` | `dera` reports a code error distinctly instead of as a missing quarter | ✅ |
+| `50be4ed` | **Finnhub non-USD market caps abstain** instead of being read as dollars (the $63.9T `TSM` bug) | ✅ |
+| `c6406a2`, `1cab195`, `d0c8879`, `7c97fd4`, `c7b8b2f` | Standing-screen audits, adversarial-review corrections, this log | docs |
 
-Suite **2393 passing**, ruff clean.
+Suite **2400 passing**, ruff clean.
 
 ## 2. Root causes of the empty digest (all fixed)
 

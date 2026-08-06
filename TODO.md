@@ -6,6 +6,19 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## Discovery-layer workstream — SESSION TRACKER (2026-08-05/06)
+
+**→ `docs/audits/2026-08-05-session-log.md` is the single pickup document.** It carries the
+current state, everything shipped, the measured findings, seven claims retracted in-session,
+and §6 "REMAINING" split into blocked vs unblocked. Read it before starting anything here.
+
+Two things gate most of the remaining work: **tonight's `sec_requests`** in
+`scout/<date>/manifest.json` (confirms or refutes the Form-4 cascade; gates the Phase 3
+originators) and **the paid price feed** (gates all cohort measurement — the unwired `form4`
+backfill, the regime-break audit, and attributing the buyback verdict).
+
+**Status:** workstream paused at a clean point; `main` and `/opt` both current.
+
 ## SEC request budget is now measured — and two consumers were outside it (2026-08-05)
 
 Plan Phase 1.1 (`/home/chris/.claude/plans/sunny-shimmying-parasol.md`). The 2026-08-04
