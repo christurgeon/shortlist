@@ -8,7 +8,14 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ## Discovery-layer workstream — SESSION TRACKER (2026-08-05/06)
 
-**→ `docs/audits/2026-08-05-session-log.md` is the single pickup document.** It carries the
+**→ For what to DO next, read `docs/audits/2026-08-06-discovery-breadth-plan.md`** — the
+agreed plan under the constraint that the paid price feed is **not** being purchased. Track A
+(correct the `edgar_form4` weight-1.5 error, read `sec_requests`, enable the quality floor,
+size `daily_x`) is unblocked. The standing screen is **designed but gated** on a spike, and
+the plan records why building it now would have been premature: `raw == 0` has happened
+**once in 28 sessions**, on a day with four failed originators that are since fixed.
+
+**→ `docs/audits/2026-08-05-session-log.md` is the single pickup document for STATE.** It carries the
 current state, everything shipped, the measured findings, seven claims retracted in-session,
 and §6 "REMAINING" split into blocked vs unblocked. Read it before starting anything here.
 
