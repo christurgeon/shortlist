@@ -6,9 +6,9 @@ shipped, what was measured, what was **retracted**, and what remains (§6). Plan
 
 **Trigger:** the daily digest delivered **zero candidates** on 2026-08-04.
 
-**State as of 2026-08-06 02:40 UTC:** `main` = `c7b8b2f`, `/opt/shortlist` = `50be4ed` (the
-difference is docs-only, so production has every code change). Suite **2400 passing**, ruff
-clean, working tree clean, nothing unpushed.
+**State at hand-off (2026-08-06 ~03:20 UTC):** `main` = `/opt/shortlist` = same commit, suite
+**2400 passing**, ruff clean, working tree clean, nothing unpushed. The **bot was restarted
+2026-08-06 02:57:52 UTC** and is running current code.
 
 **The two things gating almost everything else:**
 1. **Tonight's 22:30 run produces the first `sec_requests`** — the measurement that confirms
@@ -112,6 +112,41 @@ is *below* the floor, an inflated cap **silently passes** — a 30–1000x overs
 weak-currency issuers, quietly favouring the foreign nano-caps the composition audit
 complains about. Now abstains unless `currency == "USD"`.
 
+## 4c. Post-deploy verification (2026-08-06)
+
+**Bot restarted** 02:57:52 UTC (PID 3126051). Standing lesson: **`git pull` alone NEVER
+updates the bot.** The scout is a fresh process nightly so it self-updates; the bot is
+long-running and keeps old code indefinitely. It had been up ~21 h serving `/screen`,
+`/deep` and `/portfolio` on pre-fix code.
+
+**The TSM currency fix verified end-to-end** on the deployed code: `market_cap` is now
+`None` where it previously held **63,923,289,931,641**. The run was a clean test of the exact
+failure path — FMP was 429-limited, so Finnhub was the *only* market-cap source, which is
+where the bug used to bite. Note `gates: []` either way: with `market_cap = None` the
+`below_min_mktcap` gate cannot evaluate, so the visible outcome is unchanged for TSM. The real
+correction lands on **small** foreign issuers, where a 30x inflation previously hid a genuine
+microcap.
+
+**`insider: 0.0` investigated — NOT A BUG.** Recorded so nobody re-opens it. TSM's Finnhub
+MSPR rows are `[100, -82.42, -97.95, -99.27, 0.11]`; the source takes `mean/100` = **-0.3590**,
+the `insider_sentiment` band is `[-0.30, 0.30]`, so it clamps to **0.0** — a real "heavy net
+selling" reading, not a coerced `None`. The gate threshold is `-0.60`, and -0.359 > -0.60, so
+`gates: []` is correct too. The `flow` leg *did* abstain: `scoring.py:124` requires
+`m.market_cap` truthy. `insider = avg([0.0, None]) = 0.0`, and `confidence: 1.0` is right
+because the sentiment leg genuinely is present.
+
+**Two hypotheses I raised were WRONG** (kept so they are not re-run):
+1. That a `None` was being coerced to 0.0 — the abstain guard already exists and worked.
+2. That foreign private issuers are Section-16 exempt (Rule 3a12-3(b)), so TSM's insider data
+   could not exist. **TSM has 185 Forms 3/4/5.** It varies by issuer: ASML 0, MANU 14, TSM 185.
+   There is no data-quality problem here.
+
+**One genuine observation, NOT acted on.** That single `+100` month swings the equal-weighted
+5-month mean by ~+20 points. Without it the mean would be ≈ **-0.70**, which *would* have
+tripped `heavy_insider_selling`. So the gate outcome is sensitive to one month and to the
+choice of an unweighted mean over Finnhub's window. That is an **unfitted design choice, not a
+bug** — changing it moves a live gate and therefore needs measurement, not a hunch.
+
 ## 5. Incidents
 
 - **I tripped Yahoo's WAF** running a cohort replay (~44 price fetches). The chart endpoint —
@@ -135,10 +170,9 @@ complains about. Now abstains unless `currency == "USD"`.
 - **`8k-neg` coverage/attrition split** (~2,884 fetches; run off-hours).
 
 **Not blocked:**
-- **Decide whether to enable the quality floor.** Evidence:
-  `2026-08-05-quality-floor-evidence.md`.
-- ~~Deploy `46b4cd2` + the quality floor~~ — **DONE**; `/opt` is on `50be4ed`.
-- **Enable the quality floor — but NOT before tonight's run.** It adds ~16 `secframes`
+- ~~Deploy the pending commits~~ — **DONE**; `/opt` and the bot are both current.
+- **Enable the quality floor — but NOT before the next 22:30 run completes.** Evidence:
+  `2026-08-05-quality-floor-evidence.md`. It adds ~16 `secframes`
   requests, which would contaminate the first `sec_requests` baseline. Enable after reading it.
 - **Read `sec_requests`** from the next few manifests. If `edgar_form4`'s share holds near the
   98.7% the simulation suggested, the cascade is confirmed and `edgar_index_daily_cap` is the
@@ -150,6 +184,14 @@ complains about. Now abstains unless `currency == "USD"`.
   already retired.
 - **Phase 3 originators**, each gated on the SEC budget model: FINRA daily RegSHO (1 req/day),
   SEC comment letters (`UPLOAD`/`CORRESP`), `NT 10-K`, 8-K items 4.01/1.02.
+
+### Recommended next step
+
+**Phase 1.2 — Form 25/25-NSE.** It is the only remaining item whose value is **correctness
+rather than a signal awaiting measurement**, so it is worth having regardless of what any
+later verdict says. Everything else unblocked (RegSHO, comment letters) would ship disabled
+and *stay* disabled until the price feed lands. Caveat: it can be BUILT now, but *validating*
+that it does not shift a committed cohort verdict needs the replays, which need prices.
 
 **Explicitly not doing:** a standing full-universe *originator* (adds scoring surface); "build
 Lazy Prices" (already exists — `research/textsim.py`, `filings.py:148`); 8-K 4.02 conditioning
