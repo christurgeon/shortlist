@@ -735,8 +735,11 @@ through the **process-wide `sec_throttle()`** (below).
 
 ## Deep-screen slot hygiene — the quality floor (scout)
 
-The binding constraint in this funnel is **not candidate volume — it is the ~10 FMP
-deep-screen slots/day** (`scout.daily_x`). `budget.select` orders purely by signal weight and
+The binding constraint in this funnel is **not candidate volume — it is the ~10 deep-screen
+slots per NIGHT** (`scout.daily_x`). The nightly digest runs the **free chain**
+(`daily_push.include_fmp: false` makes `digest_sources` drop FMP), so a wasted slot costs a
+Yahoo/Finnhub/EDGAR screen, **not FMP quota** — FMP binds the bot's `/screen` and `/deep`,
+which keep the full chain. `budget.select` orders purely by signal weight and
 knows nothing about the business, because assessing fundamentals used to require the very
 per-ticker screen being allocated.
 

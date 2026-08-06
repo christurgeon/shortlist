@@ -4,8 +4,14 @@
 waste, running between the 8-K veto and `budget.select`. Ships **OFF**
 (`scout.quality_floor.enabled: false`).
 
+> **CORRECTION 2026-08-06.** This document originally said the slots cost **FMP quota**. They
+> do not: the nightly digest runs the free chain (`daily_push.include_fmp: false` drops FMP),
+> so a slot costs a Yahoo/Finnhub/EDGAR screen and a line of the digest. FMP quota binds the
+> bot's `/screen` and `/deep` only. The floor's justification is unchanged (a slot is finite),
+> but it must not be argued from an FMP number.
+
 **Why a floor and not a ranker.** The binding constraint in this funnel is not candidate
-volume — it is the **~10 FMP deep-screen slots/day**. `budget.select` orders purely by signal
+volume — it is the **~10 deep-screen slots per night**. `budget.select` orders purely by signal
 weight and knows nothing about the business, because assessing fundamentals used to require
 the very per-ticker screen we were allocating. SEC `frames` breaks that circularity. But an
 adversarial review was blunt that a full-universe *ranking* is the existing quality/value

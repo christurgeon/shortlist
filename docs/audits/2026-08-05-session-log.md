@@ -86,6 +86,13 @@ Kept deliberately visible; the surviving claims are only worth something because
    not return-predicting. It fails on *no daily refresh cadence* + a better alternative.
 7. **Quality floor v1 dropped `GIPR` (a REIT) and `COE`** — false positives, found by
    measuring against the real ledger. Fixed with the OCF cash-burn condition.
+8. **"The binding constraint is the ~10 FMP deep-screen slots/day"** — I wrote this into the
+   code, config, CLAUDE.md and two audits. **The nightly digest burns no FMP at all**:
+   `daily_push.include_fmp: false` makes `digest_sources` drop FMP from the chain. A slot
+   costs a Yahoo/Finnhub/EDGAR screen and a line of the digest. FMP quota binds only the
+   bot's `/screen` and `/deep`, which keep the full chain. Corrected in all five places
+   2026-08-06. The quality floor's justification survives (a slot is still finite) but must
+   not be argued from an FMP number.
 
 ## 4b. Day 2 (2026-08-06)
 
@@ -153,6 +160,41 @@ because the sentiment leg genuinely is present.
 tripped `heavy_insider_selling`. So the gate outcome is sensitive to one month and to the
 choice of an unweighted mean over Finnhub's window. That is an **unfitted design choice, not a
 bug** — changing it moves a live gate and therefore needs measurement, not a hunch.
+
+## 4d. Operational rules learned (read before touching production)
+
+1. **NEVER deploy between 22:30 and 22:35 UTC.** The scout is `Type=oneshot` with **lazy
+   imports**, so a mid-run `git pull` leaves a torn state — modules loaded before the pull are
+   old, modules imported after are new. Cost us a `TypeError` on 2026-08-05 that surfaced as
+   a fake "quarter unavailable". Check `systemctl is-active shortlist-scout.service` first.
+2. **`git pull` alone NEVER updates the bot.** The scout self-updates (fresh process nightly);
+   `shortlist-bot.service` is long-running and keeps old code indefinitely. It served
+   `/screen`, `/deep` and `/portfolio` on pre-fix code for ~21 h. Always
+   `sudo systemctl restart shortlist-bot.service` after a deploy that touches
+   `data/sources/*`, `screen.py`, `scoring.py` or the report.
+3. **Any cohort replay is a Yahoo-load event.** `validate` fetches full price history per
+   uncached ticker; ~44 fetches was enough to trip the WAF **IP-wide**, taking down the
+   `v8/finance/chart` endpoint production depends on. The old guidance ("don't probe the
+   screener") was too narrow. The 404-caching fixes reduce, not remove, this.
+4. **The screener is permanently blocked; the chart endpoint is not.** Two different
+   mechanisms — a deterministic fingerprint block vs. volume-sensitive throttling. Never say
+   "Yahoo is blocked" without naming the endpoint.
+5. **`shortlist` takes `--tickers`, not a positional argument.**
+6. **Backticks in `git commit -m` get shell-substituted.** Two commit messages were mangled
+   this session. Use `git commit -F -` with a heredoc.
+
+## 4e. Open opportunity — is `daily_x: 10` an arbitrary cap?
+
+Falls directly out of retraction #8. Since the nightly digest runs the **free chain**, the
+10-name cap is **not** an FMP-quota constraint — it is a config choice. Raising it costs
+Yahoo + Finnhub + EDGAR per extra name, and EDGAR is now bounded by the shared ~6 req/s
+throttle.
+
+That matters because discovery is thin (raw 3–21/day) and the funnel's real problem is
+composition, not volume — but more slots means more of the surfaced names actually get
+screened rather than dropped for budget. **`sec_requests` from the next few runs is exactly
+the measurement needed to size this**: it says how much SEC headroom a larger `daily_x` would
+consume. Do not raise it blind.
 
 ## 5. Incidents
 

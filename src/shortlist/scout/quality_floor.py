@@ -1,10 +1,16 @@
 """Deep-screen slot hygiene — drop candidates that cannot be a good buy under any reading.
 
-**The binding constraint in this funnel is not candidate volume, it is the ~10 FMP
-deep-screen slots per day** (`scout.daily_x`). Discovery routinely surfaces more names than
-that, and `budget.select` currently orders purely by signal weight — it knows nothing about
-the business. Until now that was unavoidable: assessing fundamentals required the very
-per-ticker screen we were trying to allocate.
+**The binding constraint in this funnel is not candidate volume, it is the ~10 deep-screen
+slots per night** (`scout.daily_x`). Discovery routinely surfaces more names than that, and
+`budget.select` currently orders purely by signal weight — it knows nothing about the
+business. Until now that was unavoidable: assessing fundamentals required the very per-ticker
+screen we were trying to allocate.
+
+NOTE on cost (corrected 2026-08-06): the nightly digest runs the FREE chain —
+`daily_push.include_fmp: false` makes `digest_sources` drop FMP — so a wasted slot costs a
+Yahoo/Finnhub/EDGAR screen and a line of the digest, NOT FMP quota. FMP quota binds the bot's
+`/screen` and `/deep`, which keep the full chain. The floor is still worth having (a slot is
+still finite), but do not justify it with an FMP figure.
 
 SEC `frames` (`data/secframes.py`) breaks that circularity: ~12 requests buys fundamentals
 for the whole universe, so a candidate can be checked *before* it consumes a slot.

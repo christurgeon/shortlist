@@ -644,8 +644,10 @@ scout:
       enabled: true
       lookback_days: 30      # veto horizon + state prune window (matches the drift window)
   # Deep-screen slot hygiene. The binding constraint in this funnel is NOT candidate volume,
-  # it is the ~10 FMP deep-screen slots/day (daily_x): budget.select orders purely by signal
-  # weight and knows nothing about the business. SEC `frames` breaks that circularity —
+  # it is the ~10 deep-screen slots/NIGHT (daily_x): budget.select orders purely by signal
+  # weight and knows nothing about the business. NOTE the digest runs the FREE chain
+  # (daily_push.include_fmp: false drops FMP), so a wasted slot costs a Yahoo/Finnhub/EDGAR
+  # screen, not FMP quota -- FMP binds the bot's /screen and /deep, which keep the full chain. SEC `frames` breaks that circularity —
   # ~12 requests buys fundamentals for the WHOLE listed universe, so a candidate can be
   # checked BEFORE it consumes a slot (docs/audits/2026-08-05-standing-screen-data-source.md).
   #
