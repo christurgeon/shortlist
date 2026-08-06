@@ -177,6 +177,19 @@ box actually uses), or run the installer from a **separate** up-to-date checkout
 **Always verify after deploying** — `git -C /opt/shortlist log --oneline -1` plus a grep for a
 symbol you just added. Do not trust the installer's exit code as evidence the code moved.
 
+**GOTCHA — NEVER deploy between 22:30 and 22:35 UTC (the scout's run window).** The scout
+is a `Type=oneshot` process with **lazy imports**: it imports modules as it reaches them, so a
+`git pull` mid-run leaves a **torn import state** — modules loaded before the pull are the old
+code, modules imported after it are the new code. This happened 2026-08-05: the pull landed at
+`22:31:27`, 86 seconds into the run, and `dera.py` (new, passing a throttle label) called a
+`SecThrottle` (old, no label parameter) that was already in memory. It surfaced as
+`dera: 2026q2 unavailable: SecThrottle.__call__() takes 1 positional argument but 2 were
+given` — **a code error masquerading as a missing quarter**, because `ensure_quarters` caught
+everything as a data gap. That masking is now fixed (programming errors warn distinctly), but
+the deploy hazard remains: the failure mode is silent, arbitrary, and depends on which modules
+the run happened to have reached. Check `systemctl is-active shortlist-scout.service` before
+pulling, or deploy well outside the window.
+
 **GOTCHA — the installer GENERATES its unit files inline; it does NOT read `deploy/*.service`.**
 `deploy/shortlist-{scout,accumulate}.{service,timer}` are only used by the *manual* route in
 `deploy/README.md`. Both routes are supported, so **a `[Service]` setting added to one must be

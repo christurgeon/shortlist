@@ -187,6 +187,17 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
                                   stacklevel=2)
                     continue
                 os.replace(tmp, p)
+            except (TypeError, AttributeError, NameError, ImportError) as exc:
+                # A BUG, not a data gap. On 2026-08-05 a mid-run deploy left a torn import
+                # state (old SecThrottle in memory, new dera.py on disk) and the labelled
+                # throttle call raised TypeError -- which `except Exception` below reported
+                # as "2026q2 unavailable", indistinguishable from SEC not having published
+                # it. Still degrades (a daily run never dies on one quarter), but the
+                # message must not lie about what happened.
+                warnings.warn(f"dera: {q} FAILED WITH A CODE ERROR (not a data gap) — "
+                              f"{type(exc).__name__}: {redact_secrets(str(exc))}",
+                              stacklevel=2)
+                continue
             except Exception as exc:  # noqa: BLE001 -- absent quarter degrades history
                 warnings.warn(f"dera: {q} unavailable: {redact_secrets(str(exc))}",
                               stacklevel=2)

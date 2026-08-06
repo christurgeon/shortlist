@@ -232,3 +232,28 @@ def test_one_corrupt_archive_degrades_only_its_own_quarter(tmp_path, monkeypatch
     assert idx, "the good quarter must still contribute"
     assert missing == 1
     assert not bad.exists(), "the corrupt archive must unlink itself for retry"
+
+
+def test_a_code_error_is_NOT_reported_as_a_missing_quarter(tmp_path, monkeypatch):
+    """On 2026-08-05 a mid-run deploy left a torn import state and the labelled throttle call
+    raised TypeError. `except Exception` reported it as "2026q2 unavailable" — a BUG wearing
+    a data-gap costume, indistinguishable from SEC simply not having published the quarter.
+
+    The run must still not crash (a daily run never dies on one quarter), but the message
+    must not lie about what happened.
+    """
+    import warnings
+
+    from shortlist.scout import dera
+
+    def _boom(*a, **k):
+        raise TypeError("SecThrottle.__call__() takes 1 positional argument but 2 were given")
+
+    monkeypatch.setattr(dera, "sec_throttle", lambda: _boom)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        out = dera.ensure_quarters(["2026q2"], str(tmp_path), "me@x.com")
+    assert out == []                                   # still degrades, never raises
+    msg = str(w[0].message)
+    assert "unavailable" not in msg, f"a code error must not read as a data gap: {msg}"
+    assert "TypeError" in msg or "code" in msg.lower()
