@@ -160,10 +160,21 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     snap = TickerSnapshot(ticker=ticker)
     p = raw.get("profile") or {}
     if p:
+        # Finnhub reports `marketCapitalization` in the issuer's NATIVE currency (TSM comes
+        # back as 60,163,096 with currency "TWD" — millions of Taiwan dollars). `market_cap`
+        # is the insider net-flow denominator AND the `below_min_mktcap` gate input, both of
+        # which assume DOLLARS. Reading TWD/JPY/KRW as USD overstates by 30-1000x, and
+        # scoring.py only trips that gate when the cap is BELOW the floor — so an inflated
+        # cap silently PASSES, favouring exactly the foreign nano-caps the composition audit
+        # complains about. Abstain rather than convert: there is no FX source here, and FMP
+        # (which reports USD) outranks Finnhub in the merge, so a real figure still wins
+        # wherever FMP has one. Found 2026-08-06 via a $63.9T TSM in the selection ledger.
+        cur = (p.get("currency") or "").strip().upper()
         snap.profile = Profile(
             name=p.get("name"), industry=p.get("finnhubIndustry"),
             exchange=p.get("exchange"), currency=p.get("currency"),
-            country=p.get("country"), market_cap=_mm(p.get("marketCapitalization")),
+            country=p.get("country"),
+            market_cap=_mm(p.get("marketCapitalization")) if cur == "USD" else None,
         )
     m = (raw.get("metric") or {}).get("metric", {})
     if m:

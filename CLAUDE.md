@@ -1270,7 +1270,16 @@ uncapped) is intentionally uncached.
 - Margins/returns are **fractions** (0.42 == 42%). **FMP `/stable/` returns fractions**
   (use as-is); **Finnhub returns percentages** (÷100 via `_pct`). Don't double-convert.
 - **`market_cap` is absolute dollars** (FMP `quote.marketCap`). **Finnhub reports
-  millions** (×1e6 via `_millions`). The `below_min_mktcap` gate + insider net-flow ratio
+  millions IN THE ISSUER'S NATIVE CURRENCY** — so `_normalize_finnhub` uses it **only when
+  `profile.currency == "USD"`, and abstains otherwise**. TSM comes back as 60,163,096 with
+  `currency: "TWD"`; read as USD that is **$60.2T**, and it was recorded that way in the
+  selection ledger until 2026-08-06. This is not cosmetic: `market_cap` is the insider
+  net-flow denominator and the `below_min_mktcap` gate input, and `scoring.py` only trips
+  that gate when the cap is **below** the floor — so an inflated cap **silently passes**,
+  favouring exactly the foreign nano-caps `docs/audits/2026-07-26-funnel-composition-audit.md`
+  complains about. Abstain rather than convert (no FX source; abstain-never-guess); FMP
+  outranks Finnhub in the merge, so a USD figure still wins where FMP has one. The cost is
+  that an FMP-gated non-USD issuer loses its cap, and with it the insider ratio. The `below_min_mktcap` gate + insider net-flow ratio
   assume dollars, so Finnhub is the free fallback denominator when FMP gates a symbol —
   without it EDGAR's insider dollars can't be normalized and the insider sub-score goes
   `null`.
