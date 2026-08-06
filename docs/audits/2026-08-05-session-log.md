@@ -6,9 +6,16 @@ shipped, what was measured, what was **retracted**, and what remains (§6). Plan
 
 **Trigger:** the daily digest delivered **zero candidates** on 2026-08-04.
 
-**State at hand-off (2026-08-06 ~03:20 UTC):** `main` = `/opt/shortlist` = same commit, suite
-**2400 passing**, ruff clean, working tree clean, nothing unpushed. The **bot was restarted
-2026-08-06 02:57:52 UTC** and is running current code.
+**State at hand-off (2026-08-06 ~03:20 UTC):** suite **2400 passing**, ruff clean, working
+tree clean, nothing unpushed. **`/opt/shortlist` carries every CODE change** — `main` may sit
+a commit or two ahead on docs-only updates (this log), which need no deploy. The **bot was
+restarted 2026-08-06 02:57:52 UTC** and runs current code.
+
+Verify on pickup rather than trusting this line:
+```bash
+git -C /opt/shortlist log --oneline -1     # vs `git log --oneline -1`
+uv run ruff check src tests && uv run pytest -q
+```
 
 **The two things gating almost everything else:**
 1. **Tonight's 22:30 run produces the first `sec_requests`** — the measurement that confirms
