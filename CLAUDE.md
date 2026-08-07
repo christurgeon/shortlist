@@ -733,6 +733,44 @@ suffixes, EXACT equality only — ambiguous names abstain); (3) **None** (abstai
 `available()` detail). Every sec.gov request (submissions, index, infotable, FTD zips) goes
 through the **process-wide `sec_throttle()`** (below).
 
+## Investability floor — is the SECURITY reachable? (scout)
+
+`scout/investable.py` + `data/nasdaq_universe.py` (**ON**, `scout.investable_floor`) drop
+candidates a retail-scale book cannot act on, at the same funnel seam as the quality floor
+(`funnel.apply_investable_floor`, between the veto and `select`). **Two floors, two
+questions:** the quality floor asks whether the BUSINESS is broken, this asks whether the
+SECURITY is reachable — a sound little company trading $20k/day is a fine business and an
+unactionable idea.
+
+Two legs, both **abstaining on a missing or non-positive input**: market cap ≥ `min_market_cap`
+($100M) and average daily **DOLLAR** volume ≥ `min_dollar_adv` ($500k). Dollar, never share,
+volume — 1M shares/day of a $0.20 stock is $200k/day; the share-count floor in
+`short_interest.py` is a different instrument and is NOT reused. An absent market cap is
+**common** (`_normalize_finnhub` abstains on non-USD caps) and means *unknown*, not *small*.
+
+**Sources, neither on sec.gov** (so this draws nothing from `sec_throttle()` and must never be
+routed there): the listed universe from `api.nasdaq.com/api/screener/stocks` (3 requests,
+~7,100 symbols, day-cached, **undocumented** — the retired-Yahoo-screener fragility class, so
+every failure degrades to inert), and average daily share volume from the **FINRA** dataset the
+harness already disk-caches (zero extra requests; 93% coverage of ledger tickers). FINRA short
+interest is **semi-monthly**, so ADV can be ~4 weeks stale — fine for a floor, never a ranking.
+
+**`gates.min_market_cap` was lowered $2B → $300M** in the same change. That is an
+**investability MANDATE, not an alpha claim** — no backtest says $300M beats $2B. At $2B the
+gate was mismatched to its own funnel (`edgar:activist_13d`'s median pick is **$50M**; ~80% of
+slots went to names the gate would reject; 13 of 25 sessions would deliver nothing). The gate
+is pinned by test to sit **above** the funnel floor — inverting them would make the floor the
+real gate and silently change what `passed` means. Measured effect: actionable picks
+**26% → 45%**, zero-candidate nights **13/25 → 2/25**. Evidence:
+`docs/audits/2026-08-07-investability-floor.md`; the mismatch it fixes:
+`docs/audits/2026-08-07-funnel-gate-mismatch.md`.
+
+Removing the `investable_floor` block gives the byte-identical pre-feature funnel with **zero
+fetches** (pinned by `tests/test_scout_investable_wiring.py`, whose fetch doubles raise so the
+assertion cannot pass as a tautology). Every failure path — raise, empty universe, FINRA
+outage — degrades to inert plus a LOUD manifest note, and a FINRA outage still applies the cap
+leg. Every drop is named with its reason, never a bare count.
+
 ## Deep-screen slot hygiene — the quality floor (scout)
 
 The binding constraint in this funnel is **not candidate volume — it is the ~10 deep-screen

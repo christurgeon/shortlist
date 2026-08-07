@@ -102,7 +102,26 @@ weights:
   # before trusting these weights.
 
 gates:
-  min_market_cap:          2.0e+9
+  # LOWERED 2026-08-07 from 2.0e+9 to 3.0e+8. This is an INVESTABILITY MANDATE, not an alpha
+  # claim -- no backtest says $300M outperforms $2B, and none is asserted.
+  #
+  # At $2B the gate was mismatched to the funnel feeding it: edgar:activist_13d's MEDIAN pick
+  # is $50M, and ~80% of deep-screen slots went to names this gate was configured to reject
+  # (52 of 54 13D picks gated). Activism and insider buying structurally happen at small caps
+  # -- that is what the enabled originators are built to find -- so a $2B floor did not filter
+  # a tail, it deleted the distribution: 13 of 25 sessions would deliver nothing.
+  #
+  # $300M sits inside the $0.3-10B band docs/audits/2026-07-26-funnel-composition-audit.md
+  # identifies as retail-accessible, and keeps 46% of picks across 19 of 25 sessions. The
+  # untradeable tail below it is cut EARLIER and more cheaply by scout.investable_floor
+  # (a $100M cap floor plus a $500k/day DOLLAR-volume floor), so this gate no longer has to
+  # double as a liquidity proxy -- which it was always bad at, since cap does not tell you
+  # whether a $200M name trades $600k/day or $30k/day.
+  #
+  # Reversible in one line, and measurable: the selection ledger records what surfaces, so
+  # this becomes a checkable decision rather than a permanent bet. Evidence + the full
+  # floor-sensitivity curve: docs/audits/2026-08-07-investability-floor.md.
+  min_market_cap:          3.0e+8
   max_debt_to_equity:      5.0
   min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
   # Leverage gate (ASSESSMENT_GAPS §2.7). Shipped ON. Net-debt/EBITDA primary;
@@ -669,6 +688,37 @@ scout:
   #       set, and SEC `frames` is LIVE-ONLY so it scores TODAY's fundamentals against
   #       HISTORICAL picks rather than a point-in-time replay.
   # Neither is fatal; both mean the flip is a measured decision, not a one-line convenience.
+  # Investability floor -- can a retail-scale book ACT on this name? The sibling of
+  # quality_floor above, and deliberately a separate stage: that one asks whether the
+  # BUSINESS is broken, this asks whether the SECURITY is reachable. A sound little company
+  # trading $20k/day is a fine business and an unactionable idea.
+  #
+  # Measured motivation (docs/audits/2026-08-07-investability-floor.md): across the three
+  # enabled originators the p25 pick is a $15M market cap and a THIRD of all picks sit below
+  # $50M -- shells no account size can trade. The floors below are the measured knee: at
+  # $100M the funnel keeps 57% of picks across 21 of 25 sessions, while $500M+ starts
+  # emptying sessions outright.
+  #
+  # DOLLAR volume, never share volume: 1M shares/day of a $0.20 stock is $200k/day. (The
+  # share-count floor in short_interest.py is a different instrument, not reused here.)
+  # Every leg ABSTAINS on a missing or non-positive input -- an absent market cap is common
+  # (Finnhub abstains on non-USD caps) and means "unknown", not "small".
+  #
+  # Neither source touches sec.gov -- the universe is api.nasdaq.com and the volume map is
+  # the FINRA dataset the harness already caches -- so this does NOT draw on the shared SEC
+  # budget and did not need to wait on the sec_requests baseline. FINRA short interest is
+  # semi-monthly, so ADV can be ~4 weeks stale: fine for a floor, never a ranking input.
+  # Remove the block (or set enabled:false) for the byte-identical pre-feature funnel with
+  # ZERO fetches -- pinned by tests/test_scout_investable_wiring.py.
+  investable_floor:
+    enabled: true
+    min_market_cap: 1.0e+8    # $100M -- below this, spreads eat any edge and promotion risk
+                              # dominates; EDGAR-driven microcap discovery is exactly where
+                              # promoters operate.
+    min_dollar_adv: 5.0e+5    # $500k/day average dollar volume.
+    universe_cache_dir: .cache/nasdaq_universe
+    finra_cache_dir: .cache/finra
+
   quality_floor:
     enabled: false
     cache_dir: .cache/sec_frames

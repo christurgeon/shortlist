@@ -20,7 +20,20 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 | **A4** cap sizing | **ANSWERED** — `edgar_index_daily_cap` stays **2500** (never binds; peak 37%; lowering truncates a structured prefix). `daily_x` is **not** sizeable from `sec_requests` at all |
 | **A5** security-type filter | **DONE** — mutual funds were reaching the digest as stock picks; `X` added to `_FIFTH_LETTER_SUFFIXES`, `_junk_suffix` applied to `edgar_form4`. Proven neutral for every committed cohort |
 
-## The funnel finds names the scorer rejects — DOCUMENTED, NOT FIXED (2026-08-07)
+## ✅ The gate mismatch — RESOLVED (2026-08-07, PR #164)
+
+The open decision below was taken. **`gates.min_market_cap` lowered $2B → $300M** (an
+investability *mandate*, not an alpha claim) and a new **`scout.investable_floor`** ($100M cap
++ $500k/day **dollar** volume) cuts the untradeable tail before a slot is spent.
+
+Measured: **actionable picks 26% → 45%**; zero-candidate nights **13/25 → 2/25**. Evidence and
+the full floor-sensitivity curve: `docs/audits/2026-08-07-investability-floor.md`.
+
+Still open, and deliberately so: this fixes *reachability*, not *composition*. The surviving
+names are tradeable, not necessarily better businesses — `scout.quality_floor` is the
+instrument for that and is still OFF pending its own bar.
+
+## ~~The funnel finds names the scorer rejects~~ — RESOLVED, see above (2026-08-07)
 
 Evidence: **`docs/audits/2026-08-07-funnel-gate-mismatch.md`**. PR #163.
 
