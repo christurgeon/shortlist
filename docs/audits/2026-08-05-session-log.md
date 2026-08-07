@@ -227,17 +227,28 @@ consume. Do not raise it blind.
 
 **Not blocked:**
 - ~~Deploy the pending commits~~ — **DONE**; `/opt` and the bot are both current.
-- **Enable the quality floor — but NOT before the next 22:30 run completes.** Evidence:
-  `2026-08-05-quality-floor-evidence.md`. It adds ~16 `secframes`
-  requests, which would contaminate the first `sec_requests` baseline. Enable after reading it.
-- **Read `sec_requests`** from the next few manifests. If `edgar_form4`'s share holds near the
-  98.7% the simulation suggested, the cascade is confirmed and `edgar_index_daily_cap` is the
-  lever.
+- **Enable the quality floor — STILL OFF, deliberately** (proposed in PR #163, then pulled).
+  Two reasons, both recorded in `config.yaml` beside the flag: the plan gates it on **≥3
+  sessions** of `sec_requests` and only one exists; and its 5.2% evidence is **same-ledger** —
+  the GIPR/COE guards were found on the very 135 picks the number is computed from, with no
+  held-out set, scored with LIVE-ONLY `frames` rather than a point-in-time replay. Neither is
+  fatal; both make the flip a measured decision, not a one-line convenience.
+- ~~**Read `sec_requests`**~~ — **FIRST MEASUREMENT DONE (PR #163)**, 2 more sessions needed.
+  2026-08-06: `edgar_form4` **741 of 756 = 98.0%**, matching the simulation — the cascade is
+  **confirmed**. But `edgar_index_daily_cap` is **NOT** the lever this entry assumed: it has
+  never bound (peak 928 = 37% of 2500), and lowering it truncates a *structured* prefix. The
+  budget has **13.5× headroom**. See `2026-08-07-funnel-gate-mismatch.md` §2.
 - **Phase 1.2 — Form 25/25-NSE** to replace `symbology.py`'s archive.org Wayback dependency
   for delisted tickers (rate-limits datacenter IPs; a single point of failure in the evidence
   base).
-- ~~Security-type filter~~ — **investigated, not needed** (§4b): the source originators are
-  already retired.
+- ~~Security-type filter~~ — **THIS CONCLUSION WAS WRONG; FILTER SHIPPED IN PR #163.**
+  §4b claimed the affected originators were "already-dead". Both premises were false:
+  `edgar:form4_cluster_buy` is the **pre-rewrite emission name of the still-enabled**
+  `EdgarForm4Signal` (renamed at the 2026-07-27 rebuild, not retired), and `GLD` came from the
+  live `edgar:13f_new_position`. `BBASX`, a mutual fund, was delivered **ungated at composite
+  100.0** as a top-ranked pick. Fixed by adding `X` to `_FIFTH_LETTER_SUFFIXES` and applying
+  `_junk_suffix` to `edgar_form4`. **`GLD` remains unfixed** — a 3-letter ETF carries no
+  suffix marker. Evidence: `2026-08-07-funnel-gate-mismatch.md` §3.
 - **Phase 3 originators**, each gated on the SEC budget model: FINRA daily RegSHO (1 req/day),
   SEC comment letters (`UPLOAD`/`CORRESP`), `NT 10-K`, 8-K items 4.01/1.02.
 

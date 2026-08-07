@@ -6,6 +6,20 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
+
+**Do not redo any of this.** Plan: `docs/audits/2026-08-06-discovery-breadth-plan.md`
+(its Track-A status table is authoritative). Evidence:
+`docs/audits/2026-08-07-funnel-gate-mismatch.md`.
+
+| item | outcome |
+|---|---|
+| **A1** doc corrections | **DONE** — `edgar_form4` is weight **1.0**, not 1.5; `CLAUDE.md` fixed; three factual errors corrected in the plan |
+| **A2** SEC budget | **PRELIMINARY** — 1 of the required ≥3 sessions. 2026-08-06: `edgar_form4` **98.0%**, cascade **confirmed**. Also fixed: 4 unlabelled `throttle()` sites, bound by an AST test |
+| **A3** quality floor | **DEFERRED on evidence** — see below, still `enabled: false` |
+| **A4** cap sizing | **ANSWERED** — `edgar_index_daily_cap` stays **2500** (never binds; peak 37%; lowering truncates a structured prefix). `daily_x` is **not** sizeable from `sec_requests` at all |
+| **A5** security-type filter | **DONE** — mutual funds were reaching the digest as stock picks; `X` added to `_FIFTH_LETTER_SUFFIXES`, `_junk_suffix` applied to `edgar_form4`. Proven neutral for every committed cohort |
+
 ## The funnel finds names the scorer rejects — DOCUMENTED, NOT FIXED (2026-08-07)
 
 Evidence: **`docs/audits/2026-08-07-funnel-gate-mismatch.md`**. PR #163.
@@ -46,23 +60,28 @@ filtering the funnel harder** — that path is measured and closed.
 
 ## Discovery-layer workstream — SESSION TRACKER (2026-08-05/06)
 
-**→ For what to DO next, read `docs/audits/2026-08-06-discovery-breadth-plan.md`** — the
-agreed plan under the constraint that the paid price feed is **not** being purchased. Track A
-(correct the `edgar_form4` weight-1.5 error, read `sec_requests`, enable the quality floor,
-size `daily_x`) is unblocked. The standing screen is **designed but gated** on a spike, and
-the plan records why building it now would have been premature: `raw == 0` has happened
-**once in 28 sessions**, on a day with four failed originators that are since fixed.
+**→ Track A is SHIPPED (PR #163) — see the ✅ section at the top of this file before reading
+further here.** The plan `docs/audits/2026-08-06-discovery-breadth-plan.md` remains the
+reference for Tracks B/C, whose status is unchanged: the standing screen is **designed but
+gated**, now on **B0** as well (reconcile against
+`2026-08-05-standing-screen-data-source.md` §6, which says do NOT build a standing
+full-universe originator). The plan records why building it would have been premature:
+`raw == 0` has happened **once in 28 sessions**, on a day whose originator failures are fixed —
+and the two genuinely healthy sessions since delivered **10 and 8** names.
 
 **→ `docs/audits/2026-08-05-session-log.md` is the single pickup document for STATE.** It carries the
 current state, everything shipped, the measured findings, seven claims retracted in-session,
 and §6 "REMAINING" split into blocked vs unblocked. Read it before starting anything here.
 
-Two things gate most of the remaining work: **tonight's `sec_requests`** in
-`scout/<date>/manifest.json` (confirms or refutes the Form-4 cascade; gates the Phase 3
-originators) and **the paid price feed** (gates all cohort measurement — the unwired `form4`
-backfill, the regime-break audit, and attributing the buyback verdict).
+~~Two things gate most of the remaining work: **tonight's `sec_requests`**~~ — **the first
+`sec_requests` landed 2026-08-06 and CONFIRMED the cascade** (`edgar_form4` 98.0%); two more
+sessions complete A2's bar. The remaining gate is **the paid price feed**, which still blocks
+all cohort measurement — the unwired `form4` backfill, the regime-break audit, and attributing
+the buyback verdict.
 
-**Status:** workstream paused at a clean point; `main` and `/opt` both current.
+**Status (2026-08-07):** Track A shipped and merged as `540e2ea`; `main` clean, suite 2405
+passing, ruff clean. Deploy to `/opt/shortlist` was the user's action — verify with
+`git -C /opt/shortlist log --oneline -1` before assuming production carries it.
 
 ## SEC request budget is now measured — and two consumers were outside it (2026-08-05)
 
