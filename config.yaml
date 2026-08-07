@@ -523,7 +523,10 @@ edgar_events:
 
 # Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
 scout:
-  daily_x: 10
+  daily_x: 15               # deep-screen slots/NIGHT (raised 10 -> 15 on 2026-08-07). The
+                            # digest runs the FREE chain (daily_push.include_fmp: false), so
+                            # each extra slot costs a Yahoo/Finnhub/EDGAR screen, NOT FMP
+                            # quota -- FMP binds the bot's /screen and /deep only.
   daily_push:
     enabled: true         # autonomous daily report ARMED (2026-06-29); runs the lean digest
                           # (research:false) — discover→screen→gate→rank→Telegram + /deep block,
@@ -663,7 +666,7 @@ scout:
       enabled: true
       lookback_days: 30      # veto horizon + state prune window (matches the drift window)
   # Deep-screen slot hygiene. The binding constraint in this funnel is NOT candidate volume,
-  # it is the ~10 deep-screen slots/NIGHT (daily_x): budget.select orders purely by signal
+  # it is the ~15 deep-screen slots/NIGHT (daily_x): budget.select orders purely by signal
   # weight and knows nothing about the business. NOTE the digest runs the FREE chain
   # (daily_push.include_fmp: false drops FMP), so a wasted slot costs a Yahoo/Finnhub/EDGAR
   # screen, not FMP quota -- FMP binds the bot's /screen and /deep, which keep the full chain. SEC `frames` breaks that circularity —
