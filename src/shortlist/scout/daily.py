@@ -20,7 +20,7 @@ from ._caption import _caption
 from .budget import select
 from .calendar import last_session
 from .firehose import CohortEvent, cohort_events_from_emissions
-from .funnel import aggregate, apply_quality_floor, apply_veto, prefilter
+from .funnel import aggregate, apply_investable_floor, apply_quality_floor, apply_veto, prefilter
 from .models import Candidate, Emission, RunManifest, SignalStatus
 from .sec_throttle import sec_throttle
 from .signals import build_signals
@@ -295,6 +295,76 @@ def _quality_floor_verdicts(scout_cfg: dict, session: date,
     verdicts = verdicts_from_fundamentals(funds)
     notes = [f"quality floor: {len(funds):,} listed filers checked"] if funds else []
     return verdicts, notes
+
+
+def _investable_verdicts(scout_cfg: dict, session: date,
+                         _fetch_universe=None, _fetch_finra=None) -> tuple[dict, list[str]]:
+    """Investability floor (`investable`): drop names a retail-scale book cannot act on.
+
+    The sibling of `_quality_floor_verdicts` and deliberately a SEPARATE stage — that one
+    asks whether the business is broken, this asks whether the security is reachable.
+
+    Returns `(verdicts, notes)`. Gated by `scout.investable_floor.enabled`; **absent or
+    disabled returns ({}, []) with ZERO fetches**, the byte-identical pre-feature funnel.
+    Never raises — a failed fetch degrades to inert plus a LOUD note, because screening
+    unprotected must not be silent (the veto-sweep precedent).
+
+    Neither source touches sec.gov: the universe is `api.nasdaq.com` and the volume map is
+    the FINRA short-interest dataset the harness already disk-caches. The SEC budget is
+    untouched, which is why this can ship without waiting on the `sec_requests` baseline.
+    """
+    cfg = scout_cfg.get("investable_floor") or {}
+    if not cfg.get("enabled"):
+        return {}, []
+    from ..data.nasdaq_universe import adv_shares_from_finra, fetch_universe
+    from .investable import liquidity_from_universe, verdicts_from_liquidity
+    fetch_u = _fetch_universe or fetch_universe
+    try:
+        universe = fetch_u(cache_dir=cfg.get("universe_cache_dir", ".cache/nasdaq_universe"),
+                           today=session)
+    except Exception as exc:  # noqa: BLE001 — degrade, but never quietly
+        return {}, [f"investable floor UNAVAILABLE ({redact_secrets(str(exc))}) — "
+                    "candidates were not liquidity-checked this run"]
+    if not universe:
+        return {}, ["investable floor UNAVAILABLE (empty listed universe) — "
+                    "candidates were not liquidity-checked this run"]
+    adv: dict = {}
+    try:
+        fetch_f = _fetch_finra or _finra_rows_for_adv
+        adv = adv_shares_from_finra(fetch_f(cfg))
+    except Exception:  # noqa: BLE001 — the cap leg still works without volume
+        adv = {}   # surfaced in `notes` below, never silently
+    liq = liquidity_from_universe(universe=universe, adv_shares=adv)
+    verdicts = verdicts_from_liquidity(
+        liq,
+        min_market_cap=float(cfg.get("min_market_cap", 100_000_000.0)),
+        min_dollar_adv=float(cfg.get("min_dollar_adv", 500_000.0)))
+    notes = [f"investable floor: {len(universe):,} listed symbols, "
+             f"{len(adv):,} with volume"]
+    if not adv:
+        notes.append("investable floor: VOLUME UNAVAILABLE — market-cap leg only this run")
+    return verdicts, notes
+
+
+def _finra_rows_for_adv(cfg: dict):
+    """The FINRA rows behind the volume leg, from the cache the harness already fills.
+
+    Reuses `short_interest.fetch_short_interest_rows`, so a warm cache costs no request and
+    a cold one costs the same bulk fetch the harness `FinraSource` would make anyway. The
+    dataset is semi-monthly: a value can be ~4 weeks stale, which is why it feeds a floor
+    and never a ranking.
+    """
+    from .short_interest import fetch_short_interest_rows
+    rows, _settlement = fetch_short_interest_rows(
+        cache_dir=cfg.get("finra_cache_dir", ".cache/finra"))
+    return rows
+
+
+def _investable_notes(dropped: list) -> list[str]:
+    """One manifest note per drop, naming the ticker AND the reason — observability parity
+    with the veto and the quality floor. A bare count would make an over-aggressive floor
+    invisible."""
+    return [f"INVESTABLE FLOOR: {c.ticker} dropped — {v.reason}" for c, v in dropped]
 
 
 def _quality_floor_notes(dropped: list) -> list[str]:
@@ -691,6 +761,16 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     kept, floor_dropped = apply_quality_floor(kept, floor_verdicts)
     veto_notes.extend(floor_notes)
     veto_notes.extend(_quality_floor_notes(floor_dropped))
+
+    # 1a-iii. Investability floor (scout.investable_floor): drop names a retail-scale book
+    # cannot act on -- shells below the cap floor, and anything too thin to enter or exit.
+    # Same seam again, so the next-ranked candidate backfills. Neither source touches
+    # sec.gov. Demo is offline; an absent/disabled block returns ({}, []) with zero fetches
+    # -> byte-identical funnel.
+    inv_verdicts, inv_notes = ({}, []) if demo else _investable_verdicts(scout_cfg, session)
+    kept, inv_dropped = apply_investable_floor(kept, inv_verdicts)
+    veto_notes.extend(inv_notes)
+    veto_notes.extend(_investable_notes(inv_dropped))
 
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
     _run_boosters(boosters, kept, session=session, sig_cfg=sig_cfg, statuses=statuses)

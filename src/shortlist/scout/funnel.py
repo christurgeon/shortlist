@@ -68,6 +68,26 @@ def apply_quality_floor(candidates: list[Candidate],
     `(kept, [(candidate, verdict), ...])`; the CALLER names each drop in manifest.notes, so
     this stage stays pure (no state, no I/O), exactly like `apply_veto`.
     """
+    return _apply_floor(candidates, verdicts)
+
+
+def apply_investable_floor(candidates: list[Candidate],
+                           verdicts: dict) -> tuple[list[Candidate], list[tuple]]:
+    """Drop candidates a retail-scale book could not act on (`investable.assess`).
+
+    Same seam, same contract and the same abstain-on-absence rule as
+    `apply_quality_floor` — the two floors are independent questions (is the BUSINESS
+    broken vs is the SECURITY reachable) deliberately kept as separate stages so a drop
+    reason in the manifest names which one fired.
+
+    `verdicts` is UPPER ticker -> `investable.Verdict`. An empty map is the identity.
+    """
+    return _apply_floor(candidates, verdicts)
+
+
+def _apply_floor(candidates: list[Candidate],
+                 verdicts: dict) -> tuple[list[Candidate], list[tuple]]:
+    """Shared body for the two floor stages. Absent-from-map == abstain == keep."""
     if not verdicts:
         return list(candidates), []
     kept: list[Candidate] = []
