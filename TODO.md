@@ -4,6 +4,19 @@ Tracked, low-urgency follow-up work that has no natural home in code comments.
 Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal designs and
 `docs/ASSESSMENT_GAPS.md` for the broader scoring roadmap.
 
+> **HOW TO PRIORITISE ANYTHING BELOW (restated by the user, 2026-08-07).** The bar is
+> **"surface interesting stocks the user evaluates, and passes to `/deep` when they want a
+> closer look."** *It is fine for a signal to have no measurable edge.* This is `CLAUDE.md`'s
+> design premise, and it means the price-feed-blocked items (the `form4`/`13f` backfill
+> cohorts, the regime-break audit, attributing the buyback verdict) are **NOT** the top of
+> this list — they answer an alpha question the project is not asking. A prior session drifted
+> into treating "no repo-measured edge" as a defect; it is the expected condition.
+>
+> Work that serves the actual bar — *does a surfaced name earn the user's attention* — ranks
+> above work that measures forward returns. By the same token, guards about **wasting the
+> user's attention** (the quality floor, the investability floor, the negative-8-K veto) need
+> no alpha evidence to justify themselves; they need only to be right about what they claim.
+
 ---
 
 ## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
