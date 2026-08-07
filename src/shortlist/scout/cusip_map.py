@@ -217,7 +217,7 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
         # else: absent OR legacy-[] (no marker) -> a MISS; refetch (heals poisoned caches)
         try:
             if throttle is not None:
-                throttle()
+                throttle("cusip_map")   # SEC fails-to-deliver zips -- www.sec.gov
             raw = getter(url, identity, timeout)
         except Exception:  # noqa: BLE001 — a transient fetch error just skips this period
             raw = None

@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 
+from .eightk import _junk_suffix  # shared 5th-letter rule (thirteenf/buyback precedent)
 from .models import Emission
 
 _TRUE = {"1", "true", "yes", "y"}
@@ -241,7 +242,14 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
     by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
     for t in txns:
         tier = classify_tier(t.owner_cik, index, as_of)
-        if not is_real_ticker(t.ticker) or not qualifies(t, tier, cfg):
+        # A 5th-letter security-type suffix means the symbol is not common stock. An
+        # insider buy cannot originate at a mutual fund or a warrant, so such a row is a
+        # resolver artifact, not a signal -- FTECX/VFLEX/BBASX all reached the live ledger
+        # this way and BBASX was delivered UNGATED at composite 100.0. The other EDGAR
+        # originators (8-K, buyback, 13F) have always applied this rule; Form 4 did not.
+        if not is_real_ticker(t.ticker) or _junk_suffix(t.ticker.strip().upper()):
+            continue
+        if not qualifies(t, tier, cfg):
             continue
         by_ticker.setdefault(t.ticker, []).append((t, tier))
 

@@ -219,7 +219,7 @@ def fetch_submissions(cik: str | int, identity: str, *, timeout: float = 30.0,
         return _http_json(_SUBMISSIONS_URL.format(cik10=cik10), identity, timeout)
     import httpx
     if throttle is not None:
-        throttle()
+        throttle("thirteenf")
     with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
         r = c.get(_SUBMISSIONS_URL.format(cik10=cik10))
         r.raise_for_status()
@@ -253,7 +253,7 @@ def fetch_infotable_rows(cik: str | int, accession: str, identity: str, *,
     else:
         import httpx
         if throttle is not None:
-            throttle()
+            throttle("thirteenf")
         with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
             r = c.get(_ARCHIVE_INDEX_URL.format(cik=cik_i, acc=acc))
             r.raise_for_status()
@@ -266,7 +266,7 @@ def fetch_infotable_rows(cik: str | int, accession: str, identity: str, *,
     else:
         import httpx
         if throttle is not None:
-            throttle()
+            throttle("thirteenf")
         with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
             r = c.get(_ARCHIVE_FILE_URL.format(cik=cik_i, acc=acc, name=name))
             r.raise_for_status()

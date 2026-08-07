@@ -23,6 +23,31 @@ def _idx_opportunistic(owner):
     return {owner.zfill(10): {(2024, 1), (2023, 5), (2022, 9)}}
 
 
+def test_mutual_fund_suffix_never_emits():
+    """A 5th-letter `X` is Nasdaq's open-end-fund marker, and three of them reached the
+    live picks ledger through this originator (FTECX, VFLEX, BBASX 2026-07-08..07-27).
+    BBASX scored composite 100.0 UNGATED and entered the digest as a top-ranked "stock" —
+    a mutual fund cannot be an insider-buy issuer, so the emission is a resolver artifact.
+    Evidence: docs/audits/2026-08-07-funnel-gate-mismatch.md §3."""
+    ems = emissions_from_txns([_t("A", "BBASX", 200_000)], _idx_opportunistic("A"),
+                              date(2025, 6, 3), CFG)
+    assert ems == []
+
+
+def test_four_char_ticker_ending_in_a_suffix_letter_still_emits():
+    """The rule is 5-letter-only. WOOF/ONEX must not be collateral damage."""
+    ems = emissions_from_txns([_t("A", "WOOF", 200_000)], _idx_opportunistic("A"),
+                              date(2025, 6, 3), CFG)
+    assert [e.ticker for e in ems] == ["WOOF"]
+
+
+def test_ordinary_five_letter_ticker_still_emits():
+    """GOOGL is 5 letters and must survive — only the suffix LETTERS are junk markers."""
+    ems = emissions_from_txns([_t("A", "GOOGL", 200_000)], _idx_opportunistic("A"),
+                              date(2025, 6, 3), CFG)
+    assert [e.ticker for e in ems] == ["GOOGL"]
+
+
 def test_below_the_dollar_floor_does_not_emit():
     ems = emissions_from_txns([_t("A", "ZZZ", 50_000)], _idx_opportunistic("A"),
                               date(2025, 6, 3), CFG)

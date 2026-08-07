@@ -4,6 +4,13 @@
 shipped, what was measured, what was **retracted**, and what remains (§6). Plan:
 `/home/chris/.claude/plans/sunny-shimmying-parasol.md`.
 
+> **SUPERSEDED FOR "WHAT TO DO NEXT" (2026-08-06):** the paid price feed is **not** being
+> purchased, so every §6 blocked item stays blocked. The agreed plan under that constraint is
+> **`docs/audits/2026-08-06-discovery-breadth-plan.md`**. It also corrects a factual error
+> repeated in this log: `edgar_form4` is weight **1.0**, not 1.5 (`config.yaml:736`; PR #152
+> lowered it in the same commit that shipped the signal). This log stays authoritative for
+> **state** — what shipped, what was measured, what was retracted.
+
 **Trigger:** the daily digest delivered **zero candidates** on 2026-08-04.
 
 **State at hand-off (2026-08-06 ~03:20 UTC):** suite **2400 passing**, ruff clean, working
