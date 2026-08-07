@@ -6,6 +6,44 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## The funnel finds names the scorer rejects — DOCUMENTED, NOT FIXED (2026-08-07)
+
+Evidence: **`docs/audits/2026-08-07-funnel-gate-mismatch.md`**. PR #163.
+
+`gates.min_market_cap` is **$2B**; `edgar:activist_13d`'s median pick is **$50M**. Across the
+three enabled originators, **~80% of deep-screen slots go to names the committed gate is
+configured to reject** (52 of 54 13D picks gated). A market-cap pre-filter — the obvious fix,
+and the one an external review recommended — was **measured before being built** and would
+leave **13 of 25 sessions with zero candidates**. It deletes the only names there are.
+
+Two coherent resolutions, neither taken: lower `gates.min_market_cap` toward the $0.3–10B band
+the composition audit argues for (a **live scoring-gate change** needing its own pre-registered
+evidence), or accept the mismatch and stop reading "gated" as waste. **Do not resolve this by
+filtering the funnel harder** — that path is measured and closed.
+
+**Status:** open decision, deliberately deferred. Needs an evidenced, pre-registered call.
+
+## Follow-ups deferred out of PR #163 (2026-08-07)
+
+- **Enable `scout.quality_floor`.** Gated on ≥3 sessions of `RunManifest.sec_requests`
+  (one exists: 2026-08-06). Also worth closing first: its 5.2% evidence is **same-ledger** —
+  the GIPR/COE false-positive guards were found on the very 135 picks the number is computed
+  from, with no held-out set, and SEC `frames` is LIVE-ONLY so it scores today's fundamentals
+  against historical picks. Consider a firehose drop-log (the `edgar:8k_negative` pattern) so
+  the floor is killable on evidence once live.
+- **`GLD` is still unfixed.** A 3-letter ETF symbol carries no 5th-letter suffix, so the
+  `_junk_suffix` fix does not reach it. Cloning a marquee fund's new ETF position is not a
+  stock idea; filtering it needs an instrument this repo does not have yet.
+- **`daily_x` sizing needs its own instrumentation.** It is **not** answerable from
+  `sec_requests`: deep-screen EDGAR fetches use the harness `EdgarSource`'s own
+  `_EDGAR_MAX_CONCURRENCY` semaphore, outside the shared throttle and therefore uncounted.
+  (`edgar_index_daily_cap` **is** answerable, and the answer is leave it at 2500.)
+- **Track B0** — reconcile the deferred standing sampler against
+  `docs/audits/2026-08-05-standing-screen-data-source.md` §6 ("do NOT build a standing
+  full-universe originator") **before** any Track B spike work.
+
+**Status:** captured; none blocking.
+
 ## Discovery-layer workstream — SESSION TRACKER (2026-08-05/06)
 
 **→ For what to DO next, read `docs/audits/2026-08-06-discovery-breadth-plan.md`** — the
