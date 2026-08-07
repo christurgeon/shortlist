@@ -9,8 +9,18 @@ Committed to the tracked `docs/audits/` tree, not `docs/superpowers/specs/` — 
 is gitignored (`.gitignore:37`, 0 files tracked) and is where two enablement artifacts already
 evaporated.
 
-**Status:** plan agreed, nothing built. Track A is unblocked and unconditional. Track C is
-designed but **gated** on Track B.
+**Status (updated 2026-08-07):** reviewed adversarially, corrected, and partly implemented.
+A1 and A5 are DONE; A2 is preliminary; A3 is deferred on evidence; A4 is split and answered.
+Track C remains **gated**, now on B0 as well.
+
+> **⚠ READ THIS FIRST — the largest finding of this workstream is not in Track A.**
+> `docs/audits/2026-08-07-funnel-gate-mismatch.md`: `gates.min_market_cap` is **$2B**, while
+> `edgar:activist_13d`'s median pick is **$50M**. Across the three enabled originators, **~80%
+> of deep-screen slots are spent on names the committed gate is configured to reject.** The
+> obvious fix — a market-cap pre-filter — was measured before being built and would empty
+> **13 of 25 sessions**. Both the discovery layer and the gate are individually defensible;
+> together they are mismatched. Resolving that is a live-gate decision requiring its own
+> evidence, and it is deliberately **not** taken here.
 
 ---
 
@@ -47,17 +57,27 @@ event-triggered — but its realized incidence is one occurrence with a differen
 `wsb_hype` was demoted in `7398ef2` (#151) and reached production for the **2026-07-30**
 session. Only five sessions have run in the current origination regime, and two were degraded:
 
-| session | raw | delivered | health |
+| session | raw | delivered | health (replayed through the real `run_health()`) |
 |---|---|---|---|
-| 2026-07-30 | 3 | 2 | clean |
-| 2026-07-31 | 6 | 5 | clean |
-| 2026-08-03 | 3 | 3 | degraded (`edgar_activist_13d` dead) |
-| 2026-08-04 | 0 | 0 | degraded (4 originators dead) |
-| 2026-08-05 | 13 | 10 | clean |
+| 2026-07-30 | 3 | 2 | degraded (`yahoo_screener`) |
+| 2026-07-31 | 6 | 5 | degraded (`yahoo_screener`) |
+| 2026-08-03 | 3 | 3 | degraded (`yahoo_screener`, `edgar_activist_13d`) |
+| 2026-08-04 | 0 | 0 | degraded (`yahoo_screener`, `edgar_activist_13d`) |
+| 2026-08-05 | 13 | 10 | **healthy** |
+| 2026-08-06 | 8 | 8 | **healthy** |
 
-**Three clean sessions, delivering 2 / 5 / 10.** The funnel is *thin*, not *empty*. Three
-observations cannot size a remedy, and the cheapest way to get more is to let the scheduled
-runs accumulate while doing Track A.
+> **CORRECTED 2026-08-07.** This table first read "three clean sessions, delivering 2/5/10"
+> and scored 08-04 as "4 originators dead". Both were wrong.
+> `yahoo_screener` was still **enabled** and WAF-failing through 08-04 (it was disabled on
+> 08-05), so 07-30 and 07-31 replay as `degraded`, not clean. And the "4" counted every
+> `ran=False` row, double-counting `finnhub_news`/`wikipedia` — enrichment signals whose
+> `ran=False` is a *consequence* of `raw=0`, as §5.2 of this same document argues.
+
+**Two genuinely healthy sessions, delivering 10 and 8.** The correction cuts both ways, and
+the second half matters more: the sample is *smaller* than claimed, but when nothing was
+broken the funnel delivered 8–10 names. That weakens the case for a standing sampler rather
+than strengthening it. Two observations cannot size a remedy; the cheapest way to get more is
+to let the scheduled runs accumulate while doing Track A.
 
 ### 1.3 Two further over-claims, recorded so they are not re-made
 
@@ -104,10 +124,32 @@ requires price history.
 | **A1** | Correct the `edgar_form4` weight-1.5 claim in `CLAUDE.md`, `sunny-shimmying-parasol.md`, `2026-08-05-session-log.md` | Three committed documents assert a wrong number that anchors a priority argument (§2) | All three read 1.0; the "joint-highest" framing is amended, not deleted |
 | **A2** | Read `sec_requests` from the 2026-08-06 manifest onward; record the figures | First production measurement of the shared SEC budget. Confirms or refutes the 2026-08-04 cascade, which is still **inferred from timing correlation** | A short evidence note under `docs/audits/` with ≥3 sessions of per-consumer counts |
 | **A3** | Enable the quality floor (`scout.quality_floor.enabled: true`) | Evidence already committed in `2026-08-05-quality-floor-evidence.md` (7 of 135 past picks were slot-wasting, 6 of 7 from `edgar:activist_13d`). **Must land after A2's first clean baseline** — it adds ~16 `secframes` requests that would contaminate it | Deployed; a subsequent manifest shows floor drops named in `notes` |
-| **A4** | Size `daily_x` and `edgar_index_daily_cap` from A2 | §4e of the session log: `daily_x: 10` is **not** an FMP-quota constraint (the nightly digest runs the free chain), so it is an unexamined config choice. Do not raise it blind | A recommendation backed by measured SEC headroom, or an explicit "leave as-is" with the number that says so |
+| **A4** | Size `edgar_index_daily_cap` from A2. **`daily_x` is NOT sizeable from A2** | §4e of the session log: `daily_x: 10` is **not** an FMP-quota constraint (the nightly digest runs the free chain), so it is an unexamined config choice. Do not raise it blind | A recommendation backed by measured SEC headroom, or an explicit "leave as-is" with the number that says so |
 
 **Ordering is load-bearing: A2 before A3.** The session log is explicit that enabling the
 quality floor before the first `sec_requests` baseline pollutes that baseline.
+
+### A-track status after the 2026-08-07 review and implementation
+
+| item | status |
+|---|---|
+| **A1** | **DONE** — `CLAUDE.md` corrected to weight 1.0; the session log carries a superseded note; this document's three factual errors are fixed in place (see the §1.2 correction box, `daily.py:663`, and B0) |
+| **A2** | **PRELIMINARY, bar NOT met.** One session (2026-08-06) of the required ≥3. Recorded in `docs/audits/2026-08-07-funnel-gate-mismatch.md` §2. Also **fixed**: 1.3% of the budget was unattributable — four unlabelled `throttle()` sites now carry consumer labels, bound by an AST test |
+| **A3** | **DEFERRED, deliberately.** Proposed and pulled — see §5 of the gate-mismatch audit. Blocked by A2's own bar, and the 5.2% evidence is same-ledger with no held-out set |
+| **A4** | **SPLIT.** `edgar_index_daily_cap`: **leave at 2500** — never binds (peak 928 = 37%), and lowering it truncates a structured prefix. `daily_x`: **not answerable from `sec_requests` at all** — deep-screen EDGAR fetches use the harness `EdgarSource`'s own `_EDGAR_MAX_CONCURRENCY` semaphore, outside the shared throttle and therefore uncounted. Needs separate instrumentation |
+
+**A4's split is a correction to this document**, which bundled two unrelated budgets under
+one evidence source. Only one of them is measured by the artifact A2 produces.
+
+### A5 (new, DONE) — mutual funds were reaching the digest as stock picks
+
+Not in the original Track A; found while measuring for it. `BBASX`, an open-end mutual fund,
+was delivered **ungated at composite 100.0** as the top-ranked name of 2026-07-27. Fixed by
+adding `X` to `_FIFTH_LETTER_SUFFIXES` and applying `_junk_suffix` to `edgar_form4` — the one
+EDGAR originator that never did. Proven neutral for every committed cohort verdict. This also
+**corrects `2026-08-05-session-log.md` §4b**, which declined to build a security-type filter
+on the belief that the affected originators were retired; one was merely *renamed*, and the
+ETF case came from the live 13F signal. Evidence: gate-mismatch audit §3.
 
 **A2 note (2026-08-06):** the `sec_requests` block visible in the *local*
 `scout/2026-08-05/manifest.json` is the previous session's **offline simulation**
@@ -147,9 +189,22 @@ cost and the benefit are the same mechanism.
 
 Do this against **committed manifests**, not a live re-run.
 
+### B0. Reconcile against the prior committed decision — do this FIRST
+
+`docs/audits/2026-08-05-standing-screen-data-source.md` §6 concludes: *"Do NOT build a
+standing full-universe originator… Build it as a FILTER on existing originators' output
+instead"* — the decision that produced the quality floor. **This plan resurrected a standing
+sampler without citing it.** That is the same read-past-a-committed-guard pattern §1 opens by
+correcting, committed one day earlier.
+
+A neutral-sign random *control draw* is plausibly a different animal from the ranked
+full-universe *originator* that §6 rejected — but that argument has to be made explicitly and
+recorded, not assumed by omission. **No Track B work starts until it is.** If it cannot be
+made, Track C is dead and that is the finding.
+
 ### B3. Gate
 
-Build Track C only if **both** hold:
+Build Track C only if **all three** hold (B0, plus):
 
 1. B1 shows a substantial, non-shell population in $0.3–10B — i.e. the sampler would not
    reproduce the nano-cap barbell it exists to correct.
@@ -189,7 +244,7 @@ baseline sample, not a pick.
 
 ### 5.2 Two hazards that are load-bearing
 
-**The sampler would silently destroy the `quiet` / `degraded` distinction.** `daily.py:667`
+**The sampler would silently destroy the `quiet` / `degraded` distinction.** `daily.py:663`
 sets `raw = len(emissions)`, and `models.run_health` returns `quiet` only when `raw == 0`. A
 sampler that always fires makes `raw >= K` on every session, so a night where *every* event
 originator died would classify as `healthy`. That is the audit's remedy #6 re-broken through

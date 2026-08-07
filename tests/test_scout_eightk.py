@@ -3,8 +3,9 @@ style: dict-row fixtures, no network)."""
 from datetime import date
 
 from shortlist.scout.eightk import (DEFAULT_ITEM_SETS, NEGATIVE_ITEMS, SIGNAL,
-                                    eightk_events_from_rows, match_item_sets,
-                                    match_negative, negative_events_from_rows)
+                                    _junk_suffix, eightk_events_from_rows,
+                                    match_item_sets, match_negative,
+                                    negative_events_from_rows)
 from shortlist.scout.firehose import cohort_events_from_emissions
 from shortlist.scout.models import Emission
 
@@ -82,11 +83,24 @@ def test_resolver_abstention_no_display_names_fallback():
 
 
 def test_junk_suffix_and_deny_list_dropped():
+    # The deny-list ticker is deliberately NOT 5-letter-suffixed: it used to be `DENYX`,
+    # which the `X` (mutual-fund) suffix rule now drops on its own, so the assertion would
+    # have passed without the deny list doing any work at all.
     r_f = _row("a-1", cik="1"); r_ok = _row("a-2", cik="2"); r_deny = _row("a-3", cik="3")
-    resolver = _resolver({"1": "ABCDF", "2": "GOOD", "3": "DENYX"})
+    resolver = _resolver({"1": "ABCDF", "2": "GOOD", "3": "DENY"})
     ems = eightk_events_from_rows([r_f, r_ok, r_deny], resolve_ticker_fn=resolver,
-                                  deny_list=["denyx"])
+                                  deny_list=["deny"])
     assert [e.ticker for e in ems] == ["GOOD"]
+
+
+def test_mutual_fund_x_suffix_is_a_junk_suffix():
+    """Nasdaq's 5th-letter `X` marks an open-end fund. Adding it is provably neutral for
+    every committed cohort verdict: `_junk_suffix` is reached only by `_assemble_8k` and
+    `_assemble_buyback`, whose cohorts hold 0 X-suffix events across 1,843 + 588 rows
+    (docs/audits/2026-08-07-funnel-gate-mismatch.md §3.2)."""
+    assert _junk_suffix("BBASX") and _junk_suffix("FTECX") and _junk_suffix("VFLEX")
+    assert not _junk_suffix("GOOGL")   # ordinary 5-letter common stock
+    assert not _junk_suffix("ONEX")    # 4 chars — rule is 5-letter-only
 
 
 def test_four_char_ticker_ending_in_suffix_letter_kept():

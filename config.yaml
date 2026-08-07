@@ -660,6 +660,15 @@ scout:
   #
   # Ships OFF. Remove the block (or leave enabled:false) for the byte-identical pre-feature
   # funnel with ZERO fetches — pinned by tests/test_scout_quality_floor.py.
+  #
+  # STILL OFF after review on 2026-08-07, deliberately. Enabling was proposed and pulled:
+  #   (1) docs/audits/2026-08-06-discovery-breadth-plan.md gates this on ≥3 sessions of
+  #       RunManifest.sec_requests; exactly ONE exists (2026-08-06).
+  #   (2) the 5.2% evidence is same-ledger — the two false-positive guards (GIPR, COE) were
+  #       found on the very 135 picks the headline number is computed from, with no held-out
+  #       set, and SEC `frames` is LIVE-ONLY so it scores TODAY's fundamentals against
+  #       HISTORICAL picks rather than a point-in-time replay.
+  # Neither is fatal; both mean the flip is a measured decision, not a one-line convenience.
   quality_floor:
     enabled: false
     cache_dir: .cache/sec_frames

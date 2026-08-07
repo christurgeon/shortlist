@@ -893,10 +893,23 @@ insiders, **no dollar floor at all** — real emissions read "2 insiders bought 
 bottom quartile of insider buying by construction, capped at reading only ~400 of a
 **median 838 / p90 1,498** filing day, truncated in EDGAR index order) into a
 Cohen-Malloy-Pomorski (JF 2012) routine/opportunistic classifier. It ships **ENABLED at
-weight 1.5** (`scout.signals.edgar_form4`) — the joint-highest of any originator, the same
-tier as 13D — on the **established-positive** CMP/Lakonishok-Lee 2001 prior; it is drift
-capture, **not** an information edge (Form 4 is public T+2 and every vendor parses it
-instantly).
+weight 1.0** (`config.yaml:736`) — tied with `edgar_13f`, one tier BELOW `edgar_activist_13d`
+(1.5) — on the **established-positive** CMP/Lakonishok-Lee 2001 prior; it is drift capture,
+**not** an information edge (Form 4 is public T+2 and every vendor parses it instantly).
+*(This paragraph read "weight 1.5 — the joint-highest of any originator, the same tier as
+13D" until 2026-08-07. That was never true in shipped config: PR #152 (`d31170e`) lowered it
+1.5 → 1.0 in the same commit that shipped the signal, and the prose kept the pre-review
+number. It matters because the wrong figure anchored a priority argument in two audits.)*
+
+Emissions are dropped when the resolved symbol carries a 5th-letter security-type suffix
+(`_junk_suffix`, shared with the 8-K/buyback/13F originators). Form 4 was the one EDGAR
+originator not applying that rule, and three open-end mutual funds (`FTECX`, `VFLEX`,
+`BBASX`) reached the live picks ledger through it — `BBASX` **ungated at composite 100.0**,
+delivered to the digest as a top-ranked stock. `X` (open-end fund) was added to
+`_FIFTH_LETTER_SUFFIXES` at the same time; it is **provably neutral for every committed
+cohort verdict** (`_junk_suffix` is reached only by `_assemble_8k` / `_assemble_buyback`,
+whose cohorts hold zero X-suffix events). See
+`docs/audits/2026-08-07-funnel-gate-mismatch.md` §3.
 
 **Two pure/IO leaves, one shared record:** `scout/insider.py` (pure — Form 4 XML parse,
 CMP classification, qualification/strength/emission) and `scout/dera.py` (I/O — SEC DERA

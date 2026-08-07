@@ -35,7 +35,16 @@ _DTC_SENTINEL = 999.99
 # 5th-letter security-type codes on a 5-letter symbol that mean NOT US common stock:
 # F=foreign ordinary (the OTC *F junk), Y=ADR, W=warrant, U=unit, R=rights, Q=bankruptcy.
 # Only applied to 5-char symbols — 4-char tickers ending in these letters (e.g. WOOF) are fine.
-_FIFTH_LETTER_SUFFIXES = frozenset("FYWURQ")
+# Nasdaq 5th-letter security-type markers. `X` (open-end mutual fund) was added
+# 2026-08-07: three X-suffixed funds (FTECX, VFLEX, BBASX) reached the live picks ledger
+# through `edgar_form4`, and BBASX scored composite 100.0 UNGATED — a mutual fund
+# delivered to the analyst as a top-ranked stock idea. Adding it is provably neutral for
+# every committed cohort verdict: `_junk_suffix` is reached only by `_assemble_8k` and
+# `_assemble_buyback`, whose cohorts hold ZERO X-suffix events across 1,843 + 588 rows.
+# (The 13D cohort's two funds — CPRDX, PMFAX — go through `_assemble_13d`, which never
+# calls this rule, so they are untouched.) Evidence:
+# docs/audits/2026-08-07-funnel-gate-mismatch.md §3.
+_FIFTH_LETTER_SUFFIXES = frozenset("FYWURQX")
 
 
 def _http_fetch_partitions(timeout: float):
