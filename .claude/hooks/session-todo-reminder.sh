@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Stop hook: nudge Claude to record unfinished follow-ups in TODO.md before ending.
-# Loop-safe (bails on stop_hook_active); silent on read-only turns and on TODO-only
-# edits. See CLAUDE.md "Session wrap-up — capture follow-ups".
+# Stop hook: nudge Claude to curate TODO.md before ending. Self-contained by design —
+# the rule lives here, not in CLAUDE.md, which is loaded into every session's context
+# and is for codebase knowledge rather than process.
+# Loop-safe (bails on stop_hook_active); silent on read-only turns and TODO-only edits.
 set -u
 
 # Past this, the nudge leads with pruning instead of capture.
@@ -24,8 +25,8 @@ changed=$({ git diff --name-only; git diff --cached --name-only; } 2>/dev/null |
 # an entry about the entry. This fired for two months and is why TODO.md hit 2,133 lines.
 [ "$changed" = "TODO.md" ] && exit 0
 
-reason="This session changed files. Before ending, update TODO.md per CLAUDE.md 'Session wrap-up'."
-reason="$reason Two obligations, not one: (a) record unfinished follow-up work, deferred decisions and known gaps;"
+reason="This session changed files. Before ending, curate TODO.md — a working set of open work, not a session journal."
+reason="$reason Two obligations, not one: (a) record unfinished follow-up work, deferred decisions and known gaps, newest at top, with a dated heading and a closing Status line;"
 reason="$reason (b) DELETE or fold down any entry whose work has now shipped or been resolved — the durable record is CLAUDE.md, docs/audits/ and git, so a resolved entry left in TODO.md is rot, and removing one is a completed obligation rather than a liberty."
 reason="$reason Prefer updating an existing entry in place over adding a new dated one for the same thread of work."
 reason="$reason Never record work done ON TODO.md itself, nor a narrative of this session — that is meta-churn, not follow-up work."

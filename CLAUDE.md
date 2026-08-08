@@ -3,25 +3,6 @@
 Guidance for Claude Code (claude.ai/code) working in this repo. See `README.md`
 (overview) and `HARNESS.md` (data layer) for the user-facing docs.
 
-## Session wrap-up — curate TODO.md (capture AND retire)
-
-`TODO.md` is a **working set of open work, not a session journal.** Treat it as
-append-*and*-delete or it rots: it reached 2,133 lines by 2026-08-08, most of it
-`✅ SHIPPED` / `RESOLVED` entries nobody was responsible for removing.
-
-Before ending a session that produced **unfinished follow-up work, deferred decisions,
-or known gaps**, record them there — and in the same pass **delete or fold down any
-entry whose work has now shipped or been resolved.** Retiring an entry is the job, not
-a liberty; the durable record is this file, `docs/audits/` and git history, so a
-resolved entry left in `TODO.md` is pure cost.
-
-- **Update in place** over adding a new dated entry for the same thread of work.
-- Newest at top, a dated `## <title> (YYYY-MM-DD)` heading, a short body, a closing
-  **Status:** line.
-- **Never record work done on `TODO.md` itself, or a narrative of the session** — that
-  is meta-churn, not follow-up work.
-- Nothing to add and nothing to retire → change nothing.
-
 ## What this is
 
 A quantitative stock pre-screen: pull fundamentals, score quality / moat /

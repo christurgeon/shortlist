@@ -1,9 +1,12 @@
 # TODO — open follow-ups
 
-Only work that still needs doing. Shipped features, resolved defects and retracted analyses
-have been removed — the durable versions live in `CLAUDE.md` (behaviour + landmines),
-`docs/audits/` (evidence of record) and git history. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md`
-for signal designs and `docs/ASSESSMENT_GAPS.md` for the scoring roadmap.
+**A working set of open work, not a session journal** — when an entry's work ships, delete it
+rather than marking it done. The durable record is `CLAUDE.md` (behaviour + landmines),
+`docs/audits/` (evidence) and git history; a resolved entry left here is pure cost. This file
+reached 2,133 lines by 2026-08-08 because nobody owned removing anything.
+
+See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for signal designs and `docs/ASSESSMENT_GAPS.md` for
+the scoring roadmap.
 
 > **HOW TO PRIORITISE ANYTHING BELOW (restated by the user, 2026-08-07).** The bar is
 > **"surface interesting stocks the user evaluates, and passes to `/deep` when they want a
