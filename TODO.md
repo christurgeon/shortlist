@@ -50,7 +50,41 @@ the digest at rank 3 with `confidence: 0.0` — every axis null except `Risk 50`
 correct, but it traded an *inflated* cap for a *null* cap: it closed the wrong-number half of the
 TSM bug and left the **silently-passes** half intact. TM reached the digest one day later.
 
-Three follow-ups, in leverage order:
+Three follow-ups. ⚠ **THE ORDER BELOW WAS MEASURED ON 2026-08-08 AND IS WRONG — the backfill
+is listed first and is the LEAST valuable of the three.** Measured against the 199-pick ledger
+joined to `.cache/nasdaq_universe/2026-08-07.json`:
+
+| | count |
+|---|---|
+| picks with a null `market_cap` | 13 |
+| of those, **backfillable** (present in the listed universe) | **2** (TM, YARW) |
+| absent from the universe — backfill does **nothing** for them | 11 |
+| **would newly trip the $300M gate** | **1** (YARW, $116M) |
+
+So the backfill changes the gate outcome for **1 pick in 199**. TM gains a display value and an
+insider net-flow denominator but stays correctly ungated at $300.2B — a *large* cap was never
+going to trip a floor that rejects names *below* $300M. The entry's framing ("the gate cannot
+trip" ⇒ "a bad name passes") does not hold for the case it cites.
+
+The value is in the other two bullets, and they are **one rule, not two** — every ETP *and*
+CSBA is in the same bucket (absent from the listed universe). Measured there: 18 of 199 absent
+(9%), but **7 were already correctly gated**, and **4 (BBASX/FTECX/VFLEX) were already killed by
+A5's `X`-suffix rule** — leaving roughly **2 genuinely open instances (~1%)**: `GLD` (arrived via
+**13F**, so the WSB deny-list addition does not cover it) and `CSBA`.
+
+**On deny lists as the instrument — they are the wrong layer.** There are five, one per signal
+(`wsb_hype` 14 entries, `short_interest` 16, `eightk`/`thirteenf`/`buyback` empty). Junk must be
+enumerated once *per originator*, which is exactly how GLD entered through 13F while denied for
+WSB; the lists are reactive (a name is added only after it has already burned a slot); and
+**`buyback`'s must stay empty** — it is a LIVE-ONLY knob whose backfill cohort ran undenied. The
+shared structural filter (`_FIFTH_LETTER_SUFFIXES`, `short_interest.py:47`) cannot help: `GLD`,
+`VOO`, `USO`, `SOXL` are 3–4 letter tickers with no fifth letter. The right seam is
+`funnel.apply_investable_floor` — it runs once for every candidate regardless of originator, and
+absence from the Nasdaq **stock** screener is precisely "not a listed common stock". Guard it so
+a single bad fetch from that undocumented API cannot delete real picks (the floor already
+degrades loudly on an implausible symbol count).
+
+Original three, unedited:
 
 - **Backfill `market_cap` from the listed universe when Finnhub abstains and FMP gates.** The
   floor already fetches and day-caches it — `.cache/nasdaq_universe/2026-08-07.json` holds
@@ -74,14 +108,17 @@ floor dropped exactly two names, at **$12M** (REBN) and **$9M** (SAGT) — corre
 *not* what shortened the list (6 survived the prefilter, already below the budget). This
 corroborates the closed "do not resolve this by filtering the funnel harder" finding below.
 
-**Status:** defect verified in code + ledger, nothing changed. Backfill unimplemented; the
-absent-from-universe question is an open decision awaiting the user.
+**Status:** defect verified in code + ledger, nothing changed. Sized 2026-08-08 (table above):
+the backfill is worth **1 pick in 199** and is hygiene, not priority; the absent-from-universe
+rule is ~1% and remains an open decision awaiting the user. The user was shown all of this on
+2026-08-08 and **declined to act for now** — the reasonable call, since supply (below), not
+filtering, is the binding constraint. Do not re-raise this as high-leverage without new evidence.
 
 ## `daily_x` raised 10 → 15 — verify the first live run (2026-08-07)
 
 `config.yaml:526` now allocates **15** deep-screen slots/night (was 10). Merged to `main`
-2026-08-08 in PR #165 — but **not deployed**, so `/opt/shortlist` is still on 10 until a
-`git pull` + `deploy/install_opt_shortlist.sh`.
+2026-08-08 in PR #165 and **DEPLOYED** the same day — `/opt/shortlist` verified at `6a09dff`
+with `daily_x: 15` live.
 
 Track A4 says `daily_x` is **not** sizeable from `sec_requests` (deep-screen EDGAR fetches
 use the harness `EdgarSource`'s own `_EDGAR_MAX_CONCURRENCY` semaphore, outside the shared
@@ -111,7 +148,8 @@ Follow-up on the first run at 15, two things:
   draw ever needs a real number it needs its own instrumentation — the shared throttle will
   never show it.
 
-**Status:** config changed, undeployed, unverified against a live run.
+**Status:** deployed 2026-08-08; **not yet observed against a real 22:30 UTC run** — the two
+watch items above are still open.
 
 ## ✅ WSB re-enable — SHIPPED (2026-08-08, branch `feat/wsb-novelty-and-slot-cap`)
 
@@ -153,8 +191,12 @@ baseline). Both are corrected in the audit doc, which carries a retraction banne
   `deploy/install_opt_shortlist.sh`. First live run: check the digest for `wsb:novel` names
   and confirm the signal reports `ran=True` rather than degrading the run.
 
-**Status:** MERGED to `main` 2026-08-08 as `6a09dff` (PR #165). **Undeployed** and unmeasured
-for returns.
+**Status:** MERGED as `6a09dff` (PR #165) and **DEPLOYED + VERIFIED** 2026-08-08 —
+`/opt/shortlist` at `6a09dff`, `wsb_hype {enabled: true, weight: 0.5, max_slots: 5}`, novelty
+block live, bot active, timer enabled. A live run of the deployed signal returned
+`ran=True, 14 prior boards, 0 emissions` — correct behaviour (the rule fires on ~half of days;
+`ran=True` on an empty day is what stops `run_health` marking the run degraded). **Not yet
+observed against a real 22:30 UTC run, and unmeasured for returns.**
 
 ## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
 
