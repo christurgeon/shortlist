@@ -23,6 +23,20 @@ the scoring roadmap.
 
 ---
 
+## `docs/FORM4_INSIDER.md` still states the old Form 4 weight (2026-08-07)
+
+Found while shrinking `CLAUDE.md` (moved most per-signal detail into a reference table +
+`docs/EDGAR_ORIGINATORS.md`). `docs/FORM4_INSIDER.md:20` still says `edgar_form4` is "enabled
+at weight 1.5 — the joint-highest of any originator." That was true when the doc was written,
+but PR #152 (`d31170e`) lowered it to 1.0 in the same commit that shipped the signal, and the
+doc's prose was never updated — `CLAUDE.md` and shipped `config.yaml` both correctly say 1.0.
+Low-risk one-line fix; left alone this session since it's outside the CLAUDE.md scope, but
+worth a quick correction next time that file is touched.
+
+**Status:** not fixed, purely a stale-doc note.
+
+---
+
 # 1. Watch items — deployed, not yet observed
 
 ## `daily_x` 15 — first live run (2026-08-07)
