@@ -113,110 +113,48 @@ Follow-up on the first run at 15, two things:
 
 **Status:** config changed, undeployed, unverified against a live run.
 
-## WSB re-enable — design agreed in discussion, nothing built (2026-08-07)
+## ✅ WSB re-enable — SHIPPED (2026-08-08, branch `feat/wsb-novelty-and-slot-cap`)
 
-`wsb_hype` stays **OFF** (`config.yaml:799`). It was demoted 2026-07-26 for **crowd-out, not
-harm** (60% of 141 ledger picks at a $310B median cap, ~4 of 10 slots; its own −0.6% vs SPY,
-n=82, is no worse than the enabled originators —
-`docs/audits/2026-07-26-funnel-composition-audit.md` §1). Two changes were agreed as the path
-back on; **neither is implemented**:
+**Do not redo this.** `wsb_hype` is re-enabled as **`wsb:novel`** under a rank-novelty rule
+(`scout/wsb_novelty.py`), plus a contention-triggered per-originator slot cap in
+`budget.select`. Design, measurements and honest limits:
+`docs/audits/2026-08-07-wsb-novelty-rule.md`; replay + **committed** inputs under
+`docs/audits/scripts/wsb_novelty_replay.py` + `docs/audits/raw-2026-08-07-wsb/`.
 
-1. **Contention-triggered per-originator slot cap** in `budget.select`. A *fixed* quota is
-   wrong — on a quiet night where only one originator fires it would leave slots empty. The
-   cap must bind **only when demand exceeds `daily_x`**, with freed slots backfilled from the
-   remaining candidates. Fits the seam already specced in
-   `docs/audits/2026-08-06-discovery-breadth-plan.md` §5.1
-   (`select(candidates, daily_x, reserve_signal=None, reserve_n=0)`, byte-identical when unused).
-2. **Rank-novelty qualification** replacing the `mention_delta_pct` gate. ⚠ **This supersedes
-   the "per-ticker mention baseline" written here earlier the same day — that design was
-   MEASURED AND KILLED, do not rebuild it.** See the measurement note below.
+**Two designs were measured and killed along the way — do not rebuild either:**
+a per-ticker **mention-ratio baseline** (barely moves composition; AAPL exceeds 2× its own
+14-day median on 37% of days) and a **market-cap ceiling** (would drop UNH/CAT/NKE/UPS/NVO,
+large names that are genuinely not board regulars).
 
-Whatever ships, WSB returns at **weight 0.5** and re-accumulates ledger rows: the −0.6%
-reading was measured on exactly the mega-cap population these changes remove, so the
-band-restricted signal is **unmeasured**, not re-validated.
+**Corrections made after adversarial review — the numbers that stand:** median selected market
+cap **$308.7B → $34.3B**, `$0.3–10B` band **8% → 39%**, `≥$200B` **53% → 15%**. An earlier
+revision of the audit claimed **0% mega-caps** (artifact of a hand-written 25-name list — CAT
+$387B, UNH $370B, GEV, ANET, NVO all scored "clean") and called the `mention_delta_pct` filter
+**"the entire mega-cap bias"** (measured: **12%** of novelty emissions; ApeWisdom tracks ~784
+tickers across 8 pages and we cache page 1, so board-absence does not imply a missing 24h
+baseline). Both are corrected in the audit doc, which carries a retraction banner.
 
-**Why re-enable at all (the case, recorded so it is not re-litigated from scratch).** Its
-−0.6% (n=82) sits *mid-pack* against the originators that stayed ON — `edgar:form4` −0.5%
-(n=17), `edgar:activist_13d` −0.8% (n=26) — with by far the largest sample. More important:
-**every other originator is an event feed** (something must have been filed), so WSB is the
-only signal that can catch a name with **no filing at all**, and the only one with daily
-coverage of the whole retail-visible market. Turning it off removed the funnel's only
-non-event discovery channel, not just noise. Note the "real funds monitor social sentiment"
-argument is the **weak** leg and should not be leaned on: they do, but as an intraday
-positioning/crowding/squeeze-risk input off the full firehose joined to borrow and options
-data — that justifies the category, not a once-daily top-N list from a free aggregator, and
-borrowing it would import a use case this funnel does not run.
+### What remains open
 
-**MEASURED 2026-08-07 — this is the part a future session must not redo.** 42 days of daily
-ApeWisdom payloads are already cached on disk (`/opt/shortlist/.cache/apewisdom/`,
-2026-06-07 → 2026-08-07, top-100 tickers/day), so candidate rules were replayed offline
-against real data rather than shipped as priors:
+- **Forward returns are NOT measured.** Composition is. The rule surfaces some retail-lottery
+  names (`LCID HTZ SOUN DJT`) whose profile Bali's MAX-effect literature ties to
+  *under*performance, though the median emission is a $34B company. `scout/preregister/wsb_novelty.yaml`
+  (committed, live-forward window from 2026-08-08, K=3m) fixes the bar. **A KILL is a real
+  expected outcome.** No backfill is possible — ApeWisdom publishes no history.
+- **Shipping ENABLED is a deliberate exception** to the contested-prior precedent
+  (`finra_short_interest` / `edgar_8k` / `edgar_buyback` all ship disabled behind a prereg).
+  Recorded as the owner's call, not an oversight.
+- **The slot cap is near-dead code today** — `after_prefilter > 15` on only 2 of 25 sessions,
+  and at ~2 emissions/day WSB cannot reach `max_slots: 5`. Do not credit it with fixing the
+  crowd-out; it is a guard for the next noisy originator.
+- **Sparse history is more permissive** (2.0 vs 0.9 emissions/cal day) and modestly worse on
+  composition (20% vs 13% ≥$200B) — 3-day buckets, directional only.
+- **Not deployed.** `/opt/shortlist` still runs the old code until a `git pull` +
+  `deploy/install_opt_shortlist.sh`. First live run: check the digest for `wsb:novel` names
+  and confirm the signal reports `ran=True` rather than degrading the run.
 
-| rule | emissions/day | mega-cap share |
-|---|---|---|
-| current (`delta >= +50%`) | 8.7 | **39%** |
-| **median-baseline (the killed design)** | 8.0 | **38%** |
-| **rank-novelty (14d, best rank > 50, ≥20 mentions)** | **2.2** | **0%** |
-
-⚠ **READ BEFORE TRUSTING THE ROW ABOVE — it is IN-SAMPLE.** The chosen parameters
-(`lookback 14`, `max_regular_rank 50`, `min_mentions 20`) were picked by sweeping **12
-configurations** over these same 42 days and reporting the best cell. That is in-sample
-parameter selection — the p-hacking the `preregister.py` machinery exists to prevent — and it
-was initially presented as though it were a validation. Two things bound the damage, neither
-of which makes it out-of-sample: the mechanism is **structural, not statistical** (a
-`rank > 50` filter excludes perennial top-30 names by construction), and the surface was flat
-(rank **50 and 75 both gave 0%**; only rank 30 leaked, at 4–7%). **A holdout split (tune on
-the first 21 days, verify on the last 21) is required before these numbers are quoted as
-validated.**
-
-⚠ **Composition was measured; VALUE was not.** The 0% figure says the rule stops surfacing
-mega-caps. It does **not** say the names it surfaces instead are good. The rule's actual output
-includes `LCID HTZ SOUN DJT SELF SLS PENG ONDS APLD` — a retail-lottery profile that Bali's
-MAX-effect literature associates with UNDERperformance. This trades a measured-mediocre signal
-(−0.6% vs SPY, n=82) for an unmeasured one that could be worse. The investability floor + the
-scorer are the downstream skeptics and the picks ledger settles it over calendar time, but
-**do not present the composition fix as a quality fix.**
-
-⚠ **Sparse-history sensitivity is UNTESTED.** The cache has gaps (42 files across a ~62-day
-span), so a nominal "14-day" window is often ~8 boards. Fewer prior boards ⇒ fewer tickers
-look like regulars ⇒ the rule gets **more permissive**. This is the most likely way the rule
-quietly regresses in production and it was not isolated in the replay.
-
-- **Why the median baseline failed:** it assumed mega-cap chatter is a *stable* high plateau a
-  self-relative ratio would normalize away. It is a **volatile** one — AAPL exceeds 2× its own
-  14-day median on **40% of days** (14/35), TSLA 17%, MSFT 14% — so a ratio rule fires on them
-  constantly. AAPL got *more* frequent under it (12 → 14 appearances), not less.
-- **Root cause of the mega-cap bias (the real find):** the signal requires
-  `mention_delta_pct is not None`, which requires yesterday's count > 0, so **a ticker absent
-  from the board yesterday is structurally unemittable**. `signals.py` documents this as
-  deliberate ("a brand-new spike with no baseline is NOT surfaced here"). ~7 tickers/day arrive
-  with no prior-day baseline, and those clearing 20 mentions arrive at a **median rank of
-  16.5** — hot on arrival, and every one discarded. The signal can only emit names already on
-  the board, i.e. board regulars.
-- **Rank beats both size and ratio** as a perennial-ness detector, because rank is relative to
-  the board and mega-caps sit top-30 regardless of news. It also beats the market-cap ceiling
-  rejected earlier: a $10B ceiling would drop UNH/CAT/NKE/UPS/NVO — large companies that are
-  *not* WSB regulars, where the arrival is the informative part.
-- Incidental: leveraged ETFs contaminate emissions (`SOXL` 14 appearances; TQQQ/SQQQ/UVXY) and
-  are absent from the current `deny_list`.
-
-Replay scripts live in this session's scratchpad only (ephemeral) — **they must be committed
-with the evidence doc** (`docs/audits/2026-08-07-wsb-novelty-rule.md`) or these numbers become
-unreproducible, the exact failure `CLAUDE.md` names for the two evaporated enablement artifacts.
-
-**Two tests are queued before implementation** (proposed to the user, not yet run): (1) the
-holdout split above; (2) the sparse-history sensitivity check. Both are cheap and settle the
-first and third caveats with data rather than argument. A single adversarial review of the
-spec's *reasoning* follows them.
-
-**On the slot-cap half:** it is the low-risk half (one pure function, config-absent by default,
-established drop-naming pattern) but note that at the measured **2.2 emissions/day the WSB cap
-will essentially never bind**. Its value is as a general mechanism for the next noisy
-originator, not as part of this fix — do not credit it with fixing the crowd-out.
-
-**Status:** open — design presented and awaiting user approval; two validation tests queued,
-spec NOT yet written, agent review NOT yet run, nothing implemented. `wsb_hype` remains
-`enabled: false`.
+**Status:** shipped on the branch, tests + ruff green, PR open. Undeployed and unmeasured
+for returns.
 
 ## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
 

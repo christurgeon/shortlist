@@ -1020,6 +1020,48 @@ one bulk GET/run, disk-cached by fetch date (`.cache/apewisdom`, shared). It pop
 documented substitute (mention volume + 24h delta, not finance-tuned bull/bear). Tune
 `flags.social_hype` (scoring) / `scout.wsb_hype` (discovery thresholds + index-ETF deny-list).
 
+**The scout originator qualifies on RANK-NOVELTY, not velocity** (`scout/wsb_novelty.py`, a
+pure leaf; `scout.wsb_hype.novelty`, **ON**). A ticker emits only when it is **not a board
+regular** — its best rank across the prior `lookback_days` cached boards is worse than
+`max_regular_rank`, or it is absent from all of them. **Rank, not mention ratio, and not
+market cap**: mega-caps sit top-30 regardless of news, so rank-regularity excludes the
+perennials nearly deterministically, while their mention *counts* are volatile (AAPL exceeds
+2× its own 14-day median on **37% of days**, which is why a self-relative baseline rule was
+measured and **KILLED** — do not rebuild it). A market-cap ceiling was also rejected: it would
+drop UNH/CAT/NKE/UPS/NVO, large names that are genuinely *not* regulars, where the arrival is
+the informative part. Measured over 43 committed boards: median selected cap **$308.7B →
+$34.3B**, the **$0.3–10B band 8% → 39%** — but **≥$200B is 15%, NOT zero** (an early revision
+claimed 0% by scoring against a hand-written name list instead of real caps; never reintroduce
+one). **COMPOSITION is measured; forward returns are NOT.**
+
+Three things are load-bearing: it emits the **distinct key `wsb:novel`** (reusing `wsb:hype`
+would pool the velocity rule's ~82 ledger picks with a different population and make the
+cohort unmeasurable — the `edgar:8k_negative` precedent); the **history comes from the daily
+files `fetch_wsb_mentions` already writes** (`read_cached_boards`, read-only, no new fetch and
+**no `ScoutState` change**); and below `min_history_days` boards it **abstains with `ran=True`**
+— never falling back to the velocity rule (that would reinstate the composition it fixes on
+unwatched runs), and never `ran=False` (`run_health` would mark every such run degraded).
+Removing the `novelty` block restores the byte-identical velocity signal. Prereg:
+`scout/preregister/wsb_novelty.yaml`. Evidence + honest limits:
+`docs/audits/2026-08-07-wsb-novelty-rule.md`; replay + committed inputs under
+`docs/audits/scripts/` + `docs/audits/raw-2026-08-07-wsb/`.
+
+## Per-originator slot cap (scout budget)
+
+`budget.select(candidates, daily_x, caps)` optionally bounds how many of the ~`daily_x` nightly
+deep-screen slots one originator may claim (`scout.signals.<name>.max_slots`; absent for every
+signal ⇒ **byte-identical** uncapped ranking). Three deliberate properties: it **only engages
+under contention** (at or below `daily_x` candidates there is nothing to arbitrate); **≥2
+DISTINCT discovery signals are exempt** (confluence is the strongest thing the funnel finds —
+count distinct `signal` strings, since 13F emits once per fund and boosters run *before*
+`select`); and it **never wastes a slot** — deferred names backfill when other originators
+cannot fill the ceiling. So it is a **re-ordering of the drop set, not a hard quota**: an
+originator supplying every candidate on a quiet night still takes every slot. `RunManifest.capped`
+counts only names the cap **displaced** (those the uncapped ranking would have screened), each
+named `BUDGET CAP: <tk> dropped — <signal> quota N` like the floors' drops; ordinary
+below-the-cut drops stay in `dropped_for_budget`. **Not load-bearing today**: `after_prefilter
+> 15` on only 2 of 25 production sessions, so it is a guard for the next noisy originator.
+
 ## Government contracts (harness + research)
 
 `GovContractsSource` (keyless) queries USAspending's **`spending_by_transaction`** endpoint

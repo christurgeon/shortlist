@@ -14,7 +14,7 @@ rule exists to prevent. Live cache dirs are still read as a fallback/extension.
 
 **Market caps are REAL, not a hand-written name list.** The first revision of this analysis
 scored composition against a 25-name "mega-cap" set and reported 0%; joining to actual caps
-showed 14% of the same emissions above $200B (CAT $387B, UNH $370B, GEV, ANET, NVO were all
+shows 15% of the same emissions above $200B (CAT $387B, UNH $370B, GEV, ANET, NVO were all
 absent from the list). Never reintroduce a hand list here.
 
 DENOMINATOR CONVENTION (not interchangeable; both are reported):
@@ -50,7 +50,8 @@ def load_history(extra_dirs=()):
     hist: dict[str, dict] = {}
     raw = os.path.join(RAW_DIR, "boards.json")
     if os.path.exists(raw):
-        blob = json.load(open(raw))
+        with open(raw) as fh:
+            blob = json.load(fh)
         for day, rows in blob.get("boards", {}).items():
             hist[day] = {r[0]: {"rank": r[1], "mentions": r[2], "mentions_24h_ago": r[3]}
                          for r in rows}
@@ -62,7 +63,8 @@ def load_history(extra_dirs=()):
         if day in hist:
             continue
         try:
-            rows = json.load(open(path))["payload"].get("results") or []
+            with open(path) as fh:
+                rows = json.load(fh)["payload"].get("results") or []
         except (OSError, ValueError, KeyError):
             continue
         hist[day] = {r["ticker"].upper(): r for r in rows if r.get("ticker")}
@@ -72,9 +74,11 @@ def load_history(extra_dirs=()):
 def load_caps():
     p = os.path.join(RAW_DIR, "market_caps.json")
     if os.path.exists(p):
-        return {k: v[0] for k, v in json.load(open(p))["caps"].items() if v and v[0]}
+        with open(p) as fh:
+            return {k: v[0] for k, v in json.load(fh)["caps"].items() if v and v[0]}
     for p in glob.glob(".cache/nasdaq_universe/*.json"):
-        return {k: v[0] for k, v in json.load(open(p)).items() if v and v[0]}
+        with open(p) as fh:
+            return {k: v[0] for k, v in json.load(fh).items() if v and v[0]}
     return {}
 
 
