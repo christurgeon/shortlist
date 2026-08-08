@@ -1,0 +1,39 @@
+# Pre-registered validation parameters for the wsb:novel signal (rank-novelty WSB
+# discovery: qualify a ticker only when it is NOT an ApeWisdom board regular).
+# Design + evidence: docs/audits/2026-08-07-wsb-novelty-rule.md
+#
+# Committed BEFORE any evaluation run -- the anti-p-hacking guard. `preregister.load_prereg`
+# reads `git show HEAD:<path>`, NOT the worktree, so editing this file has no effect until
+# it is committed, and `verify_untampered` dates the parsed CONTENT so a later edit cannot
+# launder itself. Fixing all of these here rather than in config.yaml IS the guard.
+#
+# WHY THIS EXISTS EVEN THOUGH THE SIGNAL SHIPS ENABLED. The other contested priors in this
+# repo (finra_short_interest, edgar_8k, edgar_buyback) ship DISABLED behind their prereg.
+# This one ships enabled at weight 0.5 as an explicit, recorded exception: it is discovery
+# plumbing (`scoring.score()` untouched), and its measured claim is about COMPOSITION
+# (median selected market cap $230.8B -> $34.3B; $0.3-10B band 7% -> 39%), which does not
+# need a return cohort to be true. What is NOT measured is whether the names it surfaces
+# perform, and this file fixes the bar for answering that before any return is seen.
+#
+# EXPECTED SIGN IS DELIBERATELY NOT "positive by assumption". The rule's own output carries
+# a retail-lottery profile (LCID, HTZ, SOUN, DJT ...) that Bali's MAX-effect literature
+# associates with UNDERperformance, while the demoted velocity rule it replaces measured
+# -0.6% vs SPY (n=82) on a different population. A KILL here is a real and expected outcome.
+signal: wsb:novel
+as_of: 2026-08-08
+window_start: 2026-08-08         # live-forward only: the cohort accrues from the picks
+                                 # ledger + firehose. NO backfill is possible -- ApeWisdom
+                                 # publishes no history, and the 42 cached boards are our
+                                 # own incidental capture, far too short for a cohort.
+window_end: 2027-08-08
+verdict_as_of: 2027-11-08        # window_end + K; earlier runs are labelled INTERIM
+k_months: 3                      # matches the funnel's 30-90d triage horizon
+factor_model: ff3
+weighting: equal
+min_measurable_frac: 0.90        # CHECK THIS BEFORE READING ANY ALPHA (audit 2026-07-26 §5)
+min_independent_blocks: 8
+min_bucket_events: 5
+delisting_return: -0.55
+regime_down_rule: spy_trailing_3m_negative
+expected_sign: positive          # the funnel only surfaces LONG candidates, so a negative
+                                 # verdict is a KILL, not a short signal

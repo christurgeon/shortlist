@@ -19,6 +19,143 @@ Newest context at top. See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for the signal 
 
 ---
 
+## A null `market_cap` bypasses BOTH the gate and the investability floor (2026-08-07)
+
+Found while reading the **first live run with `scout.investable_floor`** (2026-08-07, deployed
+`77e5022`, 10 slots — the run predates the undeployed `daily_x` 15). The user asked whether the
+recent changes had made the scout too restrictive. **They have not** — see the supply note below
+— but the run surfaced a real defect in the opposite direction, and it is exactly the failure the
+prioritisation note above cares about: a guard that is **not right about what it claims**.
+
+**`market_cap = None` is simultaneously the input both guards need to reject a name**, and both
+abstain on it, so there is no backstop:
+
+- **The gate** — `scoring.py:627`: `if m.market_cap is not None and m.market_cap < min_market_cap`.
+  Null → cannot trip → the pick is recorded `gated: false`.
+- **The floor** — `investable.assess` abstains on a missing/non-positive cap by design, *and*
+  `liquidity_from_universe` is driven by the listed universe, so a symbol **absent from the
+  7,126-name Nasdaq screener never gets a `Liquidity` row at all** → `funnel._apply_floor` treats
+  absent-from-map as abstain → keep.
+
+**Mechanical, not a one-off.** Of 199 ledger picks, **13 have a null `market_cap` and every one
+is `gated: false`**: `SOXL GLD VOO USO` (ETFs), `FTECX VFLEX BBASX` (mutual funds — killed by
+A5's `X` suffix, but the ETFs carry **no** fifth-letter suffix and are still uncaught), plus
+`TM`, `YARW`, `CSBA`. 18 of 199 (9%) are absent from the listed universe entirely.
+
+The 2026-08-07 instance: **CSBA** (CSB Financial, CIK 2114521, a very recent registrant) reached
+the digest at rank 3 with `confidence: 0.0` — every axis null except `Risk 50` — and
+`gated: false`. **TM** (Toyota) was the run's only `/deep` recommendation, also with a null cap.
+
+**Note the interaction with `50be4ed` (2026-08-06, Finnhub non-USD abstention).** That fix was
+correct, but it traded an *inflated* cap for a *null* cap: it closed the wrong-number half of the
+TSM bug and left the **silently-passes** half intact. TM reached the digest one day later.
+
+Three follow-ups, in leverage order:
+
+- **Backfill `market_cap` from the listed universe when Finnhub abstains and FMP gates.** The
+  floor already fetches and day-caches it — `.cache/nasdaq_universe/2026-08-07.json` holds
+  **TM at $300.2B** while the report line reads `Mkt cap: ·`. We fetch the right number and
+  never use it. Contained data-recovery change, re-arms the gate for any *listed* name; owed the
+  byte-identical-when-absent contract and a test. **Does not fix CSBA** (not in the universe).
+- **DEFERRED DECISION — should absent-from-listed-universe be a drop rather than an abstain?**
+  This is the CSBA case and it **inverts a documented rule**, so it needs the user's call, not a
+  quiet flip. `investable.py`'s docstring reasons that such a symbol "is not a listed common
+  stock we can size" — sound for declining to *size* it, but the funnel then converts "can't
+  size" into "keep", and an unlisted name is the least investable class there is. Counter-risk:
+  the same abstention deliberately protects foreign issuers, so measure the drop set before
+  changing it.
+- **Consider whether ETFs/leveraged ETPs belong in the funnel at all** — `GLD/VOO/USO/SOXL` are
+  not stock picks and no current filter excludes them.
+
+**Supply, not filtering, is the binding constraint — do not tighten in response to this.** Raw
+candidates over the last 10 sessions: 21, 12, 16, 3, 6, 3, **0**, 13, 8, 7 (median ~7.5 against
+10 slots); `dropped_for_budget: 0` on **8 of 10**; 8 of 12 signals disabled. On 2026-08-07 the
+floor dropped exactly two names, at **$12M** (REBN) and **$9M** (SAGT) — correct drops that were
+*not* what shortened the list (6 survived the prefilter, already below the budget). This
+corroborates the closed "do not resolve this by filtering the funnel harder" finding below.
+
+**Status:** defect verified in code + ledger, nothing changed. Backfill unimplemented; the
+absent-from-universe question is an open decision awaiting the user.
+
+## `daily_x` raised 10 → 15 — verify the first live run (2026-08-07)
+
+`config.yaml:526` now allocates **15** deep-screen slots/night (was 10). Committed to the
+working tree only — **not deployed**, so `/opt/shortlist` is still on 10 until a
+`git pull` + `deploy/install_opt_shortlist.sh`.
+
+Track A4 says `daily_x` is **not** sizeable from `sec_requests` (deep-screen EDGAR fetches
+use the harness `EdgarSource`'s own `_EDGAR_MAX_CONCURRENCY` semaphore, outside the shared
+throttle and therefore uncounted), and the breadth plan says "do not raise it blind." The
+raise was made on the user's explicit instruction, cleared against **runtime** rather than
+request count: peak wall clock over the last week is **227s** (2026-08-05, 10 names) against
+`TimeoutStartSec=1800` — ~8× headroom, and 2026-08-05 delivered exactly 10, i.e. the cap was
+binding. The uncounted-SEC-load question is **unchanged**, only bounded by that headroom.
+
+**Per-provider cost was checked (2026-08-07) and no hard limit is threatened.** Ticker count
+is not what sets the request *rate* — `collector.collect` runs 8 tickers in parallel
+(`collector.py:19,22`) and `EdgarSource` holds its own `_EDGAR_MAX_CONCURRENCY = 3`, so 5
+more tickers is one more batch: more total requests over a longer window, same peak rate.
+FMP is **0 calls** (dropped by `include_fmp: false` — the 250/day belongs to the bot's
+`/screen` + `/deep`); Finnhub is 8 calls/ticker (`finnhub.py:44-67`), 80 → 120; FINRA and WSB
+are one cached bulk fetch per run and do not scale with tickers at all. The only 429s in 8
+days of logs are 2 × `dera: 2026q2 unavailable` (Aug 03/04) — **discovery phase**, unrelated
+to `daily_x`.
+
+Follow-up on the first run at 15, two things:
+- **Coverage, not just completion.** Finnhub is configured with **no retry**
+  (`_max_retries = 0`, commented as intentional because "60/min is comfortable"). At 8
+  concurrent tickers × 8 calls, ~64 can be in flight; 15 tickers sustains that one batch
+  longer. If it tips, a 429 there does **not** error — it quietly thins a section and shows up
+  as degraded coverage. Check the coverage summary.
+- Duration + any EDGAR 429s (`journalctl -u shortlist-scout.service`). If the deep-screen SEC
+  draw ever needs a real number it needs its own instrumentation — the shared throttle will
+  never show it.
+
+**Status:** config changed, undeployed, unverified against a live run.
+
+## ✅ WSB re-enable — SHIPPED (2026-08-08, branch `feat/wsb-novelty-and-slot-cap`)
+
+**Do not redo this.** `wsb_hype` is re-enabled as **`wsb:novel`** under a rank-novelty rule
+(`scout/wsb_novelty.py`), plus a contention-triggered per-originator slot cap in
+`budget.select`. Design, measurements and honest limits:
+`docs/audits/2026-08-07-wsb-novelty-rule.md`; replay + **committed** inputs under
+`docs/audits/scripts/wsb_novelty_replay.py` + `docs/audits/raw-2026-08-07-wsb/`.
+
+**Two designs were measured and killed along the way — do not rebuild either:**
+a per-ticker **mention-ratio baseline** (barely moves composition; AAPL exceeds 2× its own
+14-day median on 37% of days) and a **market-cap ceiling** (would drop UNH/CAT/NKE/UPS/NVO,
+large names that are genuinely not board regulars).
+
+**Corrections made after adversarial review — the numbers that stand:** median selected market
+cap **$308.7B → $34.3B**, `$0.3–10B` band **8% → 39%**, `≥$200B` **53% → 15%**. An earlier
+revision of the audit claimed **0% mega-caps** (artifact of a hand-written 25-name list — CAT
+$387B, UNH $370B, GEV, ANET, NVO all scored "clean") and called the `mention_delta_pct` filter
+**"the entire mega-cap bias"** (measured: **12%** of novelty emissions; ApeWisdom tracks ~784
+tickers across 8 pages and we cache page 1, so board-absence does not imply a missing 24h
+baseline). Both are corrected in the audit doc, which carries a retraction banner.
+
+### What remains open
+
+- **Forward returns are NOT measured.** Composition is. The rule surfaces some retail-lottery
+  names (`LCID HTZ SOUN DJT`) whose profile Bali's MAX-effect literature ties to
+  *under*performance, though the median emission is a $34B company. `scout/preregister/wsb_novelty.yaml`
+  (committed, live-forward window from 2026-08-08, K=3m) fixes the bar. **A KILL is a real
+  expected outcome.** No backfill is possible — ApeWisdom publishes no history.
+- **Shipping ENABLED is a deliberate exception** to the contested-prior precedent
+  (`finra_short_interest` / `edgar_8k` / `edgar_buyback` all ship disabled behind a prereg).
+  Recorded as the owner's call, not an oversight.
+- **The slot cap is near-dead code today** — `after_prefilter > 15` on only 2 of 25 sessions,
+  and at ~2 emissions/day WSB cannot reach `max_slots: 5`. Do not credit it with fixing the
+  crowd-out; it is a guard for the next noisy originator.
+- **Sparse history is more permissive** (2.0 vs 0.9 emissions/cal day) and modestly worse on
+  composition (20% vs 13% ≥$200B) — 3-day buckets, directional only.
+- **Not deployed.** `/opt/shortlist` still runs the old code until a `git pull` +
+  `deploy/install_opt_shortlist.sh`. First live run: check the digest for `wsb:novel` names
+  and confirm the signal reports `ran=True` rather than degrading the run.
+
+**Status:** shipped on the branch, tests + ruff green, PR open. Undeployed and unmeasured
+for returns.
+
 ## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
 
 **Do not redo any of this.** Plan: `docs/audits/2026-08-06-discovery-breadth-plan.md`

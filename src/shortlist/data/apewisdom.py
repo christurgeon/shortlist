@@ -103,3 +103,49 @@ def fetch_wsb_mentions(
         return {}, redact_secrets(str(e))
     write_json_cache(cp, {"as_of": as_of, "payload": payload})
     return parse_wsb(payload, as_of), None
+
+
+def read_cached_boards(cache_dir: str = _DEFAULT_CACHE_DIR, *, before: Optional[str] = None,
+                       lookback_days: int = 14) -> list[dict[str, WsbMention]]:
+    """Read up to ``lookback_days`` previously-cached daily boards, newest first.
+
+    **Reads only — never fetches.** Every day file this returns was written by an earlier
+    `fetch_wsb_mentions` call, so this adds no network cost and no new cache contract; it
+    is the same shared-disk-cache pattern the scout FINRA fetcher uses against the harness
+    `FinraSource` cache.
+
+    ``before`` (ISO date, exclusive) bounds the window so a point-in-time caller cannot
+    read the day it is scoring. Missing, unreadable and corrupt files are skipped
+    silently — a thin result is the caller's signal to abstain, and a cache read must
+    never break a live run.
+
+    Days are identified by FILENAME, not by the `as_of` recorded inside, because the
+    filename is what `fetch_wsb_mentions` keys on; a file whose name does not parse as a
+    date is skipped rather than guessed at.
+    """
+    directory = Path(cache_dir)
+    try:
+        names = sorted(p.stem for p in directory.glob("*.json"))
+    except OSError:
+        return []
+
+    out: list[dict[str, WsbMention]] = []
+    for stem in reversed(names):           # newest first
+        if len(out) >= max(0, lookback_days):
+            break
+        try:
+            datetime.strptime(stem, "%Y-%m-%d")
+        except ValueError:
+            continue                        # not a day file
+        if before is not None and stem >= before:
+            continue                        # strictly before the as-of day
+        cached = read_json_cache(directory / f"{stem}.json")
+        if cached is None:
+            continue
+        try:
+            board = parse_wsb(cached.get("payload"), cached.get("as_of", stem))
+        except Exception:
+            continue                        # corrupt payload -> treat as absent
+        if board:
+            out.append(board)
+    return out

@@ -93,6 +93,11 @@ class RunManifest:
     # Durable on purpose: the 2026-08-04 cascade was diagnosed from timing correlation
     # alone, and a count that lives only in an overwritten log cannot settle it afterwards.
     sec_requests: dict = field(default_factory=dict)
+    # Names dropped by a per-originator slot cap (a SUBSET of dropped_for_budget, which
+    # keeps its meaning: everything not chosen). Separate because the two reasons differ —
+    # "ranked below the cut" vs "its originator's quota was spent while it outranked names
+    # that were kept". LAST field with a default, same rule as `sec_requests` above.
+    capped: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -102,7 +107,7 @@ class RunManifest:
             "funnel": {"raw": self.raw, "after_dedup": self.after_dedup,
                        "after_prefilter": self.after_prefilter, "screened": self.screened,
                        "dropped_for_budget": self.dropped_for_budget,
-                       "vetoed": self.vetoed},
+                       "vetoed": self.vetoed, "capped": self.capped},
             "researched": self.researched,
             "notes": self.notes,
             "sec_requests": dict(self.sec_requests),
