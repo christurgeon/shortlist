@@ -79,8 +79,8 @@ absent-from-universe question is an open decision awaiting the user.
 
 ## `daily_x` raised 10 → 15 — verify the first live run (2026-08-07)
 
-`config.yaml:526` now allocates **15** deep-screen slots/night (was 10). Committed to the
-working tree only — **not deployed**, so `/opt/shortlist` is still on 10 until a
+`config.yaml:526` now allocates **15** deep-screen slots/night (was 10). Merged to `main`
+2026-08-08 in PR #165 — but **not deployed**, so `/opt/shortlist` is still on 10 until a
 `git pull` + `deploy/install_opt_shortlist.sh`.
 
 Track A4 says `daily_x` is **not** sizeable from `sec_requests` (deep-screen EDGAR fetches
@@ -153,7 +153,7 @@ baseline). Both are corrected in the audit doc, which carries a retraction banne
   `deploy/install_opt_shortlist.sh`. First live run: check the digest for `wsb:novel` names
   and confirm the signal reports `ran=True` rather than degrading the run.
 
-**Status:** shipped on the branch, tests + ruff green, PR open. Undeployed and unmeasured
+**Status:** MERGED to `main` 2026-08-08 as `6a09dff` (PR #165). **Undeployed** and unmeasured
 for returns.
 
 ## ✅ Track A — SHIPPED AND DEPLOYED (PR #163, merged 2026-08-07 as `540e2ea`)
