@@ -101,6 +101,13 @@ Original three, unedited:
 - **Consider whether ETFs/leveraged ETPs belong in the funnel at all** — `GLD/VOO/USO/SOXL` are
   not stock picks and no current filter excludes them.
 
+*Factual footnote, not a recommendation (2026-08-08):* **`USO` is absent from the 14-entry
+`scout.wsb_hype.deny_list`** and hit twice via `wsb:hype` (07-09, 07-23), so it is the one
+already-recurred ETP still uncovered now that PR #165 re-enabled WSB (weight 0.5, `max_slots: 5`,
+deployed). Recorded so it need not be re-discovered — **do not fix it by enumerating `USO`**,
+which is precisely the per-originator whack-a-mole the paragraph above rejects; it falls out of
+the universe rule for free.
+
 **Supply, not filtering, is the binding constraint — do not tighten in response to this.** Raw
 candidates over the last 10 sessions: 21, 12, 16, 3, 6, 3, **0**, 13, 8, 7 (median ~7.5 against
 10 slots); `dropped_for_budget: 0` on **8 of 10**; 8 of 12 signals disabled. On 2026-08-07 the
