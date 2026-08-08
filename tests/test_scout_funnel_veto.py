@@ -34,7 +34,7 @@ def test_vetoed_slot_backfills_in_select():
     next-ranked candidate takes it."""
     strong, weak = _cand("BAD", 0.9), _cand("OK", 0.4)
     kept, vetoed = apply_veto([strong, weak], {"BAD": {"adsh": "n-1"}})
-    chosen, dropped = select(kept, daily_x=1)
+    chosen, dropped, capped = select(kept, daily_x=1)
     assert [c.ticker for c in chosen] == ["OK"] and dropped == 0
     assert [c.ticker for c in vetoed] == ["BAD"]
 

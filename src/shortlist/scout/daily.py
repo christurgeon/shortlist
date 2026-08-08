@@ -106,7 +106,13 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
         "wsb_hype":      {"min_mentions": wsb.get("min_mentions", 30),
                           "min_mention_delta_pct": wsb.get("min_mention_delta_pct", 0.5),
                           "top_n": wsb.get("top_n", 15),
-                          "deny_list": wsb.get("deny_list", [])},
+                          "deny_list": wsb.get("deny_list", []),
+                          # `novelty` absent -> the velocity rule runs unchanged.
+                          "novelty": wsb.get("novelty"),
+                          # Explicit, because the novelty rule reads the PRIOR days' cached
+                          # boards: with a cwd-relative default, running the scout from a
+                          # different directory would silently see no history and abstain.
+                          "cache_dir": wsb.get("cache_dir", ".cache/apewisdom")},
         "edgar_activist_13d": {"identity": os.environ.get("SEC_IDENTITY"),
                                "max_filings": act.get("daily_cap", 300),
                                "drop_spacs": act.get("drop_spacs", True),
@@ -365,6 +371,13 @@ def _investable_notes(dropped: list) -> list[str]:
     with the veto and the quality floor. A bare count would make an over-aggressive floor
     invisible."""
     return [f"INVESTABLE FLOOR: {c.ticker} dropped — {v.reason}" for c, v in dropped]
+
+
+def _capped_notes(capped: list) -> list[str]:
+    """Name every slot-cap drop. `dropped_for_budget` is a bare count, which was fine
+    while its only reason was "ranked below the cut"; a cap can drop a name that outranks
+    names it kept, so that reason has to be stated like the veto's and the floors' are."""
+    return [f"BUDGET CAP: {c.ticker} dropped — {reason}" for c, reason in capped]
 
 
 def _quality_floor_notes(dropped: list) -> list[str]:
@@ -630,9 +643,16 @@ def _scan_discovery(discovery: list, *, state: ScoutState, demo: bool, session: 
                     sig_cfg: dict, statuses: list[SignalStatus]) -> tuple[list, dict]:
     """Run each discovery signal's scan, failure-isolated so one bad signal can't abort
     the run. Persists post-scan state, appends a SignalStatus per signal, and records
-    each emission's config weight. Returns (emissions, weights_by_signal)."""
+    each emission's config weight. Returns (emissions, weights_by_signal, caps_by_signal).
+
+    Both maps are keyed by the EMISSION's `signal` string, not the config key, and are
+    built from the emissions actually produced — the same indirection `weights_by_signal`
+    has always used. That is what lets a signal change its emission string (`wsb:hype` ->
+    `wsb:novel`) without silently falling back to a default weight or losing its cap.
+    """
     emissions: list = []
     weights_by_signal: dict[str, float] = {}
+    caps_by_signal: dict[str, int] = {}
     for s in discovery:
         # Polite cooldown: after a Yahoo WAF block we skip the endpoint entirely (zero
         # requests) for the rest of the day to protect the IP's reputation.
@@ -651,12 +671,17 @@ def _scan_discovery(discovery: list, *, state: ScoutState, demo: bool, session: 
             # identity except the demo "mock" signal, which borrows yahoo_screener's weight.
             cfg_key = "yahoo_screener" if s.name == "mock" else s.name
             w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
+            # Optional per-originator slot cap. Absent -> the signal is never capped and
+            # `budget.select` stays byte-identical to the uncapped ranking.
+            cap = sig_cfg.get(cfg_key, {}).get("max_slots")
             for e in ems:
                 weights_by_signal[e.signal] = w
+                if cap is not None:
+                    caps_by_signal[e.signal] = int(cap)
         except Exception as exc:  # noqa: BLE001
             statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
             continue
-    return emissions, weights_by_signal
+    return emissions, weights_by_signal, caps_by_signal
 
 
 def _run_boosters(boosters: list, kept: list, *, session: date, sig_cfg: dict,
@@ -726,7 +751,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     signals, boosters = _build_signals_and_statuses(scout_cfg, state, demo, statuses)
 
     discovery = [s for s in signals if getattr(s, "is_discovery", False)]
-    emissions, weights_by_signal = _scan_discovery(
+    emissions, weights_by_signal, caps_by_signal = _scan_discovery(
         discovery, state=state, demo=demo, session=session, sig_cfg=sig_cfg,
         statuses=statuses)
 
@@ -775,7 +800,11 @@ def run(config: dict, *, demo: bool, today: date) -> int:
     # 1b. Run confluence boosters on already-discovered names (§3 step 2 / §4).
     _run_boosters(boosters, kept, session=session, sig_cfg=sig_cfg, statuses=statuses)
 
-    chosen, dropped = select(kept, daily_x=scout_cfg.get("daily_x", 15))
+    # Per-originator slot cap (scout.signals.<name>.max_slots). Absent for every signal ->
+    # `caps_by_signal` is {} and select() is byte-identical to the uncapped ranking.
+    chosen, dropped, capped = select(kept, daily_x=scout_cfg.get("daily_x", 15),
+                                     caps=caps_by_signal)
+    veto_notes.extend(_capped_notes(capped))
 
     # 2. Deep-screen via the harness scorer (mock source offline in --demo)
     from ..data.macro import fetch_macro
@@ -812,6 +841,7 @@ def run(config: dict, *, demo: bool, today: date) -> int:
         session=session, signals=statuses, raw=raw, after_dedup=after_dedup,
         after_prefilter=after_prefilter, screened=len(cards), dropped_for_budget=dropped,
         researched=researched, notes=notes, vetoed=len(vetoed_cands),
+        capped=len(capped),
         # Read AFTER discovery + deep-screen so the manifest records the whole run's
         # sec.gov draw. NOTE this counts only consumers routed through sec_throttle():
         # the harness EdgarSource (own asyncio semaphore) and EFTS (own throttle, and a

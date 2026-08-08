@@ -1091,12 +1091,16 @@ class WsbHypeSignal:
 
     def __init__(self, cache_dir: str = ".cache/apewisdom", min_mentions: int = 30,
                  min_mention_delta_pct: float = 0.5, top_n: int = 15,
-                 deny_list: list[str] | None = None) -> None:
+                 deny_list: list[str] | None = None,
+                 novelty: dict | None = None) -> None:
         self.cache_dir = cache_dir
         self.min_mentions = min_mentions
         self.min_mention_delta_pct = min_mention_delta_pct
         self.top_n = top_n
         self._deny_raw = list(deny_list or [])
+        # `novelty` absent or disabled -> the velocity path below runs unchanged and this
+        # class is byte-identical to its pre-feature behaviour (pinned by test).
+        self.novelty = dict(novelty or {})
         self._status = (False, "not run")
 
     def scan(self, session: date) -> list[Emission]:
@@ -1106,6 +1110,8 @@ class WsbHypeSignal:
         if err:
             self._status = (False, redact_secrets(err))
             return []
+        if self.novelty.get("enabled"):
+            return self._scan_novelty(session, idx, deny)
         # Discovery requires a measurable 24h baseline (mention_delta_pct is not None):
         # unlike the advisory social_hype flag, a brand-new spike with no baseline is
         # NOT surfaced here — discovery needs evidence of velocity, not just volume.
@@ -1123,6 +1129,54 @@ class WsbHypeSignal:
             ev = f"WSB: {w.mentions} mentions, {w.mention_delta_pct:+.0%} 24h, rank {w.rank}"
             ems.append(Emission(w.ticker, "wsb:hype", strength, ev, is_discovery=True))
         self._status = (True, f"{len(ems)} hyped (from {len(idx)} tracked)")
+        return ems
+
+    def _scan_novelty(self, session: date, idx: dict, deny: set) -> list[Emission]:
+        """Rank-novelty path: emit names that are NOT board regulars (`wsb_novelty`).
+
+        Emits under a DISTINCT signal string, `wsb:novel`. The velocity rule's ~82 live
+        picks are already pooled in the firehose and the selection ledger under
+        `wsb:hype`; reusing that key would blend two different populations into one
+        cohort and make the ledger permanently unable to measure either. Same reasoning
+        that gave the 8-K negative veto its own `edgar:8k_negative` key.
+        """
+        from ..data.apewisdom import read_cached_boards
+        from .wsb_novelty import (
+            DEFAULT_LOOKBACK_DAYS,
+            DEFAULT_MAX_REGULAR_RANK,
+            DEFAULT_MIN_HISTORY_DAYS,
+            DEFAULT_MIN_MENTIONS,
+            qualify_board,
+        )
+
+        cfg = self.novelty
+        lookback = int(cfg.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
+        boards = read_cached_boards(self.cache_dir, before=session.isoformat(),
+                                    lookback_days=lookback)
+        rows, detail = qualify_board(
+            idx, boards,
+            max_regular_rank=int(cfg.get("max_regular_rank", DEFAULT_MAX_REGULAR_RANK)),
+            min_mentions=int(cfg.get("min_mentions", DEFAULT_MIN_MENTIONS)),
+            min_history_days=int(cfg.get("min_history_days", DEFAULT_MIN_HISTORY_DAYS)),
+            top_n=self.top_n, deny=frozenset(deny))
+        if rows is None:
+            # Abstention is NOT a failure: `models.run_health` treats an enabled discovery
+            # signal with ran=False as a failed originator and marks the whole run
+            # degraded. A cold cache would then report every run for `min_history_days`
+            # sessions as broken. Report ran=True with zero emissions instead.
+            self._status = (True, f"0 novel — {detail}")
+            return []
+        ems = []
+        for ticker, verdict, mentions in rows:
+            seen = ("new to the board" if verdict.best_prior_rank is None
+                    else f"prior best rank {verdict.best_prior_rank}")
+            ev = f"WSB novel: {mentions} mentions, {seen}"
+            ems.append(Emission(ticker, "wsb:novel", verdict.strength, ev,
+                                is_discovery=True,
+                                meta={"mentions": mentions,
+                                      "best_prior_rank": verdict.best_prior_rank,
+                                      "rule": "novelty_v1"}))
+        self._status = (True, detail)
         return ems
 
     def available(self) -> tuple[bool, str]:

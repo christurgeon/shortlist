@@ -621,10 +621,31 @@ scout:
   #   buyback_phrases: []        # override the phrase set (default: scout/buyback.py:DEFAULT_PHRASES)
   wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
   wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
-    min_mentions: 30         # absolute floor for discovery
-    min_mention_delta_pct: 0.5  # +50% mention velocity vs 24h ago
-    top_n: 15                # cap emissions to the highest-velocity names
-    deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA]   # index ETFs / non-actionable
+    min_mentions: 30         # absolute floor for discovery  [velocity rule only]
+    min_mention_delta_pct: 0.5  # +50% mention velocity vs 24h ago  [velocity rule only]
+    top_n: 15                # cap emissions (applies to BOTH rules)
+    # Index/leveraged-index products and other non-operating tickers. NOTE this list is a
+    # backstop, not the filter: the replay found ETPs reaching emissions that no enumerated
+    # list anticipated (GLD, ESG), the same class as the BBASX mutual fund in
+    # docs/audits/2026-08-07-funnel-gate-mismatch.md §3. The investable floor + scorer
+    # abstention are the structural backstop; extend here only for repeat offenders.
+    deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA, SOXL, SOXS, SPXL, TQQQ, SQQQ, UVXY, VOO, GLD]
+    # RANK-NOVELTY rule. Replaces the velocity gate above when enabled: qualify a ticker
+    # only if it is NOT a board regular (best rank over the prior `lookback_days` boards is
+    # worse than `max_regular_rank`, or absent from all of them). Emits under a DISTINCT
+    # signal key `wsb:novel` so its cohort never pools with the velocity rule's ~82 picks.
+    # Measured over 42 cached boards: median selected market cap $230.8B -> $34.3B, and the
+    # $0.3-10B band 7% -> 39%. Composition only — forward returns are NOT measured.
+    # Evidence + honest limits: docs/audits/2026-08-07-wsb-novelty-rule.md
+    # Remove this block for the byte-identical pre-feature velocity signal.
+    novelty:
+      enabled: true
+      lookback_days: 14      # prior boards consulted (read from the existing disk cache)
+      max_regular_rank: 50   # best prior rank <= this => board regular => never emitted
+      min_mentions: 20       # absolute noise floor for the novelty rule
+      min_history_days: 5    # below this, ABSTAIN (emit nothing) — never fall back to
+                             # the velocity rule, which would reinstate the composition
+                             # this rule exists to fix, on unwatched runs
   short_interest:            # FinraShortInterestSignal — short-interest JUMP discovery.
                              # CONTESTED prior (heavy/rising SI has a NEGATIVE base rate for a
                              # long book), so it ships OFF (signals below) at low weight and the
@@ -799,19 +820,29 @@ scout:
     finnhub_news:   {enabled: true,  weight: 0.5}
     wikipedia:      {enabled: true,  weight: 0.5}
     quiver:         {enabled: false, weight: 1.0}
-    wsb_hype:       {enabled: false, weight: 0.5}   # DEMOTED to confirmation-only 2026-07-26.
-                                              # It was 60% of all 141 ledger picks at a $310B
-                                              # MEDIAN market cap (AAPL x4, MSFT, AMD x3, IBM x3)
-                                              # — names where no informational edge exists — and
-                                              # it consumed ~4 of the 10 daily deep-screen slots
-                                              # that the EDGAR event originators should be using.
-                                              # Its own measured performance (-0.6% vs SPY, n=82)
-                                              # is no worse than the other catalysts; the problem
-                                              # is CROWD-OUT, not harm. The per-ticker
-                                              # `social_hype` flag still confirms hype on names
-                                              # that arrive via another originator, so nothing is
-                                              # lost but origination. Raw flow ~9-13/day -> ~5-9.
-                                              # Evidence: docs/audits/2026-07-26-funnel-composition-audit.md §1
+    wsb_hype:       {enabled: true,  weight: 0.5, max_slots: 5}
+                                              # RE-ENABLED 2026-08-08 under the rank-NOVELTY
+                                              # rule (scout.wsb_hype.novelty), emitting the
+                                              # distinct key `wsb:novel`. It was DEMOTED
+                                              # 2026-07-26 for CROWD-OUT, not harm: 60% of 141
+                                              # ledger picks at a $310B median cap (AAPL x4,
+                                              # MSFT, AMD x3, IBM x3) — names where no
+                                              # informational edge exists. Its own measured
+                                              # performance (-0.6% vs SPY, n=82) was no worse
+                                              # than the other catalysts. NOTE that $310B
+                                              # figure predates the 2026-08-06 Finnhub non-USD
+                                              # market-cap fix, so ADR caps in it are inflated.
+                                              # The novelty rule cuts the median selected cap
+                                              # to $34.3B and lifts the $0.3-10B band 7% -> 39%
+                                              # (42 cached boards). COMPOSITION is measured;
+                                              # forward returns are NOT — the picks ledger and
+                                              # scout/preregister/wsb_novelty.yaml earn the
+                                              # weight from here. `max_slots` bounds it under
+                                              # contention; at ~2 emissions/day it will rarely
+                                              # bind (only 2 of 25 sessions exceeded 15
+                                              # candidates), so it is a guard, not the fix.
+                                              # Evidence: docs/audits/2026-08-07-wsb-novelty-rule.md
+                                              # Prior: docs/audits/2026-07-26-funnel-composition-audit.md §1
     edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
     edgar_13d_stake_increase: {enabled: false, weight: 0.5}  # MEASURE-FIRST — OFF pending the
                                                    # pre-registered backfill verdict
