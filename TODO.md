@@ -20,33 +20,6 @@ for signal designs and `docs/ASSESSMENT_GAPS.md` for the scoring roadmap.
 
 ---
 
-## TODO.md compacted 2,133 → ~430 lines (2026-08-08)
-
-Removed every shipped/merged/deployed section and all struck-through sub-items, and
-reorganised the survivors thematically instead of chronologically — so the "newest at top,
-dated heading" convention now applies only to entries like this one, at the top, above the
-numbered sections. Removed content is recoverable from git (`git show HEAD~1:TODO.md`); its
-durable forms are `CLAUDE.md`, `docs/audits/` and the linked design docs. §7 "Closed with a
-verdict — do not redo" compresses ~500 lines of rejected-refactor and killed-signal prose into
-one-liners so those aren't re-derived.
-
-**One open item was dropped as a judgment call, recorded here so it is not silently lost:** the
-2026-07-26 composition audit's **item 1, the 13D entry-price size-band re-run**. It was parked
-pending the `calendar_time_portfolio` Jensen fix, which landed in #151 — so it is technically
-runnable now. It was cut because item 0e (same audit, later) found raw-cohort levels
-**structurally unmeasurable** on free data via outcome-correlated attrition, and a size band on
-the raw 13D cohort is exactly a raw-level analysis; the prioritisation rule also ranks it below
-funnel work. Reinstate it only if the raw-vs-scored attrition finding is itself overturned.
-
-Two stale items were verified dead rather than carried: `tests/scout/test_daily_demo.py` no
-longer reads production state and passes, and `quality_floor`'s "≥3 sessions of `sec_requests`"
-gate is now met (08-05/06/07 at 97.8–98.0% `edgar_form4`). Both are reflected in the body.
-
-**Status:** done — no follow-up. The dropped size-band item is the only deliberate content
-deletion; everything else removed was shipped, resolved, or superseded.
-
----
-
 # 1. Watch items — deployed, not yet observed
 
 ## `daily_x` 15 — first live run (2026-08-07)
@@ -427,6 +400,11 @@ the linked docs.
 - **A market-cap pre-filter in the funnel** deletes the only names there are (13 of 25 sessions
   → zero candidates). Resolved instead by lowering `gates.min_market_cap` to $300M + the
   investability floor.
+- **The 13D entry-price size-band re-run is retired, not parked.** It waited on the
+  `calendar_time_portfolio` Jensen fix, which landed in #151, so it is technically runnable —
+  but the same audit's later finding (below) makes a band on the *raw* 13D cohort a raw-level
+  analysis, and the prioritisation rule ranks it under funnel work. Reinstate only if the
+  raw-vs-scored attrition finding is overturned.
 - **Cohort levels are structurally unmeasurable on free data** (outcome-correlated attrition;
   22% of events have no price series, monotonic in age). Do **not** build the ABK/value-weighting
   correction; never quote a RAW-cohort alpha; scored-cohort levels *are* usable. No data
