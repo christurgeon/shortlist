@@ -136,8 +136,12 @@ abstain rather than read a missing count as zero.
 
 ```python
 def material_add_diff(latest, prior, *, min_position_pct=0.005,
-                      full_strength_pct=0.05, material_add_ratio=1.50) -> list[dict]
+                      full_strength_pct=0.05,
+                      material_add_ratio=1.50) -> tuple[list[dict], int]
 ```
+
+Returns `(adds, n_abstained)` — the abstain count is part of the contract, not a side channel,
+because a silent abstention is indistinguishable from "no adds found".
 
 CUSIP present in **both** books, `shares` usable in both and `> 0` in prior, ratio clears
 `material_add_ratio`, resulting book weight clears `min_position_pct`. Returns dicts shaped
@@ -255,8 +259,12 @@ zero-total book → `[]`; ordering deterministic.
 appears in both result sets. This is the cohort-contamination guard.
 
 **Signal-level** (injected fakes, existing fixture pattern) — adds emit with the right signal
-string and meta; `material_add.enabled: false` emits nothing and leaves state untouched;
-`material_add_top_n` caps independently of `top_n`; new positions are emitted before adds.
+string and meta; `material_add.enabled: false` emits no add and produces **the same state as
+today** (note `_mark_processed` still runs on every processed accession either way — the claim
+is "unchanged *relative to today*", NOT "no state written", which would be false and would
+mislead an implementer into asserting `processed_accessions == []`); `material_add_top_n` caps
+independently of `top_n`; new positions are emitted before adds; and the status line reports
+new positions and adds as **separate** counts.
 
 **Back-compat pins** — `_scan_discovery` weight/cap resolution unchanged for a signal without
 `cfg_key_for`; `budget.select`/`originator` unchanged for every non-13F signal string; the
