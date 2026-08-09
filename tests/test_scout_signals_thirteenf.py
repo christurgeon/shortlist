@@ -7,6 +7,7 @@ from datetime import date
 from shortlist.scout.signals import EdgarThirteenFSignal, build_signals
 from shortlist.scout.thirteenf import (
     aggregate_positions,
+    material_add_diff,
     new_position_diff,
     parse_infotable,
     parse_submissions_13fhr,
@@ -220,6 +221,126 @@ def test_parse_submissions_excludes_amendments_newest_first():
         ("13F-HR", "acc-0", "2026-02-14", "2025-12-31")])
     got = parse_submissions_13fhr(subm)
     assert [f["accession"] for f in got] == ["acc-1", "acc-0"]
+
+
+# --- material-add diff -----------------------------------------------------------------
+
+def _book(entries):
+    """entries: {cusip: (value, shares)} -> an aggregate_positions-shaped dict."""
+    return {c: {"value": float(v), "shares": (None if s is None else float(s)),
+                "name": c, "title": "COM"} for c, (v, s) in entries.items()}
+
+
+def test_material_add_fires_on_share_growth_over_ratio():
+    latest = _book({"AAA": (300, 150), "BBB": (700, 10)})   # AAA shares 100 -> 150 = 1.5x
+    prior = _book({"AAA": (200, 100), "BBB": (800, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA"]
+    assert adds[0]["share_ratio"] == 1.5
+    assert abst == 0
+
+
+def test_material_add_ignores_price_only_weight_growth():
+    """THE core guard: value up 3x, shares flat -> not an add. Price is not conviction."""
+    latest = _book({"AAA": (900, 100), "BBB": (100, 10)})
+    prior = _book({"AAA": (300, 100), "BBB": (700, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_below_ratio_does_not_fire():
+    latest = _book({"AAA": (500, 140), "BBB": (500, 10)})    # 1.4x < 1.5x
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_below_weight_floor_does_not_fire():
+    """Shares tripled, but the position is 0.1% of the book -- below min_position_pct."""
+    latest = _book({"AAA": (1, 300), "BBB": (999, 10)})
+    prior = _book({"AAA": (1, 100), "BBB": (999, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_excludes_new_positions():
+    """A CUSIP absent from prior is a NEW position, never an add -- no cohort overlap."""
+    latest = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    prior = _book({"BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_excludes_exits():
+    latest = _book({"BBB": (500, 10)})
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_abstains_on_missing_shares_either_side():
+    latest = _book({"AAA": (500, None), "BBB": (500, 10)})
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert adds == [] and abst == 1
+
+    latest2 = _book({"AAA": (500, 300), "BBB": (500, 10)})
+    prior2 = _book({"AAA": (500, None), "BBB": (500, 10)})
+    adds2, abst2 = material_add_diff(latest2, prior2)
+    assert adds2 == [] and abst2 == 1
+
+
+def test_material_add_abstains_on_zero_prior_shares():
+    """0 -> 200 is an infinite ratio, not a measurable add. Abstain, never guess."""
+    latest = _book({"AAA": (500, 200), "BBB": (500, 10)})
+    prior = _book({"AAA": (500, 0), "BBB": (500, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert adds == [] and abst == 1
+
+
+def test_material_add_strength_scales_on_weight_increment():
+    """delta_weight 0.05 at full_strength_pct 0.05 -> full strength.
+
+    Tolerance, not equality: 0.15 - 0.10 is 0.04999999999999999 in binary float.
+    """
+    latest = _book({"AAA": (150, 200), "BBB": (850, 10)})    # w 0.15
+    prior = _book({"AAA": (100, 100), "BBB": (900, 10)})     # w 0.10 -> delta 0.05
+    adds, _ = material_add_diff(latest, prior)
+    assert abs(adds[0]["delta_weight"] - 0.05) < 1e-9
+    assert abs(adds[0]["strength"] - 1.0) < 1e-9
+
+
+def test_material_add_negative_delta_weight_clamps_to_zero_strength():
+    """Shares bought into a price decline: still an add, at floor strength, never negative."""
+    latest = _book({"AAA": (100, 300), "BBB": (900, 10)})    # w 0.10
+    prior = _book({"AAA": (300, 100), "BBB": (700, 10)})     # w 0.30 -> delta -0.20
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA"]
+    assert adds[0]["strength"] == 0.0
+
+
+def test_material_add_empty_book_returns_empty():
+    assert material_add_diff({}, _book({"AAA": (1, 1)})) == ([], 0)
+    assert material_add_diff(_book({"AAA": (0, 1)}), _book({"AAA": (1, 1)})) == ([], 0)
+    assert material_add_diff(_book({"AAA": (1, 1)}), {}) == ([], 0)
+
+
+def test_material_add_ordering_is_deterministic():
+    latest = _book({"AAA": (300, 300), "BBB": (300, 200), "CCC": (400, 10)})
+    prior = _book({"AAA": (300, 100), "BBB": (300, 100), "CCC": (400, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA", "BBB"]   # ratio 3.0 then 2.0
+
+
+def test_material_add_and_new_position_diffs_are_disjoint():
+    """Cohort-contamination guard: no CUSIP may appear in both result sets."""
+    latest = _book({"AAA": (300, 150), "NEW": (300, 50), "CCC": (400, 10)})
+    prior = _book({"AAA": (200, 100), "CCC": (400, 10)})
+    news = new_position_diff(latest, prior)
+    adds, _ = material_add_diff(latest, prior)
+    assert {a["cusip"] for a in adds}.isdisjoint({n["cusip"] for n in news})
+    assert {n["cusip"] for n in news} == {"NEW"}
+    assert {a["cusip"] for a in adds} == {"AAA"}
 
 
 # --- signal-level orchestration --------------------------------------------------------

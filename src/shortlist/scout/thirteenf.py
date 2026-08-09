@@ -173,6 +173,74 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
     return out
 
 
+def material_add_diff(latest: dict[str, dict], prior: dict[str, dict], *,
+                      min_position_pct: float = 0.005,
+                      full_strength_pct: float = 0.05,
+                      material_add_ratio: float = 1.50) -> tuple[list[dict], int]:
+    """Existing positions a fund MATERIALLY ADDED to -> `(adds, n_abstained)`.
+
+    A CUSIP qualifies when it is present in BOTH books, its SHARE count grew by at least
+    `material_add_ratio`, and the resulting within-book VALUE weight clears
+    `min_position_pct`.
+
+    Detection is on shares, NOT value or weight, because `value` is market value at quarter
+    end: a position whose stock rose 50% with zero shares bought shows a ~50% weight increase
+    and would otherwise read as conviction. Sizing stays on value weight, because conviction
+    is a share of the book.
+
+    `strength` treats the INCREMENT as the bet — `min(1.0, delta_weight / full_strength_pct)`,
+    where `delta_weight` is the change in within-book weight. A fund adding `full_strength_pct`
+    of book is a full-conviction new bet; a nibble on an existing stake is weak. `delta_weight`
+    is clamped at 0.0 for strength (shares bought into a price decline still emits, at floor
+    strength — the purchase is the signal), though the raw signed value is reported.
+
+    ABSTAINS rather than guessing when either share count is missing or prior shares are <= 0
+    (a 0 -> N ratio is infinite, not measurable); abstentions are COUNTED, never silently
+    dropped. Note the count covers every position held in both books with an unusable count,
+    tallied before the ratio test — it is an `sshPrnamt` coverage diagnostic, not "adds we
+    nearly made".
+
+    New positions (absent from `prior`) and exits (absent from `latest`) are both out of scope
+    by construction, so the result is DISJOINT from `new_position_diff` over the same books.
+
+    An empty or zero-total book on either side yields `([], 0)` — no division by zero.
+
+    Assumes `aggregate_positions`-shaped input, where `value` is always a float. A hand-built
+    entry with `value: None` raises `TypeError`; that is undefended, matching
+    `new_position_diff`, which is why this is not documented as "never raises".
+    """
+    total = sum(p["value"] for p in latest.values() if p.get("value"))
+    prior_total = sum(p["value"] for p in prior.values() if p.get("value"))
+    if total <= 0 or prior_total <= 0:
+        return [], 0
+    out: list[dict] = []
+    abstained = 0
+    for cusip, pos in latest.items():
+        prev = prior.get(cusip)
+        if prev is None:
+            continue                                  # a NEW position, not an add
+        sh_now, sh_before = pos.get("shares"), prev.get("shares")
+        if sh_now is None or sh_before is None or sh_before <= 0:
+            abstained += 1                            # never guess a share count
+            continue
+        ratio = sh_now / sh_before
+        if ratio < material_add_ratio:
+            continue
+        weight = pos["value"] / total
+        if weight < min_position_pct:
+            continue
+        delta_weight = weight - (prev["value"] / prior_total)
+        strength = (min(1.0, max(0.0, delta_weight) / full_strength_pct)
+                    if full_strength_pct > 0 else 1.0)
+        out.append({"cusip": cusip, "name": pos.get("name") or "",
+                    "title": pos.get("title") or "", "value": pos["value"],
+                    "weight": weight, "strength": strength,
+                    "shares_latest": sh_now, "shares_prior": sh_before,
+                    "share_ratio": ratio, "delta_weight": delta_weight})
+    out.sort(key=lambda d: (-d["share_ratio"], d["cusip"]))
+    return out, abstained
+
+
 def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                         fund_name: str, period: str, filing_date: str,
                         fund_cik: str | int | None = None, accession: str = "",
