@@ -294,6 +294,47 @@ check the manifest's `edgar_13f` detail line for the add count and the abstain c
 
 ---
 
+## 6a. Live validation against real filings (2026-08-09, post-implementation)
+
+Ran the shipped `material_add_diff` over each fund's real Q1-2026 vs Q4-2025 infotable pair
+(read-only, outside the scout, production state untouched). This is the offline dress rehearsal
+for the Q2 burst.
+
+| fund | book | `sshPrnamt` parsed | new | adds | abstentions |
+|---|---|---|---|---|---|
+| Berkshire | 29 | 29/29 | 1 | 1 | 0 |
+| Pershing Square | 11 | 11/11 | 1 | 0 | 0 |
+| Baupost | 22 | 22/22 | 6 | 1 | 0 |
+| ValueAct | 18 | 18/18 | 3 | 1 | 0 |
+| Third Point | 33 | 33/33 | 10 | 0 | 0 |
+| Appaloosa | 31 | 31/31 | 1 | 3 | 0 |
+| TCI | 10 | 10/10 | 1 | 0 | 0 |
+| **total** | **154** | **154/154** | **23** | **6** | **0** |
+
+Four findings:
+
+1. **`sshPrnamt` coverage is 100%** across 154 real positions and 7 filers. The abstain path is
+   correct to have, but on this cohort it never fires — a nonzero count in production is
+   therefore a genuine signal that something changed, not routine noise.
+2. **Adds would have added ~26% more supply** (6 against 23 new positions) — material, and not
+   so much that adds dominate the digest. `top_n: 5` never bound (max 3 adds on one filing).
+3. **Face validity is good.** Berkshire ×3.04 Alphabet, Appaloosa ×3.42 Uber / ×2.14 Vistra /
+   ×1.98 Amazon, ValueAct ×1.61 Toast. Strength spread 0.18–1.00, not pinned at the cap.
+4. **No add in this cohort is a stock-split artifact**, and the check is cheap. §2.1's split
+   false positive has a signature — shares up by the split ratio with **flat book weight** — and
+   every real add moved weight substantially:
+
+   | Appaloosa add | share ratio | w prior → now | Δw |
+   |---|---|---|---|
+   | Uber | ×3.42 | 2.21% → 7.68% | +5.47% |
+   | Vistra | ×2.14 | 2.22% → 5.12% | +2.90% |
+   | Amazon | ×1.98 | 7.34% → 15.16% | +7.82% |
+
+   Amazon's ×1.98 is exactly the "looks like a 2:1 split" case, and `delta_weight` settles it:
+   a split leaves weight flat, this doubled it. **If a split guard is ever needed, `|delta_weight|
+   ≈ 0` is the discriminator** — but it is still not built, because on real data the false
+   positive did not occur.
+
 ## 7. Explicitly out of scope
 
 - **Exits** (CUSIP in prior, absent in latest). An exit surfaces a name to *avoid*, and the
