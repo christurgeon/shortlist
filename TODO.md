@@ -23,20 +23,6 @@ the scoring roadmap.
 
 ---
 
-## `docs/FORM4_INSIDER.md` still states the old Form 4 weight (2026-08-07)
-
-Found while shrinking `CLAUDE.md` (moved most per-signal detail into a reference table +
-`docs/EDGAR_ORIGINATORS.md`). `docs/FORM4_INSIDER.md:20` still says `edgar_form4` is "enabled
-at weight 1.5 — the joint-highest of any originator." That was true when the doc was written,
-but PR #152 (`d31170e`) lowered it to 1.0 in the same commit that shipped the signal, and the
-doc's prose was never updated — `CLAUDE.md` and shipped `config.yaml` both correctly say 1.0.
-Low-risk one-line fix; left alone this session since it's outside the CLAUDE.md scope, but
-worth a quick correction next time that file is touched.
-
-**Status:** not fixed, purely a stale-doc note.
-
----
-
 # 1. Watch items — deployed, not yet observed
 
 ## `daily_x` 15 — first live run (2026-08-07)
@@ -247,20 +233,25 @@ top ranks *below* funnel work. Take these when they are cheap or when they unblo
   redundant). Cost is ~1,000 FMP calls against the 250/day free cap — a scheduling/quota
   problem, not a host problem (`FMP_API_KEY` is present; Yahoo *is* reachable from oracle-prod).
 
-## Un-gate the snapshot-replay path (this unblocks two other items)
+## Snapshot-replay path: live, with two standing constraints (2026-08-09)
 
-`backtest/cli.py:437` still hard-refuses `--source snapshot` with "no organic history exists yet
-(needs >= 24 daily captures)" — a stub written when the store was empty. It never inspects the
-store, which now holds ~43 capture days. Replace it with a real store-history check so the path
-activates automatically, and smoke-test end-to-end. Small, no verdict attached.
+`--source snapshot` is un-gated and smoke-tested; the suppression question that gated it is
+answered. What survives is the part that constrains *future* runs:
 
-Then, in order:
-1. **Measure the composite suppression rate on the live store** before trusting any
-   composite-axis replay IC. `SnapshotSignalSource.observe` suppresses the `composite` axis for
-   any card below `validity.min_scored_weight`, and real accumulated snapshots systematically
-   lack price/insider legs — so a plausibly-healthy name is suppressed by design and the rate
-   has never been measured.
-2. **Finnhub `roiTTM` → `roic` proxy** (`data/sources/finnhub.py`): Return on *Investment*
+- **Horizon maturity.** Signals come from the store, forward returns from Yahoo `hists`, so
+  the store's span bounds the *observation grid*, not the horizon. Only **h=1** has matured
+  windows from the earliest captures; **h=3 needs ~late September 2026**. A 3-month replay
+  before then is not a thin result, it is an empty one.
+- **The 0% suppression result is large-cap-only.** 1642/1642 stored snapshots emit
+  `composite` — but the store is 42 large caps, the population where confidence is highest.
+  **Re-measure before trusting composite replay IC if accumulation widens to small/mid**,
+  where `validity.min_scored_weight` (0.25) is far likelier to bind.
+
+Reading trap: low breadth is **not** suppression — a 2026-06-22 grid date shows breadth 10
+because only 10 tickers had been captured that early (42 by 2026-08-08).
+
+**Status:** path live, no verdict attached. Next in this thread, in order:
+1. **Finnhub `roiTTM` → `roic` proxy** (`data/sources/finnhub.py`): Return on *Investment*
    mapped into Return on Invested *Capital*, on the FMP-gated fallback path. The doc half is
    done (inline comment); the numerics half (keep the proxy vs drop to `None`) shifts
    quality/moat and needs a proxy-on-vs-off replay — null the `roic` where
@@ -268,7 +259,7 @@ Then, in order:
    ~706 Finnhub-provenance `roic` snapshots across 43 days, exactly the population at issue.
    `--source xbrl` **cannot** measure this (it derives ROIC from companyfacts and never
    exercises the fallback).
-3. **SUE** is blocked on calendar time only — a prereg-grade verdict (≥8 non-overlapping blocks)
+2. **SUE** is blocked on calendar time only — a prereg-grade verdict (≥8 non-overlapping blocks)
    is a late-2026-into-2027 proposition. Keep accumulating.
 
 **Lazy-Prices (`filing_text_change`) can never validate on this path** — full filing text was

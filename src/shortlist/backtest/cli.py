@@ -14,6 +14,7 @@ from typing import Optional
 import httpx
 
 from ..config import ConfigError, load_config
+from ..data.store import capture_days
 from ..env import load_env
 from .engine import (
     _TRUST_MIN_BREADTH,
@@ -27,11 +28,16 @@ from .metrics import aggregate_ic, cross_signal_xs_corr, spearman_ic
 from .prices import _UA, PriceHistory, _add_months, fetch_history
 from .report import _ic_dict, render_table, report_to_dict
 from .residual import residual_rows
-from .signals import MomentumSignalSource, XbrlSignalSource
+from .signals import MomentumSignalSource, SnapshotSignalSource, XbrlSignalSource
 from .universe import load_universe
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
 _RESIDUALIZE_MIN_NAMES = 10   # hardcoded per design §Implementation 3 -- no flag
+
+# Minimum store-wide captured days before --source snapshot will run. Carried over
+# unchanged from the stub gate this replaces -- the bar was never the disputed part,
+# only that the stub asserted it instead of measuring it.
+_SNAPSHOT_MIN_CAPTURE_DAYS = 24
 
 # Collinearity diagnostic pairs (candidate axis, already-scored axis). Each is checked
 # for cross-sectional rank correlation; >~_COLLINEARITY_REDUNDANT means the candidate
@@ -89,6 +95,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--xbrl-cache-dir", dest="xbrl_cache_dir",
                     default=".cache/sec_xbrl",
                     help="disk cache for companyfacts + the SEC ticker map")
+    ap.add_argument("--store-root", dest="store_root", default="snapshots",
+                    help="accumulated point-in-time snapshot store (--source snapshot); "
+                         "same default as shortlist-accumulate --root")
     ap.add_argument("--step-months", dest="step_months", type=int, default=0,
                     help="grid spacing; 0 = non-overlapping (= max horizon)")
     ap.add_argument("--residualize", dest="residualize",
@@ -427,15 +436,22 @@ def main(argv=None) -> int:
         print("--fit requires --fit-horizon (months); fitted ratios are horizon-conditional",
               file=sys.stderr)
         return 2
+    if args.source == "snapshot":
+        # Activates automatically off real store history. The stub this replaces
+        # asserted emptiness unconditionally and never inspected the store, so it
+        # kept refusing 23 days after the store passed its own stated bar. Report
+        # the count found: a refusal has to be falsifiable.
+        n_days = len(capture_days(args.store_root))
+        if n_days < _SNAPSHOT_MIN_CAPTURE_DAYS:
+            print(f"--source snapshot needs >= {_SNAPSHOT_MIN_CAPTURE_DAYS} captured days "
+                  f"in the store; {args.store_root!r} has {n_days}. Run "
+                  f"shortlist-accumulate, point --store-root at the real store, or use "
+                  f"--source momentum.", file=sys.stderr)
+            return 2
     if args.fit and args.fit_horizon < 1:
         # A 0-month horizon would spin observation_grid forever (_add_months(cur, 0)
         # never advances) — reject before any work.
         print("--fit-horizon must be a positive integer month (>= 1)", file=sys.stderr)
-        return 2
-    if args.source == "snapshot":
-        print("snapshot source is GATED: no organic point-in-time snapshot history "
-              "exists yet (needs >= 24 daily captures). Use --source momentum.",
-              file=sys.stderr)
         return 2
 
     residualize: tuple[str, list[str]] | None = None
@@ -529,6 +545,12 @@ def main(argv=None) -> int:
                 cik_for(tk, _idx), cache_dir=_cdir, month=_month)
 
         src = XbrlSignalSource(None, hists, thresholds, fact_loader=_fact_loader)
+    elif args.source == "snapshot":
+        # Signals come from the stored point-in-time snapshots; forward RETURNS still
+        # come from `hists`, so the store's span bounds the observation grid only, not
+        # the horizon. NOTE this branch must exist: without it `snapshot` falls through
+        # to the momentum `else` and reports a momentum backtest as a snapshot result.
+        src = SnapshotSignalSource(args.store_root, config)
     else:
         src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
     if args.fit:
