@@ -244,3 +244,83 @@ def test_fit_horizon_negative_rejected(capsys):
     rc = main(["--source", "xbrl", "--fit", "--fit-horizon", "-3"])
     assert rc == 2
     assert "--fit-horizon" in capsys.readouterr().err
+
+
+# --- snapshot-replay source: un-gated against real store history (2026-08-09) ---
+
+def _seed_store(root, tickers=("AAA", "BBB"), n_days=30, start=date(2026, 6, 1)):
+    """Write `n_days` of minimal point-in-time snapshots per ticker under `root`."""
+    from datetime import timedelta
+
+    from shortlist.data.models import TickerSnapshot
+    from shortlist.data.store import save
+
+    for t in tickers:
+        for i in range(n_days):
+            day = start + timedelta(days=i)
+            save(TickerSnapshot(ticker=t, as_of=f"{day.isoformat()}T00:00:00+00:00"), root)
+    return root
+
+
+def _snapshot_histories():
+    """Deterministic daily closes spanning the seeded store window + a forward year."""
+    from datetime import timedelta
+
+    from shortlist.backtest.prices import PriceHistory
+
+    def _ramp(ticker, step):
+        d0 = date(2026, 1, 1)
+        dates = [d0 + timedelta(days=i) for i in range(500)]
+        closes = [100.0 + step * i for i in range(500)]
+        return PriceHistory(ticker, dates, closes)
+
+    async def fake_load(tickers, cache_dir, today):
+        return {"AAA": _ramp("AAA", 3.0), "BBB": _ramp("BBB", 1.0)}, _ramp("SPY", 0.5)
+
+    return fake_load
+
+
+def test_snapshot_source_constructs_snapshot_signal_source(tmp_path, monkeypatch):
+    """--source snapshot must build a SnapshotSignalSource.
+
+    The CLI had NO snapshot branch — only the gate — so merely deleting the gate
+    falls through the `else` and runs a MOMENTUM backtest that is then reported,
+    to stdout/--json/--csv, as a snapshot result. Silent wrong-measurement, the
+    exact failure this repo retracts claims over.
+    """
+    from shortlist.backtest import cli
+    from shortlist.backtest.signals import SnapshotSignalSource
+
+    root = _seed_store(tmp_path / "store")
+    captured = {}
+
+    def fake_run_backtest(srcs, hists, spy, **kw):
+        captured["srcs"] = srcs
+        return _report()
+
+    monkeypatch.setattr(cli, "_load_histories", _snapshot_histories())
+    monkeypatch.setattr(cli, "run_backtest", fake_run_backtest)
+    rc = cli.main(["--tickers", "AAA,BBB", "--source", "snapshot",
+                   "--store-root", str(root), "--horizons", "1",
+                   "--start", "2026-06-01", "--end", "2026-06-05"])
+    assert rc == 0
+    assert isinstance(captured["srcs"][0], SnapshotSignalSource)
+
+
+def test_snapshot_source_refused_when_store_history_too_thin(tmp_path, capsys, monkeypatch):
+    """The gate must inspect the store, not assert emptiness from a stale stub —
+    and must report the count it actually found so the refusal is falsifiable."""
+    from shortlist.backtest import cli
+
+    root = _seed_store(tmp_path / "store", n_days=5)
+    monkeypatch.setattr(cli, "_load_histories", _snapshot_histories())
+    rc = cli.main(["--tickers", "AAA,BBB", "--source", "snapshot",
+                   "--store-root", str(root), "--horizons", "1"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "5" in err and "24" in err
+
+
+def test_arg_parser_store_root_default():
+    ap = build_arg_parser()
+    assert ap.parse_args([]).store_root == "snapshots"

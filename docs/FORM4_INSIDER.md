@@ -17,7 +17,14 @@ reference for a multi-session build.
 
 ## 1. Why
 
-`edgar_form4` is **enabled at weight 1.5 — the joint-highest of any originator — and has
+> **Stale-prose correction (2026-08-09).** This section states the motivation *as it stood
+> before* PR #152. Two of its facts no longer hold: the weight is **1.0**, not 1.5 (#152
+> lowered it in the same commit that shipped the signal — `config.yaml` and `CLAUDE.md` are
+> the current record), and `preregister/edgar_form4.yaml` **is** committed. Still true: no
+> `_BACKFILL_SPECS` row and no cohort has run, so the signal remains unmeasured — see
+> TODO §3 "The Form 4 backfill leg is not wired."
+
+`edgar_form4` was **enabled at weight 1.5 — the joint-highest of any originator — and had
 never been measured**: no `preregister/edgar_form4.yaml`, no `_BACKFILL_SPECS` row, no audit.
 Three *lower*-weighted originators were disabled by measurement while this one was never
 asked to justify itself.

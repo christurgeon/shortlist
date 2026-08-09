@@ -87,3 +87,20 @@ def captured_days(ticker: str, root: str | Path) -> list[str]:
     if not tdir.is_dir():
         return []
     return sorted(_files_by_day(tdir))
+
+
+def capture_days(root: str | Path) -> list[str]:
+    """Sorted distinct ISO days present ANYWHERE in the store (empty if none).
+
+    Store-wide history depth, as opposed to `captured_days`' per-ticker view: a
+    day on which only some tickers were captured still counts, because it is a
+    day the grid can observe. Same-day .json/.json.gz twins collapse to one day.
+    """
+    rdir = Path(root)
+    if not rdir.is_dir():
+        return []
+    days: set[str] = set()
+    for tdir in rdir.iterdir():
+        if tdir.is_dir():        # the live store keeps `_runs.jsonl` beside the tickers
+            days.update(_files_by_day(tdir))
+    return sorted(days)

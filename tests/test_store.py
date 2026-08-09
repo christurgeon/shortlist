@@ -3,7 +3,7 @@ import gzip
 import json
 
 from shortlist.data.models import Fundamentals, TickerSnapshot
-from shortlist.data.store import captured_days, load, save
+from shortlist.data.store import capture_days, captured_days, load, save
 
 
 def _snap(ticker="LMT", as_of="2026-07-07T00:00:00+00:00"):
@@ -48,6 +48,31 @@ def test_save_unlinks_legacy_twin_for_same_day(tmp_path):
     assert not (tdir / "2026-07-07.json").exists()
     assert (tdir / "2026-07-07.json.gz").exists()
     assert captured_days("LMT", tmp_path) == ["2026-07-07"]   # counted once
+
+
+def test_capture_days_unions_distinct_days_across_tickers(tmp_path):
+    """Store-wide history depth: the union of days, deduped across tickers (a
+    day one ticker missed is still a captured day), never double-counting a
+    same-day .json/.json.gz twin."""
+    save(_snap("AAA", "2026-07-06T00:00:00+00:00"), tmp_path)
+    save(_snap("AAA", "2026-07-07T00:00:00+00:00"), tmp_path)
+    save(_snap("BBB", "2026-07-07T00:00:00+00:00"), tmp_path)   # same day, 2nd ticker
+    save(_snap("BBB", "2026-07-08T00:00:00+00:00"), tmp_path)
+    assert capture_days(tmp_path) == ["2026-07-06", "2026-07-07", "2026-07-08"]
+
+
+def test_capture_days_empty_for_missing_root(tmp_path):
+    assert capture_days(tmp_path / "nope") == []
+
+
+def test_capture_days_ignores_non_ticker_files_at_store_root(tmp_path):
+    """The live store keeps `_runs.jsonl` beside the ticker directories, so a stray
+    root-level file must not disturb the day list. API-level guarantee only: it holds
+    both via the `is_dir()` skip AND because globbing a non-directory yields nothing,
+    so this does NOT pin either mechanism on its own (verified by removing the skip)."""
+    save(_snap("AAA", "2026-07-06T00:00:00+00:00"), tmp_path)
+    (tmp_path / "_runs.jsonl").write_text('{"run": 1}\n')
+    assert capture_days(tmp_path) == ["2026-07-06"]
 
 
 def test_save_failure_cleans_up_temp_file(tmp_path, monkeypatch):
