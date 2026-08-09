@@ -809,6 +809,14 @@ class EdgarThirteenFSignal:
     the information is up to 45 days stale (the clone return is measured from the FILING date,
     the lag priced into the literature). Keyless + VPS-safe (pure SEC, no Yahoo WAF).
 
+    A SECOND diff (`scout.thirteenf.material_add`, ON) runs over the same two books at zero
+    extra SEC cost and emits `edgar:13f_material_add` for positions the fund materially ADDED
+    to — detected on SHARE count, because `value` is quarter-end market value and a price rise
+    alone would read as conviction. It carries its own weight (0.75) via `cfg_key_for`, its own
+    per-filing `top_n`, and `meta["kind"]` so the two cohorts stay separable. Disabled or
+    absent => byte-identical to new-positions-only. Design:
+    `docs/audits/2026-08-09-13f-material-adds-design.md`.
+
     Seen-accession semantics differ from the 8-K originator deliberately: a fund's latest
     13F-HR is marked processed ONCE the diff runs, even when it yields zero new positions —
     otherwise an empty-diff fund re-downloads both infotables every day forever. `max_filings
@@ -823,6 +831,7 @@ class EdgarThirteenFSignal:
                  min_position_pct: float = 0.005, full_strength_pct: float = 0.05,
                  max_filings_per_day: int = 3, top_n: int = 10,
                  deny_list: list[str] | None = None,
+                 material_add: dict | None = None,
                  seen_accessions: list[str] | None = None, timeout: float = 30.0,
                  resolver_cache_dir: str = ".cache/sec_tickers",
                  ftd_cache_dir: str = ".cache/sec_ftd") -> None:
@@ -832,6 +841,12 @@ class EdgarThirteenFSignal:
         self.full_strength_pct = full_strength_pct
         self.max_filings_per_day = max_filings_per_day
         self.top_n = top_n
+        # Second diff over the SAME two books (zero extra SEC requests). Absent or disabled
+        # => byte-identical to the new-positions-only behaviour.
+        ma = dict(material_add or {})
+        self.material_add_on = bool(ma.get("enabled"))
+        self.material_add_ratio = float(ma.get("ratio", 1.50))
+        self.material_add_top_n = int(ma.get("top_n", 5))
         self.deny_list = list(deny_list or [])
         self.seen_accessions = set(seen_accessions or [])
         self.timeout = timeout
@@ -874,6 +889,9 @@ class EdgarThirteenFSignal:
         out: list[Emission] = []
         processed = 0
         abstained = 0
+        n_new = 0            # NOT len(out): `out` also carries material adds
+        n_adds = 0
+        add_abstained = 0
         errors = 0
         last_error: str | None = None
         capped = False
@@ -929,8 +947,10 @@ class EdgarThirteenFSignal:
                     self._mark_processed(latest["accession"])
                     processed += 1
                     continue
+                latest_agg = tf.aggregate_positions(latest_rows)
+                prior_agg = tf.aggregate_positions(prior_rows)
                 new_pos = tf.new_position_diff(
-                    tf.aggregate_positions(latest_rows), tf.aggregate_positions(prior_rows),
+                    latest_agg, prior_agg,
                     min_position_pct=self.min_position_pct,
                     full_strength_pct=self.full_strength_pct)
                 ems, abst = tf.thirteenf_emissions(
@@ -939,7 +959,26 @@ class EdgarThirteenFSignal:
                     fund_cik=cik, accession=latest["accession"],
                     deny_list=self.deny_list, top_n=self.top_n)
                 out.extend(ems)
+                n_new += len(ems)
                 abstained += abst
+                if self.material_add_on:
+                    # Same two books, no refetch. Emitted AFTER new positions so the sharper
+                    # signal wins a contested per-filing budget.
+                    adds, add_abst = tf.material_add_diff(
+                        latest_agg, prior_agg,
+                        min_position_pct=self.min_position_pct,
+                        full_strength_pct=self.full_strength_pct,
+                        material_add_ratio=self.material_add_ratio)
+                    add_ems, add_res_abst = tf.thirteenf_emissions(
+                        adds, resolve_fn=self._resolver.resolve, fund_name=fund_name,
+                        period=latest["period"], filing_date=latest["filing_date"],
+                        fund_cik=cik, accession=latest["accession"],
+                        deny_list=self.deny_list, top_n=self.material_add_top_n,
+                        kind="material_add", signal=tf.SIGNAL_MATERIAL_ADD)
+                    out.extend(add_ems)
+                    n_adds += len(add_ems)
+                    abstained += add_res_abst
+                    add_abstained += add_abst
                 self._mark_processed(latest["accession"])   # processed even on empty diff
                 processed += 1
             except Exception as e:  # noqa: BLE001 — isolate one bad fund; keep the rest
@@ -948,13 +987,21 @@ class EdgarThirteenFSignal:
                 continue
 
         tail = f", {abstained} unresolved CUSIPs" if abstained else ""
+        if self.material_add_on:
+            tail += f", {n_adds} material add(s)"
+            # NOT "adds we abstained on": this counts every position held in BOTH books whose
+            # share count was unusable or non-positive, tallied before the ratio test. It is
+            # an `sshPrnamt` coverage diagnostic, so a 3-digit value on a large filer is not
+            # in itself a fault.
+            tail += (f" ({add_abstained} overlapping positions with unusable share counts)"
+                     if add_abstained else "")
         tail += f", {errors} fund errors" if errors else ""
         if errors and last_error:
             tail += f" (last: {last_error})"    # surfaced, not dead state
         tail += "; filings-cap hit (carry-over)" if capped else ""
         tail += ("; " + "; ".join(skipped)) if skipped else ""   # loud, named skip notes
         self._status = (errors == 0,
-                        f"{len(out)} new 13F positions from {processed} filings"
+                        f"{n_new} new 13F positions from {processed} filings"
                         f" ({len(self.funds)} funds){tail}")
         return out
 

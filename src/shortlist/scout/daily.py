@@ -141,6 +141,7 @@ def _signal_kwargs(scout_cfg: dict, last_finra_settlement: str | None = None,
                       "max_filings_per_day": tf.get("max_filings_per_day", 3),
                       "top_n": tf.get("top_n", 10),
                       "deny_list": tf.get("deny_list", []),
+                      "material_add": tf.get("material_add", {}),
                       "seen_accessions": thirteenf_seen or []},
         "edgar_buyback": {"identity": os.environ.get("SEC_IDENTITY"),
                           "phrases": bb.get("phrases"),   # None => buyback.DEFAULT_PHRASES

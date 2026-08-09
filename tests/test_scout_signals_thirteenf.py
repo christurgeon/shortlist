@@ -375,6 +375,102 @@ def _wire(sig, monkeypatch, *, submissions, infotables):
     monkeypatch.setattr(tf, "fetch_infotable_rows", fake_info)
 
 
+_ADD_CUSIPS = {"OLDCUS": "OLDTKR", "NEWCUS": "NEWTKR", "BIGCUS": "BIGTKR",
+               "ACUS": "ATKR", "BCUS": "BTKR", "CCUS": "CTKR"}
+
+
+def _signal_with(monkeypatch, infos, *, material_add, top_n=10):
+    """An EdgarThirteenFSignal wired to two fake infotables ('acc-latest'/'acc-prior')."""
+    sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}],
+                               top_n=top_n, material_add=material_add)
+    sig._resolver = _FakeResolver(dict(_ADD_CUSIPS))
+    _wire(sig, monkeypatch,
+          submissions={1067983: _submissions([
+              ("13F-HR", "acc-latest", "2026-08-14", "2026-06-30"),
+              ("13F-HR", "acc-prior", "2026-05-15", "2026-03-31")])},
+          infotables=infos)
+    return sig
+
+
+def _run_signal_with(monkeypatch, infos, *, material_add, top_n=10):
+    return _signal_with(monkeypatch, infos, material_add=material_add,
+                        top_n=top_n).scan(date(2026, 8, 14))
+
+
+# AAA/OLDCUS shares 100 -> 200 (a 2x add); NEWCUS is a brand-new position.
+_MIXED_LATEST = [("Old Co", "OLDCUS", 300, "SH", "", 200),
+                 ("New Co", "NEWCUS", 300, "SH", "", 50),
+                 ("Big Co", "BIGCUS", 400, "SH", "", 10)]
+_MIXED_PRIOR = [("Old Co", "OLDCUS", 200, "SH", "", 100),
+                ("Big Co", "BIGCUS", 400, "SH", "", 10)]
+_MIXED = {"acc-latest": _infotable(_MIXED_LATEST), "acc-prior": _infotable(_MIXED_PRIOR)}
+_ADD_ON = {"enabled": True, "ratio": 1.5, "top_n": 5}
+
+
+def test_signal_emits_material_adds_with_own_signal_string(monkeypatch):
+    ems = _run_signal_with(monkeypatch, _MIXED, material_add=_ADD_ON)
+    adds = [e for e in ems if e.signal == "edgar:13f_material_add"]
+    assert [e.ticker for e in adds] == ["OLDTKR"]
+    assert adds[0].meta["kind"] == "material_add"
+    assert adds[0].meta["share_ratio"] == 2.0
+    assert adds[0].is_discovery is True
+    assert "added to 13F position" in adds[0].evidence
+
+
+def test_signal_material_add_disabled_is_inert(monkeypatch):
+    ems = _run_signal_with(monkeypatch, _MIXED, material_add={"enabled": False})
+    assert all(e.signal != "edgar:13f_material_add" for e in ems)
+    assert [e.ticker for e in ems] == ["NEWTKR"]      # only the new position
+
+
+def test_signal_material_add_absent_config_is_inert(monkeypatch):
+    """No `material_add` key at all must behave exactly like disabled."""
+    ems = _run_signal_with(monkeypatch, _MIXED, material_add=None)
+    assert [e.ticker for e in ems] == ["NEWTKR"]
+
+
+def test_signal_new_positions_are_emitted_before_adds(monkeypatch):
+    ems = _run_signal_with(monkeypatch, _MIXED, material_add=_ADD_ON)
+    sigs = [e.signal for e in ems]
+    assert sigs.index("edgar:13f_new_position") < sigs.index("edgar:13f_material_add")
+
+
+def test_signal_material_add_top_n_is_independent_of_new_position_top_n(monkeypatch):
+    latest = [("A Co", "ACUS", 200, "SH", "", 300), ("B Co", "BCUS", 200, "SH", "", 300),
+              ("C Co", "CCUS", 200, "SH", "", 300), ("Big", "BIGCUS", 400, "SH", "", 10)]
+    prior = [("A Co", "ACUS", 200, "SH", "", 100), ("B Co", "BCUS", 200, "SH", "", 100),
+             ("C Co", "CCUS", 200, "SH", "", 100), ("Big", "BIGCUS", 400, "SH", "", 10)]
+    infos = {"acc-latest": _infotable(latest), "acc-prior": _infotable(prior)}
+    ems = _run_signal_with(monkeypatch, infos,
+                           material_add={"enabled": True, "ratio": 1.5, "top_n": 2})
+    adds = [e for e in ems if e.signal == "edgar:13f_material_add"]
+    assert len(adds) == 2          # capped at material_add.top_n, not top_n: 10
+
+
+def test_signal_status_counts_adds_separately_from_new_positions(monkeypatch):
+    """The headline count must NOT absorb adds -- spec §6 tells the owner to read this line."""
+    sig = _signal_with(monkeypatch, _MIXED, material_add=_ADD_ON)
+    sig.scan(date(2026, 8, 14))
+    _ran, detail = sig.available()
+    assert "1 new 13F positions" in detail      # NOT 2 -- the add must not be counted here
+    assert "1 material add" in detail
+
+
+def test_signal_status_reports_share_count_abstentions(monkeypatch):
+    """A position held in both books with no usable share count is a coverage diagnostic."""
+    latest = (f'<informationTable xmlns="{_NS}"><infoTable>'
+              "<nameOfIssuer>Old Co</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+              "<cusip>OLDCUS</cusip><value>500</value>"
+              "<shrsOrPrnAmt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+              "</infoTable></informationTable>")
+    infos = {"acc-latest": latest,
+             "acc-prior": _infotable([("Old Co", "OLDCUS", 400, "SH", "", 100)])}
+    sig = _signal_with(monkeypatch, infos, material_add=_ADD_ON)
+    sig.scan(date(2026, 8, 14))
+    _ran, detail = sig.available()
+    assert "1 overlapping positions with unusable share counts" in detail
+
+
 def test_scan_emits_new_position_and_marks_processed(monkeypatch):
     sig = EdgarThirteenFSignal(funds=[{"cik": 1067983, "name": "Berkshire"}])
     sig._resolver = _FakeResolver({"NEWCUS": "NEW", "OLDCUS": "OLD"})

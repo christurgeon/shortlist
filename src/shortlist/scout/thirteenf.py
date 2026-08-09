@@ -23,6 +23,7 @@ from .models import Emission
 from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottle re-exported
 
 SIGNAL = "edgar:13f_new_position"
+SIGNAL_MATERIAL_ADD = "edgar:13f_material_add"
 
 # Emission strength = within-book conviction, capped at 1.0 (design §1.8): a 5%-of-book new
 # position is a full-conviction bet. Below the 13D/Form-4 marquee tier only via the smaller
@@ -244,14 +245,24 @@ def material_add_diff(latest: dict[str, dict], prior: dict[str, dict], *,
 def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                         fund_name: str, period: str, filing_date: str,
                         fund_cik: str | int | None = None, accession: str = "",
-                        deny_list=None, top_n: int = 10) -> tuple[list[Emission], int]:
-    """New-position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
+                        deny_list=None, top_n: int = 10,
+                        kind: str = "new_position",
+                        signal: str = SIGNAL) -> tuple[list[Emission], int]:
+    """Position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
     ticker (abstain on a miss — counted, never guessed), drops deny-listed + 5th-letter
     junk-suffix symbols, dedups within the filing, and caps at `top_n` KEPT names (an
     unresolved position never consumes a slot). Emissions carry `cik=None` (the CUSIP
     resolver yields a ticker but no *subject* CIK — a stated measurement limit); the FUND's
     identity + filing accession ride `meta` (`fund_cik`/`fund_name`/`adsh`) as firehose join
-    keys for per-fund attribution, matching the 8-K/13D/buyback emissions. Never raises."""
+    keys for per-fund attribution, matching the 8-K/13D/buyback emissions.
+
+    `kind`/`signal` default to the NEW-POSITION behaviour, so every pre-existing call site is
+    unchanged. Pass `kind="material_add", signal=SIGNAL_MATERIAL_ADD` for `material_add_diff`
+    output: that switches the evidence wording and adds the share-ratio fields to `meta`.
+    `meta["kind"]` is the firehose join key that keeps the two cohorts separable, so a later
+    measurement can never pool an add with a fresh best idea.
+
+    Never raises."""
     deny = {str(d).upper() for d in (deny_list or [])}
     out: list[Emission] = []
     seen: set[str] = set()
@@ -267,14 +278,23 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
         seen.add(tkr)
         pct = pos["weight"] * 100.0
         qlabel = _quarter_label(period)
-        ev = (f"{fund_name} new 13F position ({qlabel}, filed {filing_date}): "
-              f"{pct:.1f}% of book")
-        out.append(Emission(tkr, SIGNAL, pos["strength"], ev, is_discovery=True,
-                            cik=None, meta={"cusip": pos["cusip"], "period": period,
-                                            "filing_date": filing_date, "weight": pos["weight"],
-                                            "fund_cik": (str(fund_cik) if fund_cik is not None
-                                                         else None),
-                                            "fund_name": fund_name, "adsh": accession}))
+        if kind == "material_add":
+            ev = (f"{fund_name} added to 13F position ({qlabel}, filed {filing_date}): "
+                  f"shares +{(pos['share_ratio'] - 1.0) * 100:.0f}%, now {pct:.1f}% of book")
+        else:
+            ev = (f"{fund_name} new 13F position ({qlabel}, filed {filing_date}): "
+                  f"{pct:.1f}% of book")
+        meta = {"cusip": pos["cusip"], "period": period, "kind": kind,
+                "filing_date": filing_date, "weight": pos["weight"],
+                "fund_cik": (str(fund_cik) if fund_cik is not None else None),
+                "fund_name": fund_name, "adsh": accession}
+        if kind == "material_add":
+            meta.update({"share_ratio": pos["share_ratio"],
+                         "shares_latest": pos["shares_latest"],
+                         "shares_prior": pos["shares_prior"],
+                         "delta_weight": pos["delta_weight"]})
+        out.append(Emission(tkr, signal, pos["strength"], ev, is_discovery=True,
+                            cik=None, meta=meta))
         if len(out) >= top_n:
             break
     return out, abstained
