@@ -150,3 +150,46 @@ def test_scan_discovery_without_cfg_key_for_is_unchanged(tmp_path):
         session=date(2026, 8, 14), sig_cfg=sig_cfg, statuses=[])
     assert weights == {"edgar:form4_opportunistic": 1.0}
     assert caps == {"edgar:form4_opportunistic": 3}
+
+
+# --- repo config ships material adds ON, and plumbs through ------------------------------
+
+def test_repo_config_ships_material_add_enabled():
+    ma = _CFG["scout"]["thirteenf"]["material_add"]
+    assert ma["enabled"] is True
+    assert ma["ratio"] == 1.50
+    assert ma["top_n"] == 5
+
+
+def test_repo_config_material_add_weight_is_below_new_positions():
+    sig = _CFG["scout"]["signals"]
+    assert sig["edgar_13f_material_add"]["weight"] == 0.75
+    assert sig["edgar_13f"]["weight"] == 1.0
+    assert sig["edgar_13f_material_add"]["weight"] < sig["edgar_13f"]["weight"]
+
+
+def test_repo_config_material_add_key_is_weight_only_and_not_buildable():
+    """No `enabled` here (that would be a dead knob), and it must never build a signal."""
+    assert set(_CFG["scout"]["signals"]["edgar_13f_material_add"]) == {"weight"}
+    assert "edgar_13f_material_add" not in _KNOWN_SIGNAL_KEYS
+    assert "edgar_13f_material_add" not in _DISCOVERY_SIGNAL_NAMES
+    assert "edgar_13f_material_add" not in _enabled_signal_names(_CFG["scout"])
+
+
+def test_repo_config_family_cap_lives_on_the_parent_key():
+    """max_slots governs the family, so it must be on edgar_13f, not the add's key."""
+    assert _CFG["scout"]["signals"]["edgar_13f"]["max_slots"] == 4
+    assert "max_slots" not in _CFG["scout"]["signals"]["edgar_13f_material_add"]
+
+
+def test_signal_kwargs_threads_material_add_block():
+    cfg = {"thirteenf": {"funds": [], "material_add": {"enabled": True, "ratio": 1.5,
+                                                       "top_n": 5}}}
+    kw = _signal_kwargs(cfg)["edgar_13f"]
+    assert kw["material_add"] == {"enabled": True, "ratio": 1.5, "top_n": 5}
+
+
+def test_signal_kwargs_material_add_absent_is_empty_dict():
+    """A config with no material_add block must yield the inert default, never a KeyError."""
+    kw = _signal_kwargs({"thirteenf": {"funds": []}})["edgar_13f"]
+    assert kw["material_add"] == {}

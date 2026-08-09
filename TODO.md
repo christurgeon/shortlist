@@ -58,6 +58,31 @@ Bali's MAX-effect literature ties to *under*performance. No backfill is possible
 publishes no history. Shipping it ENABLED is a deliberate exception to the contested-prior
 precedent, recorded as the owner's call.
 
+## `edgar:13f_material_add` — first live burst (shipped 2026-08-09)
+
+ENABLED at weight 0.75, `ratio: 1.50`, `top_n: 5`, family cap `max_slots: 4` on `edgar_13f`
+(governs both kinds). **Never run against a real filing.** Verified live 2026-08-09: all 7
+funds' latest 13F-HR is Q1 (period 2026-03-31) and already in `thirteenf_seen`, so the full Q2
+burst is still ahead. Q2 is due **2026-08-14** and these funds file at the deadline (Q1 → filed
+May 14/15). `_mark_processed` burns an accession permanently, so a fund processed before the
+deploy loses that quarter's adds until November — **deploy by 2026-08-12**. Aug 15/16 are a
+weekend, so with `max_filings_per_day: 3` the 7-fund burst absorbs across Fri 14 (3), Mon 17
+(3), Tue 18 (1).
+
+Read from the first post-burst manifest:
+- the `N material add(s)` count, and that the `N new 13F positions` headline still counts
+  **only** new positions (it was `len(out)` pre-ship, which would have absorbed adds);
+- `N overlapping positions with unusable share counts` — every position held in **both** books
+  whose `sshPrnamt` was missing or non-positive, tallied *before* the ratio test. A 3-digit
+  value on a large filer is not itself a fault; it is an `sshPrnamt` coverage diagnostic, **not**
+  "adds we abstained on";
+- whether any add is a **stock split** false positive (shares ≈2.0× with flat book weight).
+  Documented and deliberately unmitigated — count it before deciding it needs a guard.
+
+Expect a new `INSUFFICIENT` row for `edgar:13f_material_add` in `shortlist-scout validate` and
+the digest verdicts section: it has no prereg, for the same PiT CUSIP→symbology reason
+`edgar:13f_new_position` has none. Expected, not a regression.
+
 ## Weekend finality-vs-cursor edge (8-K veto)
 
 The EFTS day-cache freezes a day as FINAL by *calendar* fetch-age while the sweep cursor lags
@@ -166,8 +191,11 @@ standing full-universe originator. Plan of record for Tracks B/C:
 - **FINRA short-interest:** a cleaner fund/ETF universe filter than the seed `deny_list` (the
   5th-letter drop misses 4-letter ETFs/CEFs); **from-zero ramps** (brand-new short positions,
   currently dropped by `min_prev_short_shares`) as a separate absolute-share variant.
-- **13F:** material-adds/exits (v1 is new-positions only); a PiT CUSIP→symbology backfill cohort
-  (live FTD files leak post-event symbols, so this is deferred by design).
+- **13F:** material-**exits** as a negative-context veto (adds SHIPPED 2026-08-09,
+  `docs/audits/2026-08-09-13f-material-adds-design.md`; exits need veto machinery and their own
+  evidence, and a wrong veto silently deletes real picks from a supply-starved funnel), and
+  trims on the same reasoning; a PiT CUSIP→symbology backfill cohort (live FTD files leak
+  post-event symbols, so this is deferred by design).
 - **13D:** a stake-**decrease**/exit negative-context signal; reweighting initial-13D strength by
   stake-% (needs ledger data first); extending the curated `scout/quality.py:_MARQUEE` alias map
   as new credible activists appear.

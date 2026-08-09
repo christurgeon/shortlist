@@ -776,6 +776,30 @@ scout:
                              # (never dropped), spreading the burst across sessions
     top_n: 10                # cap emissions per filing by within-book weight
     deny_list: []
+    material_add:            # SECOND diff over the SAME two books (zero extra SEC requests):
+                             # existing positions the fund materially ADDED to. Detected on
+                             # SHARE count (sshPrnamt), NOT value — `value` is quarter-end
+                             # market value, so a stock up 50% with zero shares bought shows a
+                             # ~50% book-weight rise and would read as conviction. Sized on
+                             # value weight, because conviction is a share of the book.
+                             # Ships ENABLED at weight 0.75 (below new positions' 1.0): the
+                             # prior is real but weaker — an add moves a holding TOWARD the
+                             # large-weight "best ideas" territory (Cohen-Polk-Silli 2010)
+                             # rather than being the fresh best-idea event
+                             # Martin-Puthenpurackal (2008) replication measures. Owner's call
+                             # 2026-08-09; design, thresholds and limitations in
+                             # docs/audits/2026-08-09-13f-material-adds-design.md.
+                             # KNOWN false positive, documented and NOT mitigated: a 2:1 stock
+                             # split doubles shares with no purchase. Rare across a 7-fund
+                             # concentrated book, and it surfaces a name a marquee fund already
+                             # holds — the cost is a wasted slot, not junk in the digest.
+                             # Count it from the firehose before adding a guard.
+      enabled: true          # THE on/off switch. false (or absent) => byte-identical to the
+                             # new-positions-only behaviour: no second diff, no add emissions
+      ratio: 1.50            # shares_latest / shares_prior bar. +50% is unambiguous
+                             # accumulation rather than a rebalance
+      top_n: 5               # per-filing cap, SEPARATE from top_n: 10 above so adds cannot
+                             # crowd out new positions (the sharper signal) inside one filing
   buyback:                   # EdgarBuybackSignal — NEW repurchase-authorization discovery from
                              # 8-K full text (EFTS phrase query, data/efts.py; own cache
                              # namespace .cache/efts_buyback). A DEFENSIBLE academic prior
@@ -849,9 +873,25 @@ scout:
                                                    # (preregister/edgar_13d_stake_increase.yaml)
     finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
     edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
-    edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
+    edgar_13f: {enabled: true, weight: 1.0, max_slots: 4}
+                                              # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
                                               # Cohen-Polk-Silli 2010) — DEFENSIBLE prior, ON; weight below the
-                                              # 13D/Form-4 tier (info up to 45 days stale; return from FILING date)
+                                              # 13D/Form-4 tier (info up to 45 days stale; return from FILING date).
+                                              # max_slots ADDED 2026-08-09 and governs the whole `edgar:13f` FAMILY
+                                              # (new positions + material adds) — budget.signal_family collapses
+                                              # them, since two funds agreeing is not two originators agreeing.
+                                              # NOT a hard quota: budget.select backfills, so on a burst night where
+                                              # 13F is the only supply it still fills every slot. It only gives the
+                                              # other originators first refusal, which matters because 13F volume is
+                                              # quarterly-bursty and supply is the binding constraint the rest of
+                                              # the time.
+    # Weight-only lookup key for the `edgar:13f_material_add` emission string (see
+    # scout.thirteenf.material_add). NOT a buildable signal — deliberately absent from
+    # daily.py's _KNOWN_SIGNAL_KEYS, so there is NO `enabled` here: that switch is
+    # scout.thirteenf.material_add.enabled. One switch, one place. Adding `enabled` here would
+    # be a dead knob that reads as authoritative; adding the key to _DISCOVERY_SIGNAL_NAMES
+    # would build a second signal object and re-fetch every infotable.
+    edgar_13f_material_add: {weight: 0.75}
     edgar_buyback: {enabled: false, weight: 0.5}   # INSUFFICIENT (re-derived 2026-07-26), NOT killed.
                                                    # The 2026-07-11 KILL was RETRACTED: its "90% CI entirely
                                                    # negative" rested on a bootstrap over an already-flattened
