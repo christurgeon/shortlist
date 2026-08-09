@@ -193,3 +193,37 @@ def test_signal_kwargs_material_add_absent_is_empty_dict():
     """A config with no material_add block must yield the inert default, never a KeyError."""
     kw = _signal_kwargs({"thirteenf": {"funds": []}})["edgar_13f"]
     assert kw["material_add"] == {}
+
+
+def test_real_cfg_key_for_hook_resolves_to_the_repo_config_weights():
+    """Ties the REAL hook to the REAL config in one assertion, so neither can drift alone.
+
+    Without this, the hook (`signals.py:cfg_key_for`) and the config key were pinned to the
+    same literal INDEPENDENTLY, with a fake in between. A typo in the hook's return, or a
+    config-key rename that updated only the config tests, would fall through
+    `sig_cfg.get(ekey, {}).get("weight", 1.0)` to **1.0** -- silently weighting adds equal to
+    new positions, destroying the whole "weaker prior, lower weight" rationale, with the full
+    suite still green. It fails OPEN toward the maximum weight, which is the dangerous
+    direction.
+    """
+    from shortlist.scout import thirteenf as tf
+    from shortlist.scout.signals import EdgarThirteenFSignal
+
+    sig = EdgarThirteenFSignal(funds=[])
+    keys = {s: sig.cfg_key_for(Emission("X", s, 0.5, "ev", is_discovery=True))
+            for s in (tf.SIGNAL, tf.SIGNAL_MATERIAL_ADD)}
+    cfg_signals = _CFG["scout"]["signals"]
+    assert cfg_signals[keys[tf.SIGNAL]]["weight"] == 1.0
+    assert cfg_signals[keys[tf.SIGNAL_MATERIAL_ADD]]["weight"] == 0.75
+    # and the cap must resolve from the PARENT key, which is what _scan_discovery uses
+    assert cfg_signals[keys[tf.SIGNAL]]["max_slots"] == 4
+
+
+def test_real_cfg_key_for_falls_back_for_an_unknown_signal_string():
+    """A signal string the hook doesn't recognise must map to the parent, not to nothing."""
+    from shortlist.scout.signals import EdgarThirteenFSignal
+    sig = EdgarThirteenFSignal(funds=[])
+    got = sig.cfg_key_for(Emission("X", "edgar:13f_future_kind", 0.5, "ev",
+                                   is_discovery=True))
+    assert got == "edgar_13f"
+    assert got in _CFG["scout"]["signals"]

@@ -61,9 +61,12 @@ precedent, recorded as the owner's call.
 ## `edgar:13f_material_add` — first live burst (shipped 2026-08-09)
 
 ENABLED at weight 0.75, `ratio: 1.50`, `top_n: 5`, family cap `max_slots: 4` on `edgar_13f`
-(governs both kinds). **Never run against a real filing.** Verified live 2026-08-09: all 7
-funds' latest 13F-HR is Q1 (period 2026-03-31) and already in `thirteenf_seen`, so the full Q2
-burst is still ahead. Q2 is due **2026-08-14** and these funds file at the deadline (Q1 → filed
+(governs both kinds). **Never emitted through the live scout** — the detector itself HAS been
+run against real filings offline (all 7 funds' Q1-2026 vs Q4-2025 pairs: 154/154 `sshPrnamt`
+parsed, 6 adds, 0 abstentions, no split artifacts — design doc §6a). What is unobserved is the
+live path: emission → funnel → cap → digest. Verified live 2026-08-09: all 7 funds' latest
+13F-HR is Q1 (period 2026-03-31) and already in `thirteenf_seen`, so the full Q2 burst is still
+ahead. Q2 is due **2026-08-14** and these funds file at the deadline (Q1 → filed
 May 14/15). `_mark_processed` burns an accession permanently, so a fund processed before the
 deploy loses that quarter's adds until November — **deploy by 2026-08-12**. Aug 15/16 are a
 weekend, so with `max_filings_per_day: 3` the 7-fund burst absorbs across Fri 14 (3), Mon 17

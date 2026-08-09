@@ -119,8 +119,20 @@ def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
 
     `shares` is `None` when NO surviving row supplied a usable count — deliberately distinct
     from 0.0, so `material_add_diff` can abstain rather than read a missing count as a holding
-    that "grew from nothing". Rows dropped as options/PRN contribute neither value nor shares.
-    Order-independent: a `None`-shares row seen first never swallows a later usable count.
+    that "grew from nothing". Rows dropped as options/PRN contribute neither value nor shares
+    (the `ssh_type != "SH"` drop happens BEFORE summing, so a PRN principal amount can never
+    be added into a share count — the units stay coherent, which is what makes the add ratio
+    meaningful). Order-independent: a `None`-shares row seen first never swallows a later
+    usable count.
+
+    KNOWN asymmetry: a row with an unparseable `value` is dropped before its `shares` are
+    read, so a usable share count on a value-less row is lost. On the PRIOR side that
+    understates prior shares and therefore **inflates** the add ratio — i.e. this fabricates an
+    add rather than abstaining, the wrong direction. Not defended against, because summing
+    shares from value-less rows would break value/shares coherence; and live coverage is
+    154/154 real positions with zero occurrences
+    (`docs/audits/2026-08-09-13f-material-adds-design.md` §6a). Revisit if the abstain counter
+    in production is ever nonzero.
 
     Never raises."""
     agg: dict[str, dict] = {}
@@ -246,8 +258,7 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                         fund_name: str, period: str, filing_date: str,
                         fund_cik: str | int | None = None, accession: str = "",
                         deny_list=None, top_n: int = 10,
-                        kind: str = "new_position",
-                        signal: str = SIGNAL) -> tuple[list[Emission], int]:
+                        kind: str = "new_position") -> tuple[list[Emission], int]:
     """Position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
     ticker (abstain on a miss — counted, never guessed), drops deny-listed + 5th-letter
     junk-suffix symbols, dedups within the filing, and caps at `top_n` KEPT names (an
@@ -256,14 +267,20 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
     identity + filing accession ride `meta` (`fund_cik`/`fund_name`/`adsh`) as firehose join
     keys for per-fund attribution, matching the 8-K/13D/buyback emissions.
 
-    `kind`/`signal` default to the NEW-POSITION behaviour, so every pre-existing call site is
-    unchanged. Pass `kind="material_add", signal=SIGNAL_MATERIAL_ADD` for `material_add_diff`
-    output: that switches the evidence wording and adds the share-ratio fields to `meta`.
+    `kind` defaults to the NEW-POSITION behaviour, so every pre-existing call site is
+    unchanged. Pass `kind="material_add"` for `material_add_diff` output: that switches the
+    evidence wording, adds the share-ratio fields to `meta`, and selects the emission signal
+    string. The signal string is DERIVED from `kind` rather than passed alongside it — the two
+    were separate parameters once, which let `kind="material_add"` be emitted under the
+    new-position signal string, contaminating the firehose cohort with nothing to catch it.
+
     `meta["kind"]` is the firehose join key that keeps the two cohorts separable, so a later
     measurement can never pool an add with a fresh best idea.
 
     Never raises."""
     deny = {str(d).upper() for d in (deny_list or [])}
+    is_add = kind == "material_add"
+    signal = SIGNAL_MATERIAL_ADD if is_add else SIGNAL
     out: list[Emission] = []
     seen: set[str] = set()
     abstained = 0
@@ -278,7 +295,7 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
         seen.add(tkr)
         pct = pos["weight"] * 100.0
         qlabel = _quarter_label(period)
-        if kind == "material_add":
+        if is_add:
             ev = (f"{fund_name} added to 13F position ({qlabel}, filed {filing_date}): "
                   f"shares +{(pos['share_ratio'] - 1.0) * 100:.0f}%, now {pct:.1f}% of book")
         else:
@@ -288,7 +305,7 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                 "filing_date": filing_date, "weight": pos["weight"],
                 "fund_cik": (str(fund_cik) if fund_cik is not None else None),
                 "fund_name": fund_name, "adsh": accession}
-        if kind == "material_add":
+        if is_add:
             meta.update({"share_ratio": pos["share_ratio"],
                          "shares_latest": pos["shares_latest"],
                          "shares_prior": pos["shares_prior"],

@@ -332,6 +332,19 @@ def test_material_add_ordering_is_deterministic():
     assert [a["cusip"] for a in adds] == ["AAA", "BBB"]   # ratio 3.0 then 2.0
 
 
+def test_material_add_equal_ratios_break_the_tie_on_cusip():
+    """Inserted in REVERSE cusip order at an identical ratio, so the tiebreak must do work.
+
+    Without this the ordering test above passes even with the `d["cusip"]` sort term deleted:
+    its ratios are distinct AND dict insertion order already matches the expectation.
+    """
+    latest = _book({"ZZZ": (300, 200), "AAA": (300, 200), "CCC": (400, 10)})
+    prior = _book({"ZZZ": (300, 100), "AAA": (300, 100), "CCC": (400, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA", "ZZZ"]
+    assert adds[0]["share_ratio"] == adds[1]["share_ratio"] == 2.0
+
+
 def test_material_add_and_new_position_diffs_are_disjoint():
     """Cohort-contamination guard: no CUSIP may appear in both result sets."""
     latest = _book({"AAA": (300, 150), "NEW": (300, 50), "CCC": (400, 10)})
@@ -398,8 +411,12 @@ def _run_signal_with(monkeypatch, infos, *, material_add, top_n=10):
 
 
 # AAA/OLDCUS shares 100 -> 200 (a 2x add); NEWCUS is a brand-new position.
-_MIXED_LATEST = [("Old Co", "OLDCUS", 300, "SH", "", 200),
-                 ("New Co", "NEWCUS", 300, "SH", "", 50),
+# OLDCUS weight rises 200/600=33.3% -> 500/1000=50.0%, so delta_weight is +16.7% and the
+# emission carries a REAL nonzero strength. With the old fixture delta_weight was negative and
+# every signal-level add asserted against strength 0.0, which would not have caught a plumbing
+# regression that passed `weight` where `strength` was meant.
+_MIXED_LATEST = [("Old Co", "OLDCUS", 500, "SH", "", 200),
+                 ("New Co", "NEWCUS", 100, "SH", "", 50),
                  ("Big Co", "BIGCUS", 400, "SH", "", 10)]
 _MIXED_PRIOR = [("Old Co", "OLDCUS", 200, "SH", "", 100),
                 ("Big Co", "BIGCUS", 400, "SH", "", 10)]
@@ -415,12 +432,18 @@ def test_signal_emits_material_adds_with_own_signal_string(monkeypatch):
     assert adds[0].meta["share_ratio"] == 2.0
     assert adds[0].is_discovery is True
     assert "added to 13F position" in adds[0].evidence
+    # strength, not weight, and genuinely nonzero: delta_weight +16.7% / 5% caps at 1.0
+    assert adds[0].strength == 1.0
 
 
 def test_signal_material_add_disabled_is_inert(monkeypatch):
-    ems = _run_signal_with(monkeypatch, _MIXED, material_add={"enabled": False})
+    sig = _signal_with(monkeypatch, _MIXED, material_add={"enabled": False})
+    ems = sig.scan(date(2026, 8, 14))
     assert all(e.signal != "edgar:13f_material_add" for e in ems)
     assert [e.ticker for e in ems] == ["NEWTKR"]      # only the new position
+    # state too, not just emissions: the accession is marked exactly as it was pre-feature
+    assert sig.processed_accessions == ["acc-latest"]
+    assert sig.seen_accessions == {"acc-latest"}
 
 
 def test_signal_material_add_absent_config_is_inert(monkeypatch):

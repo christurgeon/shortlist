@@ -843,10 +843,13 @@ class EdgarThirteenFSignal:
         self.top_n = top_n
         # Second diff over the SAME two books (zero extra SEC requests). Absent or disabled
         # => byte-identical to the new-positions-only behaviour.
+        # Coerced defensively: a present-but-empty YAML key (`ratio:` -> None) would otherwise
+        # raise TypeError in __init__ and kill the ENTIRE 13F signal, new positions included,
+        # rather than degrading to the default.
         ma = dict(material_add or {})
         self.material_add_on = bool(ma.get("enabled"))
-        self.material_add_ratio = float(ma.get("ratio", 1.50))
-        self.material_add_top_n = int(ma.get("top_n", 5))
+        self.material_add_ratio = float(ma.get("ratio") or 1.50)
+        self.material_add_top_n = int(ma.get("top_n") or 5)
         self.deny_list = list(deny_list or [])
         self.seen_accessions = set(seen_accessions or [])
         self.timeout = timeout
@@ -962,8 +965,12 @@ class EdgarThirteenFSignal:
                 n_new += len(ems)
                 abstained += abst
                 if self.material_add_on:
-                    # Same two books, no refetch. Emitted AFTER new positions so the sharper
-                    # signal wins a contested per-filing budget.
+                    # Same two books, no refetch. Emitted AFTER new positions because
+                    # `picks.pick_from_card` falls back to `emissions[0]` for a pick's
+                    # `catalyst` (picks.py), so on a ticker BOTH kinds hit, the new position
+                    # — the sharper event — is the one recorded in the ledger. The two
+                    # per-filing budgets are independent (`top_n` vs `material_add_top_n`),
+                    # so ordering does NOT arbitrate a shared cap.
                     adds, add_abst = tf.material_add_diff(
                         latest_agg, prior_agg,
                         min_position_pct=self.min_position_pct,
@@ -974,7 +981,7 @@ class EdgarThirteenFSignal:
                         period=latest["period"], filing_date=latest["filing_date"],
                         fund_cik=cik, accession=latest["accession"],
                         deny_list=self.deny_list, top_n=self.material_add_top_n,
-                        kind="material_add", signal=tf.SIGNAL_MATERIAL_ADD)
+                        kind="material_add")
                     out.extend(add_ems)
                     n_adds += len(add_ems)
                     abstained += add_res_abst
