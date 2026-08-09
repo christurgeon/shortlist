@@ -6,6 +6,25 @@ from typing import Mapping, Optional
 
 from .models import Candidate
 
+# Emission strings that are ONE originator for cap + confluence purposes.
+# `EdgarThirteenFSignal` emits two kinds (new position, material add) from a single filing
+# pair, and two funds agreeing is not two originators agreeing — which is exactly the
+# invariant `originator()` exists to hold. Without this, fund-A-new + fund-B-add would read
+# as confluence (cap-exempt, rank-boosted) while fund-A-new + fund-B-new would not.
+# An EXPLICIT map, not a ":"-prefix rule: prefix collapsing would catch unrelated pairs such
+# as `edgar:8k` / `edgar:8k_negative` by accident.
+_SIGNAL_FAMILIES = {
+    "edgar:13f_new_position": "edgar:13f",
+    "edgar:13f_material_add": "edgar:13f",
+}
+
+
+def signal_family(signal: str) -> str:
+    """The cap/confluence identity of an emission signal string — identity for everything but
+    the 13F kinds. `caps` keys MUST use this vocabulary, since `select` looks them up with
+    `originator()`'s return value."""
+    return _SIGNAL_FAMILIES.get(signal, signal)
+
 
 def originator(candidate: Candidate) -> Optional[str]:
     """The single discovery signal a candidate is charged to, or None if uncharged.
@@ -24,8 +43,12 @@ def originator(candidate: Candidate) -> Optional[str]:
     emissions on one candidate — which is one originator agreeing with itself, not
     confluence. Only `is_discovery` emissions count; boosters run before `select`
     (`daily.py`), so counting all emissions would read a booster as an originator.
+
+    Signal strings are collapsed through `signal_family` first, so the two `edgar:13f` kinds
+    count as one originator (see `_SIGNAL_FAMILIES`).
     """
-    signals = {e.signal for e in candidate.emissions if getattr(e, "is_discovery", False)}
+    signals = {signal_family(e.signal) for e in candidate.emissions
+               if getattr(e, "is_discovery", False)}
     if len(signals) == 1:
         return next(iter(signals))
     return None
@@ -36,8 +59,10 @@ def select(candidates: list[Candidate], daily_x: int,
            ) -> tuple[list[Candidate], int, list[tuple[Candidate, str]]]:
     """Return ``(chosen, dropped_count, capped)``. Chosen = top ``daily_x`` by interest.
 
-    ``caps`` maps an emission signal string (e.g. ``"wsb:novel"``) to the maximum number
-    of slots that originator may claim. **Absent, empty, or non-binding ⇒ behaviour is
+    ``caps`` maps a signal FAMILY (``signal_family`` — the emission signal string itself for
+    every signal but the two ``edgar:13f`` kinds, which collapse to one) to the maximum
+    number of slots that originator may claim. Keying it by a raw signal string where a
+    family exists silently loses the cap. **Absent, empty, or non-binding ⇒ behaviour is
     identical to the uncapped ranking**, and ``capped`` is ``[]``.
 
     Two properties are deliberate and load-bearing:

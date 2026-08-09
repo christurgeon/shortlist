@@ -6,12 +6,16 @@ from pathlib import Path
 
 import yaml
 
+from datetime import date
+
 from shortlist.scout.daily import (
     _DISCOVERY_SIGNAL_NAMES,
     _KNOWN_SIGNAL_KEYS,
     _enabled_signal_names,
+    _scan_discovery,
     _signal_kwargs,
 )
+from shortlist.scout.models import Emission
 from shortlist.scout.state import ScoutState
 
 _CFG = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
@@ -76,3 +80,159 @@ def test_state_processed_accession_round_trip_and_forward_compat(tmp_path):
     st.add_thirteenf_accessions([f"x-{i}" for i in range(300)], cap=200)
     kept = st.thirteenf_seen_accessions()
     assert len(kept) == 200 and "acc-1" not in kept and "x-299" in kept
+
+
+# --- per-emission config keys (weight per kind, cap per signal) -------------------------
+
+class _FakeSignal:
+    """Minimal discovery signal emitting a fixed set of (signal_string, ticker) pairs."""
+    is_discovery = True
+
+    def __init__(self, name, pairs, *, cfg_keys=None):
+        self.name = name
+        self._pairs = pairs
+        self._cfg_keys = cfg_keys      # None => no cfg_key_for hook at all
+
+    def scan(self, session):
+        return [Emission(t, s, 0.5, "ev", is_discovery=True) for s, t in self._pairs]
+
+    def available(self):
+        return (True, "ok")
+
+    def __getattr__(self, item):
+        # Only expose cfg_key_for when this fake was built with a mapping, so the
+        # hook-absent back-compat path is genuinely exercised.
+        if item == "cfg_key_for" and self.__dict__.get("_cfg_keys") is not None:
+            return lambda e: self.__dict__["_cfg_keys"].get(e.signal)
+        raise AttributeError(item)
+
+
+def test_scan_discovery_resolves_per_emission_config_keys(tmp_path):
+    """One signal object, two emission strings, two different weights."""
+    sig = _FakeSignal("edgar_13f",
+                      [("edgar:13f_new_position", "NEW"),
+                       ("edgar:13f_material_add", "ADD")],
+                      cfg_keys={"edgar:13f_new_position": "edgar_13f",
+                                "edgar:13f_material_add": "edgar_13f_material_add"})
+    sig_cfg = {"edgar_13f": {"enabled": True, "weight": 1.0},
+               "edgar_13f_material_add": {"weight": 0.75}}
+    _ems, weights, _caps = _scan_discovery(
+        [sig], state=ScoutState(tmp_path / "s.json"), demo=False,
+        session=date(2026, 8, 14), sig_cfg=sig_cfg, statuses=[])
+    assert weights["edgar:13f_new_position"] == 1.0
+    assert weights["edgar:13f_material_add"] == 0.75
+
+
+def test_cap_survives_an_adds_only_night(tmp_path):
+    """max_slots lives on edgar_13f; a night with ONLY adds must still be capped.
+
+    Regression for the defect where the cap was resolved from the per-emission key:
+    edgar_13f_material_add deliberately carries no max_slots, so an adds-only night
+    produced caps == {} and ran the family uncapped.
+    """
+    sig = _FakeSignal("edgar_13f", [("edgar:13f_material_add", "ADD")],
+                      cfg_keys={"edgar:13f_material_add": "edgar_13f_material_add"})
+    sig_cfg = {"edgar_13f": {"enabled": True, "weight": 1.0, "max_slots": 4},
+               "edgar_13f_material_add": {"weight": 0.75}}
+    _ems, weights, caps = _scan_discovery(
+        [sig], state=ScoutState(tmp_path / "s.json"), demo=False,
+        session=date(2026, 8, 14), sig_cfg=sig_cfg, statuses=[])
+    assert weights["edgar:13f_material_add"] == 0.75
+    assert caps == {"edgar:13f": 4}          # NOT {} -- the family stays capped
+
+
+def test_scan_discovery_without_cfg_key_for_is_unchanged(tmp_path):
+    """Back-compat pin: a signal with no hook resolves exactly as before."""
+    sig = _FakeSignal("edgar_form4", [("edgar:form4_opportunistic", "XYZ")])
+    sig_cfg = {"edgar_form4": {"enabled": True, "weight": 1.0, "max_slots": 3}}
+    _ems, weights, caps = _scan_discovery(
+        [sig], state=ScoutState(tmp_path / "s.json"), demo=False,
+        session=date(2026, 8, 14), sig_cfg=sig_cfg, statuses=[])
+    assert weights == {"edgar:form4_opportunistic": 1.0}
+    assert caps == {"edgar:form4_opportunistic": 3}
+
+
+# --- repo config ships material adds ON, and plumbs through ------------------------------
+
+def test_repo_config_ships_material_add_enabled():
+    ma = _CFG["scout"]["thirteenf"]["material_add"]
+    assert ma["enabled"] is True
+    assert ma["ratio"] == 1.50
+    assert ma["top_n"] == 5
+
+
+def test_repo_config_material_add_weight_is_below_new_positions():
+    sig = _CFG["scout"]["signals"]
+    assert sig["edgar_13f_material_add"]["weight"] == 0.75
+    assert sig["edgar_13f"]["weight"] == 1.0
+    assert sig["edgar_13f_material_add"]["weight"] < sig["edgar_13f"]["weight"]
+
+
+def test_repo_config_material_add_key_is_weight_only_and_not_buildable():
+    """No `enabled` here (that would be a dead knob), and it must never build a signal."""
+    assert set(_CFG["scout"]["signals"]["edgar_13f_material_add"]) == {"weight"}
+    assert "edgar_13f_material_add" not in _KNOWN_SIGNAL_KEYS
+    assert "edgar_13f_material_add" not in _DISCOVERY_SIGNAL_NAMES
+    assert "edgar_13f_material_add" not in _enabled_signal_names(_CFG["scout"])
+
+
+def test_repo_config_ships_the_13f_family_uncapped():
+    """No max_slots on EITHER 13F key -- a deliberate, measured decision, not an omission.
+
+    Interest is strength x weight, and the live firehose puts 13F at the BOTTOM of the funnel
+    (median interest 0.33, n=23) against edgar:activist_13d 1.05 and form4_cluster_buy 1.00.
+    So the high-tier originators cannot be crowded out by 13F and a cap protects nothing,
+    while it WOULD make the 13F ledger's pre/post cohorts non-comparable. If this ever needs
+    a cap, it goes on `edgar_13f` (the parent), never on the add's key -- max_slots is
+    resolved from the signal's own config key so a family cap cannot vanish on an adds-only
+    night (see daily.py:_scan_discovery and test_cap_survives_an_adds_only_night, which pins
+    that mechanism independently of whether the repo config uses it).
+    """
+    sig = _CFG["scout"]["signals"]
+    assert "max_slots" not in sig["edgar_13f"]
+    assert "max_slots" not in sig["edgar_13f_material_add"]
+
+
+def test_signal_kwargs_threads_material_add_block():
+    cfg = {"thirteenf": {"funds": [], "material_add": {"enabled": True, "ratio": 1.5,
+                                                       "top_n": 5}}}
+    kw = _signal_kwargs(cfg)["edgar_13f"]
+    assert kw["material_add"] == {"enabled": True, "ratio": 1.5, "top_n": 5}
+
+
+def test_signal_kwargs_material_add_absent_is_empty_dict():
+    """A config with no material_add block must yield the inert default, never a KeyError."""
+    kw = _signal_kwargs({"thirteenf": {"funds": []}})["edgar_13f"]
+    assert kw["material_add"] == {}
+
+
+def test_real_cfg_key_for_hook_resolves_to_the_repo_config_weights():
+    """Ties the REAL hook to the REAL config in one assertion, so neither can drift alone.
+
+    Without this, the hook (`signals.py:cfg_key_for`) and the config key were pinned to the
+    same literal INDEPENDENTLY, with a fake in between. A typo in the hook's return, or a
+    config-key rename that updated only the config tests, would fall through
+    `sig_cfg.get(ekey, {}).get("weight", 1.0)` to **1.0** -- silently weighting adds equal to
+    new positions, destroying the whole "weaker prior, lower weight" rationale, with the full
+    suite still green. It fails OPEN toward the maximum weight, which is the dangerous
+    direction.
+    """
+    from shortlist.scout import thirteenf as tf
+    from shortlist.scout.signals import EdgarThirteenFSignal
+
+    sig = EdgarThirteenFSignal(funds=[])
+    keys = {s: sig.cfg_key_for(Emission("X", s, 0.5, "ev", is_discovery=True))
+            for s in (tf.SIGNAL, tf.SIGNAL_MATERIAL_ADD)}
+    cfg_signals = _CFG["scout"]["signals"]
+    assert cfg_signals[keys[tf.SIGNAL]]["weight"] == 1.0
+    assert cfg_signals[keys[tf.SIGNAL_MATERIAL_ADD]]["weight"] == 0.75
+
+
+def test_real_cfg_key_for_falls_back_for_an_unknown_signal_string():
+    """A signal string the hook doesn't recognise must map to the parent, not to nothing."""
+    from shortlist.scout.signals import EdgarThirteenFSignal
+    sig = EdgarThirteenFSignal(funds=[])
+    got = sig.cfg_key_for(Emission("X", "edgar:13f_future_kind", 0.5, "ev",
+                                   is_discovery=True))
+    assert got == "edgar_13f"
+    assert got in _CFG["scout"]["signals"]

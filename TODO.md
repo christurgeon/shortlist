@@ -51,12 +51,69 @@ Deployed and verified inert-but-alive (`ran=True, 14 prior boards, 0 emissions` 
 fires on ~half of days). Not yet seen against a real 22:30 run: confirm `wsb:novel` names reach
 the digest and the signal reports `ran=True` rather than degrading the run.
 
+**Do not read the run gap as a fault.** The last real session is **2026-08-07** (Friday). The
+Aug 8 and Aug 9 timers both fired and correctly no-opped — `journalctl -u shortlist-scout`
+reads `run for 2026-08-07 already completed; nothing to do`, because the session resolves to
+the last *trading* day and the weekend has none. So `daily_x: 15` and `wsb:novel` both get
+their first real exercise on **Mon 2026-08-10 22:30 UTC**, and the 08-07 manifest still shows
+`wsb_hype: disabled` (it predates the novelty deploy). Checked 2026-08-09.
+
 **Forward returns are NOT measured, only composition.** `scout/preregister/wsb_novelty.yaml`
 is committed with a live-forward window from 2026-08-08, K=3m. **A KILL is a real expected
 outcome** — the rule surfaces some retail-lottery names (`LCID HTZ SOUN DJT`) whose profile
 Bali's MAX-effect literature ties to *under*performance. No backfill is possible; ApeWisdom
 publishes no history. Shipping it ENABLED is a deliberate exception to the contested-prior
 precedent, recorded as the owner's call.
+
+## `edgar:13f_material_add` — first live burst (shipped 2026-08-09)
+
+ENABLED at weight 0.75, `ratio: 1.50`, `top_n: 5`, and **uncapped** (a `max_slots: 4` was
+written then removed unshipped — see below). **Never emitted through the live scout** — the
+detector itself HAS been
+run against real filings offline (all 7 funds' Q1-2026 vs Q4-2025 pairs: 154/154 `sshPrnamt`
+parsed, 6 adds, 0 abstentions, no split artifacts — design doc §6a). What is unobserved is the
+live path: emission → funnel → cap → digest. Verified live 2026-08-09: all 7 funds' latest
+13F-HR is Q1 (period 2026-03-31) and already in `thirteenf_seen`, so the full Q2 burst is still
+ahead. Q2 is due **2026-08-14** and these funds file at the deadline (Q1 → filed
+May 14/15). `_mark_processed` burns an accession permanently, so a fund processed before the
+deploy loses that quarter's adds until November — **deploy by 2026-08-12**. Aug 15/16 are a
+weekend, so with `max_filings_per_day: 3` the 7-fund burst absorbs across Fri 14 (3), Mon 17
+(3), Tue 18 (1).
+
+Read from the first post-burst manifest:
+- the `N material add(s)` count, and that the `N new 13F positions` headline still counts
+  **only** new positions (it was `len(out)` pre-ship, which would have absorbed adds);
+- `N overlapping positions with unusable share counts` — every position held in **both** books
+  whose `sshPrnamt` was missing or non-positive, tallied *before* the ratio test. A 3-digit
+  value on a large filer is not itself a fault; it is an `sshPrnamt` coverage diagnostic, **not**
+  "adds we abstained on";
+- whether any add is a **stock split** false positive (shares ≈2.0× with flat book weight).
+  Documented and deliberately unmitigated — count it before deciding it needs a guard.
+
+Expect a new `INSUFFICIENT` row for `edgar:13f_material_add` in `shortlist-scout validate` and
+the digest verdicts section: it has no prereg, for the same PiT CUSIP→symbology reason
+`edgar:13f_new_position` has none. Expected, not a regression.
+
+**Burst sizing, from the real Q1 filings + config order** (`max_filings_per_day: 3`): Fri Aug 14
+→ Berkshire/Pershing/Baupost ≈10 emissions; **Mon Aug 17 → ValueAct/Third Point/Appaloosa ≈18
+emissions, the one night contention is actually real**; Tue Aug 18 → TCI ≈1.
+
+**Why it ships uncapped** (measured, do not re-litigate without new numbers): interest is
+`strength × weight`, and the live firehose puts 13F at the **bottom** of the funnel —
+`edgar:13f_new_position` median interest **0.33** (n=23) against `edgar:activist_13d` **1.05**
+(n=58, weight 1.5) and `edgar:form4_cluster_buy` **1.00** (n=24). The high-tier originators
+therefore cannot be crowded out by 13F, so a cap protects nothing the weights don't already
+protect; the only thing it would arbitrate is a near-tie with `edgar:form4_insider_buy` (0.34).
+Against that, capping would make the 13F ledger's pre/post cohorts non-comparable. **If a
+burst does drown the daily originators, `dropped_for_budget` in the manifest says so and it is
+a one-line config change** before the November burst. The `budget.signal_family` machinery
+stays regardless — it protects the confluence invariant, which is correct independent of caps.
+
+Note the sharpest-ranking case, which is **pre-existing** behaviour: fund A opening + fund B
+adding on one ticker sums interest to as much as `1.00 + 0.75 = 1.75`, topping `activist_13d`
+(`INTEREST_CAP` is 10.0, so nothing clips it). Defensible — two marquee funds independently
+increasing exposure is real information, and two funds both *opening* already sums to 2.0
+today. The family collapse means it counts as one originator rather than confluence.
 
 ## Weekend finality-vs-cursor edge (8-K veto)
 
@@ -166,8 +223,11 @@ standing full-universe originator. Plan of record for Tracks B/C:
 - **FINRA short-interest:** a cleaner fund/ETF universe filter than the seed `deny_list` (the
   5th-letter drop misses 4-letter ETFs/CEFs); **from-zero ramps** (brand-new short positions,
   currently dropped by `min_prev_short_shares`) as a separate absolute-share variant.
-- **13F:** material-adds/exits (v1 is new-positions only); a PiT CUSIP→symbology backfill cohort
-  (live FTD files leak post-event symbols, so this is deferred by design).
+- **13F:** material-**exits** as a negative-context veto (adds SHIPPED 2026-08-09,
+  `docs/audits/2026-08-09-13f-material-adds-design.md`; exits need veto machinery and their own
+  evidence, and a wrong veto silently deletes real picks from a supply-starved funnel), and
+  trims on the same reasoning; a PiT CUSIP→symbology backfill cohort (live FTD files leak
+  post-event symbols, so this is deferred by design).
 - **13D:** a stake-**decrease**/exit negative-context signal; reweighting initial-13D strength by
   stake-% (needs ledger data first); extending the curated `scout/quality.py:_MARQUEE` alias map
   as new credible activists appear.
@@ -214,7 +274,9 @@ top ranks *below* funnel work. Take these when they are cheap or when they unblo
   **dropped, not imputed**. The drops skew toward **acquisitions** (the successful activist
   outcome), so measured alpha is plausibly biased **downward**. The defensible claim is
   **"no evidence to enable,"** NOT "proven value-destructive" — **do not wire a "KILL" config
-  comment**. Needs disk freed first (box ~7.5 GB against the 8 GB preflight floor).
+  comment**. ~~Needs disk freed first~~ — **the disk constraint is GONE** (measured 2026-08-09:
+  38 GB total, 22 GB used, **15 GB free** at 61%, against an 8 GB preflight floor). This item is
+  now blocked on the price feed alone.
 - **The Form 4 backfill leg is not wired.** `preregister/edgar_form4.yaml` is committed (so the
   anti-p-hacking guarantee holds) but no cohort has run. Unlike the other originators' pure
   per-chunk `assemble`, it needs a point-in-time `assemble_factory` — the DERA classification

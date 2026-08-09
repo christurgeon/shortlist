@@ -23,6 +23,7 @@ from .models import Emission
 from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottle re-exported
 
 SIGNAL = "edgar:13f_new_position"
+SIGNAL_MATERIAL_ADD = "edgar:13f_material_add"
 
 # Emission strength = within-book conviction, capped at 1.0 (design §1.8): a 5%-of-book new
 # position is a full-conviction bet. Below the 13D/Form-4 marquee tier only via the smaller
@@ -60,11 +61,18 @@ def _local(tag: str) -> str:
 
 
 def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
-    """13F information-table XML -> `[{"cusip","name","title","value","put_call",
+    """13F information-table XML -> `[{"cusip","name","title","value","shares","put_call",
     "ssh_type"}]`, one dict per `<infoTable>` row. Namespace-agnostic (strips namespaces via
     local tag names). `value` is a float (SEC reports whole dollars post-2023, $1000s before
-    — the within-filing weight normalizes it away either way). Never raises: a parse error
-    yields []."""
+    — the within-filing weight normalizes it away either way).
+
+    `shares` (`sshPrnamt`) is the only PRICE-INDEPENDENT quantity in the filing, and is what
+    `material_add_diff` detects on: `value` is quarter-end MARKET value, so a position whose
+    stock rose 50% with zero shares bought shows a ~50% book-weight increase and would
+    otherwise read as fund conviction. `None` (missing/unparseable) is kept distinct from 0.0
+    so downstream can abstain instead of reading a gap as "holds nothing".
+
+    Never raises: a parse error yields []."""
     try:
         root = ET.fromstring(xml_bytes if isinstance(xml_bytes, bytes)
                              else xml_bytes.encode("utf-8"))
@@ -75,7 +83,7 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
         if _local(it.tag) != "infoTable":
             continue
         rec: dict = {"cusip": "", "name": "", "title": "", "value": None,
-                     "put_call": "", "ssh_type": ""}
+                     "put_call": "", "ssh_type": "", "shares": None}
         for child in it.iter():
             tag = _local(child.tag)
             txt = (child.text or "").strip()
@@ -87,6 +95,11 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
                 rec["title"] = txt
             elif tag == "putCall":
                 rec["put_call"] = txt
+            elif tag == "sshPrnamt":
+                try:
+                    rec["shares"] = float(txt.replace(",", ""))
+                except ValueError:
+                    rec["shares"] = None
             elif tag == "sshPrnamtType":
                 rec["ssh_type"] = txt
             elif tag == "value":
@@ -99,10 +112,29 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
 
 
 def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
-    """Rows -> `{cusip -> {"value","name","title"}}`. Drops option rows (`put_call` present)
-    and non-share rows (`ssh_type != "SH"` — PRN convertible debt), then SUMS `value` across
-    the multiple `<infoTable>` rows a single holding legitimately spans (sole/shared/none
-    voting split, combined-manager filings). Never raises."""
+    """Rows -> `{cusip -> {"value","shares","name","title"}}`. Drops option rows (`put_call`
+    present) and non-share rows (`ssh_type != "SH"` — PRN convertible debt), then SUMS `value`
+    and `shares` across the multiple `<infoTable>` rows a single holding legitimately spans
+    (sole/shared/none voting split, combined-manager filings).
+
+    `shares` is `None` when NO surviving row supplied a usable count — deliberately distinct
+    from 0.0, so `material_add_diff` can abstain rather than read a missing count as a holding
+    that "grew from nothing". Rows dropped as options/PRN contribute neither value nor shares
+    (the `ssh_type != "SH"` drop happens BEFORE summing, so a PRN principal amount can never
+    be added into a share count — the units stay coherent, which is what makes the add ratio
+    meaningful). Order-independent: a `None`-shares row seen first never swallows a later
+    usable count.
+
+    KNOWN asymmetry: a row with an unparseable `value` is dropped before its `shares` are
+    read, so a usable share count on a value-less row is lost. On the PRIOR side that
+    understates prior shares and therefore **inflates** the add ratio — i.e. this fabricates an
+    add rather than abstaining, the wrong direction. Not defended against, because summing
+    shares from value-less rows would break value/shares coherence; and live coverage is
+    154/154 real positions with zero occurrences
+    (`docs/audits/2026-08-09-13f-material-adds-design.md` §6a). Revisit if the abstain counter
+    in production is ever nonzero.
+
+    Never raises."""
     agg: dict[str, dict] = {}
     for r in rows:
         if (r.get("put_call") or "").strip():
@@ -113,12 +145,17 @@ def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
         val = r.get("value")
         if not cusip or val is None:
             continue
+        sh = r.get("shares")
         cur = agg.get(cusip)
         if cur is None:
-            agg[cusip] = {"value": float(val), "name": r.get("name") or "",
-                          "title": r.get("title") or ""}
+            agg[cusip] = {"value": float(val),
+                          "shares": (None if sh is None else float(sh)),
+                          "name": r.get("name") or "", "title": r.get("title") or ""}
         else:
             cur["value"] += float(val)
+            if sh is not None:
+                cur["shares"] = (float(sh) if cur["shares"] is None
+                                 else cur["shares"] + float(sh))
     return agg
 
 
@@ -149,18 +186,101 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
     return out
 
 
+def material_add_diff(latest: dict[str, dict], prior: dict[str, dict], *,
+                      min_position_pct: float = 0.005,
+                      full_strength_pct: float = 0.05,
+                      material_add_ratio: float = 1.50) -> tuple[list[dict], int]:
+    """Existing positions a fund MATERIALLY ADDED to -> `(adds, n_abstained)`.
+
+    A CUSIP qualifies when it is present in BOTH books, its SHARE count grew by at least
+    `material_add_ratio`, and the resulting within-book VALUE weight clears
+    `min_position_pct`.
+
+    Detection is on shares, NOT value or weight, because `value` is market value at quarter
+    end: a position whose stock rose 50% with zero shares bought shows a ~50% weight increase
+    and would otherwise read as conviction. Sizing stays on value weight, because conviction
+    is a share of the book.
+
+    `strength` treats the INCREMENT as the bet — `min(1.0, delta_weight / full_strength_pct)`,
+    where `delta_weight` is the change in within-book weight. A fund adding `full_strength_pct`
+    of book is a full-conviction new bet; a nibble on an existing stake is weak. `delta_weight`
+    is clamped at 0.0 for strength (shares bought into a price decline still emits, at floor
+    strength — the purchase is the signal), though the raw signed value is reported.
+
+    ABSTAINS rather than guessing when either share count is missing or prior shares are <= 0
+    (a 0 -> N ratio is infinite, not measurable); abstentions are COUNTED, never silently
+    dropped. Note the count covers every position held in both books with an unusable count,
+    tallied before the ratio test — it is an `sshPrnamt` coverage diagnostic, not "adds we
+    nearly made".
+
+    New positions (absent from `prior`) and exits (absent from `latest`) are both out of scope
+    by construction, so the result is DISJOINT from `new_position_diff` over the same books.
+
+    An empty or zero-total book on either side yields `([], 0)` — no division by zero.
+
+    Assumes `aggregate_positions`-shaped input, where `value` is always a float. A hand-built
+    entry with `value: None` raises `TypeError`; that is undefended, matching
+    `new_position_diff`, which is why this is not documented as "never raises".
+    """
+    total = sum(p["value"] for p in latest.values() if p.get("value"))
+    prior_total = sum(p["value"] for p in prior.values() if p.get("value"))
+    if total <= 0 or prior_total <= 0:
+        return [], 0
+    out: list[dict] = []
+    abstained = 0
+    for cusip, pos in latest.items():
+        prev = prior.get(cusip)
+        if prev is None:
+            continue                                  # a NEW position, not an add
+        sh_now, sh_before = pos.get("shares"), prev.get("shares")
+        if sh_now is None or sh_before is None or sh_before <= 0:
+            abstained += 1                            # never guess a share count
+            continue
+        ratio = sh_now / sh_before
+        if ratio < material_add_ratio:
+            continue
+        weight = pos["value"] / total
+        if weight < min_position_pct:
+            continue
+        delta_weight = weight - (prev["value"] / prior_total)
+        strength = (min(1.0, max(0.0, delta_weight) / full_strength_pct)
+                    if full_strength_pct > 0 else 1.0)
+        out.append({"cusip": cusip, "name": pos.get("name") or "",
+                    "title": pos.get("title") or "", "value": pos["value"],
+                    "weight": weight, "strength": strength,
+                    "shares_latest": sh_now, "shares_prior": sh_before,
+                    "share_ratio": ratio, "delta_weight": delta_weight})
+    out.sort(key=lambda d: (-d["share_ratio"], d["cusip"]))
+    return out, abstained
+
+
 def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
                         fund_name: str, period: str, filing_date: str,
                         fund_cik: str | int | None = None, accession: str = "",
-                        deny_list=None, top_n: int = 10) -> tuple[list[Emission], int]:
-    """New-position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
+                        deny_list=None, top_n: int = 10,
+                        kind: str = "new_position") -> tuple[list[Emission], int]:
+    """Position dicts -> `(emissions, n_abstained)`. Resolves each CUSIP/name to a
     ticker (abstain on a miss — counted, never guessed), drops deny-listed + 5th-letter
     junk-suffix symbols, dedups within the filing, and caps at `top_n` KEPT names (an
     unresolved position never consumes a slot). Emissions carry `cik=None` (the CUSIP
     resolver yields a ticker but no *subject* CIK — a stated measurement limit); the FUND's
     identity + filing accession ride `meta` (`fund_cik`/`fund_name`/`adsh`) as firehose join
-    keys for per-fund attribution, matching the 8-K/13D/buyback emissions. Never raises."""
+    keys for per-fund attribution, matching the 8-K/13D/buyback emissions.
+
+    `kind` defaults to the NEW-POSITION behaviour, so every pre-existing call site is
+    unchanged. Pass `kind="material_add"` for `material_add_diff` output: that switches the
+    evidence wording, adds the share-ratio fields to `meta`, and selects the emission signal
+    string. The signal string is DERIVED from `kind` rather than passed alongside it — the two
+    were separate parameters once, which let `kind="material_add"` be emitted under the
+    new-position signal string, contaminating the firehose cohort with nothing to catch it.
+
+    `meta["kind"]` is the firehose join key that keeps the two cohorts separable, so a later
+    measurement can never pool an add with a fresh best idea.
+
+    Never raises."""
     deny = {str(d).upper() for d in (deny_list or [])}
+    is_add = kind == "material_add"
+    signal = SIGNAL_MATERIAL_ADD if is_add else SIGNAL
     out: list[Emission] = []
     seen: set[str] = set()
     abstained = 0
@@ -175,14 +295,23 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
         seen.add(tkr)
         pct = pos["weight"] * 100.0
         qlabel = _quarter_label(period)
-        ev = (f"{fund_name} new 13F position ({qlabel}, filed {filing_date}): "
-              f"{pct:.1f}% of book")
-        out.append(Emission(tkr, SIGNAL, pos["strength"], ev, is_discovery=True,
-                            cik=None, meta={"cusip": pos["cusip"], "period": period,
-                                            "filing_date": filing_date, "weight": pos["weight"],
-                                            "fund_cik": (str(fund_cik) if fund_cik is not None
-                                                         else None),
-                                            "fund_name": fund_name, "adsh": accession}))
+        if is_add:
+            ev = (f"{fund_name} added to 13F position ({qlabel}, filed {filing_date}): "
+                  f"shares +{(pos['share_ratio'] - 1.0) * 100:.0f}%, now {pct:.1f}% of book")
+        else:
+            ev = (f"{fund_name} new 13F position ({qlabel}, filed {filing_date}): "
+                  f"{pct:.1f}% of book")
+        meta = {"cusip": pos["cusip"], "period": period, "kind": kind,
+                "filing_date": filing_date, "weight": pos["weight"],
+                "fund_cik": (str(fund_cik) if fund_cik is not None else None),
+                "fund_name": fund_name, "adsh": accession}
+        if is_add:
+            meta.update({"share_ratio": pos["share_ratio"],
+                         "shares_latest": pos["shares_latest"],
+                         "shares_prior": pos["shares_prior"],
+                         "delta_weight": pos["delta_weight"]})
+        out.append(Emission(tkr, signal, pos["strength"], ev, is_discovery=True,
+                            cik=None, meta=meta))
         if len(out) >= top_n:
             break
     return out, abstained

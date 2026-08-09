@@ -228,7 +228,8 @@ live in `docs/EDGAR_ORIGINATORS.md`; design docs are in `docs/superpowers/specs/
 | 13D/A stake increase | `EdgarStakeIncreaseSignal` | OFF, weight 0.5 | pending its own backfill verdict |
 | 8-K item match (1.01∧3.03) | `EdgarEightKSignal` | OFF, weight 0.5 | contested; negative-item veto (separate, ON) drops candidates hit by items {1.03,2.04,2.05,2.06,3.01,4.02,5.01} |
 | Buyback authorization | `EdgarBuybackSignal` | OFF | killed on evidence, `docs/audits/2026-07-11-buyback-backfill-kill.md` |
-| 13F marquee-fund cloning | `EdgarThirteenFSignal` | ON, weight 1.0 | defensible (Martin-Puthenpurackal 2008); info up to 45d stale |
+| 13F marquee-fund cloning | `EdgarThirteenFSignal` (`edgar:13f_new_position`) | ON, weight 1.0 | defensible (Martin-Puthenpurackal 2008); info up to 45d stale |
+| 13F material add (shares ≥ +50%) | same signal object (`edgar:13f_material_add`) | ON, weight 0.75 | second diff over the same filing pair, **zero extra SEC requests**; detected on **share count**, not value; `docs/audits/2026-08-09-13f-material-adds-design.md` |
 | Opportunistic Form 4 (CMP classifier) | `EdgarForm4Signal` | ON, weight 1.0 | drift capture, not an information edge; `docs/FORM4_INSIDER.md` (weight there reads stale 1.5 — 1.0 is current) |
 | WSB rank-novelty | `WsbHypeSignal` (novelty submode) | ON | emits only on a ticker that isn't a board regular; `docs/audits/2026-08-07-wsb-novelty-rule.md` |
 | Yahoo predefined screeners | `YahooScreenerSignal` | ON | WAF-fragile — see below |
@@ -245,6 +246,18 @@ rejects bot-shaped requests with an HTML 429 from the edge WAF (not throttling) 
 browser header set (`_YAHOO_HEADERS`) returns 200 JSON. Never retry-spam an HTML 429 (bail
 after one request); `daily.py` persists a rest-of-day cooldown in `ScoutState`. Only a JSON
 429 with `Retry-After` is retried, once, capped.
+
+**13F emits TWO kinds from ONE signal object** — `edgar:13f_new_position` and
+`edgar:13f_material_add`. Two seams make that work, and a third kind must touch **both** or it
+silently misbehaves: `daily.py:_scan_discovery` reads an optional `cfg_key_for(emission)` hook
+so the kinds carry different **weights**, while `max_slots` is resolved from the signal's own
+key and governs the family (a cap read per-emission *vanishes* on an adds-only night — the
+mechanism is tested, though the 13F family deliberately ships **uncapped**: it already ranks
+last by interest, median 0.33 vs `activist_13d` 1.05);
+`budget.signal_family` collapses both strings to `edgar:13f` for caps **and** confluence, since
+two funds agreeing is not two originators agreeing. Adds are detected on **share count**
+(`sshPrnamt`) because `value` is quarter-end market value — a price rise alone would read as
+conviction.
 
 ## Signal-validation evaluator
 
