@@ -111,10 +111,17 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
 
 
 def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
-    """Rows -> `{cusip -> {"value","name","title"}}`. Drops option rows (`put_call` present)
-    and non-share rows (`ssh_type != "SH"` — PRN convertible debt), then SUMS `value` across
-    the multiple `<infoTable>` rows a single holding legitimately spans (sole/shared/none
-    voting split, combined-manager filings). Never raises."""
+    """Rows -> `{cusip -> {"value","shares","name","title"}}`. Drops option rows (`put_call`
+    present) and non-share rows (`ssh_type != "SH"` — PRN convertible debt), then SUMS `value`
+    and `shares` across the multiple `<infoTable>` rows a single holding legitimately spans
+    (sole/shared/none voting split, combined-manager filings).
+
+    `shares` is `None` when NO surviving row supplied a usable count — deliberately distinct
+    from 0.0, so `material_add_diff` can abstain rather than read a missing count as a holding
+    that "grew from nothing". Rows dropped as options/PRN contribute neither value nor shares.
+    Order-independent: a `None`-shares row seen first never swallows a later usable count.
+
+    Never raises."""
     agg: dict[str, dict] = {}
     for r in rows:
         if (r.get("put_call") or "").strip():
@@ -125,12 +132,17 @@ def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
         val = r.get("value")
         if not cusip or val is None:
             continue
+        sh = r.get("shares")
         cur = agg.get(cusip)
         if cur is None:
-            agg[cusip] = {"value": float(val), "name": r.get("name") or "",
-                          "title": r.get("title") or ""}
+            agg[cusip] = {"value": float(val),
+                          "shares": (None if sh is None else float(sh)),
+                          "name": r.get("name") or "", "title": r.get("title") or ""}
         else:
             cur["value"] += float(val)
+            if sh is not None:
+                cur["shares"] = (float(sh) if cur["shares"] is None
+                                 else cur["shares"] + float(sh))
     return agg
 
 

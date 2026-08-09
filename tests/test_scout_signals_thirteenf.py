@@ -82,6 +82,57 @@ def test_aggregate_sums_same_cusip_multirow_and_drops_options_and_prn():
     assert agg["02005N100"]["value"] == 150.0      # sole+shared summed
 
 
+def test_aggregate_sums_shares_across_voting_split_rows():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),   # sole voting
+        ("ALLY", "02005N100", 50, "SH", "", 40),    # shared voting -> 100 shares total
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 100.0
+    assert agg["02005N100"]["value"] == 150.0       # value unchanged by this task
+
+
+def test_aggregate_shares_all_none_stays_none_not_zero():
+    """A missing share count must ABSTAIN downstream, never read as zero shares held."""
+    xml = (f'<informationTable xmlns="{_NS}"><infoTable>'
+           "<nameOfIssuer>ALLY</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+           "<cusip>02005N100</cusip><value>100</value>"
+           "<shrsOrPrnAmt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+           "</infoTable></informationTable>")
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] is None
+
+
+def test_aggregate_shares_mixed_none_sums_only_the_present():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+        ("ALLY", "02005N100", 50, "SH", "", "n/a"),   # unparseable -> contributes nothing
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+
+
+def test_aggregate_shares_none_first_then_present_still_sums():
+    """Order must not matter: a None-shares row seen FIRST must not swallow a later count."""
+    xml = _infotable([
+        ("ALLY", "02005N100", 50, "SH", "", "n/a"),
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+
+
+def test_aggregate_option_and_prn_rows_do_not_contribute_shares():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+        ("ALLY", "02005N100", 999, "SH", "Call", 500),   # option -> dropped entirely
+        ("ALLY", "02005N100", 999, "PRN", "", 700),      # convertible debt -> dropped
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+    assert agg["02005N100"]["value"] == 100.0
+
+
 def test_new_position_diff_weight_and_strength_math():
     latest = {"NEWCUS": {"value": 50.0, "name": "New Co", "title": "COM"},
               "OLDCUS": {"value": 950.0, "name": "Old Co", "title": "COM"}}
