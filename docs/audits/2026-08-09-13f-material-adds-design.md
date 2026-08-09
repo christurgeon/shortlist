@@ -335,6 +335,32 @@ Four findings:
    ≈ 0` is the discriminator** — but it is still not built, because on real data the false
    positive did not occur.
 
+### End-to-end through the real signal (post-review, 2026-08-09)
+
+The table above exercised `material_add_diff` directly. This run drives the whole
+`EdgarThirteenFSignal.scan` path — real SEC fetches, the real CUSIP resolver, the real emission
+builder — on a throwaway instance with an empty `seen_accessions` and no state written:
+
+```
+2 new 13F positions from 2 filings (2 funds), 4 material add(s)
+
+edgar:13f_material_add  UBER  str=1.00  Appaloosa added to 13F position (Q1 2026): shares +242%
+edgar:13f_material_add  AMZN  str=1.00  Appaloosa added to 13F position (Q1 2026): shares +98%
+edgar:13f_material_add  GOOGL str=0.78  Berkshire added to 13F position (Q1 2026): shares +204%
+edgar:13f_material_add  VST   str=0.58  Appaloosa added to 13F position (Q1 2026): shares +114%
+edgar:13f_new_position  SNDK  str=0.60  Appaloosa new 13F position (Q1 2026): 3.0% of book
+edgar:13f_new_position  DAL   str=0.20  Berkshire new 13F position (Q1 2026): 1.0% of book
+```
+
+Confirms four things the unit tests can only assert against fakes: CUSIP→ticker resolution
+works on real adds; the status headline counts new positions and adds **separately**; both
+emission strings appear with correct `meta["kind"]` and **no add leaks under the new-position
+string** (the cohort-contamination guard, live); and strengths spread 0.20–1.00 rather than
+pinning at the cap.
+
+**Still unobserved:** the funnel path beyond emission — dedup, prefilter, the family cap, and
+the digest. That needs the live 22:30 run against the Q2 burst.
+
 ## 7. Explicitly out of scope
 
 - **Exits** (CUSIP in prior, absent in latest). An exit surfaces a name to *avoid*, and the
