@@ -60,11 +60,18 @@ def _local(tag: str) -> str:
 
 
 def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
-    """13F information-table XML -> `[{"cusip","name","title","value","put_call",
+    """13F information-table XML -> `[{"cusip","name","title","value","shares","put_call",
     "ssh_type"}]`, one dict per `<infoTable>` row. Namespace-agnostic (strips namespaces via
     local tag names). `value` is a float (SEC reports whole dollars post-2023, $1000s before
-    — the within-filing weight normalizes it away either way). Never raises: a parse error
-    yields []."""
+    — the within-filing weight normalizes it away either way).
+
+    `shares` (`sshPrnamt`) is the only PRICE-INDEPENDENT quantity in the filing, and is what
+    `material_add_diff` detects on: `value` is quarter-end MARKET value, so a position whose
+    stock rose 50% with zero shares bought shows a ~50% book-weight increase and would
+    otherwise read as fund conviction. `None` (missing/unparseable) is kept distinct from 0.0
+    so downstream can abstain instead of reading a gap as "holds nothing".
+
+    Never raises: a parse error yields []."""
     try:
         root = ET.fromstring(xml_bytes if isinstance(xml_bytes, bytes)
                              else xml_bytes.encode("utf-8"))
@@ -75,7 +82,7 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
         if _local(it.tag) != "infoTable":
             continue
         rec: dict = {"cusip": "", "name": "", "title": "", "value": None,
-                     "put_call": "", "ssh_type": ""}
+                     "put_call": "", "ssh_type": "", "shares": None}
         for child in it.iter():
             tag = _local(child.tag)
             txt = (child.text or "").strip()
@@ -87,6 +94,11 @@ def parse_infotable(xml_bytes: bytes | str) -> list[dict]:
                 rec["title"] = txt
             elif tag == "putCall":
                 rec["put_call"] = txt
+            elif tag == "sshPrnamt":
+                try:
+                    rec["shares"] = float(txt.replace(",", ""))
+                except ValueError:
+                    rec["shares"] = None
             elif tag == "sshPrnamtType":
                 rec["ssh_type"] = txt
             elif tag == "value":

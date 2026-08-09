@@ -17,14 +17,18 @@ _NS = "http://www.sec.gov/edgar/document/thirteenf/informationtable"
 
 
 def _infotable(rows) -> str:
-    """rows: list of (name, cusip, value, ssh_type, put_call). put_call '' = none."""
+    """rows: list of (name, cusip, value, ssh_type, put_call[, shares]). put_call '' = none.
+    `shares` (sshPrnamt) defaults to 1, so existing 5-tuple call sites are unchanged."""
     body = []
-    for name, cusip, value, ssh, pc in rows:
+    for row in rows:
+        name, cusip, value, ssh, pc = row[:5]
+        shares = row[5] if len(row) > 5 else 1
         pc_tag = f"<putCall>{pc}</putCall>" if pc else ""
         body.append(
             f"<infoTable><nameOfIssuer>{name}</nameOfIssuer><titleOfClass>COM</titleOfClass>"
             f"<cusip>{cusip}</cusip><value>{value}</value>{pc_tag}"
-            f"<shrsOrPrnAmt><sshPrnamt>1</sshPrnamt><sshPrnamtType>{ssh}</sshPrnamtType></shrsOrPrnAmt>"
+            f"<shrsOrPrnAmt><sshPrnamt>{shares}</sshPrnamt>"
+            f"<sshPrnamtType>{ssh}</sshPrnamtType></shrsOrPrnAmt>"
             f"</infoTable>")
     return f'<informationTable xmlns="{_NS}">{"".join(body)}</informationTable>'
 
@@ -43,7 +47,27 @@ def _submissions(forms):
 def test_parse_infotable_namespace_agnostic():
     rows = parse_infotable(_infotable([("ALLY FINL INC", "02005N100", 100, "SH", "")]))
     assert rows == [{"cusip": "02005N100", "name": "ALLY FINL INC", "title": "COM",
-                     "value": 100.0, "put_call": "", "ssh_type": "SH"}]
+                     "value": 100.0, "put_call": "", "ssh_type": "SH", "shares": 1.0}]
+
+
+def test_parse_infotable_shares_comma_formatted():
+    rows = parse_infotable(_infotable([("ALLY", "02005N100", 100, "SH", "", "1,234,567")]))
+    assert rows[0]["shares"] == 1234567.0
+
+
+def test_parse_infotable_shares_non_numeric_is_none():
+    rows = parse_infotable(_infotable([("ALLY", "02005N100", 100, "SH", "", "n/a")]))
+    assert rows[0]["shares"] is None
+
+
+def test_parse_infotable_missing_sshprnamt_is_none():
+    """`sshPrnamt` absent entirely -> None, never 0.0 (which would read as "holds nothing")."""
+    xml = (f'<informationTable xmlns="{_NS}"><infoTable>'
+           "<nameOfIssuer>ALLY</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+           "<cusip>02005N100</cusip><value>100</value>"
+           "<shrsOrPrnAmt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+           "</infoTable></informationTable>")
+    assert parse_infotable(xml)[0]["shares"] is None
 
 
 def test_aggregate_sums_same_cusip_multirow_and_drops_options_and_prn():
