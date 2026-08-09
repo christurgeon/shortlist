@@ -2,7 +2,7 @@
 
 Design: docs/audits/2026-08-07-wsb-novelty-rule.md §7.2
 """
-from shortlist.scout.budget import originator, select
+from shortlist.scout.budget import originator, select, signal_family
 from shortlist.scout.models import Candidate, Emission
 
 
@@ -115,3 +115,52 @@ def test_chosen_stays_interest_ordered_after_backfill():
     chosen, _, _ = select(cands, daily_x=3, caps={"wsb:novel": 1})
     interests = [c.interest for c in chosen]
     assert interests == sorted(interests, reverse=True)
+
+
+# ------------------------------------------------- 13F family collapse (two emission kinds)
+
+def test_originator_collapses_the_13f_family():
+    """A new position and a material add on one ticker are ONE originator, not confluence."""
+    c = _cand("XYZ", 0.5, signals=("edgar:13f_new_position", "edgar:13f_material_add"))
+    assert originator(c) == "edgar:13f"
+
+
+def test_signal_family_is_identity_for_everything_else():
+    assert signal_family("edgar:8k_item_match") == "edgar:8k_item_match"
+    assert signal_family("wsb:novel") == "wsb:novel"
+    assert signal_family("edgar:13f") == "edgar:13f"      # the bare legacy string
+
+
+def test_originator_unchanged_for_true_confluence():
+    c = _cand("XYZ", 0.5, signals=("edgar:13f_new_position", "edgar:form4_opportunistic"))
+    assert originator(c) is None    # two genuinely distinct originators
+
+
+def test_originator_unchanged_for_non_13f_signals():
+    assert originator(_cand("XYZ", 0.5, signals=("edgar:8k_item_match",))) \
+        == "edgar:8k_item_match"
+
+
+def test_family_shares_one_cap_bucket():
+    """The family cap counts new positions and adds together, and never wastes a slot."""
+    cands = ([_cand(f"N{i}", 0.9 - i * 0.01, signals=("edgar:13f_new_position",))
+              for i in range(3)]
+             + [_cand(f"A{i}", 0.8 - i * 0.01, signals=("edgar:13f_material_add",))
+                for i in range(3)]
+             + [_cand(f"F{i}", 0.1 - i * 0.01, signals=("edgar:form4_opportunistic",))
+                for i in range(3)])
+    chosen, _dropped, capped = select(cands, 5, caps={"edgar:13f": 2})
+    fam = [c for c in chosen if originator(c) == "edgar:13f"]
+    assert len(chosen) == 5         # a cap never wastes a slot
+    assert len(fam) == 2            # quota 2; form4's 3 fill the rest, so no backfill room
+    assert capped                   # the displaced 13F names are named
+
+
+def test_family_still_dominates_when_it_is_the_only_supply():
+    """Supply is the binding constraint: the cap must not idle slots nobody else can fill."""
+    cands = [_cand(f"N{i}", 0.9 - i * 0.01, signals=("edgar:13f_new_position",))
+             for i in range(4)]
+    cands += [_cand(f"A{i}", 0.5 - i * 0.01, signals=("edgar:13f_material_add",))
+              for i in range(4)]
+    chosen, _dropped, _capped = select(cands, 5, caps={"edgar:13f": 2})
+    assert len(chosen) == 5         # backfilled past the quota, not truncated to 2

@@ -1005,6 +1005,15 @@ class EdgarThirteenFSignal:
                         f" ({len(self.funds)} funds){tail}")
         return out
 
+    def cfg_key_for(self, emission) -> str:
+        """Per-emission config key: material adds read `signals.edgar_13f_material_add`
+        (weight 0.75), new positions read `signals.edgar_13f` (weight 1.0). Consumed by
+        `daily.py:_scan_discovery` — only `weight` is resolved per kind; `max_slots` comes
+        from `edgar_13f` and governs the whole family (see the asymmetry note there)."""
+        from .thirteenf import SIGNAL_MATERIAL_ADD
+        return ("edgar_13f_material_add" if emission.signal == SIGNAL_MATERIAL_ADD
+                else "edgar_13f")
+
     def _mark_processed(self, accession: str) -> None:
         if accession and accession not in self.seen_accessions:
             self.seen_accessions.add(accession)

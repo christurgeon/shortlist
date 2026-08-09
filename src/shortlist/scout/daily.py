@@ -17,7 +17,7 @@ import yaml
 from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
 from ._caption import _caption
-from .budget import select
+from .budget import select, signal_family
 from .calendar import last_session
 from .firehose import CohortEvent, cohort_events_from_emissions
 from .funnel import aggregate, apply_investable_floor, apply_quality_floor, apply_veto, prefilter
@@ -671,14 +671,31 @@ def _scan_discovery(discovery: list, *, state: ScoutState, demo: bool, session: 
             # weight by config: map signal name back to its config key. Names are
             # identity except the demo "mock" signal, which borrows yahoo_screener's weight.
             cfg_key = "yahoo_screener" if s.name == "mock" else s.name
-            w = sig_cfg.get(cfg_key, {}).get("weight", 1.0)
+            # A signal emitting MORE THAN ONE emission string may map each to its own config
+            # key via an optional `cfg_key_for(emission)` hook, so the kinds can carry
+            # different weights (edgar_13f: 1.0 vs edgar_13f_material_add: 0.75). Absent —
+            # every signal but edgar_13f — falls back to `cfg_key`, i.e. byte-identical to
+            # the pre-hook behaviour.
+            key_for = getattr(s, "cfg_key_for", None)
             # Optional per-originator slot cap. Absent -> the signal is never capped and
             # `budget.select` stays byte-identical to the uncapped ranking.
+            #
+            # NOTE THE ASYMMETRY, it is load-bearing: `weight` is resolved per EMISSION
+            # (`ekey`), `max_slots` from the SIGNAL's own key (`cfg_key`), because a cap
+            # governs the whole family and lives on the parent. Resolving the cap from `ekey`
+            # would make it VANISH on a night that produced only material adds, since
+            # `edgar_13f_material_add` deliberately carries no `max_slots` — leaving the
+            # family uncapped in exactly the case the split introduced.
             cap = sig_cfg.get(cfg_key, {}).get("max_slots")
             for e in ems:
-                weights_by_signal[e.signal] = w
+                ekey = cfg_key
+                if key_for is not None:
+                    ekey = key_for(e) or cfg_key
+                weights_by_signal[e.signal] = sig_cfg.get(ekey, {}).get("weight", 1.0)
                 if cap is not None:
-                    caps_by_signal[e.signal] = int(cap)
+                    # Keyed by FAMILY: `select` looks caps up with `originator()`'s return
+                    # value, which is family-collapsed.
+                    caps_by_signal[signal_family(e.signal)] = int(cap)
         except Exception as exc:  # noqa: BLE001
             statuses.append(SignalStatus(s.name, False, redact_secrets(str(exc))))
             continue
