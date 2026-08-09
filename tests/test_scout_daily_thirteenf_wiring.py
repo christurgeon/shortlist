@@ -176,10 +176,21 @@ def test_repo_config_material_add_key_is_weight_only_and_not_buildable():
     assert "edgar_13f_material_add" not in _enabled_signal_names(_CFG["scout"])
 
 
-def test_repo_config_family_cap_lives_on_the_parent_key():
-    """max_slots governs the family, so it must be on edgar_13f, not the add's key."""
-    assert _CFG["scout"]["signals"]["edgar_13f"]["max_slots"] == 4
-    assert "max_slots" not in _CFG["scout"]["signals"]["edgar_13f_material_add"]
+def test_repo_config_ships_the_13f_family_uncapped():
+    """No max_slots on EITHER 13F key -- a deliberate, measured decision, not an omission.
+
+    Interest is strength x weight, and the live firehose puts 13F at the BOTTOM of the funnel
+    (median interest 0.33, n=23) against edgar:activist_13d 1.05 and form4_cluster_buy 1.00.
+    So the high-tier originators cannot be crowded out by 13F and a cap protects nothing,
+    while it WOULD make the 13F ledger's pre/post cohorts non-comparable. If this ever needs
+    a cap, it goes on `edgar_13f` (the parent), never on the add's key -- max_slots is
+    resolved from the signal's own config key so a family cap cannot vanish on an adds-only
+    night (see daily.py:_scan_discovery and test_cap_survives_an_adds_only_night, which pins
+    that mechanism independently of whether the repo config uses it).
+    """
+    sig = _CFG["scout"]["signals"]
+    assert "max_slots" not in sig["edgar_13f"]
+    assert "max_slots" not in sig["edgar_13f_material_add"]
 
 
 def test_signal_kwargs_threads_material_add_block():
@@ -215,8 +226,6 @@ def test_real_cfg_key_for_hook_resolves_to_the_repo_config_weights():
     cfg_signals = _CFG["scout"]["signals"]
     assert cfg_signals[keys[tf.SIGNAL]]["weight"] == 1.0
     assert cfg_signals[keys[tf.SIGNAL_MATERIAL_ADD]]["weight"] == 0.75
-    # and the cap must resolve from the PARENT key, which is what _scan_discovery uses
-    assert cfg_signals[keys[tf.SIGNAL]]["max_slots"] == 4
 
 
 def test_real_cfg_key_for_falls_back_for_an_unknown_signal_string():

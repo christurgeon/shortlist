@@ -251,7 +251,9 @@ after one request); `daily.py` persists a rest-of-day cooldown in `ScoutState`. 
 `edgar:13f_material_add`. Two seams make that work, and a third kind must touch **both** or it
 silently misbehaves: `daily.py:_scan_discovery` reads an optional `cfg_key_for(emission)` hook
 so the kinds carry different **weights**, while `max_slots` is resolved from the signal's own
-key and governs the family (a cap read per-emission *vanishes* on an adds-only night);
+key and governs the family (a cap read per-emission *vanishes* on an adds-only night — the
+mechanism is tested, though the 13F family deliberately ships **uncapped**: it already ranks
+last by interest, median 0.33 vs `activist_13d` 1.05);
 `budget.signal_family` collapses both strings to `edgar:13f` for caps **and** confluence, since
 two funds agreeing is not two originators agreeing. Adds are detected on **share count**
 (`sshPrnamt`) because `value` is quarter-end market value — a price rise alone would read as
