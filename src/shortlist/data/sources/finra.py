@@ -11,7 +11,6 @@ from ..diskcache import read_json_cache, write_json_cache
 from ..models import SourceResult, TickerSnapshot
 from .base import Source
 
-# --- FINRA: keyless consolidated short interest ----------------------------
 
 class FinraSource(Source):
     """Keyless FINRA ConsolidatedShortInterest. Bulk-loads the latest bi-monthly

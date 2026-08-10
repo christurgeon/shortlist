@@ -10,7 +10,7 @@ from __future__ import annotations
 from difflib import SequenceMatcher
 from typing import Iterable, Optional
 
-from .entity_match import normalize_name  # shared generic name normalizer
+from .entity_match import normalize_name
 
 # Non-exhaustive seed map: SEC-ticker -> known USAspending recipient name tokens
 # (already in normalize_name() form) for subsidiaries/divisions whose names don't

@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="bypass cached HTTP responses and repopulate them")
     args = ap.parse_args(argv)
 
-    load_env()  # pick up API keys from a .env file if present
+    load_env()
 
     # This CLI loads no config.yaml, so the cache uses hardcoded TTL defaults (the
     # spec's on-by-default behavior holds without a config block).

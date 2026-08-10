@@ -1,4 +1,3 @@
-# src/shortlist/data/coverage_adapt.py
 """Adapt a merged harness TickerSnapshot to the (outcomes, contributed) shape that
 shortlist.coverage.build_coverage consumes, so harness-engine cards carry the same
 per-source diagnostic the screener path produces.

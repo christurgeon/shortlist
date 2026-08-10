@@ -16,7 +16,6 @@ from .yahoo_prices import (
     _normalize_yahoo,
 )
 
-# --- Yahoo: keyless OHLCV -> we compute momentum/risk ourselves ------------
 
 class YahooSource(Source):
     """Keyless Yahoo chart OHLCV. Computes momentum/risk (rel strength vs SPY,

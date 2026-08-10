@@ -1,4 +1,3 @@
-# src/shortlist/data/macro.py
 """Run-level FRED macro/credit-regime overlay. Official FRED API (needs a free
 FRED_API_KEY), day-cached, never-raises.
 
