@@ -2,7 +2,12 @@
 import pandas as pd
 import pytest
 
-from shortlist.providers._edgar_facts import extract_financials, EdgarFinancials
+from shortlist.providers._edgar_facts import (
+    EdgarFinancials,
+    _instant_columns,
+    _total_equity_series,
+    extract_financials,
+)
 
 
 def _cashflow_df():
@@ -249,3 +254,81 @@ def test_accruals_survives_net_income_standard_concept_rename():
     # accruals = (NI_2025 - CFO_2025) / avg(Assets_2025, Assets_2024)
     #          = (112.01B - 90B) / ((360B + 340B) / 2) = 22.01B / 350B
     assert fin.accruals == pytest.approx(22_010_000_000.0 / 350_000_000_000.0)
+
+
+# --- total_equity: concept family, exact-matched (2026-08-10) ---------------------------
+# docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md §3
+
+def _bal_eq(rows, cols=("2025-12-31", "2024-12-31"), levels=None):
+    """rows: {concept: [v_newest, v_prior]} -> a balance-sheet DataFrame."""
+    keys = list(rows)
+    data = {"concept": keys, "label": keys,
+            "level": levels or [1] * len(keys), "abstract": [False] * len(keys)}
+    for i, c in enumerate(cols):
+        data[c] = [rows[k][i] for k in keys]
+    return pd.DataFrame(data)
+
+
+def test_total_equity_parent_only_csco_shape():
+    df = _bal_eq({"us-gaap_StockholdersEquity": [45000.0, 44000.0],
+                  "us-gaap_LiabilitiesAndStockholdersEquity": [101000.0, 98000.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == [45000.0, 44000.0]
+
+
+def test_total_equity_nci_inclusive_only_unh_shape():
+    """UNH carries ONLY the NCI-inclusive tag; the fallback must let it resolve."""
+    df = _bal_eq({
+        "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest":
+            [94110.0, 92658.0],
+        "us-gaap_LiabilitiesAndStockholdersEquity": [309581.0, 298278.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == [94110.0, 92658.0]
+
+
+def test_total_equity_both_present_ko_shape_prefers_parent_only_and_never_sums():
+    """KO reports BOTH. Parent-only wins (it is what FMP supplies, so one field keeps one
+    meaning across sources); never the sum."""
+    df = _bal_eq({
+        "us-gaap_StockholdersEquity": [24000.0, 23000.0],
+        "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest":
+            [25000.0, 24000.0],
+        "us-gaap_LiabilitiesAndStockholdersEquity": [100000.0, 98000.0]})
+    got = _total_equity_series(df, _instant_columns(df))
+    assert got == [24000.0, 23000.0]
+    assert got != [49000.0, 47000.0]          # the summing bug
+
+
+def test_total_equity_never_matches_liabilities_and_stockholders_equity():
+    """THE landmine: that concept CONTAINS 'StockholdersEquity' and equals total ASSETS.
+    A substring match would make ROIC 3-10x too SMALL, silently."""
+    df = _bal_eq({"us-gaap_LiabilitiesAndStockholdersEquity": [309581.0, 298278.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == []
+
+
+def test_total_equity_sparse_priority_row_falls_through_to_the_complete_one():
+    """Value-aware: a sparse parent-only row must NOT shadow a complete NCI-inclusive row.
+    A presence-keyed matcher returns [] here and silently loses an available value."""
+    df = _bal_eq({
+        "us-gaap_StockholdersEquity": [24000.0, None],
+        "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest":
+            [25000.0, 24000.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == [25000.0, 24000.0]
+
+
+def test_total_equity_prefers_min_level_over_a_nested_child():
+    """A nested child listed FIRST must not pose as the balance-sheet total: equity 15x too
+    small would make ROIC ~15x too LARGE -- worse than the substring landmine."""
+    df = _bal_eq({"us-gaap_StockholdersEquity": [3000.0, 2900.0]}, levels=[4])
+    df = pd.concat([df, _bal_eq({"us-gaap_StockholdersEquity": [45000.0, 44000.0]},
+                                levels=[2])], ignore_index=True)
+    assert _total_equity_series(df, _instant_columns(df)) == [45000.0, 44000.0]
+
+
+def test_total_equity_skips_abstract_rows():
+    df = _bal_eq({"us-gaap_StockholdersEquityAbstract": [None, None],
+                  "us-gaap_StockholdersEquity": [45000.0, 44000.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == [45000.0, 44000.0]
+
+
+def test_total_equity_absent_family_returns_empty_not_zero():
+    df = _bal_eq({"us-gaap_Assets": [309581.0, 298278.0]})
+    assert _total_equity_series(df, _instant_columns(df)) == []
