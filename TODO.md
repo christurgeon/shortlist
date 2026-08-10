@@ -25,6 +25,43 @@ the scoring roadmap.
 
 # 1. Watch items — deployed, not yet observed
 
+## Scout failure alerting — built, NOT deployed (2026-08-10)
+
+`OnFailure=shortlist-alert-failure@%n.service` is now wired into **both** generated units, with
+`deploy/shortlist-alert-failure.sh` + a `tests/test_deploy_units.py` guard that fails if either
+route loses it. **Committed but not yet on the box** — the installer needs interactive root:
+
+```
+sudo bash deploy/install_opt_shortlist.sh
+```
+
+Until that runs, a scout crash is still silent. Why it was silent at all: `last_session()`
+anchors to the prior trading day, so a weekend legitimately prints `run for <Fri> already
+completed` — a crash and a Sunday look identical from the outside, and the `OnFailure=` line
+shipped commented out. Deliberately **not** the `oracle-alert-failure@` template: it runs as
+`oracle`, whose only group is `oracle`, so its `journalctl -u shortlist-scout.service` tail
+comes back empty.
+
+Two landmines the script encodes — do not "simplify" either away:
+- It **`source`s `/opt/shortlist/.env` in bash**, not systemd `EnvironmentFile=`. That file uses
+  `export KEY=value` lines, which systemd reads as a variable literally named `export KEY` and
+  skips, so the token would be empty and every alert would no-op silently.
+- It redacts the journal tail before sending (FMP/Finnhub carry the key as a query param), the
+  bash counterpart of `env.py:redact_secrets()`.
+
+To verify after deploying: `systemd-run` a deliberately-failing transient unit with the
+`OnFailure=`, or wait for a real failure. Script itself was tested against the real `.env` with
+`curl` stubbed (token found, journal tail populated, zero unredacted key params).
+
+Adjacent, unchanged: `state.mark_run_completed()` runs *before* the `return 2` on a Telegram
+delivery failure (`daily.py:912`), so a failed delivery cannot be retried that day — it no-ops
+as "already completed". That looks like a deliberate trade (the unit comment cites avoiding a
+re-hit of the Yahoo WAF endpoint) but the comment's "marked complete only after delivery"
+wording implies otherwise. Decide whether the alert is sufficient or a retry is wanted.
+
+**Status:** code + tests committed and green (2531 passed, ruff clean); **deploy is the open
+action**, and the end-to-end `OnFailure` chain is unverified until it runs.
+
 ## `daily_x` 15 — first live run (2026-08-07)
 
 `config.yaml:526` allocates **15** deep-screen slots/night (was 10); deployed 2026-08-08
@@ -40,6 +77,13 @@ Two things to check on the first real 22:30 run:
   flight, and 15 tickers sustains that one batch longer. A 429 there does **not** error — it
   quietly thins a section. Read the coverage summary.
 - Duration + any EDGAR 429s (`journalctl -u shortlist-scout.service`).
+
+**Not yet stressed.** An off-schedule run 2026-08-10 (13:53 UTC, sandboxed state) completed in
+~3 min with 591 SEC requests and no throttle errors, but the funnel only produced **9 candidates
+→ 4 screened**, so the 15 slots were never contended and `dropped_for_budget` was 0. Note the
+mid-day caveat for any repeat: EDGAR's daily index is not yet populated pre-market, so both
+Form 4 and 13D logged `2026-08-10 index empty, used 2026-08-07` — a mid-day run silently screens
+against the *previous* session's filings. Only a 22:30 run exercises this for real.
 
 The deep-screen SEC draw is still **uncounted** (harness `EdgarSource` is outside
 `sec_throttle`), so `daily_x` is not sizeable from `sec_requests`; if a real number is ever
@@ -58,6 +102,12 @@ the last *trading* day and the weekend has none. So `daily_x: 15` and `wsb:novel
 their first real exercise on **Mon 2026-08-10 22:30 UTC**, and the 08-07 manifest still shows
 `wsb_hype: disabled` (it predates the novelty deploy). Checked 2026-08-09.
 
+**Partially answered 2026-08-10** by an off-schedule run (13:53 UTC, sandboxed state, so it did
+not consume the real session): `wsb_hype` reported `ran=True`, `1 novel of 100 tracked (14 prior
+boards)` — so the rule fires and does not degrade the run. Still unconfirmed: that a `wsb:novel`
+name actually reaches the digest, and the same behaviour on a real 22:30 run (a mid-day run
+reads a *stale* EDGAR index — see below — so the candidate mix differs).
+
 **Forward returns are NOT measured, only composition.** `scout/preregister/wsb_novelty.yaml`
 is committed with a live-forward window from 2026-08-08, K=3m. **A KILL is a real expected
 outcome** — the rule surfaces some retail-lottery names (`LCID HTZ SOUN DJT`) whose profile
@@ -72,13 +122,15 @@ written then removed unshipped — see below). **Never emitted through the live 
 detector itself HAS been
 run against real filings offline (all 7 funds' Q1-2026 vs Q4-2025 pairs: 154/154 `sshPrnamt`
 parsed, 6 adds, 0 abstentions, no split artifacts — design doc §6a). What is unobserved is the
-live path: emission → funnel → cap → digest. Verified live 2026-08-09: all 7 funds' latest
-13F-HR is Q1 (period 2026-03-31) and already in `thirteenf_seen`, so the full Q2 burst is still
-ahead. Q2 is due **2026-08-14** and these funds file at the deadline (Q1 → filed
-May 14/15). `_mark_processed` burns an accession permanently, so a fund processed before the
-deploy loses that quarter's adds until November — **deploy by 2026-08-12**. Aug 15/16 are a
-weekend, so with `max_filings_per_day: 3` the 7-fund burst absorbs across Fri 14 (3), Mon 17
-(3), Tue 18 (1).
+live path: emission → funnel → cap → digest. **The deploy-by-2026-08-12 deadline is met** —
+`/opt/shortlist` is at `0f47068` (deployed 2026-08-09 23:04 UTC), so no fund loses its Q2 adds.
+Re-confirmed 2026-08-10: all 7 funds' latest 13F-HR is Q1 (period 2026-03-31) and already in
+`thirteenf_seen`, the manifest reads `0 new 13F positions from 0 filings (7 funds), 0 material
+add(s)`, and a forced-empty-seen probe against live SEC reproduced 8 new positions + 2 adds
+with `cfg_key_for` routing the two kinds to their separate weights. So the code is verified
+live; only the burst is pending. Q2 is due **2026-08-14** and these funds file at the deadline
+(Q1 → filed May 14/15). Aug 15/16 are a weekend, so with `max_filings_per_day: 3` the 7-fund
+burst absorbs across Fri 14 (3), Mon 17 (3), Tue 18 (1).
 
 Read from the first post-burst manifest:
 - the `N material add(s)` count, and that the `N new 13F positions` headline still counts
@@ -124,6 +176,28 @@ filing could be permanently missed. Look at real weekend data before trusting th
 ---
 
 # 2. Funnel & discovery
+
+## A single-axis composite can top the digest at 100.0 (2026-08-10)
+
+Observed in a real run (session 2026-08-10, 4 names): **BRVE ranked #1 at composite 100.0** with
+every axis abstained except one — `Qual· Moat· Grow· Value· Mom· Insdr· Risk100`, market cap
+`$0M`, annotated `(thin)`, and `⊘ edgar, finra, wsb: supplied no usable data`.
+
+Not a gate bug — `below_min_mktcap` tripped, so `passed` is false and it cannot rank into a
+recommendation. It is a **presentation** defect: weight redistribution ("when a sub-score has no
+inputs its weight is redistributed") reduces to `composite == risk` when risk is the *only*
+scored axis, and 100.0 then heads the digest. The user's attention lands on the noisiest name in
+the report, which is exactly what the funnel guards exist to prevent.
+
+The seam is the `validity` block, not the gates: a floor on **how many axes must be scored**
+before a composite is emitted at all (or before a card is allowed to sort above scored names).
+`ScoreCard` already carries `confidence`/`abstentions`, so the input exists. Check first whether
+`scored` is even true for a one-axis card — if it is, that is the narrower question to settle.
+Measure how often this happens across the ledger before choosing a threshold; a single observed
+instance does not size the rule.
+
+**Status:** observed once in a live run, nothing changed. Needs a ledger-wide frequency count
+before any `validity` threshold is chosen.
 
 ## A null `market_cap` bypasses BOTH the gate and the investability floor (2026-08-07)
 
