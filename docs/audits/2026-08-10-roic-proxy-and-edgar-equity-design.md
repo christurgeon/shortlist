@@ -36,7 +36,14 @@ roe=_pct(m.get("roeTTM")), roic=_pct(m.get("roiTTM")),
 ### 1.1 The proxy overstates ROIC, measured
 
 The store retains per-source `raw` payloads, so both numbers survive for names where **both**
-sources answered. That makes the substitution error directly measurable with no fetching:
+sources answered. That makes the substitution error directly measurable with no fetching.
+
+> **⚠ Every count in §1 and §2 UNDERCOUNTS by ~15%.** They were produced by a
+> `*/[0-9]*.json.gz` glob, which silently misses the **256 uncompressed snapshots with no `.gz`
+> twin**. The real corpus is **1684** snapshots across 42 tickers, not the 1428 the glob sees
+> (`store.captured_days` dedupes the twins — `store.py:27`). The *ratios* below are unaffected in
+> kind and the direction of the finding is robust, but the absolute n's are low. **Task 4
+> re-derives everything through `store.load`; those figures supersede these.**
 
 | | |
 |---|---|
