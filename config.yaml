@@ -199,9 +199,9 @@ flags:
   # snapshot history). Advisory only — never affects passed/composite/scored.
   # All three are UNFITTED priors — backtest before trusting.
   value_trap:
-    min_value_score:   60   # "cheap" floor on the value sub-score (0-100)
-    max_quality_score: 40   # below this, quality is "weak"
-    max_growth_score:  40   # below this, growth is "weak"
+    min_value_score:   60
+    max_quality_score: 40
+    max_growth_score:  40
     # OPTIONAL fundamental-quality refinement. ABSENT by default -> value_trap is
     # byte-identical to the pre-feature scorer. Uncomment to let the Piotroski-inspired
     # score suppress the flag on cheap-but-improving names and confirm it on
@@ -245,7 +245,6 @@ flags:
     max_debt_to_equity: 1.5
     cyclical_buckets: []
 
-# FMP source knobs.
 fmp:
   # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
   # the free, authoritative insider source — so leave this off to avoid burning a
@@ -828,8 +827,8 @@ scout:
   state_path: state/scout_state.json
   artifact_dir: scout
   report:
-    chart: true            # render + send the PNG glance
-    attach_html: true      # send the HTML deep-dive as a document
+    chart: true
+    attach_html: true
     caption_top_n: 3       # names listed in the photo caption
   signals:
     # DISABLED 2026-08-05. Yahoo's edge WAF rejects the predefined-screener endpoint from
@@ -930,7 +929,7 @@ macro:
     dgs10: DGS10            # 10y treasury yield (%)
     t10y2y: T10Y2Y          # 2s10s curve (%)
     hy_oas: BAMLH0A0HYM2    # ICE BofA US HY OAS (%)
-    vix: VIXCLS             # VIX
+    vix: VIXCLS
     fedfunds: FEDFUNDS      # fed funds (%)
   risk_off: { hy_oas: 5.0, t10y2y: 0.0, vix: 25.0 }   # any one trips risk-off
   risk_on:  { hy_oas: 3.5, vix: 18.0 }                # unfitted priors
