@@ -107,12 +107,36 @@ Environment=EDGAR_RATE_LIMIT_PER_SEC=6
 # Do NOT add Restart=/auto-retry: the run is marked complete only after delivery, so an
 # auto-restart before that re-runs discovery and re-hits the unofficial Yahoo endpoint
 # (see CLAUDE.md "Yahoo WAF gotcha"). Type=oneshot already means no restart — keep it.
-# Optional failure ping (uncomment if oracle-alert-failure@.service is deployed):
-# OnFailure=oracle-alert-failure@%n.service
+# A silent scout night is indistinguishable from a correct weekend no-op (last_session()
+# anchors to the prior trading day, so Sat/Sun legitimately print "already completed").
+# Without this ping a crash looks exactly like a Sunday. NOT the oracle template: that one
+# runs as \`oracle\`, which is not in systemd-journal, so its journal tail is empty.
+OnFailure=shortlist-alert-failure@%n.service
 # 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
 TimeoutStartSec=1800
 # No [Install] section: this oneshot is driven solely by shortlist-scout.timer.
 UNIT
+
+# The failure-alert template. Generated inline like every other unit here (the installer
+# does NOT read deploy/*.service — see CLAUDE.md) because it needs \$DEST/\$RUN_USER baked in.
+cat > "$UNIT_DIR/shortlist-alert-failure@.service" <<UNIT
+[Unit]
+Description=Send Telegram alert for failed shortlist unit %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=$RUN_USER
+Group=$RUN_GROUP
+WorkingDirectory=$DEST
+Environment=HOME=$RUN_HOME
+# %i is the failing unit name WITH its .service suffix (OnFailure passes %n).
+ExecStart=$DEST/deploy/shortlist-alert-failure.sh %i
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=shortlist-alert-failure
+UNIT
+chmod +x "$DEST/deploy/shortlist-alert-failure.sh"
 
 cat > "$UNIT_DIR/shortlist-scout.timer" <<'UNIT'
 [Unit]
@@ -163,6 +187,9 @@ Nice=10
 # scout uses it) and SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
 # default that degrades without the optional extra is a footgun).
 ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
+# Same failure ping as the scout. A [Service] setting added to one generated unit must be
+# added to BOTH routes or it silently never applies here (CLAUDE.md installer gotcha).
+OnFailure=shortlist-alert-failure@%n.service
 # 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
 TimeoutStartSec=1800
 UNIT
