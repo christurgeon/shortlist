@@ -1,4 +1,3 @@
-# src/shortlist/providers/_gaap_tags.py
 """Single source of truth for us-gaap concept/tag NAMES shared by both EDGAR
 extraction paths, so a bare tag string never has to be typed in more than one
 place (a duplicated literal is how the three call sites drift — see

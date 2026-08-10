@@ -1,4 +1,3 @@
-# src/shortlist/providers/_xbrl_facts.py
 """Pure transform: a parsed SEC companyfacts dict -> a point-in-time annual
 fundamentals panel -> the scalars shortlist.models.StockMetrics carries.
 
@@ -397,8 +396,6 @@ def panel_to_metrics(p: XbrlPanel, *, ticker: str, sic: Optional[str],
     ebitda_series = sum_aligned(p.operating_income, p.dep_amort)   # aligned by fiscal end
     m.ebitda = latest(ebitda_series)
     m.cash_and_equivalents = latest(p.cash)
-    # net_debt = total_debt - cash and net_debt/EBITDA, all aligned by fiscal end via the
-    # panel helpers (never mixing ends across the three series).
     net_debt_series = sum_aligned(p.total_debt, {e: -v for e, v in p.cash.items()})
     m.net_debt_to_ebitda = ratio_latest(net_debt_series, ebitda_series,
                                         positive_den=True)
