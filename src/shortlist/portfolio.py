@@ -41,13 +41,13 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
     order: list[str] = []
     try:
         rows = list(csv.reader(p.read_text(encoding="utf-8-sig").splitlines()))
-    except OSError as e:                      # unreadable file
+    except OSError as e:
         return [], [f"Could not read {p}: {e}"]
     for raw in rows:
         if not raw or not "".join(raw).strip():
-            continue                          # blank line
+            continue
         if raw[0].lstrip().startswith("#"):
-            continue                          # comment line (annotations in a hand-kept file)
+            continue                          # annotations in a hand-kept file
         ticker = raw[0].strip().upper()
         shares_s = (raw[1] if len(raw) > 1 else "").strip()
         if not ticker or len(raw) < 2:
@@ -56,7 +56,7 @@ def load_holdings(path) -> tuple[list[Holding], list[str]]:
         try:
             shares = float(shares_s)
         except ValueError:
-            if ticker == "TICKER":            # header row — silently skip
+            if ticker == "TICKER":
                 continue
             warnings.append(f"Skipped row (shares not a number): {raw}")
             continue
