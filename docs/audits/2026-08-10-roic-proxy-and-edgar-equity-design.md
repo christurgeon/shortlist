@@ -3,9 +3,10 @@
 **Status:** approved in outline by the owner 2026-08-10. Scope and evidence method are the
 owner's calls (§0).
 
-**Tracked, not `docs/superpowers/specs/`** (gitignored, 0 tracked files): this changes live
-`quality`/`moat` sub-scores, and `CLAUDE.md` requires tracked reasoning for anything that moves
-live scoring.
+**Tracked, not `docs/superpowers/specs/`** (gitignored, 0 tracked files): this changes the live
+**`moat`** sub-score, and `CLAUDE.md` requires tracked reasoning for anything that moves live
+scoring. (An earlier draft said "quality/moat". `roic` is **not** a quality leg — `_quality_legs`
+at `scoring.py:488` is roe / net_margin / interest_coverage / debt_to_equity. Moat only.)
 
 ---
 
@@ -79,10 +80,30 @@ a bank, where ROIC is structurally undefined and the scorer is already supposed 
 (§4.3).
 
 But on the actual failing path only **21 of 831** snapshots are computable, because
-`Statements.total_equity` is missing in **97%** of them (and 68% of FMP-led ones). Root cause,
-verified: **`_edgar_facts.py` never assigns `total_equity` at all.** It is declared at line 63
-and there is no `fin.total_equity = ...` anywhere in the file. `CLAUDE.md` lists it under
-"extracted but consumed nowhere" — it is in fact *neither* extracted nor consumed.
+`Statements.total_equity` is missing in **97%** of them (and 68% of FMP-led ones).
+
+**Root cause — and it is a coherent design, not an oversight.** An earlier draft of this spec
+claimed `_edgar_facts.py` "declares `total_equity` at line 63 and never assigns it". **That was
+wrong**: line 63 is `total_debt`, and `EdgarFinancials` has **no `total_equity` field at all**
+(`grep total_equity src/shortlist/providers/_edgar_facts.py` → nothing). The declared-but-unused
+field is `Statements.total_equity` (`data/models.py:74`) — a different class in a different
+module. The draft conflated them.
+
+What is actually true, per `docs/STATEMENTS_MERGE.md:22/39/167` and the comment at
+`data/sources/edgar.py:239`: EDGAR deliberately does **not** extract equity, and **the merge
+layer backfills it from FMP by fiscal year**. That design is sound on its own terms. It fails
+here for a reason it did not anticipate: **on the FMP-gated path there is no FMP payload to
+backfill from**, so no source supplies equity at all.
+
+The related "extracted but consumed nowhere" line lives in **`TODO.md:523`**, not `CLAUDE.md`
+(zero hits there — it was removed in `7c4334d`'s 1484→320-line shrink). `ASSESSMENT_GAPS.md:434`
+separately calls `total_equity` "consciously omitted", but that is scoped to the **research
+brief's** financial-series table, not to extraction; its stated reason — equity "goes negative
+on buyback compounders" — is precisely the case §5.4's `invested_capital <= 0` guard handles.
+
+So this work **extends** a documented design rather than overriding a guard: teach EDGAR to
+supply equity so the gated path has a source, instead of relying on an FMP backfill that by
+definition cannot fire when FMP is gated.
 
 ---
 
@@ -104,6 +125,13 @@ ABBV, UNH, PEP, KO, JPM, WMT, COST.
 **This is the load-bearing scoping fact: Stage 2 is justified by Stage 1a alone.** It does not
 depend on Stage 1b finding anything fixable, which is what makes 1b safe to run as an honest
 diagnostic that may conclude "structural, no fix".
+
+**Caveat — 466 is a PROJECTION, not a measurement.** It uses `total_debt` presence as a stand-in
+for equity extractability, and the two use different helpers with different strictness:
+`_sum_concepts` accepts ≥1 of 3 debt components per column, while `_series` requires one row
+complete across **every** instant column (a 3-instant frame with one blank equity cell yields
+`[]`). So the realised count can be lower. Task 1's live check must report the **actual** count
+of snapshots gaining a usable equity series, and §2's table is superseded by that number.
 
 ---
 
@@ -148,21 +176,56 @@ Therefore, non-negotiably:
 portion + short-term). Equity must **pick one**: KO reports both variants and summing them
 double-counts the whole balance-sheet equity.
 
-Priority: **`StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest` first,
-then `StockholdersEquity`.** Invested capital should reflect all capital funding operations,
-including the non-controlling interest, and that ordering also makes UNH (which has only the
-NCI-inclusive tag) resolve to a real value rather than `None`. Where a filer reports only the
-parent-only tag, that is the best available and is used.
+Priority: **`StockholdersEquity` (parent-only) first, then
+`StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest`.**
 
-### 3.4 Unit
+**This ordering was reversed in an earlier draft, and the reversal was wrong.** FMP supplies
+`totalStockholdersEquity` (`fmp.py:137`), which is **parent-only**. EDGAR outranks FMP in
+`_merge_statements`, so preferring the NCI-inclusive tag would (a) make the same
+`Statements.total_equity` field mean different things depending on which source won, and (b)
+**pre-empt the FMP backfill on the ~173 EDGAR-spine snapshots that currently carry FMP equity**,
+silently changing existing merged values. Matching FMP's definition keeps one meaning for one
+field and makes the change purely additive.
+
+Falling back to the NCI-inclusive tag still lets **UNH** resolve, since that is the only equity
+tag UNH reports. Where the two differ the NCI portion is typically small; where a filer reports
+only the inclusive tag it is the best available.
+
+### 3.4 Documentation this change obliges
+
+`total_equity`'s absence from `EdgarFinancials` is *documented* in three places, so adding it
+means correcting them — leaving them stale is how the next reader inherits a false model:
+
+- `data/sources/edgar.py:239` — the comment *"gross_profit/total_equity aren't in
+  EdgarFinancials"* becomes half wrong (`gross_profit` still is not).
+- `docs/STATEMENTS_MERGE.md:22/39/167` — the merge table and the FMP-backfill narrative.
+  EDGAR outranks FMP, so post-change EDGAR **supplies** equity rather than receiving it for the
+  EDGAR-spine snapshots. §3.3's parent-only priority is what keeps that a like-for-like swap
+  rather than a redefinition.
+- `TODO.md:523` — the "extracted but consumed nowhere" parked observation. `total_equity` gains
+  both an extractor and a consumer; `operating_margin`/`current_ratio` remain genuinely unused
+  and stay.
+
+### 3.5 Unit
 
 `_edgar_facts.py`: a `_row_by_exact_concept(df, concepts: tuple[str, ...])` helper returning the
 first exactly-matching non-abstract row in priority order, then
 `fin.total_equity = _series(...)` alongside the existing `total_debt`/`total_assets`
 assignments, using the same `bal_inst` instant-column alignment.
 
-It is a **shared leaf** (`EdgarSource` + the `--source xbrl` backtest both consume it), so the
-fix benefits the backtest too — and any change must be checked against both consumers.
+**Correction to an earlier draft: `_edgar_facts.py` is NOT shared with the XBRL backtest.** Its
+only non-test importer is `data/sources/edgar.py:191`. The XBRL backtest uses the sibling
+`providers/_xbrl_facts.py`, which has its **own** `total_equity` (`:215`, `:261`) and its own
+`_roic_series` (`:286`). The genuinely shared leaf is `_gaap_tags.py`. `CLAUDE.md` describes
+`_edgar_facts.py` as shared with the backtest; that is imprecise and this design does not rely
+on it.
+
+The practical consequence is *reassuring*: adding `total_equity` **cannot perturb any backtest
+path or golden value**. It also means the fix does not benefit `--source xbrl` — that path
+already computes its own ROIC, with a **per-year effective tax rate** clamped to [0, 0.5] and a
+0.21 statutory fallback (`_xbrl_facts.py:286-307`), where §5.2 below uses a flat 0.25. The two
+axes will therefore differ by roughly `(1-0.25)/(1-0.21) = 0.949`, ~5%. Noted so nobody reads
+the gap as a bug; unifying them is out of scope.
 
 ---
 
@@ -229,11 +292,19 @@ silently)"*. The series here have **different lengths**: UNH carries `fiscal_yea
 newest-first prefix. So this is a **defensive** requirement, not a live bug, and the spec says so
 rather than implying a defect that isn't there.
 
-It is still the right call, because the failure is silent and the guard is nearly free: an
-interior gap would pair 2024 debt against 2023 operating income and report a plausible wrong
-number, with nothing to catch it. Index each series by its fiscal year via
-`Statements.fiscal_years`, compute ROIC only for years where **all three** resolve, and require
-≥2 such years. A test must cover an interior-gap series — synthetic, since the store has none.
+**And a correction: true fiscal-year pairing is NOT implementable here, so do not claim it.**
+`Statements` carries **one** year spine. The balance-sheet series (`total_debt`, `total_equity`)
+have no year labels of their own — `edgar.py:217` derives `fiscal_years` from the *income
+statement's* `fiscal_period_end`, and `_instant_columns`' dates are discarded by `_series`.
+Indexing all three by the position of `fiscal_years[i]` is therefore **a positional zip with a
+year label attached, plus a skip for missing values** — which is the honest description of what
+ships.
+
+That is correct today (0 interior gaps across all 1684 stored snapshots, and the measured
+`fy=3 / oi=3 / debt=2` shape is a clean newest-first prefix). Keep the None-skip, because it is
+free and it degrades safely. But **name the helper and its test for what they do** — skip years
+where any input is missing — rather than for a year-pairing guarantee the data model cannot
+provide. Genuine per-series year labels would be a separate change to `Statements`.
 
 **Tax rate:** flat **`TAX_RATE = 0.25`**, config-exposed. We have no tax-expense field, and
 deriving an effective rate from `net_income`/`operating_income`/`interest_expense` is noisy
@@ -264,26 +335,89 @@ discipline the 13F share-count work used.
 
 ## 6. Verdict and its bar
 
-Pre-registered here, before measurement, so it cannot be reinterpreted afterwards:
+Pre-registered here, before measurement, so it cannot be reinterpreted afterwards. **An earlier
+draft of this section was rejected in review for validating the wrong quantity on the wrong
+population; what follows is the corrected bar.**
 
-**Metric:** median |relative error| against FMP's `returnOnInvestedCapitalTTM`, on snapshots
-where both the computed value and FMP's value exist.
+### 6.1 Measure the quantity the scorer actually reads
 
-**Bar:** the computed estimator must beat the proxy's **29.2%** median error on the same
-paired set. The provisional read is **16.9%**, but that was computed with a point-in-time
-denominator over 186 observations and must be re-derived by the shipped code path.
+`scoring.py:79` and `:523` read **`roic_5y_avg` if present, else `roic`**. §5.2 populates
+`roic_5y_avg` whenever ≥2 years resolve — which is the *normal* case on the target path (the
+measured `fy=3 / oi=3 / debt=2` shape appears in 791 of 1684 snapshots). **So the leg will read
+the 2–3 year average almost always, and a bar on spot `roic` alone would leave the shipped
+quantity unvalidated.**
 
-**If it does not clear the bar**, the finding is that `roic` should be `None` on the gated path —
-the moat leg abstains and redistributes weight, which is the scorer's documented behaviour and
-an honest outcome, not a regression. **Committing to that in advance is what stops this becoming
-a search for a flattering number.**
+The bar therefore covers **both**:
 
-**Sizing obligation either way:** dropping or adding `roic` changes each card's scored weight.
-Confirm whether any name crosses `validity.min_scored_weight` (0.25) and flips
-`scored`/`passed`, since **an unscored name cannot pass or rank**. Report the count; do not
-discover it in production.
+| quantity | compared against |
+|---|---|
+| computed spot `roic` | FMP `returnOnInvestedCapitalTTM` |
+| computed `roic_5y_avg` (2–3 yr) | FMP `roic_5y_avg` (5 yr) |
 
----
+The second comparison is not apples-to-apples by construction — a 2–3 year window against a
+5-year one — and that is exactly why it must be measured rather than waved through as "a
+documented approximation". Review measured a **+11.0% median level shift** (p10 −13.1%, p90
++32.1%) on the 420 snapshots where both exist: a systematic *upward* shift into a band
+calibrated on the 5-year figure. **Report it; do not assume it cancels.**
+
+### 6.2 Re-derive BOTH estimators on the SAME post-fix population
+
+The proxy's 29.2% is a **stored constant measured on today's population**. Stage 1a changes that
+population: review found ~**343** additional rows become computable once equity lands (EDGAR
+spine, `operating_income` present, equity absent, FMP truth present). Comparing a fresh computed
+number against an old-population constant **is not a bar**.
+
+So Task 4 must recompute **proxy and computed side by side on the identical post-fix rows**, and
+report **per statements-provenance**, because pooling hides the path being fixed — review
+measured `['fmp']` at 8.2% (n=249) against `['edgar','fmp']` at 17.3% (n=173), and the new rows
+are a third configuration (EDGAR-extracted equity) likely at or above 17.3%. A pooled headline
+would be dominated by FMP-led rows this change does not touch.
+
+### 6.3 Report signed bias, not only magnitude
+
+The entire case against the proxy in §1.1 is **direction** — 92% overstate, median +26.6%.
+Validating the replacement on magnitude alone would trade a known bias for an unstated one.
+Review measured the computed estimator overstating in **267/422 (63%), median signed +6.3%** —
+same direction, ~4× smaller. **Both signed and absolute medians go in the results.**
+
+### 6.4 The bar
+
+**PASS requires all three:**
+
+1. computed median |relative error| **< the proxy's, re-derived on the same rows** (§6.2);
+2. computed median **signed** error strictly smaller in magnitude than the proxy's `+26.6%`;
+3. the `roic_5y_avg` level shift (§6.1) **reported**, with an explicit judgement on whether it
+   is small enough to leave `thresholds.roic` untouched.
+
+**If (1) or (2) fails**, the finding is that `roic` should stay `None` on the gated path — see
+the corrected description of that outcome below. **If only (3) is troubling**, the options are to
+ship spot `roic` without the multi-year average, or to re-tune the band with its own measured
+case; picking either is a decision, not a default.
+
+### 6.5 What "leave it None" actually does
+
+**A dropped LEG does not redistribute composite weight.** `_eval_subscore` (`scoring.py:421`)
+returns `mean(... for lg in present)` — the mean spans fewer legs. Only a whole *sub-score*
+abstention redistributes. So an unknown-bucket name losing `roic` gets **`moat` as a 1–2 leg
+average (gross margin ± stability) still carrying the full 0.18** — a reweighting of what moat
+means, not a clean withdrawal. Honest, but describe it correctly.
+
+### 6.6 Sizing obligation, with the expected answer stated up front
+
+Confirm whether any name crosses `validity.min_scored_weight` and flips `scored`/`passed`, since
+**an unscored name cannot pass or rank**. The expected answer is **near-zero flips**, and the
+reasoning should be published alongside the count: known buckets need ≥2 of 3 moat legs
+(`min_valid_leg_fraction: 0.5`) but have all three masked anyway, and unknown buckets need only
+`unknown_min_present_legs: 1`, so `moat` will not abstain — it just loses the ROIC dimension.
+Report the count regardless; a prediction is not a measurement.
+
+### 6.7 Retract the exploratory numbers or state their filter
+
+§1.3's "16.9% on 186 comparable observations, 13 of 16 tickers" came from an ad-hoc exploratory
+script. Review could not reproduce it, getting **n=422 / 24 tickers, proxy 28.9%, computed
+9.7%** under the natural filter. The 28.9% replicates §1.1's 29.2% closely enough; the rest does
+not. **Task 4 supersedes those figures.** Until it runs, §1.3's table should be read as
+directional only — the shipped measurement is the one that counts.
 
 ## 7. Testing
 
