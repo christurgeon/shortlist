@@ -25,42 +25,35 @@ the scoring roadmap.
 
 # 1. Watch items — deployed, not yet observed
 
-## Scout failure alerting — built, NOT deployed (2026-08-10)
+## `shortlist-accumulate` has NO failure alerting (2026-08-10)
 
-`OnFailure=shortlist-alert-failure@%n.service` is now wired into **both** generated units, with
-`deploy/shortlist-alert-failure.sh` + a `tests/test_deploy_units.py` guard that fails if either
-route loses it. **Committed but not yet on the box** — the installer needs interactive root:
+Failure alerting shipped in `b7fbe77` and covers the **scout only in practice**. The
+`OnFailure=` line is in the accumulate unit's heredoc and pinned by a test, but the installer
+only regenerates `shortlist-accumulate.service` under `SHORTLIST_ACCUMULATE=1` — so the unit on
+the box still dates from 2026-07-08 and has no `OnFailure=`. That timer is **active** (21:30
+UTC) and currently fails silently.
 
 ```
-sudo bash deploy/install_opt_shortlist.sh
+sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh
+systemctl cat shortlist-accumulate.service | grep OnFailure   # the check that settles it
 ```
 
-Until that runs, a scout crash is still silent. Why it was silent at all: `last_session()`
-anchors to the prior trading day, so a weekend legitimately prints `run for <Fri> already
-completed` — a crash and a Sunday look identical from the outside, and the `OnFailure=` line
-shipped commented out. Deliberately **not** the `oracle-alert-failure@` template: it runs as
-`oracle`, whose only group is `oracle`, so its `journalctl -u shortlist-scout.service` tail
-comes back empty.
+Also unverified end-to-end for either unit: nothing has actually *failed* yet, so the
+`OnFailure` → template → script → Telegram chain is untested in situ. Force it with a transient
+unit carrying the same `OnFailure=`, or wait for a real failure and see whether the alert lands.
 
-Two landmines the script encodes — do not "simplify" either away:
-- It **`source`s `/opt/shortlist/.env` in bash**, not systemd `EnvironmentFile=`. That file uses
-  `export KEY=value` lines, which systemd reads as a variable literally named `export KEY` and
-  skips, so the token would be empty and every alert would no-op silently.
-- It redacts the journal tail before sending (FMP/Finnhub carry the key as a query param), the
-  bash counterpart of `env.py:redact_secrets()`.
+**Status:** scout covered and deployed; accumulate is the open gap.
 
-To verify after deploying: `systemd-run` a deliberately-failing transient unit with the
-`OnFailure=`, or wait for a real failure. Script itself was tested against the real `.env` with
-`curl` stubbed (token found, journal tail populated, zero unredacted key params).
+## Retry-vs-alert on a failed Telegram delivery (2026-08-10)
 
-Adjacent, unchanged: `state.mark_run_completed()` runs *before* the `return 2` on a Telegram
-delivery failure (`daily.py:912`), so a failed delivery cannot be retried that day — it no-ops
-as "already completed". That looks like a deliberate trade (the unit comment cites avoiding a
-re-hit of the Yahoo WAF endpoint) but the comment's "marked complete only after delivery"
-wording implies otherwise. Decide whether the alert is sufficient or a retry is wanted.
+`state.mark_run_completed()` runs *before* the `return 2` on a delivery failure
+(`daily.py:912`), so a failed delivery cannot be retried that day — a re-run no-ops as "already
+completed". Looks like a deliberate trade (the unit comment cites avoiding a re-hit of the Yahoo
+WAF endpoint), but the comment's "marked complete only after delivery" wording implies the
+opposite, so one of the two is wrong. Now that a failed delivery pages, decide whether the alert
+is sufficient or a bounded retry is wanted.
 
-**Status:** code + tests committed and green (2531 passed, ruff clean); **deploy is the open
-action**, and the end-to-end `OnFailure` chain is unverified until it runs.
+**Status:** deferred decision, nothing changed.
 
 ## `daily_x` 15 — first live run (2026-08-07)
 
@@ -102,11 +95,16 @@ the last *trading* day and the weekend has none. So `daily_x: 15` and `wsb:novel
 their first real exercise on **Mon 2026-08-10 22:30 UTC**, and the 08-07 manifest still shows
 `wsb_hype: disabled` (it predates the novelty deploy). Checked 2026-08-09.
 
-**Partially answered 2026-08-10** by an off-schedule run (13:53 UTC, sandboxed state, so it did
-not consume the real session): `wsb_hype` reported `ran=True`, `1 novel of 100 tracked (14 prior
-boards)` — so the rule fires and does not degrade the run. Still unconfirmed: that a `wsb:novel`
-name actually reaches the digest, and the same behaviour on a real 22:30 run (a mid-day run
-reads a *stale* EDGAR index — see below — so the candidate mix differs).
+**Composition is now answered** (2026-08-10, off-schedule 13:53 UTC run against a sandboxed
+state, so it did not consume the real session): `wsb_hype` reported `ran=True`, `1 novel of 100
+tracked (14 prior boards)`, and that name — `wsb:novel | ACHR`, strength 0.30 — cleared the
+funnel and **reached the digest at rank 4**. So the rule fires, does not degrade the run, and
+its output survives prefilter, the investability floor and slot contention. Nothing about the
+end-to-end path is unobserved any more.
+
+What remains is **only the prereg clock**: forward returns from 2026-08-08, K=3m, KILL a real
+expected outcome. Do not re-verify plumbing here. (Caveat if anyone repeats the exercise: a
+mid-day run reads a *stale* EDGAR index — see below — so the candidate mix differs from 22:30.)
 
 **Forward returns are NOT measured, only composition.** `scout/preregister/wsb_novelty.yaml`
 is committed with a live-forward window from 2026-08-08, K=3m. **A KILL is a real expected
@@ -176,6 +174,51 @@ filing could be permanently missed. Look at real weekend data before trusting th
 ---
 
 # 2. Funnel & discovery
+
+## The digest never names the originator that surfaced a candidate (2026-08-10)
+
+Hit for real by the user, who read the 2026-08-10 report and could not tell whether any name
+came from WSB. One did — `wsb:novel | ACHR`, strength 0.30, which cleared the whole funnel and
+landed at rank 4. The attribution exists only in `ScoutState.firehose` and the manifest, never
+in the delivered report.
+
+The digest line carries **flags** (advisory, computed during scoring), not originators:
+
+```
+4. ACHR  12.9  negative_fcf  recent_8k, passive_13g, planned_insider_sale_144, dilution, cash_burn
+```
+
+`activist_13d` is the sole accidental exception — it is both an originator name and a flag name,
+so it shows up on a 13D-sourced line and makes that originator look like the only one that ever
+contributes. Actively misleading, not merely absent.
+
+Attribution for that run, for whoever picks this up: `edgar:activist_13d` 5 (ACR COCP HEPA VRME
+YYAI) + `edgar:form4_insider_buy` 3 (ABTC BRVE ONMD) + `wsb:novel` 1 (ACHR) = the raw 9; the
+investability floor took ONMD ACR COCP VRME YYAI, leaving BRVE ABTC HEPA ACHR.
+
+Cheap fix (one tag per name in `build_report`), but it changes every digest line, so confirm the
+wanted format first — and note a name can have several originators, which is exactly the
+confluence case worth surfacing.
+
+**Status:** gap confirmed against a real delivered report, nothing changed.
+
+## `--demo` writes `mock:demo` rows into the PRODUCTION firehose (2026-08-10)
+
+`shortlist-scout --demo` skips `mark_run_completed` but still calls `_log_firehose`, and it uses
+the configured `state_path` — so the offline smoke test injects three synthetic rows (GEV,
+GOOGL, LMT) into the live selection ledger. Present on **19 sessions** in
+`/opt/shortlist/state/scout_state.json` from 2026-07-01 onward, including 2026-08-10.
+
+The source is the installer itself: step 4/7 runs `--demo` as a deploy smoke test, so every
+deploy adds a session's worth. Not a one-off operator mistake — it is wired in.
+
+Probably inert (every consumer selects by signal name and nothing real is called `mock:demo`, so
+the evaluator and the per-signal ledgers should never see them), but that is an assumption worth
+checking before trusting any all-signals firehose count. Either have `--demo` refuse to write
+firehose rows at all, or have the installer's smoke test point at a throwaway `state_path`.
+Decide whether existing rows get purged or left as harmless archaeology.
+
+**Status:** verified in prod state, nothing changed. Check the "inert" claim before purging.
 
 ## A single-axis composite can top the digest at 100.0 (2026-08-10)
 
