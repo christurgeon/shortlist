@@ -46,7 +46,6 @@ class MockSignal:
         return (True, f"{self._last} hits")
 
 
-# Registry of constructors. Real sources are added in later tasks.
 _REGISTRY: dict[str, type] = {
     "mock": MockSignal,
 }
