@@ -27,8 +27,6 @@ def composite_with(card, momentum: Optional[float], weights: dict, config: Optio
     If `config` is provided and the card has metrics, recomputes subscores from the metrics
     to avoid rounding errors (uses raw subscore values like the real scorer does).
     Otherwise, uses the card's rounded subscore values (less precise but works with minimal data)."""
-    # If we have both config and metrics, recompute subscores from the metrics to get
-    # the exact same composite as the real scorer (which uses raw, unrounded values).
     if config is not None and card.metrics is not None:
         from shortlist.scoring import (
             _eval_subscore,
@@ -58,10 +56,8 @@ def composite_with(card, momentum: Optional[float], weights: dict, config: Optio
         val = sub("value", _value_legs(m))
         ins = insider_score(m, t, config)
 
-        # Replace momentum with the new value
         mom = momentum
 
-        # Recompute composite from raw subscores
         parts = [(s, w[name]) for name, s in [
             ("quality", q), ("moat", mo), ("growth", gr),
             ("momentum", mom), ("value", val), ("insider", ins)
@@ -77,7 +73,6 @@ def composite_with(card, momentum: Optional[float], weights: dict, config: Optio
             return 0.0
         return round(sum(s * weight for s, weight in parts) / den, 1)
 
-    # Fallback: use rounded subscore values from the card
     subs = {k: getattr(card, k, None) for k in _COMPONENTS}
     subs["momentum"] = momentum
     parts = [(s, weights[k]) for k, s in subs.items() if s is not None]

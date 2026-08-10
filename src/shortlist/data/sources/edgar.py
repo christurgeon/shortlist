@@ -20,8 +20,6 @@ from ..models import (
 )
 from .base import Source
 
-# --- SEC EDGAR: authoritative insider Form 4 -------------------------------
-
 # SEC enforces ~10 req/s fair-access per IP, and each ticker pulls many filings.
 # The collector's per-ticker semaphore doesn't bound SEC request *rate* (EDGAR's
 # calls happen inside a worker thread, invisible to it), so all EdgarSource work

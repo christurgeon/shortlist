@@ -1,4 +1,3 @@
-# src/shortlist/providers/_edgar_facts.py
 """Pure transform: edgartools statement DataFrames -> normalized annual series.
 
 Dependency-isolated leaf (sibling of _form4.py). Imports pandas (a transitive

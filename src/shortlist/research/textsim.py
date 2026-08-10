@@ -53,7 +53,6 @@ def cosine_similarity(current: str, prior: str) -> Optional[float]:
     b = Counter(normalize_tokens(prior))
     if not a or not b:
         return None
-    # dot product over the shared vocabulary
     shared = a.keys() & b.keys()
     dot = sum(a[t] * b[t] for t in shared)
     if dot == 0:

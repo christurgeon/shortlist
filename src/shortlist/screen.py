@@ -138,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = build_arg_parser()
     args = ap.parse_args(argv)
 
-    load_env()  # pick up API keys from a .env file if present
+    load_env()
 
     # Guarded config load (shared shape contract in config.py): a missing file,
     # invalid/empty YAML, or non-mapping top level would otherwise surface as a

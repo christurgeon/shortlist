@@ -378,7 +378,6 @@ class TelegramBot:
         store = pos.load_store(self.store_path)
         macro = self._fetch_macro(self.config)
         entry_by_ticker = {}
-        # Screen (free chain) to capture entry_card + reply with the card.
         cards = self._screen_fn()(tickers, self._free_sources(), self.config, macro=macro)
         present, _missing = self._partition_present(cards)
         session = datetime.now(timezone.utc).date().isoformat()

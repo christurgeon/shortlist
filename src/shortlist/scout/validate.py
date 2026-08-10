@@ -691,14 +691,12 @@ def decide(measurement, ctp_rows, ff3, k_months: int, prereg: dict,
     alpha, _betas = ff3_alpha(ctp_rows, ff3)
     # The KILL rule reads `ci`, so it must reflect the dominant uncertainty — WHICH EVENTS
     # this cohort caught — not the smoothness of the flattened CTP series (audit
-    # docs/audits/2026-07-26-funnel-composition-audit.md §3a). Fall back to the month
-    # bootstrap only when the cohort carries no event list (hand-built / old persisted
-    # measurements), so a CI is never silently dropped to None.
-    # The month bootstrap is used ONLY when there is no event list at all (hand-built or old
-    # persisted CohortMeasurements) -- there, it is the only model the data supports, not a
-    # substitute for a better one. When events DO exist and the issuer bootstrap still can't
-    # compute, abstain: falling back would swap in the known-too-tight estimator on exactly
-    # the thinnest cohorts. A None CI routes to INSUFFICIENT below, which is the honest read.
+    # docs/audits/2026-07-26-funnel-composition-audit.md §3a). The month bootstrap is used ONLY
+    # when there is no event list at all (hand-built or old persisted CohortMeasurements) --
+    # there, it is the only model the data supports, not a substitute for a better one. When
+    # events DO exist and the issuer bootstrap still can't compute, abstain: falling back would
+    # swap in the known-too-tight estimator on exactly the thinnest cohorts. A None CI routes to
+    # INSUFFICIENT below, which is the honest read.
     _events = getattr(measurement, "events", None) or []
     if _events:
         ci = event_bootstrap_alpha(_events, ff3, k_months)

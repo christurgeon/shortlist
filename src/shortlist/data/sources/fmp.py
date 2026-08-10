@@ -64,7 +64,6 @@ class FMPSource(_KeyedHttpSource):
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
-        # Define every section we want and how to fetch it; capture raw verbatim.
         sections = {
             "profile": ("profile", {"symbol": ticker}),
             "quote": ("quote", {"symbol": ticker}),
