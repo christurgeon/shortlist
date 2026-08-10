@@ -429,22 +429,44 @@ answered. What survives is the part that constrains *future* runs:
 Reading trap: low breadth is **not** suppression — a 2026-06-22 grid date shows breadth 10
 because only 10 tickers had been captured that early (42 by 2026-08-08).
 
-**Status:** path live, no verdict attached. Next in this thread, in order:
-1. **Finnhub `roiTTM` → `roic` proxy** (`data/sources/finnhub.py`): Return on *Investment*
-   mapped into Return on Invested *Capital*, on the FMP-gated fallback path. The doc half is
-   done (inline comment); the numerics half (keep the proxy vs drop to `None`) shifts
-   quality/moat and needs a proxy-on-vs-off replay — null the `roic` where
-   `provenance['fundamentals'] == ['finnhub']` and compare rank IC. The store already holds
-   ~706 Finnhub-provenance `roic` snapshots across 43 days, exactly the population at issue.
-   `--source xbrl` **cannot** measure this (it derives ROIC from companyfacts and never
-   exercises the fallback).
-2. **SUE** is blocked on calendar time only — a prereg-grade verdict (≥8 non-overlapping blocks)
-   is a late-2026-into-2027 proposition. Keep accumulating.
+**Status:** path live, no verdict attached. Next in this thread:
+- **SUE** is blocked on calendar time only — a prereg-grade verdict (≥8 non-overlapping blocks)
+  is a late-2026-into-2027 proposition. Keep accumulating.
+
+*(The Finnhub `roiTTM` → `roic` proxy item that used to head this list is RESOLVED —
+`docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md`. It was measured overstating true
+ROIC in 92% of paired observations and is retired; ROIC is now computed from statements in
+`bridge.py`, which required extracting `total_equity` in `_edgar_facts.py`. Note the framing in
+the old entry was wrong twice over: the leg is **moat** only, not quality/moat, and rank IC was
+the wrong instrument — the answerable question was measurement **agreement** against FMP's real
+ROIC, not forward returns.)*
 
 **Lazy-Prices (`filing_text_change`) can never validate on this path** — full filing text was
 deliberately kept out of the snapshot (`EdgarSource` fetches Form 4 + financials + filing-index
 only). Measuring it needs a collector change to compute EDGAR text similarity into the
 snapshot. Separate feature, not a waiting game.
+
+## `operating_income` missing on 41% of the FMP-gated path — DIAGNOSE, do not assume (2026-08-10)
+
+Scoped out of the ROIC work deliberately (that design was built not to depend on it, and does
+not). It splits into three populations and only one is plausibly a bug — **guessing which is the
+read-past-the-evidence pattern the 2026-07-26 postmortem records**:
+
+- **banks — NOT a bug.** BAC/GS/WFC (SIC 6021/6211) report net interest income, not operating
+  income; JPM's raw income-statement concepts are literally `[]`. SIC abstention already masks
+  ROIC for these buckets, so they are correctly uncomputable.
+- **non-financials that certainly do report it — a real gap.** CVX, XOM (2911), HON (3724),
+  IBM (3570), JNJ/LLY/MRK (2834). Three pharma at one SIC is a striking pattern; they likely tag
+  the line differently.
+- **intra-ticker inconsistency — most concerning.** DIS 23/34 capture days, JPM 27/34, NKE 23/34.
+  Same filing, different result across days ⇒ edgartools version drift over the window or a
+  non-deterministic code path. Distinguish by checking whether the flip is a clean split at one
+  date (version change) or interleaved (non-determinism, a real bug).
+
+Deliverable is an **audit note**, not a fix. `_edgar_facts.py:383` uses
+`_row_by_standard_concept(income_df, "OperatingIncomeLoss")`; the raw-`concept`-first rule
+(`_rows_by_concept`) is the candidate remedy *if* the diagnosis supports it. Fixing this would
+raise the computed-ROIC yield from ~56% toward ~97% of the affected path.
 
 ## Other measurement gaps
 
@@ -519,8 +541,10 @@ decision above goes the paid way.
 - Parked observations: the `pe_ttm` fallback accepts negative EPS (harmless — `pe_vs_history()`
   guards `> 0` and `pe_ttm` isn't in `--json`); `bridge._close_near` has no max-gap bound (a
   short monthly history can pair a fiscal end with a months-away close);
-  `Fundamentals.operating_margin`/`current_ratio` and `Statements.total_equity` are extracted
-  but consumed nowhere; WSB `upvotes`/`rank_24h_ago` are captured but unused.
+  `Fundamentals.operating_margin`/`current_ratio` are extracted but consumed nowhere; WSB
+  `upvotes`/`rank_24h_ago` are captured but unused. (`Statements.total_equity` was on this list
+  until 2026-08-10 — it now has both an EDGAR extractor and a consumer, `bridge.py`'s computed
+  ROIC.)
 
 ---
 
