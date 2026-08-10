@@ -29,6 +29,14 @@ def test_financial_masks_moat_legs_so_moat_abstains():
     assert card.moat is None                      # gross_margin+stability+roic all masked
     names = {(a["field"], a["reason"]) for a in card.abstentions}
     assert ("moat", "inapplicable") in names
+    # A COMPUTED roic must not reach the composite for a financial either. As of 2026-08-10
+    # bridge.py derives roic from statements on the FMP-gated path, and UNH (SIC 6324) / JPM
+    # (6021) are among the names that gain one -- but ROIC is structurally meaningless for
+    # banks and insurers, so the SIC mask has to keep firing. `_fin()` already carries
+    # roic=0.20, so this pins the leg explicitly rather than relying on the subscore result.
+    # NOTE the real limit of this guard: the mask keys on `m.sic`, and `leg_applicable`
+    # returns True for bucket == "unknown" -- a name with no resolved SIC is NOT masked.
+    assert ("roic", "inapplicable") in names
 
 
 def test_financial_masks_fcf_yield_in_value():

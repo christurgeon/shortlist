@@ -84,6 +84,62 @@ def _financial_series(st) -> list[dict]:
     } for i in range(n)]
 
 
+ROIC_TAX_RATE = 0.25
+"""Flat tax rate for the computed-ROIC NOPAT.
+
+No tax-expense field exists in `Statements`, and deriving an effective rate from
+net_income / operating_income / interest_expense is noisy (non-operating items swamp it).
+0.25 ~= 21% US federal + state, the standard screening convention.
+
+A module CONSTANT, deliberately NOT config-plumbed: a knob nobody will tune is a knob that
+rots, and `--source xbrl` computes its own ROIC with a per-year effective rate clamped to
+[0, 0.5] (`_xbrl_facts.py:286`), so one config value could not honestly govern both. The two
+axes therefore differ by ~(1-0.25)/(1-0.21) = 0.949, about 5% — a known, documented gap, not a
+bug. Revisit only with a measured case for tuning it.
+"""
+
+
+def _at(seq, i):
+    """Positional access tolerating a short or absent series. The statements series have
+    DIFFERENT lengths (real UNH: 3 years of operating income and equity, 2 of debt), so an
+    index valid for one is out of range for another."""
+    return seq[i] if seq and i < len(seq) else None
+
+
+def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
+    """`{fiscal_year -> ROIC}` for years where operating income, total debt and total equity
+    ALL resolve and invested capital is positive.
+
+    `ROIC = operating_income * (1 - tax_rate) / (total_debt + total_equity)`.
+
+    **This indexes all three series by the POSITION of `fiscal_years[i]`, plus a skip for
+    missing values — it is not true fiscal-year pairing, and does not claim to be.** `Statements`
+    carries one year spine: the balance-sheet series have no year labels of their own
+    (`edgar.py` derives `fiscal_years` from the INCOME statement's period ends, and the
+    balance sheet's instant dates are discarded by `_series`). Genuine per-series labels would
+    be a change to `Statements`. Positional is correct on today's data — 0 interior gaps across
+    all 1684 stored snapshots, and the measured `fy=3 / oi=3 / debt=2` shape is a clean
+    newest-first prefix — and the None-skip makes it degrade safely rather than pairing a year
+    against a neighbour's value.
+
+    `invested_capital <= 0` abstains rather than emitting a negative or explosive ratio: real
+    MCD filings carry NEGATIVE total equity (buyback compounders), which
+    `docs/ASSESSMENT_GAPS.md` flags for exactly this reason."""
+    out: dict[int, float] = {}
+    for i, fy in enumerate(st.fiscal_years or []):
+        if fy is None:
+            continue
+        oi, td, te = (_at(st.operating_income, i), _at(st.total_debt, i),
+                      _at(st.total_equity, i))
+        if oi is None or td is None or te is None:
+            continue
+        invested = td + te
+        if invested <= 0:
+            continue
+        out[int(fy)] = oi * (1.0 - tax_rate) / invested
+    return out
+
+
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     """Map a harness TickerSnapshot onto the flat StockMetrics that
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
@@ -166,6 +222,24 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
         # statements) -> the opt-in quality legs redistribute.
         m.asset_growth = st.asset_growth
         m.accruals = st.accruals
+        # ROIC computed from statements when NO fundamentals source supplied one — the
+        # FMP-gated path, where Finnhub publishes no ROIC at all and used to substitute
+        # `roiTTM` (Return on *Investment*), which overstated the truth in 92% of 591 paired
+        # observations, median +26.6%. GAP-FILLING ONLY: a supplied roic always wins, so this
+        # can never degrade a card. Placed here rather than in finnhub.py because it is not a
+        # Finnhub concern — it works whichever source chain was gated.
+        # docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md
+        if m.roic is None:
+            by_year = _roic_by_fiscal_year(st, ROIC_TAX_RATE)
+            if by_year:
+                m.roic = by_year[max(by_year)]           # newest RESOLVABLE fiscal year
+                # Guard the average too, not just roic: an FMP 5-year figure must never be
+                # clobbered by a 2-3 year EDGAR one.
+                if len(by_year) >= 2 and m.roic_5y_avg is None:
+                    # A 2-3 YEAR average, not 5: EDGAR balance sheets carry 2-3 instants. The
+                    # thresholds.roic band was calibrated on FMP's 5y figure, so this is a
+                    # documented approximation — §6.1 of the design measures the level shift.
+                    m.roic_5y_avg = sum(by_year.values()) / len(by_year)
         # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Statements lists
         # are newest-first and index-parallel by fiscal year; free-source derivable so
         # it survives FMP-402 gating (serves broad ticker coverage).

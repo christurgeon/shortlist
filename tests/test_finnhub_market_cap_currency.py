@@ -16,6 +16,8 @@ the standing rule. FMP outranks Finnhub in the merge, so a USD figure still wins
 has one; only the FMP-gated foreign case loses the cap (and with it the insider ratio),
 which is strictly better than corrupting a hard gate with a 32x-wrong number.
 """
+import pytest
+
 from shortlist.data.sources.finnhub import _normalize_finnhub
 
 
@@ -58,3 +60,22 @@ def test_currency_check_is_case_insensitive_and_whitespace_tolerant():
 
 def test_absent_market_cap_stays_none_regardless_of_currency():
     assert _normalize_finnhub("X", _raw(None, "USD")).profile.market_cap is None
+
+
+# --- Finnhub does not supply ROIC (2026-08-10) -------------------------------------------
+
+def test_finnhub_does_not_claim_to_supply_roic():
+    """Finnhub publishes no ROIC. `roiTTM` is Return on *Investment*, mapped in as a proxy
+    until 2026-08-10 when it was measured overstating true ROIC in 92% of 591 paired
+    observations (median +26.6%; GOOGL +164%). ROIC is now computed in bridge.py from
+    statements. docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md.
+
+    This field was previously UNPINNED -- no test asserted it either way -- so this is a new
+    guard rather than an updated one. `roe`/`gross_margin` are asserted alongside to prove the
+    change is surgical: only `roic` stopped mapping.
+    """
+    snap = _normalize_finnhub("AAA", {"metric": {"metric": {
+        "roiTTM": 70.25, "roeTTM": 137.18, "grossMarginTTM": 46.2}}})
+    assert snap.fundamentals.roic is None
+    assert snap.fundamentals.roe == pytest.approx(1.3718)
+    assert snap.fundamentals.gross_margin == pytest.approx(0.462)

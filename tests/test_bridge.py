@@ -339,3 +339,74 @@ def test_bridge_copies_price_refinement_axes():
     assert m.max_daily_return == snap.price.max_daily_return
     assert m.vol_scaled_momentum == snap.price.vol_scaled_momentum
     assert m.pct_to_52w_high is not None        # the trending series populates it
+
+
+# --- computed ROIC on the FMP-gated path (2026-08-10) -----------------------------------
+# docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md §5
+
+def _stmt_snap(**kw) -> TickerSnapshot:
+    """A snapshot carrying ONLY statements -- i.e. the FMP-gated shape, where no fundamentals
+    source supplied a roic."""
+    return TickerSnapshot(ticker="AAA", statements=Statements(**kw))
+
+
+def test_roic_computed_when_no_source_supplied_one():
+    m = snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025, 2024], fiscal_period_end=["2025-12-31", "2024-12-31"],
+        operating_income=[1000.0, 900.0], total_debt=[2000.0, 2000.0],
+        total_equity=[2000.0, 2000.0]))
+    assert m.roic == pytest.approx(1000.0 * 0.75 / 4000.0)      # 0.1875
+
+
+def test_roic_never_overrides_a_real_supplied_value():
+    """Gap-filling only: an FMP-supplied roic always wins, so this cannot degrade a card."""
+    snap = _stmt_snap(fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
+                      operating_income=[1000.0], total_debt=[2000.0], total_equity=[2000.0])
+    snap.fundamentals = Fundamentals(roic=0.42, roic_5y_avg=0.40)
+    m = snapshot_to_metrics(snap)
+    assert m.roic == 0.42
+    assert m.roic_5y_avg == 0.40          # the average must not be clobbered either
+
+
+def test_roic_none_when_invested_capital_not_positive():
+    """Thin-equity buyback compounders: debt+equity can reach or cross zero (MCD's equity is
+    negative on real filings). Abstain rather than emit an explosive ratio."""
+    assert snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
+        operating_income=[1000.0], total_debt=[500.0], total_equity=[-500.0])).roic is None
+
+
+def test_roic_multi_year_average_needs_two_resolvable_years():
+    m2 = snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025, 2024], fiscal_period_end=["2025-12-31", "2024-12-31"],
+        operating_income=[1000.0, 800.0], total_debt=[2000.0, 2000.0],
+        total_equity=[2000.0, 2000.0]))
+    assert m2.roic_5y_avg == pytest.approx((0.1875 + 0.15) / 2)
+
+    m1 = snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
+        operating_income=[1000.0], total_debt=[2000.0], total_equity=[2000.0]))
+    assert m1.roic_5y_avg is None          # one year is not durability
+
+
+def test_roic_skips_years_where_any_input_is_missing():
+    """The series have DIFFERENT lengths (real UNH: 3 years of operating income, 2 of debt),
+    so a year missing any input must be skipped, not paired with a neighbour's value."""
+    m = snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025, 2024, 2023],
+        fiscal_period_end=["2025-12-31", "2024-12-31", "2023-12-31"],
+        operating_income=[1000.0, None, 600.0], total_debt=[2000.0, 2000.0, 2000.0],
+        total_equity=[2000.0, 2000.0, 2000.0]))
+    assert m.roic == pytest.approx(0.1875)                        # 2025 only
+    assert m.roic_5y_avg == pytest.approx((0.1875 + 0.1125) / 2)  # 2025 + 2023, NOT 2024
+
+
+def test_roic_absent_when_equity_series_missing_entirely():
+    """The pre-fix state: EDGAR supplied no equity, so nothing was computable."""
+    assert snapshot_to_metrics(_stmt_snap(
+        fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
+        operating_income=[1000.0], total_debt=[2000.0], total_equity=[])).roic is None
+
+
+def test_roic_absent_when_no_statements_at_all():
+    assert snapshot_to_metrics(TickerSnapshot(ticker="ZZZ")).roic is None

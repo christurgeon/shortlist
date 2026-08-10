@@ -1,3 +1,13 @@
+> **SUPERSEDED IN PART, 2026-08-10.** `total_equity` **is** now extracted by EDGAR directly
+> (`_edgar_facts.py:_total_equity_series`), so for EDGAR-spine snapshots it is *supplied* rather
+> than backfilled from FMP. The FMP backfill described below still applies to `gross_profit`, and
+> to `total_equity` only where EDGAR's concept family does not resolve. Reason for the change: the
+> backfill cannot fire on the **FMP-gated** path, which is exactly where `bridge.py` needs
+> invested capital for a computed ROIC. The EDGAR extractor prefers the **parent-only**
+> `us-gaap_StockholdersEquity` concept precisely so the value means the same thing whichever
+> source wins the merge (FMP supplies parent-only `totalStockholdersEquity`).
+> See `docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md`.
+
 # Statements merge — year-joined backfill (design)
 
 **Status:** DESIGN APPROVED 2026-07-30. Fixes the 2026-07-20 data-audit item 1

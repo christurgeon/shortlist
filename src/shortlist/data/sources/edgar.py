@@ -223,6 +223,7 @@ class EdgarSource(Source):
                 diluted_eps=ef.diluted_eps,
                 diluted_shares=ef.diluted_shares,
                 total_debt=ef.total_debt,
+                total_equity=ef.total_equity,
                 cash_and_equivalents=ef.cash_and_equivalents,
                 operating_income=ef.operating_income,
                 dep_amort=ef.dep_amort,
@@ -236,8 +237,12 @@ class EdgarSource(Source):
                 debt_repayments=ef.debt_repayments,
                 debt_issuance=ef.debt_issuance,
             )
-        # gross_profit/total_equity aren't in EdgarFinancials; _merge_statements
-        # year-joins them back in from FMP when available (docs/STATEMENTS_MERGE.md).
+        # `gross_profit` isn't in EdgarFinancials; _merge_statements year-joins it back in from
+        # FMP when available (docs/STATEMENTS_MERGE.md). `total_equity` USED to be in the same
+        # boat — it is now extracted directly (2026-08-10), because that FMP backfill cannot
+        # fire on the FMP-gated path, which is exactly where bridge.py needs invested capital
+        # for a computed ROIC. Parent-only concept first, so the value means the same thing
+        # whichever source wins the merge.
         return snap
 
     def _fetch_sic(self, ticker: str) -> Optional[str]:

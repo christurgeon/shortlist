@@ -178,19 +178,18 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         )
     m = (raw.get("metric") or {}).get("metric", {})
     if m:
-        # `roiTTM` is Return on *Investment*, mapped here as a deliberate ROIC proxy.
-        # It only surfaces on the FMP-gated fallback path (FMP leads the fundamentals
-        # merge); whether to keep the proxy or drop it to None shifts quality/moat scores
-        # and is still open — see TODO.md (2026-08-04).
-        # On measuring it: `--source xbrl` CANNOT — it derives ROIC from SEC companyfacts
-        # and never exercises this fallback. The SNAPSHOT-REPLAY path can in principle:
-        # SnapshotSignalSource re-scores stored merged snapshots through the production
-        # scorer and emits quality/moat axes, and the store already holds Finnhub-provenance
-        # `roic` for FMP-gated names (~706 snapshots over 43 capture days as of 2026-08-04).
-        # What blocks it is the hard-coded `--source snapshot` refusal in backtest/cli.py
-        # plus the absence of an on/off replay harness — code work, not an impossibility.
+        # RESOLVED 2026-08-10: Finnhub publishes NO ROIC, so `roic` is left None here.
+        # `roiTTM` is Return on *Investment* and was mapped in as a proxy until it was measured
+        # against FMP's real ROIC on paired snapshots: it OVERSTATES in 92% of them, median
+        # +26.6% relative (GOOGL +164%, AMZN +97%, NVDA +67%) — it FLATTERS the mega-cap
+        # compounders rather than penalising cash-rich ones, which is the opposite of the
+        # natural intuition. It also carried no multi-year average, so the moat leg lost its
+        # durability dimension (its whole thesis) on this entire path.
+        # ROIC is now COMPUTED from statements in `bridge.py` (gap-filling only), which needed
+        # `total_equity` extraction in `_edgar_facts.py` to become possible.
+        # Evidence: docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md.
         snap.fundamentals = Fundamentals(
-            roe=_pct(m.get("roeTTM")), roic=_pct(m.get("roiTTM")),
+            roe=_pct(m.get("roeTTM")), roic=None,
             gross_margin=_pct(m.get("grossMarginTTM")),
             net_margin=_pct(m.get("netProfitMarginTTM")),
             debt_to_equity=m.get("totalDebt/totalEquityQuarterly"),

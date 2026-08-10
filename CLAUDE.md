@@ -191,6 +191,25 @@ may embed a request URL MUST pass through `env.py:redact_secrets()`** before pri
   API fallback. `diluted_shares` is **not always absolute** (MCD reports in millions).
   Details + verified facts: `docs/audits/2026-07-31-edgar-concept-match.md`,
   `docs/audits/2026-08-02-edgar-companyconcept-fallback.md`.
+- **ROIC on the FMP-gated path is COMPUTED, not supplied.** Finnhub publishes no ROIC; it used
+  to substitute `roiTTM` (Return on *Investment*), which overstated true ROIC in 92% of paired
+  observations (median +26.6%). `bridge.py` now derives it from statements —
+  `operating_income × (1 − ROIC_TAX_RATE) / (total_debt + total_equity)` — **gap-filling only**,
+  so a supplied ROIC always wins. Measured 9.7% vs 28.9% median error.
+  `docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md`. Note `--source xbrl` computes
+  its own ROIC with a per-year effective tax rate (`_xbrl_facts.py:286`), so the two axes differ
+  ~5%; that is documented, not a bug. **`roic` is a `moat` leg only** — not quality.
+- **`total_equity` is extracted by EDGAR** (`_edgar_facts.py:_total_equity_series`) as of
+  2026-08-10; previously `STATEMENTS_MERGE.md` routed it in from FMP, a backfill that cannot fire
+  when FMP is *gated*. It is a **concept family, parent-only first** (matching what FMP supplies,
+  so one field keeps one meaning across sources), exact-matched via `_rows_by_concept`. **Never
+  match it by substring**: `us-gaap_LiabilitiesAndStockholdersEquity` *contains*
+  `StockholdersEquity` and equals **total assets** — that read makes ROIC 3–10× too small,
+  silently. Real MCD equity is negative, hence `invested_capital <= 0` abstains.
+- **`_edgar_facts.py` is NOT shared with the XBRL backtest.** Its only non-test importer is
+  `data/sources/edgar.py`; the backtest uses the sibling `_xbrl_facts.py`, which has its own
+  extraction. The genuinely shared leaf is `_gaap_tags.py`. (Earlier prose here claimed
+  otherwise.)
 - **`EdgarSource`** wraps sync `edgartools` in `asyncio.to_thread`, rate-limited by a
   shared semaphore (`_EDGAR_MAX_CONCURRENCY`, default 3). `set_identity` is process-global,
   set once in `__init__`.

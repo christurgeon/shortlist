@@ -43,6 +43,13 @@ def _bal():
         {"standard_concept": "CashAndMarketableSecurities", "label": "cash", "2025-09-27": 30_000_000_000.0, "2024-09-28": 29_000_000_000.0},
         {"standard_concept": "LongTermDebt", "label": "term debt", "2025-09-27": 80_000_000_000.0, "2024-09-28": 85_000_000_000.0},
         {"standard_concept": "CurrentPortionOfLongTermDebt", "label": "term debt cur", "2025-09-27": 10_000_000_000.0, "2024-09-28": 11_000_000_000.0},
+        # Equity is matched on the RAW `concept` column (standard_concept is inconsistent
+        # across filers), so these rows carry one. The LiabilitiesAndStockholdersEquity row is
+        # the landmine: it CONTAINS "StockholdersEquity" and equals total ASSETS.
+        {"concept": "us-gaap_StockholdersEquity", "standard_concept": "AllEquityBalance",
+         "label": "total shareholders equity", "2025-09-27": 67_000_000_000.0, "2024-09-28": 57_000_000_000.0},
+        {"concept": "us-gaap_LiabilitiesAndStockholdersEquity", "standard_concept": "LiabilitiesAndEquity",
+         "label": "total liabilities and equity", "2025-09-27": 365_000_000_000.0, "2024-09-28": 344_000_000_000.0},
     ])
 
 
@@ -59,6 +66,10 @@ def test_build_financials_snapshot_fills_statements():
     assert snap.statements.dep_amort == [12_000_000_000.0, 11_000_000_000.0]
     assert snap.statements.total_debt == [90_000_000_000.0, 96_000_000_000.0]
     assert snap.statements.cash_and_equivalents == [30_000_000_000.0, 29_000_000_000.0]
+    # total_equity (2026-08-10): extracted by EDGAR directly rather than backfilled from FMP,
+    # so the FMP-gated path has invested capital for a computed ROIC. Must be the equity row,
+    # NOT the LiabilitiesAndStockholdersEquity row (total assets) that contains it as a substring.
+    assert snap.statements.total_equity == [67_000_000_000.0, 57_000_000_000.0]
 
 
 def test_build_financials_snapshot_empty_on_no_data():

@@ -61,6 +61,10 @@ class EdgarFinancials:
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     total_debt: list[float] = field(default_factory=list)
+    # NEW 2026-08-10. EDGAR previously supplied no equity at all — STATEMENTS_MERGE.md routes
+    # it in from FMP by fiscal year, a backfill that cannot fire on the FMP-GATED path, which
+    # is exactly where a computed ROIC is needed.
+    total_equity: list[float] = field(default_factory=list)
     cash_and_equivalents: list[float] = field(default_factory=list)
     total_assets: list[float] = field(default_factory=list)   # instant total assets, newest-first
     # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3), computed here
@@ -336,6 +340,47 @@ def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
     return _series(label_picker(df), fy_cols)
 
 
+# Equity is a concept FAMILY (live-probed 2026-08-10): CSCO carries only
+# `StockholdersEquity`, UNH only the NCI-inclusive tag, KO both. `standard_concept` cannot
+# express it — CSCO/KO expose `AllEquityBalance` while UNH exposes
+# `AllEquityBalanceIncludingMinorityInterest`.
+#
+# PARENT-ONLY FIRST, deliberately: FMP supplies `totalStockholdersEquity` (parent-only) and
+# EDGAR outranks FMP in `_merge_statements`, so preferring the NCI-inclusive tag would make one
+# field mean two things depending on which source won, and would pre-empt the documented FMP
+# backfill (docs/STATEMENTS_MERGE.md) on snapshots that already carry FMP equity. The
+# NCI-inclusive tag is the fallback, which is what lets UNH resolve at all.
+#
+# NOT a sum (unlike total_debt's `_sum_concepts`): a filer reporting both variants would be
+# double-counted.
+_EQUITY_CONCEPTS = (
+    "us-gaap_StockholdersEquity",
+    "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+)
+
+
+def _total_equity_series(df: pd.DataFrame, cols: list[tuple[str, str]]) -> list[float]:
+    """Total equity, newest-first, aligned to the balance sheet's instant columns.
+
+    Reuses `_rows_by_concept`, which already supplies every guard this needs, so no new matcher
+    is introduced: EXACT `concept` equality — so `us-gaap_LiabilitiesAndStockholdersEquity`,
+    which CONTAINS `StockholdersEquity` and equals TOTAL ASSETS, can never match — plus
+    `dimension != True` to drop breakdown rows and min-`level` so a nested child cannot pose as
+    the balance-sheet total (that one would read equity ~15x small, i.e. ROIC ~15x LARGE).
+
+    Value-aware fall-through, the `_series_by_concept_or_label` pattern: a SPARSE row must not
+    shadow a later concept whose series is complete, since `_series` is all-or-nothing. Equity
+    has no label-scan fallback, so an exhausted family yields [].
+
+    Consumed by `bridge.py`'s computed ROIC —
+    docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md."""
+    for row in _rows_by_concept(df, _EQUITY_CONCEPTS):
+        series = _series(row, cols)
+        if series:
+            return series
+    return []
+
+
 def extract_financials(
     income_df: pd.DataFrame,
     cashflow_df: pd.DataFrame,
@@ -396,6 +441,8 @@ def extract_financials(
     bal_inst = _instant_columns(balance_df)
     fin.total_debt = _sum_concepts(
         balance_df, ["LongTermDebt", "CurrentPortionOfLongTermDebt", "ShortTermDebt"], bal_inst)
+    # Invested capital's other half, for bridge.py's computed ROIC on the FMP-gated path.
+    fin.total_equity = _total_equity_series(balance_df, bal_inst)
     # edgartools' `CashAndMarketableSecurities` bucket maps to the "Cash and cash
     # equivalents" balance-sheet LINE (cash-only; marketable securities are a separate
     # `ShortTermInvestments` row), so this is cash & equivalents — comparable to the
