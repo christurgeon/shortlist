@@ -1261,8 +1261,8 @@ def run_validate(config: dict, *, today: date, lookback_days: int,
                 # the "identically-measured buckets" premise untestable, so the spread stops
                 # being quotable (docs/EVALUATOR_GUARDS.md §3)
                 min_measurable_frac=prereg.get("min_measurable_frac", 0.90))
-            # TODO 0g: the ds cohort is a DIFFERENT population from the one `decide()` floored
-            # (composite-defined and gate-agnostic vs gate-filtered), so it needs its own
+            # The ds cohort is a DIFFERENT population from the one `decide()` floored
+            # (composite-defined and gate-agnostic vs gate-filtered), so it gets its own
             # floor test -- otherwise it could fail a floor its parent passes and nothing
             # would say so.
             ds_pooled_below, ds_bad_vintages = _floor_failures(ds_measurement, prereg)

@@ -230,7 +230,6 @@ def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=Tr
         who_part = who if n == 1 else f"{n} filers incl. {who}"
         ev = f"Activist 13D: {who_part} → {subject}"
 
-        # Enrich with stake % if available
         meta = {}
         if stake_by_accession:
             for r in rows:
