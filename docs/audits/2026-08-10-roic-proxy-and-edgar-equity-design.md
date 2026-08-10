@@ -463,3 +463,81 @@ uv run pytest -q          # 2522 passed / 6 skipped at 0f47068
 - **Touching the `thresholds.roic` band.** It was calibrated against FMP's 5-year average; a
   2–3 year EDGAR average feeding the same band is a known, documented approximation. Re-tuning
   needs its own measured case.
+
+---
+
+## 9. Results — measured through the shipped code path (2026-08-10)
+
+Corpus: **1684** snapshots / 42 tickers, enumerated via `store.captured_days` (not a glob — see
+the §1 warning). Each snapshot re-merged, `fundamentals.roic`/`roic_5y_avg` nulled, then run
+through the real `snapshot_to_metrics`.
+
+### 9.1 The bar — PASSED on all three conditions
+
+Both estimators on the **same 420 rows** (24 tickers) where each produces a value, as §6.2
+requires:
+
+| estimator | median \|rel error\| | median **signed** error |
+|---|---|---|
+| **computed from statements** | **9.7%** | **+6.3%** |
+| Finnhub `roiTTM` proxy | 28.9% | +28.9% |
+
+1. **Magnitude** — 9.7% vs 28.9%. **PASS**, ~3× better. Computed is closer on **310/420 rows
+   (74%)**.
+2. **Signed bias** — +6.3% vs +28.9%. **PASS**. Same direction (both overstate) but ~4.6×
+   smaller, so a known bias is not being traded for an unstated one.
+3. **The 2–3 year average vs FMP's 5-year** — signed median **+5.8%** (p10 −11.1%, p90 +32.6%),
+   n=420. Judgement: **leave `thresholds.roic` untouched.** The band is `[0.05, 0.30]`, so a
+   +5.8% relative shift on a mid-band value is ≈+0.9 normalised leg points ≈ **+0.05 composite
+   points** — an order of magnitude below the accuracy gain being bought. Re-tuning the band
+   would need its own measured case.
+
+The proxy's 28.9% here replicates §1.1's 29.2% (measured on the undercounted `.gz` subset)
+closely enough to confirm both. §1.3's "16.9% / 186 observations / 13 of 16 tickers" **does not
+reproduce and is superseded** — the exploratory script's filter was never recorded.
+
+### 9.2 Score impact — 0 flips, direction varies by name
+
+Affected path = **851** snapshots whose `provenance.fundamentals == ['finnhub']`.
+
+- **`scored` flips: 0. `passed` flips: 0.** As §6.6 predicted: known buckets have all three moat
+  legs masked anyway, and unknown buckets need only `unknown_min_present_legs: 1`, so `moat`
+  never abstains — it only loses or regains the ROIC dimension. **Prediction confirmed by
+  measurement, not substituted for it.**
+- On the **32 rows** where stored statements already carried equity (ABBV, CVX, JNJ, JPM, KO,
+  LMT, PEP, V, WMT), the computed value replaces the proxy and moves **moat +7.9 points /
+  composite +1.60**. Note the direction: for *these* names the proxy **understated** (ABBV was
+  already flagged at −45% in §1.1's tail), so the change raises them.
+- **Do not generalise that direction.** 32 rows across 9 tickers is a small, unrepresentative
+  subset — it is exactly the set where equity happened to be present. Across the 420-row paired
+  set the proxy overstates (+28.9%), so most names will move the other way. The defensible claim
+  is **"materially more accurate, direction varies by name"**, not a signed composite effect.
+
+### 9.3 The yield is deferred, and that is a real limitation
+
+§2 projected 466 snapshots gaining a real ROIC. **From the store, only 32 do today** — because
+stored snapshots were captured *before* this fix and therefore still carry no `total_equity`.
+Re-running the scorer over history cannot conjure a field the snapshot never held.
+
+Two consequences, stated plainly:
+
+- **Live scoring gets the benefit immediately.** `shortlist` and the scout fetch fresh from
+  EDGAR, which now supplies equity (live-verified on 8 issuers: equity/assets 0.08–0.42, the
+  substring landmine never fired). So the computed ROIC is available on the live path from the
+  next run.
+- **Stored history stays gappy until re-accumulated.** For snapshot-replay and backtest work over
+  existing history, the 819 affected rows now yield `roic = None` where they used to carry the
+  proxy. That *raises* moat there by a median **+13.3 points**, purely because a low-scoring leg
+  (the proxy normalised to a median **25/100**) drops out of a 3-leg mean — **not** because
+  anything got better. Anyone replaying stored history across this commit boundary must know
+  that, or they will read a data artifact as a signal.
+
+§2's 466 is therefore a projection about *future captures*, not a delivered count. It is
+falsifiable: after ~2–3 weeks of accumulation, re-run §9.1 and the computable share should climb
+toward it.
+
+### 9.4 What was NOT done
+
+`operating_income` (Stage 1b) was **not** diagnosed. It is unchanged, still missing on ~41% of
+the affected path, and still splits into the three populations §4 describes. Stage 2 was designed
+not to depend on it and does not. That diagnostic remains open work.
