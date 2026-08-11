@@ -1,0 +1,356 @@
+"""13F client (edgar/thirteenf.py): infotable parse, putCall + PRN drops, same-CUSIP
+multi-row aggregation, new-position diff + strength math, material-add diff, top_n, and
+submissions selection with /A exclusion. All offline, all pure.
+
+The signal-wrapper tests that used to live below these were retired with the scout
+orchestrator on 2026-08-10; the parse/diff surface they sat on is what survives."""
+
+from shortlist.edgar.thirteenf import (
+    aggregate_positions,
+    material_add_diff,
+    new_position_diff,
+    parse_infotable,
+    parse_submissions_13fhr,
+    thirteenf_emissions,
+)
+
+_NS = "http://www.sec.gov/edgar/document/thirteenf/informationtable"
+
+
+def _infotable(rows) -> str:
+    """rows: list of (name, cusip, value, ssh_type, put_call[, shares]). put_call '' = none.
+    `shares` (sshPrnamt) defaults to 1, so existing 5-tuple call sites are unchanged."""
+    body = []
+    for row in rows:
+        name, cusip, value, ssh, pc = row[:5]
+        shares = row[5] if len(row) > 5 else 1
+        pc_tag = f"<putCall>{pc}</putCall>" if pc else ""
+        body.append(
+            f"<infoTable><nameOfIssuer>{name}</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+            f"<cusip>{cusip}</cusip><value>{value}</value>{pc_tag}"
+            f"<shrsOrPrnAmt><sshPrnamt>{shares}</sshPrnamt>"
+            f"<sshPrnamtType>{ssh}</sshPrnamtType></shrsOrPrnAmt>"
+            f"</infoTable>")
+    return f'<informationTable xmlns="{_NS}">{"".join(body)}</informationTable>'
+
+
+def _submissions(forms):
+    """forms: list of (form, accession, filing_date, report_date) newest-first."""
+    return {"filings": {"recent": {
+        "form": [f[0] for f in forms],
+        "accessionNumber": [f[1] for f in forms],
+        "filingDate": [f[2] for f in forms],
+        "reportDate": [f[3] for f in forms]}}}
+
+
+# --- pure parse / aggregate / diff -----------------------------------------------------
+
+def test_parse_infotable_namespace_agnostic():
+    rows = parse_infotable(_infotable([("ALLY FINL INC", "02005N100", 100, "SH", "")]))
+    assert rows == [{"cusip": "02005N100", "name": "ALLY FINL INC", "title": "COM",
+                     "value": 100.0, "put_call": "", "ssh_type": "SH", "shares": 1.0}]
+
+
+def test_parse_infotable_shares_comma_formatted():
+    rows = parse_infotable(_infotable([("ALLY", "02005N100", 100, "SH", "", "1,234,567")]))
+    assert rows[0]["shares"] == 1234567.0
+
+
+def test_parse_infotable_shares_non_numeric_is_none():
+    rows = parse_infotable(_infotable([("ALLY", "02005N100", 100, "SH", "", "n/a")]))
+    assert rows[0]["shares"] is None
+
+
+def test_parse_infotable_missing_sshprnamt_is_none():
+    """`sshPrnamt` absent entirely -> None, never 0.0 (which would read as "holds nothing")."""
+    xml = (f'<informationTable xmlns="{_NS}"><infoTable>'
+           "<nameOfIssuer>ALLY</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+           "<cusip>02005N100</cusip><value>100</value>"
+           "<shrsOrPrnAmt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+           "</infoTable></informationTable>")
+    assert parse_infotable(xml)[0]["shares"] is None
+
+
+def test_aggregate_sums_same_cusip_multirow_and_drops_options_and_prn():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", ""),     # voting-split row 1
+        ("ALLY", "02005N100", 50, "SH", ""),      # voting-split row 2 -> summed to 150
+        ("ALLY", "02005N100", 999, "SH", "Call"), # option -> dropped
+        ("BOND", "11111X111", 500, "PRN", ""),    # convertible debt -> dropped
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert set(agg) == {"02005N100"}               # only the equity CUSIP survives
+    assert agg["02005N100"]["value"] == 150.0      # sole+shared summed
+
+
+def test_aggregate_sums_shares_across_voting_split_rows():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),   # sole voting
+        ("ALLY", "02005N100", 50, "SH", "", 40),    # shared voting -> 100 shares total
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 100.0
+    assert agg["02005N100"]["value"] == 150.0       # value unchanged by this task
+
+
+def test_aggregate_shares_all_none_stays_none_not_zero():
+    """A missing share count must ABSTAIN downstream, never read as zero shares held."""
+    xml = (f'<informationTable xmlns="{_NS}"><infoTable>'
+           "<nameOfIssuer>ALLY</nameOfIssuer><titleOfClass>COM</titleOfClass>"
+           "<cusip>02005N100</cusip><value>100</value>"
+           "<shrsOrPrnAmt><sshPrnamtType>SH</sshPrnamtType></shrsOrPrnAmt>"
+           "</infoTable></informationTable>")
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] is None
+
+
+def test_aggregate_shares_mixed_none_sums_only_the_present():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+        ("ALLY", "02005N100", 50, "SH", "", "n/a"),   # unparseable -> contributes nothing
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+
+
+def test_aggregate_shares_none_first_then_present_still_sums():
+    """Order must not matter: a None-shares row seen FIRST must not swallow a later count."""
+    xml = _infotable([
+        ("ALLY", "02005N100", 50, "SH", "", "n/a"),
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+
+
+def test_aggregate_option_and_prn_rows_do_not_contribute_shares():
+    xml = _infotable([
+        ("ALLY", "02005N100", 100, "SH", "", 60),
+        ("ALLY", "02005N100", 999, "SH", "Call", 500),   # option -> dropped entirely
+        ("ALLY", "02005N100", 999, "PRN", "", 700),      # convertible debt -> dropped
+    ])
+    agg = aggregate_positions(parse_infotable(xml))
+    assert agg["02005N100"]["shares"] == 60.0
+    assert agg["02005N100"]["value"] == 100.0
+
+
+def test_new_position_diff_weight_and_strength_math():
+    latest = {"NEWCUS": {"value": 50.0, "name": "New Co", "title": "COM"},
+              "OLDCUS": {"value": 950.0, "name": "Old Co", "title": "COM"}}
+    prior = {"OLDCUS": {"value": 900.0, "name": "Old Co", "title": "COM"}}
+    out = new_position_diff(latest, prior, min_position_pct=0.005, full_strength_pct=0.05)
+    assert [d["cusip"] for d in out] == ["NEWCUS"]  # only the genuinely-new CUSIP
+    d = out[0]
+    assert abs(d["weight"] - 0.05) < 1e-9           # 50 / 1000
+    # design §1.8: strength = min(1.0, weight / full_strength_pct); weight==full_strength -> 1.0
+    assert abs(d["strength"] - 1.0) < 1e-9
+
+
+def test_new_position_diff_strength_is_linear_not_reshaped():
+    """A barely-qualifying 0.5%-of-book position gets a PROPORTIONALLY small strength
+    (0.005/0.05 = 0.1), not the old base+conv inflation (~0.485); a full 5% bet -> 1.0."""
+    small = {"S": {"value": 5.0, "name": "S", "title": "C"},
+             "REST": {"value": 995.0, "name": "R", "title": "C"}}
+    out = new_position_diff(small, {"REST": {"value": 995.0, "name": "R", "title": "C"}},
+                            min_position_pct=0.005, full_strength_pct=0.05)
+    assert abs(out[0]["weight"] - 0.005) < 1e-9
+    assert abs(out[0]["strength"] - 0.1) < 1e-9     # min(1.0, 0.005/0.05), no 0.45 base
+    # a 5% bet caps at full conviction 1.0 (not the old 0.80 cap)
+    big = {"B": {"value": 50.0, "name": "B", "title": "C"},
+           "REST": {"value": 950.0, "name": "R", "title": "C"}}
+    out2 = new_position_diff(big, {"REST": {"value": 950.0, "name": "R", "title": "C"}},
+                             min_position_pct=0.005, full_strength_pct=0.05)
+    assert abs(out2[0]["strength"] - 1.0) < 1e-9
+
+
+def test_new_position_diff_min_threshold_and_ordering():
+    latest = {"A": {"value": 4.0, "name": "A", "title": "C"},    # 0.4% -> below 0.5% floor
+              "B": {"value": 300.0, "name": "B", "title": "C"},
+              "C": {"value": 696.0, "name": "C", "title": "C"}}
+    out = new_position_diff(latest, {}, min_position_pct=0.005, full_strength_pct=0.05)
+    assert [d["cusip"] for d in out] == ["C", "B"]  # weight-desc, sub-floor A dropped
+
+
+def test_thirteenf_emissions_top_n_and_abstention_and_junk_drop():
+    positions = [
+        {"cusip": "C1", "name": "One", "title": "COM", "value": 1, "weight": 0.10, "strength": 0.8},
+        {"cusip": "C2", "name": "Two", "title": "COM", "value": 1, "weight": 0.08, "strength": 0.7},
+        {"cusip": "C3", "name": "Unresolvable", "title": "COM", "value": 1, "weight": 0.06, "strength": 0.6},
+        {"cusip": "C4", "name": "Junk", "title": "COM", "value": 1, "weight": 0.05, "strength": 0.5},
+    ]
+    resolved = {"C1": "AAA", "C2": "BBB", "C3": None, "C4": "ABCDY"}  # C4 -> 5th-letter junk
+
+    def resolve(cusip, name):
+        return resolved.get(cusip)
+
+    ems, abst = thirteenf_emissions(positions, resolve_fn=resolve, fund_name="Fund X",
+                                    period="2026-03-31", filing_date="2026-05-15",
+                                    deny_list=[], top_n=10)
+    assert [e.ticker for e in ems] == ["AAA", "BBB"]  # C3 abstains, C4 is 5th-letter junk
+    assert abst == 1                                 # C3 abstained
+    assert ems[0].signal == "edgar:13f_new_position"
+    assert ems[0].cik is None                        # CUSIP resolver yields no CIK (stated limit)
+    assert ems[0].evidence == "Fund X new 13F position (Q1 2026, filed 2026-05-15): 10.0% of book"
+    # top_n caps KEPT names; an unresolved position never consumes a slot (break before C3).
+    ems1, abst1 = thirteenf_emissions(positions, resolve_fn=resolve, fund_name="Fund X",
+                                      period="2026-03-31", filing_date="2026-05-15", top_n=1)
+    assert [e.ticker for e in ems1] == ["AAA"] and abst1 == 0
+
+
+def test_thirteenf_emissions_meta_carries_fund_identity_and_accession():
+    """meta must carry structured fund identity + filing accession (firehose join keys) —
+    parity with the 8-K/13D/buyback emissions, not just the free-text evidence string."""
+    positions = [{"cusip": "C1", "name": "One", "title": "COM", "value": 1,
+                  "weight": 0.10, "strength": 0.8}]
+    ems, _ = thirteenf_emissions(positions, resolve_fn=lambda c, n: "AAA",
+                                 fund_name="Berkshire Hathaway", period="2026-03-31",
+                                 filing_date="2026-05-15", fund_cik=1067983,
+                                 accession="0001067983-26-000012")
+    m = ems[0].meta
+    assert m["fund_cik"] == "1067983"                # stringified for a stable join key
+    assert m["fund_name"] == "Berkshire Hathaway"
+    assert m["adsh"] == "0001067983-26-000012"
+    assert m["cusip"] == "C1" and m["weight"] == 0.10  # existing keys preserved
+
+
+def test_parse_submissions_excludes_amendments_newest_first():
+    subm = _submissions([
+        ("13F-HR/A", "acc-A", "2026-05-16", "2026-03-31"),  # amendment -> excluded
+        ("13F-HR", "acc-1", "2026-05-15", "2026-03-31"),
+        ("4", "acc-x", "2026-05-10", ""),
+        ("13F-HR", "acc-0", "2026-02-14", "2025-12-31")])
+    got = parse_submissions_13fhr(subm)
+    assert [f["accession"] for f in got] == ["acc-1", "acc-0"]
+
+
+# --- material-add diff -----------------------------------------------------------------
+
+def _book(entries):
+    """entries: {cusip: (value, shares)} -> an aggregate_positions-shaped dict."""
+    return {c: {"value": float(v), "shares": (None if s is None else float(s)),
+                "name": c, "title": "COM"} for c, (v, s) in entries.items()}
+
+
+def test_material_add_fires_on_share_growth_over_ratio():
+    latest = _book({"AAA": (300, 150), "BBB": (700, 10)})   # AAA shares 100 -> 150 = 1.5x
+    prior = _book({"AAA": (200, 100), "BBB": (800, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA"]
+    assert adds[0]["share_ratio"] == 1.5
+    assert abst == 0
+
+
+def test_material_add_ignores_price_only_weight_growth():
+    """THE core guard: value up 3x, shares flat -> not an add. Price is not conviction."""
+    latest = _book({"AAA": (900, 100), "BBB": (100, 10)})
+    prior = _book({"AAA": (300, 100), "BBB": (700, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_below_ratio_does_not_fire():
+    latest = _book({"AAA": (500, 140), "BBB": (500, 10)})    # 1.4x < 1.5x
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_below_weight_floor_does_not_fire():
+    """Shares tripled, but the position is 0.1% of the book -- below min_position_pct."""
+    latest = _book({"AAA": (1, 300), "BBB": (999, 10)})
+    prior = _book({"AAA": (1, 100), "BBB": (999, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_excludes_new_positions():
+    """A CUSIP absent from prior is a NEW position, never an add -- no cohort overlap."""
+    latest = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    prior = _book({"BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_excludes_exits():
+    latest = _book({"BBB": (500, 10)})
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert adds == []
+
+
+def test_material_add_abstains_on_missing_shares_either_side():
+    latest = _book({"AAA": (500, None), "BBB": (500, 10)})
+    prior = _book({"AAA": (500, 100), "BBB": (500, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert adds == [] and abst == 1
+
+    latest2 = _book({"AAA": (500, 300), "BBB": (500, 10)})
+    prior2 = _book({"AAA": (500, None), "BBB": (500, 10)})
+    adds2, abst2 = material_add_diff(latest2, prior2)
+    assert adds2 == [] and abst2 == 1
+
+
+def test_material_add_abstains_on_zero_prior_shares():
+    """0 -> 200 is an infinite ratio, not a measurable add. Abstain, never guess."""
+    latest = _book({"AAA": (500, 200), "BBB": (500, 10)})
+    prior = _book({"AAA": (500, 0), "BBB": (500, 10)})
+    adds, abst = material_add_diff(latest, prior)
+    assert adds == [] and abst == 1
+
+
+def test_material_add_strength_scales_on_weight_increment():
+    """delta_weight 0.05 at full_strength_pct 0.05 -> full strength.
+
+    Tolerance, not equality: 0.15 - 0.10 is 0.04999999999999999 in binary float.
+    """
+    latest = _book({"AAA": (150, 200), "BBB": (850, 10)})    # w 0.15
+    prior = _book({"AAA": (100, 100), "BBB": (900, 10)})     # w 0.10 -> delta 0.05
+    adds, _ = material_add_diff(latest, prior)
+    assert abs(adds[0]["delta_weight"] - 0.05) < 1e-9
+    assert abs(adds[0]["strength"] - 1.0) < 1e-9
+
+
+def test_material_add_negative_delta_weight_clamps_to_zero_strength():
+    """Shares bought into a price decline: still an add, at floor strength, never negative."""
+    latest = _book({"AAA": (100, 300), "BBB": (900, 10)})    # w 0.10
+    prior = _book({"AAA": (300, 100), "BBB": (700, 10)})     # w 0.30 -> delta -0.20
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA"]
+    assert adds[0]["strength"] == 0.0
+
+
+def test_material_add_empty_book_returns_empty():
+    assert material_add_diff({}, _book({"AAA": (1, 1)})) == ([], 0)
+    assert material_add_diff(_book({"AAA": (0, 1)}), _book({"AAA": (1, 1)})) == ([], 0)
+    assert material_add_diff(_book({"AAA": (1, 1)}), {}) == ([], 0)
+
+
+def test_material_add_ordering_is_deterministic():
+    latest = _book({"AAA": (300, 300), "BBB": (300, 200), "CCC": (400, 10)})
+    prior = _book({"AAA": (300, 100), "BBB": (300, 100), "CCC": (400, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA", "BBB"]   # ratio 3.0 then 2.0
+
+
+def test_material_add_equal_ratios_break_the_tie_on_cusip():
+    """Inserted in REVERSE cusip order at an identical ratio, so the tiebreak must do work.
+
+    Without this the ordering test above passes even with the `d["cusip"]` sort term deleted:
+    its ratios are distinct AND dict insertion order already matches the expectation.
+    """
+    latest = _book({"ZZZ": (300, 200), "AAA": (300, 200), "CCC": (400, 10)})
+    prior = _book({"ZZZ": (300, 100), "AAA": (300, 100), "CCC": (400, 10)})
+    adds, _ = material_add_diff(latest, prior)
+    assert [a["cusip"] for a in adds] == ["AAA", "ZZZ"]
+    assert adds[0]["share_ratio"] == adds[1]["share_ratio"] == 2.0
+
+
+def test_material_add_and_new_position_diffs_are_disjoint():
+    """Cohort-contamination guard: no CUSIP may appear in both result sets."""
+    latest = _book({"AAA": (300, 150), "NEW": (300, 50), "CCC": (400, 10)})
+    prior = _book({"AAA": (200, 100), "CCC": (400, 10)})
+    news = new_position_diff(latest, prior)
+    adds, _ = material_add_diff(latest, prior)
+    assert {a["cusip"] for a in adds}.isdisjoint({n["cusip"] for n in news})
+    assert {n["cusip"] for n in news} == {"NEW"}
+    assert {a["cusip"] for a in adds} == {"AAA"}

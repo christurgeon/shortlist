@@ -1,42 +1,29 @@
 # Deploy units
 
 This directory holds **sample** systemd units for the optional background jobs.
-**None are auto-installed or enabled** — copy them manually after reviewing paths.
-Two independent jobs live here:
+**None are auto-installed or enabled** by copying — use the turnkey installer below, or
+copy them manually after reviewing paths.
 
-- **Autonomous scout** (`shortlist-scout.{service,timer}`) — daily candidate
-  discovery + ranked Telegram report. See [Autonomous Scout](#autonomous-scout).
 - **Interactive bot** (`shortlist-bot.service`) — always-on Telegram bot; operator
   triggers `/screen`, `/deep`, and `/portfolio` on demand. See [Interactive Bot](#interactive-bot).
 - **Snapshot accumulation** (`shortlist-accumulate.{service,timer}`) — builds the
   daily-snapshot history the backtest replay needs. See [Snapshot accumulation](#snapshot-accumulation-disabled-by-default).
 
+> **The autonomous scout was retired on 2026-08-11** and its units are gone. The installer
+> **removes** `shortlist-scout.{service,timer}` from any box deployed before that date —
+> load-bearing, because the timer would otherwise keep firing a oneshot whose `ExecStart`
+> binary no longer exists, i.e. a nightly failure alert forever. Decision and evidence:
+> [`../docs/audits/2026-08-11-scout-retirement.md`](../docs/audits/2026-08-11-scout-retirement.md).
+
 ---
 
-# Autonomous Scout
-
-The two `shortlist-scout` units run `shortlist-scout` once daily after the US
-equity close (22:30 UTC / 18:30 ET) and deliver a ranked Telegram report.
-
-> **These units are NOT auto-installed.** Copy them manually after reviewing the
-> paths for your install location.
-
-> **Arming the daily push (ships OFF).** The autonomous push is feature-flagged
-> off (`config.yaml: scout.daily_push.enabled: false`); set it `true` to arm it.
-> For a lean **activist-catalyst digest** that surfaces names to pass to `/deep`
-> without the daily Claude/FMP-research burn, also set
-> `scout.daily_push.research: false` — the run does discover → screen → gate →
-> rank and emits a copy-paste `/deep` block plus a prior-picks scoreboard
-> (return-since-selection vs SPY). The keyless, **VPS-safe** `edgar_activist_13d`
-> discovery originator (fresh SCHEDULE 13D activist stakes) is on by default and
-> works where the Yahoo screener is WAF-blocked. Picks are journaled to
-> `state/scout_state.json` (`picks`) so the scoreboard can track them over time.
+# Install and update
 
 ## Turnkey installer
 
 `install_opt_shortlist.sh` automates the whole install: it syncs the repo to
-`/opt/shortlist`, builds the venv (`--extra scout --extra edgar`), installs both
-units, and enables the daily timer. It runs the service as a **normal login user**
+`/opt/shortlist`, builds the venv (`--extra bot --extra edgar`), installs the
+units, and restarts the bot. It runs as a **normal login user**
 (not the `oracle` service account) so the `claude`-CLI research layer keeps its auth
 in that user's `~/.claude`, and sets `HOME`/`PATH` accordingly. Idempotent — safe to
 re-run.
@@ -51,9 +38,9 @@ sudo SHORTLIST_USER=deploy SHORTLIST_DEST=/opt/shortlist bash deploy/install_opt
 
 > Source path, install dir, and run-user are configurable at the top of the script
 > (env-overridable: `SHORTLIST_SRC` / `SHORTLIST_DEST` / `SHORTLIST_USER`). The rsync
-> excludes for `/scout/`, `/research/`, `/state/` are **anchored** with a leading `/`
+> excludes for `/scout/` (legacy artifacts), `/research/`, `/state/` are **anchored** with a leading `/`
 > on purpose — unanchored, they would also match the like-named source packages
-> `src/shortlist/{scout,research}` and ship a broken wheel.
+> `src/shortlist/research` and ship a broken wheel.
 
 For a manual install on a different host, follow the steps below instead.
 
@@ -72,8 +59,9 @@ git checkout main && git pull          # (or merge your feature branch)
 # 2. Re-deploy: rsync src -> /opt/shortlist, uv sync deps, reinstall units
 sudo bash deploy/install_opt_shortlist.sh
 
-# 3. It runs on the next timer fire (22:30 UTC). To exercise it now:
-cd /opt/shortlist && ./.venv/bin/shortlist-scout --demo   # offline, no Telegram
+# 3. The bot is restarted automatically by the installer. To check it:
+systemctl status shortlist-bot.service
+cd /opt/shortlist && ./.venv/bin/shortlist --demo   # offline smoke test, no Telegram
 ```
 
 What needs what:
@@ -84,50 +72,43 @@ What needs what:
 | New/updated dependency (`pyproject.toml` / `uv.lock`) | needs `uv sync` → **re-run the installer** |
 | `config.yaml` thresholds/weights | rsync (re-run installer, or `rsync` just that file) |
 | systemd unit edits | re-run installer (it rewrites + `daemon-reload`s the units) |
-| API keys / `claude` CLI availability | **no redeploy** — auto-detected on the next run |
+| API keys / `claude` CLI availability | restart the bot (`systemctl restart shortlist-bot.service`) |
 
 Caveats:
 
 - The installer's `rsync` has **no `--delete`**, so a **renamed or removed** source file
   leaves a stale copy in `/opt/shortlist/src`. After a rename/delete, clear it first:
   `rm -rf /opt/shortlist/src && sudo bash deploy/install_opt_shortlist.sh`.
-- The run is **idempotent per session date** — a manual `systemctl start` (or a second
-  run) for a session that already completed prints "already completed; nothing to do"
-  and skips. To force a re-run for testing, drop that date from
-  `/opt/shortlist/state/scout_state.json` (`runs` array) first.
+- **Running the installer FROM `/opt/shortlist` is a silent no-op.** `SRC` derives from the
+  script's own path, so `SRC == DEST` and it rsyncs onto itself — while still reporting
+  success. Either `cd /opt/shortlist && sudo git pull && sudo bash
+  deploy/install_opt_shortlist.sh`, or run it from a **separate** up-to-date checkout.
+  Always verify with `git -C /opt/shortlist log --oneline -1`.
 
 ```bash
-# Trigger a real (Telegram-delivering) run on demand and watch it:
-sudo systemctl start shortlist-scout.service
-journalctl -u shortlist-scout.service -f
+# Watch the bot:
+journalctl -u shortlist-bot.service -f
 ```
 
 ## Install steps (manual)
 
 ```bash
-# 1. Adjust WorkingDirectory and ExecStart in shortlist-scout.service to match
+# 1. Adjust WorkingDirectory and ExecStart in shortlist-bot.service to match
 #    your install location (default assumes /opt/shortlist; see below).
 
 # 2. Copy units to systemd
 # NOTE: this MANUAL route uses the static unit files. `install_opt_shortlist.sh`
 # does NOT -- it generates its own units inline. The two can drift; a Service
 # setting added to one must be added to the other. (Bitten 2026-07-30.)
-sudo cp deploy/shortlist-scout.service /etc/systemd/system/
-sudo cp deploy/shortlist-scout.timer   /etc/systemd/system/
+sudo cp deploy/shortlist-bot.service /etc/systemd/system/
 
 # 3. Reload and enable
 sudo systemctl daemon-reload
-sudo systemctl enable --now shortlist-scout.timer
+sudo systemctl enable --now shortlist-bot.service
 
-# 4. Verify the timer is scheduled
-systemctl list-timers shortlist-scout.timer
-```
-
-To test a one-shot run without waiting for the timer:
-
-```bash
-sudo systemctl start shortlist-scout.service
-journalctl -u shortlist-scout.service -f
+# 4. Verify it is running
+systemctl status shortlist-bot.service
+journalctl -u shortlist-bot.service -f
 ```
 
 ## Paths
@@ -137,10 +118,10 @@ The units ship with VPS defaults:
 | Setting | Value |
 |---------|-------|
 | `WorkingDirectory` | `/opt/shortlist` |
-| `ExecStart` | `/opt/shortlist/.venv/bin/shortlist-scout` |
+| `ExecStart` | `/opt/shortlist/.venv/bin/shortlist-bot` |
 | `User` | `oracle` |
 
-**Adjust these to your actual install location** before copying. The scout runs
+**Adjust these to your actual install location** before copying. Everything runs
 from inside the repo so that `.env` is found by `env.py:load_env()`.
 
 ## Required environment variables
@@ -151,7 +132,7 @@ Set these in the repo-root `.env` (gitignored) or export them in the shell:
 |----------|---------|----------|
 | `FINNHUB_API_KEY` | Fundamentals + news boost | Yes (free tier OK) |
 | `FMP_API_KEY` | Deep-screen fundamentals | Yes (free tier OK; ~19 tickers/day) |
-| `TELEGRAM_BOT_TOKEN` | Deliver the daily report | Yes |
+| `TELEGRAM_BOT_TOKEN` | Bot auth (`/screen`, `/deep`, `/portfolio`) | Yes |
 | `TELEGRAM_CHAT_ID` | Target chat/channel ID | Yes |
 | `SEC_IDENTITY` | SEC EDGAR fair-access header (e.g. `you@email.com`) | Recommended |
 
@@ -160,13 +141,12 @@ and the coverage gap is surfaced in the report rather than silently dropped.
 
 ## Research phase (`claude` CLI)
 
-The scout optionally enriches the top-N names with a Claude-written 10-K brief.
-This requires:
+`/deep` enriches a name with a Claude-written 10-K brief. This requires:
 
 1. The `claude` CLI on PATH and authenticated (`claude --version` works).
 2. The `[edgar]` extra installed: `uv sync --extra edgar`.
 
-If either is absent the research phase is skipped and the report notes it.
+If either is absent the research phase is skipped and the reply notes it.
 
 ## Kill-switch
 
@@ -174,18 +154,14 @@ Two ways to disable auto-research without redeploying:
 
 ```bash
 # Option 1: file-based (persists across restarts)
-touch scout/STOP_RESEARCH
+touch research/STOP_RESEARCH
 
-# Option 2: environment variable (one run)
-SCOUT_NO_RESEARCH=1 shortlist-scout
+# Option 2: environment variable (one process)
+SHORTLIST_NO_RESEARCH=1 shortlist-bot
 ```
 
-To disable the scout entirely, stop the timer:
-
-```bash
-sudo systemctl stop shortlist-scout.timer
-sudo systemctl disable shortlist-scout.timer
-```
+Both legacy names (`scout/STOP_RESEARCH`, `SCOUT_NO_RESEARCH=1`) are still honoured —
+`research/phase.py` checks both so an existing kill switch cannot silently stop working.
 
 ## Failure alerts
 
@@ -193,7 +169,7 @@ A configured-but-failed Telegram delivery makes the unit exit non-zero, so an
 `OnFailure` hook surfaces it. The oracle-daily-report pattern uses an alert service:
 
 ```ini
-# In shortlist-scout.service [Service] section:
+# In a [Service] section:
 OnFailure=oracle-alert-failure@%n.service
 ```
 
@@ -235,26 +211,17 @@ Toggle via `config.yaml: portfolio.monitor` (design: `docs/POSITION_MONITOR.md`)
 - **Chat allowlist.** The bot only answers the `TELEGRAM_CHAT_ID` configured in
   `.env`. Requests from any other chat or user are silently ignored — there is no
   error reply.
-- **Soft per-request caps.** `scout.bot.max_screen` and `scout.bot.max_deep` in
+- **Soft per-request caps.** `bot.max_screen` and `bot.max_deep` in
   `config.yaml` limit how many tickers a single command may screen. Commands that
   exceed the cap are rejected with a friendly message rather than burning quota.
 - **No hard FMP quota guard.** The HTTP cache (`cache.py`) makes warm re-screens
   of the same basket free within TTL. Cold requests degrade honestly via the
   coverage layer rather than failing outright.
 
-## Coexistence with the daily push
+## Single instance only
 
-`shortlist-bot` shares `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` with the
-autonomous scout. Long-polling (`getUpdates`) and the daily push (`sendMessage`)
-can coexist on one token — the only conflict is running **two concurrent
-`getUpdates` pollers**, which triggers a Telegram `409 Conflict`. Run exactly
-**one** bot instance.
-
-The autonomous daily push is **feature-flagged OFF by default**
-(`scout.daily_push.enabled: false` in `config.yaml`). The interactive bot is
-the primary driver. The `shortlist-scout.timer` should be left disabled; set
-`scout.daily_push.enabled: true` and re-enable the timer to re-arm the daily
-report later if desired.
+Run exactly **one** `shortlist-bot` instance. Two concurrent `getUpdates` pollers on the
+same token trigger a Telegram `409 Conflict` and neither receives reliably.
 
 ## Install steps (manual)
 
@@ -279,29 +246,29 @@ The unit ships with VPS defaults:
 from inside the repo so that `.env` is found by `env.py:load_env()`.
 
 > **`/deep` needs the `claude` CLI on PATH and its auth in `~/.claude`.** Like the
-> scout's research phase, the `/deep` command shells out to the `claude` CLI. systemd's
+> The `/deep` command shells out to the `claude` CLI. systemd's
 > minimal default `PATH` excludes a user's `~/.local/bin`, so under a bare
 > `User=oracle` unit `shutil.which("claude")` returns `None` and `/deep` silently
 > degrades to "research skipped" (while `/screen` keeps working). To enable `/deep`,
-> run the unit as the **same login user the scout installer uses** (not the `oracle`
+> run the unit as the **same login user the installer uses** (not the `oracle`
 > service account) and add its `HOME`/`PATH` to the `[Service]` section:
 > ```ini
 > User=<login-user>
 > Environment=HOME=/home/<login-user>
 > Environment=PATH=/opt/shortlist/.venv/bin:/home/<login-user>/.local/bin:/usr/local/bin:/usr/bin:/bin
 > ```
-> This mirrors what `install_opt_shortlist.sh` already does for `shortlist-scout`.
+> This is what `install_opt_shortlist.sh` already sets up.
 > `/screen` works under any user; only the Claude research brief needs this.
 
 ## Required environment variables
 
-Same as the scout — set in the repo-root `.env` (gitignored) or exported in the
+Set in the repo-root `.env` (gitignored) or exported in the
 shell before the service starts:
 
 | Variable | Purpose | Required |
 |----------|---------|----------|
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token (shared with scout) | Yes |
-| `TELEGRAM_CHAT_ID` | Allowlisted chat/channel ID (shared with scout) | Yes |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token | Yes |
+| `TELEGRAM_CHAT_ID` | Allowlisted chat/channel ID | Yes |
 | `FMP_API_KEY` | Deep-screen fundamentals | Yes (free tier OK) |
 | `FINNHUB_API_KEY` | Fundamentals fallback | Yes (free tier OK) |
 | `SEC_IDENTITY` | SEC EDGAR fair-access header (e.g. `you@email.com`) | Recommended |
@@ -371,10 +338,9 @@ FMP's paid Starter tier (~$14–20/mo) lifts the gating; Finnhub (60/min) and Ya
 ## Enabling the daily timer (opt-in — only when you decide to)
 
 **Easiest (system unit, staggered, real paths filled in):** the deploy script installs
-and enables it for you when you pass the opt-in flag — staggered to **21:30 UTC**, one hour
-before the scout (22:30), so the two harness runs never overlap (the EDGAR concurrency
-semaphore is per-process; concurrent runs would double SEC load + compete for FMP's 250/day
-cap and Yahoo):
+and enables it for you when you pass the opt-in flag — at **21:30 UTC**. It is now the only
+scheduled harness run on the box; the time was originally chosen to stagger it an hour ahead
+of the retired scout and is kept because it works:
 
 ```bash
 sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh

@@ -1,0 +1,374 @@
+"""SEC EDGAR daily-index scanners: Form 4 submission fetch, initial 13D / 13D-A discovery.
+
+A NEW ingestion path (the per-ticker providers/_form4.py does not do this). The Form 4
+daily index lists ~800-1,500 rows/day (CIK + accession only); `fetch_form4_submissions`
+(scout/insider.py's opportunistic-insider originator) fetches each filing's complete
+submission text in one request per filing. The retired `cluster_buys_from_records` same-
+session same-issuer heuristic (edgar:form4_cluster_buy) has been superseded by the CMP
+routine/opportunistic classification in scout/insider.py + scout/dera.py. Live fetching is
+bounded by a per-day cap; this module keeps the *pure* aggregation testable in isolation.
+"""
+from __future__ import annotations
+
+import warnings
+from collections import defaultdict
+from datetime import date, timedelta
+from typing import Callable
+
+from ..env import redact_secrets
+from .calendar import is_trading_day
+from .models import Emission
+from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
+from .sec_throttle import sec_throttle
+
+# Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
+# foreign filers). They are NOT real symbols — left unfiltered they bucket together
+# into a phantom "NONE" issuer that looks like a multi-insider cluster buy.
+_NON_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
+
+
+def _is_real_ticker(raw: str | None) -> str:
+    """Normalize and validate an issuer ticker; return "" if it's a placeholder.
+
+    Catches the documented `str(None).upper() -> "NONE"` case plus whitespace, the
+    em-dash/punctuation-only forms, and CIK-as-ticker (pure digits). A real symbol
+    always contains at least one letter (e.g. BRK.B, AXIA3), so requiring an alpha
+    char rejects numeric/punctuation junk without dropping any valid ticker.
+    """
+    t = (raw or "").strip().upper()
+    if not t or t in _NON_TICKERS or not any(c.isalpha() for c in t):
+        return ""
+    return t
+
+
+def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[dict]:
+    """Live path: pull the Form 4 daily index for `session`, fetch up to
+    `max_filings` documents, parse each into {ticker, insider, code, value}.
+
+    Wraps synchronous edgartools; honors SEC fair-access via a bounded worker pool
+    SEPARATE from the per-ticker EdgarSource semaphore. Returns [] (never raises) on
+    any failure so the signal degrades. Implementation uses edgartools'
+    get_filings(form='4', filing_date=session) + .obj() transaction parsing; cap the
+    count at max_filings and record truncation in the caller's coverage detail.
+    """
+    try:
+        from edgar import get_filings, set_identity  # edgartools
+        set_identity(identity)
+        filings = get_filings(form="4", filing_date=session.isoformat())
+        records: list[dict] = []
+        for f in list(filings)[:max_filings]:
+            try:
+                form4 = f.obj()
+                mt = getattr(form4, "market_trades", None)
+                if mt is None or getattr(mt, "empty", True):
+                    continue
+                ticker = _is_real_ticker(getattr(getattr(form4, "issuer", None), "ticker", ""))
+                insider = getattr(form4, "insider_name", None)
+                if not insider:
+                    # Each Form 4 is exactly one reporting owner. When the name can't
+                    # be parsed, key the buyer off the filing's unique accession so two
+                    # distinct unnamed insiders don't collapse to one "?" and suppress
+                    # a real cluster (cluster_buys_from_records counts distinct names).
+                    acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                    insider = f"acc:{acc}" if acc else "?"
+                for row in mt.itertuples(index=False):
+                    shares = getattr(row, "Shares", None) or 0
+                    price = getattr(row, "Price", None) or 0
+                    records.append({
+                        "ticker": ticker,
+                        "insider": insider,
+                        "code": getattr(row, "Code", "") or "",
+                        "value": float(shares * price),
+                    })
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return [r for r in records if r["ticker"]]  # _is_real_ticker() already blanked placeholders
+    except Exception as exc:  # noqa: BLE001 — edgartools missing or SEC error -> degrade
+        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
+        # must not read as "0 filings today".
+        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
+        return []
+
+
+def _walk_back_to_published(session: date, lookback: int,
+                            fetch_day: Callable[[date], list[dict]]) -> tuple[list[dict], date]:
+    """Shared walk-back shape for every "most-recent published SEC daily index" scanner
+    (Form 4, initial 13D, 13D/A): the SEC daily index for `session` is not published
+    until ~02:00 UTC, so at the scout's after-close run time today's index is empty even
+    though the session has closed. An empty result means "not published yet," not "no
+    activity" — so call `fetch_day` for `session`, then walk back up to `lookback` trading
+    days until it returns non-empty. Returns (records, day_used); ([], session) if the
+    whole window comes up empty. Never raises (that's `fetch_day`'s contract)."""
+    d = session
+    for _ in range(lookback + 1):
+        recs = fetch_day(d)
+        if recs:
+            return recs, d
+        d -= timedelta(days=1)
+        while not is_trading_day(d):
+            d -= timedelta(days=1)
+    return [], session
+
+
+def fetch_recent_records(session: date, max_filings: int, identity: str,
+                         lookback: int = 4, _fetch=None) -> tuple[list[dict], date]:
+    """Most-recent *published* Form 4 daily index at or before `session`. See
+    _walk_back_to_published for the fallback rationale. Returns (records, session_used) so
+    the caller can surface the fallback in coverage. Never raises (degrades to ([], session)).
+    """
+    fetch = _fetch or fetch_daily_records
+    return _walk_back_to_published(session, lookback, lambda d: fetch(d, max_filings, identity))
+
+
+def fetch_form4_submissions(session: date, max_filings: int, identity: str,
+                            _throttle=None) -> tuple[list[str], date | None]:
+    """Form 4 complete-submission texts for `session` (walk-back to the last published
+    index, same rule as fetch_recent_records).
+
+    ONE request per filing: `Filing.full_text_submission` downloads the complete-submission
+    `.txt` (~4.6 KB, the full ownershipDocument XML embedded) directly from its
+    deterministic URL (base_dir + accession + '.txt') -- no index.json lookup, since the
+    primary document filename is arbitrary (live-verified 2026-07-26).
+
+    Deliberately NOT `Filing.text()`: for XML-native forms (3/4/5) that method renders the
+    parsed Ownership object back out to HTML and then flattens THAT to prose text (see
+    edgartools' Filing.html()) -- it can cost a second request and, worse, the result no
+    longer contains the raw `<ownershipDocument>` tags parse_form4_xml scans for.
+    `full_text_submission` fetches the same URL scan/text() would eventually reach for HTML
+    filings, just without the XML round-trip, and its output is exactly the raw text
+    parse_form4_xml already expects.
+
+    Never raises. Two DISTINCT empty outcomes (I-1, 2026-07-27):
+    - A normal walk-back exhaustion (the daily index just isn't published yet for any of
+      the last `lookback` days) -> `([], session)`, `used == session`. Not an error.
+    - A real failure (edgartools missing, SEC outage, identity error, ...) -> `([], None)`.
+      `used is None` is the hard-failure sentinel the caller (signals.py) checks to keep a
+      genuine outage from reading identically to a quiet day in `available()`.
+    """
+    try:
+        from edgar import get_filings, set_identity
+        set_identity(identity)
+        filings, used = _walk_back_to_published(
+            session, lookback=5,
+            fetch_day=lambda d: list(get_filings(form="4", filing_date=d.isoformat())))
+        candidates = _dedup_by_accession(filings)[:max_filings]
+        out: list[str] = []
+        throttle = _throttle or sec_throttle()
+        for f in candidates:
+            try:
+                throttle("edgar_form4")   # heaviest SEC consumer -- audit §4
+                out.append(f.full_text_submission())
+            except Exception:  # noqa: BLE001 -- skip one bad filing
+                continue
+        # `considered` is the pre-error count: the caller needs it to know the cap BOUND,
+        # which len(out) cannot tell it once any filing errors (I-6).
+        return out, used, len(candidates)
+    except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
+        warnings.warn(f"scout: form4 submission fetch failed: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return [], None, 0
+
+
+# --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---
+# A fresh initial SCHEDULE 13D = an investor crossed 5% with intent to influence: a
+# leading catalyst for a re-rating. We enter after-close (T+1), so the catchable edge is
+# the post-filing DRIFT, not the filing-day pop — these are "watch / pass to /deep"
+# candidates, not early-pop trades. The raw firehose is noise-dominated (SPAC shells,
+# foreign holdcos, affiliate/sponsor filings), so quality.py filters it; the scorer + the
+# market-cap gate remain the downstream skeptic.
+
+
+def _dedup_by_accession(filings):
+    """edgartools get_filings returns every row TWICE (verified 2026-06-28). Keep the
+    first occurrence per accession so co-filer counts and header fetches aren't doubled."""
+    seen: set = set()
+    out = []
+    for f in filings:
+        acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+        if acc in seen:
+            continue
+        seen.add(acc)
+        out.append(f)
+    return out
+
+
+def activist_stakes_from_records(records, *, drop_spacs=True, drop_affiliates=True,
+                                 marquee_boost=0.2, stake_by_accession=None):
+    """Pure aggregation: records -> one Emission per resolved ticker (initial 13D only).
+
+    record: {ticker, cik, subject_name, activist, form, accession}. Placeholder tickers
+    (unresolved subjects) are skipped so they can't form a phantom candidate. Dedup is on
+    the resolved TICKER (co-filers on the same target collapse to one emission). SPAC/shell
+    subjects and affiliate filings (filer name echoes the subject) are dropped by config;
+    a marquee (credible) activist boosts strength. The subject CIK is carried on the
+    Emission so the selection ledger can re-resolve a renamed ticker later.
+
+    When stake_by_accession is provided (a dict mapping accession -> stake %), the first
+    row's accession that exists in the dict gains meta={"stake_pct": <value>}."""
+    by_ticker: dict[str, list[dict]] = defaultdict(list)
+    for r in records:
+        tkr = _is_real_ticker(r.get("ticker"))
+        if not tkr or not is_initial_13d(r.get("form", "")):
+            continue
+        subj, act = r.get("subject_name", "") or "", r.get("activist", "") or ""
+        if drop_spacs and is_spac_or_shell(subj):
+            continue
+        if drop_affiliates and is_affiliate_filing(act, subj):
+            continue
+        by_ticker[tkr].append(r)
+
+    out: list[Emission] = []
+    for tkr, rows in sorted(by_ticker.items()):
+        subject = rows[0].get("subject_name", "") or tkr
+        activists = sorted({r.get("activist", "") or "" for r in rows})
+        n = len(activists)
+        marquee = next((marquee_activist(a) for a in activists if marquee_activist(a)), None)
+        strength = min(1.0, 0.7 + (marquee_boost if marquee else 0.0)
+                       + min(0.1, 0.05 * (n - 1)))
+        # fall back to the subject when no filer name parsed (a deliberately-kept valid 13D)
+        who = marquee or next((a for a in activists if a), None) or subject
+        who_part = who if n == 1 else f"{n} filers incl. {who}"
+        ev = f"Activist 13D: {who_part} → {subject}"
+
+        meta = {}
+        if stake_by_accession:
+            for r in rows:
+                pct = stake_by_accession.get(r.get("accession"))
+                if pct is not None:
+                    meta = {"stake_pct": pct}
+                    break
+
+        out.append(Emission(tkr, "edgar:activist_13d", strength, ev, is_discovery=True,
+                            cik=rows[0].get("cik"), meta=meta))
+    return out
+
+
+def _get_13d_index_rows(session: date, identity: str) -> list:
+    """Raw 13D-family daily-index rows (both form spellings; prefix match includes /A).
+    Isolated so tests can fake it; raises to the caller's guard on SEC failure."""
+    from edgar import get_filings, set_identity
+    set_identity(identity)
+    rows = []
+    for form in ("SCHEDULE 13D", "SC 13D"):
+        try:
+            rows.extend(list(get_filings(form=form, filing_date=session.isoformat())))
+        except Exception:  # noqa: BLE001 — one form spelling failing must not kill the other
+            continue
+    return rows
+
+
+def fetch_activist_records(session: date, max_filings: int, identity: str,
+                           resolve_ticker_fn, _throttle=None) -> list[dict]:
+    """Live: pull the SCHEDULE 13D (+ legacy SC 13D) daily index for `session`, dedup the
+    doubled rows, parse each header into a record. `resolve_ticker_fn(cik)->ticker|None`
+    maps the SUBJECT company's CIK to its ticker. Never raises (degrades to [])."""
+    try:
+        rows = _get_13d_index_rows(session, identity)
+        records: list[dict] = []
+        throttle = _throttle or sec_throttle()
+        for f in _dedup_by_accession(rows)[:max_filings]:
+            try:
+                if not is_initial_13d(getattr(f, "form", "")):
+                    continue  # exclude /A amendments (prefix match returns them)
+                throttle("edgar_activist_13d")   # `.header` is a network fetch
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if not subs:
+                    continue  # malformed/empty header -> skip this row, never abort the batch
+                ci = subs[0].company_information
+                cik = getattr(ci, "cik", None)
+                if not cik:
+                    continue
+                tkr = resolve_ticker_fn(cik)
+                if not tkr:
+                    continue  # unresolved (foreign issuer absent from company_tickers.json)
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    activist = (filers[0].company_information.name if filers else "") or ""
+                except Exception:  # noqa: BLE001 — a bad FILER name must not drop a valid subject
+                    activist = ""
+                acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                records.append({
+                    "ticker": tkr, "cik": f"{int(cik):010d}",
+                    "subject_name": getattr(ci, "name", "") or "",
+                    "activist": activist, "form": getattr(f, "form", ""),
+                    "accession": acc, "_filing": f})
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return records
+    except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
+        # must not read as "0 filings today".
+        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
+        return []
+
+
+def fetch_recent_activist_records(session: date, max_filings: int, identity: str,
+                                  resolve_ticker_fn, lookback: int = 4,
+                                  _fetch=None) -> tuple[list[dict], date]:
+    """Most-recent *published* SCHEDULE 13D index at or before `session`. See
+    _walk_back_to_published for the fallback rationale. Returns (records, session_used).
+    Never raises."""
+    fetch = _fetch or fetch_activist_records
+    return _walk_back_to_published(
+        session, lookback, lambda d: fetch(d, max_filings, identity, resolve_ticker_fn))
+
+
+def fetch_amendment_records(session: date, max_filings: int, identity: str,
+                            resolve_ticker_fn) -> list[dict]:
+    """Live: SCHEDULE 13D/A (+ legacy SC 13D/A) records for `session`. Same contract as
+    fetch_activist_records but keeps ONLY amendments and also parses the FILER CIK (the
+    stake-baseline pair key needs both sides). Never raises (degrades to [])."""
+    from .quality import is_13d_amendment
+    try:
+        rows = _get_13d_index_rows(session, identity)
+        records: list[dict] = []
+        for f in _dedup_by_accession(rows)[:max_filings]:
+            try:
+                if not is_13d_amendment(getattr(f, "form", "")):
+                    continue
+                hdr = f.header
+                subs = getattr(hdr, "subject_companies", None)
+                if not subs:
+                    continue
+                ci = subs[0].company_information
+                cik = getattr(ci, "cik", None)
+                if not cik:
+                    continue
+                tkr = resolve_ticker_fn(cik)
+                if not tkr:
+                    continue
+                filer_cik = activist = None
+                try:
+                    filers = getattr(hdr, "filers", None)
+                    if filers:
+                        fci = filers[0].company_information
+                        activist = getattr(fci, "name", "") or ""
+                        raw_fc = getattr(fci, "cik", None)
+                        filer_cik = f"{int(raw_fc):010d}" if raw_fc else None
+                except Exception:  # noqa: BLE001 — a bad FILER block must not drop the subject
+                    pass
+                acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
+                records.append({
+                    "ticker": tkr, "cik": f"{int(cik):010d}", "filer_cik": filer_cik,
+                    "subject_name": getattr(ci, "name", "") or "",
+                    "activist": activist or "", "form": getattr(f, "form", ""),
+                    "accession": acc,
+                    "file_date": str(getattr(f, "filing_date", "") or ""),
+                    "_filing": f})            # carried so the signal can doc-fetch stake
+            except Exception:  # noqa: BLE001 — skip an unparseable filing
+                continue
+        return records
+    except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
+        warnings.warn(f"scout: edgar 13D/A index fetch failed: {redact_secrets(str(exc))}",
+                      stacklevel=2)
+        return []
+
+
+def fetch_recent_amendment_records(session: date, max_filings: int, identity: str,
+                                   resolve_ticker_fn, lookback: int = 4,
+                                   _fetch=None) -> tuple[list[dict], date]:
+    """Walk-back twin of fetch_recent_activist_records for the /A stream."""
+    fetch = _fetch or fetch_amendment_records
+    return _walk_back_to_published(
+        session, lookback, lambda d: fetch(d, max_filings, identity, resolve_ticker_fn))

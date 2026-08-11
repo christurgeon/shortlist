@@ -1,4 +1,0 @@
-{"finance": {"result": [{"quotes": [
-  {"symbol": "ABC", "regularMarketChangePercent": 8.4, "regularMarketVolume": 3000000, "averageDailyVolume3Month": 1000000},
-  {"symbol": "XYZ", "regularMarketChangePercent": 5.1, "regularMarketVolume": 2000000, "averageDailyVolume3Month": 1500000}
-]}], "error": null}}

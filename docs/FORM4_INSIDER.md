@@ -1,5 +1,10 @@
 # Form 4 opportunistic-insider originator — design (2026-07-26)
 
+> **RETIRED 2026-08-11.** The Form 4 *originator* is gone; the Form 4 *client* survives as `shortlist/edgar/insider.py` + `dera.py`. Kept for the reasoning and measured facts it
+> records, not as a description of code that exists. See
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Status:** IMPLEMENTED 2026-07-27. Supersedes the retired count-heuristic
 `EdgarForm4Signal` (`cluster_buys_from_records`) with the rewrite described below:
 `scout/dera.py` + `scout/insider.py` + a rewritten `scout/signals.py:EdgarForm4Signal`,

@@ -5,8 +5,8 @@ from datetime import date
 if importlib.util.find_spec("PIL") is None:
     pytest.skip("Pillow not installed", allow_module_level=True)
 
-from shortlist.scout.report.png import render_glance
-from shortlist.scout.report.viewmodel import (
+from shortlist.bot.report.png import render_glance
+from shortlist.bot.report.viewmodel import (
     AssessmentVM, LeaderVM, MetricsVM, ReportVM)
 
 

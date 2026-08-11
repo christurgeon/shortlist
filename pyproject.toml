@@ -17,7 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 edgar = ["edgartools>=3.0"]
 fred = ["fredapi>=0.5"]
-scout = ["pillow>=10.0"]
+bot = ["pillow>=10.0"]   # report dashboard PNG
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.10"]
@@ -56,8 +56,7 @@ shortlist = "shortlist.screen:main"
 shortlist-harness = "shortlist.data.cli:main"
 shortlist-backtest = "shortlist.backtest.cli:main"
 shortlist-accumulate = "shortlist.data.accumulate:main"
-shortlist-scout = "shortlist.scout.daily:main"
-shortlist-bot = "shortlist.scout.bot:main"
+shortlist-bot = "shortlist.bot.telegram:main"
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -2,8 +2,8 @@
 from __future__ import annotations
 from datetime import date
 from shortlist.data.macro import MacroContext
-from shortlist.scout.report.viewmodel import ReportVM
-from shortlist.scout.report.sections import _MacroHeader, Detail
+from shortlist.bot.report.viewmodel import ReportVM
+from shortlist.bot.report.sections import _MacroHeader, Detail
 
 OFF = MacroContext("2026-06-01", 4.5, -0.2, 5.4, 27.0, 3.6, "risk-off", True)
 

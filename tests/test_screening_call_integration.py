@@ -5,7 +5,7 @@ import json
 
 from shortlist.research import report
 from shortlist.research.models import QualitativeAssessment, ScreeningCall, Thesis
-from shortlist.scout.report.viewmodel import _assessment_vm, call_one_liner
+from shortlist.bot.report.viewmodel import _assessment_vm, call_one_liner
 
 
 def _assessment(call):

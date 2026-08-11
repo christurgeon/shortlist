@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 #
-# Deploy the shortlist autonomous scout to /opt/shortlist and schedule it to run
-# once daily (22:30 UTC, after the US equity close) via a system-level systemd
-# timer. The service runs as a NORMAL login user (not a service account) so the
-# claude-CLI research layer keeps its auth in that user's ~/.claude.
+# Deploy shortlist to /opt/shortlist: sync the repo, build the venv, install the
+# systemd units, and restart the interactive Telegram bot.
+#
+# The bot runs as a NORMAL login user (not a service account) so the claude-CLI
+# research layer behind /deep keeps its auth in that user's ~/.claude.
+#
+# The autonomous scout this script used to schedule was retired on 2026-08-11
+# (docs/audits/2026-08-11-scout-retirement.md). Step 5 removes its stale units.
 #
 # By default the run-user is whoever invoked sudo (SUDO_USER); override any of the
 # settings below via the environment, e.g.:
@@ -48,13 +52,13 @@ fi
 
 echo "==> deploying $SRC -> $DEST, service runs as $RUN_USER ($RUN_HOME)"
 
-echo "==> 1/7  Create $DEST (owned by $RUN_USER)"
+echo "==> 1/6  Create $DEST (owned by $RUN_USER)"
 mkdir -p "$DEST"
 chown "$RUN_USER:$RUN_GROUP" "$DEST"
 
-echo "==> 2/7  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
-# NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only
-# the repo-root dirs, NOT the like-named source packages src/shortlist/{scout,research}.
+echo "==> 2/6  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
+# NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only the
+# repo-root dirs, NOT the like-named source package src/shortlist/research.
 # (__pycache__ stays unanchored — strip it at every level.)
 rsync -a \
   --exclude='/.venv/' \
@@ -73,52 +77,32 @@ chown -R "$RUN_USER:$RUN_GROUP" "$DEST"
 # .env carries secrets -> lock it down
 if [[ -f "$DEST/.env" ]]; then chmod 600 "$DEST/.env"; fi
 
-echo "==> 3/7  Build the venv in place (uv sync --extra scout --extra edgar) as $RUN_USER"
-sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra scout --extra edgar"
+echo "==> 3/6  Build the venv in place (uv sync --extra bot --extra edgar) as $RUN_USER"
+sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra bot --extra edgar"
 
-echo "==> 4/7  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
-sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist-scout' --demo >/dev/null && echo '    demo OK'"
+echo "==> 4/6  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
+# `shortlist --demo` runs the scorer against the offline mock fixtures. It writes NOTHING:
+# the retired scout's `--demo` used to smoke-test here and silently wrote mock:demo rows
+# into the LIVE selection ledger on every deploy (18 days of them before it was caught).
+sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist' --demo >/dev/null && echo '    demo OK'"
 
-echo "==> 5/7  Install systemd units"
-cat > "$UNIT_DIR/shortlist-scout.service" <<UNIT
-[Unit]
-Description=shortlist autonomous scout — daily candidate discovery + report
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=$RUN_USER
-Group=$RUN_GROUP
-WorkingDirectory=$DEST
-# The claude CLI lives in the run-user's ~/.local/bin; uv + the venv on /usr/local/bin.
-# systemd's default PATH has neither, so the research layer's shutil.which("claude")
-# would fail. HOME must also point at the run-user so the CLI finds its auth.
-Environment=HOME=$RUN_HOME
-Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=$DEST/.venv/bin/shortlist-scout
-# Cap memory: the DERA insider index peaks at ~295 MB on a cold build (measured live
-# 2026-07-30: 26.9s, 68,499 entries, 15 quarters). This box has 1.9 GB and also runs
-# oracle-bot, so bound the scout rather than let the OOM killer pick its neighbour.
-MemoryMax=600M
-# edgartools defaults to 9 req/s (EDGAR_RATE_LIMIT_PER_SEC); SEC fair-access wants <=10 but
-# this signal now fetches up to 2500 Form 4s per run, so hold it at 6.
-Environment=EDGAR_RATE_LIMIT_PER_SEC=6
-# Do NOT add Restart=/auto-retry: the run is marked complete only after delivery, so an
-# auto-restart before that re-runs discovery and re-hits the unofficial Yahoo endpoint
-# (see CLAUDE.md "Yahoo WAF gotcha"). Type=oneshot already means no restart — keep it.
-# A silent scout night is indistinguishable from a correct weekend no-op (last_session()
-# anchors to the prior trading day, so Sat/Sun legitimately print "already completed").
-# Without this ping a crash looks exactly like a Sunday. NOT the oracle template: that one
-# runs as \`oracle\`, which is not in systemd-journal, so its journal tail is empty.
-OnFailure=shortlist-alert-failure@%n.service
-# 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
-TimeoutStartSec=1800
-# No [Install] section: this oneshot is driven solely by shortlist-scout.timer.
-UNIT
+echo "==> 5/6  Install systemd units"
+# Remove the retired autonomous-scout units (2026-08-11). Idempotent, and load-bearing on a
+# box deployed before the retirement: the timer would otherwise keep firing a oneshot whose
+# ExecStart binary no longer exists, producing a nightly failure alert forever.
+for stale in shortlist-scout.timer shortlist-scout.service; do
+  if systemctl list-unit-files "$stale" --no-legend 2>/dev/null | grep -q .; then
+    echo "    removing retired unit $stale"
+    systemctl disable --now "$stale" 2>/dev/null || true
+    rm -f "$UNIT_DIR/$stale"
+  fi
+done
 
 # The failure-alert template. Generated inline like every other unit here (the installer
-# does NOT read deploy/*.service — see CLAUDE.md) because it needs \$DEST/\$RUN_USER baked in.
+# does NOT read deploy/*.service — see CLAUDE.md) because it needs $DEST/$RUN_USER baked in.
+# Its only remaining consumer is the opt-in accumulate timer below, which carries
+# OnFailure=shortlist-alert-failure@%n.service — install it unconditionally so enabling
+# that timer later can never reference a missing template.
 cat > "$UNIT_DIR/shortlist-alert-failure@.service" <<UNIT
 [Unit]
 Description=Send Telegram alert for failed shortlist unit %i
@@ -138,34 +122,20 @@ SyslogIdentifier=shortlist-alert-failure
 UNIT
 chmod +x "$DEST/deploy/shortlist-alert-failure.sh"
 
-cat > "$UNIT_DIR/shortlist-scout.timer" <<'UNIT'
-[Unit]
-Description=Run the shortlist scout once daily after the US close
-
-[Timer]
-# 22:30 UTC ~= 18:30 ET, after the close. Persistent reruns a missed timer.
-OnCalendar=*-*-* 22:30:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
-echo "==> 6/7  Reload systemd, enable + start the timer"
 systemctl daemon-reload
-systemctl enable --now shortlist-scout.timer
+
 
 # --- OPTIONAL: daily snapshot accumulation (OFF by default) -------------------
 # Enable with SHORTLIST_ACCUMULATE=1. Builds the >=24-day point-in-time history the
-# snapshot-replay backtest needs (unblocks SUE / Lazy-Prices validation). Staggered to
-# 21:30 UTC — one hour BEFORE the scout (22:30) so the two harness runs never overlap:
-# the EDGAR concurrency semaphore is PER-PROCESS, so concurrent runs would double SEC load
-# and compete for FMP's 250/day cap + the Yahoo endpoint. Memory is a non-issue (~48 MB).
+# snapshot-replay backtest needs (unblocks SUE / Lazy-Prices validation). Runs at 21:30 UTC.
+# Memory is a non-issue (~48 MB). It is now the only scheduled harness run on the box, so
+# the overlap concern that set this time (a per-process EDGAR semaphore competing with the
+# scout for FMP's 250/day cap) no longer applies — the slot is kept simply because it works.
 # Override the store dir with SHORTLIST_ACCUMULATE_ROOT (default: $DEST/state/snapshots,
 # which the rsync preserves across deploys). The backtest must read the SAME --root.
 if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then
   ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-$DEST/state/snapshots}"
-  echo "==> 6b/7  (opt-in) Install + enable the daily accumulate timer (21:30 UTC) -> $ACCUM_ROOT"
+  echo "==> 5b/6  (opt-in) Install + enable the daily accumulate timer (21:30 UTC) -> $ACCUM_ROOT"
   cat > "$UNIT_DIR/shortlist-accumulate.service" <<UNIT
 [Unit]
 Description=shortlist daily point-in-time snapshot capture
@@ -183,19 +153,18 @@ Nice=10
 # --max-tickers 42 = whole watchlist, so breadth can clear the backtest's 30-name
 # trust floor (FMP 429s past ~19 names; overflow saves as THIN keyless-only snapshots).
 # --sources adds edgar: keyless + VPS-reachable, supplies statements/insider/SIC for
-# FMP-quota-gated names; needs the edgartools extra (present in the /opt venv -- the
-# scout uses it) and SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
+# FMP-quota-gated names; needs the edgartools extra (present in the /opt venv) and
+# SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
 # default that degrades without the optional extra is a footgun).
 ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
-# Same failure ping as the scout. A [Service] setting added to one generated unit must be
-# added to BOTH routes or it silently never applies here (CLAUDE.md installer gotcha).
+# Failure ping. This is now the ONLY generated unit that carries it — keep it here.
 OnFailure=shortlist-alert-failure@%n.service
 # 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
 TimeoutStartSec=1800
 UNIT
   cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
 [Unit]
-Description=Daily shortlist snapshot capture (staggered 1h before the scout)
+Description=Daily shortlist snapshot capture
 
 [Timer]
 OnCalendar=*-*-* 21:30:00 UTC
@@ -210,22 +179,20 @@ UNIT
   echo "      sudo systemctl start shortlist-accumulate.service"
 fi
 
-echo "==> 7/7  Restart the interactive bot so it picks up the synced code"
+echo "==> 6/6  Restart the interactive bot so it picks up the synced code"
 # shortlist-bot is a long-running Type=simple service: it loads its modules at startup and
 # keeps running the OLD code after an rsync until restarted. `try-restart` updates it IFF
 # it is already running — a no-op on hosts without the bot, and it never force-starts an
 # unconfigured one (so a missing token / not-yet-installed bot can't fail the deploy).
-# NOTE the asymmetry: the scout above is a oneshot driven by its timer and is deliberately
-# NOT restarted here — bouncing an in-flight scout run re-hits the unofficial Yahoo endpoint
-# (see the scout-unit comment). Only the stateful long-running bot needs the bounce.
 systemctl try-restart shortlist-bot.service 2>/dev/null \
   && echo "    bot restarted" \
   || echo "    bot not running — skipped (start it with: systemctl enable --now shortlist-bot.service)"
 
 echo
-echo "===== DONE. Timer status: ====="
-systemctl list-timers shortlist-scout.timer --no-pager || true
+echo "===== DONE. Unit status: ====="
+systemctl --no-pager status shortlist-bot.service --lines=0 2>/dev/null | head -3 || true
+systemctl list-timers shortlist-accumulate.timer --no-pager || true
 echo
 echo "Next:"
-echo "  - One real validation run now:   sudo systemctl start shortlist-scout.service"
-echo "  - Watch it:                      journalctl -u shortlist-scout.service -f"
+echo "  - Watch the bot:  journalctl -u shortlist-bot.service -f"
+echo "  - Talk to it:     /screen AAPL MSFT   |   /deep AAPL"

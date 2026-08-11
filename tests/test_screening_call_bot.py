@@ -1,4 +1,4 @@
-from shortlist.scout.bot import _call_summary
+from shortlist.bot.telegram import _call_summary
 
 
 def test_call_summary_builds_message():

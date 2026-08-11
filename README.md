@@ -130,7 +130,6 @@ Six console scripts ship with the package (see `HARNESS.md` for the data-layer o
 | `shortlist-harness` | Fetch one assessment-ready `TickerSnapshot` per ticker (`--out` to persist). |
 | `shortlist-backtest` | Validate scores against forward returns — rank IC + quantile spreads (`ASSESSMENT_GAPS.md` §2.1). |
 | `shortlist-accumulate` | Capture point-in-time snapshots daily so the snapshot-replay backtest accrues history. **Scheduling is off by default** (`deploy/`). |
-| `shortlist-scout` | Autonomous daily discovery → deep-screen → Telegram report (off by default). See [Autonomous scout](#autonomous-scout). |
 | `shortlist-bot` | Interactive Telegram bot — drive screening on demand (`/screen`, `/deep`, `/portfolio`). See [Interactive bot](#interactive-bot). |
 
 ## Why these data sources (the part that adds the value)
@@ -226,32 +225,23 @@ bot's `/portfolio` command closes part of this gap: it re-screens what you *own*
 reports your exposure + sector concentration alongside the same scores — see
 [Interactive bot](#interactive-bot).)
 
-## Autonomous scout
+## Telegram bot
 
-The scout reuses the same scoring engine for discovery and delivery. There are two ways
-to drive it:
+`shortlist-bot` long-polls Telegram so you drive screening by chatting — `/screen nvda,
+lmt, msft` returns the ranked dashboard in seconds, `/deep tsla` adds the Claude 10-K
+brief, and `/portfolio` re-screens your own holdings for exposure + deterioration alerts.
+No webhook / inbound ports; it only answers your allowlisted chat.
 
-- **Interactive bot (primary).** `shortlist-bot` long-polls Telegram so you drive
-  screening by chatting — `/screen nvda, lmt, msft` returns the ranked dashboard in
-  seconds, `/deep tsla` adds the Claude 10-K brief, and `/portfolio` re-screens your own
-  holdings for exposure + deterioration alerts. No webhook / inbound ports; it only
-  answers your allowlisted chat. See [Interactive bot](#interactive-bot) below.
-- **Autonomous daily push (opt-in).** A `shortlist-scout` run discovers candidates from
-  free signal feeds, deep-screens them, and pushes a daily Telegram report — no watchlist
-  needed. **Off by default** (`scout.daily_push.enabled: false`); flip it on to re-arm.
+> **The autonomous scout was retired on 2026-08-11.** It discovered candidates nightly from
+> free signal feeds and pushed a daily report. Every originator that reached the validation
+> evaluator came back INSUFFICIENT or KILL, the apparatus that could settle the rest was
+> blocked on a paid price feed, and the stack was 47% of the source and 59% of the tests.
+> Decision, evidence, and what survives:
+> [`docs/audits/2026-08-11-scout-retirement.md`](docs/audits/2026-08-11-scout-retirement.md).
+> Discovery is now your own research feeding `/screen` and `/deep`.
 
-Full design and rationale: [`docs/AUTONOMOUS_SCOUT.md`](docs/AUTONOMOUS_SCOUT.md). Report
-delivery (Telegram + file artifact) and the inbound interactive path:
+Report delivery (Telegram + file artifact) and the inbound interactive path:
 [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
-
-```bash
-# Offline demo — no keys, prints a ranked shortlist (GEV / LMT / GOOGL basket):
-uv run shortlist-scout --demo
-
-# Live autonomous run — requires scout.daily_push.enabled: true (off by default);
-# discovers candidates, deep-screens, delivers to Telegram:
-uv run shortlist-scout
-```
 
 ### Interactive bot
 
@@ -275,7 +265,7 @@ uv run shortlist-bot           # starts the long-poll loop (Ctrl-C to stop)
 | `/help` | Command list. |
 
 It reuses the exact scorer and report pipeline as the daily push. Soft per-request caps
-(`scout.bot.max_screen` / `max_deep` in `config.yaml`) bound reply latency; the HTTP cache
+(`bot.max_screen` / `bot.max_deep` in `config.yaml`) bound reply latency; the HTTP cache
 makes warm re-screens free. It shares the bot token with the daily push — polling and
 sending coexist, only **two concurrent pollers** conflict (run one instance). Always-on
 systemd unit: [`deploy/shortlist-bot.service`](deploy/shortlist-bot.service) (see
@@ -321,29 +311,19 @@ TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
    `result[].message.chat.id` — that number is `TELEGRAM_CHAT_ID`. (Alternatively,
    DM [@userinfobot](https://t.me/userinfobot), which replies with your id.)
 
-Both keys live in `.env` (never in `config.yaml`) per the secrets house rule. The
-scout auto-detects them on the next run — no redeploy. If either is missing, the
-run still writes `scout/<date>/{report.txt,report.html,dashboard.png,manifest.json}`
-and exits cleanly; a configured-but-failed send exits non-zero so a systemd
-`OnFailure=` hook can alert. Full delivery semantics: [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
+Both keys live in `.env` (never in `config.yaml`) per the secrets house rule. The bot
+picks them up on restart. Full delivery semantics:
+[`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
 
-**Strictly free.** The scout uses Yahoo Finance (keyless), EDGAR Form 4 daily
-index (free SEC feed), Finnhub news volume (free tier), and Wikipedia pageviews
-(no key). FMP's free plan limits deep-screening to roughly **10 tickers/day**
-(configurable via `scout.daily_x` in `config.yaml`) —
-that is intentional: the signal funnel surfaces only the most interesting names
-rather than burning quota on noise.
-
-**Kill-switch.** To skip the Claude research phase without redeploying:
+**Kill-switch.** To skip the Claude research phase behind `/deep` without redeploying:
 
 ```bash
-touch scout/STOP_RESEARCH        # file-based; persists
-SCOUT_NO_RESEARCH=1 shortlist-scout  # env var; one run
+touch research/STOP_RESEARCH     # file-based; persists
+SHORTLIST_NO_RESEARCH=1 ...      # env var; one process
 ```
 
-For systemd deployment — the always-on `shortlist-bot.service` and the (off-by-default)
-daily `shortlist-scout.timer` — see [`deploy/README.md`](deploy/README.md). The daily
-timer still fires at 22:30 UTC but **no-ops unless `scout.daily_push.enabled: true`**.
+For systemd deployment — the always-on `shortlist-bot.service` and the opt-in
+`shortlist-accumulate.timer` — see [`deploy/README.md`](deploy/README.md).
 
 ## Limitations
 

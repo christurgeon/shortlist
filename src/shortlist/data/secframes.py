@@ -149,7 +149,7 @@ def fetch_frame(tag: str, frame: str, *, identity: str,
         return parse_frame(cached)
 
     if throttle is None:
-        from ..scout.sec_throttle import sec_throttle
+        from ..edgar.sec_throttle import sec_throttle
         throttle = sec_throttle()
     own = client is None
     cl = client or httpx.Client(timeout=timeout, headers={"User-Agent": identity})

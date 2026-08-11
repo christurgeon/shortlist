@@ -14,9 +14,9 @@ import warnings
 from datetime import date
 from typing import Optional
 
+from ..edgar.index import _dedup_by_accession
+from ..edgar.quality import is_13d_amendment, is_affiliate_filing, is_initial_13d, is_spac_or_shell
 from ..env import redact_secrets
-from ..scout.edgar_index import _dedup_by_accession
-from ..scout.quality import is_13d_amendment, is_affiliate_filing, is_initial_13d, is_spac_or_shell
 
 _FORMS = ("SCHEDULE 13D", "SC 13D")
 _AMENDMENT_FORMS = ("SCHEDULE 13D", "SC 13D", "SCHEDULE 13D/A", "SC 13D/A")
@@ -151,14 +151,14 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
     per the design spec; the assembler's own drops are unchanged and still apply.
 
     `_stake_fn(filing) -> float | None` is the test seam (default
-    `scout.stake.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per
+    `edgar.stake_pct.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per
     window (never per row) once at least one doc was attempted.
     """
     _get_filings = _resolve_get_filings(identity, _get_filings)
     if _get_filings is None:
         return None
     if _stake_fn is None:
-        from ..scout.stake import stake_pct_from_filing
+        from ..edgar.stake_pct import stake_pct_from_filing
         _stake_fn = stake_pct_from_filing
     rng = f"{start.isoformat()}:{end.isoformat()}"
     rows = []

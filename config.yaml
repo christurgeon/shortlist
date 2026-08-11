@@ -113,7 +113,7 @@ gates:
   #
   # $300M sits inside the $0.3-10B band docs/audits/2026-07-26-funnel-composition-audit.md
   # identifies as retail-accessible, and keeps 46% of picks across 19 of 25 sessions. The
-  # untradeable tail below it is cut EARLIER and more cheaply by scout.investable_floor
+  # untradeable tail below it was cut earlier by the retired scout.investable_floor
   # (a $100M cap floor plus a $500k/day DOLLAR-volume floor), so this gate no longer has to
   # double as a liquidity proxy -- which it was always bad at, since cap does not tell you
   # whether a $200M name trades $600k/day or $30k/day.
@@ -176,6 +176,13 @@ validity:
   min_scored_weight:      0.25  # known-bucket composite 'scored' iff present/applicable component weight >= this.
                                 # Lowered 0.34->0.25 for the value/momentum split: a gated financials name with
                                 # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
+  min_composite_components: 1   # ALL buckets, including 'unknown'. A composite must rest on at least this many
+                                # real sub-scores. `risk` is a composite-only TILT and does not count — a card
+                                # with every component null still posts a composite from the tilt alone (BRVE,
+                                # 2026-08-10: composite 100.0, ranked #1, because it reports no debt).
+                                # Deliberately a COUNT, not a weight: a momentum-only name sits at confidence
+                                # ~0.08 and is pinned as scored, so no weight threshold separates the two
+                                # safely. Remove the key for the exact pre-2026-08-11 behaviour.
 
 # Soft, NON-disqualifying advisories (parallel to `gates` — never change composite/passed).
 # crowded_short fires only with the `finra` source present.
@@ -391,12 +398,12 @@ research:
                                # spilled past the old 600s ceiling (all 3 attempts timed out
                                # 2026-06-29) -> "research unavailable". 900s gives headroom over
                                # the worst observed brief. Keep max_attempts x timeout_s below
-                               # scout.research_phase_budget_s.
+                               # bot.research_phase_budget_s.
   max_attempts: 3              # total assess() tries (transient CLI timeouts + reparse retries).
                                # A single claude call still intermittently exceeds timeout_s; that
                                # failure is transient, so retry instead of dropping the brief.
                                # Worst case ~ max_attempts x timeout_s of wall-clock per ticker —
-                               # keep <= scout.research_phase_budget_s.
+                               # keep <= bot.research_phase_budget_s.
   fallback_model: claude-opus-5   # --fallback-model on the claude CLI. Without it an
                                # overloaded primary fails all max_attempts identically and the
                                # brief is dropped ("research unavailable"). Must differ from
@@ -520,403 +527,17 @@ edgar_events:
     stale_after_8k: false
     activist_13d_note: false
 
-# Autonomous scout (shortlist-scout). See docs/AUTONOMOUS_SCOUT.md.
-scout:
-  daily_x: 15               # deep-screen slots/NIGHT (raised 10 -> 15 on 2026-08-07). The
-                            # digest runs the FREE chain (daily_push.include_fmp: false), so
-                            # each extra slot costs a Yahoo/Finnhub/EDGAR screen, NOT FMP
-                            # quota -- FMP binds the bot's /screen and /deep only.
-  daily_push:
-    enabled: true         # autonomous daily report ARMED (2026-06-29); runs the lean digest
-                          # (research:false) — discover→screen→gate→rank→Telegram + /deep block,
-                          # and records picks so the selection-ledger scoreboard accumulates.
-    research: false       # screen+gate+rank only; skip the Claude auto-research phase
-                          # (the digest surfaces names to pass to /deep; default True = legacy push)
-    include_fmp: false    # digest rations FMP -> free-source triage (loses only peg +
-                          # analyst upside_to_target; all 7 axes still score). Flip true on a
-                          # paid FMP plan to use FMP everywhere. Default true = byte-identical
-                          # back-compat; bot /screen + /deep always keep the full chain.
-  bot:
-    poll_timeout_s: 25     # getUpdates long-poll hold (client read timeout = this + 10;
-                           # deploy/shortlist-bot.service TimeoutStopSec must exceed this + slack)
-    max_screen: 10         # soft cap for /screen (truncate + warn, not reject)
-    max_deep: 3            # soft cap for /deep (research is slow + quota-heavy)
-  research_top_n: 3
-  research_phase_budget_s: 2800   # >= max_deep(3) x research.timeout_s(900) is 2700; +slack for serial EDGAR fetches
-  cooldown_days: 7
-  # market-cap floor is enforced by the existing scoring gate (gates.min_market_cap)
+# Telegram bot (shortlist-bot): /screen, /deep, and the position monitor.
+# The autonomous scout that used to own this block was retired on 2026-08-11 —
+# see docs/audits/2026-08-11-scout-retirement.md.
+bot:
+  poll_timeout_s: 25        # getUpdates long-poll seconds
+  max_screen: 10            # max tickers accepted by one /screen
+  max_deep: 3               # max tickers accepted by one /deep (each is a Claude call)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
-  edgar_index_daily_cap: 2500   # Form 4 filings FETCHED/session (edgar_form4 max_filings).
-                                # Measured SEC DERA 2025Q1 daily volume: median 838, p90 1,498,
-                                # max 3,496 -- 2500 clears p90 with headroom, binding only on rare
-                                # spike days (silent truncation in EDGAR index order would be an
-                                # uncharacterizable sampling bias, exactly the coverage defect this
-                                # signal exists to fix). At <=6 req/s that's ~7min worst case, which
-                                # the daily run can absorb.
-  form4:                     # EdgarForm4Signal -- opportunistic-insider buys.
-                             # DRIFT CAPTURE, not an information edge: Form 4 is public T+2
-                             # and every vendor parses it instantly. UNFITTED PRIORS below.
-                             # Design: docs/FORM4_INSIDER.md
-    min_value: 100000        # PER-TRANSACTION $ floor, never an aggregate (spec §7).
-                             # Measured 2025Q1: median buy $23.7k; 31% clear $100k.
-    roles: [officer, director]   # tenpercent excluded in v1 (often funds/PE)
-    exclude_10b5_1: true
-    tier_strength: {opportunistic: 1.0, unclassified: 0.6}   # routine is dropped outright
-    daily_cap: 25            # EMISSIONS/session (post-qualification) -- LIVE-ONLY knob, a
-                             # backfill cohort must run UNCAPPED (the 8-K precedent: a live
-                             # truncation the cohort never applied)
-    dera:
-      quarters: 16           # ~4y of history, ~205 MB
-      cache_dir: .cache/dera
-  activist_13d:              # EdgarActivist13DSignal — initial SCHEDULE 13D stakes (UNFITTED priors)
-    daily_cap: 300          # max 13D filings fetched/session (surfaced in coverage)
-    include_amendments: false   # v1: initial 13D only (SCHEDULE 13D/A spam — verified ~20-46/day)
-    drop_spacs: true        # SPAC/shell subjects are not takeoff candidates
-    drop_affiliates: true   # filer name echoing the subject = control txn, not outside activism
-    marquee_boost: 0.2      # strength bump when a credible (curated) activist is the filer
-    stake_increase:           # EdgarStakeIncreaseSignal — material 13D/A escalations
-      min_increase_pp: 2.0    # LIVE-only tune; the backfill cohort uses stake.MIN_INCREASE_PP
-      max_prior_fetches: 10   # cold-start baseline lookups per session (overflow is named).
-                              # LIVE-ONLY knob — the backfill cohort never applies it: it
-                              # seeds baselines from the chronological walk itself (uncapped).
-      daily_cap: 300          # LIVE-ONLY knob, same reason (the 8-K/buyback precedent) —
-                              # the backfill cohort processes every walked amendment.
-  picks:                    # selection ledger + benchmark-relative scoreboard (track picks over time)
-    enabled: true
-    scoreboard_max: 10      # prior picks shown in the digest scoreboard
-    scoreboard_lookback_days: 120
-  firehose:                  # raw-signal firehose: log every PRE-SCORER discovery event so a
-                             # signal's forward-return quality can be measured (validation harness P0)
-    enabled: true            # best-effort logging; never aborts a run. Absent block => no logging, no state key.
-    max_events_per_run: 400  # safety cap on events persisted per session; sized so the 8-K
-                             # veto sweep's 30-day cold start (~8 neg/day = ~240) lands intact
-                             # (capped-out events behind the cursor are never retried)
-  validate:                  # signal-validation evaluator (Phase 1). Absent => no CLI/section change.
-                             # Inference params (min_measurable_frac, min_independent_blocks, K,
-                             # delisting_return, …) live ONLY in src/shortlist/scout/preregister/
-                             # <signal>.yaml — the git-hashed anti-p-hacking pre-reg. Only the two
-                             # operational knobs below are read from config.
-    lookback_days: 365
-    factor_cache_dir: .cache/famafrench
-    # latest_max_age_days: 14  # digest SECTION staleness gate for scout/validate-latest.json
-                               # (Task 2); absent -> default 14. Persisted by every `validate`
-                               # CLI run (live + --backfill), read-only for the digest.
-  # --- scout.backfill (batch signal backfill: --signal 13d | 8k | 8k-neg; OFF unless the
-  #     CLI is invoked explicitly. 8-K legs: ~3k EFTS requests over 48 months (~20 min at
-  #     <=3 req/s) — per-event price/delisting measurement is the long pole. Run outside
-  #     21:15-23:00 UTC; the runner aborts below min_free_disk_gb.) ---
-  # backfill:
-  #   out_dir: scout/backfill
-  #   sec_throttle_s: 0.2        # sleep before every SEC header/delisting fetch (fair access)
-  #   yahoo_throttle_s: 0.5      # sleep before every price-history fetch
-  #   max_records: 20000         # per-chunk safety cap (warns + truncates)
-  #   symbology_cache_dir: .cache/symbology
-  #   score_events: true         # Plan 3b: reconstruct a PiT gated/composite per event
-  #   xbrl_cache_dir: .cache/sec_xbrl   # shared with the XBRL backtest's companyfacts cache
-  #   min_free_disk_gb: 8        # preflight: abort when the cache filesystem has less free
-  #                              # (.cache/sec_xbrl is month-keyed — a new month reuses nothing)
-  #   efts_cache_dir: .cache/efts  # 8k/8k-neg legs; shared with the live originator + veto day cache
-  #   buyback_cache_dir: .cache/efts_buyback  # buyback leg; shared with the live phrase day cache
-  #   buyback_phrases: []        # override the phrase set (default: scout/buyback.py:DEFAULT_PHRASES)
-  wikipedia_ticker_map: {}   # empty by default — boosters degrade honestly when unmapped
-  wsb_hype:                  # WsbHypeSignal discovery thresholds (UNFITTED priors)
-    min_mentions: 30         # absolute floor for discovery  [velocity rule only]
-    min_mention_delta_pct: 0.5  # +50% mention velocity vs 24h ago  [velocity rule only]
-    top_n: 15                # cap emissions (applies to BOTH rules)
-    # Index/leveraged-index products and other non-operating tickers. NOTE this list is a
-    # backstop, not the filter: the replay found ETPs reaching emissions that no enumerated
-    # list anticipated (GLD, ESG), the same class as the BBASX mutual fund in
-    # docs/audits/2026-08-07-funnel-gate-mismatch.md §3. The investable floor + scorer
-    # abstention are the structural backstop; extend here only for repeat offenders.
-    deny_list: [SPY, QQQ, IWM, VIX, SPX, DIA, SOXL, SOXS, SPXL, TQQQ, SQQQ, UVXY, VOO, GLD]
-    # RANK-NOVELTY rule. Replaces the velocity gate above when enabled: qualify a ticker
-    # only if it is NOT a board regular (best rank over the prior `lookback_days` boards is
-    # worse than `max_regular_rank`, or absent from all of them). Emits under a DISTINCT
-    # signal key `wsb:novel` so its cohort never pools with the velocity rule's ~82 picks.
-    # Measured over 42 cached boards: median selected market cap $230.8B -> $34.3B, and the
-    # $0.3-10B band 7% -> 39%. Composition only — forward returns are NOT measured.
-    # Evidence + honest limits: docs/audits/2026-08-07-wsb-novelty-rule.md
-    # Remove this block for the byte-identical pre-feature velocity signal.
-    novelty:
-      enabled: true
-      lookback_days: 14      # prior boards consulted (read from the existing disk cache)
-      max_regular_rank: 50   # best prior rank <= this => board regular => never emitted
-      min_mentions: 20       # absolute noise floor for the novelty rule
-      min_history_days: 5    # below this, ABSTAIN (emit nothing) — never fall back to
-                             # the velocity rule, which would reinstate the composition
-                             # this rule exists to fix, on unwatched runs
-  short_interest:            # FinraShortInterestSignal — short-interest JUMP discovery.
-                             # CONTESTED prior (heavy/rising SI has a NEGATIVE base rate for a
-                             # long book), so it ships OFF (signals below) at low weight and the
-                             # forward-return ledger earns it a weight. MIDDLE BAND: a fresh jump
-                             # off a non-extreme base, NOT the most-crowded names. UNFITTED priors.
-    min_jump_pct: 0.25       # >= +25% rise in short shares vs the prior cycle
-    min_dtc: 3.0             # at least mildly crowded (squeeze relevance)
-    max_dtc: 10.0            # EXCLUDE the extreme-DTC falling-knife tail (Hong et al 2016)
-    max_prior_dtc: 10.0      # the jump must start off a non-extreme base (Cohen-Diether-Malloy)
-    min_avg_daily_volume: 100000   # liquidity floor / OTC-junk filter
-    min_prev_short_shares: 50000   # real prior baseline (a from-near-zero ramp is an absurd %)
-    # ETFs/CEFs also report short interest; the scorer abstains on funds (they never reach the
-    # shortlist) but they waste a deep-screen slot — deny the common offenders. Long tail is
-    # handled by scorer abstention; extend as persistent fund/ETF tickers appear.
-    deny_list: [SPY, QQQ, IWM, DIA, VTI, VOO, VXUS, VEA, VWO, EEM, EFA, HYG, LQD, TLT, GLD, RQI]
-    top_n: 10                # cap emissions to bound the deep-screen budget
-  eightk:                    # EdgarEightKSignal + the 8-K negative-item veto (EFTS feed,
-                             # data/efts.py). TWO halves, ONE fetch (shared day cache):
-                             # ORIGINATOR = CONTESTED prior (Lerman-Livnat 2010's one
-                             # positive pocket, 1.01∧3.03; Zhao 2017's unconditional 8-K
-                             # sign is NEGATIVE; filing-day moves reverse) — ships OFF
-                             # (signals below) at weight 0.5, attention-not-direction;
-                             # the pre-registered backfill cohort (preregister/edgar_8k.yaml)
-                             # earns or kills it. UNFITTED priors.
-    item_sets: [["1.01", "3.03"]]  # AND-sets (ORed across the list); 2.01 is expressible
-                                   # here but deliberately NOT in the default set
-    daily_cap: 6             # max emissions/session, applied after the state accession dedup
-    drop_spacs: true         # SPAC/shell display-NAME drop (SIC-6770 blank checks are
-                             # always dropped; display_names are NEVER a ticker source)
-    deny_list: []
-    negative_veto:           # VETO half: negative-item 8-Ks ({1.03,2.04,2.05,2.06,3.01,
-                             # 4.02,5.01} — reliably negative 30-90d drift) DROP a funnel
-                             # candidate LOUDLY (named manifest note) before it burns one
-                             # of the ~15 deep-screen slots/night. Ships ON, but measured,
-                             # not assumed: every match logs to the firehose as its own
-                             # signal (edgar:8k_negative) with its own pre-registered
-                             # backfill cohort. Remove this sub-block for the
-                             # byte-identical pre-feature funnel.
-      enabled: true
-      lookback_days: 30      # veto horizon + state prune window (matches the drift window)
-  # Deep-screen slot hygiene. The binding constraint in this funnel is NOT candidate volume,
-  # it is the ~15 deep-screen slots/NIGHT (daily_x): budget.select orders purely by signal
-  # weight and knows nothing about the business. NOTE the digest runs the FREE chain
-  # (daily_push.include_fmp: false drops FMP), so a wasted slot costs a Yahoo/Finnhub/EDGAR
-  # screen, not FMP quota -- FMP binds the bot's /screen and /deep, which keep the full chain.
-  # SEC `frames` breaks that circularity — ~12 requests buys fundamentals for the WHOLE
-  # listed universe, so a candidate can be checked BEFORE it consumes a slot
-  # (docs/audits/2026-08-05-standing-screen-data-source.md).
-  #
-  # Deliberately a FLOOR, not a ranker. A full-universe fundamental RANKING is the existing
-  # quality/value composite run at S&P-1500 scale — the add-scoring-surface move this repo
-  # has killed four times (buyback, leverage tilt, accruals, EV/EBIT). Dropping the
-  # structurally unfit needs no return study, only the observation that the slot buys
-  # nothing. Anything stronger (re-ordering, weighting, originating) needs a pre-registered
-  # cohort FIRST.
-  #
-  # Ships OFF. Remove the block (or leave enabled:false) for the byte-identical pre-feature
-  # funnel with ZERO fetches — pinned by tests/test_scout_quality_floor.py.
-  #
-  # STILL OFF after review on 2026-08-07, deliberately. Enabling was proposed and pulled:
-  #   (1) docs/audits/2026-08-06-discovery-breadth-plan.md gates this on ≥3 sessions of
-  #       RunManifest.sec_requests; exactly ONE exists (2026-08-06).
-  #   (2) the 5.2% evidence is same-ledger — the two false-positive guards (GIPR, COE) were
-  #       found on the very 135 picks the headline number is computed from, with no held-out
-  #       set, and SEC `frames` is LIVE-ONLY so it scores TODAY's fundamentals against
-  #       HISTORICAL picks rather than a point-in-time replay.
-  # Neither is fatal; both mean the flip is a measured decision, not a one-line convenience.
-  # Investability floor -- can a retail-scale book ACT on this name? The sibling of
-  # quality_floor above, and deliberately a separate stage: that one asks whether the
-  # BUSINESS is broken, this asks whether the SECURITY is reachable. A sound little company
-  # trading $20k/day is a fine business and an unactionable idea.
-  #
-  # Measured motivation (docs/audits/2026-08-07-investability-floor.md): across the three
-  # enabled originators the p25 pick is a $15M market cap and a THIRD of all picks sit below
-  # $50M -- shells no account size can trade. The floors below are the measured knee: at
-  # $100M the funnel keeps 57% of picks across 21 of 25 sessions, while $500M+ starts
-  # emptying sessions outright.
-  #
-  # DOLLAR volume, never share volume: 1M shares/day of a $0.20 stock is $200k/day. (The
-  # share-count floor in short_interest.py is a different instrument, not reused here.)
-  # Every leg ABSTAINS on a missing or non-positive input -- an absent market cap is common
-  # (Finnhub abstains on non-USD caps) and means "unknown", not "small".
-  #
-  # Neither source touches sec.gov -- the universe is api.nasdaq.com and the volume map is
-  # the FINRA dataset the harness already caches -- so this does NOT draw on the shared SEC
-  # budget and did not need to wait on the sec_requests baseline. FINRA short interest is
-  # semi-monthly, so ADV can be ~4 weeks stale: fine for a floor, never a ranking input.
-  # Remove the block (or set enabled:false) for the byte-identical pre-feature funnel with
-  # ZERO fetches -- pinned by tests/test_scout_investable_wiring.py.
-  investable_floor:
-    enabled: true
-    min_market_cap: 1.0e+8    # $100M -- below this, spreads eat any edge and promotion risk
-                              # dominates; EDGAR-driven microcap discovery is exactly where
-                              # promoters operate.
-    min_dollar_adv: 5.0e+5    # $500k/day average dollar volume.
-    universe_cache_dir: .cache/nasdaq_universe
-    finra_cache_dir: .cache/finra
+  research_top_n: 3             # names sent to the research layer per /deep
+  research_phase_budget_s: 2800 # wall-clock ceiling for the whole research phase
 
-  quality_floor:
-    enabled: false
-    cache_dir: .cache/sec_frames
-    lookback_quarters: 3     # instant (balance-sheet) frames merged newest-first; a frame
-                             # keeps filling as filers report, so older ones backfill gaps
-    lookback_years: 2        # annual (duration) frames for revenue / net income
-
-  thirteenf:                 # EdgarThirteenFSignal — marquee-fund new-position cloning from
-                             # SEC 13F information tables. A DEFENSIBLE, established-positive
-                             # prior (Martin-Puthenpurackal 2008; Cohen-Polk-Silli 2010 "best
-                             # ideas"), so it ships ON (signals below) — but at weight 1.0,
-                             # below the 13D/Form-4 tier: the clone return is measured from the
-                             # FILING date and the info is up to 45 days stale (the disclosure
-                             # lag is priced into the literature). Backfill DEFERRED (a PiT
-                             # CUSIP->symbology replay is future work; today's FTD files would
-                             # leak post-event symbols). UNFITTED priors.
-    funds:                   # curated concentrated, long-horizon, fundamentals-driven managers
-                             # (a 300-name quant book has no "new position" meaning). CIKs
-                             # LIVE-VERIFIED 2026-07-09 (every latest 13F-HR filed 2026-05-14/15).
-      - {cik: 1067983, name: Berkshire Hathaway Inc}
-      - {cik: 1336528, name: Pershing Square Capital Management}
-      - {cik: 1061768, name: Baupost Group}        # NOT 1054420 (stale /ADV shell, last 13F 2002)
-      - {cik: 1418814, name: ValueAct Holdings}     # NOT 1351069/1395267 (stale since 2008/2012)
-      - {cik: 1040273, name: Third Point}
-      - {cik: 1656456, name: Appaloosa}             # NOT 1006438 (stale since 2016)
-      - {cik: 1647251, name: TCI Fund Management}
-    min_position_pct: 0.005  # a new position must be >= 0.5% of the latest book to surface
-    full_strength_pct: 0.05  # a 5%-of-book new position is a full-conviction bet (strength cap)
-    max_filings_per_day: 3   # 13F volume is quarterly-bursty (all funds file mid-Feb/May/Aug/
-                             # Nov); cap processing/session — unprocessed filings carry over
-                             # (never dropped), spreading the burst across sessions
-    top_n: 10                # cap emissions per filing by within-book weight
-    deny_list: []
-    material_add:            # SECOND diff over the SAME two books (zero extra SEC requests):
-                             # existing positions the fund materially ADDED to. Detected on
-                             # SHARE count (sshPrnamt), NOT value — `value` is quarter-end
-                             # market value, so a stock up 50% with zero shares bought shows a
-                             # ~50% book-weight rise and would read as conviction. Sized on
-                             # value weight, because conviction is a share of the book.
-                             # Ships ENABLED at weight 0.75 (below new positions' 1.0): the
-                             # prior is real but weaker — an add moves a holding TOWARD the
-                             # large-weight "best ideas" territory (Cohen-Polk-Silli 2010)
-                             # rather than being the fresh best-idea event
-                             # Martin-Puthenpurackal (2008) replication measures. Owner's call
-                             # 2026-08-09; design, thresholds and limitations in
-                             # docs/audits/2026-08-09-13f-material-adds-design.md.
-                             # KNOWN false positive, documented and NOT mitigated: a 2:1 stock
-                             # split doubles shares with no purchase. Rare across a 7-fund
-                             # concentrated book, and it surfaces a name a marquee fund already
-                             # holds — the cost is a wasted slot, not junk in the digest.
-                             # Count it from the firehose before adding a guard.
-      enabled: true          # THE on/off switch. false (or absent) => byte-identical to the
-                             # new-positions-only behaviour: no second diff, no add emissions
-      ratio: 1.50            # shares_latest / shares_prior bar. +50% is unambiguous
-                             # accumulation rather than a rebalance
-      top_n: 5               # per-filing cap, SEPARATE from top_n: 10 above so adds cannot
-                             # crowd out new positions (the sharper signal) inside one filing
-  buyback:                   # EdgarBuybackSignal — NEW repurchase-authorization discovery from
-                             # 8-K full text (EFTS phrase query, data/efts.py; own cache
-                             # namespace .cache/efts_buyback). A DEFENSIBLE academic prior
-                             # (Ikenberry-Lakonishok-Vermaelen 1995; Peyer-Vermaelen 2009 —
-                             # positive post-announcement drift) shipped OFF at weight 0.5 on the
-                             # 8-K MEASURE-FIRST precedent — and the pre-registered backfill cohort
-                             # (preregister/edgar_buyback_auth.yaml) then KILLED it (2026-07-11: FF3
-                             # alpha −0.84%/mo, 90% CI entirely negative; docs/audits/2026-07-11-
-                             # buyback-backfill-kill.md). Stays OFF on evidence, not just prior.
-                             # Phrase PRECISION (live-probed 2026-07-09, 30 hits hand-classified
-                             # over a 10-week window 2026-04-21..07-02 — see scout/buyback.py):
-                             # 29/30 genuine new/expanded authorizations (~97%), 1 boilerplate
-                             # (a "previously authorized ... implement" restatement notice); the
-                             # verb-anchored phrases exclude "purchases under our existing program"
-                             # churn. Volume is lumpy (~4/wk). Default phrases live in
-                             # scout/buyback.py:DEFAULT_PHRASES; uncomment `phrases` to override.
-    # phrases:               # override the default verb-anchored authorization phrase set
-    #   - "authorized a new share repurchase program"
-    daily_cap: 6             # max emissions/session, applied after file_date-desc sort + the
-                             # state accession dedup. LIVE-ONLY knob — the backfill cohort runs
-                             # UNCAPPED (keep generous unless re-measuring; the 8-K precedent).
-    drop_spacs: true         # SPAC/shell display-NAME drop (SIC-6770 blank checks always
-                             # dropped; display_names are NEVER a ticker source)
-    deny_list: []            # LIVE-ONLY knob — the backfill cohort runs UNDENIED (keep empty
-                             # unless re-measuring; the 8-K precedent)
-  state_path: state/scout_state.json
-  artifact_dir: scout
-  report:
-    chart: true
-    attach_html: true
-    caption_top_n: 3       # names listed in the photo caption
-  signals:
-    # DISABLED 2026-08-05. Yahoo's edge WAF rejects the predefined-screener endpoint from
-    # this datacenter IP on EVERY run (100% failure across every logged session; the chart/
-    # price endpoint still works — see the CLAUDE.md "Yahoo WAF gotcha"). It has never
-    # contributed a candidate here, so turning it off is OUTPUT-NEUTRAL. Left enabled it
-    # made run_health() report "⚠ DEGRADED" every single day, which destroys the value of an
-    # alert that exists to catch a REAL originator failure (audit §5d/§9). Re-enable only
-    # from an IP where the screener actually answers 200.
-    yahoo_screener: {enabled: false, weight: 1.0}
-    edgar_form4:    {enabled: true,  weight: 1.0}
-    finnhub_news:   {enabled: true,  weight: 0.5}
-    wikipedia:      {enabled: true,  weight: 0.5}
-    quiver:         {enabled: false, weight: 1.0}
-    wsb_hype:       {enabled: true,  weight: 0.5, max_slots: 5}
-                                              # RE-ENABLED 2026-08-08 under the rank-NOVELTY
-                                              # rule (scout.wsb_hype.novelty), emitting the
-                                              # distinct key `wsb:novel`. It was DEMOTED
-                                              # 2026-07-26 for CROWD-OUT, not harm: 60% of 141
-                                              # ledger picks at a $310B median cap (AAPL x4,
-                                              # MSFT, AMD x3, IBM x3) — names where no
-                                              # informational edge exists. Its own measured
-                                              # performance (-0.6% vs SPY, n=82) was no worse
-                                              # than the other catalysts. NOTE that $310B
-                                              # figure predates the 2026-08-06 Finnhub non-USD
-                                              # market-cap fix, so ADR caps in it are inflated.
-                                              # The novelty rule cuts the median selected cap
-                                              # to $34.3B and lifts the $0.3-10B band 7% -> 39%
-                                              # (42 cached boards). COMPOSITION is measured;
-                                              # forward returns are NOT — the picks ledger and
-                                              # scout/preregister/wsb_novelty.yaml earn the
-                                              # weight from here. `max_slots` bounds it under
-                                              # contention; at ~2 emissions/day it will rarely
-                                              # bind (only 2 of 25 sessions exceeded 15
-                                              # candidates), so it is a guard, not the fix.
-                                              # Evidence: docs/audits/2026-08-07-wsb-novelty-rule.md
-                                              # Prior: docs/audits/2026-07-26-funnel-composition-audit.md §1
-    edgar_activist_13d: {enabled: true, weight: 1.5}   # initial SCHEDULE 13D activist stakes (highest-signal EDGAR)
-    edgar_13d_stake_increase: {enabled: false, weight: 0.5}  # MEASURE-FIRST — OFF pending the
-                                                   # pre-registered backfill verdict
-                                                   # (preregister/edgar_13d_stake_increase.yaml)
-    finra_short_interest: {enabled: false, weight: 0.5}  # CONTESTED prior — OFF; ledger earns it a weight
-    edgar_8k: {enabled: false, weight: 0.5}   # CONTESTED prior — OFF; backfill verdict + ledger earn it a weight
-    edgar_13f: {enabled: true, weight: 1.0}   # marquee-fund new-position cloning (Martin-Puthenpurackal 2008;
-                                              # Cohen-Polk-Silli 2010) — DEFENSIBLE prior, ON; weight below the
-                                              # 13D/Form-4 tier (info up to 45 days stale; return from FILING date).
-                                              # DELIBERATELY NO max_slots. A `max_slots: 4` was written and then
-                                              # REMOVED unshipped 2026-08-09 once the live firehose was measured:
-                                              # 13F ranks at the BOTTOM of the funnel by interest (median 0.33,
-                                              # n=23) against edgar:activist_13d 1.05 (n=58) and
-                                              # edgar:form4_cluster_buy 1.00 (n=24) — because interest is
-                                              # strength x weight and 13D carries weight 1.5. The high-tier
-                                              # originators therefore CANNOT be crowded out by 13F; the weight
-                                              # system already does the protecting a cap was meant to do. The only
-                                              # thing a cap would arbitrate is a near-tie between 13F mid-strength
-                                              # (0.33) and edgar:form4_insider_buy (0.34), which is not worth
-                                              # changing selection for a signal with ledger history accrued
-                                              # UNCAPPED (pre/post cohorts would stop being comparable). If a real
-                                              # burst ever does drown the daily originators, the manifest says so
-                                              # (dropped_for_budget) and this is a one-line change. The FAMILY
-                                              # machinery (budget.signal_family) stays either way — it protects
-                                              # the confluence invariant, which is correct independent of caps.
-    # Weight-only lookup key for the `edgar:13f_material_add` emission string (see
-    # scout.thirteenf.material_add). NOT a buildable signal — deliberately absent from
-    # daily.py's _KNOWN_SIGNAL_KEYS, so there is NO `enabled` here: that switch is
-    # scout.thirteenf.material_add.enabled. One switch, one place. Adding `enabled` here would
-    # be a dead knob that reads as authoritative; adding the key to _DISCOVERY_SIGNAL_NAMES
-    # would build a second signal object and re-fetch every infotable.
-    edgar_13f_material_add: {weight: 0.75}
-    edgar_buyback: {enabled: false, weight: 0.5}   # INSUFFICIENT (re-derived 2026-07-26), NOT killed.
-                                                   # The 2026-07-11 KILL was RETRACTED: its "90% CI entirely
-                                                   # negative" rested on a bootstrap over an already-flattened
-                                                   # CTP series. Under the event-level bootstrap the scored
-                                                   # cohort is FF3 alpha −0.82%/mo, CI [−1.72%, +0.13%] —
-                                                   # straddling zero. So the ILV/Peyer-Vermaelen drift was
-                                                   # never DISPROVED here; it was simply never established.
-                                                   # Stays OFF regardless — "not shown to work" is not a
-                                                   # reason to enable. Do not enable without a new
-                                                   # pre-registered cohort.
-                                                   # docs/audits/2026-07-26-funnel-composition-audit.md §3a
-                                                   # docs/audits/2026-07-11-buyback-backfill-kill.md (superseded header)
-
-# Ranking surface (docs/ASSESSMENT_GAPS.md §2.4). Display-only: does NOT affect the
-# sort beyond the existing confidence tiebreak, nor `passed`/`composite`.
-# NOTE: `confidence` is the fraction of applicable *factor* weight present — it covers the
-# five fundamental components and intentionally EXCLUDES the risk tilt (whose own coverage
-# is shown separately in the Risk column).
 ranking:
   thin_below: 0.40  # mark a card "thin" when confidence < this. Omit/null to disable.
                     # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).

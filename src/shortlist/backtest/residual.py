@@ -9,7 +9,7 @@ Rank convention: matches `metrics.py:spearman_ic`, which ranks via
 `method="rank"` reuses that exact function so ties are broken identically to
 every other rank-IC computation in this codebase.
 
-Reuses `scout/validate.py:ols`/`_residuals` (stdlib Gaussian-elimination OLS,
+Reuses `backtest/_ols.py:ols`/`_residuals` (stdlib Gaussian-elimination OLS,
 already used for FF3 alpha) rather than reimplementing a solver.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import date
 from statistics import pstdev
 
-from ..scout.validate import _residuals, ols
+from ._ols import _residuals, ols
 from .metrics import rank
 from .signals import Observation
 

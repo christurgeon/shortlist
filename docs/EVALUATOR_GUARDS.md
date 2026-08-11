@@ -1,5 +1,10 @@
 # Making the evaluator's guards unbypassable — design (revision 2)
 
+> **RETIRED 2026-08-11.** The signal-validation evaluator it describes has been deleted. Kept for the reasoning and measured facts it
+> records, not as a description of code that exists. See
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Status:** IMPLEMENTED 2026-08-04. Suite **2293 green**, ruff clean.
 `642e264` (C1′+C2″) · `fda7c15` (C4′) · `2afa0a9` (C5) · this commit (C3′ core).
 **C2′ was CUT** as disproportionate — see §4. **C3′ shipped as its load-bearing slice** — §5.

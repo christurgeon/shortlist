@@ -1,4 +1,4 @@
-from shortlist.scout.report.viewmodel import _assessment_vm, call_one_liner
+from shortlist.bot.report.viewmodel import _assessment_vm, call_one_liner
 
 
 _REC = {
