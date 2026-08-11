@@ -50,8 +50,8 @@ the `quiver`/`fred` stubs (superseded, see `docs/DATA_SOURCES.md` §C2).
 
 ## Stacks built on the harness
 
-Three stacks **orchestrate** the harness + scorer — discovery, validation, history, no new
-scoring logic of their own:
+Two stacks **orchestrate** the harness + scorer — validation and history, no new scoring
+logic of their own:
 
 - **Backtest** (`shortlist.backtest.*`, `shortlist-backtest`) validates the scorer against
   forward returns (rank IC + quantile spreads). `--source xbrl` validates the fundamental
@@ -60,24 +60,28 @@ scoring logic of their own:
 - **Accumulation** (`shortlist.data.accumulate`, `shortlist-accumulate`) is idempotent
   point-in-time daily capture into `store.py` so guarded backtest paths can activate.
   Scheduling ships OFF. See `HARNESS.md` → "Feeding the snapshot path".
-- **Scout** (`shortlist.scout.*`, `shortlist-scout`) autonomously discovers tickers from
-  free signal feeds, deep-screens via `screen.run_harness`, runs the Claude research layer
-  on leaders, ships a daily Telegram report. Design: `docs/AUTONOMOUS_SCOUT.md`. Delivery +
-  bot hardening: `docs/NOTIFICATIONS.md`. Position monitor (`/add`, `/thesis`, `/hold`,
-  `/remove`): `docs/POSITION_MONITOR.md`. Run **one** bot instance — two concurrent
-  `getUpdates` pollers 409. The daily push is **ON** (lean digest mode, no Claude
-  auto-research by default — `scout.daily_push.research: false`).
+The product surface on top of them is the **Telegram bot** (`shortlist.bot.*`,
+`shortlist-bot`): `/screen`, `/deep`, and the position monitor (`/add`, `/thesis`, `/hold`,
+`/remove` — `docs/POSITION_MONITOR.md`). Delivery + bot hardening: `docs/NOTIFICATIONS.md`.
+Run **one** bot instance — two concurrent `getUpdates` pollers 409.
+
+**The autonomous scout was retired on 2026-08-11** — read
+`docs/audits/2026-08-11-scout-retirement.md` before proposing anything that rebuilds it.
+Its verdicts are measured and committed; reversing one needs new evidence, not a new
+reading of the old.
 
 ## Deploying to the VPS (the ONE command)
 
-The live scout/bot run from **`/opt/shortlist`**, an rsync'd copy — editing this repo
+The live bot runs from **`/opt/shortlist`**, an rsync'd copy — editing this repo
 changes nothing in production until deployed. From a checkout of the merged branch:
 
 ```bash
 sudo bash deploy/install_opt_shortlist.sh     # rsync + uv sync + units + daemon-reload + bot restart
 ```
 
-Idempotent, handles everything. Then optionally: `sudo systemctl start shortlist-scout.service`.
+Idempotent, handles everything. It also **removes the retired `shortlist-scout` units** on a
+box deployed before 2026-08-11 — without that the timer keeps firing a oneshot whose
+ExecStart binary no longer exists, i.e. a nightly failure alert forever.
 
 **GOTCHA — running the installer FROM `/opt/shortlist` is a silent no-op deploy.** `SRC` is
 derived from the script's own path, so `cd /opt/shortlist && sudo bash deploy/install_opt_shortlist.sh`
@@ -86,15 +90,16 @@ sets `SRC == DEST` and rsyncs onto itself — it still reports success. Either
 installer from a **separate** up-to-date checkout. **Always verify** —
 `git -C /opt/shortlist log --oneline -1` plus a grep for a symbol you just added.
 
-**GOTCHA — never deploy 22:30–22:35 UTC**, the scout's run window. It's `Type=oneshot` with
-lazy imports, so a `git pull` mid-run leaves a torn import state (modules loaded before the
-pull are old code, after are new — a real mismatch can surface as a bogus "data gap").
-Check `systemctl is-active shortlist-scout.service` before pulling.
-
 **GOTCHA — the installer generates its unit files inline; it does NOT read
-`deploy/*.service`** (except `shortlist-bot.service`, which is static and real). A
-`[Service]` setting added to one route must be added to both or it silently never applies
-in production.
+`deploy/*.service`** (except `shortlist-bot.service`, which is static and real). Only the
+opt-in `shortlist-accumulate` timer is generated now, but the rule still bites: a
+`[Service]` setting you add must go in the heredoc, not in a `deploy/*.service` file.
+`tests/test_deploy_units.py` pins this.
+
+**GOTCHA — the deploy smoke test must stay read-only.** It runs `shortlist --demo` against
+offline fixtures. The retired scout's `--demo` used to smoke-test here and silently wrote
+`mock:demo` rows into the LIVE selection ledger on every deploy — 18 days of them before it
+was caught.
 
 ## Dev workflow (uv)
 
@@ -131,6 +136,15 @@ config-ordered ranges). `unknown` is a bit-identical no-op. v1 masks equity-cent
 structurally undefined there. `ScoreCard` carries `sic_bucket`/`confidence`/`scored`/
 `abstentions`; **`passed` = `not gates and scored`** — an unscored name can't pass or rank.
 Tune `sectors` + `validity`.
+
+**`validity.min_composite_components` (ON, =1)** is a bucket-INDEPENDENT floor on `scored`:
+a composite must rest on at least one real sub-score, and `risk` is a composite-only *tilt*
+that does not count. Without it the `unknown` escape above (the MAJORITY bucket) lets a name
+with every component null still post a composite from the tilt alone — on 2026-08-10 BRVE
+ranked **#1 at composite 100.0, confidence 0.0**, because it reports no debt. It is a
+**count, not a weight threshold**, and that is forced by a committed guard: a momentum-only
+name sits at confidence ~0.08 and is pinned as scored, so no weight floor separates the two.
+No-op when the key is absent. `tests/test_scoring_composite_floor.py`.
 
 **Gates in detail**: `over_leveraged` trips on net-debt/EBITDA when EBITDA is usable, else an
 artifact-guarded D/E fallback (abstains on equity distortion, trips plausible leverage only
@@ -220,80 +234,51 @@ may embed a request URL MUST pass through `env.py:redact_secrets()`** before pri
 `EquityShortInterest`). Symbol field is `symbolCode`; `settlementDate` is a partition key
 (discover the latest cycle via `/partitions/`, can't sort it in the data query);
 `record-max-limit` is 5000, paginate. One bulk fetch/run, cached by settlement date. Row
-shape + helpers are single-sourced in `data/finra.py` so the harness source and the scout
-fetcher agree on one cache contract.
+shape + helpers are single-sourced in `data/finra.py`.
 
-## The shared sec.gov throttle
+## The EDGAR client library (`shortlist/edgar/`)
 
-`scout/sec_throttle.py` owns a process-wide ~6 req/s budget for the EDGAR-index-based scout
-originators (Form 4, 13D/13D-A, 13F, buyback, DERA). **Never give a signal its own
-throttle** — that broke the funnel outright on 2026-08-04 (`docs/audits/2026-08-05-discovery-funnel-audit.md`).
-Full rules (concurrency, retry/fallback behavior, two rejected volume "optimisations"):
+Importable SEC/EDGAR clients with **no production caller** — nothing on the `/screen` or
+`/deep` path imports them. They are the surviving data leaves of the autonomous scout,
+retired 2026-08-11 (`docs/audits/2026-08-11-scout-retirement.md`); the data is still worth
+reaching by hand during research. Implementation-level verified facts + landmines:
 `docs/EDGAR_ORIGINATORS.md`.
 
-## Scout discovery originators
+| Module | What |
+|---|---|
+| `thirteenf.py` | 13F infotable parse, position aggregation, new-position and material-add diffs |
+| `insider.py` + `dera.py` | Form 4 parse; DERA owner index for officer/director roles |
+| `index.py` | shared EDGAR daily-index client (13D initial + `/A` amendment streams) |
+| `eightk.py` | 8-K item matching over normalized EFTS rows |
+| `quality.py` | filing classifiers — SPAC/shell, initial-13D, affiliate, marquee activist |
+| `cusip_map.py`, `cik_tickers.py`, `symbology.py` | CUSIP→ticker and CIK→ticker resolution |
+| `stake_pct.py` | 13D/A cover-page percent-of-class extraction (used by `backtest/edgar_history.py`) |
+| `_ticker_rules.py` | shared leaf: 5th-letter junk-suffix rule + 8-K item normalization |
 
-All are keyless, VPS-safe (no Yahoo WAF dependency unless noted), reuse the scorer, and
-ship as either a **defensible** established-positive prior (ships enabled) or a
-**contested** prior (ships disabled at low weight, attention not direction, judged by the
-selection ledger). Implementation-level verified facts + landmines for the EDGAR-index ones
-live in `docs/EDGAR_ORIGINATORS.md`; design docs are in `docs/superpowers/specs/`
-(**gitignored — do not rely on them surviving a fresh clone**).
+**The deal you are taking by keeping these uncalled.** CI pins their **parse shapes**; it
+does **not** catch SEC or edgartools changing shape upstream, because the live fetch tests
+are `pytest.mark.live` + `skipif(not SEC_IDENTITY)` and skip by default. Run
+`SEC_IDENTITY=... uv run pytest -m live` before trusting a client after a long gap —
+`edgartools` `standard_concept` drift has broken extraction once already
+(`docs/audits/2026-07-31-edgar-concept-match.md`).
 
-| Signal | Module | Status | What / why |
-|---|---|---|---|
-| FINRA short-interest jump | `FinraShortInterestSignal` | OFF, weight 0.5 | contested (negative base rate in lit.); emits once/settlement cycle |
-| Activist 13D (initial) | `EdgarActivist13DSignal` | ON, weight 1.5 | defensible — re-rating catalyst; scout's highest-tier originator |
-| 13D/A stake increase | `EdgarStakeIncreaseSignal` | OFF, weight 0.5 | pending its own backfill verdict |
-| 8-K item match (1.01∧3.03) | `EdgarEightKSignal` | OFF, weight 0.5 | contested; negative-item veto (separate, ON) drops candidates hit by items {1.03,2.04,2.05,2.06,3.01,4.02,5.01} |
-| Buyback authorization | `EdgarBuybackSignal` | OFF | killed on evidence, `docs/audits/2026-07-11-buyback-backfill-kill.md` |
-| 13F marquee-fund cloning | `EdgarThirteenFSignal` (`edgar:13f_new_position`) | ON, weight 1.0 | defensible (Martin-Puthenpurackal 2008); info up to 45d stale |
-| 13F material add (shares ≥ +50%) | same signal object (`edgar:13f_material_add`) | ON, weight 0.75 | second diff over the same filing pair, **zero extra SEC requests**; detected on **share count**, not value; `docs/audits/2026-08-09-13f-material-adds-design.md` |
-| Opportunistic Form 4 (CMP classifier) | `EdgarForm4Signal` | ON, weight 1.0 | drift capture, not an information edge; `docs/FORM4_INSIDER.md` (weight there reads stale 1.5 — 1.0 is current) |
-| WSB rank-novelty | `WsbHypeSignal` (novelty submode) | ON | emits only on a ticker that isn't a board regular; `docs/audits/2026-08-07-wsb-novelty-rule.md` |
-| Yahoo predefined screeners | `YahooScreenerSignal` | ON | WAF-fragile — see below |
-| Investability floor (market cap + $ADV) | `funnel.apply_investable_floor` | ON | is the *security* reachable, not the business; `docs/audits/2026-08-07-investability-floor.md` |
-| Quality floor (no revenue / neg equity+earnings+OCF) | `funnel.apply_quality_floor` | OFF | slot-hygiene, not a ranker; `docs/audits/2026-08-05-quality-floor-evidence.md` |
-| Per-originator slot cap | `budget.select(..., caps)` | opt-in per signal | `scout.signals.<name>.max_slots`; only engages under contention |
+**The shared sec.gov throttle.** `edgar/sec_throttle.py` owns a process-wide ~6 req/s
+budget for every EDGAR-index caller. **Never give a client its own throttle** — that broke
+the funnel outright on 2026-08-04
+(`docs/audits/2026-08-05-discovery-funnel-audit.md`). Full rules (concurrency,
+retry/fallback, two rejected volume "optimisations"): `docs/EDGAR_ORIGINATORS.md`.
 
-Non-scored context lines (research layer only, never a gate/flag): gov contracts
+**13F adds are detected on share count** (`sshPrnamt`), never `value` — `value` is
+quarter-end market value, so a price rise alone would read as conviction.
+
+Non-scored context lines the research layer still uses (never a gate/flag): gov contracts
 (`data/govcontract_match.py`, USAspending `spending_by_transaction`), federal lobbying
 (Senate LDA API), news flow (`Finnhub company-news`), earnings execution/surprise history.
-
-**Yahoo screener WAF gotcha**: `query1.finance.yahoo.com/.../screener/predefined/saved`
-rejects bot-shaped requests with an HTML 429 from the edge WAF (not throttling) — a full
-browser header set (`_YAHOO_HEADERS`) returns 200 JSON. Never retry-spam an HTML 429 (bail
-after one request); `daily.py` persists a rest-of-day cooldown in `ScoutState`. Only a JSON
-429 with `Retry-After` is retried, once, capped.
-
-**13F emits TWO kinds from ONE signal object** — `edgar:13f_new_position` and
-`edgar:13f_material_add`. Two seams make that work, and a third kind must touch **both** or it
-silently misbehaves: `daily.py:_scan_discovery` reads an optional `cfg_key_for(emission)` hook
-so the kinds carry different **weights**, while `max_slots` is resolved from the signal's own
-key and governs the family (a cap read per-emission *vanishes* on an adds-only night — the
-mechanism is tested, though the 13F family deliberately ships **uncapped**: it already ranks
-last by interest, median 0.33 vs `activist_13d` 1.05);
-`budget.signal_family` collapses both strings to `edgar:13f` for caps **and** confluence, since
-two funds agreeing is not two originators agreeing. Adds are detected on **share count**
-(`sshPrnamt`) because `value` is quarter-end market value — a price rise alone would read as
-conviction.
-
-## Signal-validation evaluator
-
-`scout/validate.py` (KILL/HOLD/INSUFFICIENT verdict) + `scout/preregister.py`
-(anti-p-hacking gate). Three load-bearing contracts — full detail + evidence in
-`docs/EVALUATOR_CORRECTNESS.md`: `load_prereg` parses the **committed** `git show
-HEAD:<path>`, never the working tree (an uncommitted threshold edit must not read as
-pre-registered); bootstraps **resample issuers**, not events, and relabel per issuer-copy;
-and the evaluator **abstains** (CI = `None`) rather than substituting a different bootstrap
-model when the issuer-level one can't compute. Two previously-published 13D/13D-A spread
-claims were retracted 2026-08-03 after a bug fix — see
-`docs/audits/2026-08-03-evaluator-rederivation.md` before citing either number.
 
 ## Scale, caching, and data conventions
 
 Free tiers fit a watchlist, not a full universe: ~13 FMP calls/ticker, 250/day free ≈ 19
-tickers/day (scout caps deep-screening at 10/day, `shortlist-accumulate` at 15/day). FMP
+tickers/day (`shortlist-accumulate` caps at 15/day; the bot caps `/screen` at 10). FMP
 429s degrade honestly (`Retry-After`-aware retry, partial-success coverage). Daily S&P 500
 needs FMP Starter or the cache.
 

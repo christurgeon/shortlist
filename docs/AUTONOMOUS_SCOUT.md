@@ -1,5 +1,10 @@
 # Autonomous scout — signal-driven candidate discovery
 
+> **RETIRED 2026-08-11.** This describes the autonomous scout, which has been deleted. Kept for the reasoning and measured facts it
+> records, not as a description of code that exists. See
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Audience:** whoever builds the autonomous discovery loop that turns this tool from a
 "give it tickers" screener into a "tell me what to look at today" system.
 **Companion docs:** [`DATA_SOURCES.md`](DATA_SOURCES.md) (the free feeds the signals draw

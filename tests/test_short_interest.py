@@ -70,7 +70,7 @@ def test_config_yaml_has_flags_and_finra():
     assert cs["require_rising"] is True
     assert cs["max_staleness_days"] == 35
     assert "finra" in cfg["harness_sources"]
-    assert "finra" in cfg["scout"]["deep_screen_sources"]
+    assert "finra" in cfg["bot"]["deep_screen_sources"]
 
 
 import asyncio

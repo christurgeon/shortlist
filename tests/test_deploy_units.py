@@ -35,10 +35,32 @@ def _heredoc(unit_name: str) -> str:
     return m.group(1)
 
 
-@pytest.mark.parametrize("unit", ["shortlist-scout.service", "shortlist-accumulate.service"])
-def test_both_generated_routes_wire_the_failure_alert(unit: str) -> None:
-    """A crash on either timer must page, not sit silently in the journal."""
-    assert ONFAILURE in _heredoc(unit)
+def test_the_scheduled_route_wires_the_failure_alert() -> None:
+    """A crash on the timer must page, not sit silently in the journal. Accumulate is the
+    only generated timer left — the scout route was retired 2026-08-11."""
+    assert ONFAILURE in _heredoc("shortlist-accumulate.service")
+
+
+def test_installer_removes_the_retired_scout_units() -> None:
+    """On a box deployed before the retirement the scout timer would keep firing a oneshot
+    whose ExecStart binary no longer exists — a nightly failure alert forever."""
+    text = INSTALLER.read_text()
+    assert "shortlist-scout.timer shortlist-scout.service" in text
+    assert 'rm -f "$UNIT_DIR/$stale"' in text
+
+
+def test_installer_no_longer_generates_scout_units() -> None:
+    text = INSTALLER.read_text()
+    for unit in ("shortlist-scout.service", "shortlist-scout.timer"):
+        assert f'cat > "$UNIT_DIR/{unit}"' not in text
+
+
+def test_smoke_test_does_not_write_to_live_state() -> None:
+    """The retired scout's `--demo` smoke test wrote mock:demo rows into the LIVE selection
+    ledger on every deploy. Whatever replaces it must be read-only."""
+    text = INSTALLER.read_text()
+    assert "shortlist-scout' --demo" not in text
+    assert "'./.venv/bin/shortlist' --demo" in text
 
 
 def test_installer_generates_the_alert_template() -> None:

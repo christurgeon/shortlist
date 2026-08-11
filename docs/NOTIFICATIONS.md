@@ -1,5 +1,10 @@
 # Notifications — delivering the scout report
 
+> **RETIRED 2026-08-11.** The daily scout push it describes is gone; the Telegram *bot* (`shortlist-bot`) and its delivery hardening survive. Kept for the reasoning and measured facts it
+> records, not as a description of code that exists. See
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Audience:** whoever operates the autonomous scout (`shortlist-scout`) and wants the
 daily report to land somewhere a human will actually read it.
 **Companion docs:** [`AUTONOMOUS_SCOUT.md`](AUTONOMOUS_SCOUT.md) (the loop that produces the

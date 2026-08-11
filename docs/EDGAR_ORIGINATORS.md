@@ -1,5 +1,12 @@
 # EDGAR-index scout originators — implementation notes
 
+> **STILL CURRENT, but renamed.** The scout *originators* were retired 2026-08-11; the EDGAR
+> *clients* they were built on survive under `shortlist/edgar/` and this file remains their
+> implementation reference. Module paths below predate the move — `scout/edgar_index.py` is
+> now `edgar/index.py`, and the other `scout/*.py` leaves are `edgar/*.py`. Context:
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 Implementation-level "verified facts, do not fix back" detail for the SEC-EDGAR-index-based
 scout discovery originators (`scout/signals.py` + their pure leaves), migrated out of
 `CLAUDE.md` 2026-08-07 to keep that file a map, not a diary. Design rationale and

@@ -20,7 +20,7 @@ from datetime import date
 from shortlist.backtest.metrics import rank as ref_rank
 from shortlist.backtest.residual import residual_rows
 from shortlist.backtest.signals import Observation
-from shortlist.scout.validate import _residuals, ols
+from shortlist.backtest._ols import _residuals, ols
 
 D = date(2024, 1, 1)
 

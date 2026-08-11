@@ -47,6 +47,6 @@ def test_declared_sets_are_complete_and_disjoint():
 def test_theme_descriptions_bound_to_declared_sets():
     # theme.py's report-legend maps enumerate the same 18 names; bind them
     # into the same tripwire so a new flag can't go green with a stale legend
-    from shortlist.scout.report import theme
+    from shortlist.bot.report import theme
     assert set(theme.GATE_DESCRIPTIONS) == scoring.KNOWN_GATES
     assert set(theme.FLAG_DESCRIPTIONS) == scoring.KNOWN_FLAGS

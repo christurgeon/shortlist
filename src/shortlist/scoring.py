@@ -784,7 +784,24 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     pres_w = sum(weight for _, s, weight, subs in components
                  if applic(*subs) and s is not None)
     confidence = round(pres_w / appl_w, 3) if appl_w else 0.0
-    scored = True if bucket == "unknown" else confidence >= _validity(config)["min_scored_weight"]
+    _v = _validity(config)
+    scored = True if bucket == "unknown" else confidence >= _v["min_scored_weight"]
+    # Bucket-INDEPENDENT floor. The line above lets `unknown` — the MAJORITY bucket —
+    # score at any confidence, including 0.0. On 2026-08-10 that put BRVE top of the
+    # report at composite 100.0 with ALL SIX components null: the weight redistributed
+    # onto `risk` alone, which read 100 because the issuer reports no debt.
+    #
+    # This counts COMPONENTS, not weight. A weight/confidence threshold cannot express
+    # the rule: a momentum-only name sits at confidence ~0.08 and is pinned as scored
+    # (test_scoring_abstention.py:test_unknown_momentum_only_name_still_scored), while
+    # BRVE sits at 0.0 — far too narrow a band to threshold safely. The honest
+    # distinction is categorical: `risk` is a composite-only TILT, deliberately kept out
+    # of `components` (see above), so a card carrying only the tilt has no scoring
+    # component at all. No-op when the key is absent.
+    _min_components = _v.get("min_composite_components")
+    if _min_components is not None:
+        n_components = sum(1 for _, s, _, _ in components if s is not None)
+        scored = scored and n_components >= _min_components
     # Display-only coverage advisory; config-gated and None-safe (absent block -> False).
     thin_below = (config.get("ranking") or {}).get("thin_below")
     thin = thin_below is not None and confidence < thin_below

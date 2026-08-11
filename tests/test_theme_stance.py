@@ -1,4 +1,4 @@
-from shortlist.scout.report import theme
+from shortlist.bot.report import theme
 
 
 def test_stance_rgb_and_emoji():
@@ -14,7 +14,7 @@ def test_stance_rgb_and_emoji():
 
 def test_stance_keys_match_canonical_stances():
     from shortlist.research.models import STANCES
-    from shortlist.scout.report import theme
+    from shortlist.bot.report import theme
     assert set(theme.STANCE_RGB) == set(STANCES)
     assert set(theme._STANCE_EMOJI) == set(STANCES)
     assert theme.stance_to_rgb("BUY") == (102, 189, 99)

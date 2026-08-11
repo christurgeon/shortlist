@@ -1,8 +1,8 @@
 from datetime import date
-from shortlist.scout.report.sections import _Research, Detail
-from shortlist.scout.report.viewmodel import AssessmentVM, LeaderVM, MetricsVM, ReportVM
-from shortlist.scout.report.html import HtmlBuilder
-from shortlist.scout.report.theme import stance_emoji
+from shortlist.bot.report.sections import _Research, Detail
+from shortlist.bot.report.viewmodel import AssessmentVM, LeaderVM, MetricsVM, ReportVM
+from shortlist.bot.report.html import HtmlBuilder
+from shortlist.bot.report.theme import stance_emoji
 
 
 def _leader():

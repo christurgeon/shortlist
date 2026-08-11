@@ -1,5 +1,10 @@
 # Evaluator correctness pack — design (revision 2)
 
+> **RETIRED 2026-08-11.** The signal-validation evaluator (`scout/validate.py`) it describes has been deleted. Kept for the reasoning and measured facts it
+> records, not as a description of code that exists. See
+> `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Status:** IMPLEMENTED 2026-08-03 (`f36c94c` Item A, `02beaf6` Items B+C). Suite 2280 green,
 ruff clean, verdict-impact gate passed with **0 flips**. Results in §8.
 **Date:** 2026-08-02, revised 2026-08-03 after review.
