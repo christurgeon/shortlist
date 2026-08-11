@@ -7,6 +7,57 @@ snapshot**, and the raw payloads are retained as a point-in-time record.
 This is the foundation the scorer, the predictor, and any Claude feature-step
 sit on top of — it deliberately knows nothing about scoring or predictions.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph harness ["Data harness  ·  shortlist / shortlist-harness CLIs  ·  async httpx"]
+        direction TB
+        HS0["Yahoo Source<br/>keyless price/momentum"]
+        HS1["FMP Source"]
+        HS2["Finnhub Source"]
+        HS3["EDGAR Source<br/>asyncio.to_thread"]
+        HS4["FINRA Source<br/>keyless short interest"]
+        HS5["WSB Source<br/>keyless social hype"]
+        HS6["Gov contracts · Lobbying<br/>keyless context"]
+        HS7["Mock Source"]
+        HM["merge_snapshots()<br/>TickerSnapshot"]
+        BR["bridge.py<br/>snapshot_to_metrics"]
+        SC["scoring.py<br/>Quality · Moat · Growth · Value · Momentum · Insider · Risk<br/>value + momentum weighted independently"]
+        CARD["ScoreCard<br/>+ Gates"]
+        STORE["store.py<br/>persistence"]
+
+        HS0 --> HM
+        HS1 --> HM
+        HS2 --> HM
+        HS3 --> HM
+        HS4 --> HM
+        HS5 --> HM
+        HS6 --> HM
+        HS7 --> HM
+        HM --> STORE
+        HM --> BR
+        BR --> SC
+        SC --> CARD
+    end
+
+    F4["_form4.py<br/>shared Form 4 aggregation"]
+    EF["_edgar_facts.py<br/>shared 10-K financials"]
+    F4 --> HS3
+    EF --> HS3
+```
+
+`bridge.py:snapshot_to_metrics` converts a harness `TickerSnapshot` into the `StockMetrics`
+that `scoring.py` consumes, so names are ranked off the richer, audited data — including the
+keyless, gating-immune **Yahoo** momentum source and **FINRA** short interest. The harness
+recovers `value`, `growth` and the `risk` axis from free EDGAR + Yahoo data when FMP gates a
+symbol (which it does for most non-mega-caps on the free tier).
+
+The only other `StockMetrics`-producing paths are the point-in-time **XBRL backtest source**
+and the offline `MockProvider` test fixture (`--demo` itself uses the harness `mock` Source).
+`providers/_form4.py` and `providers/_edgar_facts.py` are dependency-free leaves shared by the
+harness `EdgarSource` and the XBRL backtest.
+
 ## Run
 
 ```bash
@@ -197,8 +248,10 @@ into both
 ## Adding a source
 
 Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning
-verbatim `raw` plus a normalized `partial` `TickerSnapshot`, and register it in
-`_REGISTRY` in `sources.py`. (Yahoo, FMP, Finnhub, EDGAR, FINRA, WSB, and Mock are all wired.)
+verbatim `raw` plus a normalized `partial` `TickerSnapshot`, add the module under
+`data/sources/`, and register it in `_REGISTRY` (`data/sources/__init__.py`). Nine sources
+are wired: Yahoo, FMP, Finnhub, EDGAR, FINRA, WSB, gov contracts, lobbying, and Mock — the
+first eight form the default `harness_sources` chain.
 
 ## Backtesting (`shortlist.backtest`, CLI `shortlist-backtest`)
 
@@ -420,8 +473,8 @@ uv run shortlist-accumulate status  --root snapshots            # both floors + 
 
 The harness is now the **only** engine. The legacy synchronous screener providers
 (`providers/fmp.py`/`finnhub.py`/`edgar.py`), `merge.py`, the screener `run()`, and
-the `--engine` flag were **removed** — the async harness `Source`s in
-`data/sources.py` are the sole production data layer. The shared leaves
+the `--engine` flag were **removed** — the async harness `Source`s in the
+`data/sources/` package are the sole production data layer. The shared leaves
 `providers/_form4.py` and `providers/_edgar_facts.py` were **kept** (the harness
 sources and the XBRL backtest depend on them), as were the `Provider` base +
 `MockProvider` (a lightweight offline `StockMetrics` factory the scoring tests use)

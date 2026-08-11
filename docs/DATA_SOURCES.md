@@ -313,8 +313,10 @@ computable from the 5y `Statements` we already merge + the XBRL facts from A1.
 
 The repo's two-layer split (see `CLAUDE.md`) tells you where each source goes:
 
-- **Per-ticker fundamentals/price/insider/news** → a new `Source` in `data/sources.py`
-  (harness) and/or a `Provider` in `providers/` (screener), normalized into
+- **Per-ticker fundamentals/price/insider/news** → a new `Source` module under
+  `data/sources/`, registered in `_REGISTRY` (`data/sources/__init__.py`). The harness is the
+  **only** production data layer — the legacy synchronous screener and its `Provider`s were
+  retired, so do **not** add one there. Normalized into
   `TickerSnapshot` / `StockMetrics`, merged by priority. Add new fields to the dataclasses;
   unavailable fields stay `None` and the redistribution logic in `scoring.py` handles it.
 - **Run-level macro** (A2 FRED — shipped) → `data/macro.py:fetch_macro` builds a `MacroContext`
