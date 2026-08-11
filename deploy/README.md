@@ -192,10 +192,11 @@ The operator drives screening by chatting:
 | `/portfolio` | Re-screens your tracked holdings from `positions.json`; adds a Portfolio section with exposure, sector concentration, and deterioration alerts. Cap: `config.yaml: portfolio.max_holdings` |
 | `/help` | Lists available commands |
 
-The daily digest also carries a **position-monitor** section: a held ticker hit by a fresh
-clean-negative 8-K (items 1.03 / 2.04 / 4.02) surfaces once with a link to the SEC filing,
-plus a "Monitoring N holdings" heartbeat. Filings watch, not a selling system — no stance.
-Toggle via `config.yaml: portfolio.monitor` (design: `docs/POSITION_MONITOR.md`).
+**There is no position-monitor section and no daily digest.** Held-name 8-K alerting was
+removed in `de3c9f8` along with `bot/monitor.py` and the `portfolio.monitor` config block —
+it needed a nightly scheduler, whose only producer was the retired scout. The position store
+and its commands above are unaffected. Historical design:
+[`../docs/POSITION_MONITOR.md`](../docs/POSITION_MONITOR.md).
 
 > **This unit is NOT auto-installed.** Copy it manually after reviewing the paths
 > for your install location.
