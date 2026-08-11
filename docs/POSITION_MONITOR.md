@@ -1,11 +1,15 @@
 # Position Monitor — design (v1)
 
-> **Alerting is NOT armed.** The position store and its commands (`/add`, `/hold`, `/remove`,
-> `/thesis`) are live. The 8-K alerting described below has no caller — `portfolio.monitor.enabled`
-> is `false`. Wiring it into `/portfolio` is an open decision.
+> **HISTORICAL DESIGN — the alerting described below is NOT built.** The position store and
+> its commands (`/add`, `/hold`, `/remove`, `/thesis`, `/portfolio`) are live and unaffected.
+> The 8-K alerting was **removed** in `de3c9f8`, which deleted `bot/monitor.py` and the
+> `portfolio.monitor` config block — so there is no `portfolio.monitor.enabled` flag to set,
+> and no code to re-enable. It needed a nightly scheduler and its only producer
+> (`scout/daily.py`) was retired with the scout. Re-adding it is a build, not a toggle.
+> Read this doc as the design rationale, not as a description of the current system.
 
 
-**Status:** store implemented; alerting not wired.
+**Status:** store implemented; alerting removed (was: not wired).
 Spec dated 2026-07-21; this document remains the design authority. v2 items in §10 are
 still deferred.
 

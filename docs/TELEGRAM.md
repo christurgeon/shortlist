@@ -85,9 +85,12 @@ brokerage sync and no cost basis**.
 A portfolio larger than `portfolio.max_holdings` (default **50**) is screened up to the cap
 with an explicit "alerts incomplete" warning naming the un-screened tickers.
 
-> **Held-name 8-K alerting is not currently armed** — `portfolio.monitor.enabled` is `false`.
-> The alerting functions live in `bot/monitor.py`, pending a decision on wiring them into
-> `/portfolio`. Design: [`POSITION_MONITOR.md`](POSITION_MONITOR.md).
+> **Held-name 8-K alerting does not exist.** It was **removed**, not disabled: `de3c9f8`
+> deleted `bot/monitor.py` and the whole `portfolio.monitor` config block, because the
+> alerting needed a nightly scheduler to be an alert at all and its only producer
+> (`scout/daily.py`) went with the scout. Re-adding it is an open decision that requires a
+> scheduler, not a config flag. The original design — which describes a feature that is no
+> longer built — is kept for reference in [`POSITION_MONITOR.md`](POSITION_MONITOR.md).
 
 ## Research kill-switch
 
