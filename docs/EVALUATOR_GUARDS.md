@@ -197,5 +197,5 @@ No verdict rules, no thresholds moved, no new pre-registered parameter, no RNG c
   `None`, `unresolved_ticker` for a `CIK:` sentinel; one test asserts a dead-symbol
   `PriceHistory(dates=[])` is NOT labelled attrition (the revision-1 inversion, pinned).
 - **C4′:** `ci_mc_error` scales as `1/√B` — deterministic given the sorted replicate array.
-- Gate: `uv sync --extra edgar --extra scout`, `uv run ruff check src tests`, `uv run pytest -q`.
+- Gate: `uv sync --extra edgar --extra bot`, `uv run ruff check src tests`, `uv run pytest -q`.
   Baseline 2286 passed / 3 skipped.

@@ -1,12 +1,11 @@
 """Direct cover for the shared leaf the EDGAR clients depend on.
 
-These three symbols previously lived in three separate modules and were imported across
-module boundaries, so retiring any one of them would silently have broken the others.
-This file pins them at their new single source.
+Both symbols previously lived in separate modules and were imported across module
+boundaries, so retiring either module would silently have broken the other. This file pins
+them at their new single source.
 """
 from shortlist.edgar._ticker_rules import (
     _FIFTH_LETTER_SUFFIXES,
-    is_common_stock,
     junk_suffix,
     normalize_items,
 )
@@ -29,20 +28,6 @@ class TestJunkSuffix:
     def test_plain_common_stock(self):
         assert not junk_suffix("AAPL")
         assert not junk_suffix("GOOGL")   # 5 letters, L is not a suffix code
-
-
-class TestIsCommonStock:
-    def test_accepts_one_to_five_alpha(self):
-        for t in ("F", "GE", "AON", "AAPL", "GOOGL"):
-            assert is_common_stock(t), t
-
-    def test_rejects_suffixed_five_letter(self):
-        assert not is_common_stock("BBASX")
-
-    def test_rejects_non_alpha_and_overlong(self):
-        assert not is_common_stock("BRK.B")
-        assert not is_common_stock("ABCDEF")
-        assert not is_common_stock("")
 
 
 class TestNormalizeItems:

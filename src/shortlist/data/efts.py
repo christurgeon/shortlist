@@ -23,6 +23,12 @@ tests/test_data_efts.py pins them). An OPTIONAL exact-phrase `q` threads a `"...
 query through the same fetch discipline for the buyback originator (data/buyback.py), with
 its OWN cache namespace (`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/
 split/finality machinery lives here ONCE; only the params gain a `q` key when a phrase is set.
+
+**No production caller since 2026-08-11.** Its consumers (the 8-K and buyback originators) retired with the scout
+(`docs/audits/2026-08-11-scout-retirement.md`), so nothing in `shortlist` imports this
+on the `/screen` or `/deep` path. Same deal as `shortlist/edgar/`: CI pins the PARSE
+shapes, but upstream shape drift is only caught by the live tests, which are
+`pytest.mark.live` and skip by default.
 """
 from __future__ import annotations
 

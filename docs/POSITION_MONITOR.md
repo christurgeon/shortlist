@@ -1,5 +1,13 @@
 # Position Monitor — design (v1)
 
+> **PARTLY RETIRED 2026-08-11.** The position *store* and its commands (`/add`, `/hold`,
+> `/remove`, `/thesis`) are live. The **8-K alerting described here is NOT armed**: its only
+> producer was the retired scout's nightly run, so `compute_alerts`/`heartbeat` in
+> `bot/monitor.py` are pure, tested and uncalled, and `portfolio.monitor.enabled` is now
+> `false`. Re-wiring them into `/portfolio` is an open decision.
+> See `docs/audits/2026-08-11-scout-retirement.md`.
+
+
 **Status:** implemented and shipped (PR #146, 2026-07-22) — deployed to `/opt/shortlist`.
 Spec dated 2026-07-21; this document remains the design authority. v2 items in §10 are
 still deferred.
