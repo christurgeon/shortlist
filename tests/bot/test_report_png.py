@@ -2,7 +2,7 @@ import io
 import pytest
 from datetime import date
 from shortlist.bot.report.viewmodel import (
-    ReportVM, LeaderVM, MetricsVM, FunnelVM, SignalStatusVM)
+    ReportVM, LeaderVM, MetricsVM)
 
 pytest.importorskip("PIL")
 from PIL import Image
@@ -20,10 +20,7 @@ def _leader(t, c, subs=None):
 
 
 def _vm(leaders):
-    return ReportVM(session=date(2026, 6, 4), leaders=leaders,
-                    signals=[SignalStatusVM("edgar_form4", True, "x")],
-                    funnel=FunnelVM(len(leaders), len(leaders), len(leaders), len(leaders), 0),
-                    notes=[])
+    return ReportVM(session=date(2026, 6, 4), leaders=leaders, notes=[])
 
 
 def test_render_returns_valid_png_bytes():

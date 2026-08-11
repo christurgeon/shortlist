@@ -6,7 +6,6 @@ from datetime import date
 
 from shortlist.models import ScoreCard, rank_key
 
-from ..models import RunManifest
 from .theme import SUBS
 
 
@@ -87,35 +86,13 @@ class LeaderVM:
 
 
 @dataclass
-class SignalStatusVM:
-    name: str
-    ran: bool
-    detail: str
-    discovery: bool = True   # mirrors SignalStatus.discovery; run_health needs it to tell a
-                             # failed ORIGINATOR from a booster with nothing to enrich
-
-
-@dataclass
-class FunnelVM:
-    raw: int
-    after_dedup: int
-    after_prefilter: int
-    screened: int
-    dropped_for_budget: int
-
-
-@dataclass
 class ReportVM:
     session: date
     leaders: list[LeaderVM]
-    signals: list[SignalStatusVM]
-    funnel: FunnelVM
-    notes: list[str]
-    macro: "object | None" = None   # data.macro.MacroContext | None (run-level)
+    notes: list[str] = field(default_factory=list)
+    macro: "object | None" = None   # data.macro.MacroContext | None
     portfolio: "object | None" = None   # shortlist.portfolio.PortfolioSummary | None
     deep_block: list[str] = field(default_factory=list)   # non-gated tickers for the /deep handoff
-    prior_picks: list[dict] = field(default_factory=list)  # scoreboard rows (pick_performance dicts)
-    positions_monitor: "dict | None" = None   # {"alerts": [...], "heartbeat": {...}} or None
 
 
 def _claim(x) -> str:
@@ -212,9 +189,8 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
         assessment=_assessment_vm(rec) if rec else None)
 
 
-def build_view_model(cards, manifest: RunManifest, *,
-                     assessments: dict[str, dict], macro=None, portfolio=None,
-                     prior_picks=None, positions_monitor=None) -> ReportVM:
+def build_view_model(cards, session: date, *, assessments: dict[str, dict],
+                     macro=None, portfolio=None, notes=None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
     leaders = [_leader_vm(c, assessments) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
@@ -223,15 +199,9 @@ def build_view_model(cards, manifest: RunManifest, *,
     deep_block = ([ld.ticker for ld in leaders if not ld.gates and ld.scored]
                   if portfolio is None else [])
     return ReportVM(
-        session=manifest.session,
+        session=session,
         leaders=leaders,
-        signals=[SignalStatusVM(s.name, s.ran, s.detail, getattr(s, "discovery", True))
-                 for s in manifest.signals],
-        funnel=FunnelVM(manifest.raw, manifest.after_dedup, manifest.after_prefilter,
-                        manifest.screened, manifest.dropped_for_budget),
-        notes=list(manifest.notes),
+        notes=list(notes or []),
         macro=macro,
         portfolio=portfolio,
-        deep_block=deep_block,
-        prior_picks=list(prior_picks or []),
-        positions_monitor=positions_monitor)
+        deep_block=deep_block)

@@ -9,7 +9,6 @@ from __future__ import annotations
 import enum
 from typing import Protocol
 
-from ..models import run_health
 from .html import HtmlBuilder
 from .theme import (
     FLAG_DESCRIPTIONS,
@@ -343,73 +342,16 @@ class _Research:
 
 # ---- footer: signals + funnel + notes ----
 class _Footer:
-    id, title = "footer", "Coverage"
+    id, title = "footer", "Notes"
 
-    def applies(self, vm): return True
-
-    def _sig(self, vm):
-        return " · ".join(f"{s.name} {'✓' if s.ran else '✗'} ({s.detail})" for s in vm.signals)
-
-    @staticmethod
-    def _funnel_steps(vm):
-        # Shared ordered pipeline: (value, text_label, html_label). Text and HTML
-        # deliberately differ in the third label ("after prefilter" vs "prefilter")
-        # and in markup, so each renderer keeps its own label/format — only the
-        # numeric step values are sourced here once.
-        f = vm.funnel
-        return [(f.raw, "raw", "raw"), (f.after_dedup, "deduped", "deduped"),
-                (f.after_prefilter, "after prefilter", "prefilter"),
-                (f.screened, "screened", "screened")]
-
-    def _funnel(self, vm):
-        steps = self._funnel_steps(vm)
-        body = " → ".join(f"{n} {tlabel}" for n, tlabel, _ in steps)
-        return f"{body} ({vm.funnel.dropped_for_budget} dropped: budget)"
-
-    def _funnel_html(self, vm, h):
-        steps = self._funnel_steps(vm)
-        arw = '<span class="arw">›</span>'
-        body = arw.join(f'<b>{n}</b> {h.esc(hlabel)}' for n, _, hlabel in steps)
-        drop = f' <span class="drop">({vm.funnel.dropped_for_budget} dropped: budget)</span>'
-        return h.raw("div", body + drop, _class="funnel")
+    def applies(self, vm): return bool(vm.notes)
 
     def render_html(self, vm, h):
-        inner = ""
-        if vm.signals:   # autonomous run; interactive sets signals=[] -> coverage hidden
-            health = self._health_line(vm)
-            if health:
-                status, _ = run_health(list(vm.signals), vm.funnel.raw)
-                inner += h.tag("div", health,
-                               _class=f"health {'bad' if status == 'degraded' else 'ok'}")
-            chips = "".join(
-                h.raw("span", f'{h.esc(s.name)} {"✓" if s.ran else "✗"} '
-                      f'<span class="muted">({h.esc(s.detail)})</span>',
-                      _class=f"sig {'ok' if s.ran else 'no'}")
-                for s in vm.signals)
-            inner += h.raw("div", chips, _class="sigs") + self._funnel_html(vm, h)
-        inner += "".join(h.tag("div", n, _class="note") for n in vm.notes)
-        return h.raw("div", inner, _class="cov")
-
-    def _health_line(self, vm):
-        """One line telling a BROKEN run from a genuinely quiet one — they produce the same
-        `0 raw` otherwise, which is how 13D stayed dead for two sessions (audit §5d)."""
-        status, failed = run_health(list(vm.signals), vm.funnel.raw)
-        if status == "degraded":
-            return (f"⚠ DEGRADED — {len(failed)} originator(s) failed: {', '.join(failed)}. "
-                    "Candidate count is NOT a read on the market.")
-        if status == "quiet":
-            return "✓ All enabled originators ran — a genuinely quiet day, nothing broke."
-        return None
+        return h.raw("div", "".join(h.tag("div", n, _class="note") for n in vm.notes),
+                     _class="cov")
 
     def render_text(self, vm, detail):
-        out = [""]
-        if vm.signals:
-            health = self._health_line(vm)
-            if health:
-                out.append(health)
-            out += [f"Signals: {self._sig(vm)}", f"Funnel: {self._funnel(vm)}"]
-        out += [f"Note: {n}" for n in vm.notes]
-        return out
+        return [""] + [f"Note: {n}" for n in vm.notes]
 
 
 # ---- macro / regime header ----
@@ -626,105 +568,13 @@ class _DeepBlock:
         lines = self._lines(vm)
         if not lines:
             return []
-        out = ["", "Pass to /deep (activist re-rating candidates — "
-                   "screening triage, not investment advice):"]
+        out = ["", "Pass to /deep (screening triage, not investment advice):"]
         out += [f"/deep {ln}" for ln in lines]
         return out
 
 
-# ---- prior-picks scoreboard (how past selections performed) ----
-class _PriorPicks:
-    """Return-since-selection vs SPY for recent picks, so every report shows whether the
-    discovery signal is catching winners (the over-time tracking deliverable)."""
-    id, title = "picks", "Prior picks"
-
-    def applies(self, vm) -> bool:
-        return bool(vm.prior_picks)
-
-    @staticmethod
-    def _line(p: dict) -> str:
-        bucket = p.get("horizon_bucket") or "—"
-        return (f"{p.get('ticker', '?')} [{bucket}] ret {_pct(p.get('ret'))} · "
-                f"vs SPY {_pct(p.get('excess'))} — {p.get('evidence', '')}".rstrip(" —"))
-
-    def render_html(self, vm, h) -> str:
-        rows = "".join(h.tag("div", self._line(p), _class="pick")
-                       for p in (vm.prior_picks or []))
-        return h.raw("div", rows, _class="picks")
-
-    def render_text(self, vm, detail) -> list[str]:
-        picks = list(vm.prior_picks or [])
-        if not picks:
-            return []
-        return ["", "Prior picks scoreboard (return since selection vs SPY):"] + \
-               [f"  {self._line(p)}" for p in picks]
-
-
-# ---- position monitor: held-name clean-negative 8-K alerts + liveness heartbeat ----
-class _PositionMonitor:
-    """Held-name clean-negative 8-K alerts + a liveness heartbeat (docs/POSITION_MONITOR.md
-    §5). Display-only; byte-identical when vm.positions_monitor is None. applies() keys on
-    payload PRESENCE so the heartbeat renders on quiet days."""
-    id, title = "positions", "Holdings watch"
-
-    def applies(self, vm) -> bool:
-        return isinstance(vm.positions_monitor, dict)
-
-    @staticmethod
-    def _filing_url(ticker: str) -> str:
-        """EDGAR 8-K filings list for the ticker — a fetch-free, always-valid link. The
-        alert dict carries no CIK (the veto_map only has {last_date, items, adsh}), so this
-        ticker-keyed filings-list page substitutes for a per-accession deep link; the alert
-        already prints the item + filing date, so the reader can find the exact filing."""
-        return f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={ticker}&type=8-K"
-
-    @staticmethod
-    def _alert_lines(pm) -> list[str]:
-        lines = []
-        for a in pm.get("alerts", []):
-            lines.append(f"⚠ {a['ticker']} — {a['meaning']}. "
-                         f"8-K item {'+'.join(a['items'])}, filed {a['date']}")
-            lines.append(f"    filing: {_PositionMonitor._filing_url(a['ticker'])}")
-            if a.get("thesis"):
-                lines.append(f"    your thesis: \"{a['thesis']}\"")
-            else:
-                lines.append(f"    ⚠ no thesis — /thesis {a['ticker']} <why you own it>")
-        return lines
-
-    def render_html(self, vm, h) -> str:
-        pm = vm.positions_monitor
-        parts = []
-        alerts = pm.get("alerts", [])
-        if alerts:
-            items = []
-            for a in alerts:
-                text = (f"⚠ {a['ticker']} — {a['meaning']}. "
-                        f"8-K item {'+'.join(a['items'])}, filed {a['date']}")
-                link = h.tag("a", self._filing_url(a["ticker"]), href=self._filing_url(a["ticker"]))
-                if a.get("thesis"):
-                    thesis = f'your thesis: "{a["thesis"]}"'
-                else:
-                    thesis = f"⚠ no thesis — /thesis {a['ticker']} <why you own it>"
-                inner = (h.tag("div", text) + h.raw("div", link) + h.tag("div", thesis))
-                items.append(h.raw("li", inner))
-            parts.append(h.raw("ul", "".join(items)))
-        hb = pm.get("heartbeat") or {}
-        parts.append(h.tag("div", f"Monitoring {hb.get('count', 0)} holding(s) · "
-                                  f"last filing check {hb.get('as_of', '—')}"))
-        return "".join(parts)
-
-    def render_text(self, vm, detail) -> list[str]:
-        pm = vm.positions_monitor
-        out = list(self._alert_lines(pm))
-        hb = pm.get("heartbeat") or {}
-        out.append(f"Monitoring {hb.get('count', 0)} holding(s) · "
-                   f"last filing check {hb.get('as_of', '—')}")
-        return out
-
-
-SECTIONS: list[Section] = [_MacroHeader(), _PositionMonitor(), _Leaderboard(), _Fundamentals(),
-                            _Research(), _DeepBlock(), _PriorPicks(),
-                            _Portfolio(), _Glossary(), _Footer()]
+SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
+                           _DeepBlock(), _Portfolio(), _Glossary(), _Footer()]
 
 
 def render_html_body(vm: ReportVM) -> str:

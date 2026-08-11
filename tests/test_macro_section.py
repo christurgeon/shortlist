@@ -8,8 +8,7 @@ from shortlist.bot.report.sections import _MacroHeader, Detail
 OFF = MacroContext("2026-06-01", 4.5, -0.2, 5.4, 27.0, 3.6, "risk-off", True)
 
 def _vm(macro):
-    return ReportVM(session=date(2026, 6, 1), leaders=[], signals=[],
-                    funnel=None, notes=[], macro=macro)
+    return ReportVM(session=date(2026, 6, 1), leaders=[], notes=[], macro=macro)
 
 def test_section_omitted_when_no_macro():
     assert _MacroHeader().applies(_vm(None)) is False

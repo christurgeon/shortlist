@@ -15,7 +15,7 @@ def _vm(call_stance):
     ld = LeaderVM(ticker="X", name=None, composite=70, subscores={"quality": 80},
                   masked=set(), gates=[], flags=[], confidence=0.8, thin=False,
                   scored=True, coverage_note=None, metrics=MetricsVM(), assessment=a)
-    return ReportVM(session=date(2026, 6, 7), leaders=[ld], signals=[], funnel=None,
+    return ReportVM(session=date(2026, 6, 7), leaders=[ld],
                     notes=[])
 
 

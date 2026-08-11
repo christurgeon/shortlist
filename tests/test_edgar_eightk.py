@@ -5,7 +5,7 @@ from shortlist.edgar.eightk import (DEFAULT_ITEM_SETS, NEGATIVE_ITEMS, SIGNAL,
                                     _junk_suffix, eightk_events_from_rows,
                                     match_item_sets, match_negative,
                                     negative_events_from_rows)
-from shortlist.bot.models import Emission
+from shortlist.edgar.models import Emission
 
 
 def _row(adsh, cik="0000000007", items=("1.01", "3.03"), file_date="2026-07-03",

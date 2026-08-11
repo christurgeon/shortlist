@@ -2,7 +2,7 @@ from datetime import date
 
 from shortlist.models import StockMetrics
 from shortlist.bot.report.viewmodel import (
-    ReportVM, LeaderVM, MetricsVM, FunnelVM, SignalStatusVM, _metrics_vm)
+    ReportVM, LeaderVM, MetricsVM, _metrics_vm)
 from shortlist.bot.report.sections import (
     render_html_body, render_text, Detail, _piotroski_text, _FUND_ROWS)
 
@@ -15,10 +15,7 @@ def _leader(ticker, mvm):
 
 
 def _vm(leaders):
-    return ReportVM(session=date(2026, 6, 4), leaders=leaders,
-                    signals=[SignalStatusVM("edgar", True, "")],
-                    funnel=FunnelVM(10, 8, 5, len(leaders), 1), notes=[])
-
+    return ReportVM(session=date(2026, 6, 4), leaders=leaders, notes=[])
 
 # --- projection ---
 

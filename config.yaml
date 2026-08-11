@@ -560,9 +560,3 @@ portfolio:
   store: positions.json    # bot-owned source of truth (gitignored); atomic writes
   decisions: decisions.jsonl   # append-only decision ledger (gitignored)
   max_holdings: 50         # safety cap; over this, screen the cap + WARN (never silent-drop)
-  # INERT — held-name 8-K alerting is NOT armed. `bot/monitor.py` is pure and tested and the
-  # report still renders a payload, but nothing builds one. Kept because wiring it into
-  # /portfolio is small and is the open decision; see TODO.md.
-  monitor:
-    enabled: false
-    items: ["1.03", "2.04", "4.02"]   # v1 clean-negative subset (§5.1); widen on evidence

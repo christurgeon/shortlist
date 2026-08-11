@@ -1,5 +1,5 @@
 
-from shortlist.bot.report.sections import (Detail, _DeepBlock, _PriorPicks)
+from shortlist.bot.report.sections import Detail, _DeepBlock
 
 
 class _VM:
@@ -23,20 +23,4 @@ def test_deep_block_absent_when_empty():
     assert _DeepBlock().render_text(_VM([], []), Detail.FULL) == []
 
 
-def test_prior_picks_shows_excess_and_bucket():
-    picks = [{"ticker": "XYZ", "ret": 0.30, "excess": 0.20, "horizon_bucket": "3m",
-              "evidence": "Activist 13D: Elliott → XYZ"}]
-    vm = _VM([], picks)
-    assert _PriorPicks().applies(vm)
-    txt = "\n".join(_PriorPicks().render_text(vm, Detail.FULL))
-    assert "XYZ" in txt and "+20" in txt and "3m" in txt
 
-
-def test_prior_picks_none_safe_dash():
-    picks = [{"ticker": "ABC", "ret": None, "excess": None, "horizon_bucket": None,
-              "evidence": ""}]
-    txt = "\n".join(_PriorPicks().render_text(_VM([], picks), Detail.FULL))
-    assert "ABC" in txt and "—" in txt
-
-
-# ---- byte-identical-absent pin (digest-verdicts Task 2) ----

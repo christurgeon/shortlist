@@ -1,6 +1,6 @@
 from datetime import date
 from shortlist.bot.report.viewmodel import (
-    ReportVM, LeaderVM, MetricsVM, AssessmentVM, FunnelVM, SignalStatusVM)
+    ReportVM, LeaderVM, MetricsVM, AssessmentVM)
 from shortlist.bot.report.sections import render_html_body, render_text, Detail
 
 
@@ -14,14 +14,13 @@ def _leader(ticker, comp, assessment=None, gates=None, subs=None, flags=None):
 
 def _vm(leaders):
     return ReportVM(session=date(2026, 6, 4), leaders=leaders,
-                    signals=[SignalStatusVM("edgar_form4", True, "2 clusters")],
-                    funnel=FunnelVM(10, 8, 5, len(leaders), 1), notes=[])
+                    notes=[])
 
 
 def test_html_body_lists_every_leader_and_funnel():
     body = render_html_body(_vm([_leader("AAPL", 80), _leader("MSFT", 70)]))
     assert "AAPL" in body and "MSFT" in body
-    assert "screened" in body and "edgar_form4" in body
+    assert "AAPL" in body
 
 
 def test_research_section_only_when_assessment_present():
@@ -43,7 +42,7 @@ def test_text_glance_has_substring_contract():
     txt = render_text(_vm([_leader("AAPL", 80, gates=["negative_fcf"])]), Detail.GLANCE)
     assert "AAPL" in txt and "80" in txt
     assert "negative_fcf" in txt
-    assert "screened" in txt and "edgar_form4" in txt
+    assert "AAPL" in txt
 
 
 def test_leaderboard_renders_soft_flags_html_and_text():
@@ -167,20 +166,14 @@ def test_fundamentals_renders_escaped_company_name():
     assert "Apple" in body and "<b>Apple</b>" not in body and "&lt;b&gt;Apple" in body
 
 
-def test_footer_omits_funnel_when_no_signals():
-    # Interactive reports set manifest.signals=[] as the marker. The funnel line
-    # ("0 deduped … dropped: budget") is meaningless there and must be suppressed;
-    # notes must still render.
-    from shortlist.bot.report.sections import _Footer
+def test_footer_renders_notes_only():
+    """The footer carries notes and nothing else — there is no funnel or signal status."""
     from types import SimpleNamespace
 
-    vm = SimpleNamespace(
-        signals=[],
-        funnel=SimpleNamespace(raw=3, after_dedup=3, after_prefilter=3,
-                               screened=3, dropped_for_budget=0),
-        notes=["interactive /screen request"],
-    )
+    from shortlist.bot.report.sections import _Footer
+
+    vm = SimpleNamespace(notes=["interactive /screen request"])
     text = _Footer().render_text(vm, None)
-    assert not any("Funnel:" in line for line in text)
-    assert not any("Signals:" in line for line in text)
+    assert any("interactive /screen request" in line for line in text)
+    assert not any("Funnel:" in line or "Signals:" in line for line in text)
     assert any("interactive /screen request" in line for line in text)

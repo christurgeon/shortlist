@@ -19,27 +19,6 @@ the scoring roadmap.
 
 # 1. Bot & report
 
-## Trim `report/` — sections with no producer
-
-`bot/report/sections.py` still carries funnel counts, per-signal status and the prior-picks
-scoreboard, none of which anything builds. `bot/telegram.py:_interactive_manifest` fabricates
-a `RunManifest` with `signals=[]` purely to satisfy that API, and `bot/models.py` carries
-`RunManifest`/`SignalStatus`/`run_health`/`Candidate` only to feed it.
-
-It renders correctly — dead weight, not a defect. The trim should collapse `models.py` to
-whatever the slimmed renderer actually needs.
-
-## Held-name 8-K alerting is orphaned — wire it into `/portfolio`, or delete it (2026-08-11)
-
-`bot/monitor.py:compute_alerts`/`heartbeat` are pure, tested and **uncalled** — nothing builds
-the `positions_monitor` payload. The report still renders it, and `tests/bot/test_monitor.py`
-passes against the orphaned functions, so the suite gives no signal that the feature is dead.
-`portfolio.monitor.enabled` is `false`.
-
-**Decision needed:** wire alerts into `/portfolio` (it already loads the store and screens the
-holdings; it would need the 8-K veto lookup plus a `seen` set), or delete `bot/monitor.py`,
-the renderer section and the config block. Do not leave it half-wired.
-
 ## `shortlist-accumulate` has NO failure alerting on the box (2026-08-10)
 
 The `OnFailure=` line is in the accumulate unit's heredoc and pinned by

@@ -1,6 +1,5 @@
 from datetime import date
 from shortlist.models import ScoreCard, StockMetrics
-from shortlist.bot.models import RunManifest, SignalStatus
 from shortlist.bot.report.viewmodel import build_view_model
 
 
@@ -11,30 +10,27 @@ def _card(ticker, comp, **kw):
     return ScoreCard(**base)
 
 
-def _manifest():
-    return RunManifest(session=date(2026, 6, 4),
-                       signals=[SignalStatus("edgar_form4", True, "2 clusters")],
-                       raw=10, after_dedup=8, after_prefilter=5, screened=2,
-                       dropped_for_budget=1, researched=["AAPL"], notes=["hi"])
+def _session():
+    return date(2026, 6, 4)
 
 
 def test_leaders_sorted_by_scored_then_composite():
     cards = [_card("LOW", 40.0), _card("HIGH", 90.0),
              _card("NS1", 99.0, scored=False), _card("NS2", 50.0, scored=False)]
-    vm = build_view_model(cards, _manifest(), assessments={})
+    vm = build_view_model(cards, _session(), assessments={})
     assert [ld.ticker for ld in vm.leaders] == ["HIGH", "LOW", "NS1", "NS2"]
 
 
 def test_target_upside_uses_metrics_property():
     m = StockMetrics(ticker="AAPL", price=100.0, target_median=137.0)
-    vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(), assessments={})
+    vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _session(), assessments={})
     assert abs(vm.leaders[0].metrics.target_upside - 0.37) < 1e-6
 
 
 def test_target_upside_none_for_missing_or_zero_price():
     for p in (None, 0.0):
         m = StockMetrics(ticker="AAPL", price=p, target_median=137.0)
-        vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _manifest(), assessments={})
+        vm = build_view_model([_card("AAPL", 80.0, metrics=m)], _session(), assessments={})
         assert vm.leaders[0].metrics.target_upside is None
 
 
@@ -46,7 +42,7 @@ def test_assessment_present_only_for_researched():
            "risks": [{"claim": "China export limits"}],
            "red_flags": [], "management_capital_allocation": "Buybacks"}
     cards = [_card("AAPL", 80.0), _card("MSFT", 70.0)]
-    vm = build_view_model(cards, _manifest(), assessments={"AAPL": rec})
+    vm = build_view_model(cards, _session(), assessments={"AAPL": rec})
     a = {ld.ticker: ld for ld in vm.leaders}
     assert a["AAPL"].assessment.bull_case == "AI demand"
     assert a["AAPL"].assessment.risks == ["China export limits"]
@@ -54,9 +50,8 @@ def test_assessment_present_only_for_researched():
     assert a["MSFT"].assessment is None
 
 
-def test_funnel_and_subscores_carried():
-    vm = build_view_model([_card("AAPL", 80.0)], _manifest(), assessments={})
-    assert vm.funnel.screened == 2
+def test_subscores_carried():
+    vm = build_view_model([_card("AAPL", 80.0)], _session(), assessments={})
     assert vm.leaders[0].subscores["quality"] == 70
     assert vm.leaders[0].subscores["risk"] is None
 
@@ -66,6 +61,6 @@ def test_masked_derived_from_abstentions_not_data_gaps():
     c = _card("BNK", 50.0, moat=None, risk=None,
               abstentions=[{"field": "moat", "reason": "inapplicable", "scope": "subscore"},
                            {"field": "roe", "reason": "inapplicable", "scope": "leg"}])
-    vm = build_view_model([c], _manifest(), assessments={})
+    vm = build_view_model([c], _session(), assessments={})
     assert vm.leaders[0].masked == {"moat"}       # subscore-scope inapplicable only
     assert "risk" not in vm.leaders[0].masked     # data-gap None is not masked

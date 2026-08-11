@@ -16,8 +16,7 @@ def _leader():
 
 
 def _vm():
-    return ReportVM(session=date(2026, 6, 7), leaders=[_leader()], signals=[],
-                    funnel=None, notes=[])
+    return ReportVM(session=date(2026, 6, 7), leaders=[_leader()], notes=[])
 
 
 def test_html_has_pill_and_disclaimer():

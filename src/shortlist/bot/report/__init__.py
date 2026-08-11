@@ -32,12 +32,10 @@ def _render_png(vm):
         return None
 
 
-def build_report(cards, manifest, *, assessments: dict[str, dict], macro=None,
-                 portfolio=None, prior_picks=None,
-                 positions_monitor=None) -> ReportArtifacts:
-    vm = build_view_model(cards, manifest, assessments=assessments, macro=macro,
-                          portfolio=portfolio, prior_picks=prior_picks,
-                          positions_monitor=positions_monitor)
+def build_report(cards, session, *, assessments: dict[str, dict], macro=None,
+                 portfolio=None, notes=None) -> ReportArtifacts:
+    vm = build_view_model(cards, session, assessments=assessments, macro=macro,
+                          portfolio=portfolio, notes=notes)
     png = _render_png(vm)
     b64 = base64.b64encode(png).decode() if png else None
     title = f"Shortlist — {vm.session.isoformat()}"
@@ -46,9 +44,9 @@ def build_report(cards, manifest, *, assessments: dict[str, dict], macro=None,
     return ReportArtifacts(png=png, html=html, text=text)
 
 
-def render_message(cards, manifest, briefs: dict[str, str] | None = None) -> str:
-    """Back-compat text renderer (Telegram GLANCE fallback + demo stdout). Briefs are
-    rendered via the _Research section by synthesizing a minimal assessment each."""
+def render_message(cards, session, briefs: dict[str, str] | None = None) -> str:
+    """Compact text renderer (Telegram GLANCE fallback). Briefs are rendered via the
+    _Research section by synthesizing a minimal assessment each."""
     synth = {t: {"synthesis": b} for t, b in (briefs or {}).items()}
-    vm = build_view_model(cards, manifest, assessments=synth)
+    vm = build_view_model(cards, session, assessments=synth)
     return render_text(vm, Detail.GLANCE)

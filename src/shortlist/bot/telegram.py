@@ -21,7 +21,6 @@ from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
 from ..validation import no_data, partition_format, valid_format
 from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
-from .models import RunManifest
 
 _KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain",
           "add", "thesis", "hold", "remove", "sold"}
@@ -168,22 +167,14 @@ def _soft_cap(tickers: tuple[str, ...], cap: int) -> tuple[list[str], int]:
     return kept, max(0, len(tickers) - cap)
 
 
+def _today():
+    return datetime.now(timezone.utc).date()
+
+
 def _no_data_note(missing) -> str:
     names = ", ".join(c.ticker for c in missing)
     return (f"⚠️ No data for: {names} — unknown symbol, or all sources "
             f"(FMP/Finnhub/EDGAR) failed. Check the symbol or retry.")
-
-
-def _interactive_manifest(n_requested: int, n_cards: int, command: str,
-                          researched: list[str]) -> RunManifest:
-    # signals=[] is the interactive marker that suppresses the funnel/coverage
-    # footer (Task 4). Funnel counts are a clean passthrough; only the caption
-    # ("{screened} screened from {raw} raw") reads them.
-    return RunManifest(
-        session=datetime.now(timezone.utc).date(),
-        signals=[], raw=n_requested, after_dedup=n_requested,
-        after_prefilter=n_requested, screened=n_cards, dropped_for_budget=0,
-        researched=list(researched), notes=[f"interactive /{command} request"])
 
 
 def _call_summary(assessments: dict) -> str | None:
@@ -317,11 +308,10 @@ class TelegramBot:
         cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
         present, missing = self._partition_present(cards)
         if present:
-            manifest = _interactive_manifest(len(kept), len(present), "screen", [])
-            art = self._report_fn()(present, manifest, assessments={}, macro=macro)
+            art = self._report_fn()(present, _today(), assessments={}, macro=macro)
             self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                               caption=_caption(manifest, present),
-                               session=manifest.session.isoformat())
+                               caption=_caption(_today(), present),
+                               session=_today().isoformat())
         if missing:
             self.notifier.send_message(_no_data_note(missing))
         self._send_dropped_note("screened", kept, dropped)
@@ -342,16 +332,14 @@ class TelegramBot:
             _briefs, assessments, researched, note, skipped = self._research_fn()(
                 present, self.config, self.bot_cfg,
                 require_passed=False, top_n=len(present), macro=macro)
-            manifest = _interactive_manifest(len(kept), len(present), "deep", researched)
-            if note:
-                manifest.notes.append(note)
-            art = self._report_fn()(present, manifest, assessments=assessments, macro=macro)
+            art = self._report_fn()(present, _today(), assessments=assessments, macro=macro,
+                                    notes=[note] if note else None)
             summary = _call_summary(assessments)
             if summary:
                 self.notifier.send_message(summary)
             self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                               caption=_caption(manifest, present),
-                               session=manifest.session.isoformat())
+                               caption=_caption(_today(), present),
+                               session=_today().isoformat())
             if skipped:
                 lines = "\n".join(f"• {t}: {why}" for t, why in skipped.items())
                 self.notifier.send_message("⚠️ research unavailable —\n" + lines)
@@ -464,12 +452,11 @@ class TelegramBot:
         cards = self._screen_fn()(tickers, self.sources, self.config, macro=macro)
         present, _missing = self._partition_present(cards)
         summary = pf.summarize(screened_holdings, present)
-        manifest = _interactive_manifest(len(tickers), len(present), "portfolio", [])
-        art = self._report_fn()(present, manifest, assessments={}, macro=macro,
+        art = self._report_fn()(present, _today(), assessments={}, macro=macro,
                                 portfolio=summary)
         self._deliver_fn()(self.notifier, png=art.png, html=art.html, text=art.text,
-                           caption=_caption(manifest, present),
-                           session=manifest.session.isoformat())
+                           caption=_caption(_today(), present),
+                           session=_today().isoformat())
         if dropped:
             self.notifier.send_message(
                 f"⚠️ {len(dropped)} holdings NOT screened (cap {cap}): {', '.join(dropped)}. "

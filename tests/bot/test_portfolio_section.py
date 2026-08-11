@@ -2,18 +2,14 @@ from datetime import date
 
 from shortlist.bot.report.viewmodel import ReportVM, build_view_model
 from shortlist.bot.report import build_report
-from shortlist.bot.models import RunManifest
 
 
 def _manifest():
-    return RunManifest(session=date(2026, 6, 12), signals=[], raw=0, after_dedup=0,
-                       after_prefilter=0, screened=0, dropped_for_budget=0,
-                       researched=[], notes=[])
+    return date(2026, 6, 12)
 
 
 def test_reportvm_defaults_portfolio_none():
-    vm = ReportVM(session=date(2026, 6, 12), leaders=[], signals=[],
-                  funnel=None, notes=[])
+    vm = ReportVM(session=date(2026, 6, 12), leaders=[], notes=[])
     assert vm.portfolio is None
 
 
@@ -33,12 +29,11 @@ def test_build_report_threads_portfolio():
 from types import SimpleNamespace
 
 from shortlist.bot.report.sections import _Portfolio, render_html_body, render_text, Detail
-from shortlist.bot.report.viewmodel import FunnelVM
 
 
 def _vm(portfolio):
-    return ReportVM(session=date(2026, 6, 12), leaders=[], signals=[],
-                    funnel=FunnelVM(0, 0, 0, 0, 0), notes=[], portfolio=portfolio)
+    return ReportVM(session=date(2026, 6, 12), leaders=[],
+                    notes=[], portfolio=portfolio)
 
 
 def _pos(ticker, *, weight=None, composite=50.0, gates=(), flags=(), scored=True,

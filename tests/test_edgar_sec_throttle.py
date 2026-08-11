@@ -93,26 +93,3 @@ def test_company_tickers_fetch_draws_on_the_shared_budget():
     assert len(calls) == 1, "the company_tickers fetch must pass through the shared throttle"
 
 
-def test_the_manifest_carries_the_per_consumer_sec_budget():
-    """The budget has to land in a durable artifact — a number only visible in a log the
-    run overwrites cannot confirm or refute the cascade after the fact."""
-    from datetime import date
-
-    from shortlist.bot.models import RunManifest, SignalStatus
-
-    m = RunManifest(session=date(2026, 8, 5), signals=[SignalStatus("x", True, "ok")],
-                    raw=1, after_dedup=1, after_prefilter=1, screened=1,
-                    dropped_for_budget=0, sec_requests={"edgar_form4": 930, "cik_tickers": 1})
-    assert m.to_dict()["sec_requests"] == {"edgar_form4": 930, "cik_tickers": 1}
-
-
-def test_sec_requests_defaults_empty_for_back_compat():
-    """LAST field with a default — every existing RunManifest construction stays valid."""
-    from datetime import date
-
-    from shortlist.bot.models import RunManifest
-
-    m = RunManifest(session=date(2026, 8, 5), signals=[], raw=0, after_dedup=0,
-                    after_prefilter=0, screened=0, dropped_for_budget=0)
-    assert m.sec_requests == {}
-    assert m.to_dict()["sec_requests"] == {}
