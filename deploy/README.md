@@ -182,8 +182,9 @@ The operator drives screening by chatting:
 
 | Command | What it does |
 |---------|--------------|
-| `/screen NVDA, LMT, MSFT` | Fast scores + gates report; same PNG dashboard + HTML deep-dive the daily push sends |
+| `/screen NVDA, LMT, MSFT` | Fast scores + gates report; replies with a PNG dashboard + HTML deep-dive |
 | `/deep TSLA` | Same as `/screen` but also runs the Claude 10-K research brief (slower) |
+| `/explain 13d` | Plain-English definition of a term, gate or flag used in these reports |
 | `/add NVDA 12` | Track a holding in the bot-owned `positions.json` store (shares optional; bulk `/add NVDA, MSFT, LMT`) |
 | `/thesis NVDA <why you own it>` | Record why you hold a tracked name (the only command taking free-text prose) |
 | `/hold NVDA <note>` | After an alert, log that you looked and chose to keep the position (`decisions.jsonl`) |

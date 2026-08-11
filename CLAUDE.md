@@ -34,13 +34,21 @@ This is a **triage funnel for a human deep-dive, NOT a return-predicting alpha m
 ## One fetching layer: the data harness
 
 The async `httpx` **harness** (`shortlist.data.*`) is the sole production data layer:
-`Source`s in `data/sources.py` (`yahoo`, `fmp`, `finnhub`, `edgar`, `finra`, `wsb`, `mock`),
-merged by `data/models.py:merge_snapshots` into an audited `TickerSnapshot`, adapted by
-`bridge.py:snapshot_to_metrics` into the `StockMetrics` that `scoring.py` consumes. Two
-CLIs front it: `shortlist` (rank a shortlist) and `shortlist-harness` (raw snapshots). The
-keyless `yahoo` OHLCV source — we compute price/momentum/risk ourselves — **leads the price
-merge** (`harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]`). **`--provider`
-overrides `harness_sources`**, so omit it on the default path or yahoo/finra get dropped.
+`Source`s in the **`data/sources/` package** (`_REGISTRY` in its `__init__.py` — `yahoo`,
+`fmp`, `finnhub`, `edgar`, `finra`, `wsb`, `gov_contracts`, `lobbying`, `mock`; **there is no
+`data/sources.py`**), merged by `data/models.py:merge_snapshots` into an audited
+`TickerSnapshot`, adapted by `bridge.py:snapshot_to_metrics` into the `StockMetrics` that
+`scoring.py` consumes. Two CLIs front it: `shortlist` (rank a shortlist) and
+`shortlist-harness` (raw snapshots). The keyless `yahoo` OHLCV source — we compute
+price/momentum/risk ourselves — **leads the price merge**
+(`harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, gov_contracts, lobbying]` —
+**8**, not the 6 this file claimed until 2026-08-11). **`--provider` overrides
+`harness_sources`**, so omit it on the default path or yahoo/finra get dropped.
+
+`gov_contracts` and `lobbying` are **auxiliary** sources: they populate aux `TickerSnapshot`
+sections which are **NOT `KEY_OBJECT`s** (`_AUX_DEFAULTS`, `data/models.py:441`), so they
+never move coverage and never reach a score, gate or flag. They are in the default chain
+regardless — a run fetches them unless you override `--provider`.
 
 The legacy synchronous screener was retired. Surviving in `providers/`: shared leaves
 `_form4.py` (Form 4 aggregation) and `_edgar_facts.py` (10-K/balance-sheet extraction) —
@@ -294,14 +302,22 @@ issuer misread here silently inflates market cap and can mask the `below_min_mkt
 real as `data/macro.py` (risk-off regime overlay). Quiver is largely superseded (gov
 contracts/lobbying/WSB shipped keyless); its one net-new feed, congressional trades, is a
 contested prior deferred per `docs/PREDICTIVE_SIGNALS_RESEARCH.md`. To wire anything here,
-reimplement as an async `Source` in `data/sources.py` — the harness Source registry, not
-`providers/__init__.py:build_providers`, is what `--provider`/`harness_sources` resolves
-against.
+add an async `Source` module under `data/sources/` and register it in `_REGISTRY`
+(`data/sources/__init__.py`) — that registry, not `providers/__init__.py:build_providers`, is
+what `--provider`/`harness_sources` resolves against.
 
 ## Skills
 
+Both are tracked in git and are Claude Code workflows, **not** part of the Python package.
+
 - **`/run`** — end-to-end screener skill (gather tickers → `uv run shortlist --json` →
   interpret scores/gates/coverage). `.claude/skills/run/SKILL.md`.
+- **`/prospect`** — web-only weekly discovery: hunts undervalued / breakout-poised US names,
+  vets them against the same gate logic, and returns a 5–8 name brief plus a copy-paste
+  `/deep` block. `.claude/skills/prospect/SKILL.md`. **This is the only discovery surface
+  left** — the package itself has no universe scan (`--tickers` or `--demo` only;
+  `data/nasdaq_universe.py` has no production importer), so after the scout retirement
+  `/prospect` is what answers "where do tickers come from".
 
 ## Qualitative research layer (`shortlist/research/`)
 

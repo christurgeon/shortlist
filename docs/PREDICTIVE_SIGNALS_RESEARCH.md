@@ -334,7 +334,8 @@ have, worth a backtest before the bigger builds:
 
 2. **We fetch analyst-recommendation history, then discard it.** The Finnhub
    `stock/recommendation` call returns ~4 months of dated consensus buy/hold/sell
-   counts, but the code keeps only the latest month (`data/sources.py`, `trend[0]`).
+   counts, but the code keeps only the latest month (`data/sources/finnhub.py:204`,
+   `trend[0]`).
    Retaining the history yields a **recommendation-*change* momentum** signal —
    **Jegadeesh, Kim, Krische & Lee (2004), *J. Finance*** found the *change* in
    consensus predicts returns while the *level* does not. One small code change
