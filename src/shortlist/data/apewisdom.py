@@ -1,7 +1,7 @@
 """Keyless WallStreetBets mention data via ApeWisdom (https://apewisdom.io/api/).
 
 A dependency-light leaf shared by the harness WsbSource (async, via to_thread) and
-the scout WsbHypeSignal (sync). One bulk GET of the wallstreetbets filter (page 1 =
+the WSB harness source. One bulk GET of the wallstreetbets filter (page 1 =
 top tickers by volume), normalized + disk-cached by fetch date. NEVER raises.
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ _DEFAULT_CACHE_DIR = ".cache/apewisdom"
 class WsbMention:
     """One ApeWisdom WSB row, normalized. `ticker` is the upcased symbol (dots kept,
     e.g. "BRK.B") used for downstream screening; the index keys it via norm_symbol().
-    `mention_delta_pct`/`rising` are derived HERE for the scout consumer; the bridge
+    `mention_delta_pct`/`rising` are derived HERE; the bridge
     re-derives the parallel StockMetrics fields from raw facts (ShortInterest pattern)
     — keep the two derivations in lockstep if you edit either."""
     ticker: str
@@ -111,7 +111,7 @@ def read_cached_boards(cache_dir: str = _DEFAULT_CACHE_DIR, *, before: Optional[
 
     **Reads only — never fetches.** Every day file this returns was written by an earlier
     `fetch_wsb_mentions` call, so this adds no network cost and no new cache contract; it
-    is the same shared-disk-cache pattern the scout FINRA fetcher uses against the harness
+    is the same shared-disk-cache pattern the FINRA fetcher uses against the harness
     `FinraSource` cache.
 
     ``before`` (ISO date, exclusive) bounds the window so a point-in-time caller cannot

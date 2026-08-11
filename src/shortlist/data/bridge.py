@@ -339,7 +339,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:
     soc = snap.social
     if soc:
         # rising/delta are re-derived here from raw facts (the ShortInterest pattern);
-        # the apewisdom leaf computes the parallel WsbMention fields for the scout
+        # the apewisdom leaf computes the parallel WsbMention fields
         # consumer — keep both derivations in lockstep if you edit either.
         m.social_mentions = soc.mentions
         m.social_rank = soc.rank

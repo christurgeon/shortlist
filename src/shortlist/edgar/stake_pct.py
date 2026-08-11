@@ -1,14 +1,7 @@
-"""Pure stake-% extraction from Schedule 13D / 13D-A cover pages.
+"""Percent-of-class extraction from Schedule 13D / 13D-A cover pages.
 
-ABSTAINS (None), never guesses: row 13 ("percent of class represented") is parsed per
-reporting-person cover page and the MAX is returned as the group-aggregate proxy — values
-outside (0, 100] are dropped; no parseable row -> None. Delta computations use the same
-rule on both sides, so max-vs-max is internally consistent.
-
-Rescued from the retired `scout/stake.py` on 2026-08-10. The 13D/A *stake-increase signal*
-was dropped on its INSUFFICIENT verdict (monthly alpha −2.0% raw / −4.4% scored, CIs
-entirely below zero — `docs/audits/2026-07-19-13d-a-stake-increase-backfill-verdict.md`);
-this extraction is not the signal, and `backtest/edgar_history.py` still uses it.
+Abstains (None) rather than guessing: row 13 is parsed per reporting-person page and the MAX
+returned as the group-aggregate proxy; values outside (0, 100] are dropped.
 """
 from __future__ import annotations
 

@@ -1,9 +1,7 @@
-"""Pure quality predicates for SC 13D discovery (spec §6, §14 #9/#11/#14).
+"""Filing classifiers for SC 13D: SPAC/shell, initial-13D, affiliate, marquee activist. Pure.
 
-The raw SCHEDULE 13D firehose is noise-dominated (verified 2026-06-28): SPAC shells,
-foreign holdcos, micro-cap shells, and affiliate/sponsor filings whose filer name echoes
-the subject. These predicates raise the signal-to-noise of the *digest* — the scorer + the
-market-cap gate remain the downstream skeptic.
+The raw SCHEDULE 13D firehose is noise-dominated — SPAC shells, foreign holdcos, micro-cap
+shells, and affiliate/sponsor filings whose filer name echoes the subject.
 """
 from __future__ import annotations
 

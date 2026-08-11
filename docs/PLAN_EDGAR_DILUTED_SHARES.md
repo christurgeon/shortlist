@@ -83,7 +83,7 @@ fine, so they never appeared in Gap 1.
 **[R2] MCD is a live garbage value on a scored surface.** `diluted_eps[0] = 11,952,819.65`,
 because `get_shares_outstanding_diluted()` returns MCD's count in **millions** (~716) while
 `net_income` is absolute dollars. `bridge.py:242` then yields `pe_ttm = 268.44 / 1.195e7 =
-2.25e-05`, which renders in the scout digest and feeds `pe_vs_history`. Fixing the EPS row
+2.25e-05`, which renders in the bot digest and feeds `pe_vs_history`. Fixing the EPS row
 pick removes the fallback for MCD and repairs this. **Note the residual:** the units hazard in
 `get_shares_outstanding_diluted()` itself is NOT fixed here — see §Deferred.
 
@@ -125,7 +125,7 @@ Additional surfaces, all previously unnamed:
 - **Research briefs are accession-cached**, so existing briefs will NOT regenerate; those
   tickers keep an LLM screening call reasoned over the old `dEPS`/`shrs` numbers
   (`research/assess.py:294-315`) until `--refresh`.
-- **Scout digest** prints "PE (ttm)" (`scout/report/sections.py:148`) — MCD's `2.25e-05`
+- **Bot digest** prints "PE (ttm)" (`bot/report/sections.py:148`) — MCD's `2.25e-05`
   becomes a real PE.
 - **`eps_cagr_ps` is currently DEGENERATE** for all 9: dividing every year's NI by one constant
   makes `cagr(diluted_eps) == cagr(net_income) == eps_cagr`. Not a regression, but any prior

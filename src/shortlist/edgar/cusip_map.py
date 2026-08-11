@@ -1,4 +1,4 @@
-"""CUSIP -> ticker resolver leaf for the 13F cloning originator (scout).
+"""CUSIP -> ticker resolver leaf for the 13F client.
 
 13F information tables identify holdings by 9-char CUSIP, not ticker. A layered resolver:
 

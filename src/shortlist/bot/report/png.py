@@ -57,7 +57,7 @@ def render_glance(vm: ReportVM) -> bytes:
     f_cell = _font(10 * s, bold=True)
 
     pad = 14 * s
-    d.text((pad, 10 * s), f"Scout daily dashboard — {vm.session.isoformat()}",
+    d.text((pad, 10 * s), f"Shortlist — {vm.session.isoformat()}",
            font=f_title, fill=FG)
 
     left = 70 * s                 # gutter for ticker labels

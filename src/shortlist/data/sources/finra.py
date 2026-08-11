@@ -89,7 +89,7 @@ class FinraSource(Source):
                           f"settlement {settlement}; result may be truncated",
                           file=sys.stderr)
                 if not truncated:
-                    # never cache a truncated set: the scout's short-interest
+                    # never cache a truncated set: the short-interest
                     # fetcher shares this file and requires the COMPLETE rows
                     # for the whole ~2-week settlement cycle
                     self._write_cache(settlement, rows)
@@ -117,7 +117,7 @@ class FinraSource(Source):
 
 
 # --- FINRA short interest (pure helpers) ----------------------------------
-# Single-sourced in data/finra.py so the sync scout fetcher shares one row-shape
+# Single-sourced in data/finra.py so every consumer shares one row-shape
 # definition (CLAUDE.md "edit … not in two places"). Re-exported under the historical
 # _finra_* names so call sites + tests that import them from here keep working.
 _finra_latest_partition = _finra.latest_partition

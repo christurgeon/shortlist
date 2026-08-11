@@ -11,9 +11,9 @@ from .stats import sue as _stats_sue
 # Names check_gates/check_flags/score can emit, DECLARATIVE ONLY: the append
 # sites keep their string literals (the byte-identical guarantee on score()),
 # tests/test_scoring_names.py AST-scans the emitters and asserts every
-# appended literal is declared here, and tests/scout/test_glossary.py asserts
+# appended literal is declared here, and tests/bot/test_glossary.py asserts
 # each name has an /explain glossary entry. Add a gate/flag -> declare it
-# here AND document it in scout/glossary.py, or CI fails.
+# here AND document it in bot/glossary.py, or CI fails.
 _FILING_STREAM_FLAGS = ("activist_13d", "recent_8k", "passive_13g",
                         "planned_insider_sale_144")
 KNOWN_GATES = frozenset({

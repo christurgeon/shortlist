@@ -2,7 +2,7 @@
 
 Pure + dependency-light (stdlib + Holding), the portfolio.py / _form4.py leaf pattern.
 The ONLY writer of positions.json is the bot; the daily run reads it but never writes it
-(see docs/POSITION_MONITOR.md §3.1). Atomic writes mirror ScoutState._save.
+(see docs/POSITION_MONITOR.md §3.1). Writes are atomic.
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def load_store(path) -> dict:
 
 
 def save_store(path, store: dict) -> None:
-    """Atomic write (PID-unique sibling temp + os.replace), the ScoutState._save pattern."""
+    """Atomic write: PID-unique sibling temp + os.replace."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")

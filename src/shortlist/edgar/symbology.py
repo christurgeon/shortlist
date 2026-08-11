@@ -1,13 +1,12 @@
-"""Point-in-time CIK<->ticker resolver for the Phase-2 backfill (survivorship correction).
+"""Point-in-time CIK<->ticker resolution.
 
-Forward (CIK->ticker, 13D): active CIK -> live company_tickers.json; delisted CIK -> nearest
-Wayback snapshot <= the event date. Reverse (ticker->CIK, FINRA): archive-only, None for the
-~82% of FINRA's OTC universe absent from company_tickers.json (reported as an abstention rate).
-See docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md §8/§16/§17. Free/keyless; caches forever;
-polite to archive.org (~1 req/s). Never raises to the caller.
+Forward (CIK->ticker): active CIK -> live `company_tickers.json`; delisted CIK -> nearest
+Wayback snapshot at or before the event date. Reverse (ticker->CIK) is archive-only and
+abstains for the ~82% of FINRA's OTC universe absent from `company_tickers.json`. Keyless,
+caches forever, polite to archive.org. Never raises.
 
-SERIAL-ONLY (L1): the module-level request throttle is not thread-safe. The backfill coordinator
-resolves serially; do not share one Symbology across threads without adding a lock.
+SERIAL-ONLY: the module-level request throttle is not thread-safe. Do not share one
+`Symbology` across threads without adding a lock.
 """
 from __future__ import annotations
 

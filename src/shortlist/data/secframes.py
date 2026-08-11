@@ -19,11 +19,8 @@ would put restatement look-ahead into every verdict.
 Pure parsing is separated from I/O (the `_form4.py` / `data/finra.py` shared-leaf pattern) so
 the whole thing is testable offline.
 
-**No production caller since 2026-08-11.** Its consumer (the quality floor) retired with the scout
-(`docs/audits/2026-08-11-scout-retirement.md`), so nothing in `shortlist` imports this
-on the `/screen` or `/deep` path. Same deal as `shortlist/edgar/`: CI pins the PARSE
-shapes, but upstream shape drift is only caught by the live tests, which are
-`pytest.mark.live` and skip by default.
+**No production caller.** CI pins the parse shapes; the live fetch tests skip by
+default.
 """
 from __future__ import annotations
 

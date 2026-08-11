@@ -6,9 +6,6 @@
 # The bot runs as a NORMAL login user (not a service account) so the claude-CLI
 # research layer behind /deep keeps its auth in that user's ~/.claude.
 #
-# The autonomous scout this script used to schedule was retired on 2026-08-11
-# (docs/audits/2026-08-11-scout-retirement.md). Step 5 removes its stale units.
-#
 # By default the run-user is whoever invoked sudo (SUDO_USER); override any of the
 # settings below via the environment, e.g.:
 #
@@ -68,7 +65,6 @@ rsync -a \
   --exclude='/.xbrl_cache/' \
   --exclude='/.ruff_cache/' \
   --exclude='/research/' \
-  --exclude='/scout/' \
   --exclude='/state/' \
   --exclude='/backtest_*.json' \
   --exclude='/backtest_*.err' \
@@ -81,23 +77,11 @@ echo "==> 3/6  Build the venv in place (uv sync --extra bot --extra edgar) as $R
 sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra bot --extra edgar"
 
 echo "==> 4/6  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
-# `shortlist --demo` runs the scorer against the offline mock fixtures. It writes NOTHING:
-# the retired scout's `--demo` used to smoke-test here and silently wrote mock:demo rows
-# into the LIVE selection ledger on every deploy (18 days of them before it was caught).
+# `shortlist --demo` runs the scorer against offline fixtures and writes NOTHING. Keep it
+# that way: a smoke test that writes to state/ pollutes live data on every deploy.
 sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist' --demo >/dev/null && echo '    demo OK'"
 
 echo "==> 5/6  Install systemd units"
-# Remove the retired autonomous-scout units (2026-08-11). Idempotent, and load-bearing on a
-# box deployed before the retirement: the timer would otherwise keep firing a oneshot whose
-# ExecStart binary no longer exists, producing a nightly failure alert forever.
-for stale in shortlist-scout.timer shortlist-scout.service; do
-  if systemctl list-unit-files "$stale" --no-legend 2>/dev/null | grep -q .; then
-    echo "    removing retired unit $stale"
-    systemctl disable --now "$stale" 2>/dev/null || true
-    rm -f "$UNIT_DIR/$stale"
-  fi
-done
-
 # The failure-alert template. Generated inline like every other unit here (the installer
 # does NOT read deploy/*.service — see CLAUDE.md) because it needs $DEST/$RUN_USER baked in.
 # Its only remaining consumer is the opt-in accumulate timer below, which carries
@@ -128,9 +112,7 @@ systemctl daemon-reload
 # --- OPTIONAL: daily snapshot accumulation (OFF by default) -------------------
 # Enable with SHORTLIST_ACCUMULATE=1. Builds the >=24-day point-in-time history the
 # snapshot-replay backtest needs (unblocks SUE / Lazy-Prices validation). Runs at 21:30 UTC.
-# Memory is a non-issue (~48 MB). It is now the only scheduled harness run on the box, so
-# the overlap concern that set this time (a per-process EDGAR semaphore competing with the
-# scout for FMP's 250/day cap) no longer applies — the slot is kept simply because it works.
+# Memory is a non-issue (~48 MB).
 # Override the store dir with SHORTLIST_ACCUMULATE_ROOT (default: $DEST/state/snapshots,
 # which the rsync preserves across deploys). The backtest must read the SAME --root.
 if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then

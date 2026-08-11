@@ -1,10 +1,7 @@
-"""SEC DERA bulk Form 3/4/5 ingest -> InsiderTxn records + a per-insider trade-month index.
+"""SEC DERA bulk Form 3/4/5 ingest: `InsiderTxn` records + a per-insider trade-month index.
 
-Quarterly ZIPs (~12.8 MB each) at sec.gov/files/structureddata/data/insider-transactions-
-data-sets/. Publication lags a quarter, so this is the HISTORY side only; live detection
-reads Form 4 XML (scout/insider.py). Both produce the same InsiderTxn from RAW fields.
-
-Design: docs/FORM4_INSIDER.md
+Quarterly ZIPs (~12.8 MB) whose publication lags a quarter, so this is the HISTORY side only —
+live detection reads Form 4 XML (`insider.py`). Both build the same `InsiderTxn` from RAW fields.
 """
 from __future__ import annotations
 
@@ -25,7 +22,7 @@ from .sec_throttle import sec_throttle
 _BASE = ("https://www.sec.gov/files/structureddata/data/"
          "insider-transactions-data-sets")
 
-_UA = "shortlist-scout turgechr@duck.com"
+_UA = "shortlist turgechr@duck.com"
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -257,7 +254,7 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
     Memory: quarters are processed ONE AT A TIME (`_index_from_zip` per path, merged into
     `idx` and discarded) -- the parsed InsiderTxn list for a quarter never coexists with
     another quarter's, and the ~900k-submission full-history case never materializes as one
-    list. This runs on a 1.9 GB VPS alongside the live daily scout.
+    list. This runs on a 1.9 GB VPS.
     """
     paths = ensure_quarters(quarters, cache_dir, identity)
     downloaded = sorted(p.name.removesuffix("_form345.zip") for p in paths)

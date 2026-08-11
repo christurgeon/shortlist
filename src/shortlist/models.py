@@ -271,5 +271,5 @@ def rank_key(card) -> tuple[bool, float, float]:
     tiebreaker. composite is rounded to 0.1 (scoring.py), so confidence only decides
     exact ties — a higher composite always wins (we never bury a strong-but-thin name).
     getattr-based so it also works on the duck-typed cards enrich() accepts. Single
-    source of truth for every sort site (screen, research, scout)."""
+    source of truth for every sort site (screen, research, bot)."""
     return (getattr(card, "scored", True), card.composite, getattr(card, "confidence", 1.0))

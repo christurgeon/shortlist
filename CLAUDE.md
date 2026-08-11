@@ -62,13 +62,8 @@ logic of their own:
   Scheduling ships OFF. See `HARNESS.md` → "Feeding the snapshot path".
 The product surface on top of them is the **Telegram bot** (`shortlist.bot.*`,
 `shortlist-bot`): `/screen`, `/deep`, and the position monitor (`/add`, `/thesis`, `/hold`,
-`/remove` — `docs/POSITION_MONITOR.md`). Delivery + bot hardening: `docs/NOTIFICATIONS.md`.
+`/remove` — `docs/POSITION_MONITOR.md`).
 Run **one** bot instance — two concurrent `getUpdates` pollers 409.
-
-**The autonomous scout was retired on 2026-08-11** — read
-`docs/audits/2026-08-11-scout-retirement.md` before proposing anything that rebuilds it.
-Its verdicts are measured and committed; reversing one needs new evidence, not a new
-reading of the old.
 
 ## Deploying to the VPS (the ONE command)
 
@@ -79,9 +74,11 @@ changes nothing in production until deployed. From a checkout of the merged bran
 sudo bash deploy/install_opt_shortlist.sh     # rsync + uv sync + units + daemon-reload + bot restart
 ```
 
-Idempotent, handles everything. It also **removes the retired `shortlist-scout` units** on a
-box deployed before 2026-08-11 — without that the timer keeps firing a oneshot whose
-ExecStart binary no longer exists, i.e. a nightly failure alert forever.
+Idempotent, handles everything. **`/opt/shortlist` is a git checkout of `origin/main`**, so
+the supported form is `cd /opt/shortlist && sudo git pull && sudo bash
+deploy/install_opt_shortlist.sh` — `git pull` handles deletions. **Never `rm -rf` the source
+tree**: the installer derives `SRC` from its own path, so running it from `/opt/shortlist`
+makes `SRC == DEST` and the rsync copies onto itself, leaving nothing to restore from.
 
 **GOTCHA — running the installer FROM `/opt/shortlist` is a silent no-op deploy.** `SRC` is
 derived from the script's own path, so `cd /opt/shortlist && sudo bash deploy/install_opt_shortlist.sh`
@@ -97,9 +94,8 @@ opt-in `shortlist-accumulate` timer is generated now, but the rule still bites: 
 `tests/test_deploy_units.py` pins this.
 
 **GOTCHA — the deploy smoke test must stay read-only.** It runs `shortlist --demo` against
-offline fixtures. The retired scout's `--demo` used to smoke-test here and silently wrote
-`mock:demo` rows into the LIVE selection ledger on every deploy — 18 days of them before it
-was caught.
+offline fixtures. Anything that writes to `state/` from a smoke test pollutes live data on
+every deploy.
 
 ## Dev workflow (uv)
 
@@ -239,10 +235,8 @@ shape + helpers are single-sourced in `data/finra.py`.
 ## The EDGAR client library (`shortlist/edgar/`)
 
 Importable SEC/EDGAR clients with **no production caller** — nothing on the `/screen` or
-`/deep` path imports them. They are the surviving data leaves of the autonomous scout,
-retired 2026-08-11 (`docs/audits/2026-08-11-scout-retirement.md`); the data is still worth
-reaching by hand during research. Implementation-level verified facts + landmines:
-`docs/EDGAR_ORIGINATORS.md`.
+`/deep` path imports them. They exist so the data is reachable by hand during research.
+Implementation-level verified facts + landmines: `docs/EDGAR_CLIENTS.md`.
 
 | Module | What |
 |---|---|
@@ -266,7 +260,7 @@ are `pytest.mark.live` + `skipif(not SEC_IDENTITY)` and skip by default. Run
 budget for every EDGAR-index caller. **Never give a client its own throttle** — that broke
 the funnel outright on 2026-08-04
 (`docs/audits/2026-08-05-discovery-funnel-audit.md`). Full rules (concurrency,
-retry/fallback, two rejected volume "optimisations"): `docs/EDGAR_ORIGINATORS.md`.
+retry/fallback, two rejected volume "optimisations"): `docs/EDGAR_CLIENTS.md`.
 
 **13F adds are detected on share count** (`sshPrnamt`), never `value` — `value` is
 quarter-end market value, so a price rise alone would read as conviction.

@@ -1,10 +1,9 @@
 """Guardrailed orchestration around `research.enrich` — kill-switch, auth probe, hard cap,
 wall-clock phase budget.
 
-Extracted from the retired scout orchestrator (`scout/daily.py:_research_phase`) on
-2026-08-10; the Telegram bot's `/deep` is now its only caller. The guardrails are the reason
-this is not just a call to `enrich()`: an unavailable `claude` CLI, a hung subprocess, or a
-config typo must degrade to a note rather than hang or crash the caller.
+The Telegram bot's `/deep` is its only caller. The guardrails are the reason this is not
+just a call to `enrich()`: an unavailable `claude` CLI, a hung subprocess, or a config typo
+must degrade to a note rather than hang or crash the caller.
 """
 from __future__ import annotations
 
@@ -15,10 +14,9 @@ from pathlib import Path
 
 from ..env import redact_secrets
 
-# File kill-switch, checked at both the current and the legacy pre-retirement path so an
-# existing `scout/STOP_RESEARCH` keeps working. Never silently break a kill switch.
-_STOP_FILES = ("research/STOP_RESEARCH", "scout/STOP_RESEARCH")
-_STOP_ENVS = ("SHORTLIST_NO_RESEARCH", "SCOUT_NO_RESEARCH")
+# File kill-switch for the research phase behind /deep.
+_STOP_FILES = ("research/STOP_RESEARCH",)
+_STOP_ENVS = ("SHORTLIST_NO_RESEARCH",)
 
 
 def _stopped() -> bool:

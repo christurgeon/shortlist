@@ -1,19 +1,13 @@
-"""Pure 8-K aggregation over normalized EFTS rows (data/efts.py).
+"""8-K item aggregation over normalized EFTS rows (`data/efts.py`). Pure.
 
-Two halves, one feed (design 2026-07-07):
-- POSITIVE POCKET (edgar:8k): filings whose items contain a configured AND-set (default
-  1.01∧3.03 — Lerman-Livnat 2010's only positive-drift pocket). A CONTESTED prior: Zhao
-  2017's unconditional 8-K sign is negative and filing-day moves reverse, so the signal
-  ships disabled at weight 0.5 and supplies attention, not direction.
-- NEGATIVE SET (edgar:8k_negative): items {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01} —
-  reliably negative 30-90d drift. Extraction here is deliberately BROAD (no SPAC/SIC/
-  suffix drops): a blank-check bankruptcy still vetoes.
+Two halves, one feed. A POSITIVE pocket: filings whose items contain a configured AND-set
+(default 1.01 AND 3.03). A NEGATIVE set: items {1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01},
+reliably negative over 30-90d, extracted BROADLY (no SPAC/SIC/suffix drops) so a blank-check
+bankruptcy still registers.
 
-Filter order is load-bearing: the `file_type != "8-K"` drop comes FIRST (EFTS `forms=8-K`
-filters root_forms and returns 8-K/A amendment rows — live-verified; an amendment would
-double-fire the originator and re-trigger the veto). CIK->ticker resolution ABSTAINS on a
-miss — `display_names` is used only as a name input to the SPAC check, NEVER as a ticker
-source (mis-binding risk; matches the backfill rule).
+Filter order is load-bearing: the `file_type != "8-K"` drop comes FIRST, because EFTS
+`forms=8-K` filters root_forms and returns 8-K/A amendment rows too. CIK->ticker resolution
+ABSTAINS on a miss; `display_names` is a name input to the SPAC check, NEVER a ticker source.
 """
 from __future__ import annotations
 

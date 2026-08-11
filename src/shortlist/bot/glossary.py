@@ -9,7 +9,7 @@ gate / advisory flag / discovery-only / research-only).
 
 Completeness is enforced, not hoped for: tests/test_scoring_names.py binds
 scoring.KNOWN_GATES/KNOWN_FLAGS to the emission-site literals, and
-tests/scout/test_glossary.py asserts every one of those names resolves via
+tests/bot/test_glossary.py asserts every one of those names resolves via
 lookup() -- adding a gate/flag without documenting it here fails CI.
 
 Alias partition (collisions assert at module load): concept entries own the
@@ -46,7 +46,7 @@ GLOSSARY: list[Entry] = [
           "SEC filing when an investor crosses 5% ownership WITH intent to "
           "influence (vs 13G = passive). Historically precedes positive "
           "drift: activists push operational/strategic change and "
-          "re-ratings. Here: the scout surfaces fresh initial 13Ds as watch "
+          "re-ratings. Here: fresh initial 13Ds surface as watch "
           "candidates, and the activist_13d flag marks one on a screened "
           "name — advisory only, never moves the score."),
     Entry("13G", "SEC filings", ("sc 13g", "schedule 13g"),
@@ -61,7 +61,7 @@ GLOSSARY: list[Entry] = [
           "Each event has an item number. On average 8-K news skews "
           "NEGATIVE and the filing-day pop often reverses, so a fresh 8-K "
           "means 'read it', not 'buy it'. Here: the recent_8k flag notes "
-          "one; certain reliably-bad items trigger the scout's negative "
+          "one; certain reliably-bad items trigger the negative "
           "veto (see 8-K negative-item veto)."),
     Entry("Form 4", "SEC filings", ("insider filing",),
           "Insider trade disclosure — officers, directors, and 10% owners "
@@ -69,7 +69,7 @@ GLOSSARY: list[Entry] = [
           "BUYS are informative (insiders buy for one reason); sells are "
           "noisy (tax, diversification). Clustered buys by several insiders "
           "are the strongest configuration. Here: Form 4s feed the insider "
-          "sub-score and the scout's discovery feed."),
+          "sub-score."),
     Entry("Form 144", "SEC filings", ("144", "rule 144"),
           "Notice of INTENT to sell restricted stock (typically insider "
           "shares). Mildly negative to neutral — often routine "
@@ -285,7 +285,7 @@ GLOSSARY: list[Entry] = [
           "('Lazy Prices'). Fires on LOW text similarity. Advisory only."),
     Entry("8-K negative-item veto", "Gates & flags",
           ("negative veto", "veto", "vetoed", "8k veto"),
-          "Scout-funnel drop, not a score: certain 8-K items — "
+          "A drop, not a score: certain 8-K items — "
           "going-concern doubt, defaults, delisting notices, restatements, "
           "auditor exits — are reliably negative over the following weeks, "
           "so a fresh match ejects the candidate LOUDLY before it burns a "
@@ -304,7 +304,7 @@ GLOSSARY: list[Entry] = [
           "much money is betting against the name. Shorts are informed on "
           "average: heavy or RISING short interest has a negative base "
           "rate, and the jump is sharper than the level. Here: feeds "
-          "crowded_short and the scout's short-interest jump scan — "
+          "crowded_short — "
           "attention, with the scorer deciding direction."),
     Entry("days to cover", "Finance concepts", ("dtc", "short ratio"),
           "Short interest ÷ average daily volume: how many days of normal "

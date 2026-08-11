@@ -1,6 +1,5 @@
 """Interactive Telegram bot: /screen, /deep and the position monitor (long-poll side).
 
-Design: docs/superpowers/specs/2026-06-06-scout-telegram-bot-design.md.
 The poll loop validates the allowlist, advances the offset, and enqueues commands;
 a single worker thread runs the existing run_harness -> build_report -> deliver chain.
 """

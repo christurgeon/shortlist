@@ -542,7 +542,7 @@ composite entirely). Assume yours will too. Before writing any code you MUST:
 | Sector-relative / peer-percentile scoring | §2.3 — highest-leverage **scoring** fix; subsumes the cross-sector band misfire most absolute metrics inherit |
 | Earnings-call transcripts + DEF 14A proxy | §3.1 (deferred) — **highest-leverage research-layer next step** per the reverse-DCF red-team |
 | News / event tone | `DATA_SOURCES.md` A5 (GDELT); EDGAR 8-K/13D/13G/144 events already SHIPPED |
-| Portfolio-level exposure/concentration | scout `_Portfolio` section SHIPPED (see `CLAUDE.md`) |
+| Portfolio-level exposure/concentration | bot `_Portfolio` section SHIPPED (see `CLAUDE.md`) |
 
 ### Net-new clues (no home yet — feed AND value both unproven)
 

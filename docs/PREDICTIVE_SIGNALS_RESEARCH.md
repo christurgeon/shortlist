@@ -371,7 +371,7 @@ have, worth a backtest before the bigger builds:
   conviction is unknowable; tracker "politician returns" are reconstructions from
   range midpoints and assumed fills; and the disclosure-day pop is partly *caused* by
   copy-trading flow (reflexive — an auto-copier systematically buys its own pop). If
-  ever built: a scout **discovery originator** on the FINRA short-interest pattern
+  ever built: a bot **discovery originator** on the FINRA short-interest pattern
   (contested prior, ships disabled, attention-not-direction — the scorer + gates
   judge, the selection ledger measures), keyed on **cluster buys** (several members,
   same name/window — the only slice the literature leaves plausible), sourced from

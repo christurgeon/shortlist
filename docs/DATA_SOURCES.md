@@ -252,7 +252,7 @@ not a new sub-score or hard gate.
   eFD) but PDF/HTML-shaped — free-source feasibility unverified.
 - **Wire-in (revised):** ~~`gov_contract_momentum` and `congress_net_buy` → a new low-weight
   sub-score in `scoring.py`~~ — off the table on the evidence above. If congressional trades
-  are ever wired: a scout **discovery originator** on the FINRA short-interest pattern
+  are ever wired: a bot **discovery originator** on the FINRA short-interest pattern
   (contested prior, ships disabled, cluster-buys only, selection-ledger-measured), never a
   scored leg and never auto-execution.
 

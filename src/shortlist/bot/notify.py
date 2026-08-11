@@ -169,7 +169,7 @@ def deliver(notifier, *, png: bytes | None, html: str | None, text: str, caption
             failures.append("photo")
     if html is not None:
         sent_any = True
-        if not notifier.send_document(html.encode("utf-8"), f"scout-{session}.html", caption):
+        if not notifier.send_document(html.encode("utf-8"), f"shortlist-{session}.html", caption):
             failures.append("document")
     if (failures or not sent_any) and not notifier.send_message(text):
         failures.append("message")

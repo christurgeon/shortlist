@@ -16,9 +16,9 @@ def test_tag_escapes_text_content_and_attrs():
 
 
 def test_document_is_self_contained_html():
-    out = document("Scout — 2026-06-04", png_b64=None, body="<p>hi</p>")
+    out = document("Shortlist — 2026-06-04", png_b64=None, body="<p>hi</p>")
     assert out.startswith("<!DOCTYPE html>")
-    assert "<style>" in out and "Scout — 2026-06-04" in out and "<p>hi</p>" in out
+    assert "<style>" in out and "Shortlist — 2026-06-04" in out and "<p>hi</p>" in out
 
 
 def test_document_embeds_png_when_present():

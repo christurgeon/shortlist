@@ -113,7 +113,7 @@ gates:
   #
   # $300M sits inside the $0.3-10B band docs/audits/2026-07-26-funnel-composition-audit.md
   # identifies as retail-accessible, and keeps 46% of picks across 19 of 25 sessions. The
-  # untradeable tail below it was cut earlier by the retired scout.investable_floor
+  # untradeable tail below it is not filtered elsewhere any more
   # (a $100M cap floor plus a $500k/day DOLLAR-volume floor), so this gate no longer has to
   # double as a liquidity proxy -- which it was always bad at, since cap does not tell you
   # whether a $200M name trades $600k/day or $30k/day.
@@ -527,9 +527,7 @@ edgar_events:
     stale_after_8k: false
     activist_13d_note: false
 
-# Telegram bot (shortlist-bot): /screen, /deep, and the position monitor.
-# The autonomous scout that used to own this block was retired on 2026-08-11 —
-# see docs/audits/2026-08-11-scout-retirement.md.
+# Telegram bot (shortlist-bot): /screen, /deep, and the position store.
 bot:
   poll_timeout_s: 25        # getUpdates long-poll seconds
   max_screen: 10            # max tickers accepted by one /screen
@@ -562,12 +560,9 @@ portfolio:
   store: positions.json    # bot-owned source of truth (gitignored); atomic writes
   decisions: decisions.jsonl   # append-only decision ledger (gitignored)
   max_holdings: 50         # safety cap; over this, screen the cap + WARN (never silent-drop)
-  # INERT since 2026-08-11 — READ BEFORE TRUSTING. Held-name 8-K alerting is NOT armed.
-  # `bot/monitor.py:compute_alerts`/`heartbeat` are pure and still tested, and the report
-  # still RENDERS a `positions_monitor` payload — but the only thing that ever BUILT that
-  # payload was the retired scout's nightly run (`scout/daily.py`), so nothing calls them.
-  # Kept (not deleted) because re-wiring the alerts into `/portfolio` is a small change and
-  # is the open decision; see TODO.md and docs/POSITION_MONITOR.md.
+  # INERT — held-name 8-K alerting is NOT armed. `bot/monitor.py` is pure and tested and the
+  # report still renders a payload, but nothing builds one. Kept because wiring it into
+  # /portfolio is small and is the open decision; see TODO.md.
   monitor:
-    enabled: false         # was `true`, which advertised alerting that cannot fire
+    enabled: false
     items: ["1.03", "2.04", "4.02"]   # v1 clean-negative subset (§5.1); widen on evidence

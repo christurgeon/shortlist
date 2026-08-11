@@ -11,7 +11,7 @@ class WsbSource(Source):
     """Keyless WSB social mentions via ApeWisdom. Bulk-loads the top WSB tickers
     ONCE per run (the FinraSource fetch-once-reuse precedent), indexes by normalized
     symbol, and serves per-ticker lookups as O(1) dict hits. Disk-cached by fetch date.
-    No API key, no config — cache_dir is shared with the scout WsbHypeSignal."""
+    No API key, no config — cache_dir is shared across consumers."""
 
     name = "wsb"
 

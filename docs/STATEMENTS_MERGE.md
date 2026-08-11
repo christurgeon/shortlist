@@ -228,6 +228,6 @@ showing `share_count_cagr` / `asset_growth` / `accruals` / `total_assets` non-nu
 
 ## 7. Deployment
 
-Standard flow — the live scout/bot run from `/opt/shortlist`, so nothing changes in
+Standard flow — the live bot/bot run from `/opt/shortlist`, so nothing changes in
 production until `git pull` + `sudo bash deploy/install_opt_shortlist.sh`. The accumulate
 timer starts capturing the recovered fields on its next run after that.

@@ -66,7 +66,7 @@ def run_health(signals: list["SignalStatus"], raw: int) -> tuple[str, list[str]]
 
 @dataclass
 class RunManifest:
-    """Persisted per-run record for observability (written under scout/)."""
+    """Per-run record carried by the report renderer."""
     session: date
     signals: list[SignalStatus]
     raw: int

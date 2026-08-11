@@ -1,21 +1,17 @@
 # Position Monitor — design (v1)
 
-> **PARTLY RETIRED 2026-08-11.** The position *store* and its commands (`/add`, `/hold`,
-> `/remove`, `/thesis`) are live. The **8-K alerting described here is NOT armed**: its only
-> producer was the retired scout's nightly run, so `compute_alerts`/`heartbeat` in
-> `bot/monitor.py` are pure, tested and uncalled, and `portfolio.monitor.enabled` is now
-> `false`. Re-wiring them into `/portfolio` is an open decision.
-> See `docs/audits/2026-08-11-scout-retirement.md`.
+> **Alerting is NOT armed.** The position store and its commands (`/add`, `/hold`, `/remove`,
+> `/thesis`) are live. The 8-K alerting described below has no caller — `portfolio.monitor.enabled`
+> is `false`. Wiring it into `/portfolio` is an open decision.
 
 
-**Status:** implemented and shipped (PR #146, 2026-07-22) — deployed to `/opt/shortlist`.
+**Status:** store implemented; alerting not wired.
 Spec dated 2026-07-21; this document remains the design authority. v2 items in §10 are
 still deferred.
 
 Tells you when something material and verifiable is **filed against a name you own**. It is
 a filings watch, not a selling system.
 
-See `AUTONOMOUS_SCOUT.md` (discovery), `NOTIFICATIONS.md` (delivery), and the repo
 `CLAUDE.md` (design premise).
 
 ---
@@ -159,7 +155,7 @@ The bot and the daily timer are separate processes. Rather than lock a shared fi
 | Store | Owner | Contents |
 |---|---|---|
 | `positions.json` | **bot** (interactive commands only) | tickers, shares, thesis, `entry_card` |
-| `ScoutState` | **daily run** (already its exclusive owner) | `position_alerts_seen` — the dedup ledger, nothing else |
+| `the bot's state` | **daily run** (already its exclusive owner) | `position_alerts_seen` — the dedup ledger, nothing else |
 
 This matters. Atomic `os.replace` prevents a torn file but **not a lost update**: if both
 processes wrote the same file, the daily run would read at 22:30, spend tens of seconds
@@ -169,15 +165,15 @@ breaking the one invariant that keeps this feature unmuted. Split ownership remo
 failure mode instead of documenting it.
 
 **The daily run READS `positions.json` (bot-written) but never writes it** — the monitor
-step and the `set_held` wiring both only read it, and write their state into `ScoutState`.
+step and the `set_held` wiring both only read it, and write their state into `the bot's state`.
 That read is safe against a concurrent bot write with no lock: atomic `os.replace` swaps the
 directory entry to a new inode, and a POSIX reader either opens the old inode (and reads it
 whole) or the new one (whole) — **never a half-written file**. The monitor sees a
 possibly-one-cycle-stale but always internally-consistent snapshot; a `/add` mid-run is
-simply picked up next digest. (Verified: `bot.py` has zero `ScoutState` references and the
+simply picked up next digest. (Verified: `bot.py` has zero `the bot's state` references and the
 daily run is `positions.json`'s sole reader-not-writer — the exclusivity is real. The one
 rule an implementer must honor: **the daily monitor never writes `positions.json`.** If a
-future "mark alerted" needs per-position state, it goes in `ScoutState`, not the store.)
+future "mark alerted" needs per-position state, it goes in `the bot's state`, not the store.)
 
 ### 3.2 Schema
 
@@ -296,7 +292,7 @@ important as the alert for a CRUD-first feature:
 - **The `/add` success reply teaches the next step** — confirms the holding count and points
   at `/portfolio`.
 
-New user-facing terms require `scout/glossary.py` entries (the AST-scan test enforces it).
+New user-facing terms require `bot/glossary.py` entries (the AST-scan test enforces it).
 
 ## 5. The trigger
 
@@ -323,7 +319,7 @@ name. Same signal, opposite side of the funnel — but a **narrower** item set, 
 sign of an item can differ by side (a pending control change is a reason not to *enter*, and
 often a reason to be pleased you *held*).
 
-**Dedup:** `8k:<accession>` recorded in `ScoutState.position_alerts_seen` via the existing
+**Dedup:** `8k:<accession>` recorded in `the bot's state.position_alerts_seen` via the existing
 `_append_capped` helper (copy `add_eightk_accessions`, `state.py:130`). A given filing
 surfaces exactly once, ever. **Cap sizing matters:** `_append_capped` evicts oldest past
 cap, and the veto map is 30-day-pruned — so an accession can only re-arm if it is evicted
@@ -339,7 +335,7 @@ design does not have.
 
 ### 5.2 Delivery — structurally rate-capped
 
-**The alert is a section in the existing daily digest, not a standalone message.** The scout
+**The alert is a section in the existing daily digest, not a standalone message.** The bot
 push already arrives daily; a held-name filing becomes a **new** section near the top of it
 (§6 — it is *not* the `_Portfolio` section, which the daily `build_report` never renders).
 Its `applies()` keys on **payload-presence, not alert-presence**: it returns True whenever
@@ -373,7 +369,7 @@ Starting quiet and widening is recoverable; starting loud and getting muted is n
 **Plain meaning leads; the item code is secondary provenance.** "Non-reliance on previously
 issued financial statements" does not read as *bad* to a human on a phone — so the first line
 says what happened in plain words, with the SEC item code trailing for the link/glossary. The
-three v1 glosses (also in `scout/glossary.py`, enforced by the §9 AST scan):
+three v1 glosses (also in `bot/glossary.py`, enforced by the §9 AST scan):
 
 - **4.02** → *"its past financial statements can no longer be relied on — a restatement is coming"*
 - **1.03** → *"filed for bankruptcy"*
@@ -408,7 +404,7 @@ No stance, no score, no recommendation — the alert routes to primary evidence 
 ## 6. Wiring
 
 - **`state.set_held` is fed from the position store.** It exists (`state.py:270`), is
-  called nowhere, and `funnel.py:32` already drops held tickers via `is_held` — so Scout
+  called nowhere, and `funnel.py:32` already drops held tickers via `is_held` — so Bot
   will re-surface names you own the moment positions exist, burning FMP deep-screen slots
   from a budget of ~10/day. Latent today (`held` is `[]`), real immediately after. ~10 lines.
 
@@ -427,7 +423,7 @@ No stance, no score, no recommendation — the alert routes to primary evidence 
      `_record_session_picks` (`daily.py:607`) — the "never crash an already-delivered run"
      precedent. The whole monitor is failure-isolated: any exception is caught + noted.
 
-- **New digest section** (`scout/report/`): copy `_ValidationScoreboard` (`sections.py:644`)
+- **New digest section** (`bot/report/`): copy `_ValidationScoreboard` (`sections.py:644`)
   — a display-only, byte-identical-when-absent section. Touches: `viewmodel.py` (`ReportVM`
   field + `build_view_model` kwarg), `report/__init__.py` (`build_report` kwarg forward),
   `sections.py` (one `Section` class + one `SECTIONS` entry, placed right after
@@ -463,7 +459,7 @@ portfolio:
 
 **FMP quota is why the holdings screen defaults to the free chain.** The harness makes ~13
 FMP calls/ticker against a 250/day free limit (≈19 tickers/day), and discovery already
-spends up to `scout.daily_x` = 10. Screening 12 holdings on the full chain would starve the
+spends up to `bot.daily_x` = 10. Screening 12 holdings on the full chain would starve the
 funnel. `bot.py:_free_sources` calls `digest_sources(base, include_fmp=False)` **directly**
 — `include_fmp` is a hardcoded `False` argument at the call site, not a `config.yaml` key
 (v1: hardcoded, not a config key). Verified: `digest_sources(include_fmp=False)` yields
@@ -494,19 +490,19 @@ Each has a close in-repo template to copy — this is pattern-matching, not inve
   render without a `TypeError` and is listed in `unpriced` (the §6 crash-fix regression guard).
 - **Dedup:** one accession surfaces exactly once across N consecutive sessions; the capped
   ledger never re-arms a recent alert on eviction. Template:
-  `test_scout_daily_veto.py:152` (fire-once across runs) + `:79` (cap round-trip).
+  `test_bot_daily_veto.py:152` (fire-once across runs) + `:79` (cap round-trip).
 - **`KNOWN_BREACH_KINDS` + AST scan** — a frozen set plus a scan asserting no alert kind is
   emitted outside it, each with a glossary entry. Enforceable where an earlier draft's "test
   that the §2 non-goals produce no alert" was not (§2 is English concepts). Template:
   `test_scoring_names.py` (whole file — AST walk + vacuity floor) + the glossary-binding
-  `tests/scout/test_glossary.py:71`.
+  `tests/bot/test_glossary.py:71`.
 - **Chain consistency:** `entry_card.sources` matches the monitor's chain.
 - **Quota:** the holdings screen resolves to the free chain (`include_fmp=False` is
   hardcoded in v1, not a config key — see §7).
 - **Section isolation + disabled-block invariance:** all *other* digest sections are
   byte-identical whether the monitor payload is present or absent, and absent `monitor:` →
-  discovery run byte-identical. Template: `test_scout_report_sections.py:82` (section
-  present-vs-absent) + `test_scout_daily_veto.py:297` (run-level disabled byte-identical).
+  discovery run byte-identical. Template: `test_bot_report_sections.py:82` (section
+  present-vs-absent) + `test_bot_daily_veto.py:297` (run-level disabled byte-identical).
 
 ## 10. Deferred, with reasons
 
@@ -518,7 +514,7 @@ Named so they do not creep back in.
 | **Hard-gate transitions** | Three of four are continuous-threshold crossings (`heavy_insider_selling` reads monthly-refreshed Finnhub MSPR), violating §2. And gate-diffing cannot distinguish "cleared" from "input was `None`" — every gate short-circuits on `None`, so one EDGAR timeout would clear a key and the next night's success would fire a false alert. Returns only when **abstention-aware** (using `ScoreCard.abstentions`) and **hysteretic** (re-fire only after N consecutive absent sessions and ≥90 days). |
 | **8-K items 2.05 / 2.06 / 3.01 / 5.01** | Matched by the sweep but **not alerted** in v1 (§5.1). 5.01 is often a favorable buyout; 2.05/2.06 are already-priced large-cap noise; 3.01 doesn't fire on a quality book. Widen the `items` config on engagement evidence. |
 | **`/positions` command** | Redundant with `/portfolio`; the bare list is either a dead view (no returns) or a disposition anchor (with returns). `/portfolio` is the single holdings view. |
-| **Engagement detector** (`last_prompted` + "ignored 3×") | Patronizing for a solo user who reads their own digest, and redundant with the firehose (the measurement seam). ScoutState carries only `position_alerts_seen`. |
+| **Engagement detector** (`last_prompted` + "ignored 3×") | Patronizing for a solo user who reads their own digest, and redundant with the firehose (the measurement seam). the bot's state carries only `position_alerts_seen`. |
 | **`entry_card` gates/flags/abstentions** | Captured only to feed a v2 gate-diff that is itself deferred (this table). v1 stores the minimal `composite`/`sources`/`as_of` seam. |
 | **Post-earnings re-underwrite** | Deferred pending engagement data. Likely v2 shape is **pull-only `/review <ticker>`** — thesis + delta-vs-entry + current card on demand, no push, no queue, no cadence machinery. |
 | **`dilution`** | Annual data, continuous threshold, slow quality drift — not a dated event. |

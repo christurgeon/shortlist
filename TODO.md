@@ -12,52 +12,33 @@ the scoring roadmap.
 > evaluates, and passes to `/deep` when they want a closer look."** *It is fine for a signal to
 > have no measurable edge* — that is `CLAUDE.md`'s design premise, not a defect.
 >
-> **Since the scout retirement (2026-08-11) discovery is the user's own research**, feeding
-> `/screen` and `/deep`. Work that makes a *supplied* name easier to judge outranks work that
-> measures forward returns. The price-feed-blocked alpha questions are not the top of this
-> list; several were retired outright with the evaluator.
+> **Discovery is the user's own research**, feeding `/screen` and `/deep`. Work that makes a
+> *supplied* name easier to judge outranks work that measures forward returns.
 
 ---
 
 # 1. Bot & report
 
-## Trim `report/` — it is still scout-shaped (2026-08-11)
+## Trim `report/` — sections with no producer
 
-`bot/report/sections.py` (845 lines) carries sections that no longer have a producer: funnel
-counts, per-signal status, the prior-picks scoreboard, and `_ValidationScoreboard` — whose
-validator (`scout/validate.py`) was deleted. `bot/telegram.py:_interactive_manifest` fabricates
-a `RunManifest` with `signals=[]` purely to satisfy that API, and `bot/models.py` still carries
+`bot/report/sections.py` still carries funnel counts, per-signal status and the prior-picks
+scoreboard, none of which anything builds. `bot/telegram.py:_interactive_manifest` fabricates
+a `RunManifest` with `signals=[]` purely to satisfy that API, and `bot/models.py` carries
 `RunManifest`/`SignalStatus`/`run_health`/`Candidate` only to feed it.
 
-It **renders correctly** — this is dead weight, not a defect, which is why it was left out of
-the retirement rather than rushed. The trim should also collapse `models.py` to whatever the
-slimmed renderer actually needs.
-
-Two comments still cite the deleted module by name — `sections.py:732` and `viewmodel.py:122`
-both reference `scout.validate.latest_max_age_days`. They are the only surviving mentions of
-any deleted module anywhere in `src/`; fix the prose with the code rather than separately.
-
-**Status:** identified and scoped during the retirement, deliberately not done.
-`docs/audits/2026-08-11-scout-retirement.md` §5.
+It renders correctly — dead weight, not a defect. The trim should collapse `models.py` to
+whatever the slimmed renderer actually needs.
 
 ## Held-name 8-K alerting is orphaned — wire it into `/portfolio`, or delete it (2026-08-11)
 
-`bot/monitor.py:compute_alerts`/`heartbeat` are pure, tested and **uncalled**: the only thing
-that ever built the `positions_monitor` payload was the retired `scout/daily.py`. The report
-still *renders* the payload (`report/sections.py:663`), and `tests/bot/test_monitor.py` still
+`bot/monitor.py:compute_alerts`/`heartbeat` are pure, tested and **uncalled** — nothing builds
+the `positions_monitor` payload. The report still renders it, and `tests/bot/test_monitor.py`
 passes against the orphaned functions, so the suite gives no signal that the feature is dead.
+`portfolio.monitor.enabled` is `false`.
 
-`portfolio.monitor.enabled` is now `false` (it read `true`, advertising alerting that cannot
-fire). The machinery is kept rather than deleted because re-wiring is small — `/portfolio`
-already loads the store and screens the holdings; it would need the 8-K veto lookup plus the
-`seen` set that used to live in `ScoutState`.
-
-**Decision needed:** wire alerts into `/portfolio` (the user asked to keep "research and
-portfolio", and this is the portfolio half), or delete `bot/monitor.py`, the renderer section
-and the config block. Do not leave it in the current half-state.
-
-**Status:** found by code review of the retirement commit; config made truthful, docs
-corrected (`docs/POSITION_MONITOR.md`, README, retirement audit §Decision), nothing wired.
+**Decision needed:** wire alerts into `/portfolio` (it already loads the store and screens the
+holdings; it would need the 8-K veto lookup plus a `seen` set), or delete `bot/monitor.py`,
+the renderer section and the config block. Do not leave it half-wired.
 
 ## `shortlist-accumulate` has NO failure alerting on the box (2026-08-10)
 
@@ -78,22 +59,37 @@ script → Telegram chain is untested in situ. Force it with a transient unit ca
 
 **Status:** accumulate is now the only scheduled unit, so this is the only alerting path left.
 
-## VPS remnants after the retirement deploy (2026-08-11)
+## Deploy recipe: `git pull` first, NEVER `rm -rf src`
 
-`/opt/shortlist` still holds `state/scout_state.json` (373 KB, now orphaned — the 203-pick
-ledger is archived at `docs/audits/2026-08-11-scout-retirement/ledger.json`) and the
-`scout/<date>/` artifact tree. The installer's rsync has **no `--delete`** and deliberately
-excludes `/scout/` and `/state/`, so neither is removed by deploying. Decide whether to delete
-them on the box or leave them as a local archive.
+`/opt/shortlist` is a **git checkout tracking `origin/main`**, not just an rsync target, so
+`git pull` already removes files deleted upstream. The documented recipe is the only correct
+one:
 
-Related standing caveat, and the sharper half: the same no-`--delete` rsync means the whole
-deleted `src/shortlist/scout/` package (~12k LOC) **stays on disk after the deploy, and stays
-importable as `shortlist.scout`** because `uv sync` installs the project editable. Nothing
-triggers it — the units and the `scout:` config block do go away — but the CLAUDE.md
-verification recipe (`git log --oneline -1` plus a grep for a symbol you just *added*)
-passes while the retired stack is fully present; it cannot detect a *removal*. Clear it
-explicitly on this deploy:
-`sudo rm -rf /opt/shortlist/src && sudo bash deploy/install_opt_shortlist.sh`.
+```bash
+cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh
+```
+
+Do **not** `rm -rf /opt/shortlist/src` first, however tempting given the rsync's missing
+`--delete`. That is destructive here: the installer
+derives `SRC` from its own path, so running it from `/opt/shortlist` makes `SRC == DEST` and
+the rsync copies the tree onto itself — with `src/` deleted there is nothing to restore it
+from, and step 3's `uv sync` then rebuilds the venv against a package with no code. Recovery is `git checkout -- src/`,
+because the repo is already at the right commit.
+
+Two hazards that only bite together, so both are worth keeping in mind: the `SRC == DEST`
+no-op is *harmless* when the content is already correct (which `git pull` guarantees), and the
+missing `--delete` is *harmless* on a git checkout (which handles deletions itself).
+
+**Status:** recipe corrected here and in CLAUDE.md. Two installer improvements are open —
+the smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
+changes, which is the worst place to fail; and the installer could refuse to run when
+`SRC == DEST` rather than reporting success.
+
+## VPS remnants
+
+`/opt/shortlist` still holds the orphaned `state/scout_state.json` and a `scout/<date>/`
+artifact tree from the old nightly run. Nothing reads either. Decide whether to delete them
+on the box or leave them as a local archive.
 
 ## A null `market_cap` still bypasses the size gate (2026-08-07)
 
@@ -201,8 +197,7 @@ cap — a scheduling/quota problem, not a host problem.
 
 Accumulate (42 tickers) alone runs ~550 calls/day against a 250/day free limit, which is why
 **23 of 24 store dates have ZERO fmp-won statements** and EDGAR supplies 100% of production
-statements. (The scout's ~130 calls/day left with it on 2026-08-11, which eases but does not
-close the gap.) Options: drop `--max-tickers` to ~18; remove `fmp` from the accumulate chain
+statements. Options: drop `--max-tickers` to ~18; remove `fmp` from the accumulate chain
 (it contributes nothing today); or paid **Starter** (~$14–20/mo).
 
 The free window is **not calendar-UTC-day aligned** (measured 2026-07-31: still "Limit Reach"
@@ -264,9 +259,6 @@ decision above goes the paid way.
 - **Pin the dev Python via `.python-version`** — a fresh 3.11 venv fails
   `test_block_bootstrap_ci_*` on a floating-point boundary that 3.13 doesn't hit, so a fresh
   clone hits a spurious local failure.
-- Module paths in `docs/EDGAR_ORIGINATORS.md` predate the 2026-08-11 move
-  (`scout/edgar_index.py` → `edgar/index.py`, other `scout/*.py` leaves → `edgar/*.py`). The
-  banner says so; updating them inline is cheap when next editing that file.
 
 ---
 
@@ -319,7 +311,3 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
   8-K still excludes zero. `docs/audits/2026-08-03-evaluator-rederivation.md` is the current
   record — quote it, not the older audits.
 
-**Status (2026-08-11):** the scout retirement retired ~340 lines of this file with the code they
-tracked. Two entries were closed by fixes that shipped alongside it (the `--demo` production-
-ledger write; the single-leg composite topping the digest). Open work is now the report trim,
-accumulate alerting, and the standing measurement/data-layer items above.

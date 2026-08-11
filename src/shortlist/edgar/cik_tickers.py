@@ -1,10 +1,8 @@
-"""CIK -> ticker resolver, common-stock preferred. Reads SEC company_tickers.json.
+"""CIK -> ticker resolver, common-stock preferred. Reads SEC `company_tickers.json`.
 
-Verified (2026-06-28): the file lists the common stock FIRST per CIK (PECE before
-PECEU/PECER/PECEW; GOOGL before GOOG*; BAC before BAC-PB), and first-occurrence alone
-is correct for 1,472/1,473 multi-ticker CIKs. So first-occurrence is authoritative and
-the suffix backstop is sibling-relative ONLY — a blanket 'de-prioritize W/U/R/-P' rule
-would mis-bind ~54 liquid issuers to a foreign-OTC (*F) or preferred sibling.
+The file lists the common stock FIRST per CIK, so first-occurrence is authoritative. The
+suffix backstop is sibling-relative ONLY — a blanket "de-prioritize W/U/R/-P" rule would
+mis-bind liquid issuers to a foreign-OTC (*F) or preferred sibling.
 """
 from __future__ import annotations
 

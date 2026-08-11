@@ -1,17 +1,8 @@
-"""Pure 13F information-table parsing + new-position diff for the marquee-fund cloning
-originator (scout). See docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md §1.
+"""13F information-table parsing, position aggregation, and new-position / material-add diffs.
 
-Fetch and pure aggregation are separated (the shared-leaf pattern) so the whole diff runs
-offline in tests. Live SEC requests go through the PROCESS-WIDE `sec_throttle()`
-(`scout/sec_throttle.py`) — this module used to own a private `SecThrottle`, which meant its
-~3 req/s ran on top of the Form 4 sweep's rate rather than inside one shared ceiling; see
-`docs/audits/2026-08-05-discovery-funnel-audit.md` §4. `SecThrottle` is re-exported here for
-back-compat.
-
-Marquee-fund new positions clone an established-positive academic prior (Martin &
-Puthenpurackal 2008; Cohen-Polk-Silli 2010 "best ideas"), measured from the FILING date
-(the 45-day disclosure lag is priced into the literature). Discovery plumbing only —
-scoring.score() is byte-identical, the downstream scorer + gates remain the skeptic.
+Fetch and pure aggregation are separated so the whole diff runs offline in tests. Adds are
+detected on SHARE COUNT, never `value` — `value` is quarter-end market value, so a price rise
+alone would read as conviction.
 """
 from __future__ import annotations
 

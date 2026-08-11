@@ -1,10 +1,7 @@
-"""Pure Form 4 insider math: parse, classify (Cohen-Malloy-Pomorski), score strength.
+"""Form 4 insider math: parse, classify (Cohen-Malloy-Pomorski), score strength. No I/O.
 
-NO I/O. The bulk-history side lives in scout/dera.py; both produce the SAME InsiderTxn from
-RAW fields (never edgartools' normalized view -- that layer drifted between versions and
-silently broke the accruals leg; see docs/audits/2026-07-12-accruals-leg-disable.md).
-
-Design: docs/FORM4_INSIDER.md
+The bulk-history side is `dera.py`; both build the SAME `InsiderTxn` from RAW filing fields,
+never edgartools' normalized view, which drifts between versions.
 """
 from __future__ import annotations
 

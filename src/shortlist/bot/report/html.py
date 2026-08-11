@@ -213,7 +213,6 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
          border:1px solid var(--line); border-radius:var(--radius); padding:4px 8px}
 .picks{display:flex; flex-direction:column; gap:3px}
 .pick{font:13px/1.5 var(--mono); color:var(--text-2)}
-.validation{display:flex; flex-direction:column; gap:3px}
 .verdict{font:13px/1.5 var(--mono); color:var(--text-2)}
 .verdict-ds{font:12px/1.5 var(--mono); color:var(--text-3); padding-left:14px}
 
@@ -230,7 +229,7 @@ def document(title: str, png_b64: str | None, body: str) -> str:
     glance = (f'<img class="glance" src="data:image/png;base64,{png_b64}" '
               f'alt="dashboard glance">' if png_b64 else "")
     header = (f'<header class="masthead"><div class="brand">{_LOGO}'
-              f'<span>Shortlist Scout</span></div>'
+              f'<span>Shortlist</span></div>'
               f'<h1>{b.esc(headline)}</h1>{datechip}</header>')
     return (
         "<!DOCTYPE html>\n<html lang='en'><head><meta charset='utf-8'>"

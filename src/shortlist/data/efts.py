@@ -4,7 +4,7 @@ The 13D-pattern daily index carries NO item codes; EFTS returns them inline
 (`_source.items`), so a full day of 8-Ks costs 3-6 requests instead of a header fetch
 per filing. Shared-leaf pattern (data/finra.py): the URL, normalization, day-cache
 contract, and windowing live here ONCE so the live EdgarEightKSignal, the negative-item
-veto sweep, and the batch backfill walker agree on one definition. No scout imports.
+veto sweep agree on one definition.
 
 Live-probed facts this module encodes (2026-07-07, twice — do not "fix" back):
 - `forms=8-K` filters on `root_forms` and RETURNS 8-K/A rows -> `file_type` is preserved
@@ -24,11 +24,8 @@ query through the same fetch discipline for the buyback originator (data/buyback
 its OWN cache namespace (`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/
 split/finality machinery lives here ONCE; only the params gain a `q` key when a phrase is set.
 
-**No production caller since 2026-08-11.** Its consumers (the 8-K and buyback originators) retired with the scout
-(`docs/audits/2026-08-11-scout-retirement.md`), so nothing in `shortlist` imports this
-on the `/screen` or `/deep` path. Same deal as `shortlist/edgar/`: CI pins the PARSE
-shapes, but upstream shape drift is only caught by the live tests, which are
-`pytest.mark.live` and skip by default.
+**No production caller.** CI pins the parse shapes; the live fetch tests skip by
+default.
 """
 from __future__ import annotations
 
@@ -329,7 +326,7 @@ def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,
     cache (fetch_eightk_window namespaces automatically whenever `q` is set); rows are tagged
     with the matched `phrase` and merged (accession dedup is the aggregator's job, never
     here). None = any phrase's window failed. Used by the 8-K-shaped buyback backfill (the
-    fetch factory in scout/backfill.py)."""
+    fetch factory)."""
     today = today or date.today()
     out: list[dict] = []
     for phrase in phrases:

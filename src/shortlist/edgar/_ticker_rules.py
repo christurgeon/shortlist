@@ -1,10 +1,4 @@
-"""Shared ticker/item normalization rules — pure, no I/O.
-
-A shared leaf in the `providers/_form4.py` / `providers/_gaap_tags.py` mould. `junk_suffix`
-and `normalize_items` were each defined in a different module and imported across module
-boundaries, so retiring any one of those modules would silently have broken the others
-(`docs/audits/2026-08-11-scout-retirement.md` §3.1). Single-sourced here instead.
-"""
+"""Shared ticker and 8-K item normalization. Pure, no I/O."""
 from __future__ import annotations
 
 import re

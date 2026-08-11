@@ -22,7 +22,7 @@ tripping** — and `quality.dilution` is commented out (`config.yaml:262-264`) s
 **Net effect: a JSON/CSV field goes `null` → number for 8 tickers. No score, gate, ranking or
 selection changes. On the 42 measured tickers, no flag changes either — all 8 recovered CAGRs
 are negative.** That is a UNIVERSE-scoped claim, not a population-scoped one: outside the 42
-(scout discovery, `/screen`, `/portfolio` — all through `EdgarSource`) the ON-by-default
+(bot discovery, `/screen`, `/portfolio` — all through `EdgarSource`) the ON-by-default
 advisory `dilution` flag becomes newly **evaluable** for names that previously abstained
 (`flags.dilution`, `min_share_cagr: 0.03`); it stays advisory-only and never affects
 `passed`/`composite`/`scored`. One more widening, live in the code: `_edgar_facts.py`'s

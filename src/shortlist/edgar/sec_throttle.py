@@ -1,15 +1,8 @@
-"""One process-wide sec.gov rate budget, shared by every scout SEC consumer.
+"""One process-wide sec.gov rate budget, shared by every SEC consumer.
 
-Why this is a module and not a per-signal object: a per-signal throttle cannot bound the
-*process's* request rate. On 2026-08-03/04 the Form 4 sweep (up to `edgar_index_daily_cap`
-= 2500 filings, one request each, previously unthrottled) exhausted SEC's fair-access
-budget mid-run, and the 13D originator, the DERA quarterly index and `company_tickers.json`
-all took 429s behind it — the 13D signal lost two full sessions. See
-`docs/audits/2026-08-05-discovery-funnel-audit.md` §4.
-
-`SecThrottle` originated in `thirteenf.py`, which already noted "a shared instance across
-signals stays polite" — this module is that shared instance. `thirteenf` re-exports the
-class for back-compat.
+A per-caller throttle cannot bound the *process's* request rate: one unthrottled sweep
+exhausts SEC's fair-access budget and every other caller takes 429s behind it. Never give a
+client its own throttle.
 """
 from __future__ import annotations
 
@@ -32,7 +25,7 @@ DEFAULT_MIN_INTERVAL_S = 0.167
 
 
 class SecThrottle:
-    """Min-interval throttle + per-consumer request accounting. Thread-safe: the scout runs
+    """Min-interval throttle + per-consumer request accounting. Thread-safe: callers run
     signals on one worker thread, but the bot and the harness can call in concurrently.
 
     Counting exists because the 2026-08-04 cascade (the Form 4 sweep starving 13D and DERA)
@@ -78,5 +71,5 @@ _shared = SecThrottle()
 
 
 def sec_throttle() -> SecThrottle:
-    """The process-wide throttle. Every sec.gov request in the scout should pass through it."""
+    """The process-wide throttle. Every sec.gov request should pass through it."""
     return _shared

@@ -232,17 +232,6 @@ lmt, msft` returns the ranked dashboard in seconds, `/deep tsla` adds the Claude
 brief, and `/portfolio` re-screens your own holdings for exposure + deterioration alerts.
 No webhook / inbound ports; it only answers your allowlisted chat.
 
-> **The autonomous scout was retired on 2026-08-11.** It discovered candidates nightly from
-> free signal feeds and pushed a daily report. Every originator that reached the validation
-> evaluator came back INSUFFICIENT or KILL, the apparatus that could settle the rest was
-> blocked on a paid price feed, and the stack was 47% of the source and 59% of the tests.
-> Decision, evidence, and what survives:
-> [`docs/audits/2026-08-11-scout-retirement.md`](docs/audits/2026-08-11-scout-retirement.md).
-> Discovery is now your own research feeding `/screen` and `/deep`.
-
-Report delivery (Telegram + file artifact) and the inbound interactive path:
-[`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
-
 ### Interactive bot
 
 `shortlist-bot` turns the screen into a chat assistant — you drive it instead of a
@@ -286,10 +275,9 @@ brokerage sync, no cost basis. A portfolio larger than `portfolio.max_holdings` 
 is screened up to the cap with an explicit "alerts incomplete" warning naming the
 un-screened tickers — never a silent drop.
 
-Held-name 8-K alerting (the former **Holdings watch** section) is **not currently armed** —
-it was produced by the retired nightly run. `portfolio.monitor.enabled` is `false`; the
-alerting functions survive untouched in `bot/monitor.py` pending a decision on wiring them
-into `/portfolio`.
+Held-name 8-K alerting is **not currently armed** — `portfolio.monitor.enabled` is `false`.
+The alerting functions live in `bot/monitor.py`, pending a decision on wiring them into
+`/portfolio`.
 
 ### Telegram delivery setup
 
@@ -312,8 +300,7 @@ TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
    DM [@userinfobot](https://t.me/userinfobot), which replies with your id.)
 
 Both keys live in `.env` (never in `config.yaml`) per the secrets house rule. The bot
-picks them up on restart. Full delivery semantics:
-[`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md).
+picks them up on restart.
 
 **Kill-switch.** To skip the Claude research phase behind `/deep` without redeploying:
 

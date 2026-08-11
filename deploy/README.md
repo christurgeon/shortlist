@@ -9,12 +9,6 @@ copy them manually after reviewing paths.
 - **Snapshot accumulation** (`shortlist-accumulate.{service,timer}`) — builds the
   daily-snapshot history the backtest replay needs. See [Snapshot accumulation](#snapshot-accumulation-disabled-by-default).
 
-> **The autonomous scout was retired on 2026-08-11** and its units are gone. The installer
-> **removes** `shortlist-scout.{service,timer}` from any box deployed before that date —
-> load-bearing, because the timer would otherwise keep firing a oneshot whose `ExecStart`
-> binary no longer exists, i.e. a nightly failure alert forever. Decision and evidence:
-> [`../docs/audits/2026-08-11-scout-retirement.md`](../docs/audits/2026-08-11-scout-retirement.md).
-
 ---
 
 # Install and update
@@ -38,7 +32,7 @@ sudo SHORTLIST_USER=deploy SHORTLIST_DEST=/opt/shortlist bash deploy/install_opt
 
 > Source path, install dir, and run-user are configurable at the top of the script
 > (env-overridable: `SHORTLIST_SRC` / `SHORTLIST_DEST` / `SHORTLIST_USER`). The rsync
-> excludes for `/scout/` (legacy artifacts), `/research/`, `/state/` are **anchored** with a leading `/`
+> excludes for `/research/` and `/state/` are **anchored** with a leading `/`
 > on purpose — unanchored, they would also match the like-named source packages
 > `src/shortlist/research` and ship a broken wheel.
 
@@ -160,8 +154,7 @@ touch research/STOP_RESEARCH
 SHORTLIST_NO_RESEARCH=1 shortlist-bot
 ```
 
-Both legacy names (`scout/STOP_RESEARCH`, `SCOUT_NO_RESEARCH=1`) are still honoured —
-`research/phase.py` checks both so an existing kill switch cannot silently stop working.
+
 
 ## Failure alerts
 
@@ -338,9 +331,8 @@ FMP's paid Starter tier (~$14–20/mo) lifts the gating; Finnhub (60/min) and Ya
 ## Enabling the daily timer (opt-in — only when you decide to)
 
 **Easiest (system unit, staggered, real paths filled in):** the deploy script installs
-and enables it for you when you pass the opt-in flag — at **21:30 UTC**. It is now the only
-scheduled harness run on the box; the time was originally chosen to stagger it an hour ahead
-of the retired scout and is kept because it works:
+and enables it for you when you pass the opt-in flag — at **21:30 UTC**. It is the only
+scheduled unit on the box:
 
 ```bash
 sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh

@@ -1,9 +1,9 @@
 """Guards for the systemd units the installer generates INLINE.
 
-CLAUDE.md: `deploy/install_opt_shortlist.sh` does not read `deploy/*.service` (except the
-static `shortlist-bot.service`) — it writes each unit from a heredoc. So a `[Service]`
-setting added to one route silently never applies on the other. These tests pin the
-failure-alert wiring across both generated routes, and exercise the alert script itself.
+`deploy/install_opt_shortlist.sh` does not read `deploy/*.service` (except the static
+`shortlist-bot.service`) — it writes each unit from a heredoc, so a `[Service]` setting
+must go in the heredoc to take effect. These tests pin the failure-alert wiring and
+exercise the alert script itself.
 """
 from __future__ import annotations
 
@@ -36,31 +36,16 @@ def _heredoc(unit_name: str) -> str:
 
 
 def test_the_scheduled_route_wires_the_failure_alert() -> None:
-    """A crash on the timer must page, not sit silently in the journal. Accumulate is the
-    only generated timer left — the scout route was retired 2026-08-11."""
+    """A crash on the timer must page, not sit silently in the journal."""
     assert ONFAILURE in _heredoc("shortlist-accumulate.service")
 
 
-def test_installer_removes_the_retired_scout_units() -> None:
-    """On a box deployed before the retirement the scout timer would keep firing a oneshot
-    whose ExecStart binary no longer exists — a nightly failure alert forever."""
-    text = INSTALLER.read_text()
-    assert "shortlist-scout.timer shortlist-scout.service" in text
-    assert 'rm -f "$UNIT_DIR/$stale"' in text
 
 
-def test_installer_no_longer_generates_scout_units() -> None:
-    text = INSTALLER.read_text()
-    for unit in ("shortlist-scout.service", "shortlist-scout.timer"):
-        assert f'cat > "$UNIT_DIR/{unit}"' not in text
 
-
-def test_smoke_test_does_not_write_to_live_state() -> None:
-    """The retired scout's `--demo` smoke test wrote mock:demo rows into the LIVE selection
-    ledger on every deploy. Whatever replaces it must be read-only."""
-    text = INSTALLER.read_text()
-    assert "shortlist-scout' --demo" not in text
-    assert "'./.venv/bin/shortlist' --demo" in text
+def test_smoke_test_is_read_only() -> None:
+    """A smoke test that writes to state/ pollutes live data on every deploy."""
+    assert "'./.venv/bin/shortlist' --demo" in INSTALLER.read_text()
 
 
 def test_installer_generates_the_alert_template() -> None:
@@ -111,7 +96,7 @@ def _run_alert(tmp_path: Path, env_body: str, journal: str) -> tuple[int, str, s
     env["PATH"] = f"{bindir}:{env['PATH']}"
     env["SHORTLIST_ENV_FILE"] = str(env_file)
     proc = subprocess.run(
-        ["bash", str(ALERT_SH), "shortlist-scout.service"],
+        ["bash", str(ALERT_SH), "shortlist-accumulate.service"],
         capture_output=True, text=True, env=env, cwd=tmp_path,
     )
     payload = captured.read_text() if captured.exists() else ""
@@ -126,11 +111,11 @@ def test_alert_script_reads_export_prefixed_env(tmp_path: Path) -> None:
     rc, payload, _ = _run_alert(
         tmp_path,
         "export TELEGRAM_BOT_TOKEN=123456789:AAtesttoken\nexport TELEGRAM_CHAT_ID=42\n",
-        "scout crashed",
+        "accumulate crashed",
     )
     assert rc == 0
-    assert "scout crashed" in payload
-    assert "shortlist-scout.service failed" in payload
+    assert "accumulate crashed" in payload
+    assert "shortlist-accumulate.service failed" in payload
 
 
 @pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")

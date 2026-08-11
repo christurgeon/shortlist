@@ -16,7 +16,7 @@ _CAPTION_SUPPRESS_FLAGS = frozenset({"recent_8k", "passive_13g", "planned_inside
 def _caption(manifest, cards, top_n: int = 3) -> str:
     ordered = sorted(cards, key=rank_key, reverse=True)
     top = " · ".join(f"{c.ticker} {c.composite:.0f}" for c in ordered[:top_n])
-    lines = [f"Scout — {manifest.session.isoformat()}", f"Top: {top}"]
+    lines = [f"Shortlist — {manifest.session.isoformat()}", f"Top: {top}"]
     for c in ordered:
         notable = [f for f in (getattr(c, "flags", ()) or ()) if f not in _CAPTION_SUPPRESS_FLAGS]
         if notable:

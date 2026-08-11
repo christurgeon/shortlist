@@ -594,7 +594,7 @@ class _Glossary:
         return out
 
 
-# tickers per /deep command line — matches the bot's scout.bot.max_deep default (3)
+# tickers per /deep command line — matches the bot's bot.max_deep default (3)
 _DEEP_PER_LINE = 3
 
 
@@ -722,108 +722,8 @@ class _PositionMonitor:
         return out
 
 
-# ---- signal-validation verdicts (display-only; shortlist-scout validate + digest wiring) ----
-class _ValidationScoreboard:
-    """Display-only per-signal KILL/HOLD/INSUFFICIENT verdicts, read (with NO network at
-    digest time) from `scout/validate-latest.json` — see daily.py:VALIDATE_LATEST_PATH and
-    docs/superpowers/plans/2026-07-05-digest-verdicts.md. Purely informational — never wired
-    into scoring, gating, or ranking. NEVER renders a PROMOTE verdict (the evaluator itself
-    never emits one). `vm.validation` is the parsed `{"as_of", "source", "verdicts": [...]}`
-    envelope, already staleness-filtered by the builder (`scout.validate.latest_max_age_days`,
-    default 14) — None on every run where the file is absent/stale/malformed, so this
-    section is absent and the report stays byte-identical.
-
-    M2 (H2 immature-denominator fix, 2026-07): N_SEL/N_MEAS/the pooled fraction are now
-    MATURE-ONLY (immature events excluded from the denominator per spec §6.1/H2) rather
-    than pooling every event ever seen. That makes the fraction MORE time-sensitive than
-    before the fix — a young signal's mature cohort can be tiny (or empty) even with a
-    healthy, growing raw firehose, and will visibly change run-to-run as more events
-    mature. The existing 14-day staleness bound (`latest_max_age_days`) stays purely a
-    display-freshness guard, unrelated to (and not a fix for) this new time-sensitivity."""
-    id, title = "validation", "Signal validation (provisional)"
-
-    _DISCLAIMER = "display / provisional / survivorship-biased — not evidence, not advice."
-
-    def applies(self, vm) -> bool:
-        data = vm.validation
-        if not isinstance(data, dict):
-            return False
-        verdicts = data.get("verdicts")
-        return isinstance(verdicts, list) and len(verdicts) > 0
-
-    @staticmethod
-    def _verdict_line(v: dict) -> str:
-        ir = v.get("ir")
-        ir_s = f"{ir:.2f}" if isinstance(ir, (int, float)) else "—"
-        ci = v.get("alpha_ci")   # asdict() turns the SignalVerdict tuple into a list
-        if isinstance(ci, (list, tuple)) and len(ci) == 2:
-            ir_s += f" ±[{ci[0]:.4f}, {ci[1]:.4f}]"
-        # The digest never renders `notes`, so a level blanked by the measurability floor
-        # would read exactly like one that could not be computed (validate.py R-0f).
-        if v.get("alpha_suppressed"):
-            ir_s = "level suppressed — measurability floor"
-        notes = v.get("notes") or []
-        synthetic = " [SYNTHETIC]" if any("SYNTHETIC" in str(n) for n in notes) else ""
-        # B2/I4: a young live cohort must read "0/0 (+350 immature)", never a bare "0/0".
-        n_immature = v.get("n_immature") or 0
-        immature_s = f" (+{n_immature} immature)" if n_immature else ""
-        return (f"{v.get('signal', '?')} [{v.get('cohort_type', 'raw')}]: "
-                f"{v.get('verdict', '?')} (IR {ir_s}, blocks={v.get('effective_blocks', '—')}, "
-                f"n={v.get('n_measurable', 0)}/{v.get('n_selected', 0)}{immature_s}){synthetic}")
-
-    @staticmethod
-    def _double_sort_line(ds: dict) -> str:
-        # A suppressed spread must render as "—", not as a number. Suppression blanks the
-        # JSON fields, but this renderer previously never read `level_suppressed`, so a
-        # guard that blanked `spread_ci` in the artifact could still have printed a stale
-        # value here had the keys diverged. Read it explicitly (docs/EVALUATOR_GUARDS.md §3).
-        if ds.get("level_suppressed") and ds.get("spread_alpha_monthly") is None:
-            return (f"double-sort: spread SUPPRESSED (a bucket is below the pre-registered "
-                    f"measurable-fraction floor: high={ds.get('high_frac')}, "
-                    f"low={ds.get('low_frac')}), "
-                    f"n={ds.get('n_high', '—')}/{ds.get('n_low', '—')}")
-        alpha = ds.get("spread_alpha_monthly")
-        alpha_s = f"{alpha:.4f}" if isinstance(alpha, (int, float)) else "—"
-        ci = ds.get("spread_ci")   # asdict() turns the tuple into a list
-        ci_s = (f"[{ci[0]:.4f}, {ci[1]:.4f}]"
-                if isinstance(ci, (list, tuple)) and len(ci) == 2 else "—")
-        return (f"double-sort: spread α/mo={alpha_s}, CI={ci_s}, "
-                f"blocks={ds.get('effective_blocks', '—')}, "
-                f"n={ds.get('n_high', '—')}/{ds.get('n_low', '—')}")
-
-    def _meta_line(self, vm) -> str:
-        data = vm.validation or {}
-        return f"as of {data.get('as_of', '?')} ({data.get('source', '?')})"
-
-    def render_html(self, vm, h) -> str:
-        data = vm.validation or {}
-        rows = []
-        for v in data.get("verdicts") or []:
-            rows.append(h.tag("div", self._verdict_line(v), _class="verdict"))
-            ds = v.get("double_sort")
-            if ds:
-                rows.append(h.tag("div", self._double_sort_line(ds), _class="verdict-ds"))
-        meta = h.tag("div", self._meta_line(vm), _class="muted")
-        note = h.tag("div", self._DISCLAIMER, _class="muted")
-        return h.raw("div", meta + "".join(rows) + note, _class="validation")
-
-    def render_text(self, vm, detail) -> list[str]:
-        data = vm.validation or {}
-        verdicts = data.get("verdicts") or []
-        if not verdicts:
-            return []
-        lines = ["", "Signal validation (provisional):", self._DISCLAIMER,
-                 f"  {self._meta_line(vm)}"]
-        for v in verdicts:
-            lines.append(f"  {self._verdict_line(v)}")
-            ds = v.get("double_sort")
-            if ds:
-                lines.append(f"    {self._double_sort_line(ds)}")
-        return lines
-
-
 SECTIONS: list[Section] = [_MacroHeader(), _PositionMonitor(), _Leaderboard(), _Fundamentals(),
-                            _Research(), _DeepBlock(), _PriorPicks(), _ValidationScoreboard(),
+                            _Research(), _DeepBlock(), _PriorPicks(),
                             _Portfolio(), _Glossary(), _Footer()]
 
 
@@ -838,7 +738,7 @@ def render_html_body(vm: ReportVM) -> str:
 
 
 def render_text(vm: ReportVM, detail: Detail) -> str:
-    lines = [f"📊 Scout shortlist — session {vm.session.isoformat()}", ""]
+    lines = [f"📊 Shortlist — session {vm.session.isoformat()}", ""]
     for s in SECTIONS:
         if s.applies(vm):
             lines += s.render_text(vm, detail)   # every Section.render_text -> list[str]

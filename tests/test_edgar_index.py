@@ -75,7 +75,7 @@ def test_fetch_daily_records_outage_degrades_loudly(monkeypatch):
     import pytest
     from shortlist.edgar.index import fetch_daily_records
     _broken_edgar_module(monkeypatch)
-    with pytest.warns(UserWarning, match="edgar index fetch failed") as w:
+    with pytest.warns(UserWarning, match="index fetch failed") as w:
         assert fetch_daily_records(date(2026, 7, 1), 5, "x@y.z") == []   # still never-raises
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
@@ -84,7 +84,7 @@ def test_fetch_activist_records_outage_degrades_loudly(monkeypatch):
     import pytest
     from shortlist.edgar.index import fetch_activist_records
     _broken_edgar_module(monkeypatch)
-    with pytest.warns(UserWarning, match="edgar index fetch failed") as w:
+    with pytest.warns(UserWarning, match="index fetch failed") as w:
         assert fetch_activist_records(date(2026, 7, 1), 5, "x@y.z",
                                       lambda cik: None) == []            # still never-raises
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied

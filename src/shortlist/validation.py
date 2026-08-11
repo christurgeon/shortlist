@@ -1,7 +1,7 @@
 """Ticker validation — a dependency-free leaf (no heavy imports), safe on the
 always-on bot path. Two layers: a cheap input format pre-check (saves API quota
 on typos) and a post-screen no-data predicate (separates unknown symbols from
-real-but-thin/gated ones). Consumed by the scout bot today; importable by
+real-but-thin/gated ones). Consumed by the bot today; importable by
 daily.py / the harness CLI later.
 """
 from __future__ import annotations

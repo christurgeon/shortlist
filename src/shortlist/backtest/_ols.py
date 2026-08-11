@@ -1,9 +1,4 @@
-"""Stdlib ordinary-least-squares, shared by the residual-momentum leg.
-
-Rescued from the retired `scout/validate.py` on 2026-08-10 — `backtest/residual.py` was its
-only surviving consumer, and residual momentum is a shipped scoring leg
-(`momentum.residual`, ON), so this math could not leave with the orchestrator.
-"""
+"""Stdlib ordinary least squares, used by the residual-momentum leg."""
 from __future__ import annotations
 
 

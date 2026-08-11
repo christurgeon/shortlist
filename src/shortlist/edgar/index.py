@@ -1,12 +1,8 @@
-"""SEC EDGAR daily-index scanners: Form 4 submission fetch, initial 13D / 13D-A discovery.
+"""EDGAR daily-index scanners: Form 4 submission fetch, initial 13D and 13D/A discovery.
 
-A NEW ingestion path (the per-ticker providers/_form4.py does not do this). The Form 4
-daily index lists ~800-1,500 rows/day (CIK + accession only); `fetch_form4_submissions`
-(scout/insider.py's opportunistic-insider originator) fetches each filing's complete
-submission text in one request per filing. The retired `cluster_buys_from_records` same-
-session same-issuer heuristic (edgar:form4_cluster_buy) has been superseded by the CMP
-routine/opportunistic classification in scout/insider.py + scout/dera.py. Live fetching is
-bounded by a per-day cap; this module keeps the *pure* aggregation testable in isolation.
+The daily index lists ~800-1,500 rows/day (CIK + accession only), so each filing needs one
+further request for its submission text. Live fetching is bounded by a per-day cap; the pure
+aggregation stays testable in isolation.
 """
 from __future__ import annotations
 
@@ -86,7 +82,7 @@ def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[
     except Exception as exc:  # noqa: BLE001 — edgartools missing or SEC error -> degrade
         # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
         # must not read as "0 filings today".
-        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
+        warnings.warn(f"edgar: index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
 
 
@@ -94,7 +90,7 @@ def _walk_back_to_published(session: date, lookback: int,
                             fetch_day: Callable[[date], list[dict]]) -> tuple[list[dict], date]:
     """Shared walk-back shape for every "most-recent published SEC daily index" scanner
     (Form 4, initial 13D, 13D/A): the SEC daily index for `session` is not published
-    until ~02:00 UTC, so at the scout's after-close run time today's index is empty even
+    until ~02:00 UTC, so an after-close caller finds today's index empty even
     though the session has closed. An empty result means "not published yet," not "no
     activity" — so call `fetch_day` for `session`, then walk back up to `lookback` trading
     days until it returns non-empty. Returns (records, day_used); ([], session) if the
@@ -164,7 +160,7 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
         # which len(out) cannot tell it once any filing errors (I-6).
         return out, used, len(candidates)
     except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
-        warnings.warn(f"scout: form4 submission fetch failed: {redact_secrets(str(exc))}",
+        warnings.warn(f"edgar: form4 submission fetch failed: {redact_secrets(str(exc))}",
                       stacklevel=2)
         return [], None, 0
 
@@ -299,7 +295,7 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
     except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
         # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
         # must not read as "0 filings today".
-        warnings.warn(f"scout: edgar index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
+        warnings.warn(f"edgar: index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
 
 
@@ -360,7 +356,7 @@ def fetch_amendment_records(session: date, max_filings: int, identity: str,
                 continue
         return records
     except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
-        warnings.warn(f"scout: edgar 13D/A index fetch failed: {redact_secrets(str(exc))}",
+        warnings.warn(f"edgar: 13D/A index fetch failed: {redact_secrets(str(exc))}",
                       stacklevel=2)
         return []
 
