@@ -1,9 +1,9 @@
 """Shared ticker/item normalization rules — pure, no I/O.
 
-A shared leaf in the `providers/_form4.py` / `providers/_gaap_tags.py` mould: these three
-symbols were each defined in a different module and imported across module boundaries, so
-retiring any one of those modules would have silently broken the others. Single-sourced
-here instead.
+A shared leaf in the `providers/_form4.py` / `providers/_gaap_tags.py` mould. `junk_suffix`
+and `normalize_items` were each defined in a different module and imported across module
+boundaries, so retiring any one of those modules would silently have broken the others
+(`docs/audits/2026-08-11-scout-retirement.md` §3.1). Single-sourced here instead.
 """
 from __future__ import annotations
 
@@ -26,14 +26,6 @@ def junk_suffix(ticker: str) -> bool:
     """5th-letter security-type suffix on a 5-letter symbol. 4-char tickers ending in these
     letters (WOOF) are fine; dotted/hyphenated share classes are NOT dropped."""
     return len(ticker) == 5 and ticker.isalpha() and ticker[-1] in _FIFTH_LETTER_SUFFIXES
-
-
-def is_common_stock(sym: str) -> bool:
-    """A plausible US common-stock ticker: 1-5 alphabetic chars, and a 5-letter symbol whose
-    5th letter is NOT a security-type suffix."""
-    if not (sym.isalpha() and 1 <= len(sym) <= 5):
-        return False
-    return not (len(sym) == 5 and sym[-1] in _FIFTH_LETTER_SUFFIXES)
 
 
 def normalize_items(raw) -> tuple[str, ...]:

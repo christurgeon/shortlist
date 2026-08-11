@@ -286,10 +286,10 @@ brokerage sync, no cost basis. A portfolio larger than `portfolio.max_holdings` 
 is screened up to the cap with an explicit "alerts incomplete" warning naming the
 un-screened tickers — never a silent drop.
 
-The daily digest also carries a **Holdings watch** section: a held ticker hit by a fresh
-clean-negative 8-K (bankruptcy, debt acceleration, or a coming restatement) surfaces once,
-plain-English first, with a link to the filer's EDGAR 8-K list — a filings watch, not a
-selling system (see [`docs/POSITION_MONITOR.md`](docs/POSITION_MONITOR.md)).
+Held-name 8-K alerting (the former **Holdings watch** section) is **not currently armed** —
+it was produced by the retired nightly run. `portfolio.monitor.enabled` is `false`; the
+alerting functions survive untouched in `bot/monitor.py` pending a decision on wiring them
+into `/portfolio`.
 
 ### Telegram delivery setup
 

@@ -14,8 +14,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - name: Sync deps (core + edgar + scout extras + dev group)
-        run: uv sync --extra edgar --extra scout
+      - name: Sync deps (core + edgar + bot extras + dev group)
+        run: uv sync --extra edgar --extra bot
       - name: Lint (ruff)
         run: uv run ruff check src tests
       - name: Tests (hermetic; live tests are deselected by addopts)

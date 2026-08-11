@@ -1,8 +1,17 @@
 # The autonomous scout is retired (2026-08-11)
 
 **Decision:** `shortlist` is now two things — **research** (`/screen`, `/deep`, the 10-K
-brief layer) and **portfolio** (positions, the monitor). The nightly discovery orchestrator
-is deleted. Its SEC/EDGAR **clients** survive as an importable library with no caller.
+brief layer) and **portfolio** (positions: `/add`, `/hold`, `/remove`, `/thesis`). The
+nightly discovery orchestrator is deleted. Its SEC/EDGAR **clients** survive as an
+importable library with no caller.
+
+> **Correction (2026-08-11, from code review).** An earlier draft of this line said
+> "positions, **the monitor**". Only half the monitor survived. `bot/monitor.py`'s
+> `compute_alerts`/`heartbeat` are pure and still tested, and `report/sections.py` still
+> renders a `positions_monitor` payload — but the only producer of that payload was
+> `scout/daily.py`, so **held-name 8-K alerting no longer fires**. `portfolio.monitor.enabled`
+> is now `false` rather than advertising a feature that cannot run. Re-wiring the alerts into
+> `/portfolio` is an open decision, tracked in TODO.md.
 
 This is a scope decision, not a bug fix. It is written down because the code that
 implemented the scout is gone and the reasoning would otherwise go with it.

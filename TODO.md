@@ -40,6 +40,25 @@ any deleted module anywhere in `src/`; fix the prose with the code rather than s
 **Status:** identified and scoped during the retirement, deliberately not done.
 `docs/audits/2026-08-11-scout-retirement.md` §5.
 
+## Held-name 8-K alerting is orphaned — wire it into `/portfolio`, or delete it (2026-08-11)
+
+`bot/monitor.py:compute_alerts`/`heartbeat` are pure, tested and **uncalled**: the only thing
+that ever built the `positions_monitor` payload was the retired `scout/daily.py`. The report
+still *renders* the payload (`report/sections.py:663`), and `tests/bot/test_monitor.py` still
+passes against the orphaned functions, so the suite gives no signal that the feature is dead.
+
+`portfolio.monitor.enabled` is now `false` (it read `true`, advertising alerting that cannot
+fire). The machinery is kept rather than deleted because re-wiring is small — `/portfolio`
+already loads the store and screens the holdings; it would need the 8-K veto lookup plus the
+`seen` set that used to live in `ScoutState`.
+
+**Decision needed:** wire alerts into `/portfolio` (the user asked to keep "research and
+portfolio", and this is the portfolio half), or delete `bot/monitor.py`, the renderer section
+and the config block. Do not leave it in the current half-state.
+
+**Status:** found by code review of the retirement commit; config made truthful, docs
+corrected (`docs/POSITION_MONITOR.md`, README, retirement audit §Decision), nothing wired.
+
 ## `shortlist-accumulate` has NO failure alerting on the box (2026-08-10)
 
 The `OnFailure=` line is in the accumulate unit's heredoc and pinned by
@@ -67,8 +86,13 @@ ledger is archived at `docs/audits/2026-08-11-scout-retirement/ledger.json`) and
 excludes `/scout/` and `/state/`, so neither is removed by deploying. Decide whether to delete
 them on the box or leave them as a local archive.
 
-Related standing caveat: the same no-`--delete` rsync means the retirement's **renames and
-deletions leave stale `.py` files in `/opt/shortlist/src`**. Clear it on the retirement deploy:
+Related standing caveat, and the sharper half: the same no-`--delete` rsync means the whole
+deleted `src/shortlist/scout/` package (~12k LOC) **stays on disk after the deploy, and stays
+importable as `shortlist.scout`** because `uv sync` installs the project editable. Nothing
+triggers it — the units and the `scout:` config block do go away — but the CLAUDE.md
+verification recipe (`git log --oneline -1` plus a grep for a symbol you just *added*)
+passes while the retired stack is fully present; it cannot detect a *removal*. Clear it
+explicitly on this deploy:
 `sudo rm -rf /opt/shortlist/src && sudo bash deploy/install_opt_shortlist.sh`.
 
 ## A null `market_cap` still bypasses the size gate (2026-08-07)

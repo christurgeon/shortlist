@@ -22,6 +22,12 @@ universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request pe
 
 Rows with an unparseable `marketCap` are skipped **individually** (mirroring
 `secframes.parse_frame`), never failing the whole payload.
+
+**No production caller since 2026-08-11.** Its consumer (the investability floor) retired with the scout
+(`docs/audits/2026-08-11-scout-retirement.md`), so nothing in `shortlist` imports this
+on the `/screen` or `/deep` path. Same deal as `shortlist/edgar/`: CI pins the PARSE
+shapes, but upstream shape drift is only caught by the live tests, which are
+`pytest.mark.live` and skip by default.
 """
 from __future__ import annotations
 

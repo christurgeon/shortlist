@@ -378,7 +378,7 @@ structure, reintroducing the conditioning error being fixed.
 **Gate — the exact CI commands** (`.github/workflows/ci.yml`), not an approximation:
 
 ```
-uv sync --extra edgar --extra scout
+uv sync --extra edgar --extra bot
 uv run ruff check src tests
 uv run pytest -q
 ```
