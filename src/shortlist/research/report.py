@@ -114,6 +114,12 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     ]
     if a.silent_count:
         lines += [f"_{a.silent_count} reconciliation(s) unaddressed by the filing._"]
+    if a.text_similarity is not None:
+        pct = max(0.0, min(1.0, 1.0 - a.text_similarity)) * 100
+        lines += ["", "## Filing-text change (Lazy Prices)",
+                  f"- Risk-factor + MD&A language is **{pct:.0f}% rewritten** vs the "
+                  f"prior-year 10-K (cosine {a.text_similarity:.2f}). _Computed, not a "
+                  "filing quote; advisory context only._"]
     lines += ["", "## Moat",
               f"- **Trajectory:** {a.moat.trajectory or 'n/a'}",
               f"- {a.moat.summary}"]
