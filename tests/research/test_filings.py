@@ -107,7 +107,9 @@ class _FakeFiling:
     form = "10-K"
     def __init__(self, filing_date, period):
         self.filing_date, self.period_of_report = filing_date, period
+        self.obj_calls = 0
     def obj(self):
+        self.obj_calls += 1
         return _PriorTenK()
 
 
@@ -128,6 +130,9 @@ def test_prior_year_sections_returns_risk_and_mda_from_one_filing():
     risk, mda = _prior_year_sections("A", company_factory=_fake_company(rows))
     assert risk == "prior risk text"
     assert mda == "prior mda text"
+    # Pin the "zero extra network request" invariant mechanically: risk_factors
+    # and management_discussion must come off the SAME .obj() call, not two.
+    assert rows[1].obj_calls == 1
 
 
 def test_prior_year_sections_empty_without_a_prior_year():
