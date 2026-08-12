@@ -86,7 +86,110 @@ declined to act. Do not re-raise as high-leverage without new evidence.
 
 ---
 
-# 2. Measurement (backtest + snapshot replay)
+# 2. `/deep` as market research — external-review triage (2026-08-11)
+
+An outside review of the repo argued that `/deep` is **good issuer diligence but not market
+research**: it understands the company's filings far better than the company's market, peers,
+customers and expectations. Every claim below was **checked against the code before it was
+written down** — each carries a verdict, because roughly half of the review restated work that
+is already recorded elsewhere, and two of its scoring recommendations conflict with committed
+evidence rules.
+
+Ordering here follows the file's own bar: this whole section is *judging a supplied name*, so
+it outranks §3's alpha questions.
+
+## 2a. VERIFIED defects — small, worth building
+
+- **The brief cache cannot go stale on anything but filings.** `cache_key` is
+  `f"{tenk.accession}+{tenq_acc}"` (`research/filings.py:258`), consumed by
+  `research/__init__.py:55`. But the prompt also carries price, valuation, macro regime,
+  insider Form-4s, short interest, gov contracts, proxy and recent-8-K context
+  (`assess.py:_build_user_prompt`). A brief written the day before an earnings gap is served
+  unchanged. **Second, larger consequence: editing the prompt, the guards, or
+  `research.max_chars` does not invalidate a single cached brief** — the corpus under
+  `research/` silently mixes prompt generations. Fix is a wider key: prompt/schema version +
+  a hash of the quant/event context + an as-of day bucket. Small; the key is built in one
+  place and `is_cached` already keys off whatever string it is handed.
+- **The 10-Q contributes only MD&A.** `_tenq_mda` (`filings.py:64`) reads Part I Item 2 and
+  nothing else, so Part II **Item 1 (legal proceedings)** and **Item 1A (risk-factor updates —
+  the quarter's *changes*)** never reach the model, even though the YoY 10-K risk diff shows we
+  care about exactly that delta. Small: extend `FilingBundle`, `cap_bundle`, the prompt and the
+  grounding haystack the same way the 10-Q MD&A was added.
+- **8-Ks are detected, never read.** `assess.py:296-309` renders `form + (items …) + filed`
+  from the edgartools filings index. The substantive text is never fetched: Item 2.02 +
+  Exhibit 99.1 (earnings release **and guidance**), 4.02 (non-reliance/restatement), 5.02, 1.01,
+  2.01. This is the single largest freshness gap and it is primary-source, company-specific and
+  keyless — strictly better than adding news sentiment. Medium: needs an exhibit fetch, a char
+  cap, and a decision on prompt-only vs haystack (guidance quoted from an 8-K is *not* 10-K text,
+  so prompt-only unless the haystack learns per-document provenance).
+- **Evidence discipline is asymmetric.** Risks, red flags, added risks and reconciliation carry
+  `evidence` + a `verified` mark (`report.py:_findings_md`), while **moat, business model and
+  management/capital-allocation are bare prose** (`report.py:117-123`) — the three most
+  narrative-prone sections have the weakest standard. Medium: schema + prompt + renderer.
+  Scope it down to "moat sources and the management conclusion each require a quoted span,
+  run through the existing `_verify_grounding`" before designing a full
+  `claim/evidence_ids/source_type/source_date/url` ledger.
+
+## 2b. Filing content we do not extract (bigger, genuinely missing)
+
+Statement **notes** never reach the prompt — `assess.py:324-331` sends Item 1, Item 7, Item 1A
+and the 10-Q MD&A only. The notes hold segment reporting, revenue disaggregation, customer
+concentration, debt maturities/covenants, SBC, restructuring, acquisitions/goodwill, legal
+contingencies, tax and leases. Build as **targeted extractors, never "send all notes to
+Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity,
+(3) SBC & dilution, (4) concentrations & commitments, (5) acquisitions/goodwill, (6) legal
+contingencies. SEC's Financial Statement **and Notes** data sets are the structured route;
+edgartools text extraction is the cheap route. Sequence this **after** 2a.
+
+## 2c. Peers / market context — the review's headline gap
+
+A peer bundle (5–10 SIC/NAICS + size + revenue-mix matched names; growth, margins, ROIC,
+share-count growth, valuation, relative performance) is the review's top recommendation, and it
+is also **the enabling data for `docs/ASSESSMENT_GAPS.md` §2.3** (sector-relative percentiles
+replacing absolute bands) — do not re-spec §2.3 from scratch. Take the review's own constraint:
+**display it in `/deep`, do not feed it into the score** until it has cross-universe evidence.
+Cost is the blocker, not design: N peers × the per-ticker call budget against a 250/day FMP free
+cap (§4). The keyless route is SEC `companyfacts`/`frames`, which is also what `--source xbrl`
+already reads.
+
+## 2d. Recorded, NOT endorsed — where the review argues against committed rules
+
+- **"Split risk out of the composite."** `weights.risk: 0.10` is the *shipped* design of
+  `ASSESSMENT_GAPS.md` §2.9, deliberately a tilt. The review's point (low trailing vol is a
+  preference, not an expected-return claim) is fair as a **labelling/display** question —
+  expected-return evidence vs fundamental risk vs market exposure, shown separately. Changing
+  the composite is a scoring change and needs evidence, not an argument.
+- **"Disable `upside_to_target`."** Already recorded at `PREDICTIVE_SIGNALS_RESEARCH.md`
+  §Quick wins #1 (Brav & Lehavy: the *level* is negatively related to realised returns; the
+  *revision* predicts). Note the mechanical obstacle: the leg is **hard-coded**
+  (`scoring.py:569`) with mandatory thresholds (`config.yaml:45`) — unlike `shareholder_yield`
+  it cannot be switched off from config. The cheap, honest step is to make it
+  threshold-guarded/opt-out **with the default unchanged**, so a measurement can toggle it;
+  flipping the default without a point-in-time test is the same move the file's own bar
+  forbids.
+- **"Label the composite heuristic until a survivorship-free, delisting-adjusted, walk-forward,
+  multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
+  verbatim. No action; do not open a work item that restates it.
+- **Transcripts / estimate-revision history / 13F / news sentiment** are all already triaged in
+  `PREDICTIVE_SIGNALS_RESEARCH.md` (transcripts + estimates paid or no free point-in-time
+  source; 13F a Phase-2 candidate; social/news as trigger not valuation). The one live free item
+  there remains **recommendation-*change*** — we fetch 4 months of consensus history and keep
+  only `trend[0]` (`data/sources/finnhub.py:204`).
+
+## 2e. Net-new source ideas worth keeping (UNVETTED)
+
+Independent, non-issuer-authored industry data — the review's best net-new suggestion, since
+everything we read today is written by the company. Census QSS / Economic Census, BEA
+input-output, BLS PPI for industry pricing; then sector adapters rather than one universal
+feed: EIA (energy/utilities), ClinicalTrials.gov + openFDA (biotech/pharma), FDIC call reports
+(banks), DOT/BTS (airlines), FCC (telecom), USAspending backlog (defense — we already have
+`gov_contracts`). Cheap landing pattern: an **auxiliary** `Source` whose section is not a
+`KEY_OBJECT` (`_AUX_DEFAULTS`, `data/models.py:441`), exactly like `gov_contracts`/`lobbying` —
+it reaches the research layer without touching coverage, gates, flags or scores.
+
+---
+
+# 3. Measurement (backtest + snapshot replay)
 
 Ordering note: everything here answers an alpha question, which the prioritisation rule at the
 top ranks *below* work on judging a supplied name. Take these when they are cheap or when they
@@ -170,7 +273,7 @@ cap — a scheduling/quota problem, not a host problem.
 
 ---
 
-# 3. Data layer
+# 4. Data layer
 
 ## FMP quota is over-subscribed — a config-or-money decision, not a build
 
@@ -222,7 +325,7 @@ decision above goes the paid way.
 
 ---
 
-# 4. Code hygiene (fold in when next touching these files)
+# 5. Code hygiene (fold in when next touching these files)
 
 - **Optional guardrail:** ruff `C901` with a `max-complexity` (or a soft line ceiling) so
   mega-functions can't silently regrow. Its own small change, not bundled with a refactor.
@@ -241,7 +344,7 @@ decision above goes the paid way.
 
 ---
 
-# 5. Closed with a verdict — do not redo
+# 6. Closed with a verdict — do not redo
 
 One line each, so the next session doesn't re-derive them. Evidence is in `docs/audits/`.
 
