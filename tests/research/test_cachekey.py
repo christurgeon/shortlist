@@ -188,7 +188,69 @@ def test_prompt_fingerprint_covers_more_than_assess():
     in models.py; the aux context lines live in their own modules)."""
     assert set(cachekey._PROMPT_MODULES) >= {
         "assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
-        "gov_contracts", "lobbying", "earnings", "riskdiff"}
+        "gov_contracts", "lobbying", "earnings", "riskdiff",
+        "filings", "textsim"}
+
+
+# --- I1: insider trades hash direction (kind), not just a gross magnitude sum ---
+
+def test_insider_buy_vs_sell_changes_key():
+    """A CEO buy replaced by a CEO sell of the SAME magnitude must NOT read as
+    identical: `value` is an unsigned magnitude (providers/_form4.py:113-114),
+    direction lives in `kind`, and the old net-sum hash could not see a flip."""
+    buy = [{"date": "2026-08-01", "name": "A", "role": "CEO", "kind": "buy",
+            "value": 2_000_000.0}]
+    sell = [{"date": "2026-08-01", "name": "A", "role": "CEO", "kind": "sell",
+             "value": 2_000_000.0}]
+    assert _key(_Card(metrics=_M(insider_recent=buy))) != \
+        _key(_Card(metrics=_M(insider_recent=sell)))
+
+
+# --- I2: the DATA GAPS line (coverage status / abstentions) must move the key ---
+
+class _Coverage:
+    def __init__(self, providers=None, unavailable=None):
+        self.providers = providers or {}
+        self.unavailable = unavailable or []
+
+
+def test_coverage_provider_status_changes_key():
+    """Same null axis, different WHY (402 gated vs 429 rate-limited) must not
+    read as identical — assess.py renders the reason string into the prompt
+    (`_data_gaps_line` / `coverage_caveat._short_reason`)."""
+    gated = _Card(metrics=_M(),
+                  coverage=_Coverage(providers={"fmp": "gated_402"}, unavailable=["value"]))
+    limited = _Card(metrics=_M(),
+                    coverage=_Coverage(providers={"fmp": "rate_limited_429"},
+                                       unavailable=["value"]))
+    assert _key(gated) != _key(limited)
+
+
+def test_abstentions_change_key():
+    a = _Card(metrics=_M(), abstentions=[
+        {"field": "value", "scope": "subscore", "reason": "inapplicable"}])
+    b = _Card(metrics=_M(), abstentions=[
+        {"field": "quality", "scope": "subscore", "reason": "inapplicable"}])
+    assert _key(a) != _key(b)
+
+
+def test_card_without_coverage_or_abstentions_does_not_raise():
+    """Mirrors the stub cards in test_enrich.py: no `.coverage`, no `.abstentions`."""
+    assert _key(_Card(metrics=_M()))
+
+
+# --- M2: malformed rows in a .get-looping site must be skipped, not fatal ---
+
+def test_malformed_filing_events_do_not_raise():
+    assert _key(_Card(metrics=_M(filing_events=["oops"])))
+
+
+def test_malformed_insider_trades_do_not_raise():
+    assert _key(_Card(metrics=_M(insider_recent=["oops"])))
+
+
+def test_malformed_financial_series_rows_do_not_raise():
+    assert _key(_Card(metrics=_M(financial_series=["oops"])))
 
 
 def test_fingerprint_fallback_when_source_unavailable(monkeypatch):

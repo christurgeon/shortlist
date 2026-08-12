@@ -9,6 +9,7 @@ from ..models import rank_key
 from . import cachekey, claude_cli, report
 from .assess import assess as _assess
 from .filings import fetch_bundle as _fetch_bundle
+from .filings import log_abstain as _log_abstain
 from .filings import no_10k_reason as _no_10k_reason
 
 __all__ = ["enrich", "ResearchResult", "is_available"]
@@ -62,7 +63,13 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     # return {} for every name in the run.
     try:
         key = cachekey.brief_key(bundle, card, macro=macro, config=config)
-    except Exception:
+    except Exception as e:
+        # Silent-degrade-to-narrow-key is exactly the stale-forever mode this
+        # whole feature exists to close, so a ticker landing here systematically
+        # must be visible, not indistinguishable from a healthy cache hit.
+        # log_abstain already runs the message through redact_secrets.
+        _log_abstain("brief_key failed, falling back to the narrow accession key",
+                     card.ticker, e)
         key = bundle.cache_key
     if not refresh and report.is_cached(card.ticker, key, root):
         bp = report.brief_path(card.ticker, key, root)
