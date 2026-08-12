@@ -52,8 +52,12 @@ _CONFIDENCE_STEP = 0.05
 
 # Every module whose source shapes the prompt or the deterministic guards.
 # ADD TO THIS LIST when a new context-line renderer gets its own module.
+# `filings`/`textsim` produce `bundle.text_similarity` (the Lazy-Prices YoY
+# cosine rendered by `_similarity_line`); `filings` also owns `_filing_sections`
+# / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
-                   "gov_contracts", "lobbying", "earnings", "riskdiff")
+                   "gov_contracts", "lobbying", "earnings", "riskdiff",
+                   "filings", "textsim")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
 # content; cache's own values already move the key mechanically.
@@ -168,6 +172,30 @@ def _aux_lines(m, config: Optional[dict]) -> list[str]:
     return out
 
 
+def _gaps_line(card, config: Optional[dict]) -> str:
+    """The rendered DATA GAPS line (`assess._data_gaps_line`, built from
+    `card.coverage`/`card.abstentions` via `coverage_caveat.coverage_caveats`).
+    Hashed as the RENDERED string, same approach as `_aux_lines`: a future field
+    added inside the line is covered by construction. `assess` is already forced
+    into `sys.modules` by `_module_sources()` above (it's a `_PROMPT_MODULES`
+    entry), so this import is not new I/O and cannot introduce a cycle — `assess`
+    does not import `cachekey`. Mirrors `_build_user_prompt`'s own
+    `screening_call.enabled` gate, so the digest only reacts to a gaps line the
+    prompt would actually render. Any failure (a duck-typed stub with neither
+    `.coverage` nor `.abstentions`, or no `research` block at all) degrades to
+    "" — never raises."""
+    if card is None:
+        return ""
+    scfg = ((config or {}).get("research") or {}).get("screening_call") or {}
+    if not scfg.get("enabled", True):
+        return ""
+    try:
+        from .assess import _data_gaps_line
+        return _s(_data_gaps_line(card))
+    except Exception:
+        return ""
+
+
 def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     """8 hex chars over the bucketed materiality tuple. Deliberately EXCLUDES
     DEF 14A proxy facts: they are fetched inside `assess()` (assess.py:594-598),
@@ -200,20 +228,29 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
 
     events = getattr(m, "filing_events", None) or []
     parts.append(sorted((_s(e.get("form")), _s(e.get("items")), _s(e.get("filed")))
-                        for e in events))
+                        for e in events if isinstance(e, dict)))
 
+    # Per-trade (date, kind, value bucket), NOT a gross sum: `value` is an
+    # UNSIGNED magnitude (providers/_form4.py:113-114 — direction lives in
+    # `kind`), so summing it loses a buy<->sell flip at identical count and
+    # identical gross dollars. Sorted so trade ORDER (irrelevant to the prompt,
+    # which is already date-ordered upstream) cannot itself move the key.
     trades = getattr(m, "insider_recent", None) or []
-    net = sum(_num(t.get("value")) or 0.0 for t in trades)
-    parts.append((len(trades), round(net / 1e5)))
+    trade_rows = sorted(
+        (_s(t.get("date")), _s(t.get("kind")), round((_num(t.get("value")) or 0.0) / 1e5))
+        for t in trades if isinstance(t, dict))
+    parts.append((len(trades), trade_rows))
 
     # Every column _render_series prints (assess.py:349-366), not just revenue/FCF.
     series = getattr(m, "financial_series", None) or []
     cols = ("revenue", "gross_profit", "net_income", "operating_cash_flow",
             "free_cash_flow", "total_debt", "diluted_eps", "diluted_shares")
     parts.append([(_s(r.get("fiscal_year")), _s(r.get("period_end")),
-                   *[_sig3(r.get(c)) for c in cols]) for r in series])
+                   *[_sig3(r.get(c)) for c in cols])
+                  for r in series if isinstance(r, dict)])
 
     parts.extend(_aux_lines(m, config))
+    parts.append(_gaps_line(card, config))
     parts.append(_s(getattr(macro, "regime", None)) or "none")
     return _sha8(repr(parts))
 
