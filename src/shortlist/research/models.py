@@ -86,9 +86,11 @@ class FilingText:
 class FilingBundle:
     """The documents fed to one research brief. `tenk` is the current 10-K (the
     primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
-    context (may be ""). `cache_key` keys the brief on disk so a new 10-Q produces
-    a fresh brief; the prior-year 10-K (the diff baseline) is deliberately NOT part
-    of the key and is never exposed here whole."""
+    context (may be ""). `cache_key` is the FILING half of the on-disk key — the
+    accessions, so a new 10-Q produces a fresh brief — not the whole key: the full
+    on-disk key also folds in a prompt/config fingerprint and a context digest
+    (`research/cachekey.py:brief_key`). The prior-year 10-K (the diff baseline) is
+    deliberately NOT part of `cache_key` and is never exposed here whole."""
     tenk: FilingText
     primary_accession: str
     cache_key: str
@@ -195,7 +197,11 @@ class QualitativeAssessment:
     silent_count: int = 0
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
-    cache_key: str = ""        # composite filing key; falls back to filing_accession
+    cache_key: str = ""        # assess() sets this to the narrow FILING key (falls back to
+                               # filing_accession); research/__init__.py:_enrich_card then
+                               # overwrites it with the WIDE on-disk key (filing + prompt/config
+                               # fingerprint + context digest + day bucket) before report.write,
+                               # so the two never diverge on disk
     text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
     screening_call: Optional[ScreeningCall] = None
 

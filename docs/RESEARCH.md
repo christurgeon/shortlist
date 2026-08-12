@@ -77,9 +77,15 @@ of inferring it. Tune under `config.yaml: research.screening_call`.
 
 ## Caching and output
 
-Briefs are written to `research/<TICKER>/<accession>.md` (plus a `.json` sibling) and **cached
-by filing accession**, so re-runs against the same filing are free. `--refresh` regenerates.
-The `research/` output directory is gitignored.
+Briefs are written to `research/<TICKER>/<accession>.md` (plus a `.json` sibling), but the
+cache key is **wider than the filing accessions in that filename**
+(`research/cachekey.py:brief_key`): it also folds in a fingerprint of the prompt-shaping
+module sources and the `research` config block, a bucketed quant/event context digest off the
+`ScoreCard`, and an as-of day bucket (`research.cache.{max_age_days,price_band_pct}`). A
+re-run against the same filings is only served from cache when the prompt, config and context
+all still match — so editing the prompt/guards/`research.max_chars`, or a material price move,
+invalidates the cache instead of serving a stale brief. `--refresh` always regenerates. The
+`research/` output directory is gitignored.
 
 ## Kill-switch
 

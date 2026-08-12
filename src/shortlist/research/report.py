@@ -21,7 +21,10 @@ def record_path(ticker: str, accession: str, root) -> Path:
 
 
 def is_cached(ticker: str, accession: str, root) -> bool:
-    """A brief for this exact filing already exists (keyed by accession, not date)."""
+    """A brief for this exact key already exists. `accession` here is really the
+    WIDE cache key from `research/cachekey.py:brief_key` — filing accessions plus
+    a prompt/config fingerprint, a context digest and a day bucket — not the bare
+    filing accession; the param name predates that change."""
     return brief_path(ticker, accession, root).exists()
 
 

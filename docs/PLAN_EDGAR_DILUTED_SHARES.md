@@ -122,9 +122,14 @@ Additional surfaces, all previously unnamed:
 
 - **`value_trap` flag** (`scoring.py:800`) keys off the `value` sub-score, so a `pe_vs_history`
   change can flip it — a second-order flag effect.
-- **Research briefs are accession-cached**, so existing briefs will NOT regenerate; those
-  tickers keep an LLM screening call reasoned over the old `dEPS`/`shrs` numbers
-  (`research/assess.py:294-315`) until `--refresh`.
+- **Research briefs are no longer accession-only cached** (`research/cachekey.py`, shipped
+  under `docs/PLAN_DEEP_FRESHNESS.md`): the on-disk key also folds in a context digest of the
+  QUANT CONTEXT block, which includes the fundamentals this plan changes (`eps_cagr_ps`,
+  `debt_to_equity`, PE inputs, and the rendered financial-series table). A `diluted_shares`/
+  `diluted_eps` fix of this size will generally bust the digest and regenerate on the next run
+  — existing briefs will **NOT** be stuck reasoning over the old `dEPS`/`shrs` numbers
+  (`research/assess.py:294-315`) the way an accession-only key would have left them. `--refresh`
+  still forces a regen immediately rather than waiting on the next natural cache miss.
 - **Bot digest** prints "PE (ttm)" (`bot/report/sections.py:148`) — MCD's `2.25e-05`
   becomes a real PE.
 - **`eps_cagr_ps` is currently DEGENERATE** for all 9: dividing every year's NI by one constant
