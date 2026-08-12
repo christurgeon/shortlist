@@ -375,8 +375,9 @@ risk overlay and no risk-adjusted ranking.
 
 ## 3. Making Claude's analysis more effective (`research/`)
 
-The qualitative layer is well-built — grounded, quote-verified, cached by accession, prompt
-hardened against injection — but **narrow**.
+The qualitative layer is well-built — grounded, quote-verified, cached on a wide key (filing
+accessions + prompt/config fingerprint + context digest + day bucket, `research/cachekey.py`),
+prompt hardened against injection — but **narrow**.
 
 ### 3.1 Only the 10-K is read — 10-Q + DEF 14A SHIPPED
 `assess.py` ingests Item 1 / 1A / 7 of a single 10-K, which can be ~11 months stale and omits
@@ -432,8 +433,11 @@ is the most decision-useful thing the layer could produce.
 > one-off spike, or NI-vs-cash-flow divergence), not just a point value. The QUANT CONTEXT is
 > excluded from `bundle.haystack()`, so a computed number can never pass as a verified filing
 > quote. `total_equity` is **consciously omitted** (only feeds `debt_to_equity`, and goes
-> negative on buyback compounders — §2.7). The brief cache is keyed by filing accession, so an
-> already-cached name needs `--refresh` to pick up the series.
+> negative on buyback compounders — §2.7). The brief cache key now folds in a fingerprint over
+> the prompt-shaping modules (`research/cachekey.py`), so a series-rendering change like this
+> one busts the cache on its own — `--refresh` is no longer required to pick up a prompt-shape
+> change, only to force a regen sooner than the day bucket / price-band would otherwise trigger
+> one.
 
 - **Still deferred:** DEF 14A proxy + earnings-call transcripts as quant/narrative inputs (no
   keyless source — tracked in §3.1).
@@ -457,8 +461,8 @@ Risks + red-flags + synthesis is a *summary*, not a decision aid.
   the quote-grounding requirement on every factual claim.
 
 ### 3.4 No year-over-year risk-factor diff — ✅ SHIPPED
-Newly-*added* 10-K Item 1A risk factors are a documented alpha signal. Briefs are already
-cached by accession, so last year's filing is one fetch away.
+Newly-*added* 10-K Item 1A risk factors are a documented alpha signal, and the prior-year
+10-K is one fetch away regardless of brief caching.
 
 > **SHIPPED:** `research/riskdiff.py` (pure, stdlib `difflib` leaf) diffs the current 10-K's
 > Item 1A against the **prior fiscal year's** (selected by `period_of_report`, `10-K/A`

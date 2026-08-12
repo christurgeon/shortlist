@@ -325,16 +325,25 @@ Opt-in `--research N` enriches top-N non-gated names with a Claude-written 10-K 
 the **`claude` CLI in headless mode** (`research/claude_cli.py`), not the API SDK — no key,
 uses CLI auth. Keep the lockdown flags: `--tools "" --strict-mcp-config --max-turns 1`,
 prompt on stdin, neutral cwd, **no `--bare`** (forces `ANTHROPIC_API_KEY`). Lazy-imported so
-the core screener works without `claude`/edgartools. Briefs cached by filing accession,
-facts quote-verified against the filing, interpretive prose labeled. Output under
-`research/` (gitignored).
+the core screener works without `claude`/edgartools. Briefs are cached under a **wide key**
+(`research/cachekey.py:brief_key`) — filing accessions plus a fingerprint over the
+prompt-shaping module sources and the `research` config block, plus a bucketed quant/event
+context digest off the `ScoreCard`, plus an as-of day bucket
+(`research.cache.{max_age_days,price_band_pct}`) — not filings alone, so an edited prompt, a
+config change, or a stale-price brief all miss cache instead of serving silently. Facts are
+quote-verified against the filing, interpretive prose labeled. Output under `research/`
+(gitignored).
 
 The brief bundles the latest 10-K, the latest 10-Q's MD&A, and a YoY Item-1A risk-factor
 diff (`riskdiff.py`). It also carries several **prompt-only context lines** (never the
 quote-verification haystack, so a computed value can't pass as a filing fact): a reverse-DCF
 "price-implied FCF growth" reframing (`research/reverse_dcf.py`), recent SEC filings, recent
-insider Form-4 trades, DEF 14A pay/governance fields (`research/proxy.py`). Ends with a
-**screening call** (buy/hold/avoid + conviction) bounded by three deterministic guards in
-`assess.py:apply_guards` — a gate clamp, a conviction cap on low confidence, and a
-HIGH-conviction corroboration requirement. Framed as **screening triage, not investment
-advice** everywhere it surfaces.
+insider Form-4 trades, DEF 14A pay/governance fields (`research/proxy.py`), and a Lazy-Prices
+YoY text-similarity between the current and prior-year 10-K (`filings.py:_prior_year_sections`,
+`FilingBundle.text_similarity`) rendered as a `## Filing-text change (Lazy Prices)` section —
+this is a **`/deep`-only display line, not a live scoring flag**: nothing on the screen path
+sets `StockMetrics.filing_text_similarity`, so the `filing_text_change` flag it would drive
+can never fire (`tests/test_flag_producers.py`, `TODO.md` §2a). Ends with a **screening call**
+(buy/hold/avoid + conviction) bounded by three deterministic guards in `assess.py:apply_guards`
+— a gate clamp, a conviction cap on low confidence, and a HIGH-conviction corroboration
+requirement. Framed as **screening triage, not investment advice** everywhere it surfaces.

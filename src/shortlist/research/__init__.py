@@ -57,7 +57,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     # what let a brief outlive its own inputs. See research/cachekey.py.
     #
     # Degrade, never raise: _enrich_card's contract (docstring, line 41) is that one
-    # bad ticker never aborts the batch, and BOTH batch callers (screen.py:227-231,
+    # bad ticker never aborts the batch, and BOTH batch callers (screen.py:229-233,
     # research/phase.py:92) catch only at the batch level — an exception here would
     # return {} for every name in the run.
     try:
@@ -76,7 +76,7 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         assessment = assess_fn(card, bundle, config, macro=macro)
         if assessment is None:
             return ResearchResult(card.ticker, skipped="assessment failed")
-        # assess() sets the narrow bundle key (assess.py:643); the brief is written
+        # assess() sets the narrow bundle key (assess.py:659); the brief is written
         # under the wide key so the two never diverge on disk.
         assessment.cache_key = key
         bp = report.write(assessment, root, config)

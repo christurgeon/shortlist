@@ -380,8 +380,10 @@ cache:
 research:
   model: claude-sonnet-5       # pinned to a family, not the cross-version "sonnet" alias.
                                # NOTE: tracks the latest snapshot in the family, not a frozen
-                               # date-pinned build; brief reproducibility is anchored by
-                               # accession-keyed caching (research/), not the model string.
+                               # date-pinned build; brief reproducibility is anchored by the
+                               # wide cache key (research/cachekey.py — filing accessions +
+                               # prompt/config fingerprint + context digest + day bucket),
+                               # not the model string.
                                # Set 2026-08-05 as a DELIBERATE JUDGMENT CALL, not a
                                # measurement — see the audit doc D9 and TODO.md. Two
                                # consequences worth keeping in mind:
@@ -415,7 +417,9 @@ research:
                                # that actually ran (claude_cli._answering_model), so the corpus
                                # stays auditable.
                                # Remove the key for the byte-identical pre-feature argv.
-  output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
+  output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, where <key> is
+                               # the wide cache key (accession-p<fingerprint>-c<digest>-<day>),
+                               # not the bare filing accession — see research/cachekey.py.
   cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
     max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay
     price_band_pct: 0.03       # regenerate when price/market cap moves ~3%

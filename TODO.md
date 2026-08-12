@@ -100,16 +100,25 @@ it outranks §3's alpha questions.
 
 ## 2a. VERIFIED defects — small, worth building
 
-- **The brief cache cannot go stale on anything but filings.** `cache_key` is
-  `f"{tenk.accession}+{tenq_acc}"` (`research/filings.py:258`), consumed by
-  `research/__init__.py:55`. But the prompt also carries price, valuation, macro regime,
-  insider Form-4s, short interest, gov contracts, proxy and recent-8-K context
-  (`assess.py:_build_user_prompt`). A brief written the day before an earnings gap is served
-  unchanged. **Second, larger consequence: editing the prompt, the guards, or
-  `research.max_chars` does not invalidate a single cached brief** — the corpus under
-  `research/` silently mixes prompt generations. Fix is a wider key: prompt/schema version +
-  a hash of the quant/event context + an as-of day bucket. Small; the key is built in one
-  place and `is_cached` already keys off whatever string it is handed.
+- **Shipped:** the brief cache is now a wide key — `research/cachekey.py:brief_key` composes
+  the filing accessions with a prompt/config fingerprint, a bucketed quant/event context
+  digest, and an as-of day bucket (`research.cache.{max_age_days, price_band_pct}` in
+  `config.yaml`). Editing the prompt, the guards, `research.max_chars`, or a material price
+  move now invalidates the cache instead of silently serving a stale brief.
+  - **Known gap, no producer yet:** the YoY Lazy-Prices text-similarity computed alongside the
+    wide key (`research/filings.py:_prior_year_sections`, `FilingBundle.text_similarity`) only
+    ever reaches `/deep` as a prompt-only context line and a rendered `## Filing-text change
+    (Lazy Prices)` section. Nothing writes `StockMetrics.filing_text_similarity`, so the
+    `filing_text_change` scoring flag still cannot fire — `check_flags` runs inside `score()`
+    (`scoring.py:809`) during `run_harness`, and research runs after it (`screen.py:188`,
+    `:193`), so a research-layer producer is structurally too late for the screen path.
+    Guarded by `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
+    (deliberately `xfail(strict=True)` — delete the decorator, not the test, if a
+    collection-time producer ever ships).
+  - **10-Q arm needs Part II too:** the same YoY similarity only diffs 10-K risk factors —
+    `TenQ` has no `risk_factors` property, so `_section(obj, "risk_factors")`
+    (`filings.py:134`) always returns `""` for the 10-Q leg. Extending the similarity (and the
+    risk diff) to Part II Item 1A is the same shape of fix as the 10-Q MD&A bullet below.
 - **The 10-Q contributes only MD&A.** `_tenq_mda` (`filings.py:64`) reads Part I Item 2 and
   nothing else, so Part II **Item 1 (legal proceedings)** and **Item 1A (risk-factor updates —
   the quarter's *changes*)** never reach the model, even though the YoY 10-K risk diff shows we
