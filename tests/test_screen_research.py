@@ -50,7 +50,7 @@ def test_run_research_phase_prints_maps_paths_and_handles_cache(capsys, monkeypa
         ResearchResult("GEV", skipped="no 10-K"),
     ]
     monkeypatch.setattr(screen, "_research_available", lambda: True)
-    monkeypatch.setattr(screen, "_run_enrich", lambda cards, cfg, n, refresh: fake_results)
+    monkeypatch.setattr(screen, "_run_enrich", lambda cards, cfg, n, refresh, macro=None: fake_results)
 
     paths = screen._run_research_phase([_card()], {"research": {}}, n=3, refresh=False)
     err = capsys.readouterr().err
@@ -79,7 +79,7 @@ def test_research_rejects_non_positive():
 def test_run_research_phase_survives_enrich_exception(capsys, monkeypatch):
     from shortlist import screen
     monkeypatch.setattr(screen, "_research_available", lambda: True)
-    def boom(cards, cfg, n, refresh):
+    def boom(cards, cfg, n, refresh, macro=None):
         raise RuntimeError("edgar blew up with token=sk-ant-SECRET99")
     monkeypatch.setattr(screen, "_run_enrich", boom)
     paths = screen._run_research_phase([_card()], {}, n=1, refresh=False)
