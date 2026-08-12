@@ -82,7 +82,12 @@ the prompt or the guards**, plus a canonical `repr` of the `research` config blo
 Modules hashed (`_PROMPT_MODULES`): `assess`, `models` (it holds `SCHEMA_HINT`, concatenated
 into the system prompt at `assess.py:87`), `reverse_dcf`, `coverage_caveat`, `proxy`,
 `gov_contracts`, `lobbying`, `earnings`, `riskdiff` (its output is `bundle.added_risks_text`,
-which reaches both the prompt and the haystack).
+which reaches both the prompt and the haystack), `filings` (owns `_filing_sections`,
+`_tenq_mda`, `cap_bundle` — most of the prompt's actual bytes — and `_prior_year_sections` /
+`fetch_bundle`, which produce `bundle.text_similarity`) and `textsim` (the Lazy-Prices cosine
+those bytes feed into, `combined_similarity`). Both import no `edgar` at module scope (the
+`edgar` import in `filings.py` is lazy, inside `_prior_year_sections`/`fetch_10k`/etc.), so
+adding them does not drag the optional `[edgar]` extra into `cachekey`'s import.
 
 > **Why a module SET.** Two smaller designs were considered and both fail:
 > `getsource(_build_user_prompt) + getsource(apply_guards)` misses the callees that produce most
@@ -124,8 +129,9 @@ caching entirely.
 | `confidence` | round to 0.05 | printed to 2dp |
 | `gates`, `flags` | exact, sorted | any change is material by definition |
 | `sic_bucket` | exact | rendered at `assess.py:418-419` |
-| `filing_events` | exact, sorted `(form, items, filed)` | a new 8-K/13D **must** bust the cache |
-| `insider_recent` | trade count + `round(net_value / 1e5)` | new Form 4s are material; cents are not |
+| `filing_events` | exact, sorted `(form, items, filed)`; non-dict rows skipped | a new 8-K/13D **must** bust the cache |
+| `insider_recent` | trade count + sorted per-trade `(date, kind, round(value / 1e5))`; non-dict rows skipped | `value` (`data/bridge.py:203-206`, `providers/_form4.py:113-114`) is an UNSIGNED magnitude — direction lives in `kind` — so a gross sum cannot see a buy↔sell flip at identical count/dollars; hashing per-trade `kind` closes that |
+| DATA GAPS line (`card.coverage` / `card.abstentions`) | the **rendered string** from `assess._data_gaps_line(card)` (built by `coverage_caveat.coverage_caveats`), gated the same as the prompt by `research.screening_call.enabled` | it renders into the prompt (`assess.py:306,492`) and the shipped brief (`assess.py:539`); a provider-status flip (e.g. `gated_402` → `rate_limited_429`) on an otherwise-unchanged null axis must bust the cache too |
 | short interest | `short_pct_outstanding` to 0.001, `days_to_cover` to 0.5, `short_interest_rising` exact | |
 | `revenue_cagr`, `fcf_cagr`, `eps_cagr`, `revenue_growth_persistence`, `gross_margin`, `net_margin`, `roic`, `debt_to_equity`, `interest_coverage` | 3 significant figures | the full `Fundamentals:` line (`assess.py:424-429`); catches a **statements repair with no new filing** |
 | `pe_ttm`, `pe_median_5y`, `fcf_yield`, `peg` | 3 significant figures | the `Valuation:` line (`assess.py:436-441`) |
