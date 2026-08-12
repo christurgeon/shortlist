@@ -190,7 +190,8 @@ def main(argv: list[str] | None = None) -> int:
 
     research_paths: dict = {}
     if args.research:
-        research_paths = _run_research_phase(cards, config, args.research, args.refresh)
+        research_paths = _run_research_phase(cards, config, args.research, args.refresh,
+                                             macro)
 
     if args.csv:
         _write_csv(cards, args.csv)
@@ -211,12 +212,12 @@ def _research_available() -> bool:
     return is_available()
 
 
-def _run_enrich(cards: list[ScoreCard], config: dict, n: int, refresh: bool):
+def _run_enrich(cards: list[ScoreCard], config: dict, n: int, refresh: bool, macro=None):
     from .research import enrich
-    return enrich(cards, config, top_n=n, refresh=refresh)
+    return enrich(cards, config, top_n=n, refresh=refresh, macro=macro)
 
 
-def _run_research_phase(cards, config, n: int, refresh: bool) -> dict:
+def _run_research_phase(cards, config, n: int, refresh: bool, macro=None) -> dict:
     """Run the qualitative research phase over the top-N non-gated cards.
     Returns {ticker: brief_path} for names that produced (or have a cached)
     brief. All console output goes to stderr so it never contaminates --json
@@ -226,7 +227,7 @@ def _run_research_phase(cards, config, n: int, refresh: bool) -> dict:
               file=sys.stderr)
         return {}
     try:
-        results = _run_enrich(cards, config, n, refresh)
+        results = _run_enrich(cards, config, n, refresh, macro)
     except Exception as e:
         print(f"  ! research phase failed: {redact_secrets(e)}", file=sys.stderr)
         return {}

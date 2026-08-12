@@ -54,32 +54,78 @@ def test_enrich_skips_when_no_10k(tmp_path):
     assert results[0].brief_path is None
 
 
-def test_enrich_uses_cache_unless_refresh(tmp_path):
+def test_enrich_ignores_a_brief_cached_under_the_narrow_key(tmp_path):
+    """THE INVARIANT. A brief written under the old accession-only key must NOT
+    short-circuit the LLM call. This is the test that fails if the wide key is
+    computed after assess() instead of before the is_cached check."""
     from shortlist.research import report
-    cfg = {"research": {"output_root": str(tmp_path)}}
-    report.write(_assessment("A"), tmp_path)  # pre-seed cache for cache_key acc-A
+    # max_age_days: 0 removes the day bucket so the test cannot flake across a
+    # UTC midnight boundary (enrich() has no `today` injection point).
+    cfg = {"research": {"output_root": str(tmp_path), "cache": {"max_age_days": 0}}}
+    report.write(_assessment("A", key="acc-A"), tmp_path)      # legacy narrow key
     calls = {"n": 0}
     def fake_assess(card, bundle, config, **kw):
         calls["n"] += 1
-        return _assessment(card.ticker, key="acc-A")
-    fetch = lambda t, **k: _bundle(t, key="acc-A")
-    r = enrich([_Card("A", 90)], cfg, top_n=1, refresh=False, fetch=fetch, assess_fn=fake_assess)
+        return _assessment(card.ticker)
+    enrich([_Card("A", 90)], cfg, top_n=1, fetch=lambda t, **k: _bundle(t),
+           assess_fn=fake_assess)
+    assert calls["n"] == 1
+
+
+def test_enrich_regenerates_when_context_changes(tmp_path):
+    """Same filings, materially different card -> the cached brief must not be reused."""
+    from shortlist.research import cachekey, report
+    cfg = {"research": {"output_root": str(tmp_path), "cache": {"max_age_days": 0}}}
+    card = _Card("A", 90)
+    bundle = _bundle("A")
+    key = cachekey.brief_key(bundle, card, config=cfg)
+    report.write(_assessment("A", key=key), tmp_path)
+    calls = {"n": 0}
+    def fake_assess(card, bundle, config, **kw):
+        calls["n"] += 1
+        return _assessment(card.ticker)
+    fetch = lambda t, **k: bundle
+    enrich([card], cfg, top_n=1, fetch=fetch, assess_fn=fake_assess)
+    assert calls["n"] == 0                      # unchanged card -> cache hit
+    enrich([_Card("A", 90, gates=["negative_fcf"])], cfg, top_n=1, fetch=fetch,
+           assess_fn=fake_assess, require_passed=False)
+    assert calls["n"] == 1                      # a new gate -> regenerated
+
+
+def test_enrich_uses_cache_unless_refresh(tmp_path):
+    from shortlist.research import cachekey, report
+    cfg = {"research": {"output_root": str(tmp_path), "cache": {"max_age_days": 0}}}
+    card, bundle = _Card("A", 90), _bundle("A", key="acc-A")
+    key = cachekey.brief_key(bundle, card, config=cfg)
+    report.write(_assessment("A", key=key), tmp_path)
+    calls = {"n": 0}
+    def fake_assess(card, bundle, config, **kw):
+        calls["n"] += 1
+        return _assessment(card.ticker)
+    fetch = lambda t, **k: bundle
+    r = enrich([card], cfg, top_n=1, refresh=False, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 0 and r[0].brief_path and r[0].from_cache is True
-    r2 = enrich([_Card("A", 90)], cfg, top_n=1, refresh=True, fetch=fetch, assess_fn=fake_assess)
+    enrich([card], cfg, top_n=1, refresh=True, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 1                     # refresh forces re-assessment
 
 
 def test_enrich_new_10q_invalidates_cache(tmp_path):
-    from shortlist.research import report
-    cfg = {"research": {"output_root": str(tmp_path)}}
-    report.write(_assessment("A", key="acc-A+q1"), tmp_path)   # cached for q1
+    from shortlist.research import cachekey, report
+    cfg = {"research": {"output_root": str(tmp_path), "cache": {"max_age_days": 0}}}
+    card = _Card("A", 90)
+    bundle_q1 = _bundle("A", key="acc-A+q1")
+    bundle_q2 = _bundle("A", key="acc-A+q2")
+    key_q1 = cachekey.brief_key(bundle_q1, card, config=cfg)
+    key_q2 = cachekey.brief_key(bundle_q2, card, config=cfg)
+    assert key_q1 != key_q2
+    report.write(_assessment("A", key=key_q1), tmp_path)   # cached for q1
     calls = {"n": 0}
     def fake_assess(card, bundle, config, **kw):
         calls["n"] += 1
-        return _assessment(card.ticker, key=bundle.cache_key)
-    # a NEW 10-Q -> different composite key -> cache miss -> re-assessed
-    fetch = lambda t, **k: _bundle(t, key="acc-A+q2")
-    enrich([_Card("A", 90)], cfg, top_n=1, fetch=fetch, assess_fn=fake_assess)
+        return _assessment(card.ticker)
+    # a NEW 10-Q -> different wide key -> cache miss -> re-assessed
+    fetch = lambda t, **k: bundle_q2
+    enrich([card], cfg, top_n=1, fetch=fetch, assess_fn=fake_assess)
     assert calls["n"] == 1
 
 

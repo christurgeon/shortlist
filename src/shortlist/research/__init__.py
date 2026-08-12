@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 from ..env import redact_secrets
 from ..models import rank_key
-from . import claude_cli, report
+from . import cachekey, claude_cli, report
 from .assess import assess as _assess
 from .filings import fetch_bundle as _fetch_bundle
 from .filings import no_10k_reason as _no_10k_reason
@@ -52,8 +52,20 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         return ResearchResult(card.ticker, skipped=f"filing error: {redact_secrets(e)}")
     if bundle is None:
         return ResearchResult(card.ticker, skipped=reason_fn(card.ticker))
-    if not refresh and report.is_cached(card.ticker, bundle.cache_key, root):
-        bp = report.brief_path(card.ticker, bundle.cache_key, root)
+    # The WIDE key must be computed here, BEFORE the is_cached short-circuit: this
+    # is the check that saves the LLM call, and keying it on accessions alone is
+    # what let a brief outlive its own inputs. See research/cachekey.py.
+    #
+    # Degrade, never raise: _enrich_card's contract (docstring, line 41) is that one
+    # bad ticker never aborts the batch, and BOTH batch callers (screen.py:227-231,
+    # research/phase.py:92) catch only at the batch level — an exception here would
+    # return {} for every name in the run.
+    try:
+        key = cachekey.brief_key(bundle, card, macro=macro, config=config)
+    except Exception:
+        key = bundle.cache_key
+    if not refresh and report.is_cached(card.ticker, key, root):
+        bp = report.brief_path(card.ticker, key, root)
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
     # cap_bundle / assess / report.write (filesystem I/O, prompt building, the LLM
     # call) can all raise; isolate them too so the docstring promise — one failure
@@ -64,6 +76,9 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         assessment = assess_fn(card, bundle, config, macro=macro)
         if assessment is None:
             return ResearchResult(card.ticker, skipped="assessment failed")
+        # assess() sets the narrow bundle key (assess.py:643); the brief is written
+        # under the wide key so the two never diverge on disk.
+        assessment.cache_key = key
         bp = report.write(assessment, root, config)
     except Exception as e:  # assess/render/write errors
         return ResearchResult(card.ticker, skipped=f"research error: {redact_secrets(e)}")

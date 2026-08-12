@@ -416,6 +416,9 @@ research:
                                # stays auditable.
                                # Remove the key for the byte-identical pre-feature argv.
   output_root: research        # artifacts: research/<TICKER>/<accession>.{md,json}
+  cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
+    max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay
+    price_band_pct: 0.03       # regenerate when price/market cap moves ~3%
   max_risks: 12
   max_red_flags: 12
   max_conflicts: 6             # cap on reconciliation entries (truncation budget)
