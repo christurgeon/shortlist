@@ -96,3 +96,56 @@ def test_tenq_mda_empty_on_missing():
             return None
     assert _tenq_mda(_Bare()) == ""
     assert _tenq_mda(object()) == ""              # no method at all -> ""
+
+
+class _PriorTenK:
+    risk_factors = "prior risk text"
+    management_discussion = "prior mda text"
+
+
+class _FakeFiling:
+    form = "10-K"
+    def __init__(self, filing_date, period):
+        self.filing_date, self.period_of_report = filing_date, period
+    def obj(self):
+        return _PriorTenK()
+
+
+def _fake_company(rows):
+    class _Company:
+        def __init__(self, ticker):
+            self.ticker = ticker
+        def get_filings(self, form):
+            return rows
+    return _Company
+
+
+def test_prior_year_sections_returns_risk_and_mda_from_one_filing():
+    """Both baselines come from ONE parsed filing - that is what makes the
+    similarity free (no second network fetch)."""
+    from shortlist.research.filings import _prior_year_sections
+    rows = [_FakeFiling("2026-02-01", "2025-12-31"), _FakeFiling("2025-02-01", "2024-12-31")]
+    risk, mda = _prior_year_sections("A", company_factory=_fake_company(rows))
+    assert risk == "prior risk text"
+    assert mda == "prior mda text"
+
+
+def test_prior_year_sections_empty_without_a_prior_year():
+    from shortlist.research.filings import _prior_year_sections
+    rows = [_FakeFiling("2026-02-01", "2025-12-31")]          # only one 10-K
+    assert _prior_year_sections("A", company_factory=_fake_company(rows)) == ("", "")
+
+
+def test_prior_year_sections_never_raises():
+    from shortlist.research.filings import _prior_year_sections
+    def _boom(_ticker):
+        raise RuntimeError("edgar exploded")
+    assert _prior_year_sections("A", company_factory=_boom) == ("", "")
+
+
+def test_similarity_enabled_defaults_on_and_honours_false():
+    """enabled: false -> no similarity computed (the byte-identical escape hatch)."""
+    from shortlist.research import filings
+    cfg = {"research": {"text_similarity": {"enabled": False}}}
+    assert filings._similarity_enabled(cfg) is False
+    assert filings._similarity_enabled({}) is True          # default ON

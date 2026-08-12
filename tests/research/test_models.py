@@ -200,6 +200,18 @@ def test_assessment_added_risks_capped():
                                 stop_reason=None, max_added_risks=3)
     assert len(a.added_risks) == 3
 
+def test_text_similarity_is_not_in_the_haystack():
+    """A computed number must never be quotable as a filing fact."""
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                     filing_date="2026-01-01", text_similarity=0.42)
+    assert b.text_similarity == 0.42
+    # Assert on the source of truth, not on one formatting of the number: the
+    # haystack is exactly the filing texts, nothing else.
+    assert b.haystack() == "b\n\nm\n\nr"
+
+
 def test_assessment_added_risks_tolerates_malformed_items():
     # advisory list: a non-dict item is skipped, NOT raised (must not sink the brief)
     from shortlist.research.models import assessment_from_payload

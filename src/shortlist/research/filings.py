@@ -68,7 +68,9 @@ def _tenq_mda(tenq: Any) -> str:
         getter = getattr(tenq, "get_item_with_part", None)
         if getter is None:
             return ""
-        value = getter("Part I", "Item 2", markdown=True)  # markdown=True for 10-K parity
+        # markdown=True is passed for the legacy-fallback path only; on the current
+        # parser path get_item_with_part returns Section.text() and ignores it.
+        value = getter("Part I", "Item 2", markdown=True)
         return str(value) if value else ""
     except Exception:
         return ""
@@ -80,29 +82,49 @@ def _fiscal_year(filing: Any) -> Optional[int]:
     return int(por[:4]) if por[:4].isdigit() else None
 
 
-def _prior_year_risk_factors(ticker: str) -> str:
-    """The prior fiscal year's 10-K Item 1A, for the YoY diff baseline. Excludes
-    10-K/A amendments and selects by fiscal year (not 'second most recent'). "" if
-    there is no genuinely-prior annual report. Never raises."""
-    from edgar import Company
+def _similarity_enabled(config: Optional[dict]) -> bool:
+    """Lazy-Prices similarity ships ON. Note this is the one research key whose
+    ABSENT block is not a no-op — a producer nobody switches on is exactly how
+    this signal sat dead with a fully-built consumer (see TODO.md §2a)."""
+    block = ((config or {}).get("research") or {}).get("text_similarity") or {}
+    return bool(block.get("enabled", True))
+
+
+def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
+    """(risk_factors, mda) from the prior fiscal year's 10-K — the diff baseline
+    AND the Lazy-Prices baseline, taken from ONE already-parsed filing object so
+    the similarity costs no extra network request. Excludes 10-K/A amendments and
+    selects by fiscal year (not 'second most recent'). ("", "") if there is no
+    genuinely-prior annual report. Never raises.
+
+    `company_factory` exists ONLY so tests can inject a fake without patching
+    `sys.modules`; production always takes the lazy `edgar` import below (the
+    [edgar] extra is optional, so it must not be imported at module scope).
+
+    BEHAVIOUR CHANGE vs `_prior_year_risk_factors`: the `edgar` import now sits
+    INSIDE the try, so a missing [edgar] extra degrades to ("", "") + a stderr
+    line instead of raising ImportError. That is unreachable in practice —
+    `fetch_10k` runs first in `fetch_bundle` and imports `edgar` at its top — and
+    it matches this function's documented never-raises contract."""
     try:
-        filings = Company(ticker).get_filings(form="10-K")
+        if company_factory is None:
+            from edgar import Company
+            company_factory = Company
+        filings = company_factory(ticker).get_filings(form="10-K")
         rows = [f for f in filings if str(getattr(f, "form", "")) == "10-K"]
         if len(rows) < 2:
-            return ""
+            return "", ""
         rows.sort(key=lambda f: str(getattr(f, "filing_date", "")), reverse=True)
         current_fy = _fiscal_year(rows[0])
         for f in rows[1:]:
             fy = _fiscal_year(f)
             if current_fy is None or fy is None or fy < current_fy:
                 tenk = f.obj()
-                return _section(tenk, "risk_factors")
-        return ""
+                return _section(tenk, "risk_factors"), _section(tenk, "management_discussion")
+        return "", ""
     except Exception as e:
-        # Never-raises contract: the YoY diff degrades to "" — but say why on
-        # stderr so a systematic failure doesn't hide as "no prior 10-K".
-        log_abstain("prior-year 10-K risk-factor fetch failed", ticker, e)
-        return ""
+        log_abstain("prior-year 10-K fetch failed", ticker, e)
+        return "", ""
 
 
 def _filing_sections(obj: Any, form: str) -> tuple[str, str]:
@@ -252,10 +274,16 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     except Exception:
         tenq_mda, tenq_acc = "", ""
 
-    prior_1a = _prior_year_risk_factors(ticker)
+    prior_1a, prior_mda = _prior_year_sections(ticker)
     added = riskdiff.added_risk_blocks(tenk.risk_factors, prior_1a, config or {})
+    # Lazy-Prices YoY similarity from documents ALREADY in hand — no extra fetch.
+    similarity = None
+    if _similarity_enabled(config):
+        similarity = textsim.combined_similarity(
+            tenk.risk_factors, prior_1a, tenk.mda, prior_mda)
 
     cache_key = f"{tenk.accession}+{tenq_acc}" if tenq_acc else tenk.accession
     return FilingBundle(
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
-        filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added)
+        filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
+        text_similarity=similarity)

@@ -95,6 +95,11 @@ class FilingBundle:
     filing_date: str
     tenq_mda: str = ""
     added_risks_text: str = ""
+    text_similarity: Optional[float] = None
+    # ^ Lazy-Prices YoY cosine (Item 1A + MD&A) vs the prior-year 10-K, computed in
+    # fetch_bundle from documents already fetched for the risk diff. PROMPT-ONLY:
+    # it is a computed number, not filing text, so it must never enter haystack()
+    # or a model could quote it through quote-verification as a filing fact.
 
     def haystack(self) -> str:
         """All text shown to the model — the grounding corpus. Excludes the
