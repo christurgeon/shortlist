@@ -421,8 +421,15 @@ research:
                                # the wide cache key (accession-p<fingerprint>-c<digest>-<day>),
                                # not the bare filing accession — see research/cachekey.py.
   cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
-    max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay
-    price_band_pct: 0.03       # regenerate when price/market cap moves ~3%
+    max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay.
+                               # 0 also freezes the macro line: only `macro.regime` is
+                               # hashed in context_digest, but _macro_line (assess.py:
+                               # 265-282) prints five rate levels (10y, 10y-2y, HY OAS,
+                               # VIX, fed funds) that can all move while regime does not.
+    price_band_pct: 0.03       # regenerate when price/market cap moves ~3%. 0 means
+                               # price/market_cap DROP OUT of the digest entirely (band<=0
+                               # short-circuits _band() to None) — i.e. price never busts
+                               # the key on its own, NOT "bust on any move".
   max_risks: 12
   max_red_flags: 12
   max_conflicts: 6             # cap on reconciliation entries (truncation budget)
