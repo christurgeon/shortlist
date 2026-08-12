@@ -545,3 +545,29 @@ def test_market_cap_is_never_reported_as_zero_for_a_small_cap():
     assert _fmt_mcap(490e6) == "$490M"
     assert _fmt_mcap(5e9) == "$5.0B"
     assert _fmt_mcap(3.2e12) == "$3.20T"
+
+
+def test_similarity_line_renders_and_stays_out_of_the_haystack():
+    from shortlist.research.assess import _similarity_line
+    line = _similarity_line(0.62)
+    assert "38%" in line                     # 1 - 0.62, rendered as percent rewritten
+    assert "0.62" in line
+    assert "context only" in line.lower()
+
+
+def test_similarity_line_absent_when_none():
+    from shortlist.research.assess import _similarity_line
+    assert _similarity_line(None) == ""
+
+
+def test_prompt_is_byte_identical_when_similarity_is_none():
+    """spec §7: disabled / uncomputable similarity must not perturb the prompt."""
+    from shortlist.research.assess import _build_user_prompt
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    base = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                        filing_date="2026-01-01")
+    withnone = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                            filing_date="2026-01-01", text_similarity=None)
+    cfg = {"research": {}}
+    assert _build_user_prompt(base, cfg) == _build_user_prompt(withnone, cfg)

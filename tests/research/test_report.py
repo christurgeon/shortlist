@@ -126,3 +126,23 @@ def test_write_commits_md_last_so_no_stranded_cached_brief(tmp_path, monkeypatch
         report.write(a, tmp_path)
     assert report.record_path("AAPL", a.filing_accession, tmp_path).exists()
     assert report.is_cached("AAPL", a.filing_accession, tmp_path) is False
+
+
+def test_brief_renders_the_similarity_line():
+    from shortlist.research.models import Moat, QualitativeAssessment, Thesis
+    from shortlist.research.report import to_markdown
+    a = QualitativeAssessment(
+        ticker="A", as_of="t", filing_accession="acc", filing_date="2026-01-01",
+        model="m", cost_usd=0.0, moat=Moat(), thesis=Thesis(takeaway="t"),
+        text_similarity=0.62)
+    md = to_markdown(a)
+    assert "Filing-text change" in md and "38%" in md
+
+
+def test_brief_omits_the_similarity_line_when_none():
+    from shortlist.research.models import Moat, QualitativeAssessment, Thesis
+    from shortlist.research.report import to_markdown
+    a = QualitativeAssessment(
+        ticker="A", as_of="t", filing_accession="acc", filing_date="2026-01-01",
+        model="m", cost_usd=0.0, moat=Moat(), thesis=Thesis(takeaway="t"))
+    assert "Filing-text change" not in to_markdown(a)

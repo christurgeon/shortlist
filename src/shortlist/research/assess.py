@@ -282,6 +282,20 @@ def _macro_line(macro, cfg: Optional[dict]) -> str:
             f"financing cost, cyclicality): {body}; regime {regime}.")
 
 
+def _similarity_line(similarity: Optional[float]) -> str:
+    """One prompt context line for the Lazy-Prices YoY text change, or "" to omit.
+    PROMPT-ONLY — never the grounding haystack: this is a computed cosine, not
+    filing text, and must not survive quote-verification as a filing fact."""
+    if similarity is None:
+        return ""
+    rewritten = max(0.0, min(1.0, 1.0 - float(similarity)))
+    return ("\n\nFiling-text change vs the prior-year 10-K (context only — computed, "
+            f"NOT filing text): risk-factor + MD&A language is {rewritten * 100:.0f}% "
+            f"rewritten (cosine {similarity:.2f}). Cohen-Malloy-Nguyen (2020) associate "
+            "large year-over-year rewrites with weaker forward returns; treat it as a "
+            "prompt to look for WHAT changed, not as a verdict.")
+
+
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None,
                        insider_recent: Optional[list] = None,
@@ -313,6 +327,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     proxy_ctx_line = proxy_ctx.context_line(proxy_facts, rcfg.get("proxy"))
     proxy_section = f"\n\n{proxy_ctx_line}" if proxy_ctx_line else ""
     macro_section = _macro_line(macro, rcfg.get("macro"))
+    similarity_section = _similarity_line(getattr(bundle, "text_similarity", None))
     tenq_section = ""
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
@@ -339,6 +354,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{insider_line}"
         f"{proxy_section}"
         f"{macro_section}"
+        f"{similarity_section}"
     )
 
 
@@ -641,6 +657,7 @@ def assess(card, bundle: FilingBundle, config: dict,
                     valid_signals=vs, max_conflicts=max_conflicts,
                     max_falsifiers=max_falsifiers, max_added_risks=max_added_risks)
                 assessment.cache_key = bundle.cache_key
+                assessment.text_similarity = getattr(bundle, "text_similarity", None)
                 _verify_grounding(assessment, bundle)
                 if scfg.get("enabled", True):
                     assessment.screening_call = _screening_call(payload)

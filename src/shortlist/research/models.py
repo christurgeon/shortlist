@@ -196,6 +196,7 @@ class QualitativeAssessment:
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
     cache_key: str = ""        # composite filing key; falls back to filing_accession
+    text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
     screening_call: Optional[ScreeningCall] = None
 
     @property
