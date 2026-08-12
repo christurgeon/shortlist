@@ -64,7 +64,9 @@ uv run shortlist --demo --json
 **Optional flags:**
 - `--csv <path>` — write ranked results to a CSV (`rank,ticker,composite,quality,moat,growth,momentum,value,opportunity,insider,risk,upside_to_target,gates,scored,confidence,sic_bucket,piotroski_f,share_count_cagr,net_debt_to_ebitda`; gates are pipe-joined, `piotroski_f` is `won/legs`, `net_debt_to_ebitda` is floored at 0 for net-cash names)
 - `--research N` — generate Claude-written 10-K briefs for the top-N non-gated names; requires `claude` CLI on PATH and `SEC_IDENTITY` set
-- `--refresh` — force regeneration of cached research briefs (cached by filing accession, not date)
+- `--refresh` — force regeneration of cached research briefs (the cache key is wider than the
+  filing accessions — it also folds in a prompt/config fingerprint and a context digest, see
+  `research/cachekey.py` — so `--refresh` forces a regen sooner than a natural cache miss would)
 - Omit `--provider` to use the defaults from `config.yaml`
 
 Run from the **repo root** so `.env` is found.

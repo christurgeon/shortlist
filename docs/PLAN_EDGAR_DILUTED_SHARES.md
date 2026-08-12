@@ -124,9 +124,12 @@ Additional surfaces, all previously unnamed:
   change can flip it — a second-order flag effect.
 - **Research briefs are no longer accession-only cached** (`research/cachekey.py`, shipped
   under `docs/PLAN_DEEP_FRESHNESS.md`): the on-disk key also folds in a context digest of the
-  QUANT CONTEXT block, which includes the fundamentals this plan changes (`eps_cagr_ps`,
-  `debt_to_equity`, PE inputs, and the rendered financial-series table). A `diluted_shares`/
-  `diluted_eps` fix of this size will generally bust the digest and regenerate on the next run
+  QUANT CONTEXT block. `eps_cagr_ps` itself is not part of that digest (it isn't rendered to
+  the prompt at all — `assess.py:441` prints only `eps_cagr`, the net-income-based figure the
+  digest hashes by name at `cachekey.py:196`), but the raw `diluted_eps`/`diluted_shares`
+  values this plan repairs ARE captured — the digest hashes every rendered financial-series
+  column, including those two (`cachekey.py:209-213`). So a `diluted_shares`/`diluted_eps` fix
+  of this size will generally still bust the digest and regenerate on the next run
   — existing briefs will **NOT** be stuck reasoning over the old `dEPS`/`shrs` numbers
   (`research/assess.py:294-315`) the way an accession-only key would have left them. `--refresh`
   still forces a regen immediately rather than waiting on the next natural cache miss.
