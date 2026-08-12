@@ -562,7 +562,7 @@ def test_similarity_line_absent_when_none():
 
 def test_prompt_is_byte_identical_when_similarity_is_none():
     """spec §7: disabled / uncomputable similarity must not perturb the prompt."""
-    from shortlist.research.assess import _build_user_prompt
+    from shortlist.research.assess import _build_user_prompt, _similarity_line
     from shortlist.research.models import FilingBundle, FilingText
     tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
     base = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
@@ -570,4 +570,15 @@ def test_prompt_is_byte_identical_when_similarity_is_none():
     withnone = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                             filing_date="2026-01-01", text_similarity=None)
     cfg = {"research": {}}
-    assert _build_user_prompt(base, cfg) == _build_user_prompt(withnone, cfg)
+    none_prompt = _build_user_prompt(base, cfg)
+    assert none_prompt == _build_user_prompt(withnone, cfg)
+    # Guard against a stray similarity line slipping into the None case unnoticed.
+    assert "Filing-text change" not in none_prompt
+
+    # Positive control: a real similarity must change the prompt, and by EXACTLY
+    # the contribution of _similarity_line — nothing else in the assembly shifts.
+    withvalue = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                             filing_date="2026-01-01", text_similarity=0.62)
+    value_prompt = _build_user_prompt(withvalue, cfg)
+    assert value_prompt != none_prompt
+    assert value_prompt == none_prompt + _similarity_line(0.62)
