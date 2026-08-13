@@ -335,7 +335,26 @@ quote-verified against the filing, interpretive prose labeled. Output under `res
 (gitignored).
 
 The brief bundles the latest 10-K, the latest 10-Q's MD&A, and a YoY Item-1A risk-factor
-diff (`riskdiff.py`). It also carries several **prompt-only context lines** (never the
+diff (`riskdiff.py`).
+
+**Recent 8-K substance** (`research/eightk.py`, ON) is the one addition that is **filing text,
+so it enters the grounding haystack** — everything else added since the 10-Q MD&A is
+prompt-only. Consequences worth knowing before touching it:
+- `haystack()` is now the join of `FilingBundle.segments()`, and `_verify_grounding` matches a
+  quote against **one segment**, setting `Finding.source`/`Conflict.source` to that segment's
+  label (`"10-K"`, `"8-K 2026-07-30 (Item 2.02, EX-99.1)"`, …). This is strictly *stricter* than
+  the old whole-haystack substring test: a quote stitched across two documents used to verify
+  and now correctly does not.
+- **Selection never reads `filing_events`.** `EdgarSource._index_limit = 40` truncates a
+  mixed-form index before the 90-day filter — measured on JPM that window collapses to 26 days
+  (35 of 40 rows are `SCHEDULE 13G/A`) and its Item 2.02 earnings release falls outside. 8-Ks
+  come from a dedicated `get_filings(form="8-K")` call. Do not "simplify" this back.
+- Extraction rules are each pinned to a measured filing (empty `EX-99.1`, bare `EX-99`,
+  99.1-before-99.2, body-included-on-multi-item): `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
+- 8-K accessions ride in `FilingBundle.cache_key`, because the `context_digest` event tuple
+  cannot see an 8-K outside that 40-row index.
+
+It also carries several **prompt-only context lines** (never the
 quote-verification haystack, so a computed value can't pass as a filing fact): a reverse-DCF
 "price-implied FCF growth" reframing (`research/reverse_dcf.py`), recent SEC filings, recent
 insider Form-4 trades, DEF 14A pay/governance fields (`research/proxy.py`), and a Lazy-Prices
