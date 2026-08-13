@@ -146,3 +146,26 @@ def test_brief_omits_the_similarity_line_when_none():
         ticker="A", as_of="t", filing_accession="acc", filing_date="2026-01-01",
         model="m", cost_usd=0.0, moat=Moat(), thesis=Thesis(takeaway="t"))
     assert "Filing-text change" not in to_markdown(a)
+
+
+def test_findings_source_suffix_only_appears_for_a_non_10k_document():
+    """spec §3.5: the reader is told when a quote came from something OTHER than the
+    10-K they already assume — and the brief stays byte-identical when it did not."""
+    a = _assessment()
+    plain = report.to_markdown(a)
+    assert "— verified against" not in plain    # the unverified-count footer is a near-miss
+
+    a.risks[0].source = "10-K"                       # the assumed default — still silent
+    assert report.to_markdown(a) == plain
+
+    a.risks[0].source = "8-K 2026-07-30 (Item 2.02, EX-99.1)"
+    md = report.to_markdown(a)
+    assert "_— verified against 8-K 2026-07-30 (Item 2.02, EX-99.1)_" in md
+    assert "_(unverified)_" in md                     # the fabricated red flag is untouched
+
+
+def test_an_unverified_finding_never_claims_a_source():
+    a = _assessment()
+    a.red_flags[0].source = "8-K 2026-07-30 (Item 2.02)"   # cannot happen; belt and braces
+    md = report.to_markdown(a)
+    assert "- **Invented** _(unverified)_" in md
