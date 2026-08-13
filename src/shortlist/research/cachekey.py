@@ -57,7 +57,7 @@ _CONFIDENCE_STEP = 0.05
 # / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "riskdiff",
-                   "filings", "textsim")
+                   "filings", "textsim", "eightk")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
 # content; cache's own values already move the key mechanically.
@@ -200,7 +200,10 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     """8 hex chars over the bucketed materiality tuple. Deliberately EXCLUDES
     DEF 14A proxy facts: they are fetched inside `assess()` (assess.py:594-598),
     so hashing them would force a network call on every cache check. Proxy data
-    moves annually; the day bucket covers it."""
+    moves annually; the day bucket covers it. The 8-K substance is excluded for the
+    same reason (it is fetched in `fetch_bundle`, after the key is needed) — its
+    ACCESSIONS mostly ride in via `filing_events` above, and the day bucket covers
+    the residue: an 8-K selected outside the 40-row mixed index (spec F1)."""
     raw_band = _num(_cache_cfg(config).get("price_band_pct"))
     band = _DEFAULT_PRICE_BAND if raw_band is None else raw_band
     m = getattr(card, "metrics", None)
@@ -226,8 +229,11 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
                  "interest_coverage", "pe_ttm", "pe_median_5y", "fcf_yield", "peg"):
         parts.append(_sig3(getattr(m, name, None)))
 
+    # `accession` is in the tuple so a same-day 8-K/A cannot collide with the
+    # original it amends — (form, items, filed) alone are identical for that pair.
     events = getattr(m, "filing_events", None) or []
-    parts.append(sorted((_s(e.get("form")), _s(e.get("items")), _s(e.get("filed")))
+    parts.append(sorted((_s(e.get("form")), _s(e.get("items")), _s(e.get("filed")),
+                         _s(e.get("accession")))
                         for e in events if isinstance(e, dict)))
 
     # Per-trade (date, kind, value bucket), NOT a gross sum: `value` is an
