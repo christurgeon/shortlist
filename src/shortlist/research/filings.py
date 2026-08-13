@@ -282,8 +282,14 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         similarity = textsim.combined_similarity(
             tenk.risk_factors, prior_1a, tenk.mda, prior_mda)
 
+    # Recent 8-K substance. Imported here, not at module scope: `eightk` imports
+    # log_abstain back out of this module, and its own contract is never-raises, so
+    # a dead SEC endpoint costs a bare label rather than the whole brief.
+    from . import eightk
+    eightks = eightk.fetch_eightks(ticker, config)
+
     cache_key = f"{tenk.accession}+{tenq_acc}" if tenq_acc else tenk.accession
     return FilingBundle(
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
-        text_similarity=similarity)
+        text_similarity=similarity, eightks=eightks)
