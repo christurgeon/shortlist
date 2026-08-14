@@ -124,13 +124,16 @@ it outranks §3's alpha questions.
   the quarter's *changes*)** never reach the model, even though the YoY 10-K risk diff shows we
   care about exactly that delta. Small: extend `FilingBundle`, `cap_bundle`, the prompt and the
   grounding haystack the same way the 10-Q MD&A was added.
-- **8-Ks are detected, never read.** `assess.py:296-309` renders `form + (items …) + filed`
-  from the edgartools filings index. The substantive text is never fetched: Item 2.02 +
-  Exhibit 99.1 (earnings release **and guidance**), 4.02 (non-reliance/restatement), 5.02, 1.01,
-  2.01. This is the single largest freshness gap and it is primary-source, company-specific and
-  keyless — strictly better than adding news sentiment. Medium: needs an exhibit fetch, a char
-  cap, and a decision on prompt-only vs haystack (guidance quoted from an 8-K is *not* 10-K text,
-  so prompt-only unless the haystack learns per-document provenance).
+- **Shipped (2026-08-14): 8-K substance now reaches `/deep`.** `research/eightk.py` selects up
+  to 3 recent 8-Ks by item priority (`4.02 > 2.02 > 2.01 > 1.01 > 5.02`) and feeds their text to
+  the brief as **its own labelled haystack segment** — the first quotable addition, so
+  `Finding.source` now records which document verified a quote. Design, 60-filing probe evidence
+  and the post-build value test: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
+  - **Item 4.02 is still unexercised by real data** — no non-reliance filing appeared in the
+    60-filing sample (§5). Tested against a constructed fixture only. Do not claim it verified.
+  - **Selection must never read `filing_events`** (§2.2 F1) and **cover pages must be stripped
+    before the char cap** (§6.2 B1). Both are measured failures, both would look like the
+    feature "just not finding much" if reintroduced.
 - **Evidence discipline is asymmetric.** Risks, red flags, added risks and reconciliation carry
   `evidence` + a `verified` mark (`report.py:_findings_md`), while **moat, business model and
   management/capital-allocation are bare prose** (`report.py:117-123`) — the three most
@@ -402,3 +405,10 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
   8-K still excludes zero. `docs/audits/2026-08-03-evaluator-rederivation.md` is the current
   record — quote it, not the older audits.
 
+
+## `tests/research/test_filings_integration.py` reaches the live network by default
+
+No `pytest.mark.live`, and its filename does not match the `*_live*.py` tripwire, so a plain
+`uv run pytest` hits SEC whenever `SEC_IDENTITY` is exported — which it is on this box. CI
+never sees it (no identity there), so local and CI runs silently differ. Pre-existing; found
+2026-08-14 while placing `tests/test_eightk_live.py`. Add the marker.

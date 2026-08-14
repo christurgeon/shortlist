@@ -118,7 +118,11 @@ adding one.** `m.filing_events` keeps its existing bare-label role, unchanged.
 | Include the **body** unless the filing's priority items are exactly `{2.02}` | F2 (NKE 2026-06-23) |
 | No usable EX-99 → body only | CVX 2026-04-09, XOM 2026-07-01 |
 | Prefix, plus a `guidance_window_chars` splice around a late outlook hit, marked `[…]` | F4 (JPM 0.45, CVX 0.41) |
-| Budget walked in priority order: each filing takes `min(per_filing_cap, remaining)`; stop at exhaustion | deterministic, no rebalancing pass |
+| ~~Budget walked in priority order: each filing takes `min(per_filing_cap, remaining)`; stop at exhaustion~~ **SUPERSEDED by §6.2 (B2)** — it starved the material filing. Equal shares, then redistribution. | deterministic, no rebalancing pass |
+
+**§3.2 is the as-designed rule set and two rows of it were WRONG — read §6.2 before trusting
+this table.** The prefix row is also incomplete: it must be preceded by cover-page stripping
+(§6.2 B1), or the prefix is spent on SEC letterhead for every body-bearing item type.
 
 The `[…]` elision is safe by construction: a quote spanning it fails the `_norm` substring check
 and is correctly marked unverified. The splice cannot weaken the guard.
