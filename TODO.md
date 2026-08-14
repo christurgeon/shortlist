@@ -19,24 +19,15 @@ the scoring roadmap.
 
 # 1. Bot & report
 
-## `shortlist-accumulate` has NO failure alerting on the box (2026-08-10)
+## The accumulate failure-alert chain is untested in situ (2026-08-14)
 
-The `OnFailure=` line is in the accumulate unit's heredoc and pinned by
-`tests/test_deploy_units.py`, and the installer now writes the alert **template**
-unconditionally — but it only regenerates `shortlist-accumulate.service` under
-`SHORTLIST_ACCUMULATE=1`, so the unit on the box still dates from 2026-07-08 and has no
-`OnFailure=`. That timer is **active** (21:30 UTC) and currently fails silently.
+The deployed unit now carries `OnFailure=shortlist-alert-failure@%n.service` (verified with
+`systemctl cat shortlist-accumulate.service`), and the alert template is installed — but
+nothing has ever actually *failed*, so the `OnFailure` → template → script → Telegram chain
+has never fired end to end. Force it with a transient unit carrying the same `OnFailure=`, or
+wait for a real failure and see whether the alert lands.
 
-```
-sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh
-systemctl cat shortlist-accumulate.service | grep OnFailure   # the check that settles it
-```
-
-Also unverified end-to-end: nothing has actually *failed* yet, so the `OnFailure` → template →
-script → Telegram chain is untested in situ. Force it with a transient unit carrying the same
-`OnFailure=`, or wait for a real failure and see whether the alert lands.
-
-**Status:** accumulate is now the only scheduled unit, so this is the only alerting path left.
+**Status:** accumulate is the only scheduled unit, so this is the only alerting path left.
 
 ## Deploy recipe: `git pull` first, NEVER `rm -rf src`
 
@@ -427,11 +418,3 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
 - **Two committed double-sort spread claims are RETRACTED** (13D and 13D/A both now span zero);
   8-K still excludes zero. `docs/audits/2026-08-03-evaluator-rederivation.md` is the current
   record — quote it, not the older audits.
-
-
-## `tests/research/test_filings_integration.py` reaches the live network by default
-
-No `pytest.mark.live`, and its filename does not match the `*_live*.py` tripwire, so a plain
-`uv run pytest` hits SEC whenever `SEC_IDENTITY` is exported — which it is on this box. CI
-never sees it (no identity there), so local and CI runs silently differ. Pre-existing; found
-2026-08-14 while placing `tests/test_eightk_live.py`. Add the marker.

@@ -97,6 +97,7 @@ def test_financials_failure_does_not_drop_insider(monkeypatch):
     assert res.partial.statements is None
 
 
+@pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("RUN_LIVE_EDGAR"), reason="live SEC call; set RUN_LIVE_EDGAR=1")
 def test_live_edgar_financials_10k_filer():
     res = asyncio.run(EdgarSource().fetch("LMT"))     # SEC_IDENTITY from env
@@ -105,6 +106,7 @@ def test_live_edgar_financials_10k_filer():
     assert res.partial.statements.diluted_eps
 
 
+@pytest.mark.live
 @pytest.mark.skipif(not os.environ.get("RUN_LIVE_EDGAR"), reason="live SEC call; set RUN_LIVE_EDGAR=1")
 def test_live_edgar_foreign_or_nofinancials_degrades_cleanly():
     # A 20-F foreign issuer (ASML) should not crash; statements may be None.

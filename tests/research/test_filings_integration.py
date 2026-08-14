@@ -6,9 +6,12 @@ import os
 import pytest
 
 pytest.importorskip("edgar")
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("SEC_IDENTITY"),
-    reason="needs SEC_IDENTITY (a contact email) for live EDGAR")
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        not os.environ.get("SEC_IDENTITY"),
+        reason="needs SEC_IDENTITY (a contact email) for live EDGAR"),
+]
 
 
 def test_fetch_bundle_aapl_has_real_sections():
