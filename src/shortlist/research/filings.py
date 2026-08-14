@@ -61,19 +61,66 @@ def _build_filing_text(ticker: str, accession: Any, filing_date: Any, tenk: Any)
     )
 
 
-def _tenq_mda(tenq: Any) -> str:
+_OVER_CAPTURE_FRACTION = 0.50
+
+
+def _note_over_capture(text: str, tenq: Any, ticker: str) -> None:
+    """stderr note when the extracted MD&A span is >= half the whole 10-Q — the
+    mirror image of the INTC gap: a NEIGHBOURING item's heading went undetected, so
+    this span swallowed it. Measured 2026-08-14 over 35 large caps: JPM 0.846, MCD
+    0.644, PFE 0.566 against a median 0.230 and p90 0.397, so the threshold sits in
+    a clean gap.
+
+    OBSERVABILITY ONLY — it must never change the returned text. All three
+    over-capturing spans start at a genuine MD&A heading, and the prefix surviving
+    `research.max_chars.tenq_mda` (40,000) is genuine MD&A prose, so the model sees
+    correct content. Whole-document length is neither cheap nor guaranteed, so an
+    absent or raising `doc` skips the check silently rather than failing."""
+    try:
+        whole = len(tenq.doc.text())
+        if not whole:
+            return
+        frac = len(text) / whole
+        if frac >= _OVER_CAPTURE_FRACTION:
+            print(f"research: 10-Q MD&A span looks over-captured for {ticker or '?'}: "
+                  f"{len(text)} of {whole} document chars ({frac:.2f}); a neighbouring "
+                  f"item heading was likely undetected", file=sys.stderr)
+    except Exception:
+        return
+
+
+def _tenq_mda(tenq: Any, ticker: str = "") -> str:
     """10-Q MD&A is Part I, Item 2 — NOT a `management_discussion` attribute (that
-    exists only on TenK). Returns "" on any extraction failure."""
+    exists only on TenK). Returns "" on any extraction failure, and says so on
+    stderr: an empty span is a systematic edgartools heading-detection failure, not
+    "this filer has no MD&A", and looking identical to no-data is how INTC's silent
+    0-char gap (1 of 35 large caps, measured 2026-08-14) went unnoticed.
+
+    TWO MEASURED NON-FIXES, both of which look obvious (`tests/research/test_filings.py`):
+    - `tenq["Item 2"]` is NOT a fallback. On INTC it returns 2,459 chars of *Part II*
+      Item 2 (share repurchases) — wrong content silently labelled MD&A.
+    - `tenq.items` is NOT a guard. XOM/TSLA/MCD list misleading entries yet extract
+      69,820 / 49,879 / 122,045 chars, so an `items` check reports phantom failures.
+    Recovering the missing span (slicing the containing Part I Item 1 blob at an MD&A
+    heading) is deliberately deferred — fitted to n=1, and it would inject wrong text
+    into the grounding haystack."""
     try:
         getter = getattr(tenq, "get_item_with_part", None)
-        if getter is None:
-            return ""
         # markdown=True is passed for the legacy-fallback path only; on the current
         # parser path get_item_with_part returns Section.text() and ignores it.
-        value = getter("Part I", "Item 2", markdown=True)
-        return str(value) if value else ""
-    except Exception:
+        value = getter("Part I", "Item 2", markdown=True) if getter is not None else None
+        text = str(value) if value else ""
+    except Exception as e:
+        log_abstain("10-Q MD&A extraction failed", ticker or "?", e)
         return ""
+    if not text:
+        # Not an exception, so log_abstain (which formats one) does not fit; keep the
+        # same `research: <action> for <ticker>` shape it prints.
+        print(f"research: 10-Q MD&A empty (Part I Item 2 not detected) for "
+              f"{ticker or '?'}", file=sys.stderr)
+        return ""
+    _note_over_capture(text, tenq, ticker)
+    return text
 
 
 _TENQ_RISK_DEFAULTS = {"enabled": True, "max_blocks": 4, "max_chars": 4000}
@@ -177,12 +224,13 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
         return "", ""
 
 
-def _filing_sections(obj: Any, form: str) -> tuple[str, str]:
+def _filing_sections(obj: Any, form: str, ticker: str = "") -> tuple[str, str]:
     """(risk_factors, mda) text for a parsed filing object. 10-K MD&A is the
     `management_discussion` attribute; 10-Q MD&A is Part I Item 2 (see _tenq_mda).
-    Item 1A (risk_factors) exists on both. Returns "" for any missing section."""
+    Item 1A (risk_factors) exists on both. Returns "" for any missing section.
+    `ticker` is passed through so _tenq_mda's stderr diagnostics name the issuer."""
     risk = _section(obj, "risk_factors")
-    mda = _tenq_mda(obj) if str(form).upper().startswith("10-Q") else _section(
+    mda = _tenq_mda(obj, ticker) if str(form).upper().startswith("10-Q") else _section(
         obj, "management_discussion")
     return risk, mda
 
@@ -251,8 +299,8 @@ def filing_text_change(
             return None
         rows.sort(key=_acceptance_date, reverse=True)
         current, prior = rows[0], rows[1]
-        cur_risk, cur_mda = _filing_sections(current.obj(), form)
-        pri_risk, pri_mda = _filing_sections(prior.obj(), form)
+        cur_risk, cur_mda = _filing_sections(current.obj(), form, ticker)
+        pri_risk, pri_mda = _filing_sections(prior.obj(), form, ticker)
         sim = textsim.combined_similarity(cur_risk, pri_risk, cur_mda, pri_mda)
         if sim is None:
             return None
@@ -321,7 +369,7 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         if latest_q is not None and str(getattr(latest_q, "form", "")) == "10-Q":
             # ONE parse feeds both Part I Item 2 and Part II Item 1A.
             qobj = latest_q.obj()
-            tenq_mda = _tenq_mda(qobj)
+            tenq_mda = _tenq_mda(qobj, ticker)
             tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
     except Exception:

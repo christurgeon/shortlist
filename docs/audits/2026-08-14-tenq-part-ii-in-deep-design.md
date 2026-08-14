@@ -55,10 +55,43 @@ Two failures, neither introduced by this work:
   A length threshold alone would have admitted 71K chars of note text under a
   "10-Q legal proceedings" label, misattributing any verified quote. A second reason to
   defer legal.
-- **JPM Part I Item 2 → 601,221 chars** (whole-document over-capture) and **INTC → 0**.
-  This is the *shipped* `_tenq_mda` path: JPM's brief has been fed the first 40K chars of
-  a 601K over-capture, and INTC's brief has had no 10-Q MD&A at all. Recorded in
-  `TODO.md` §2a; the `max_chars.tenq_mda` cap is what keeps it bounded.
+- **JPM Part I Item 2 → 601,221 chars** (over-capture) and **INTC → 0**. This is the
+  *shipped* `_tenq_mda` path. Recorded in `TODO.md` §2a.
+
+  **CORRECTION (same day, wider probe of 35 large caps).** An earlier revision of this
+  bullet said JPM's brief "has been fed the first 40K chars of a 601K over-capture",
+  implying the model saw the wrong content. That is **wrong** and was retracted after
+  measurement:
+
+  | symptom | incidence | fractions | consequence |
+  |---|---|---|---|
+  | 0-char extraction | **1 / 35** (INTC) | — | **the real defect** — no quarterly MD&A in the brief |
+  | over-capture (span >= 50% of doc) | **3 / 35** | JPM 0.846, MCD 0.644, PFE 0.566 | **benign** — see below |
+  | normal | 31 / 35 | median 0.230, p90 0.397 | — |
+
+  All three over-capturing spans **start at a genuine MD&A heading**, so the prefix that
+  survives `max_chars.tenq_mda` (40,000) is genuine MD&A prose — the model sees correct
+  content. The cause is the mirror image of INTC's: a *neighbouring* item's heading goes
+  undetected and this span swallows it, rather than this span's heading going undetected
+  and the previous item swallowing it (on INTC the preceding Part I Item 1 span is 135,783
+  chars). The clean gap between p90 0.397 and 0.566 is why the observability threshold sits
+  at 0.50. **Do not change extraction behaviour for over-capture.**
+
+  **Two measured non-fixes**, each pinned by a regression test in
+  `tests/research/test_filings.py`:
+  - `tenq["Item 2"]` is **not** a fallback for the INTC gap — it returns 2,459 chars of
+    *Part II* Item 2 (unregistered sales / share repurchases), i.e. wrong content that
+    would be silently labelled MD&A inside the grounding haystack.
+  - `tenq.items` is **not** a usable guard — XOM lists an unqualified `'Item 2'`, TSLA
+    lists 3 entries, MCD exactly one, yet `get_item_with_part("Part I","Item 2")` returns
+    69,820 / 49,879 / 122,045 chars for them respectively. Any guard keyed on `items`
+    reports phantom failures.
+
+  **Shipped instead:** `_tenq_mda` now logs both symptoms to stderr (the 0-char abstention
+  and an over-capture note carrying the fraction) and returns the text unchanged.
+  *Recovering* the missing INTC span by slicing the containing Part I Item 1 blob at an
+  MD&A heading is **deferred pending a wider probe** — it is fitted to n=1 and its failure
+  mode injects wrong text into the haystack.
 
 ## Probe 2 — does diffing fix Finding 2? (10 tickers)
 

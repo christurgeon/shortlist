@@ -129,12 +129,28 @@ it outranks §3's alpha questions.
     200–800 chars of "Refer to Note 24 of this Form 10-Q". The legal substance is in the
     **notes**, so it is §2b work (legal contingencies, item 6 on its list), not an item
     extractor. Do not re-raise it as a 10-Q gap.
-- **`_tenq_mda` over-captures on some filers (found 2026-08-14, pre-existing).** Measured:
-  JPM's Part I Item 2 extraction returns **601,221 chars** — a whole-document over-capture, so
-  its brief is fed the first 40K of the wrong span — and **INTC returns 0**, so INTC briefs
-  have had no 10-Q MD&A at all. `max_chars.tenq_mda` is what keeps the first case bounded.
-  Same class of fault as INTC's Part II Item 1 returning 71,869 chars of Note 14. Diagnose
-  against edgartools' item-boundary detection before assuming our call is wrong.
+- **`_tenq_mda` silently abstains on one filer in 35 (found 2026-08-14, pre-existing).**
+  Both symptoms are edgartools item-boundary detection, not our call. Measured over 35 large
+  caps (2026-08-14), and **both are now logged to stderr** by `_tenq_mda`
+  (`fix/tenq-mda-diagnostics`) — the gap is observable, not fixed:
+  - **The real defect: INTC extracts 0 chars (1 of 35)** — its Part I Item 2 heading is not
+    detected, so the preceding Part I Item 1 span (135,783 chars) absorbs the MD&A and the
+    brief carries no quarterly MD&A at all.
+  - **Over-capture (3 of 35) is NOT harmful.** JPM 0.846, MCD 0.644, PFE 0.566 of the whole
+    document vs a median 0.230 and p90 0.397 for normal names — a clean gap between <=0.40
+    and >=0.566. An earlier revision of this bullet claimed JPM's brief "is fed the first 40K
+    of the wrong span"; that was **wrong**. All three spans start at a genuine MD&A heading,
+    so the prefix surviving `max_chars.tenq_mda` (40,000) is genuine MD&A prose and the model
+    sees correct content. Do not change extraction for this case.
+  - **Two measured traps, pinned by regression tests.** `tenq["Item 2"]` is not a fallback —
+    on INTC it returns 2,459 chars of *Part II* Item 2 (share repurchases), wrong content
+    silently labelled MD&A. `tenq.items` is not a guard — XOM lists an unqualified `Item 2`,
+    TSLA three entries, MCD exactly one, yet `get_item_with_part("Part I","Item 2")` returns
+    69,820 / 49,879 / 122,045 chars for them, so an `items` check reports phantom failures.
+  - **Recovery is deferred**, not forgotten: slicing the containing Part I Item 1 blob at an
+    MD&A heading is fitted to n=1 and would inject wrong text into the grounding haystack.
+    Needs a wider probe first. Same class of fault as INTC's Part II Item 1 returning 71,869
+    chars of Note 14.
 - **8-K substance in `/deep`: SHIPPED 2026-08-14, one caveat still open.** Behaviour and
   landmines are in `CLAUDE.md`; evidence is
   `docs/audits/2026-08-13-eightk-text-in-deep-design.md`. What remains open here:
