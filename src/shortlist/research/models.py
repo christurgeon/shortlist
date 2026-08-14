@@ -120,6 +120,12 @@ class FilingBundle:
     # ^ list[EightKText] — recent 8-K substance (research/eightk.py). Empty unless
     # `research.eightk` is enabled AND a qualifying filing exists, which is what
     # keeps the prompt and the report byte-identical for every other name.
+    tenq_accession: str = ""
+    # ^ set whenever a 10-Q was LOCATED, independently of whether its MD&A parsed.
+    # `tenq_accession and not tenq_mda` is the "we found the filing but could not read
+    # Item 2" case (2.19% of 228 filings measured 2026-08-14), which must be reported
+    # as a data gap rather than silently omitted — see
+    # docs/audits/2026-08-14-tenq-mda-recovery-kill.md.
     tenq_added_risks: str = ""
     # ^ Part II Item 1A blocks absent from the 10-K's Item 1A — the quarter's risk
     # CHANGES (research/filings.py:_tenq_added_risks). Filing text, so unlike

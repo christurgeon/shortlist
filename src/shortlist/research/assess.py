@@ -369,6 +369,17 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
                         f"{bundle.tenq_mda}\n\n")
+    elif getattr(bundle, "tenq_accession", ""):
+        # A 10-Q exists but Item 2 would not parse (2.19% of filings — the edgartools
+        # heading-detection gap). Say so: silence let the model read "no quarterly MD&A"
+        # as "nothing changed". PROMPT-ONLY — a computed status line, never a haystack
+        # segment, so it cannot be quoted back and pass quote-verification.
+        tenq_section = (
+            "=== LATEST 10-Q — MD&A UNAVAILABLE ===\n"
+            "A 10-Q was filed for the current quarter, but its Part I Item 2 (MD&A) could "
+            "not be extracted, so NO quarterly MD&A appears in this brief. Treat that as a "
+            "data gap in the evidence available to you, NOT as evidence that nothing "
+            "changed this quarter, and do not infer quarterly trends from its absence.\n\n")
     # The quarter's risk-factor CHANGES, already diffed against the 10-K Item 1A
     # above (research/filings.py:_tenq_added_risks) — so this section is small and
     # non-duplicative by construction. Empty => byte-identical prompt.
