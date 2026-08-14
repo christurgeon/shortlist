@@ -305,6 +305,91 @@ def test_grounding_verifies_tenq_quote_not_prior_year():
     assert a.risks[0].verified is False            # prior-year text excluded from haystack
 
 
+def _bundle_with_8k(text, label="8-K 2026-07-30 (Item 2.02, EX-99.1)"):
+    from shortlist.research.models import EightKText, FilingBundle, FilingText
+    tenk = FilingText("A", "acc", "d", business="The Company designs devices.",
+                      mda="Net sales increased.", risk_factors="Supply is concentrated.")
+    e = EightKText(accession="a1", filed="2026-07-30", items="2.02,9.01",
+                   label=label, text=text)
+    return FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                        filing_date="d", eightks=[e])
+
+
+def _assessment_with(risks):
+    from shortlist.research.models import Moat, QualitativeAssessment, Thesis
+    a = QualitativeAssessment(ticker="A", as_of="t", filing_accession="acc",
+                              filing_date="d", model="m", moat=Moat(), thesis=Thesis())
+    a.risks = risks
+    return a
+
+
+def test_a_quote_only_in_the_8k_verifies_and_names_the_8k_as_its_source():
+    """An 8-K IS filing text, so it grounds a quote — but "verified" must not
+    silently widen from "the 10-K" to "a furnished press release"."""
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import Finding
+    bundle = _bundle_with_8k("Fourth-quarter revenue rose 8% to $94.0 billion.")
+    a = _assessment_with([Finding(claim="growth", evidence="revenue rose 8% to $94.0 billion")])
+    _verify_grounding(a, bundle)
+    assert a.risks[0].verified is True
+    assert a.risks[0].source == "8-K 2026-07-30 (Item 2.02, EX-99.1)"
+
+
+def test_a_10k_quote_still_reports_the_10k_as_its_source():
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import Finding
+    bundle = _bundle_with_8k("Fourth-quarter revenue rose 8%.")
+    a = _assessment_with([Finding(claim="supply", evidence="Supply is concentrated.")])
+    _verify_grounding(a, bundle)
+    assert a.risks[0].verified is True and a.risks[0].source == "10-K"
+
+
+def test_a_fabricated_or_stitched_quote_still_fails_with_an_8k_present():
+    """Adding a segment can change what a quote is ATTRIBUTED to; it must never
+    change what verifies. A span stitched across the 10-K and the 8-K matches
+    neither document on its own."""
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import Finding
+    bundle = _bundle_with_8k("Fourth-quarter revenue rose 8%.")
+    a = _assessment_with([
+        Finding(claim="invented", evidence="Guidance was withdrawn entirely."),
+        Finding(claim="stitched", evidence="Supply is concentrated. Fourth-quarter revenue rose 8%."),
+    ])
+    _verify_grounding(a, bundle)
+    assert [f.verified for f in a.risks] == [False, False]
+    assert [f.source for f in a.risks] == ["", ""]
+    assert a.unverified_count == 2
+
+
+def test_a_quote_spanning_the_elision_marker_cannot_verify():
+    """The `[…]` splice is safe by construction: a quote crossing it fails the
+    substring check and is correctly marked unverified."""
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.eightk import _ELISION
+    from shortlist.research.models import Finding
+    bundle = _bundle_with_8k(f"Revenue rose 8%.{_ELISION}Outlook: we expect growth.")
+    a = _assessment_with([Finding(claim="spliced", evidence="Revenue rose 8%. Outlook: we expect growth.")])
+    _verify_grounding(a, bundle)
+    assert a.risks[0].verified is False
+
+
+def test_the_8k_system_addendum_is_keyed_on_the_bundle_not_the_config():
+    """No qualifying 8-K => no block => no instructions about a section that is not
+    there, and a byte-identical system prompt."""
+    from shortlist.research import assess as A
+
+    seen = {}
+
+    def _runner(prompt, system, model, timeout_s, **kw):
+        seen[len(seen)] = system
+        return CliResult(text=json.dumps(GOOD), model=model)
+
+    A.assess(None, BUNDLE, CONFIG, runner=_runner)
+    A.assess(None, _bundle_with_8k("Revenue rose 8%."), CONFIG, runner=_runner)
+    assert A.EIGHTK_SYSTEM_ADDENDUM not in seen[0]
+    assert seen[1] == seen[0] + A.EIGHTK_SYSTEM_ADDENDUM
+
+
 def test_assess_sets_cache_key():
     from shortlist.research import assess as A
     from shortlist.research.claude_cli import CliResult
@@ -582,3 +667,22 @@ def test_prompt_is_byte_identical_when_similarity_is_none():
     value_prompt = _build_user_prompt(withvalue, cfg)
     assert value_prompt != none_prompt
     assert value_prompt == none_prompt + _similarity_line(0.62)
+
+    # Same contract for the 8-K block: an empty `eightks` (disabled, or simply no
+    # qualifying filing) must leave the prompt byte-identical...
+    from shortlist.research.models import EightKText
+    empty = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                         filing_date="2026-01-01", eightks=[])
+    assert _build_user_prompt(empty, cfg) == none_prompt
+    assert "RECENT 8-K" not in none_prompt
+
+    # ...and a present one must grow the prompt by EXACTLY the rendered block, in
+    # place (it sits after the 10-Q MD&A, so it is an insertion, not an append).
+    e = EightKText(accession="a1", filed="2026-07-30", items="2.02,9.01",
+                   label="8-K 2026-07-30 (Item 2.02, EX-99.1)",
+                   text="Apple reported revenue of $94.0 billion.")
+    with8k = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                          filing_date="2026-01-01", eightks=[e])
+    block = f"=== RECENT 8-K — 2026-07-30, Item(s) 2.02,9.01 ===\n{e.text}\n\n"
+    assert (_build_user_prompt(with8k, cfg)
+            == none_prompt.replace("Return at most", block + "Return at most", 1))

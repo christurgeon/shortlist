@@ -80,6 +80,21 @@ def test_new_filing_event_changes_key():
     assert _key(_Card(metrics=_M())) != _key(_Card(metrics=_M(filing_events=ev)))
 
 
+def test_a_same_day_8k_amendment_does_not_collide_with_its_original():
+    """spec §3.7: (form, items, filed) are identical for an 8-K/A filed the same day
+    as the report it amends, so the accession has to be in the per-event tuple."""
+    orig = [{"form": "8-K", "filed": "2026-08-11", "items": "2.02", "accession": "a1"}]
+    amend = [{"form": "8-K", "filed": "2026-08-11", "items": "2.02", "accession": "a2"}]
+    assert (_key(_Card(metrics=_M(filing_events=orig)))
+            != _key(_Card(metrics=_M(filing_events=amend))))
+
+
+def test_the_8k_reader_is_in_the_prompt_fingerprint():
+    """`eightk` shapes the prompt's bytes, so an edit to it must self-invalidate the
+    brief cache — the completeness rule _PROMPT_MODULES exists to enforce."""
+    assert "eightk" in cachekey._PROMPT_MODULES
+
+
 def test_filing_events_with_none_fields_do_not_raise():
     ev = [{"form": "8-K", "filed": None, "items": None},
           {"form": None, "filed": "2026-08-01", "items": "5.02"}]

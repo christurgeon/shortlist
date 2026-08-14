@@ -83,6 +83,20 @@ class FilingText:
 
 
 @dataclass
+class EightKText:
+    """One recent 8-K's extracted substance (research/eightk.py). Unlike the
+    proxy/reverse-DCF context lines this IS filing text, so it enters the grounding
+    haystack — but as its OWN segment, carrying `label` (e.g.
+    "8-K 2026-07-30 (Item 2.02, EX-99.1)") so a reader is told which document a
+    verified quote came from rather than assuming the 10-K."""
+    accession: str
+    filed: str
+    items: str
+    label: str
+    text: str
+
+
+@dataclass
 class FilingBundle:
     """The documents fed to one research brief. `tenk` is the current 10-K (the
     primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
@@ -102,13 +116,27 @@ class FilingBundle:
     # fetch_bundle from documents already fetched for the risk diff. PROMPT-ONLY:
     # it is a computed number, not filing text, so it must never enter haystack()
     # or a model could quote it through quote-verification as a filing fact.
+    eightks: list = field(default_factory=list)
+    # ^ list[EightKText] — recent 8-K substance (research/eightk.py). Empty unless
+    # `research.eightk` is enabled AND a qualifying filing exists, which is what
+    # keeps the prompt and the report byte-identical for every other name.
+
+    def segments(self) -> list[tuple[str, str]]:
+        """The grounding corpus split into (provenance label, text) pairs, in the
+        order they reach the model. haystack() is the join of these, so adding a
+        segment cannot change what verifies — only what it is attributed to.
+        Empty texts are dropped so a label can never match the empty string."""
+        parts = [("10-K", self.tenk.combined()),
+                 ("10-Q MD&A", self.tenq_mda),
+                 ("newly disclosed risks", self.added_risks_text)]
+        parts += [(e.label, e.text) for e in self.eightks]
+        return [(label, text) for label, text in parts if text]
 
     def haystack(self) -> str:
         """All text shown to the model — the grounding corpus. Excludes the
         prior-year 10-K (never shown), includes the current 10-K + 10-Q MD&A +
-        added-risk blocks."""
-        parts = [self.tenk.combined(), self.tenq_mda, self.added_risks_text]
-        return "\n\n".join(p for p in parts if p)
+        added-risk blocks + any recent 8-K substance."""
+        return "\n\n".join(text for _, text in self.segments())
 
 
 @dataclass
@@ -116,6 +144,7 @@ class Finding:
     claim: str
     evidence: str
     verified: bool = False
+    source: str = ""               # provenance label of the segment that verified it ("" if none)
 
 
 @dataclass
@@ -132,6 +161,7 @@ class Conflict:
     filing_says: str = ""          # verbatim quote; "" iff verdict == "silent"
     verdict: str = "silent"        # one of VERDICTS
     verified: bool = False         # set by _verify_grounding (non-silent only)
+    source: str = ""               # provenance label of the segment that verified it ("" if none)
 
 
 @dataclass

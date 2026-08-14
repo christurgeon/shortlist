@@ -282,8 +282,23 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         similarity = textsim.combined_similarity(
             tenk.risk_factors, prior_1a, tenk.mda, prior_mda)
 
+    # Recent 8-K substance. Imported here, not at module scope: `eightk` imports
+    # log_abstain back out of this module, and its own contract is never-raises, so
+    # a dead SEC endpoint costs a bare label rather than the whole brief.
+    from . import eightk
+    eightks = eightk.fetch_eightks(ticker, config)
+
     cache_key = f"{tenk.accession}+{tenq_acc}" if tenq_acc else tenk.accession
+    # 8-K accessions belong in the FILING half of the key: selection is deliberately
+    # independent of `filing_events` (that is the F1 fix), so `context_digest`'s event
+    # tuple cannot see an 8-K outside EdgarSource's 40-row index — exactly the JPM case
+    # the design was built around. Without this, a fresh earnings release only busts the
+    # brief via the `max_age_days` day bucket, i.e. up to 24h late. Sorted for
+    # determinism; empty list appends nothing, so a name with no qualifying 8-K keeps a
+    # byte-identical key.
+    for acc in sorted(e.accession for e in eightks if e.accession):
+        cache_key += f"+{acc}"
     return FilingBundle(
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
-        text_similarity=similarity)
+        text_similarity=similarity, eightks=eightks)

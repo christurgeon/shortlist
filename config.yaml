@@ -499,6 +499,32 @@ research:
                                # company's numbers read", not market-timing prose.
     enabled: true              # flip false (or remove the block) for a byte-identical no-op
 
+  eightk:                      # recent 8-K SUBSTANCE in the brief (research/eightk.py; design +
+                               # 60-filing evidence: docs/audits/2026-08-13-eightk-text-in-deep-design.md).
+                               # Unlike the context lines above this IS filing text, so it enters
+                               # the grounding haystack — as its own labelled segment, so a verified
+                               # quote is attributed to the 8-K, not to the 10-K. NOT a scored
+                               # signal, no gate, no flag: /deep prompt + report only.
+    enabled: true              # flip false (or remove the block) for a byte-identical no-op
+    lookback_days: 120         # window on the DEDICATED form="8-K" index — NOT m.filing_events,
+                               # whose 40-row mixed index collapsed to 26 days on JPM and dropped
+                               # its Item 2.02 earnings release entirely (spec F1)
+    max_filings: 3
+    max_chars_total: 10000     # normalized chars, POST whitespace-collapse (which alone recovers
+                               # 47-85% of exhibit bytes). ~8% longer prompts; a 30K variant was
+                               # ~25% and pushed a heavy filer toward the timeout_s ceiling above.
+    max_chars_per_filing: 6000 # EX-99 normalized length measured 1,938-47,906 chars, median ~26K,
+                               # so this binds on most earnings releases by design: the goal is
+                               # capturing what is NEW, not capturing the whole release.
+    guidance_window_chars: 1500  # spliced around a late outlook/guidance hit the prefix would lose
+                               # (2 of 23 measured releases place "Outlook" AFTER the financial
+                               # tables — JPM at 0.45, CVX at 0.41 of the document). The one
+                               # heuristic here, fitted to n=2, and a TRADE: the window displaces
+                               # prefix chars inside the same cap. Set 0 to drop it first.
+    items: ["4.02", "2.02", "2.01", "1.01", "5.02"]   # priority order, best-first. 4.02 outranks
+                               # 2.02 because a non-reliance restatement unconditionally stops a
+                               # thesis. An 8-K with none of these keeps today's bare form label.
+
   proxy:                       # DEF 14A compensation & governance context line (research-only;
                                # prompt-only, NOT a scored signal — see 2026-06-27-def14a-proxy-reader).
                                # Structured XBRL (pay-vs-performance, ownership, pay slice); fetched

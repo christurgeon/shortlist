@@ -226,3 +226,28 @@ def test_assessment_added_risks_tolerates_malformed_items():
                                 filing_date="d", model="m", cost_usd=None,
                                 stop_reason=None)
     assert len(a.added_risks) == 1 and a.added_risks[0].claim == "real"
+
+
+def test_segments_label_each_document_and_haystack_is_their_join():
+    """spec §3.4: haystack() becomes the join of segments(), so every existing
+    caller is unchanged and adding a segment cannot change what verifies."""
+    from shortlist.research.models import EightKText, FilingBundle, FilingText
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    e = EightKText(accession="a1", filed="2026-07-30", items="2.02,9.01",
+                   label="8-K 2026-07-30 (Item 2.02, EX-99.1)", text="revenue rose")
+    b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                     filing_date="2026-01-01", tenq_mda="q", added_risks_text="new",
+                     eightks=[e])
+    assert b.segments() == [("10-K", "b\n\nm\n\nr"), ("10-Q MD&A", "q"),
+                            ("newly disclosed risks", "new"),
+                            ("8-K 2026-07-30 (Item 2.02, EX-99.1)", "revenue rose")]
+    assert b.haystack() == "\n\n".join(t for _, t in b.segments())
+
+
+def test_segments_drops_empty_documents_so_no_label_matches_the_empty_string():
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                     filing_date="2026-01-01")
+    assert b.segments() == [("10-K", "b\n\nm\n\nr")]
+    assert b.haystack() == "b\n\nm\n\nr"        # unchanged with no 8-K, no 10-Q

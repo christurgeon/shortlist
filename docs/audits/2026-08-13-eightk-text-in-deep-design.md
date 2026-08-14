@@ -212,3 +212,78 @@ Fixtures are drawn from the measured filings in §2.4, not invented shapes:
   900s ceiling. Re-measure on a heavy filer before calling this done.
 - **Foreign issuers are out of scope** — briefs are 10-K-only with an ADR-aware skip, so the
   6-K analogue never arises.
+
+---
+
+## 6. Post-build value test — two bugs found, then SHIP (2026-08-14)
+
+The build passed CI, rendered correct labels and produced readable briefs. It was still
+**broken**, and only a test that read the *content* rather than the pass/fail found it.
+
+### 6.1 The first three runs said "kill"
+
+| run | card | 8-K chars | verified quotes | from an 8-K |
+|---|---|---|---|---|
+| WDC (stub card) | mock | 10,000 | 23 | **0** |
+| WDC (real card) | real | 10,000 | 21 | **0** |
+| NKE (real card) | real | 10,000 | 29 | **0** |
+
+50 quotes, none from an 8-K — against a pre-registered rule that said kill on zero.
+
+### 6.2 Why it was zero — two defects, both in this design
+
+**B1 — cover pages were never stripped from filing bodies.** NKE's 2026-08-10 Item 5.02
+body is 4,023 normalized chars and the CFO appointment sits at **char 2,672**. The prefix
+slice therefore delivered SEC letterhead ("One Bowerman Drive, Beaverton") and dropped the
+event. §3.2's prefix rule was justified by 10-K risk factors being ordered worst-first; an
+8-K body is the **opposite**, and that was never checked. Fix: `_strip_cover` cuts at the
+first `Item d.dd` heading, falling back to the untouched body when absent or implausibly
+early.
+
+**B2 — the budget walk starved the tail.** Priority-ordered greedy allocation let two
+routine 2.02 releases take 6,000 + 3,400 of 10,000, leaving **600** for the 5.02 — and with
+only three slots it silently dropped a fourth filing entirely. Item priority ranks which
+filings are worth READING; it must not also decide which one gets read. Fix: `_allocate`
+grants equal shares, then redistributes unused share in priority order.
+
+Both were invisible to the test suite: every test passed, every label was correct.
+
+### 6.3 After the fix
+
+Extraction, verified with no model call:
+
+| filing | before | after |
+|---|---|---|
+| 2026-08-10 (5.02) | 600 (letterhead) | **1,994, from "Item 5.02. Departure of Directors…"** |
+| 2026-06-23 (2.02+5.02) | 3,400 | 2,733, from "Item 2.02. Results of Operations" |
+| 2026-06-30 (2.02) | 6,000 | 4,673, from the release headline |
+
+Total **9,400 of 10,000** — stripping the cover page made the feature *cheaper*, not dearer.
+
+Re-run on NKE: **3 verified 8-K citations, 0 unverified.**
+
+- red flag, from the Item 5.02 body: *"On August 4, 2026, Johanna Nielsen informed NIKE,
+  Inc. of her intent to resign as Vice President, Chief Accounting Officer and Corporate
+  Controller"* — an accounting-officer resignation, absent from the 10-K entirely.
+- red flag + reconciliation, from the EX-99.1: *"Net income was $1.1 billion, up 407
+  percent… including a $0.52 benefit related to the expected recovery of…"* — i.e. the
+  headline beat was largely one-time.
+
+**Verdict: SHIP.** Both surfaced facts are the "otherwise confidently wrong" case the
+feature was justified on.
+
+### 6.4 Measured cost
+
+| | |
+|---|---|
+| prompt growth | +10,100 chars, **5.6–7.7%** (fixed, not a multiplier — smallest on the heaviest filers) |
+| brief latency | 124–187s against a 900s ceiling (recorded pre-feature WDC baseline ~490s) |
+| brief cost | ~$0.71–0.91 |
+| extra network | ~13–19s for the whole bundle including 8-Ks |
+
+### 6.5 Method note
+
+Three measurement instruments gave the wrong answer before the right one landed: a citation
+tally that omitted `reconciliation`; a token matcher that missed paraphrase; and a plausible
+read of the narrative prose ("a CFO transition") that traced back to the **10-K**, not the
+8-K, when checked. Verify the mechanism, not the pattern.

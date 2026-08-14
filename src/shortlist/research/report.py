@@ -34,6 +34,11 @@ def _findings_md(findings, empty_label: str) -> list[str]:
     lines = []
     for f in findings:
         mark = "" if f.verified else " _(unverified)_"
+        # Name the source document only when it is NOT the 10-K a reader already
+        # assumes — so a brief with no 8-K text renders byte-identically.
+        source = getattr(f, "source", "") or ""
+        if f.verified and source and source != "10-K":
+            mark = f" _— verified against {source}_"
         lines.append(f"- **{f.claim}**{mark}")
         if f.evidence:
             lines.append(f"  > {f.evidence}")
