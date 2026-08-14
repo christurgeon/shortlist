@@ -98,6 +98,127 @@ def test_tenq_mda_empty_on_missing():
     assert _tenq_mda(object()) == ""              # no method at all -> ""
 
 
+def test_tenq_mda_does_not_fall_back_to_bare_item_2(capsys):
+    """INTC (measured 2026-08-14): get_item_with_part('Part I','Item 2') returns 0 chars
+    because edgartools misses the Part I Item 2 heading. `tenq["Item 2"]` is NOT a safe
+    recovery — on INTC it returns 2,459 chars of *Part II* Item 2 (unregistered sales /
+    share repurchases), which would be silently labelled MD&A in the grounding haystack.
+    Abstaining is correct; this test exists so the "obvious fix" is not re-added."""
+    from shortlist.research.filings import _tenq_mda
+
+    part_ii_item_2 = ("Issuer Purchases of Equity Securities. During the quarter we "
+                      "repurchased shares under the publicly announced program. " * 20)
+
+    class _FakeINTC:
+        def get_item_with_part(self, part, item, markdown=True):
+            return ""                      # Part I Item 2 heading undetected
+        def __getitem__(self, key):
+            assert key == "Item 2"
+            return part_ii_item_2          # wrong content: Part II Item 2
+
+    assert _tenq_mda(_FakeINTC(), "INTC") == ""
+    assert "repurchased shares" not in capsys.readouterr().err
+
+
+def test_tenq_mda_ignores_the_items_list(capsys):
+    """XOM / TSLA / MCD (measured 2026-08-14): `tenq.items` is NOT a usable guard. XOM
+    lists an unqualified 'Item 2', TSLA lists three entries, MCD exactly one — yet
+    get_item_with_part('Part I','Item 2') returns 69,820 / 49,879 / 122,045 chars for
+    them. Any guard keyed on `items` reports phantom failures, so a misleading or empty
+    `items` must not suppress a working extraction."""
+    from shortlist.research.filings import _tenq_mda
+
+    mda = "Management's Discussion and Analysis. Revenue rose on volume. " * 500
+
+    class _FakeItemsMismatch:
+        def __init__(self, items):
+            self.items = items
+        def get_item_with_part(self, part, item, markdown=True):
+            assert (part, item) == ("Part I", "Item 2")
+            return mda
+
+    for items in ([], ["Item 2"], ["Item 1", "Item 2", "Item 3"], ["Part I Item 2"]):
+        assert _tenq_mda(_FakeItemsMismatch(items), "XOM") == mda
+    assert capsys.readouterr().err == ""
+
+
+def test_tenq_mda_logs_the_abstention(capsys):
+    """The INTC 0-char gap went unnoticed because _tenq_mda returned "" silently."""
+    from shortlist.research.filings import _tenq_mda
+
+    class _Empty:
+        def get_item_with_part(self, *a, **k):
+            return ""
+
+    assert _tenq_mda(_Empty(), "INTC") == ""
+    err = capsys.readouterr().err
+    assert "INTC" in err and "10-Q MD&A" in err
+
+
+def test_tenq_mda_logs_extraction_failure_and_never_raises(capsys):
+    from shortlist.research.filings import _tenq_mda
+
+    class _Boom:
+        def get_item_with_part(self, *a, **k):
+            raise ValueError("item boundary detection failed")
+
+    assert _tenq_mda(_Boom(), "AAPL") == ""
+    err = capsys.readouterr().err
+    assert "AAPL" in err and "ValueError" in err
+
+
+def test_tenq_mda_notes_over_capture_without_changing_the_text(capsys):
+    """JPM 0.846 / MCD 0.644 / PFE 0.566 of the whole 10-Q (measured 2026-08-14) vs a
+    median 0.230 and p90 0.397 for normal names. Over-capture is NOT harmful — the span
+    starts at a genuine MD&A heading and the prefix surviving the 40K cap is real MD&A
+    prose — so it must be observable only, never truncated or abstained."""
+    from shortlist.research.filings import _tenq_mda
+
+    mda = "x" * 8460
+
+    class _FakeJPM:
+        doc = type("_Doc", (), {"text": staticmethod(lambda: "y" * 10000)})()
+        def get_item_with_part(self, *a, **k):
+            return mda
+
+    assert _tenq_mda(_FakeJPM(), "JPM") == mda           # unchanged
+    err = capsys.readouterr().err
+    assert "JPM" in err and "over-captured" in err and "0.85" in err
+
+
+def test_tenq_mda_no_over_capture_note_for_a_normal_span(capsys):
+    from shortlist.research.filings import _tenq_mda
+
+    class _FakeNormal:
+        doc = type("_Doc", (), {"text": staticmethod(lambda: "y" * 10000)})()
+        def get_item_with_part(self, *a, **k):
+            return "x" * 2300                            # 0.230, the measured median
+
+    assert _tenq_mda(_FakeNormal(), "KO") == "x" * 2300
+    assert capsys.readouterr().err == ""
+
+
+def test_tenq_mda_over_capture_check_is_skipped_when_doc_is_unusable(capsys):
+    """Whole-document length is neither cheap nor guaranteed; a missing or raising
+    `doc` must skip the check silently and never change the returned text."""
+    from shortlist.research.filings import _tenq_mda
+
+    class _NoDoc:
+        def get_item_with_part(self, *a, **k):
+            return "mda text"
+
+    class _RaisingDoc:
+        @property
+        def doc(self):
+            raise RuntimeError("html fetch failed")
+        def get_item_with_part(self, *a, **k):
+            return "mda text"
+
+    for fake in (_NoDoc(), _RaisingDoc()):
+        assert _tenq_mda(fake, "X") == "mda text"
+        assert capsys.readouterr().err == ""
+
+
 class _PriorTenK:
     risk_factors = "prior risk text"
     management_discussion = "prior mda text"
