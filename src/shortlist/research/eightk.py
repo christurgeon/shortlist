@@ -51,6 +51,10 @@ _GUIDANCE_RE = re.compile(r"outlook|guidance|we expect|expects? (?:to|revenue|fu
 
 _ITEM_CODE_RE = re.compile(r"\d+\.\d+")
 
+# The first "Item d.dd" heading marks where an 8-K body stops being SEC cover page
+# and starts being the event. See _strip_cover.
+_ITEM_HEADING_RE = re.compile(r"Item\s+\d\.\d{2}", re.I)
+
 
 def config_block(config: Optional[dict]) -> dict:
     """The merged `research.eightk` block. An ABSENT block is NOT a no-op — the
@@ -114,9 +118,49 @@ def _exhibit_text(filing: Any) -> tuple[str, str]:
 
 def _body_text(filing: Any) -> str:
     try:
-        return _norm_ws(filing.text())
+        return _strip_cover(_norm_ws(filing.text()))
     except Exception:
         return ""
+
+
+def _strip_cover(body: str) -> str:
+    """Drop the SEC cover page, which precedes the substance of every 8-K body.
+
+    MEASURED FAILURE this fixes: NKE's 2026-08-10 Item 5.02 body is 4,023 normalized
+    chars and the CFO appointment sits at char 2,672 — so a prefix slice fed the model
+    2,672 chars of "Securities and Exchange Commission / One Bowerman Drive"
+    letterhead and dropped the event. A prefix slice is only defensible on text whose
+    front matter is material (10-K risk factors are ordered worst-first); an 8-K body
+    is the opposite, so the cover has to go before the cap applies.
+
+    Cuts at the first `Item d.dd` heading. Falls back to the untouched body when there
+    is no heading or it sits implausibly early (<200 chars in, i.e. a match inside the
+    header itself) — losing the cover page must never cost the substance."""
+    m = _ITEM_HEADING_RE.search(body)
+    return body[m.start():] if (m and m.start() >= 200) else body
+
+
+def _allocate(lengths: list[int], total: int, per_filing: int) -> list[int]:
+    """Per-filing char budgets, in selection (priority) order.
+
+    MEASURED FAILURE this fixes: a priority-ORDERED greedy walk let two routine NKE
+    earnings releases take 6,000 + 3,400 of 10,000, leaving 600 for the Item 5.02 CFO
+    appointment — the one materially new event in the window. Item priority ranks
+    which filings are WORTH reading; it must not also decide which one gets to be
+    read. Equal shares first, then unused share (a filing shorter than its slice)
+    redistributed in priority order so nothing is wasted."""
+    if not lengths:
+        return []
+    share = min(per_filing, total // len(lengths))
+    grants = [min(share, n) for n in lengths]
+    leftover = total - sum(grants)
+    for i, n in enumerate(lengths):
+        if leftover <= 0:
+            break
+        take = min(min(per_filing, n) - grants[i], leftover)
+        grants[i] += take
+        leftover -= take
+    return grants
 
 
 def _label(filed: str, hits: list[str], parts: list[str]) -> str:
@@ -161,6 +205,14 @@ def extract(filing: Any, hits: list[str], cap: int, window: int) -> tuple[str, l
     narrative exists ONLY in the body (F2). With no usable EX-99 the body is all
     there is anyway (CVX 2026-04-09 files a 2.02 with no exhibit at all; XOM
     2026-07-01 carries EX-3/EX-4 only)."""
+    text, parts = extract_raw(filing, hits)
+    return (_cap(text, cap, window) if text else ""), parts
+
+
+def extract_raw(filing: Any, hits: list[str]) -> tuple[str, list[str]]:
+    """`extract` without the cap, so `fetch_eightks` can size every filing's budget
+    against what each one actually has (see `_allocate`) instead of handing the whole
+    budget to whichever filing it reaches first."""
     ex_type, ex_text = _exhibit_text(filing)
     body = "" if (ex_text and set(hits) == {"2.02"}) else _body_text(filing)
     chunks, parts = [], []
@@ -172,7 +224,7 @@ def extract(filing: Any, hits: list[str], cap: int, window: int) -> tuple[str, l
         parts.append(ex_type)
     if not chunks:
         return "", []
-    return _cap(" ".join(chunks), cap, window), parts
+    return " ".join(chunks), parts
 
 
 def select(filings: Any, cfg: dict,
@@ -236,24 +288,31 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
         log_abstain("8-K index fetch failed", ticker, e)
         return []
 
-    out: list[EightKText] = []
-    remaining = int(cfg["max_chars_total"])
     window = int(cfg["guidance_window_chars"])
+    # Extract every selected filing FIRST, then size the budgets against what each
+    # one actually holds. Fetching before allocating costs nothing extra (the
+    # documents are already being downloaded) and is what lets `_allocate` protect a
+    # short, material filing from a long routine one.
+    raw: list[tuple[Any, list[str], list[str], str, list[str]]] = []
     for filing, codes, hits in selected:
-        if remaining <= 0:
-            break
         try:
-            text, parts = extract(
-                filing, hits, min(int(cfg["max_chars_per_filing"]), remaining), window)
+            text, parts = extract_raw(filing, hits)
         except Exception as e:
             log_abstain("8-K text extraction failed", ticker, e)
             continue
-        if not text:
+        if text:
+            raw.append((filing, codes, hits, text, parts))
+
+    grants = _allocate([len(r[3]) for r in raw], int(cfg["max_chars_total"]),
+                       int(cfg["max_chars_per_filing"]))
+    out: list[EightKText] = []
+    for (filing, codes, hits, text, parts), grant in zip(raw, grants, strict=True):
+        capped = _cap(text, grant, window)
+        if not capped:
             continue
         filed = str(getattr(filing, "filing_date", "") or "")
         out.append(EightKText(
             accession=str(getattr(filing, "accession_no", "") or ""),
             filed=filed, items=",".join(codes),
-            label=_label(filed, hits, parts), text=text))
-        remaining -= len(text)
+            label=_label(filed, hits, parts), text=capped))
     return out

@@ -226,10 +226,13 @@ def test_budget_walk_is_deterministic_and_never_exceeds_max_chars_total():
     rows = [_Filing(f"2026-07-{d:02d}", items="2.02", accession=f"a{d}",
                     exhibits=[_Att("EX-99.1", "w" * 20000)]) for d in (10, 11, 12)]
     out = fetch_eightks("X", None, company_factory=_company(rows), today=TODAY)
-    # priority-order walk: min(per_filing_cap, remaining) each, then exhaustion
-    assert [len(e.text) for e in out] == [6000, 4000]
+    # Equal shares, not a priority-ordered greedy walk. The greedy version gave
+    # [6000, 4000] and silently DROPPED the third filing — measured on NKE, where
+    # that third slot held the Item 5.02 CFO appointment (the one material event in
+    # the window) while two routine 2.02 releases ate the budget.
+    assert [len(e.text) for e in out] == [3334, 3333, 3333]
     assert sum(len(e.text) for e in out) == CFG["max_chars_total"]
-    assert [e.filed for e in out] == ["2026-07-12", "2026-07-11"]   # newest-first tie-break
+    assert [e.filed for e in out] == ["2026-07-12", "2026-07-11", "2026-07-10"]
 
 
 def test_label_carries_date_priority_items_and_source_documents():
@@ -277,3 +280,68 @@ def test_item_4_02_is_selected_first_from_a_constructed_fixture():
     out = fetch_eightks("X", None, company_factory=_company(rows),
                         today=TODAY)
     assert out[0].label == "8-K 2026-05-01 (Item 4.02, body)"
+
+
+# ---------------------------------------------------------------------------
+# Cover-page stripping and budget allocation. Both pin MEASURED failures found
+# on NKE 2026-08-10 (Item 5.02) during the post-build value test — see
+# docs/audits/2026-08-13-eightk-text-in-deep-design.md §6.
+# ---------------------------------------------------------------------------
+
+_COVER = ("UNITED STATES SECURITIES AND EXCHANGE COMMISSION Washington, D.C. 20549 "
+          "FORM 8-K CURRENT REPORT Pursuant to Section 13 or 15(d) of the Securities "
+          "Exchange Act of 1934 August 4, 2026 NIKE, Inc. Oregon 1-10635 93-0584541 "
+          "One Bowerman Drive Beaverton OR 97005-6453 Registrant's telephone number "
+          "Check the appropriate box below if the Form 8-K filing is intended to "
+          "simultaneously satisfy the filing obligation of the registrant ")
+_SUBSTANCE = ("Item 5.02 Departure of Directors or Certain Officers. David Denton, "
+              "the company's newly appointed Executive Vice President and Chief "
+              "Financial Officer, effective as of August 17, 2026, will also assume "
+              "the role of interim Corporate Controller.")
+
+
+def test_cover_page_is_stripped_so_the_event_survives_the_cap():
+    """NKE 2026-08-10: 4,023-char body, substance at char 2,672, 600-char budget.
+    Before the fix this returned pure letterhead."""
+    body = _COVER + _SUBSTANCE
+    assert len(_COVER) >= 200          # the guard's own precondition
+    stripped = eightk._strip_cover(body)
+    assert stripped.startswith("Item 5.02")
+    assert "Chief Financial Officer" in stripped[:600]
+    assert "Bowerman" not in stripped
+
+
+def test_a_body_with_no_item_heading_is_returned_untouched():
+    body = "no heading anywhere in this body at all"
+    assert eightk._strip_cover(body) == body
+
+
+def test_an_implausibly_early_heading_is_not_trusted():
+    """A match inside the header itself must not chop the body to nothing."""
+    body = "Item 1.01 " + "x" * 500
+    assert eightk._strip_cover(body) == body
+
+
+def test_allocation_gives_a_short_material_filing_its_share():
+    """The measured starvation: two long 2.02s must not consume the budget and
+    leave the 5.02 with cover-page scraps."""
+    grants = eightk._allocate([76803, 83684, 1400], total=10000, per_filing=6000)
+    assert grants[2] == 1400, "the short 5.02 must get everything it has"
+    assert sum(grants) <= 10000
+
+
+def test_allocation_redistributes_unused_share_in_priority_order():
+    grants = eightk._allocate([500, 90000, 90000], total=9000, per_filing=6000)
+    assert grants[0] == 500
+    assert grants[1] > grants[2] or grants[1] == 6000
+    assert sum(grants) <= 9000
+
+
+def test_allocation_never_exceeds_either_cap():
+    grants = eightk._allocate([99999, 99999], total=10000, per_filing=6000)
+    assert sum(grants) <= 10000
+    assert all(g <= 6000 for g in grants)
+
+
+def test_allocation_of_nothing_is_empty():
+    assert eightk._allocate([], total=10000, per_filing=6000) == []
