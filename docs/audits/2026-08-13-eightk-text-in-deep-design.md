@@ -1,8 +1,12 @@
 # Reading 8-K substance into `/deep` — design + evidence (2026-08-13)
 
-**Status:** approved in outline by the owner 2026-08-13, at **trimmed** scope (§0). Every
-extraction rule below is traceable to a named, measured filing in §2; nothing here rests on a
-single example.
+**Status: SHIPPED and merged to `main` 2026-08-14** (`8fe6d91`), at **trimmed** scope (§0).
+Approved in outline by the owner 2026-08-13. Every extraction rule below is traceable to a
+named, measured filing in §2; nothing here rests on a single example.
+
+**Read §6 before §3.** The design in §3 passed CI and was still broken — two defects (§6.2)
+made it deliver SEC cover pages instead of the event. §3 is preserved as-designed, with the
+superseded rows marked; §6 is what actually shipped.
 
 **Tracked, not `docs/superpowers/specs/`** (gitignored at `.gitignore:37`; `CLAUDE.md` records
 two enablement artifacts that already evaporated from there). This adds **no scoring leg, no

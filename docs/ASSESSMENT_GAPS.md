@@ -392,8 +392,12 @@ the richest qualitative sources:
 > `FilingBundle` carrying the latest **10-Q's MD&A** (Part I Item 2 — extracted via
 > `TenQ.get_item_with_part`, **not** the TenK-only `management_discussion` attribute;
 > validated by a live-EDGAR integration test) alongside the 10-K, fed to the prompt as a
-> labeled `=== LATEST 10-Q — MD&A ===` section. The brief caches on a **composite key**
-> (`<10-K-acc>+<10-Q-acc>`) so a new quarter invalidates.
+> labeled `=== LATEST 10-Q — MD&A ===` section.
+>
+> **Cache key claim below is superseded twice over.** It is no longer `<10-K-acc>+<10-Q-acc>`:
+> `research/cachekey.py:brief_key` composes the filing accessions with a prompt/config
+> fingerprint, a bucketed context digest and a day bucket, and the filing half now also carries
+> the selected **8-K** accessions (2026-08-14). Quote `cachekey.py`, not this line.
 
 > **SHIPPED — DEF 14A proxy half (compensation & governance, context-line scope):**
 > `research/proxy.py` reads the latest DEF 14A via edgartools' `ProxyStatement` and renders a

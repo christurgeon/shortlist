@@ -124,16 +124,12 @@ it outranks §3's alpha questions.
   the quarter's *changes*)** never reach the model, even though the YoY 10-K risk diff shows we
   care about exactly that delta. Small: extend `FilingBundle`, `cap_bundle`, the prompt and the
   grounding haystack the same way the 10-Q MD&A was added.
-- **Shipped (2026-08-14): 8-K substance now reaches `/deep`.** `research/eightk.py` selects up
-  to 3 recent 8-Ks by item priority (`4.02 > 2.02 > 2.01 > 1.01 > 5.02`) and feeds their text to
-  the brief as **its own labelled haystack segment** — the first quotable addition, so
-  `Finding.source` now records which document verified a quote. Design, 60-filing probe evidence
-  and the post-build value test: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
-  - **Item 4.02 is still unexercised by real data** — no non-reliance filing appeared in the
-    60-filing sample (§5). Tested against a constructed fixture only. Do not claim it verified.
-  - **Selection must never read `filing_events`** (§2.2 F1) and **cover pages must be stripped
-    before the char cap** (§6.2 B1). Both are measured failures, both would look like the
-    feature "just not finding much" if reintroduced.
+- **8-K substance in `/deep`: SHIPPED 2026-08-14, one caveat still open.** Behaviour and
+  landmines are in `CLAUDE.md`; evidence is
+  `docs/audits/2026-08-13-eightk-text-in-deep-design.md`. What remains open here:
+  **Item 4.02 (non-reliance/restatement) is unexercised by real data** — none appeared in the
+  60-filing probe, so the highest-priority branch is pinned by a constructed fixture only. Do
+  not describe it as verified; the first real restatement is its first real test.
 - **Evidence discipline is asymmetric.** Risks, red flags, added risks and reconciliation carry
   `evidence` + a `verified` mark (`report.py:_findings_md`), while **moat, business model and
   management/capital-allocation are bare prose** (`report.py:117-123`) — the three most

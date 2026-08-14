@@ -36,7 +36,16 @@ Default model is `claude-sonnet-5` with `claude-opus-5` as fallback (`config.yam
 ## What's in a brief
 
 The bundle sent to the model is the latest **10-K** (business, MD&A, risk factors), the latest
-**10-Q's MD&A**, and a **YoY Item-1A risk-factor diff** (`riskdiff.py`).
+**10-Q's MD&A**, a **YoY Item-1A risk-factor diff** (`riskdiff.py`), and the substance of up to
+three recent **8-Ks** (`research/eightk.py`).
+
+The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
+guidance, a non-reliance restatement, a completed acquisition, an officer departure. Selected by
+item priority (`4.02 > 2.02 > 2.01 > 1.01 > 5.02`), capped at 10K normalized chars, and — unlike
+everything in the next list — **quotable filing text that enters the haystack**, as its own
+labelled segment. Measured on NKE it surfaced a chief accounting officer's resignation and a
+one-time benefit behind a 407% net-income jump, neither present in the 10-K.
+Design + evidence: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
 
 Several **prompt-only context lines** ride along. These are deliberately kept out of the
 quote-verification haystack, so a computed value can never pass itself off as a filing fact:
@@ -55,6 +64,12 @@ score-vs-filing reconciliation.
 Factual findings — risks and red flags — must carry a **verbatim quote that is verified to
 actually appear in the filing text**. Findings whose quote cannot be located are flagged as
 unverifiable rather than presented as fact. Interpretive prose is labeled as interpretation.
+
+Verification is **per document, not per corpus**: a quote is matched against one labelled
+segment and the finding records which one, so the brief can say *verified against 8-K
+2026-08-10 (Item 5.02, body)* rather than letting "verified" quietly mean "somewhere in the
+pile". A consequence worth knowing: a quote stitched across two documents no longer verifies —
+that is stricter than before, and deliberately so.
 
 ## The screening call
 
