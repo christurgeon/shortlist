@@ -369,6 +369,14 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     if bundle.tenq_mda:
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
                         f"{bundle.tenq_mda}\n\n")
+    # The quarter's risk-factor CHANGES, already diffed against the 10-K Item 1A
+    # above (research/filings.py:_tenq_added_risks) — so this section is small and
+    # non-duplicative by construction. Empty => byte-identical prompt.
+    tenq_risk_section = ""
+    if getattr(bundle, "tenq_added_risks", ""):
+        tenq_risk_section = (
+            f"=== LATEST 10-Q — PART II ITEM 1A (RISK FACTORS NEW SINCE THE 10-K) ===\n"
+            f"{bundle.tenq_added_risks}\n\n")
     # 8-K substance sits directly after the 10-Q MD&A: both are "fresher than the
     # 10-K" filing text, and the header names the date + items so the model can see
     # what it is quoting. Empty list => byte-identical prompt.
@@ -386,6 +394,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"=== ITEM 7 — MD&A ===\n{filing.mda}\n\n"
         f"=== ITEM 1A — RISK FACTORS ===\n{filing.risk_factors}\n\n"
         f"{tenq_section}"
+        f"{tenq_risk_section}"
         f"{eightk_section}"
         f"{added_section}"
         f"Return at most {rcfg.get('max_risks', 8)} risks, "

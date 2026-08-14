@@ -334,8 +334,23 @@ config change, or a stale-price brief all miss cache instead of serving silently
 quote-verified against the filing, interpretive prose labeled. Output under `research/`
 (gitignored).
 
-The brief bundles the latest 10-K, the latest 10-Q's MD&A, and a YoY Item-1A risk-factor
-diff (`riskdiff.py`).
+The brief bundles the latest 10-K, the latest 10-Q's MD&A, a YoY Item-1A risk-factor
+diff (`riskdiff.py`), and the latest 10-Q's **Part II Item 1A** — the quarter's risk-factor
+*changes*, as its own haystack segment (`filings.py:_tenq_added_risks`, ON,
+`research.tenq_risk_update`).
+
+**Part II Item 1A is a DIFF against the 10-K, never the raw section** — that is load-bearing,
+not a refinement. Measured on 15 filings (`docs/audits/2026-08-14-tenq-part-ii-in-deep-design.md`):
+the raw section spans 204–84,281 chars because four filers in ten restate *every* risk factor
+quarterly, duplicating the 10-K Item 1A already in the same prompt; the diff collapses all of
+them under 3K (+1.73% prompt worst case). Two rules that look optional and are not:
+- **Do not filter on "no material changes" boilerplate.** NVDA's section opens with that exact
+  sentence and then lists 2,949 chars of genuinely new risk factors. The diff already collapses
+  a true boilerplate filer to ~200 chars.
+- **Do not extract Part II Item 1 (legal proceedings)** — 10 of 15 names are a bare
+  "Refer to Note 24" pointer; the substance is in the notes (`TODO.md` §2b). INTC's Item 1 also
+  returns 71,869 chars of *Note 14*, so a length threshold would misattribute a verified quote.
+  Same over-capture class as `_tenq_mda` on JPM (601,221 chars) and INTC (0) — see `TODO.md` §2a.
 
 **Recent 8-K substance** (`research/eightk.py`, ON) is the one addition that is **filing text,
 so it enters the grounding haystack** — everything else added since the 10-Q MD&A is

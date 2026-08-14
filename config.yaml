@@ -443,7 +443,20 @@ research:
     business: 50000            # generous context now that timeout_s has headroom. MD&A kept
     mda: 60000                 # largest (highest-signal). risk_factors is boilerplate, ordered
     risk_factors: 50000        # worst-first, so a prefix slice keeps the material risks.
-    tenq_mda: 40000            # cap the latest 10-Q MD&A prompt section (§3.1)
+    tenq_mda: 40000            # cap the latest 10-Q MD&A prompt section (§3.1). NOTE this cap
+                               # is load-bearing beyond prompt size: JPM's Part I Item 2
+                               # extraction measured 601,221 chars (a whole-document
+                               # over-capture) on 2026-08-14, so the section fed to the model is
+                               # its first 40K. See TODO.md §2a.
+  tenq_risk_update:            # 10-Q Part II Item 1A — the quarter's risk-factor CHANGES,
+                               # diffed against the 10-K Item 1A (research/filings.py:
+                               # _tenq_added_risks). Filing text, so it enters the grounding
+                               # haystack as its own labelled segment. NOT a scored signal.
+    enabled: true              # flip false (or remove the block) for a byte-identical no-op
+    max_blocks: 4              # diff blocks kept, worst-first (riskdiff semantics)
+    max_chars: 4000            # measured ceiling across 10 large caps was 2,949 chars (NVDA)
+                               # AFTER the diff; the RAW section runs to 84,281 (GILD), which
+                               # is precisely why this is a diff and not the raw Item 1A.
   screening_call:              # buy/hold/avoid capstone on the research brief (spec 2026-06-07)
     enabled: true              # defaults ON; flip false for a byte-identical no-op
     labels:
