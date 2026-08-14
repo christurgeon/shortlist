@@ -402,4 +402,5 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     return FilingBundle(
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
-        text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added)
+        text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added,
+        tenq_accession=tenq_acc)
