@@ -184,12 +184,22 @@ import pytest
 
 @pytest.mark.live
 def test_finra_live_smoke():
-    """Real FINRA call. Skipped by default; run with: uv run pytest -m live."""
-    src = FinraSource()
-    try:
-        res = asyncio.run(src.fetch("AAPL"))
-    finally:
-        asyncio.run(src.aclose())
+    """Real FINRA call. Skipped by default; run with: uv run pytest -m live.
+
+    fetch AND aclose must share ONE event loop, as production does
+    (`collector.collect_async` closes its sources in the same loop that used them).
+    Two `asyncio.run` calls bind the httpx transports to the first loop and then
+    close them from the second: `RuntimeError: Event loop is closed`. The offline
+    tests above get away with the two-call shape only because their transports are
+    monkeypatched and never open a socket.
+    """
+    async def go():
+        src = FinraSource()
+        try:
+            return await src.fetch("AAPL")
+        finally:
+            await src.aclose()
+    res = asyncio.run(go())
     si = res.partial.short_interest
     assert si is not None, "AAPL absent from consolidated cycle — contract changed"
     assert si.short_shares and si.short_shares > 0
