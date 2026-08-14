@@ -120,6 +120,11 @@ class FilingBundle:
     # ^ list[EightKText] — recent 8-K substance (research/eightk.py). Empty unless
     # `research.eightk` is enabled AND a qualifying filing exists, which is what
     # keeps the prompt and the report byte-identical for every other name.
+    tenq_added_risks: str = ""
+    # ^ Part II Item 1A blocks absent from the 10-K's Item 1A — the quarter's risk
+    # CHANGES (research/filings.py:_tenq_added_risks). Filing text, so unlike
+    # `text_similarity` it DOES enter the haystack — as its own segment, so a
+    # verified quote is attributed to the 10-Q and not to the 10-K.
 
     def segments(self) -> list[tuple[str, str]]:
         """The grounding corpus split into (provenance label, text) pairs, in the
@@ -128,6 +133,7 @@ class FilingBundle:
         Empty texts are dropped so a label can never match the empty string."""
         parts = [("10-K", self.tenk.combined()),
                  ("10-Q MD&A", self.tenq_mda),
+                 ("10-Q Part II Item 1A", self.tenq_added_risks),
                  ("newly disclosed risks", self.added_risks_text)]
         parts += [(e.label, e.text) for e in self.eightks]
         return [(label, text) for label, text in parts if text]

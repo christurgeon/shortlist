@@ -115,15 +115,26 @@ it outranks §3's alpha questions.
     Guarded by `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
     (deliberately `xfail(strict=True)` — delete the decorator, not the test, if a
     collection-time producer ever ships).
-  - **10-Q arm needs Part II too:** the same YoY similarity only diffs 10-K risk factors —
-    `TenQ` has no `risk_factors` property, so `_section(obj, "risk_factors")`
-    (`filings.py:134`) always returns `""` for the 10-Q leg. Extending the similarity (and the
-    risk diff) to Part II Item 1A is the same shape of fix as the 10-Q MD&A bullet below.
-- **The 10-Q contributes only MD&A.** `_tenq_mda` (`filings.py:64`) reads Part I Item 2 and
-  nothing else, so Part II **Item 1 (legal proceedings)** and **Item 1A (risk-factor updates —
-  the quarter's *changes*)** never reach the model, even though the YoY 10-K risk diff shows we
-  care about exactly that delta. Small: extend `FilingBundle`, `cap_bundle`, the prompt and the
-  grounding haystack the same way the 10-Q MD&A was added.
+  - **10-Q arm of the SIMILARITY is still open.** The risk-**diff** half shipped 2026-08-14
+    (below), but `filing_text_change(form="10-Q")` still reads `_section(obj, "risk_factors")`
+    via `_filing_sections` (`filings.py`), which is always `""` on a 10-Q — `TenQ` has no
+    `risk_factors` property (verified live, 10/10 names). That function has no production
+    caller, so this is low priority; fix it by routing the 10-Q leg through
+    `get_item_with_part("Part II", "Item 1A")`.
+- **10-Q Part II Item 1A: SHIPPED 2026-08-14.** The quarter's risk-factor *changes* now reach
+  the model as a diff against the 10-K Item 1A (`research/filings.py:_tenq_added_risks`,
+  `config.yaml: research.tenq_risk_update`). Design + 25-filing probe evidence:
+  `docs/audits/2026-08-14-tenq-part-ii-in-deep-design.md`.
+  - **Item 1 (legal proceedings) was deliberately NOT built** — measured, 10 of 15 names are
+    200–800 chars of "Refer to Note 24 of this Form 10-Q". The legal substance is in the
+    **notes**, so it is §2b work (legal contingencies, item 6 on its list), not an item
+    extractor. Do not re-raise it as a 10-Q gap.
+- **`_tenq_mda` over-captures on some filers (found 2026-08-14, pre-existing).** Measured:
+  JPM's Part I Item 2 extraction returns **601,221 chars** — a whole-document over-capture, so
+  its brief is fed the first 40K of the wrong span — and **INTC returns 0**, so INTC briefs
+  have had no 10-Q MD&A at all. `max_chars.tenq_mda` is what keeps the first case bounded.
+  Same class of fault as INTC's Part II Item 1 returning 71,869 chars of Note 14. Diagnose
+  against edgartools' item-boundary detection before assuming our call is wrong.
 - **8-K substance in `/deep`: SHIPPED 2026-08-14, one caveat still open.** Behaviour and
   landmines are in `CLAUDE.md`; evidence is
   `docs/audits/2026-08-13-eightk-text-in-deep-design.md`. What remains open here:

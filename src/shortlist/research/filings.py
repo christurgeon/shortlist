@@ -76,6 +76,56 @@ def _tenq_mda(tenq: Any) -> str:
         return ""
 
 
+_TENQ_RISK_DEFAULTS = {"enabled": True, "max_blocks": 4, "max_chars": 4000}
+
+
+def _tenq_risk_cfg(config: Optional[dict]) -> dict:
+    """Own config block, deliberately NOT `research.risk_diff`: that one tunes the
+    YoY 10-K diff, which feeds a different prompt section. Absent block ships ON."""
+    blk = ((config or {}).get("research") or {}).get("tenq_risk_update") or {}
+    return {**_TENQ_RISK_DEFAULTS, **blk}
+
+
+def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict]) -> str:
+    """Risk-factor blocks in the 10-Q's Part II Item 1A that are NOT already in the
+    10-K's Item 1A — the quarter's *changes*. Returns "" on any failure.
+
+    A DIFF, not the raw section, and that is load-bearing. Measured live on 10 large
+    caps (2026-08-14): raw Part II Item 1A spans 204-84,281 chars because four of ten
+    restate every risk factor quarterly (GILD 84K, NVDA 43K, AAPL 19K, DIS 17.6K) —
+    text the 10-K Item 1A in the same prompt already carries. Feeding it raw would
+    duplicate up to 84K chars against a `timeout_s` ceiling a heavy filer already
+    approaches. Diffing collapses all ten to <3K while keeping the genuinely new
+    blocks (AAPL's new AI-compute-capacity risk, DIS's IP-litigation risk).
+
+    No boilerplate filter: NVDA's section OPENS with "there have been no material
+    changes..." and then lists 2,949 chars of new risk factors, so a regex on that
+    sentence would drop real content. The diff already collapses a true boilerplate
+    filer to ~200 chars.
+
+    `tenk_risk_factors` is the UNCAPPED 10-K section (cap_bundle runs later) — a
+    fuller baseline can only reduce false 'new' blocks."""
+    cfg = _tenq_risk_cfg(config)
+    if not cfg.get("enabled", True):
+        return ""
+    try:
+        getter = getattr(tenq, "get_item_with_part", None)
+        if getter is None:
+            return ""
+        # markdown=True mirrors _tenq_mda: honoured on the legacy-fallback path,
+        # ignored by the current parser (which returns Section.text()).
+        value = getter("Part II", "Item 1A", markdown=True)
+        current = str(value) if value else ""
+    except Exception:
+        return ""
+    if not current or not tenk_risk_factors:
+        # No baseline => abstain. Emitting the raw section here is exactly the
+        # 84K-char dump this function exists to prevent.
+        return ""
+    return riskdiff.added_risk_blocks(current, tenk_risk_factors, {"research": {"risk_diff": {
+        k: v for k, v in cfg.items() if k != "enabled"}}})
+
+
 def _fiscal_year(filing: Any) -> Optional[int]:
     """Best-effort fiscal year from a filing's period_of_report (YYYY-MM-DD)."""
     por = str(getattr(filing, "period_of_report", "") or "")
@@ -265,14 +315,17 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     if tenk is None:
         return None
 
-    tenq_mda, tenq_acc = "", ""
+    tenq_mda, tenq_acc, tenq_added = "", "", ""
     try:
         latest_q = Company(ticker).get_filings(form="10-Q").latest(1)
         if latest_q is not None and str(getattr(latest_q, "form", "")) == "10-Q":
-            tenq_mda = _tenq_mda(latest_q.obj())
+            # ONE parse feeds both Part I Item 2 and Part II Item 1A.
+            qobj = latest_q.obj()
+            tenq_mda = _tenq_mda(qobj)
+            tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
     except Exception:
-        tenq_mda, tenq_acc = "", ""
+        tenq_mda, tenq_acc, tenq_added = "", "", ""
 
     prior_1a, prior_mda = _prior_year_sections(ticker)
     added = riskdiff.added_risk_blocks(tenk.risk_factors, prior_1a, config or {})
@@ -301,4 +354,4 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     return FilingBundle(
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
-        text_similarity=similarity, eightks=eightks)
+        text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added)
