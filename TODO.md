@@ -297,6 +297,37 @@ cap — a scheduling/quota problem, not a host problem.
 - **`dilution`-flag threshold review** instead of a `share_count` scored leg — the payoff is
   tail-concentrated, which suits a flag/screen better than a ranker.
 
+## Pin universe membership by CIK, not ticker (LOW priority — the bleeding is stopped)
+
+`universe_largecap.txt` / `universe_smallmid.txt` key on **tickers, which are not stable
+identifiers**. Measured 2026-08-15: 8 of 238 symbols had gone stale unnoticed (4 renamed —
+MMC→MRSH, CSWI→CSW, UCBI→UCB, LANC→MZTI; 4 stopped filing), and rot accrues ~3-4%/yr.
+
+Storing `CIK,TICKER` pairs and resolving CIK→current ticker at load (SEC's
+`company_tickers.json`, already fetched + month-cached by `xbrl.fetch_company_tickers_raw` /
+`build_cik_index`; `edgar/symbology.py` already does this resolution) would make renames
+**self-healing** and — the real prize — catch the failure the shipped guard **cannot**:
+a ticker REASSIGNED to a different issuer still resolves, so it fails silently.
+`B` was Barnes Group (CIK 9984, stopped filing 2024-10-29) and now belongs to **Barrick
+Mining** (CIK 756894, a Canadian 6-K filer); it was caught only because Barrick files no 10-Q.
+Evidence: `docs/audits/2026-08-14-tenq-mda-recovery-kill.md`.
+
+**Why this is LOW and not urgent:** `shortlist-backtest` now refuses to run a *bundled*
+universe containing symbols absent from SEC's map (`universe.py:stale_tickers`,
+`--allow-stale-universe` to override), so staleness can no longer silently corrupt a
+measurement — it aborts at measurement time. The files are also read by **nothing** except
+`backtest/cli.py` and `prize_bound.py`; `/screen`, `/deep`, the bot and accumulate never touch
+them. Roughly half a day on a path that runs a few times a year.
+
+**Do NOT "fix" this by generating the universe at run time** from `data/nasdaq_universe.py`
+(keyless, 3 requests, ~5,800 names with market caps — the obvious-looking answer). It would
+destroy the reproducibility the files exist for: `CLAUDE.md` gates new legs on *reproducible*
+cross-universe rank IC, and a membership set that silently differs between runs makes two
+verdicts non-comparable — you could no longer separate a decaying signal from drifting
+membership. That module also documents itself as undocumented and "the same fragility class as
+the Yahoo screener this repo retired". Its correct role is a **deliberate membership-refresh
+tool**, never a run-time dependency.
+
 ---
 
 # 4. Data layer
