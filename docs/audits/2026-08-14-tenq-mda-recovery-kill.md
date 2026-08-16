@@ -84,9 +84,45 @@ Honest degradation, no heuristic:
    omitting the section, so the model and the reader can tell "we could not read it" from
    "nothing happened". Prompt-only — a computed status line, never the grounding haystack.
 
-## Loose end, deliberately not claimed
+## The 8 `CompanyNotFoundError` tickers — RESOLVED 2026-08-15: our universe files are stale
 
-10 of 238 tickers errored, 8 of them `CompanyNotFoundError` from `Company(ticker)` (MMC, CSWI,
-SCS, LANC, AMED, UCBI, TOWN, CIVI). That may be SEC throttling during a tight loop rather than a
-real resolution gap — a re-run at lower concurrency would distinguish them. **Not** counted as
-extraction failures anywhere above.
+10 of 238 tickers errored, 8 of them `CompanyNotFoundError` from `Company(ticker)`. **Not**
+counted as extraction failures anywhere above.
+
+The throttling hypothesis in the first revision of this section was **wrong**. Re-resolved one at
+a time with pauses: all 8 fail deterministically across repeated attempts while AAPL/MSFT resolve
+in the same loop. It is not transient, and it is not an edgartools bug — all 8 are genuinely
+absent from SEC's own `company_tickers.json` / `company_tickers_exchange.json`, which edgartools
+faithfully reflects. **The stale data is ours**: `universe_largecap.txt` / `universe_smallmid.txt`
+carry symbols the issuers no longer use.
+
+| ticker in our file | what actually happened | current symbol |
+|---|---|---|
+| MMC | renamed (CIK 62709 unchanged) | **MRSH** |
+| CSWI | renamed (CIK 1624794) | **CSW** |
+| UCBI | renamed (CIK 857855) | **UCB** |
+| LANC | issuer renamed Lancaster Colony -> Marzetti Co (CIK 57515) | **MZTI** |
+| AMED | stopped filing; last 10-Q 2025-07-30 | delisted/acquired |
+| CIVI | stopped filing; last 10-Q 2025-11-06 | delisted/acquired |
+| SCS, TOWN | absent from SEC's current listed map; **not individually confirmed** | unknown |
+
+### Production consequence (verified, not inferred)
+
+`EdgarSource.fetch("MMC")` returns 4 recorded errors with `statements=None` and `insider=None`,
+while `fetch("MRSH")` returns full statements and insider data from the same CIK. So the failure
+is **honest** — it surfaces in `errors`/coverage rather than silently — but EDGAR supplies 100%
+of production statements, so a renamed ticker loses its entire fundamental picture. The
+user-facing message is also actively unhelpful: edgartools suggests `'MMCP' (Mag Mile Capital)`
+for MMC.
+
+### Consequences worth acting on, NOT yet acted on
+
+1. **The committed universes silently drop 8 of 238 names** (3.4%). That is a breadth loss against
+   the ~30-name cross-sectional IC floor, and it grows over time. Editing the files is *not* a
+   free fix: they are reproducibility artifacts for committed cross-universe verdicts, so any
+   correction changes what a re-run measures and must be recorded, not slipped in.
+2. **A clearer not-found message for `/screen` and `/deep`** — "not in SEC's current ticker map;
+   it may have been renamed or delisted" beats a nonsense nearest-neighbour suggestion.
+3. Automatic old->new resolution needs a historical map (`edgar/symbology.py`'s Wayback +
+   `dei:TradingSymbol` route, currently uncalled). Real work; not obviously worth it for
+   user-typed tickers.
