@@ -38,10 +38,15 @@ def test_an_unavailable_sec_map_abstains_rather_than_failing_every_ticker(index)
 
 
 def test_a_stale_universe_aborts_the_run_and_names_the_offenders(monkeypatch, capsys):
+    """Uses the DEFAULT momentum source deliberately. `--source xbrl` returns 2 from an
+    earlier SEC_IDENTITY precondition, so the assertion passed locally (where another
+    test had leaked SEC_IDENTITY into os.environ) and failed on CI, which has no key.
+    The guard is source-independent; the test must be too."""
     from shortlist.backtest import cli
+    monkeypatch.delenv("SEC_IDENTITY", raising=False)     # no cross-test leakage either way
     monkeypatch.setattr(cli, "_known_symbols", lambda cache_dir: KNOWN, raising=False)
     monkeypatch.setattr(cli, "load_universe", lambda spec: ["AAPL", "MMC", "AMED"], raising=False)
-    rc = cli.main(["--universe", "largecap", "--source", "xbrl", "--horizons", "12"])
+    rc = cli.main(["--universe", "largecap", "--horizons", "12"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "MMC" in err and "AMED" in err
