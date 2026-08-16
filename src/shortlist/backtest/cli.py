@@ -29,7 +29,7 @@ from .prices import _UA, PriceHistory, _add_months, fetch_history
 from .report import _ic_dict, render_table, report_to_dict
 from .residual import residual_rows
 from .signals import MomentumSignalSource, SnapshotSignalSource, XbrlSignalSource
-from .universe import load_universe
+from .universe import is_named_universe, load_universe, stale_tickers
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
 _RESIDUALIZE_MIN_NAMES = 10   # hardcoded per design §Implementation 3 -- no flag
@@ -110,6 +110,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--end", help="grid end YYYY-MM-DD (default today)")
     ap.add_argument("--config", default=str(Path(__file__).parents[3] / "config.yaml"))
     ap.add_argument("--cache-dir", dest="cache_dir", default=".cache/yahoo")
+    ap.add_argument("--allow-stale-universe", action="store_true",
+                    help="proceed even if universe symbols are absent from SEC's "
+                         "current ticker map (renamed/delisted names contribute nothing)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--csv", help="write per-signal rows to this CSV path")
     ap.add_argument("--fit", action="store_true",
@@ -125,6 +128,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--shrink", type=float, default=0.5,
                     help="shrinkage toward the prior (0..1)")
     return ap
+
+
+def _known_symbols(cache_dir: str) -> dict[str, str]:
+    """{TICKER -> CIK} from SEC's company_tickers.json, month-cached on disk by
+    `fetch_company_tickers_raw`, so this costs one request per month rather than one
+    per run. Returns {} on ANY failure — the freshness check must abstain rather than
+    block a backtest because SEC is unreachable (`stale_tickers` treats {} as
+    "could not check", not "everything is dead")."""
+    from .xbrl import build_cik_index, fetch_company_tickers_raw
+
+    async def go():
+        async with httpx.AsyncClient(headers={"User-Agent": _UA}, timeout=30.0) as c:
+            raw = await fetch_company_tickers_raw(
+                c, cache_dir=cache_dir, month=date.today().strftime("%Y-%m"))
+        return build_cik_index(raw)
+    try:
+        return asyncio.run(go())
+    except Exception:
+        return {}
 
 
 async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict[str, str]]:
@@ -484,6 +506,19 @@ def main(argv=None) -> int:
         return 2
 
     tickers = load_universe(args.tickers or args.universe)
+    _spec = args.tickers or args.universe
+    if is_named_universe(_spec) and not args.allow_stale_universe:
+        dead = stale_tickers(tickers, _known_symbols(args.cache_dir))
+        if dead:
+            print(
+                f"universe contains {len(dead)} symbol(s) absent from SEC's current "
+                f"ticker map: {', '.join(dead)}\n"
+                "Each is renamed or delisted, so it yields no data and silently shrinks "
+                "the cross-section — which is why this aborts at measurement time rather "
+                "than producing a quietly narrower result.\n"
+                "Fix the universe file (a rename keeps the same CIK), or re-run with "
+                "--allow-stale-universe to proceed anyway.", file=sys.stderr)
+            return 2
     try:
         horizons = [int(h) for h in args.horizons.split(",") if h.strip()]
     except ValueError:
