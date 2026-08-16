@@ -34,6 +34,16 @@ _edgar_gate: dict = {}
 _FORM4_FETCH_LIMIT = 40
 
 
+def _is_company_not_found(err: Any) -> bool:
+    """True when `err` (an exception OR an already-formatted error string) is
+    edgartools' unresolvable-ticker failure. Matched on the message rather than by
+    importing `CompanyNotFoundError`, because `edgar` is an OPTIONAL extra — importing
+    it at module scope would make the whole harness require it. The phrase is stable
+    across edgartools releases; a false negative merely restores the old four-error
+    behaviour, so this cannot lose data."""
+    return "company not found" in str(err).lower()
+
+
 def _edgar_semaphore() -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     if _edgar_gate.get("loop") is not loop:
@@ -321,6 +331,19 @@ class EdgarSource(Source):
 
     def _fetch_sync(self, ticker: str) -> SourceResult:
         res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
+        # Ticker resolution is a PRECONDITION, not a fifth isolated section: if the
+        # symbol is not in SEC's ticker map, none of the sections below can succeed
+        # and each would append its own copy of edgartools' nearest-neighbour guess
+        # (four errors suggesting "MMCP (Mag Mile Capital)" for MMC). Report it once,
+        # in terms the user can act on, and skip the rest. Measured 2026-08-15: 8 of
+        # 238 tickers in the committed universes no longer resolve — 4 renamed their
+        # symbol, the rest stopped filing.
+        if res.errors and _is_company_not_found(res.errors[0]):
+            res.errors = [
+                f"edgar: {ticker} is not in SEC's current ticker map — the issuer may "
+                f"have renamed its symbol or been delisted/acquired. No EDGAR data "
+                f"(statements, insider, SIC, events) is available under this symbol."]
+            return res
         # SIC is isolated: a failure must never drop insider/statements/events. We
         # emit a PARTIAL Profile carrying only sic; _merge_flat fills the rest from
         # FMP/Finnhub, so SIC survives even when those gate the symbol's profile.

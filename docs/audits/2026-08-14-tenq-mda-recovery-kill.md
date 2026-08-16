@@ -115,6 +115,24 @@ of production statements, so a renamed ticker loses its entire fundamental pictu
 user-facing message is also actively unhelpful: edgartools suggests `'MMCP' (Mag Mile Capital)`
 for MMC.
 
+### A worse defect found while fixing this: ticker `B` was REASSIGNED
+
+Re-checking the 2 non-`CompanyNotFoundError` rows turned up the dangerous shape. `B` **resolves
+fine** — to the wrong company. Barnes Group (CIK 9984) stopped filing 2024-10-29 and holds no
+ticker; the symbol now belongs to **BARRICK MINING CORP** (CIK 756894), a Canadian 6-K filer.
+
+A not-found error is loud. A reassignment is **silent**: the backtest would have scored Barrick's
+data in a slot meant for a US industrial. This one was caught only because Barrick files no 10-Q,
+so it showed up as "no 10-Q" in the probe.
+
+**A resolution check cannot find reassignments that land on a valid 10-Q filer.** Only pinning
+CIKs would — the universes key on tickers, which are not stable identifiers. This is the same
+landmine `CLAUDE.md` records for the retired scout (`Company("BBBY")` today resolves to
+*Overstock*), now confirmed live inside a committed universe file. Converting the universes to
+ticker+CIK pairs is the real fix and is **not** done here.
+
+(The other row, MO, resolves fine with a current 10-Q — its probe `AttributeError` was transient.)
+
 ### Consequences worth acting on, NOT yet acted on
 
 1. **The committed universes silently drop 8 of 238 names** (3.4%). That is a breadth loss against
