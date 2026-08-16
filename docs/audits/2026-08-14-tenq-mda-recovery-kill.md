@@ -20,8 +20,9 @@ failure in a 35-name sample.
 
 ## Probe
 
-Both committed universes — `universe_largecap.txt` + `universe_smallmid.txt`, 238 unique
-tickers (the files overlap by 35) — latest 10-Q each. Reproduce with
+Both committed universes — `universe_largecap.txt` (80) + `universe_smallmid.txt` (158),
+238 tickers, **zero overlap** — latest 10-Q each. (An earlier revision said the files
+overlap by 35; that was a miscount of comment lines, corrected 2026-08-15.) Reproduce with
 `docs/audits/scripts/probe_10q_mda_extraction.py` (keyless beyond `SEC_IDENTITY`; resumable, ~25 min).
 
 | | count | rate |
