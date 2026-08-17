@@ -54,6 +54,27 @@ SYSTEM_PROMPT = (
     "EXACTLY from the filing text (at least a full clause). No ellipses, bracketed "
     "edits, or stitched non-adjacent sentences — any of these fails verification. If "
     "you cannot supply a contiguous verbatim quote, omit the item.\n"
+    "TWO LISTS, AND ONLY TWO, MAY CARRY AN EMPTY 'evidence': the entries of "
+    "'moat.sources' and of 'management_findings'. For those two ONLY: supply the "
+    "contiguous verbatim quote when the filing states the claim, and set 'evidence' "
+    "to \"\" when the claim is YOUR INFERENCE rather than something the filing says. "
+    "An empty 'evidence' there is a CORRECT answer, not a failure — the item is kept "
+    "and labelled as unquoted. Never drop such an item, and never paraphrase, "
+    "shorten, stitch or reconstruct a quote to avoid leaving the field empty: a "
+    "quote that is not an exact contiguous span is WORSE than \"\". Test each one by "
+    "asking whether a reader could find that exact sentence by searching the filing "
+    "text above; if not, the answer is \"\".\n"
+    "This exception extends nowhere else. In 'risks', 'red_flags' and 'added_risks' "
+    "an empty 'evidence' is never valid — if you cannot quote it, OMIT the item, "
+    "exactly as stated above. In 'reconciliation' an empty 'filing_says' means only "
+    "'the filing does not address this signal' and is valid only with verdict "
+    "'silent'. Being allowed to declare an inference is also not a licence to pad: "
+    "state the moat sources and management findings that matter and no more.\n"
+    "MANAGEMENT: 'management_capital_allocation' is your JUDGMENT of capital-"
+    "allocation quality in prose — do NOT enumerate figures there. Every specific, "
+    "checkable fact behind that judgment (buybacks, dividends, capex, debt paydown, "
+    "acquisitions, insider alignment) belongs in 'management_findings', one claim "
+    "each, so a reader can check it. Do not state the same fact in both.\n"
     "RECONCILIATION reconciles the filing NARRATIVE against the QUANT CONTEXT "
     "numbers. Emit an entry ONLY where a number and the filing genuinely diverge or "
     "strongly corroborate — this list is sparse, not one row per score. Each entry "
@@ -231,11 +252,35 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
     10-K (diff baseline) is excluded, so a quote only present there is correctly
     counted unverified. Also records WHICH document verified it (`source`): an 8-K
     exhibit is filing text, but "verified" must not silently widen from "the 10-K"
-    to "a furnished press release". Reconciliation handled as before."""
+    to "a furnished press release". Reconciliation handled as before.
+
+    `moat.sources` and `management_findings` verify the same way with ONE exception:
+    an empty quote there is a DECLARED INFERENCE — a legal answer, not a failed
+    check — so it lands in `inference_count` and never in `unverified_count`."""
     segments = _segments(bundle)
     unverified = 0
     for finding in (*assessment.risks, *assessment.red_flags, *assessment.added_risks):
         source = _locate(_norm(finding.evidence), segments)
+        finding.verified = source is not None
+        finding.source = source or ""
+        if not finding.verified:
+            unverified += 1
+    # The two lists where an empty quote is a legal answer. A declared inference is
+    # branched on BEFORE _locate is ever called — never rely on _locate's
+    # _MIN_EVIDENCE_CHARS guard to carry this meaning: `"" in hay` is True for every
+    # segment, so the day that guard moves, every empty quote would verify against
+    # the first document and render as grounded (cf. models.py:139, which drops empty
+    # texts for the mirror-image reason). Branch on the NORMALIZED string so a
+    # whitespace-only quote is an inference, not a fabrication.
+    inferences = 0
+    for finding in (*assessment.moat.sources, *assessment.management_findings):
+        quote = _norm(finding.evidence)
+        if not quote:
+            finding.verified = False
+            finding.source = ""
+            inferences += 1
+            continue
+        source = _locate(quote, segments)
         finding.verified = source is not None
         finding.source = source or ""
         if not finding.verified:
@@ -255,6 +300,7 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
             unverified += 1
     assessment.unverified_count = unverified
     assessment.silent_count = silent
+    assessment.inference_count = inferences
 
 
 def _data_gaps_line(card) -> str:
@@ -411,7 +457,9 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"Return at most {rcfg.get('max_risks', 8)} risks, "
         f"{rcfg.get('max_red_flags', 8)} red_flags, "
         f"{rcfg.get('max_added_risks', 8)} added_risks, "
-        f"{rcfg.get('max_conflicts', 3)} reconciliation entries, and "
+        f"{rcfg.get('max_conflicts', 3)} reconciliation entries, "
+        f"{rcfg.get('max_moat_sources', 6)} moat.sources, "
+        f"{rcfg.get('max_management_findings', 6)} management_findings, and "
         f"{rcfg.get('max_falsifiers', 3)} 'what would change my mind' items, "
         "most material first."
         f"{events_line}"
@@ -663,6 +711,8 @@ def assess(card, bundle: FilingBundle, config: dict,
     max_conflicts = rcfg.get("max_conflicts", 3)
     max_falsifiers = rcfg.get("max_falsifiers", 3)
     max_added_risks = rcfg.get("max_added_risks", 8)
+    max_moat_sources = rcfg.get("max_moat_sources", 6)
+    max_management_findings = rcfg.get("max_management_findings", 6)
     filing = bundle.tenk
     m = getattr(card, "metrics", None)
     fe = getattr(m, "filing_events", None)
@@ -723,7 +773,9 @@ def assess(card, bundle: FilingBundle, config: dict,
                     model=res.model or model, cost_usd=total_cost,
                     stop_reason=res.stop_reason,
                     valid_signals=vs, max_conflicts=max_conflicts,
-                    max_falsifiers=max_falsifiers, max_added_risks=max_added_risks)
+                    max_falsifiers=max_falsifiers, max_added_risks=max_added_risks,
+                    max_moat_sources=max_moat_sources,
+                    max_management_findings=max_management_findings)
                 assessment.cache_key = bundle.cache_key
                 assessment.text_similarity = getattr(bundle, "text_similarity", None)
                 _verify_grounding(assessment, bundle)

@@ -35,7 +35,10 @@ def test_assessment_from_payload_builds_nested_types():
         model="claude-sonnet-5", cost_usd=0.03, stop_reason="end_turn")
     assert a.ticker == "AAPL"
     assert isinstance(a.moat, Moat) and a.moat.trajectory == "stable"
-    assert a.moat.sources == ["brand", "switching costs"]
+    # sources are Findings now; the legacy bare-string payload above coerces to
+    # claim-only items with no quote (see test_evidence_discipline.py)
+    assert [s.claim for s in a.moat.sources] == ["brand", "switching costs"]
+    assert all(isinstance(s, Finding) and s.evidence == "" for s in a.moat.sources)
     assert len(a.risks) == 1 and isinstance(a.risks[0], Finding)
     assert a.risks[0].verified is False        # grounding not run yet
     assert a.red_flags == []

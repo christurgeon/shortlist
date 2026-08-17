@@ -331,7 +331,14 @@ prompt-shaping module sources and the `research` config block, plus a bucketed q
 context digest off the `ScoreCard`, plus an as-of day bucket
 (`research.cache.{max_age_days,price_band_pct}`) — not filings alone, so an edited prompt, a
 config change, or a stale-price brief all miss cache instead of serving silently. Facts are
-quote-verified against the filing, interpretive prose labeled. Output under `research/`
+quote-verified against the filing, interpretive prose labeled. **Grounding covers `moat.sources`
+and `management_findings` too** (2026-08-17): both are `Finding` lists, and an empty `evidence`
+there is a LEGAL *declared inference* — branched **before** `_locate` (an empty string is a
+substring of every segment; only `_MIN_EVIDENCE_CHARS` stops it verifying) and counted in
+`inference_count`, never in `unverified_count`, which must keep meaning "the model quoted
+something absent from the filing". `management_capital_allocation` is now the *judgment* only;
+figures belong in `management_findings`.
+`docs/audits/2026-08-17-moat-management-evidence-design.md`. Output under `research/`
 (gitignored).
 
 The brief bundles the latest 10-K, the latest 10-Q's MD&A, a YoY Item-1A risk-factor

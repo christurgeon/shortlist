@@ -148,13 +148,27 @@ it outranks §3's alpha questions.
   **Item 4.02 (non-reliance/restatement) is unexercised by real data** — none appeared in the
   60-filing probe, so the highest-priority branch is pinned by a constructed fixture only. Do
   not describe it as verified; the first real restatement is its first real test.
-- **Evidence discipline is asymmetric.** Risks, red flags, added risks and reconciliation carry
-  `evidence` + a `verified` mark (`report.py:_findings_md`), while **moat, business model and
-  management/capital-allocation are bare prose** (`report.py:117-123`) — the three most
-  narrative-prone sections have the weakest standard. Medium: schema + prompt + renderer.
-  Scope it down to "moat sources and the management conclusion each require a quoted span,
-  run through the existing `_verify_grounding`" before designing a full
-  `claim/evidence_ids/source_type/source_date/url` ledger.
+- **Evidence discipline: SHIPPED 2026-08-17 for moat + management.** `moat.sources` is now
+  `list[Finding]` and `management_findings` is new; both are quote-verified, and an empty
+  quote is a legal *declared inference* counted separately from `unverified_count`. Measured
+  defect (45% of moat sources asserted an ungrounded figure; 14–27 bare numbers per
+  management paragraph), design, and three non-obvious constraints:
+  `docs/audits/2026-08-17-moat-management-evidence-design.md`. Two things stay open:
+  - **`business_model_summary` is still bare prose.** Deliberately out of that cut. It is the
+    last narrative section with no grounding standard.
+  - **Can `management_findings` verify at all? UNMEASURED.** The haystack omits Item 5 and the
+    financial statements, which is where buyback figures live, so an unknown share of
+    management claims can only ever be declared inferences. Needs a live EDGAR probe
+    (`SEC_IDENTITY`); do not read the inference/quote ratio as a model failure until it runs.
+
+- **Evidence is invisible on the Telegram surface (pre-existing, applies to risks too).**
+  `/deep` delivers `art.png/html/text` from the viewmodel (`telegram.py:339-341`); the
+  markdown brief — the only artifact carrying quotes, `_(unverified)_` marks and provenance —
+  is never sent. `viewmodel.py:126-127` reduces risks and red flags to `_claim(x)`, dropping
+  evidence entirely. So the whole grounding layer reaches CLI/file readers only. Fixing it is
+  a real design question (Telegram message length, `Detail.GLANCE` vs `FULL`), not a
+  one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
+  means.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
