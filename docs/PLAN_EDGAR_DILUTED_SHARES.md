@@ -393,6 +393,18 @@ def test_continuing_operations_eps_row_never_displaces_the_total_eps_row():
     assert ef.diluted_eps == [5.0, 4.0, 3.0]
 ```
 
+> **SUPERSEDED — historical text, do not copy.** Steps 2 and 3 below quote the plan as it
+> was signed off. They shipped with changes, so the code block is no longer what is in the
+> tree; read `src/shortlist/providers/_edgar_facts.py` for the current implementation and
+> `docs/audits/2026-07-31-edgar-concept-match.md` +
+> `docs/audits/2026-08-02-edgar-companyconcept-fallback.md` for the evidence. The one claim
+> here that is not merely stale but **FALSE** is `_rows_by_concept`'s "a sparse total must
+> fall through to the label scan and ultimately ABSTAIN": the label scan
+> (`_row_diluted_eps`/`_row_diluted_shares`) is LEVEL-BLIND, so with a sparse min-level total
+> and a complete deeper child listed first it can return the child. The shipped docstring
+> states this correctly; unlike the other revisions in this file, that correction was never
+> back-annotated here as an `[R…]` note, which is why this banner exists.
+
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `uv run pytest tests/test_edgar_facts_concept_match.py -q`
@@ -491,6 +503,8 @@ Then in `extract_financials`, replace lines 282 and 286 only (leave 283-285 inta
 ```
 
 `_row_diluted_shares` and `_row_diluted_eps` are **not modified**.
+
+*(End of the superseded Step 2 / Step 3 text.)*
 
 - [ ] **Step 4: Verify they pass**
 

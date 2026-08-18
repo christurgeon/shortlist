@@ -510,7 +510,13 @@ def _newest_year(years: list[Optional[int]]) -> Optional[int]:
 def _usable_years(st: "Statements") -> Optional[list[Optional[int]]]:
     """A Statements' fiscal-year spine, or None when it cannot serve as a join
     key: empty (nothing to key on) or containing duplicates (ambiguous — a
-    52/53-week fiscal can put two period ends in one calendar year)."""
+    52/53-week fiscal can put two period ends in one calendar year).
+
+    An ALL-`None` spine is deliberately NOT rejected here even though it is
+    equally unusable as a key. It does not need to be: `_reindex_by_year` treats
+    a None year as a non-key on both sides, so an all-None spine lands nothing
+    and returns [], which `_is_present` reads as absent — the same observable
+    outcome as returning None from here. The branch would be dead weight."""
     years = st.fiscal_years
     if not years:
         return None
