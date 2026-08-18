@@ -54,6 +54,17 @@ judgment-only on 2026-08-17 (`docs/audits/2026-08-17-moat-management-evidence-de
 precisely to get 14–27 bare numbers per paragraph out of it; sending arithmetic there would
 undo that cut three days later.
 
+## One downstream interaction, deliberate
+
+`assess.py:_high_corroborated` lets a **bearish** HIGH-conviction call be corroborated by
+`contradicts OR red` — where `red` is "any verified red flag". Closing the `red_flags`
+enumeration narrows that route: a generic bearish observation no longer lands in `red_flags`,
+so an AVOID must now rest on a genuine distress marker or on a verified `contradicts`
+reconciliation entry. That is the intended reading of the guard, not a side effect to undo.
+Its practical blast radius is nil today — the baseline audit measured the HIGH-corroboration
+demotion firing **0 of 32** — but a future session comparing guard-fire rates should attribute
+any change here rather than to the guard code, which is untouched.
+
 ## How to re-measure
 
 The baseline is reproducible from the brief corpus, not from a fixture: for each section,
