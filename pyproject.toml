@@ -30,7 +30,14 @@ markers = ["live: hits real external APIs; skipped unless -m live"]
 line-length = 110
 target-version = "py310"
 src = ["src", "tests"]
-extend-exclude = [".claude"]  # transient git worktrees, not part of this project
+extend-exclude = [
+    ".claude",             # transient git worktrees, not part of this project
+    "docs/audits/scripts", # one-off probes preserved AS RUN — they are the evidence
+                           # behind an audit note, so reformatting them would edit the
+                           # record. CI lints `src tests` only, so these never gated
+                           # anything; the exclude just stops a bare `ruff check .`
+                           # from reporting failures nobody is allowed to fix.
+]
 
 [tool.ruff.lint]
 # Curated for signal, not churn: pyflakes/pycodestyle defaults plus bugbear,
