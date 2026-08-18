@@ -42,18 +42,20 @@ cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh
 Do **not** `rm -rf /opt/shortlist/src` first, however tempting given the rsync's missing
 `--delete`. That is destructive here: the installer
 derives `SRC` from its own path, so running it from `/opt/shortlist` makes `SRC == DEST` and
-the rsync copies the tree onto itself — with `src/` deleted there is nothing to restore it
+the sync step is skipped (see below) — with `src/` deleted there is nothing to restore it
 from, and step 3's `uv sync` then rebuilds the venv against a package with no code. Recovery is `git checkout -- src/`,
 because the repo is already at the right commit.
 
 Two hazards that only bite together, so both are worth keeping in mind: the `SRC == DEST`
-no-op is *harmless* when the content is already correct (which `git pull` guarantees), and the
+skip is *harmless* when the content is already correct (which `git pull` guarantees), and the
 missing `--delete` is *harmless* on a git checkout (which handles deletions itself).
 
-**Status:** recipe corrected here and in CLAUDE.md. Two installer improvements are open —
-the smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
-changes, which is the worst place to fail; and the installer could refuse to run when
-`SRC == DEST` rather than reporting success.
+**Status:** recipe corrected here and in CLAUDE.md. The installer now detects `SRC == DEST`
+(canonical comparison, before any mutation) and skips the rsync with a loud notice instead of
+silently reporting success on a self-copy — it does not hard-refuse, since the documented
+`git pull` recipe depends on running in-place. One installer improvement is still open: the
+smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
+changes, which is the worst place to fail.
 
 ## VPS remnants
 
@@ -106,12 +108,6 @@ it outranks §3's alpha questions.
     Guarded by `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
     (deliberately `xfail(strict=True)` — delete the decorator, not the test, if a
     collection-time producer ever ships).
-  - **10-Q arm of the SIMILARITY is still open.** The risk-**diff** half shipped 2026-08-14
-    (below), but `filing_text_change(form="10-Q")` still reads `_section(obj, "risk_factors")`
-    via `_filing_sections` (`filings.py`), which is always `""` on a 10-Q — `TenQ` has no
-    `risk_factors` property (verified live, 10/10 names). That function has no production
-    caller, so this is low priority; fix it by routing the 10-Q leg through
-    `get_item_with_part("Part II", "Item 1A")`.
 - **10-Q Part II Item 1A: SHIPPED 2026-08-14.** The quarter's risk-factor *changes* now reach
   the model as a diff against the 10-K Item 1A (`research/filings.py:_tenq_added_risks`,
   `config.yaml: research.tenq_risk_update`). Design + 25-filing probe evidence:
@@ -173,23 +169,16 @@ it outranks §3's alpha questions.
   one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
   means.
 
-- **Three prompt-only wins sitting unbuilt in the 2026-08-04 audit — the cheapest work on this
-  surface.** They were living only in `docs/audits/2026-08-04-deep-brief-assessment.md:594-606`
-  (`worth-building` #1, #2, #4), which means finding them required knowing to open that file.
-  All three are one edit to `SYSTEM_PROMPT`: no schema, no renderer, no back-compat surface,
-  and they share the cache-bust any prompt edit costs anyway.
-  - **#1 materiality bar instead of a count cap** (D3). The cap reads as a target: the audit
-    measured 7 of 8 briefs returning **exactly 12/12** risks, and the 2026-08-18 live runs
-    added two more (AAPL 12/12, JPM 12/12) — **9 of 11**. Do *not* justify it as "removing
-    filler" (§3 measured the tail as company-specific); the case is false precision and
-    attention dilution. `reconciliation` saturates the same way, against an explicit
-    instruction.
-  - **#2 close the `red_flags` enumeration** (D7) and **forbid cross-section quote reuse**
-    (D6 — 62 instances across 31/35 briefs). The current prompt (`assess.py:47-51`) has
-    neither clause.
-  - **#4 ask the model to do the arithmetic** — normalized earnings ex-one-offs, cash runway,
-    refinancing coverage. The audit calls this "the single most consistent qualitative gap"
-    across three close reads: the briefs assemble the inputs and stop.
+- **The 2026-08-04 audit's three prompt-only wins SHIPPED 2026-08-18** — materiality bar
+  instead of a count quota (D3), a CLOSED `red_flags` enumeration (D7), no cross-section
+  quote reuse (D6), and an instruction to do the arithmetic (normalized earnings
+  ex-one-offs, cash runway, refinancing coverage). What shipped, the constraint that keeps
+  a derived figure out of an `evidence` quote, and the re-measurement recipe:
+  `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`. **Still open: none of
+  it is measured yet.** The pre-change saturation baselines are recorded in that note; the
+  briefs must be re-counted against them before the change can be called a win, and the
+  failure mode to look for is OVER-application (Sonnet 5 follows instructions more
+  literally than the generation the prompt was tuned against).
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
