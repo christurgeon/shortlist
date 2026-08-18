@@ -90,12 +90,10 @@ the verbose filers (JPM, INTC) that already stress that path, so both lists ship
 
 - **A filing fact from an unsent section lands in the inference bucket.** The haystack is
   Item 1 + Item 7 + Item 1A + 10-Q MD&A + 8-K. Item 5 (issuer purchases of equity securities)
-  and the financial statements are **not** sent, and that is exactly where buyback figures
-  like "5.3M shares at an average $163.07" live. The label was worded "inference **or from a
-  section not provided**" precisely so it is not a lie in that case. **Unmeasured:** what
-  share of `management_findings` can verify at all. It needs a live EDGAR probe, which no
-  environment with `SEC_IDENTITY` was available for at build time. Run it before drawing any
-  conclusion from the inference/quote ratio.
+  and the financial statements are **not** sent. The label was worded "inference **or from a
+  section not provided**" precisely so it is not a lie in that case — and the live run below
+  confirms that wording was load-bearing, not pedantry. **Measured n=1** (see §Live
+  verification): the concern was overstated for buybacks, which Item 7 MD&A does carry.
 - **None of this is visible on the Telegram surface.** `/deep` delivers `art.png/html/text`
   built from the viewmodel (`telegram.py:339-341`); the markdown brief is never sent, and
   `viewmodel.py:126-127` reduces even *risks* to `_claim(x)`, stripping evidence. This is a
@@ -104,9 +102,54 @@ the verbose filers (JPM, INTC) that already stress that path, so both lists ship
 - The rule split — strict "omit the item" for risks, permissive empty for these two lists —
   is a real bleed risk in both directions. It is mitigated by stating the permissive rule as a
   closed set named twice (positively, then negatively) and by an explicit "a quote that is not
-  an exact contiguous span is WORSE than empty". **Whether the model honours it is unmeasured**
-  until briefs are regenerated; check the first few for empty evidence appearing on `risks`,
-  which would be the dangerous direction.
+  an exact contiguous span is WORSE than empty". **Held at n=1** (below). One brief is not a
+  verdict: keep checking new briefs for empty evidence on `risks`, the dangerous direction.
+
+## Live verification (AAPL, 2026-08-18, n=1)
+
+First brief ever generated with this prompt. `uv run shortlist --tickers AAPL --research 1`,
+`stop=end_turn`, 173s, $0.5459. AAPL was chosen because a pre-change brief of the same company
+was on disk, making this a before/after rather than a smoke test.
+
+| list | n | verified | declared inference | fabricated |
+|---|---|---|---|---|
+| `moat.sources` | 5 | 4 | 1 | 0 |
+| `management_findings` | 6 | 4 | 2 | 0 |
+| `risks` | 12 | 12 | 0 | 0 |
+| `red_flags` | 5 | 5 | 0 | 0 |
+| `added_risks` | 3 | 3 | 0 | 0 |
+
+`unverified_count: 0`, `inference_count: 3`, `silent_count: 1`.
+
+**The three risks this design was built against, all resolved:**
+
+1. **No truncation.** `stop=end_turn`, not `max_tokens` — the caps held on a large filer.
+2. **No rule bleed.** All 20 strict-list items carry quotes; zero empty `evidence` leaked into
+   `risks`/`red_flags`/`added_risks`.
+3. **`management_findings` verifies.** 4 of 6, including the $89.3B buyback and $15.4B
+   dividends that the *old* brief asserted as bare prose. One verified against the **10-Q
+   MD&A** with correct segment provenance.
+
+**The label wording was load-bearing.** Two of the three declared inferences — the 533x CEO
+pay ratio and the insider-alignment read — come from `research/proxy.py` and the Form-4
+context lines, which are **prompt-only and deliberately outside the grounding haystack**. The
+model correctly declined to fabricate a quote for them. "Analyst inference" alone would have
+been a false label there; "or from a section not provided" is accurate.
+
+**The management re-scoping worked as designed.** Same company, same section:
+
+| | old brief | new brief |
+|---|---|---|
+| `management_capital_allocation` | 1,157 chars | 575 chars |
+| numeric tokens in that prose | **26** | **0** |
+
+The old version asserted "$63.8 billion remaining under existing programs as of March 2026"
+with no grounding available anywhere. The new prose is judgment only; every figure moved into
+`management_findings`, quoted.
+
+**Do not over-read n=1.** AAPL is a well-structured filer with a quotable Item 1. The failure
+modes to keep watching are a filer whose Item 1 states no moat language at all (does the
+inference list inflate?) and a verbose filer near the output ceiling (JPM, INTC).
 
 ## Not bundled
 

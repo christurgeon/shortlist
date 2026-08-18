@@ -156,10 +156,11 @@ it outranks §3's alpha questions.
   `docs/audits/2026-08-17-moat-management-evidence-design.md`. Two things stay open:
   - **`business_model_summary` is still bare prose.** Deliberately out of that cut. It is the
     last narrative section with no grounding standard.
-  - **Can `management_findings` verify at all? UNMEASURED.** The haystack omits Item 5 and the
-    financial statements, which is where buyback figures live, so an unknown share of
-    management claims can only ever be declared inferences. Needs a live EDGAR probe
-    (`SEC_IDENTITY`); do not read the inference/quote ratio as a model failure until it runs.
+  - **Live-verified n=1 (AAPL, 2026-08-18): holds.** No truncation (`stop=end_turn`), zero
+    rule bleed (all 20 strict-list items quoted), `management_findings` 4/6 verified, 0
+    fabrications, and management prose fell 1,157→575 chars / 26→0 bare numbers. One brief is
+    not a verdict: the untested cases are a filer whose Item 1 states no moat language (does
+    the inference list inflate?) and a verbose filer near the output ceiling (JPM, INTC).
 
 - **Evidence is invisible on the Telegram surface (pre-existing, applies to risks too).**
   `/deep` delivers `art.png/html/text` from the viewmodel (`telegram.py:339-341`); the
