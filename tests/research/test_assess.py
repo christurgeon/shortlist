@@ -466,6 +466,34 @@ def test_system_prompt_mentions_trajectory():
     assert "trajectory" in SYSTEM_PROMPT.lower()
 
 
+def test_system_prompt_carries_the_three_2026_08_04_audit_clauses():
+    """D3/D6/D7 of `docs/audits/2026-08-04-deep-brief-assessment.md` are prompt-only
+    fixes, so nothing but the prompt text can pin them. Each was measured saturating
+    or drifting on a 35-brief corpus; losing a clause silently reopens the defect."""
+    from shortlist.research.assess import SYSTEM_PROMPT
+    low = SYSTEM_PROMPT.lower()
+    # D3 — the count caps are ceilings, not a quota (risks 33/35 at cap).
+    assert "hard ceilings, never targets" in low
+    assert "what_would_change_my_mind" in SYSTEM_PROMPT   # bar covers the saturating lists
+    # D7 — the red_flags enumeration is closed (only 24% of 214 flags matched it).
+    assert "limited to" in low and "closed" in low
+    # D6 — no cross-section quote reuse (62 instances across 31/35 briefs).
+    assert "only one item across" in low
+    # worth-building #4 — derived figures are computed, and stay out of quotes.
+    assert "do the arithmetic" in low
+
+
+def test_user_prompt_frames_the_caps_as_ceilings():
+    from shortlist.research.assess import _build_user_prompt
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText(ticker="X", accession="a", filing_date="d", business="B.")
+    bundle = FilingBundle(tenk=tenk, primary_accession="a", cache_key="a",
+                          filing_date="d")
+    prompt = _build_user_prompt(bundle, {})
+    assert "Return at most" in prompt          # the section/instruction boundary
+    assert "HARD CEILINGS, not targets" in prompt
+
+
 def _dcf_card():
     from shortlist.models import ScoreCard, StockMetrics
     m = StockMetrics(ticker="AAPL", market_cap=2000e6, financial_series=[
