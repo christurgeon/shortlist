@@ -211,12 +211,12 @@ already reads.
   the composite is a scoring change and needs evidence, not an argument.
 - **"Disable `upside_to_target`."** Already recorded at `PREDICTIVE_SIGNALS_RESEARCH.md`
   §Quick wins #1 (Brav & Lehavy: the *level* is negatively related to realised returns; the
-  *revision* predicts). Note the mechanical obstacle: the leg is **hard-coded**
-  (`scoring.py:569`) with mandatory thresholds (`config.yaml:45`) — unlike `shareholder_yield`
-  it cannot be switched off from config. The cheap, honest step is to make it
-  threshold-guarded/opt-out **with the default unchanged**, so a measurement can toggle it;
-  flipping the default without a point-in-time test is the same move the file's own bar
-  forbids.
+  *revision* predicts). The mechanical obstacle is GONE as of 2026-08-18: the leg is now the
+  scorer's one **opt-OUT** block (`scoring.py:_upside_to_target_on`, `value.upside_to_target.
+  enabled`), default ON and byte-identical when the key is absent, so the counterfactual can
+  be run from config. **What is still open is the measurement itself** — nobody has scored the
+  leg-off universe against forward returns point-in-time. Flipping the default without that
+  test remains the move this file's own bar forbids.
 - **"Label the composite heuristic until a survivorship-free, delisting-adjusted, walk-forward,
   multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
   verbatim. No action; do not open a work item that restates it.
@@ -389,8 +389,13 @@ decision above goes the paid way.
 ## EDGAR / statements minors
 
 - **`get_shares_outstanding_diluted()` returns MCD's count in millions**, not absolute shares
-  (`[716.4, 721.9, 732.3]`). Nothing depends on it for MCD any more, but any future consumer
-  inherits the bug. (`diluted_shares` from the companyconcept fallback *is* absolute, so
+  (`[716.4, 721.9, 732.3]`). Documented at the one call site as of 2026-08-18
+  (`data/sources/edgar.py`), still not fixed: the scalar reaches exactly ONE consumer,
+  `extract_financials`' computed-EPS fallback (`ni / shares_diluted`), which fires only when no
+  as-reported EPS row matched — so a millions-scaled value yields an EPS 1e6x too small there.
+  `ef.diluted_shares` is extracted per-row and does NOT come from it, so `share_count_cagr` and
+  the `dilution` flag are unaffected. No sanity bound was added: every candidate threshold is
+  fitted to this single observation. (`diluted_shares` from the companyconcept fallback *is* absolute, so
   `financial_series` display mixes conventions — scoring is unaffected, `share_count_cagr` being
   scale-invariant.)
 - **Widen the diluted-shares go/no-go beyond the store's 42 tickers** — keyless, costs only
@@ -408,20 +413,17 @@ decision above goes the paid way.
 
 # 5. Code hygiene (fold in when next touching these files)
 
-- **Optional guardrail:** ruff `C901` with a `max-complexity` (or a soft line ceiling) so
-  mega-functions can't silently regrow. Its own small change, not bundled with a refactor.
-- `_TRUE` is duplicated between `edgar/dera.py` and `edgar/insider.py`; `n_joint` counts tickers
-  pre-filter while labelled "filings"; `edgar/index.py:fetch_daily_records`/`fetch_recent_records`
-  are dead code with tests pinning them.
-- An `isinstance` assertion-of-convenience in `tests/test_edgar_insider_parse.py` exists only to
-  satisfy ruff F401 — fold into a real assertion.
-- `docs/PLAN_EDGAR_DILUTED_SHARES.md`'s historical "Step 2"/"Step 3" code blocks quote the
-  original signed-off text (including a false "ultimately ABSTAIN" safety claim). Each is
-  followed by its `[R…]` correction so a linear reader is fine, but someone skimming would copy
-  stale text — annotate them "superseded".
-- **Pin the dev Python via `.python-version`** — a fresh 3.11 venv fails
-  `test_block_bootstrap_ci_*` on a floating-point boundary that 3.13 doesn't hit, so a fresh
-  clone hits a spurious local failure.
+- `edgar/index.py:fetch_daily_records`/`fetch_recent_records` are dead code with tests pinning
+  them.
+- **Python is pinned to 3.12 (`.python-version`), and the reason on the old bullet was
+  STALE.** That bullet said a fresh 3.11 venv fails `test_block_bootstrap_ci_*`; that test no
+  longer exists — it came in with the scout validation harness (#105) and went out with the
+  scout retirement (`6ed0297`), the same way `n_joint` did. Re-measured 2026-08-18: the full
+  suite is **2036 passed on 3.11, 3.12 and 3.13 alike**. The pin was kept anyway, at **3.12
+  to match production** (`/opt/shortlist/.venv` is 3.12.3): it makes dev/CI/prod one
+  interpreter, and it is the only value that costs the deployed bot nothing — `.python-version`
+  is rsynced to `/opt/shortlist`, so pinning 3.13 would have silently rebuilt the live venv on
+  a new interpreter as a side effect of a hygiene commit.
 
 ---
 
