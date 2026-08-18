@@ -173,6 +173,24 @@ it outranks §3's alpha questions.
   one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
   means.
 
+- **Three prompt-only wins sitting unbuilt in the 2026-08-04 audit — the cheapest work on this
+  surface.** They were living only in `docs/audits/2026-08-04-deep-brief-assessment.md:594-606`
+  (`worth-building` #1, #2, #4), which means finding them required knowing to open that file.
+  All three are one edit to `SYSTEM_PROMPT`: no schema, no renderer, no back-compat surface,
+  and they share the cache-bust any prompt edit costs anyway.
+  - **#1 materiality bar instead of a count cap** (D3). The cap reads as a target: the audit
+    measured 7 of 8 briefs returning **exactly 12/12** risks, and the 2026-08-18 live runs
+    added two more (AAPL 12/12, JPM 12/12) — **9 of 11**. Do *not* justify it as "removing
+    filler" (§3 measured the tail as company-specific); the case is false precision and
+    attention dilution. `reconciliation` saturates the same way, against an explicit
+    instruction.
+  - **#2 close the `red_flags` enumeration** (D7) and **forbid cross-section quote reuse**
+    (D6 — 62 instances across 31/35 briefs). The current prompt (`assess.py:47-51`) has
+    neither clause.
+  - **#4 ask the model to do the arithmetic** — normalized earnings ex-one-offs, cash runway,
+    refinancing coverage. The audit calls this "the single most consistent qualitative gap"
+    across three close reads: the briefs assemble the inputs and stop.
+
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
 Statement **notes** never reach the prompt — `assess.py:324-331` sends Item 1, Item 7, Item 1A
