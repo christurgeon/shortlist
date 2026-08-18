@@ -53,11 +53,12 @@ def default_valid_signals() -> set[str]:
 # The JSON shape the model is instructed to emit (meta fields are added by us).
 SCHEMA_HINT = """{
   "business_model_summary": "string",
-  "moat": {"summary": "string", "sources": ["string"], "trajectory": "widening|stable|eroding"},
+  "moat": {"summary": "string", "sources": [{"claim": "string", "evidence": "verbatim quote, or \\"\\" if this is your inference rather than something the filing states"}], "trajectory": "widening|stable|eroding"},
   "risks": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "red_flags": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "added_risks": [{"claim": "string (a risk newly disclosed vs the prior year)", "evidence": "verbatim quote from the NEWLY ADDED RISK FACTORS section"}],
-  "management_capital_allocation": "string",
+  "management_capital_allocation": "string (your JUDGMENT of capital-allocation quality — do NOT enumerate figures here, they belong in management_findings)",
+  "management_findings": [{"claim": "one specific, checkable capital-allocation fact", "evidence": "verbatim quote, or \\"\\" if this is your inference rather than something the filing states"}],
   "reconciliation": [{"signal": "value|growth|moat|quality|momentum|insider|risk|short_interest|narrative_tone|gate:<name>|flag:<name>", "tension": "one sentence: the number vs the narrative", "filing_says": "verbatim quote, or \\"\\" if the filing is silent", "verdict": "confirms|contradicts|silent"}],
   "thesis": {"bull_case": "string (1-2 sentences)", "bear_case": "string (1-2 sentences)", "what_would_change_my_mind": ["string"], "takeaway": "string (1-2 sentences)"}
 }"""
@@ -162,7 +163,10 @@ class Finding:
 @dataclass
 class Moat:
     summary: str = ""
-    sources: list[str] = field(default_factory=list)
+    # {claim, evidence} pairs, NOT bare strings: 17 of 38 moat sources measured on
+    # 2026-08-17 asserted a specific figure with no grounding anywhere in the brief.
+    # An empty `evidence` is valid here (declared inference) — see _evidence_pairs.
+    sources: list["Finding"] = field(default_factory=list)
     trajectory: Optional[str] = None  # one of TRAJECTORIES, or None
 
 
@@ -233,10 +237,16 @@ class QualitativeAssessment:
     risks: list[Finding] = field(default_factory=list)
     red_flags: list[Finding] = field(default_factory=list)
     management_capital_allocation: str = ""
+    management_findings: list[Finding] = field(default_factory=list)
     reconciliation: list[Conflict] = field(default_factory=list)
     thesis: Thesis = field(default_factory=Thesis)
     unverified_count: int = 0
     silent_count: int = 0
+    # Claims that declared themselves unquoted (empty evidence) in the two lists
+    # where that is legal. Deliberately NOT folded into unverified_count: that
+    # number means "the model quoted something absent from the filing" — a
+    # fabrication signal — and mixing populations would destroy it.
+    inference_count: int = 0
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
     cache_key: str = ""        # assess() sets this to the narrow FILING key (falls back to
@@ -259,6 +269,32 @@ def _finding_from(item: dict) -> Finding:
     """Build a Finding from a payload item's claim/evidence (missing -> empty)."""
     return Finding(claim=str(item.get("claim", "")),
                    evidence=str(item.get("evidence", "")))
+
+
+def _evidence_pairs(raw, limit: Optional[int] = None) -> list[Finding]:
+    """Tolerant parse of the two lists where an empty quote is legal (`moat.sources`,
+    `management_findings`). Accepts BOTH shapes on purpose:
+
+    - a bare string is the pre-2026-08-17 form — claim only, no quote;
+    - a dict is the {claim, evidence} form.
+
+    Anything else is skipped. Tolerance is not a style choice here: `_finding_from`
+    raises AttributeError on a str, and `assess.py`'s parse-retry catches only
+    ValueError/JSONDecodeError — so a model that drifts back to the legacy shape
+    would escape the retry and drop the entire brief. `_added_risks` sets the
+    precedent: an advisory list must never sink an otherwise-valid brief.
+    """
+    out: list[Finding] = []
+    for item in (raw or []):
+        if isinstance(item, str):
+            out.append(Finding(claim=item, evidence=""))
+        elif isinstance(item, dict):
+            out.append(_finding_from(item))
+        else:
+            continue
+        if limit is not None and len(out) >= limit:
+            break
+    return out
 
 
 def _findings(payload: dict, key: str) -> list[Finding]:
@@ -331,7 +367,9 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
                             valid_signals: Optional[set[str]] = None,
                             max_conflicts: int = 3,
                             max_falsifiers: int = 3,
-                            max_added_risks: int = 8) -> QualitativeAssessment:
+                            max_added_risks: int = 8,
+                            max_moat_sources: int = 6,
+                            max_management_findings: int = 6) -> QualitativeAssessment:
     """Build a QualitativeAssessment from the model's parsed JSON.
     Raises ValueError if required keys are missing/mistyped or thesis is not a dict."""
     missing = [k for k in _REQUIRED if k not in payload]
@@ -343,7 +381,7 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
     trajectory = moat_raw.get("trajectory")
     moat = Moat(
         summary=str(moat_raw.get("summary", "")),
-        sources=[str(s) for s in (moat_raw.get("sources") or [])],
+        sources=_evidence_pairs(moat_raw.get("sources"), max_moat_sources),
         trajectory=trajectory if trajectory in TRAJECTORIES else None,
     )
     vs = valid_signals if valid_signals is not None else default_valid_signals()
@@ -355,6 +393,8 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         risks=_findings(payload, "risks"),
         red_flags=_findings(payload, "red_flags"),
         management_capital_allocation=str(payload["management_capital_allocation"]),
+        management_findings=_evidence_pairs(payload.get("management_findings"),
+                                            max_management_findings),
         reconciliation=_reconciliation(payload, valid_signals=vs, max_conflicts=max_conflicts),
         thesis=_thesis(payload, max_falsifiers=max_falsifiers),
         added_risks=_added_risks(payload, max_added_risks),

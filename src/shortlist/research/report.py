@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .models import QualitativeAssessment, call_disclaimer, stance_label
+from .models import Finding, QualitativeAssessment, call_disclaimer, stance_label
 
 
 def _safe(accession: str) -> str:
@@ -33,6 +33,20 @@ def _findings_md(findings, empty_label: str) -> list[str]:
         return [f"- {empty_label}"]
     lines = []
     for f in findings:
+        # A bare string is the pre-2026-08-17 moat.sources shape. Coerce rather than
+        # raise: rendering must never be the thing that drops a brief, and any caller
+        # can still construct Moat(sources=["brand"]). Mirrors viewmodel._claim.
+        if isinstance(f, str):
+            f = Finding(claim=f, evidence="")
+        # Three states, not two. A DECLARED inference (empty quote, legal only in
+        # moat.sources / management_findings) must not read as a failed grounding
+        # check — and the label avoids calling it "analyst inference", because a
+        # figure from Item 5 or the financial statements is a filing fact we simply
+        # never sent to the model (the haystack is Item 1/7/1A + 10-Q MD&A + 8-K).
+        if not f.verified and not (f.evidence or "").strip():
+            lines.append(f"- **{f.claim}** _(unquoted — inference or from a section "
+                         "not provided)_")
+            continue
         mark = "" if f.verified else " _(unverified)_"
         # Name the source document only when it is NOT the 10-K a reader already
         # assumes — so a brief with no 8-K text renders byte-identically.
@@ -132,9 +146,12 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
               f"- **Trajectory:** {a.moat.trajectory or 'n/a'}",
               f"- {a.moat.summary}"]
     if a.moat.sources:
-        lines += ["", "**Sources of advantage:**"] + [f"- {s}" for s in a.moat.sources]
+        lines += ["", "## Sources of advantage", *_findings_md(a.moat.sources, "None identified.")]
     lines += ["", "## Business model", a.business_model_summary,
-              "", "## Management & capital allocation", a.management_capital_allocation,
+              "", "## Management & capital allocation", a.management_capital_allocation]
+    if a.management_findings:
+        lines += ["", *_findings_md(a.management_findings, "None identified.")]
+    lines += [
               "", "## Material risks", *_findings_md(a.risks, "None identified."),
               "", "## Red flags", *_findings_md(a.red_flags, "None identified."),
               "", "## Newly disclosed risks (vs prior year)",
@@ -142,6 +159,11 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     if a.unverified_count:
         lines += ["", f"_{a.unverified_count} claim(s) could not be verified "
                   "against the filing text._"]
+    # Its own line, never folded into the count above: that one means "the model
+    # quoted something absent from the filing" and is the reader's fabrication signal.
+    if a.inference_count:
+        lines += ["", f"_{a.inference_count} claim(s) stated without a filing quote "
+                  "(declared inference, or from a section not provided)._"]
     lines += call_block
     return "\n".join(lines) + "\n"
 

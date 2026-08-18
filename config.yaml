@@ -433,6 +433,9 @@ research:
   max_risks: 12
   max_red_flags: 12
   max_conflicts: 6             # cap on reconciliation entries (truncation budget)
+  max_moat_sources: 6          # cap on moat.sources — quoted claims, so uncapped growth
+  max_management_findings: 6   # eats OUTPUT tokens, and assess.py returns None (drops the
+                               # brief, unretried) on stop_reason == max_tokens
   max_falsifiers: 6            # cap on thesis.what_would_change_my_mind
   max_added_risks: 8           # cap on the YoY newly-disclosed-risks list (§3.4)
   risk_diff:                   # YoY Item-1A risk-factor diff (research/riskdiff.py)
