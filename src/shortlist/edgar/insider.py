@@ -9,10 +9,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 
-from ..edgar._ticker_rules import junk_suffix
+from ..edgar._ticker_rules import _TRUE, junk_suffix
 from .models import Emission
-
-_TRUE = {"1", "true", "yes", "y"}
 
 
 @dataclass(frozen=True)

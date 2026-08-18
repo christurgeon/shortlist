@@ -16,6 +16,7 @@ from datetime import date
 from pathlib import Path
 
 from ..env import redact_secrets
+from ._ticker_rules import _TRUE
 from .insider import InsiderTxn
 from .sec_throttle import sec_throttle
 
@@ -27,8 +28,6 @@ _UA = "shortlist turgechr@duck.com"
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
      "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"])}
-
-_TRUE = {"1", "true", "yes", "y"}
 
 
 def dera_zip_url(quarter: str) -> str:

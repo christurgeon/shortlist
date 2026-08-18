@@ -15,7 +15,14 @@ def test_parses_a_real_open_market_purchase():
     buys = [t for t in txns if t.code == "P"]
     assert len(buys) == 1
     t = buys[0]
-    assert isinstance(t, InsiderTxn)
+    # Full-record equality (not just isinstance) so a regression in ANY field --
+    # including title/issuer_cik, which the field-by-field asserts below don't cover --
+    # fails this test, not just a downstream consumer.
+    assert t == InsiderTxn(
+        owner_cik="0002021774", ticker="OKLO", date=date(2025, 3, 27), code="P",
+        shares=6000.0, price=24.5686, plan_10b5_1=False, roles=frozenset({"director"}),
+        title=None, joint_filing=False, issuer_cik="0001849056",
+    )
     assert t.owner_cik == "0002021774"
     assert t.ticker == "OKLO"
     assert t.date == date(2025, 3, 27)
