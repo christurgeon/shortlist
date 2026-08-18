@@ -86,14 +86,18 @@ Idempotent, handles everything. **`/opt/shortlist` is a git checkout of `origin/
 the supported form is `cd /opt/shortlist && sudo git pull && sudo bash
 deploy/install_opt_shortlist.sh` — `git pull` handles deletions. **Never `rm -rf` the source
 tree**: the installer derives `SRC` from its own path, so running it from `/opt/shortlist`
-makes `SRC == DEST` and the rsync copies onto itself, leaving nothing to restore from.
+makes `SRC == DEST` and the sync step is skipped (see next paragraph), leaving nothing to
+restore a deleted `src/` from.
 
-**GOTCHA — running the installer FROM `/opt/shortlist` is a silent no-op deploy.** `SRC` is
-derived from the script's own path, so `cd /opt/shortlist && sudo bash deploy/install_opt_shortlist.sh`
-sets `SRC == DEST` and rsyncs onto itself — it still reports success. Either
-`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh`, or run the
-installer from a **separate** up-to-date checkout. **Always verify** —
-`git -C /opt/shortlist log --oneline -1` plus a grep for a symbol you just added.
+**Running the installer FROM `/opt/shortlist` sets `SRC == DEST`** (the installer derives
+`SRC` from its own path). The installer detects this (canonical `readlink -f` comparison,
+before any mutation) and **skips the rsync step with a loud notice** instead of copying the
+tree onto itself — it does not refuse to run, since `cd /opt/shortlist && sudo git pull &&
+sudo bash deploy/install_opt_shortlist.sh` is the documented, supported recipe and depends on
+this working. The skip is correct only because `git pull` already put the tree at the right
+commit; running the installer in-place *without* a preceding `git pull` silently deploys
+whatever is already on disk. **Always verify** — `git -C /opt/shortlist log --oneline -1`
+plus a grep for a symbol you just added.
 
 **GOTCHA — the installer generates its unit files inline; it does NOT read
 `deploy/*.service`** (except `shortlist-bot.service`, which is static and real). Only the

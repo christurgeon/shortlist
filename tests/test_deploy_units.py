@@ -43,6 +43,33 @@ def test_the_scheduled_route_wires_the_failure_alert() -> None:
 
 
 
+def test_inplace_run_skips_rsync_instead_of_silent_noop() -> None:
+    """SRC == DEST (e.g. running the installer FROM /opt/shortlist per the documented
+    `cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh`
+    recipe) must not silently rsync the tree onto itself and report success. It must also
+    not hard-refuse, since that recipe is the documented happy path. The installer must
+    detect the in-place case, print a loud notice, and skip the rsync call.
+    """
+    text = INSTALLER.read_text()
+    # Canonical comparison, resolved before any mutation (mkdir/rsync/venv build).
+    assert re.search(r'^SRC_REAL=.*readlink -f "\$SRC"', text, re.MULTILINE)
+    assert re.search(r'^DEST_REAL=.*readlink -f "\$DEST"', text, re.MULTILINE)
+    mkdir_pos = text.index('mkdir -p "$DEST"')
+    real_pos = text.index("SRC_REAL=")
+    assert real_pos < mkdir_pos, "SRC/DEST comparison must happen before any mutation"
+
+    inplace_check_pos = text.index('if [[ "$SRC_REAL" == "$DEST_REAL" ]]')
+    assert inplace_check_pos < mkdir_pos
+
+    # The rsync call itself must be conditional on the in-place flag, not unconditional:
+    # it must sit between the INPLACE guard and the post-sync chown that follows the fi.
+    rsync_pos = text.index("rsync -a \\")
+    guard_pos = text.index("if [[ $INPLACE -eq 1 ]]")
+    post_sync_chown_pos = text.index('chown -R "$RUN_USER:$RUN_GROUP" "$DEST"')
+    assert guard_pos < rsync_pos < post_sync_chown_pos
+    assert "skipping rsync" in text
+
+
 def test_smoke_test_is_read_only() -> None:
     """A smoke test that writes to state/ pollutes live data on every deploy."""
     assert "'./.venv/bin/shortlist' --demo" in INSTALLER.read_text()
