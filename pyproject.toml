@@ -36,13 +36,27 @@ extend-exclude = [".claude"]  # transient git worktrees, not part of this projec
 # Curated for signal, not churn: pyflakes/pycodestyle defaults plus bugbear,
 # comprehension, simplify and import-sort. Pyupgrade (Optional -> | None) is
 # deliberately omitted — it would rewrite ~300 annotations for no behaviour gain.
-select = ["E", "F", "W", "I", "B", "C4", "SIM", "PIE"]
+select = ["E", "F", "W", "I", "B", "C4", "SIM", "PIE", "C901"]
 ignore = [
     "E501",    # long lines are dense-by-design here; we don't reflow
     "SIM103",  # explicit multi-return guards read clearer than one negated return
     "SIM108",  # nested ternaries are less readable than the if/else blocks here
     "B027",    # empty non-abstract lifecycle hooks (e.g. Source.aclose) are intentional
 ]
+
+[tool.ruff.lint.mccabe]
+# A ratchet, not an aspiration. 20 is the tightest ceiling the tree passes with
+# only THREE exemptions, and they carry a per-function `# noqa: C901` at the def
+# rather than a per-file ignore, so the rest of those files stays covered:
+#   bridge.snapshot_to_metrics (47) — order-dependent pipeline; PR #145 measured
+#     the split and deliberately declined it (TODO.md §6).
+#   backtest/cli.py:main (36)       — argparse surface, flat dispatch.
+#   research/assess.py:_quant_context (21) — one optional prompt line per branch.
+# Pinning at 47 instead would have been no guardrail at all: it would let every
+# OTHER function grow to 47 unnoticed, which is the failure this rule exists to
+# catch. Raise this number only with a reason; adding a fourth noqa is the
+# cheaper answer, and a fifth is the signal that something needs splitting.
+max-complexity = 20
 
 [tool.ruff.lint.per-file-ignores]
 # Test files use deliberate task-section structure: mid-file imports, re-imports,

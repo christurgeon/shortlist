@@ -554,7 +554,7 @@ def _fcf_col(series) -> list:
     return [row.get("free_cash_flow") for row in (series or [])]
 
 
-def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=None) -> str:
+def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=None) -> str:  # noqa: C901 — one optional prompt line per branch; splitting only moves the branches
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
