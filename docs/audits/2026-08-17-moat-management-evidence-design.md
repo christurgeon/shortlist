@@ -105,7 +105,7 @@ the verbose filers (JPM, INTC) that already stress that path, so both lists ship
   an exact contiguous span is WORSE than empty". **Held at n=1** (below). One brief is not a
   verdict: keep checking new briefs for empty evidence on `risks`, the dangerous direction.
 
-## Live verification (AAPL, 2026-08-18, n=1)
+## Live verification (2026-08-18, n=3: AAPL, JPM, INTC)
 
 First brief ever generated with this prompt. `uv run shortlist --tickers AAPL --research 1`,
 `stop=end_turn`, 173s, $0.5459. AAPL was chosen because a pre-change brief of the same company
@@ -147,9 +147,34 @@ The old version asserted "$63.8 billion remaining under existing programs as of 
 with no grounding available anywhere. The new prose is judgment only; every figure moved into
 `management_findings`, quoted.
 
-**Do not over-read n=1.** AAPL is a well-structured filer with a quotable Item 1. The failure
-modes to keep watching are a filer whose Item 1 states no moat language at all (does the
-inference list inflate?) and a verbose filer near the output ceiling (JPM, INTC).
+### The two stress filers (added after the AAPL run)
+
+JPM and INTC were run specifically because they are the repo's known worst cases: JPM's
+Part I Item 2 over-captures to 601,221 chars and INTC's extracts 0. Both are the output-ceiling
+risk, since `max_tokens` drops a brief unretried.
+
+| | moat | mgmt findings | strict-list items / bleed | mgmt prose | stop |
+|---|---|---|---|---|---|
+| AAPL | 4v / 1 inf / 0 fab | 4v / 2 inf / 0 fab | 20 / **0** | 575 ch, **0 nums** | end_turn |
+| JPM | 4v / 1 inf / 0 fab | 4v / 1 inf / 0 fab | 16 / **0** | 629 ch, **0 nums** | end_turn |
+| INTC | 2v / 2 inf / 0 fab | 4v / 2 inf / 0 fab | 22 / **0** | 601 ch, **0 nums** | end_turn |
+
+- **No truncation on either stress filer.** JPM 202s/$0.63, INTC 179s/$0.44. The caps hold.
+  JPM's 601K over-capture warning and INTC's "10-Q MD&A empty (Part I Item 2 not detected)"
+  both fired as expected — pre-existing, documented in `TODO.md` §2a, unrelated to this cut.
+- **Zero rule bleed across all 58 strict-list items**, and **zero fabrications** in either new
+  list on any of the three names.
+- **The inference list does NOT inflate on a weak-moat filer** — the question the AAPL run
+  could not answer. INTC drops to 2 verified / 2 declared inference and the list *shrinks* to
+  4, under the cap of 6: the model declined to manufacture moat quotes for a business whose
+  Item 1 does not support them, rather than padding. This is the permissive rule behaving
+  correctly under adverse conditions, which was the main open risk.
+- **The management re-scoping holds across all three:** 575/629/601 chars and **0 numeric
+  tokens** in the prose, versus a 900–1,157 char / 14–27 number baseline.
+
+**Still not a verdict.** n=3, all large caps, one run each. INTC was gated (`negative_fcf`)
+so it required `require_passed=False` — the bot's `/deep` path, not the CLI's `--research N`,
+which only enriches non-gated names.
 
 ## Not bundled
 
