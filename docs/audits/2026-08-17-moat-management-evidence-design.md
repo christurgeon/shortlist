@@ -90,12 +90,10 @@ the verbose filers (JPM, INTC) that already stress that path, so both lists ship
 
 - **A filing fact from an unsent section lands in the inference bucket.** The haystack is
   Item 1 + Item 7 + Item 1A + 10-Q MD&A + 8-K. Item 5 (issuer purchases of equity securities)
-  and the financial statements are **not** sent, and that is exactly where buyback figures
-  like "5.3M shares at an average $163.07" live. The label was worded "inference **or from a
-  section not provided**" precisely so it is not a lie in that case. **Unmeasured:** what
-  share of `management_findings` can verify at all. It needs a live EDGAR probe, which no
-  environment with `SEC_IDENTITY` was available for at build time. Run it before drawing any
-  conclusion from the inference/quote ratio.
+  and the financial statements are **not** sent. The label was worded "inference **or from a
+  section not provided**" precisely so it is not a lie in that case — and the live run below
+  confirms that wording was load-bearing, not pedantry. **Measured n=1** (see §Live
+  verification): the concern was overstated for buybacks, which Item 7 MD&A does carry.
 - **None of this is visible on the Telegram surface.** `/deep` delivers `art.png/html/text`
   built from the viewmodel (`telegram.py:339-341`); the markdown brief is never sent, and
   `viewmodel.py:126-127` reduces even *risks* to `_claim(x)`, stripping evidence. This is a
@@ -104,9 +102,79 @@ the verbose filers (JPM, INTC) that already stress that path, so both lists ship
 - The rule split — strict "omit the item" for risks, permissive empty for these two lists —
   is a real bleed risk in both directions. It is mitigated by stating the permissive rule as a
   closed set named twice (positively, then negatively) and by an explicit "a quote that is not
-  an exact contiguous span is WORSE than empty". **Whether the model honours it is unmeasured**
-  until briefs are regenerated; check the first few for empty evidence appearing on `risks`,
-  which would be the dangerous direction.
+  an exact contiguous span is WORSE than empty". **Held at n=1** (below). One brief is not a
+  verdict: keep checking new briefs for empty evidence on `risks`, the dangerous direction.
+
+## Live verification (2026-08-18, n=3: AAPL, JPM, INTC)
+
+First brief ever generated with this prompt. `uv run shortlist --tickers AAPL --research 1`,
+`stop=end_turn`, 173s, $0.5459. AAPL was chosen because a pre-change brief of the same company
+was on disk, making this a before/after rather than a smoke test.
+
+| list | n | verified | declared inference | fabricated |
+|---|---|---|---|---|
+| `moat.sources` | 5 | 4 | 1 | 0 |
+| `management_findings` | 6 | 4 | 2 | 0 |
+| `risks` | 12 | 12 | 0 | 0 |
+| `red_flags` | 5 | 5 | 0 | 0 |
+| `added_risks` | 3 | 3 | 0 | 0 |
+
+`unverified_count: 0`, `inference_count: 3`, `silent_count: 1`.
+
+**The three risks this design was built against, all resolved:**
+
+1. **No truncation.** `stop=end_turn`, not `max_tokens` — the caps held on a large filer.
+2. **No rule bleed.** All 20 strict-list items carry quotes; zero empty `evidence` leaked into
+   `risks`/`red_flags`/`added_risks`.
+3. **`management_findings` verifies.** 4 of 6, including the $89.3B buyback and $15.4B
+   dividends that the *old* brief asserted as bare prose. One verified against the **10-Q
+   MD&A** with correct segment provenance.
+
+**The label wording was load-bearing.** Two of the three declared inferences — the 533x CEO
+pay ratio and the insider-alignment read — come from `research/proxy.py` and the Form-4
+context lines, which are **prompt-only and deliberately outside the grounding haystack**. The
+model correctly declined to fabricate a quote for them. "Analyst inference" alone would have
+been a false label there; "or from a section not provided" is accurate.
+
+**The management re-scoping worked as designed.** Same company, same section:
+
+| | old brief | new brief |
+|---|---|---|
+| `management_capital_allocation` | 1,157 chars | 575 chars |
+| numeric tokens in that prose | **26** | **0** |
+
+The old version asserted "$63.8 billion remaining under existing programs as of March 2026"
+with no grounding available anywhere. The new prose is judgment only; every figure moved into
+`management_findings`, quoted.
+
+### The two stress filers (added after the AAPL run)
+
+JPM and INTC were run specifically because they are the repo's known worst cases: JPM's
+Part I Item 2 over-captures to 601,221 chars and INTC's extracts 0. Both are the output-ceiling
+risk, since `max_tokens` drops a brief unretried.
+
+| | moat | mgmt findings | strict-list items / bleed | mgmt prose | stop |
+|---|---|---|---|---|---|
+| AAPL | 4v / 1 inf / 0 fab | 4v / 2 inf / 0 fab | 20 / **0** | 575 ch, **0 nums** | end_turn |
+| JPM | 4v / 1 inf / 0 fab | 4v / 1 inf / 0 fab | 16 / **0** | 629 ch, **0 nums** | end_turn |
+| INTC | 2v / 2 inf / 0 fab | 4v / 2 inf / 0 fab | 22 / **0** | 601 ch, **0 nums** | end_turn |
+
+- **No truncation on either stress filer.** JPM 202s/$0.63, INTC 179s/$0.44. The caps hold.
+  JPM's 601K over-capture warning and INTC's "10-Q MD&A empty (Part I Item 2 not detected)"
+  both fired as expected — pre-existing, documented in `TODO.md` §2a, unrelated to this cut.
+- **Zero rule bleed across all 58 strict-list items**, and **zero fabrications** in either new
+  list on any of the three names.
+- **The inference list does NOT inflate on a weak-moat filer** — the question the AAPL run
+  could not answer. INTC drops to 2 verified / 2 declared inference and the list *shrinks* to
+  4, under the cap of 6: the model declined to manufacture moat quotes for a business whose
+  Item 1 does not support them, rather than padding. This is the permissive rule behaving
+  correctly under adverse conditions, which was the main open risk.
+- **The management re-scoping holds across all three:** 575/629/601 chars and **0 numeric
+  tokens** in the prose, versus a 900–1,157 char / 14–27 number baseline.
+
+**Still not a verdict.** n=3, all large caps, one run each. INTC was gated (`negative_fcf`)
+so it required `require_passed=False` — the bot's `/deep` path, not the CLI's `--research N`,
+which only enriches non-gated names.
 
 ## Not bundled
 
