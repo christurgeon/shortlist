@@ -378,6 +378,44 @@ def test_asset_growth_and_accruals_backtest_axes():
     assert accruals_score(none_m, t) is None
 
 
+# --- upside_to_target opt-out (TODO §2d / PREDICTIVE_SIGNALS Quick wins #1) ---
+
+def test_upside_to_target_default_is_on_and_byte_identical():
+    """The ONLY opt-OUT leg in the scorer. An absent key, an absent `value:` block and a
+    `value:` block about something else must all keep it ON — otherwise shipping the knob
+    would itself have changed every live value score, which is the thing it exists to
+    avoid."""
+    m = metrics_all_50()
+    baseline = score(m, CONFIG).value
+    assert baseline == 50.0
+    for cfg in ({**CONFIG, "value": {}},
+                {**CONFIG, "value": {"shareholder_yield": {"enabled": True}}},
+                {**CONFIG, "value": {"upside_to_target": {}}},
+                {**CONFIG, "value": {"upside_to_target": {"enabled": True}}}):
+        assert score(m, cfg).value == baseline
+
+
+def test_upside_to_target_can_be_switched_off_and_the_weight_redistributes():
+    """Off, value must rest on the remaining legs alone — the counterfactual a
+    point-in-time measurement of the Brav & Lehavy result needs."""
+    off = {**CONFIG, "value": {"upside_to_target": {"enabled": False}}}
+    # A name the target leg RATES HIGHLY and the other legs do not: with the leg on,
+    # value is pulled up; with it off, only fcf_yield / pe_vs_history survive (peg is
+    # None in this fixture), so the score must fall.
+    m = dataclasses.replace(metrics_all_50(), target_median=1000.0)
+    assert score(m, CONFIG).value > score(m, off).value
+    assert score(m, off).value == 50.0          # the untouched legs, unchanged
+    # ...and the leg is gone from the card's accounting, not scored as zero.
+    assert score(m, off).composite != score(m, CONFIG).composite
+
+
+def test_upside_to_target_off_leaves_the_other_axes_untouched():
+    off = {**CONFIG, "value": {"upside_to_target": {"enabled": False}}}
+    on_card, off_card = score(metrics_all_50(), CONFIG), score(metrics_all_50(), off)
+    for axis in ("quality", "moat", "growth", "momentum", "insider"):
+        assert getattr(off_card, axis) == getattr(on_card, axis)
+
+
 # --- total shareholder-yield value leg (PREDICTIVE_SIGNALS §5) ----------------
 
 def _sy_config(*, enabled: bool = True) -> dict:

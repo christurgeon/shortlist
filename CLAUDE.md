@@ -180,6 +180,14 @@ Lazy-Prices signal — `research/textsim.py`, stdlib bag-of-words cosine).
 | SUE / earnings-surprise drift | `momentum.sue` | OFF | needs paid Finnhub tier for full accuracy; `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §1 |
 | Residual (de-betaed) momentum | `momentum.residual` | **ON** | only new leg with significant XS rank-IC (t=2.6); §2 of the same doc |
 
+**One leg is opt-OUT, not opt-in**: `value.upside_to_target.enabled` (default **true**, and
+true when the key is absent — an untouched config is byte-identical). It exists so the
+Brav & Lehavy question (the target *level* is negatively related to realised returns; the
+*revision* predicts) can be measured by toggling the leg, **not** because the leg is suspect.
+Do not flip the default without a point-in-time test. `scoring.py:_upside_to_target_on`.
+Note both commented `value:` examples in `config.yaml` — enabling both needs ONE `value:` key,
+since duplicate top-level keys are valid YAML that silently keeps only the last.
+
 ## Secrets
 
 Keys load from the environment or root `.env` (gitignored; see `.env.example`,

@@ -485,6 +485,23 @@ def _shareholder_yield_on(config: dict) -> bool:
     return bool(d) and d.get("enabled", True)
 
 
+def _upside_to_target_on(config: dict) -> bool:
+    """OPT-OUT, and the only one here — every other config gate above is opt-IN.
+
+    `upside_to_target` (sell-side price target vs price) is a SHIPPED default leg with
+    mandatory thresholds, so an absent key must keep it ON or an untouched config.yaml
+    would silently change every value score. The knob exists because the leg is a
+    standing MEASUREMENT question, not because it is suspect today: Brav & Lehavy find
+    the target LEVEL negatively related to realised returns while the REVISION predicts
+    (`docs/PREDICTIVE_SIGNALS_RESEARCH.md` §Quick wins #1). Until that is measured
+    point-in-time on this data, flipping the default is exactly the move CLAUDE.md's
+    design premise forbids — so this makes the leg togglable and changes nothing."""
+    d = ((config or {}).get("value") or {}).get("upside_to_target")
+    if isinstance(d, dict):
+        return bool(d.get("enabled", True))
+    return True
+
+
 def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     legs = [
         _Leg("roe", m.roe, "roe"),
@@ -566,11 +583,16 @@ def _momentum_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]
 
 def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     legs = [
-        _Leg("upside_to_target", m.upside_to_target(), "upside_to_target"),
         _Leg("fcf_yield", m.fcf_yield, "fcf_yield"),
         _Leg("pe_vs_history", m.pe_vs_history(), "pe_vs_history"),
         _Leg("peg", m.peg, "peg"),
     ]
+    # Opt-OUT (see _upside_to_target_on): ON unless config disables it, and inserted at
+    # the front so the leg ORDER is unchanged from before the knob existed — _eval_subscore
+    # is order-sensitive only in what it reports, but a reordered `present` list would
+    # churn every coverage/abstention fixture for no reason.
+    if _upside_to_target_on(config):
+        legs.insert(0, _Leg("upside_to_target", m.upside_to_target(), "upside_to_target"))
     # Total shareholder yield (PREDICTIVE_SIGNALS §5): dividends + net buybacks + net
     # debt reduction / market_cap. A POSITIVE predictor scored STRAIGHT (high -> high,
     # NOT inverted like the §3 legs). Opt-in + threshold-guarded like the dilution leg;

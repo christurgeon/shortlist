@@ -311,6 +311,21 @@ quality:
     asset_growth: false   # no cross-sectional edge (XS-IC -0.006 t=-0.3) — measured-but-off
     accruals: false       # re-measured 2026-07-12: sub-significant on largecap, flat combined — measured-but-off
 
+# Sell-side-target VALUE leg (`upside_to_target`) — the one OPT-OUT knob in this file.
+# It ships ON, and leaving this commented keeps it ON, so an untouched config scores
+# exactly as before. It exists so the leg can be TOGGLED FOR A MEASUREMENT: Brav & Lehavy
+# find the target LEVEL negatively related to realised returns while the REVISION predicts
+# (PREDICTIVE_SIGNALS §Quick wins #1) — but that has not been tested point-in-time on this
+# data, and CLAUDE.md's bar forbids flipping a shipped default on an argument. Set enabled
+# to false to run the counterfactual; `thresholds.upside_to_target` stays required either
+# way. Off => value rests on fcf_yield / pe_vs_history / peg and redistributes the weight.
+# CAUTION: `value.shareholder_yield` below is a second commented `value:` block. Enabling
+# both means ONE `value:` key with two children — two top-level `value:` keys is valid YAML
+# that silently keeps only the last, dropping whichever knob you wrote first.
+# value:
+#   upside_to_target:
+#     enabled: false
+
 # Total-shareholder-yield SCORING (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber).
 # DISABLED by default: leave commented so value_score is byte-identical to the pre-feature
 # scorer (the shareholder_yield signal is still surfaced + backtest-measured regardless).
