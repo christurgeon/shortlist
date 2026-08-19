@@ -495,11 +495,21 @@ def _upside_to_target_on(config: dict) -> bool:
     the target LEVEL negatively related to realised returns while the REVISION predicts
     (`docs/PREDICTIVE_SIGNALS_RESEARCH.md` §Quick wins #1). Until that is measured
     point-in-time on this data, flipping the default is exactly the move CLAUDE.md's
-    design premise forbids — so this makes the leg togglable and changes nothing."""
+    design premise forbids — so this makes the leg togglable and changes nothing.
+
+    Accepts BOTH spellings, because getting this wrong is worse than not shipping the
+    knob: `{enabled: false}` and a bare `false` must both switch the leg off. The bare
+    boolean is the idiom `quality.earnings_quality.asset_growth`/`accruals` already use
+    in this same config, so an operator will reach for it — and under an
+    `isinstance(d, dict)`-only read it would silently leave the leg ON and produce a
+    "leg-off" run byte-identical to baseline. A silently-ignored switch on a
+    measurement knob is a wrong measurement, not a no-op."""
     d = ((config or {}).get("value") or {}).get("upside_to_target")
     if isinstance(d, dict):
         return bool(d.get("enabled", True))
-    return True
+    if d is None:                # key absent, or present-but-valueless YAML null
+        return True
+    return bool(d)
 
 
 def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:

@@ -409,6 +409,22 @@ def test_upside_to_target_can_be_switched_off_and_the_weight_redistributes():
     assert score(m, off).composite != score(m, CONFIG).composite
 
 
+def test_upside_to_target_accepts_the_bare_boolean_spelling():
+    """`{enabled: false}` and a bare `false` must BOTH switch the leg off. The bare form
+    is the idiom `quality.earnings_quality.asset_growth`/`accruals` use in this same
+    config, so an operator will write it — and silently ignoring it would produce a
+    "leg-off" measurement byte-identical to baseline, which is a wrong answer, not a
+    no-op. A valueless key (YAML null) is treated as ABSENT, i.e. the shipped default."""
+    m = dataclasses.replace(metrics_all_50(), target_median=1000.0)
+    on = score(m, CONFIG).value
+    for off_cfg in ({**CONFIG, "value": {"upside_to_target": False}},
+                    {**CONFIG, "value": {"upside_to_target": {"enabled": False}}}):
+        assert score(m, off_cfg).value < on
+    for on_cfg in ({**CONFIG, "value": {"upside_to_target": True}},
+                   {**CONFIG, "value": {"upside_to_target": None}}):
+        assert score(m, on_cfg).value == on
+
+
 def test_upside_to_target_off_leaves_the_other_axes_untouched():
     off = {**CONFIG, "value": {"upside_to_target": {"enabled": False}}}
     on_card, off_card = score(metrics_all_50(), CONFIG), score(metrics_all_50(), off)

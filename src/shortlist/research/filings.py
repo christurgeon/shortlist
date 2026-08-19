@@ -128,9 +128,20 @@ def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
     exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names,
     TODO.md §2a). Mirrors `_tenq_mda`'s extraction pattern: same getter, same
     never-raises contract, "" on any failure or missing section. Used only by
-    `filing_text_change`'s 10-Q arm (`_filing_sections`) — `_tenq_added_risks` above
-    already reads the same Part II Item 1A for the /deep diff, so this path is
-    measured-safe."""
+    `filing_text_change`'s 10-Q arm (`_filing_sections`).
+
+    RETURNS THE RAW SECTION, AND THAT IS A KNOWN WEAKNESS OF THE METRIC — do not read
+    `_tenq_added_risks` above as precedent that this is safe. That function reads the
+    same Part II Item 1A but DIFFS it against the 10-K Item 1A and caps it at 4,000
+    chars, which is exactly what makes it safe; nothing here does either.
+    `textsim.combined_similarity` pools both sections into ONE bag, so the cosine is
+    length-weighted — and 4 filers in 10 restate EVERY risk factor quarterly (measured
+    2026-08-14: GILD 84K, NVDA 43K, AAPL 19K chars). For those names this near-identical
+    section dominates the pool and drags the similarity toward 1.0, diluting exactly the
+    wholesale-MD&A-rewrite signal `combined_similarity`'s docstring says the weighting
+    exists to protect. Blast radius today is nil — `filing_text_change` has no
+    production caller — but ANY producer wired to it must fix this first (route through
+    `riskdiff.added_risk_blocks`, or cap), not inherit it. `TODO.md` §2a."""
     try:
         getter = getattr(tenq, "get_item_with_part", None)
         value = getter("Part II", "Item 1A", markdown=True) if getter is not None else None
