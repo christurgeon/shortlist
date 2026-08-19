@@ -19,24 +19,6 @@ the scoring roadmap.
 
 # 1. Bot & report
 
-## The accumulate failure-alert chain is untested in situ (2026-08-14)
-
-The deployed unit now carries `OnFailure=shortlist-alert-failure@%n.service` (verified with
-`systemctl cat shortlist-accumulate.service`), and the alert template is installed — but
-nothing has ever actually *failed*, so the `OnFailure` → template → script → Telegram chain
-has never fired end to end. Force it with a transient unit carrying the same `OnFailure=`, or
-wait for a real failure and see whether the alert lands. The exact one-shot is:
-
-```bash
-sudo systemd-run --unit=shortlist-alerttest --property=Type=oneshot \
-  --property=OnFailure=shortlist-alert-failure@shortlist-alerttest.service /bin/false
-journalctl -u shortlist-alert-failure@shortlist-alerttest.service --no-pager -n 20
-```
-
-It needs an interactive sudo password, so an agent session cannot run it unattended.
-
-**Status:** accumulate is the only scheduled unit, so this is the only alerting path left.
-
 ## Deploy recipe: `git pull` first, NEVER `rm -rf src`
 
 `/opt/shortlist` is a **git checkout tracking `origin/main`**, not just an rsync target, so
@@ -457,6 +439,16 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
 - **Do not give an EDGAR client its own `SecThrottle`** — a per-client throttle cannot bound the
   process's request rate, which is exactly how the 2026-08-04 cascade happened. Concurrency buys
   nothing here (~17 ms latency; one serial worker already sustains ~57 req/s).
+- **The accumulate failure-alert chain is VERIFIED end to end (2026-08-19).** Forced with
+  `sudo systemd-run --unit=shortlist-alerttest --property=Type=oneshot
+  --property=OnFailure=shortlist-alert-failure@shortlist-alerttest.service /bin/false`. The
+  unit failed (`Result=exit-code`, exit 1), systemd started the template instance, it finished
+  `Result=success`, and the operator confirmed the Telegram message arrived. Note how to read
+  this if you ever re-run it: the script **always** `exit 0` (an `OnFailure` hook must not
+  cascade), so the exit code proves nothing — what proves delivery is that journald captured
+  NEITHER of its two stderr paths (`missing telegram env vars` / `telegram send failed`).
+  Cleanup afterwards: `sudo systemctl reset-failed shortlist-alerttest.service`, or the
+  transient unit lingers in `systemctl --failed`.
 - **The `net_debt_to_ebitda` axis is re-measured on DE-POLLUTED data and the 2026-07-11
   "leverage tilt NOT earned" verdict STANDS** — no horizon on either committed universe
   clears |t|>=2 (best: smallmid h=6, t=0.94, the only rows clearing both trust floors;
