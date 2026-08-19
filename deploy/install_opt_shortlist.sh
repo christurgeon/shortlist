@@ -1,22 +1,14 @@
 #!/usr/bin/env bash
+# Deploys shortlist to /opt/shortlist: syncs the repo, builds the venv, installs
+# systemd units, and restarts the bot. Idempotent — safe to re-run.
 #
-# Deploy shortlist to /opt/shortlist: sync the repo, build the venv, install the
-# systemd units, and restart the interactive Telegram bot.
-#
-# The bot runs as a NORMAL login user (not a service account) so the claude-CLI
-# research layer behind /deep keeps its auth in that user's ~/.claude.
-#
-# By default the run-user is whoever invoked sudo (SUDO_USER); override any of the
-# settings below via the environment, e.g.:
-#
+# Runs as a normal login user (SUDO_USER by default), not the oracle service
+# account, so the claude-CLI research layer behind /deep keeps its auth in
+# that user's ~/.claude. Override via env, e.g.:
 #   sudo SHORTLIST_USER=deploy bash deploy/install_opt_shortlist.sh
-#
-# Idempotent: safe to re-run (rsync refresh + venv sync + unit reinstall).
-#
 set -euo pipefail
 
 # --- settings (all overridable via env) ---------------------------------------
-# Source defaults to the repo this script lives in; dest + user are configurable.
 SRC="${SHORTLIST_SRC:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
 DEST="${SHORTLIST_DEST:-/opt/shortlist}"
 RUN_USER="${SHORTLIST_USER:-${SUDO_USER:-}}"
@@ -40,13 +32,10 @@ if [[ ! -d $SRC ]]; then
   exit 1
 fi
 
-# Canonicalize before comparing: SRC is derived from this script's own path, so running
-# the installer FROM $DEST (e.g. the documented `cd /opt/shortlist && sudo git pull &&
-# sudo bash deploy/install_opt_shortlist.sh` recipe) makes SRC == DEST. That is a VALID,
-# documented way to run this script -- refusing it would break the happy path. What must
-# not happen is the OLD silent behaviour, where rsync copied the tree onto itself and the
-# script still printed success. readlink -f resolves symlinks and trailing slashes so
-# `/opt/shortlist/` vs `/opt/shortlist` (or a symlinked path) still compares equal.
+# SRC derives from this script's own path, so running it from $DEST (the
+# documented `cd /opt/shortlist && git pull && install...` recipe) makes
+# SRC == DEST — valid, and handled below by skipping rsync rather than
+# copying the tree onto itself.
 SRC_REAL="$(readlink -f "$SRC")"
 DEST_REAL="$(readlink -f "$DEST" 2>/dev/null || echo "$DEST")"
 INPLACE=0
@@ -64,11 +53,9 @@ fi
 echo "==> deploying $SRC -> $DEST, service runs as $RUN_USER ($RUN_HOME)"
 
 # --- failure reporting --------------------------------------------------------
-# Under `set -e` any step below aborts the script mid-deploy. The dangerous part is not
-# the abort (stopping before the bot restart is CORRECT -- the running bot keeps serving
-# its old in-memory code) but the SILENCE: $DEST has already been replaced, and
-# shortlist-bot.service carries Restart=on-failure, so the next crash or reboot brings
-# the bot up on the untested tree with no further warning. Say so, loudly, on the way out.
+# Stopping mid-deploy (set -e) is correct — the bot keeps serving old code until
+# restarted — but $DEST may already be modified, and Restart=on-failure means a
+# later crash/reboot could pick up the untested tree. Say so loudly on exit.
 STAGE="startup"
 DEST_MUTATED=0
 
@@ -109,9 +96,8 @@ if [[ $INPLACE -eq 1 ]]; then
   echo "    IN-PLACE RUN: source IS the destination ($DEST_REAL) -- skipping rsync." >&2
   echo "    the tree must already be at the intended commit (run 'git pull' first)." >&2
 else
-  # NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only the
-  # repo-root dirs, NOT the like-named source package src/shortlist/research.
-  # (__pycache__ stays unanchored — strip it at every level.)
+  # Excludes are anchored with a leading '/' to match repo-root dirs only —
+  # unanchored they'd also match src/shortlist/research and ship a broken wheel.
   rsync -a \
     --exclude='/.venv/' \
     --exclude='__pycache__/' \
@@ -126,7 +112,6 @@ else
     "$SRC"/ "$DEST"/
 fi
 chown -R "$RUN_USER:$RUN_GROUP" "$DEST"
-# .env carries secrets -> lock it down
 if [[ -f "$DEST/.env" ]]; then chmod 600 "$DEST/.env"; fi
 
 STAGE="3/6 build the venv (uv sync)"
@@ -135,11 +120,7 @@ sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra bot --extra edgar
 
 STAGE="4/6 smoke test (shortlist --demo)"
 echo "==> 4/6  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
-# `shortlist --demo` runs the scorer against offline fixtures and writes NOTHING. Keep it
-# that way: a smoke test that writes to state/ pollutes live data on every deploy.
-# Output is captured so a failure prints as a labelled block instead of bare stderr from a
-# nested `sudo bash -lc`. It needs no redaction pass: --demo makes no HTTP request, so its
-# traceback cannot carry a keyed provider URL. Keep it offline, or add one.
+# --demo writes nothing — keep it that way, or every deploy pollutes state/.
 if ! _smoke_out="$(sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist' --demo" 2>&1)"; then
   echo "    SMOKE TEST FAILED — the deployed tree does not run:" >&2
   printf '%s\n' "$_smoke_out" | tail -n 30 >&2
@@ -149,11 +130,8 @@ echo "    demo OK"
 
 STAGE="5/6 install systemd units"
 echo "==> 5/6  Install systemd units"
-# The failure-alert template. Generated inline like every other unit here (the installer
-# does NOT read deploy/*.service — see CLAUDE.md) because it needs $DEST/$RUN_USER baked in.
-# Its only remaining consumer is the opt-in accumulate timer below, which carries
-# OnFailure=shortlist-alert-failure@%n.service — install it unconditionally so enabling
-# that timer later can never reference a missing template.
+# Generated inline (not read from deploy/*.service — see CLAUDE.md), installed
+# unconditionally so the opt-in accumulate timer never references a missing template.
 cat > "$UNIT_DIR/shortlist-alert-failure@.service" <<UNIT
 [Unit]
 Description=Send Telegram alert for failed shortlist unit %i
@@ -165,7 +143,6 @@ User=$RUN_USER
 Group=$RUN_GROUP
 WorkingDirectory=$DEST
 Environment=HOME=$RUN_HOME
-# %i is the failing unit name WITH its .service suffix (OnFailure passes %n).
 ExecStart=$DEST/deploy/shortlist-alert-failure.sh %i
 StandardOutput=journal
 StandardError=journal
@@ -177,11 +154,7 @@ systemctl daemon-reload
 
 
 # --- OPTIONAL: daily snapshot accumulation (OFF by default) -------------------
-# Enable with SHORTLIST_ACCUMULATE=1. Builds the >=24-day point-in-time history the
-# snapshot-replay backtest needs (unblocks SUE / Lazy-Prices validation). Runs at 21:30 UTC.
-# Memory is a non-issue (~48 MB).
-# Override the store dir with SHORTLIST_ACCUMULATE_ROOT (default: $DEST/state/snapshots,
-# which the rsync preserves across deploys). The backtest must read the SAME --root.
+# Enable with SHORTLIST_ACCUMULATE=1. See README.md for the breadth/free-tier caveat.
 if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then
   ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-$DEST/state/snapshots}"
   STAGE="5b/6 install the accumulate timer"
@@ -200,16 +173,9 @@ WorkingDirectory=$DEST
 Environment=HOME=$RUN_HOME
 Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Nice=10
-# --max-tickers 42 = whole watchlist, so breadth can clear the backtest's 30-name
-# trust floor (FMP 429s past ~19 names; overflow saves as THIN keyless-only snapshots).
-# --sources adds edgar: keyless + VPS-reachable, supplies statements/insider/SIC for
-# FMP-quota-gated names; needs the edgartools extra (present in the /opt venv) and
-# SEC_IDENTITY via .env. The CLI *default* stays fmp,finnhub (a
-# default that degrades without the optional extra is a footgun).
 ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
-# Failure ping. This is now the ONLY generated unit that carries it — keep it here.
 OnFailure=shortlist-alert-failure@%n.service
-# 1800s is ample: the cold DERA index build measured 26.9s and a warm read 0.5s.
+# 1800s is ample: cold DERA index build measured 26.9s, warm read 0.5s.
 TimeoutStartSec=1800
 UNIT
   cat > "$UNIT_DIR/shortlist-accumulate.timer" <<'UNIT'
@@ -231,10 +197,7 @@ fi
 
 STAGE="6/6 restart the bot"
 echo "==> 6/6  Restart the interactive bot so it picks up the synced code"
-# shortlist-bot is a long-running Type=simple service: it loads its modules at startup and
-# keeps running the OLD code after an rsync until restarted. `try-restart` updates it IFF
-# it is already running — a no-op on hosts without the bot, and it never force-starts an
-# unconfigured one (so a missing token / not-yet-installed bot can't fail the deploy).
+# try-restart no-ops if the bot isn't running yet; never force-starts an unconfigured one.
 systemctl try-restart shortlist-bot.service 2>/dev/null \
   && echo "    bot restarted" \
   || echo "    bot not running — skipped (start it with: systemctl enable --now shortlist-bot.service)"
