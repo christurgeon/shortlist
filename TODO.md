@@ -19,34 +19,6 @@ the scoring roadmap.
 
 # 1. Bot & report
 
-## Deploy recipe: `git pull` first, NEVER `rm -rf src`
-
-`/opt/shortlist` is a **git checkout tracking `origin/main`**, not just an rsync target, so
-`git pull` already removes files deleted upstream. The documented recipe is the only correct
-one:
-
-```bash
-cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh
-```
-
-Do **not** `rm -rf /opt/shortlist/src` first, however tempting given the rsync's missing
-`--delete`. That is destructive here: the installer
-derives `SRC` from its own path, so running it from `/opt/shortlist` makes `SRC == DEST` and
-the sync step is skipped (see below) — with `src/` deleted there is nothing to restore it
-from, and step 3's `uv sync` then rebuilds the venv against a package with no code. Recovery is `git checkout -- src/`,
-because the repo is already at the right commit.
-
-Two hazards that only bite together, so both are worth keeping in mind: the `SRC == DEST`
-skip is *harmless* when the content is already correct (which `git pull` guarantees), and the
-missing `--delete` is *harmless* on a git checkout (which handles deletions itself).
-
-**Status:** recipe corrected here and in CLAUDE.md. The installer now detects `SRC == DEST`
-(canonical comparison, before any mutation) and skips the rsync with a loud notice instead of
-silently reporting success on a self-copy — it does not hard-refuse, since the documented
-`git pull` recipe depends on running in-place. One installer improvement is still open: the
-smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
-changes, which is the worst place to fail.
-
 ## A null `market_cap` still bypasses the size gate (2026-08-07)
 
 `scoring.py:627` needs `m.market_cap is not None`, so a null cap ⇒ recorded `gated: false` —

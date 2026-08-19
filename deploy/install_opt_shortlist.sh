@@ -63,10 +63,47 @@ fi
 
 echo "==> deploying $SRC -> $DEST, service runs as $RUN_USER ($RUN_HOME)"
 
+# --- failure reporting --------------------------------------------------------
+# Under `set -e` any step below aborts the script mid-deploy. The dangerous part is not
+# the abort (stopping before the bot restart is CORRECT -- the running bot keeps serving
+# its old in-memory code) but the SILENCE: $DEST has already been replaced, and
+# shortlist-bot.service carries Restart=on-failure, so the next crash or reboot brings
+# the bot up on the untested tree with no further warning. Say so, loudly, on the way out.
+STAGE="startup"
+DEST_MUTATED=0
+
+_on_exit() {
+  local rc=$?
+  trap - EXIT
+  [[ $rc -eq 0 ]] && exit 0
+  {
+    echo
+    echo "===== DEPLOY FAILED (rc=$rc) during: $STAGE ====="
+    if [[ $DEST_MUTATED -eq 1 ]]; then
+      echo "  $DEST WAS ALREADY MODIFIED (tree and/or venv). The systemd units were NOT"
+      echo "  reinstalled and the bot was NOT restarted, so a running bot still serves the"
+      echo "  OLD code -- but shortlist-bot.service has Restart=on-failure, so any later"
+      echo "  restart or reboot will start it on the tree now on disk."
+      echo "  Fix the cause and re-run this script, or roll the checkout back:"
+      echo "    cd $DEST && sudo git status && sudo git log --oneline -1"
+      echo "    cd $DEST && sudo git checkout -- .      # discards local edits under $DEST"
+      echo "    sudo bash $DEST/deploy/install_opt_shortlist.sh"
+    else
+      echo "  $DEST was not modified."
+    fi
+    echo "================================================"
+  } >&2
+  exit "$rc"
+}
+trap _on_exit EXIT
+
+STAGE="1/6 create $DEST"
 echo "==> 1/6  Create $DEST (owned by $RUN_USER)"
+DEST_MUTATED=1
 mkdir -p "$DEST"
 chown "$RUN_USER:$RUN_GROUP" "$DEST"
 
+STAGE="2/6 sync $SRC -> $DEST"
 echo "==> 2/6  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
 if [[ $INPLACE -eq 1 ]]; then
   echo "    IN-PLACE RUN: source IS the destination ($DEST_REAL) -- skipping rsync." >&2
@@ -92,14 +129,25 @@ chown -R "$RUN_USER:$RUN_GROUP" "$DEST"
 # .env carries secrets -> lock it down
 if [[ -f "$DEST/.env" ]]; then chmod 600 "$DEST/.env"; fi
 
+STAGE="3/6 build the venv (uv sync)"
 echo "==> 3/6  Build the venv in place (uv sync --extra bot --extra edgar) as $RUN_USER"
 sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && uv sync --extra bot --extra edgar"
 
+STAGE="4/6 smoke test (shortlist --demo)"
 echo "==> 4/6  Smoke-test the deployed entrypoint (offline --demo, no API/Telegram)"
 # `shortlist --demo` runs the scorer against offline fixtures and writes NOTHING. Keep it
 # that way: a smoke test that writes to state/ pollutes live data on every deploy.
-sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist' --demo >/dev/null && echo '    demo OK'"
+# Output is captured so a failure prints as a labelled block instead of bare stderr from a
+# nested `sudo bash -lc`. It needs no redaction pass: --demo makes no HTTP request, so its
+# traceback cannot carry a keyed provider URL. Keep it offline, or add one.
+if ! _smoke_out="$(sudo -u "$RUN_USER" -H bash -lc "cd '$DEST' && './.venv/bin/shortlist' --demo" 2>&1)"; then
+  echo "    SMOKE TEST FAILED — the deployed tree does not run:" >&2
+  printf '%s\n' "$_smoke_out" | tail -n 30 >&2
+  exit 1
+fi
+echo "    demo OK"
 
+STAGE="5/6 install systemd units"
 echo "==> 5/6  Install systemd units"
 # The failure-alert template. Generated inline like every other unit here (the installer
 # does NOT read deploy/*.service — see CLAUDE.md) because it needs $DEST/$RUN_USER baked in.
@@ -136,6 +184,7 @@ systemctl daemon-reload
 # which the rsync preserves across deploys). The backtest must read the SAME --root.
 if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then
   ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-$DEST/state/snapshots}"
+  STAGE="5b/6 install the accumulate timer"
   echo "==> 5b/6  (opt-in) Install + enable the daily accumulate timer (21:30 UTC) -> $ACCUM_ROOT"
   cat > "$UNIT_DIR/shortlist-accumulate.service" <<UNIT
 [Unit]
@@ -180,6 +229,7 @@ UNIT
   echo "      sudo systemctl start shortlist-accumulate.service"
 fi
 
+STAGE="6/6 restart the bot"
 echo "==> 6/6  Restart the interactive bot so it picks up the synced code"
 # shortlist-bot is a long-running Type=simple service: it loads its modules at startup and
 # keeps running the OLD code after an rsync until restarted. `try-restart` updates it IFF

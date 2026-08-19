@@ -36,6 +36,15 @@ sudo SHORTLIST_USER=deploy SHORTLIST_DEST=/opt/shortlist bash deploy/install_opt
 > on purpose — unanchored, they would also match the like-named source packages
 > `src/shortlist/research` and ship a broken wheel.
 
+**If a step fails**, the installer aborts with a `DEPLOY FAILED ... during: <stage>`
+banner on stderr and exits with the failing command's status. Stopping there is
+deliberate — it never restarts the bot onto code that fails the offline smoke test, so a
+running bot keeps serving its old in-memory code. But the tree in `/opt/shortlist` has
+already been replaced by then, and `shortlist-bot.service` carries `Restart=on-failure`:
+the next crash or reboot starts the bot on that untested tree. Fix the cause and re-run,
+or roll the checkout back (`cd /opt/shortlist && sudo git checkout -- .`) before walking
+away. The banner prints both commands.
+
 For a manual install on a different host, follow the steps below instead.
 
 ## Updating after a code change

@@ -105,6 +105,14 @@ opt-in `shortlist-accumulate` timer is generated now, but the rule still bites: 
 `[Service]` setting you add must go in the heredoc, not in a `deploy/*.service` file.
 `tests/test_deploy_units.py` pins this.
 
+**A failed deploy leaves a half-applied tree.** Every step is stage-tracked and an EXIT
+trap prints `DEPLOY FAILED ... during: <stage>` plus the rollback recipe. The abort itself
+is correct — the units and the bot restart come *after* the smoke test, so a running bot
+keeps its old in-memory code — but `/opt/shortlist` is already replaced and
+`shortlist-bot.service` has `Restart=on-failure`, so the next reboot picks the bad tree up.
+Re-run the installer or `git checkout -- .` in `/opt/shortlist`; don't leave it half-applied.
+`tests/test_deploy_units.py` runs the trap block for real.
+
 **GOTCHA — the deploy smoke test must stay read-only.** It runs `shortlist --demo` against
 offline fixtures. Anything that writes to `state/` from a smoke test pollutes live data on
 every deploy.
