@@ -75,6 +75,73 @@ def test_smoke_test_is_read_only() -> None:
     assert "'./.venv/bin/shortlist' --demo" in INSTALLER.read_text()
 
 
+def test_smoke_test_failure_aborts_with_a_labelled_block() -> None:
+    """A failing smoke test must abort the deploy (never restart the bot onto code that
+    cannot even run `--demo`) and print the captured output under a label, not leak bare
+    stderr out of a nested `sudo bash -lc`.
+    """
+    text = INSTALLER.read_text()
+    assert 'if ! _smoke_out="$(' in text
+    assert "SMOKE TEST FAILED" in text
+    smoke_pos = text.index("SMOKE TEST FAILED")
+    units_pos = text.index('echo "==> 5/6  Install systemd units"')
+    restart_pos = text.index("systemctl try-restart shortlist-bot.service")
+    assert smoke_pos < units_pos < restart_pos
+
+
+def _trap_block() -> str:
+    """The failure-reporting trap the installer arms before it touches $DEST."""
+    text = INSTALLER.read_text()
+    start = text.index('STAGE="startup"')
+    end = text.index("trap _on_exit EXIT") + len("trap _on_exit EXIT")
+    return text[start:end]
+
+
+def _run_trap(tmp_path: Path, tail: str) -> tuple[int, str]:
+    script = tmp_path / "trap.sh"
+    script.write_text(
+        "set -euo pipefail\nDEST=/opt/shortlist\n" + _trap_block() + "\n" + tail
+    )
+    proc = subprocess.run(["bash", str(script)], capture_output=True, text=True)
+    return proc.returncode, proc.stderr
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_failed_deploy_names_the_stage_and_the_half_applied_state(tmp_path: Path) -> None:
+    """Aborting mid-deploy is correct (the running bot keeps its old in-memory code), but
+    it must not be silent: shortlist-bot.service carries Restart=on-failure, so the next
+    crash or reboot starts the bot on the untested tree left on disk.
+    """
+    rc, err = _run_trap(
+        tmp_path,
+        'STAGE="3/6 build the venv (uv sync)"\nDEST_MUTATED=1\n(exit 3)\necho UNREACHABLE\n',
+    )
+    assert rc == 3, "the trap must preserve the failing command's exit status"
+    assert "UNREACHABLE" not in err
+    assert "DEPLOY FAILED" in err
+    assert "3/6 build the venv" in err
+    assert "WAS ALREADY MODIFIED" in err
+    assert "Restart=on-failure" in err
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_failure_before_any_mutation_says_so(tmp_path: Path) -> None:
+    """A pre-flight failure leaves $DEST untouched — do not send the operator hunting for
+    a rollback that is not needed.
+    """
+    rc, err = _run_trap(tmp_path, 'STAGE="1/6 create $DEST"\n(exit 7)\n')
+    assert rc == 7
+    assert "was not modified" in err
+    assert "WAS ALREADY MODIFIED" not in err
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_successful_run_prints_no_failure_banner(tmp_path: Path) -> None:
+    rc, err = _run_trap(tmp_path, 'DEST_MUTATED=1\necho done\nexit 0\n')
+    assert rc == 0
+    assert "DEPLOY FAILED" not in err
+
+
 def test_installer_generates_the_alert_template() -> None:
     body = _heredoc("shortlist-alert-failure@.service")
     # %i carries the failing unit name; the script is the deployed copy, not the source tree.
