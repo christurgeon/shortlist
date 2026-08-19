@@ -25,7 +25,15 @@ The deployed unit now carries `OnFailure=shortlist-alert-failure@%n.service` (ve
 `systemctl cat shortlist-accumulate.service`), and the alert template is installed — but
 nothing has ever actually *failed*, so the `OnFailure` → template → script → Telegram chain
 has never fired end to end. Force it with a transient unit carrying the same `OnFailure=`, or
-wait for a real failure and see whether the alert lands.
+wait for a real failure and see whether the alert lands. The exact one-shot is:
+
+```bash
+sudo systemd-run --unit=shortlist-alerttest --property=Type=oneshot \
+  --property=OnFailure=shortlist-alert-failure@shortlist-alerttest.service /bin/false
+journalctl -u shortlist-alert-failure@shortlist-alerttest.service --no-pager -n 20
+```
+
+It needs an interactive sudo password, so an agent session cannot run it unattended.
 
 **Status:** accumulate is the only scheduled unit, so this is the only alerting path left.
 
@@ -56,12 +64,6 @@ silently reporting success on a self-copy — it does not hard-refuse, since the
 `git pull` recipe depends on running in-place. One installer improvement is still open: the
 smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
 changes, which is the worst place to fail.
-
-## VPS remnants
-
-`/opt/shortlist` still holds the orphaned `state/scout_state.json` and a `scout/<date>/`
-artifact tree from the old nightly run. Nothing reads either. Decide whether to delete them
-on the box or leave them as a local archive.
 
 ## A null `market_cap` still bypasses the size gate (2026-08-07)
 
@@ -304,10 +306,6 @@ cap — a scheduling/quota problem, not a host problem.
 
 ## Other measurement gaps
 
-- **Re-measure the `net_debt_to_ebitda` axis** on both committed universes. Every prior IC run —
-  including the 2026-07-11 "leverage tilt NOT earned" verdict — scored negative-EBITDA names at
-  the **top** of the inverted leverage band (they read as net cash) before the abstention fix.
-  The verdict may stand, but it was measured on polluted data. One backtest command per universe.
 - **Gate-impact measurement (`negative_fcf` excuse, scope B).** Gates are entirely unmeasured.
   Compare forward returns of *excused* (high-growth) vs *gated* negative-FCF names to test
   whether `revenue_cagr ≥ 0.15 ∧ persistence ≥ 0.70` beats a blanket gate. Needs new machinery
@@ -459,6 +457,13 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
 - **Do not give an EDGAR client its own `SecThrottle`** — a per-client throttle cannot bound the
   process's request rate, which is exactly how the 2026-08-04 cascade happened. Concurrency buys
   nothing here (~17 ms latency; one serial worker already sustains ~57 req/s).
+- **The `net_debt_to_ebitda` axis is re-measured on DE-POLLUTED data and the 2026-07-11
+  "leverage tilt NOT earned" verdict STANDS** — no horizon on either committed universe
+  clears |t|>=2 (best: smallmid h=6, t=0.94, the only rows clearing both trust floors;
+  largecap never clears the breadth floor at all). The negative-EBITDA abstention cost
+  smallmid ~10% of its breadth and largecap ~2.5%, and moved the t-stats in both directions —
+  it changed WHICH names contribute, not the absence of edge.
+  `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`.
 - **`accruals` stays disabled** — re-measured on both reproducible universes 2026-07-18,
   reproducing the 07-12 table bit-for-bit. The 195-name universe that once earned it is
   permanently unreproducible. Nothing left to measure.
