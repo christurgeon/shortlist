@@ -40,6 +40,20 @@ if [[ ! -d $SRC ]]; then
   exit 1
 fi
 
+# Canonicalize before comparing: SRC is derived from this script's own path, so running
+# the installer FROM $DEST (e.g. the documented `cd /opt/shortlist && sudo git pull &&
+# sudo bash deploy/install_opt_shortlist.sh` recipe) makes SRC == DEST. That is a VALID,
+# documented way to run this script -- refusing it would break the happy path. What must
+# not happen is the OLD silent behaviour, where rsync copied the tree onto itself and the
+# script still printed success. readlink -f resolves symlinks and trailing slashes so
+# `/opt/shortlist/` vs `/opt/shortlist` (or a symlinked path) still compares equal.
+SRC_REAL="$(readlink -f "$SRC")"
+DEST_REAL="$(readlink -f "$DEST" 2>/dev/null || echo "$DEST")"
+INPLACE=0
+if [[ "$SRC_REAL" == "$DEST_REAL" ]]; then
+  INPLACE=1
+fi
+
 RUN_GROUP="$(id -gn "$RUN_USER")"
 RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 if [[ -z $RUN_HOME ]]; then
@@ -54,21 +68,26 @@ mkdir -p "$DEST"
 chown "$RUN_USER:$RUN_GROUP" "$DEST"
 
 echo "==> 2/6  Sync repo $SRC -> $DEST (excluding venv/caches/runtime artifacts)"
-# NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only the
-# repo-root dirs, NOT the like-named source package src/shortlist/research.
-# (__pycache__ stays unanchored — strip it at every level.)
-rsync -a \
-  --exclude='/.venv/' \
-  --exclude='__pycache__/' \
-  --exclude='/.pytest_cache/' \
-  --exclude='/.cache/' \
-  --exclude='/.xbrl_cache/' \
-  --exclude='/.ruff_cache/' \
-  --exclude='/research/' \
-  --exclude='/state/' \
-  --exclude='/backtest_*.json' \
-  --exclude='/backtest_*.err' \
-  "$SRC"/ "$DEST"/
+if [[ $INPLACE -eq 1 ]]; then
+  echo "    IN-PLACE RUN: source IS the destination ($DEST_REAL) -- skipping rsync." >&2
+  echo "    the tree must already be at the intended commit (run 'git pull' first)." >&2
+else
+  # NOTE: runtime-output excludes are ANCHORED with a leading '/' so they match only the
+  # repo-root dirs, NOT the like-named source package src/shortlist/research.
+  # (__pycache__ stays unanchored — strip it at every level.)
+  rsync -a \
+    --exclude='/.venv/' \
+    --exclude='__pycache__/' \
+    --exclude='/.pytest_cache/' \
+    --exclude='/.cache/' \
+    --exclude='/.xbrl_cache/' \
+    --exclude='/.ruff_cache/' \
+    --exclude='/research/' \
+    --exclude='/state/' \
+    --exclude='/backtest_*.json' \
+    --exclude='/backtest_*.err' \
+    "$SRC"/ "$DEST"/
+fi
 chown -R "$RUN_USER:$RUN_GROUP" "$DEST"
 # .env carries secrets -> lock it down
 if [[ -f "$DEST/.env" ]]; then chmod 600 "$DEST/.env"; fi

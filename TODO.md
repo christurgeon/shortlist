@@ -19,16 +19,6 @@ the scoring roadmap.
 
 # 1. Bot & report
 
-## The accumulate failure-alert chain is untested in situ (2026-08-14)
-
-The deployed unit now carries `OnFailure=shortlist-alert-failure@%n.service` (verified with
-`systemctl cat shortlist-accumulate.service`), and the alert template is installed — but
-nothing has ever actually *failed*, so the `OnFailure` → template → script → Telegram chain
-has never fired end to end. Force it with a transient unit carrying the same `OnFailure=`, or
-wait for a real failure and see whether the alert lands.
-
-**Status:** accumulate is the only scheduled unit, so this is the only alerting path left.
-
 ## Deploy recipe: `git pull` first, NEVER `rm -rf src`
 
 `/opt/shortlist` is a **git checkout tracking `origin/main`**, not just an rsync target, so
@@ -42,24 +32,20 @@ cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh
 Do **not** `rm -rf /opt/shortlist/src` first, however tempting given the rsync's missing
 `--delete`. That is destructive here: the installer
 derives `SRC` from its own path, so running it from `/opt/shortlist` makes `SRC == DEST` and
-the rsync copies the tree onto itself — with `src/` deleted there is nothing to restore it
+the sync step is skipped (see below) — with `src/` deleted there is nothing to restore it
 from, and step 3's `uv sync` then rebuilds the venv against a package with no code. Recovery is `git checkout -- src/`,
 because the repo is already at the right commit.
 
 Two hazards that only bite together, so both are worth keeping in mind: the `SRC == DEST`
-no-op is *harmless* when the content is already correct (which `git pull` guarantees), and the
+skip is *harmless* when the content is already correct (which `git pull` guarantees), and the
 missing `--delete` is *harmless* on a git checkout (which handles deletions itself).
 
-**Status:** recipe corrected here and in CLAUDE.md. Two installer improvements are open —
-the smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
-changes, which is the worst place to fail; and the installer could refuse to run when
-`SRC == DEST` rather than reporting success.
-
-## VPS remnants
-
-`/opt/shortlist` still holds the orphaned `state/scout_state.json` and a `scout/<date>/`
-artifact tree from the old nightly run. Nothing reads either. Decide whether to delete them
-on the box or leave them as a local archive.
+**Status:** recipe corrected here and in CLAUDE.md. The installer now detects `SRC == DEST`
+(canonical comparison, before any mutation) and skips the rsync with a loud notice instead of
+silently reporting success on a self-copy — it does not hard-refuse, since the documented
+`git pull` recipe depends on running in-place. One installer improvement is still open: the
+smoke test aborts under `set -euo pipefail` *after* the venv rebuild but *before* the unit
+changes, which is the worst place to fail.
 
 ## A null `market_cap` still bypasses the size gate (2026-08-07)
 
@@ -106,12 +92,6 @@ it outranks §3's alpha questions.
     Guarded by `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
     (deliberately `xfail(strict=True)` — delete the decorator, not the test, if a
     collection-time producer ever ships).
-  - **10-Q arm of the SIMILARITY is still open.** The risk-**diff** half shipped 2026-08-14
-    (below), but `filing_text_change(form="10-Q")` still reads `_section(obj, "risk_factors")`
-    via `_filing_sections` (`filings.py`), which is always `""` on a 10-Q — `TenQ` has no
-    `risk_factors` property (verified live, 10/10 names). That function has no production
-    caller, so this is low priority; fix it by routing the 10-Q leg through
-    `get_item_with_part("Part II", "Item 1A")`.
 - **10-Q Part II Item 1A: SHIPPED 2026-08-14.** The quarter's risk-factor *changes* now reach
   the model as a diff against the 10-K Item 1A (`research/filings.py:_tenq_added_risks`,
   `config.yaml: research.tenq_risk_update`). Design + 25-filing probe evidence:
@@ -173,23 +153,25 @@ it outranks §3's alpha questions.
   one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
   means.
 
-- **Three prompt-only wins sitting unbuilt in the 2026-08-04 audit — the cheapest work on this
-  surface.** They were living only in `docs/audits/2026-08-04-deep-brief-assessment.md:594-606`
-  (`worth-building` #1, #2, #4), which means finding them required knowing to open that file.
-  All three are one edit to `SYSTEM_PROMPT`: no schema, no renderer, no back-compat surface,
-  and they share the cache-bust any prompt edit costs anyway.
-  - **#1 materiality bar instead of a count cap** (D3). The cap reads as a target: the audit
-    measured 7 of 8 briefs returning **exactly 12/12** risks, and the 2026-08-18 live runs
-    added two more (AAPL 12/12, JPM 12/12) — **9 of 11**. Do *not* justify it as "removing
-    filler" (§3 measured the tail as company-specific); the case is false precision and
-    attention dilution. `reconciliation` saturates the same way, against an explicit
-    instruction.
-  - **#2 close the `red_flags` enumeration** (D7) and **forbid cross-section quote reuse**
-    (D6 — 62 instances across 31/35 briefs). The current prompt (`assess.py:47-51`) has
-    neither clause.
-  - **#4 ask the model to do the arithmetic** — normalized earnings ex-one-offs, cash runway,
-    refinancing coverage. The audit calls this "the single most consistent qualitative gap"
-    across three close reads: the briefs assemble the inputs and stop.
+- **The 2026-08-04 audit's prompt-only wins (D3/D6/D7 + do-the-arithmetic) shipped 2026-08-18
+  and are LIVE-VERIFIED at n=3 (AAPL, JPM, INTC — 2026-08-19): HOLDS, with two open items.**
+  Design + baselines: `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`.
+  Measurement: `docs/audits/2026-08-19-deep-prompt-live-verification.md`. `risks` moved off
+  the 33/35-at-cap spike (8–10 of 12 on all three) with no material risk category observed
+  dropped — JPM specifically (the task's own worry case) still returned 8 well-distributed
+  risks, not the feared 2–3. `red_flags` matched its closed category 2/2; JPM's empty list is
+  a defensible boundary call (OCC consent order and CET1 thinning correctly routed elsewhere),
+  not suppression. Still open: **quote reuse dropped but didn't hit zero** (1 violation in 3
+  briefs, AAPL `risks`+`reconciliation`, down from 62/35); **`what_would_change_my_mind` still
+  saturates** (2/3 at its cap of 6 — the materiality bar reached `risks` and `reconciliation`
+  but not the falsifier list); and **the arithmetic clause is UNTESTED, for a structural reason,
+  not a sampling one.** 0/3 briefs computed anything because 2 of its 3 asks were unanswerable:
+  the prompt rendered debt WITHOUT cash, so neither cash runway nor even net debt was derivable,
+  and the maturity ladder lives in a note we do not extract. Cash is now a rendered column
+  (2026-08-19), so the NEXT run is the first real test; refinancing coverage stays blocked on
+  §2b item 2. n=3 on three large caps is not enough to re-certify D3/D6/D7 at the rigor of the
+  original 35-brief corpus — re-run the keyword/substring scans over a larger corpus once more
+  new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
@@ -197,7 +179,9 @@ Statement **notes** never reach the prompt — `assess.py:324-331` sends Item 1,
 and the 10-Q MD&A only. The notes hold segment reporting, revenue disaggregation, customer
 concentration, debt maturities/covenants, SBC, restructuring, acquisitions/goodwill, legal
 contingencies, tax and leases. Build as **targeted extractors, never "send all notes to
-Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity,
+Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity — **now the concrete blocker for a
+shipped prompt instruction**, since `SYSTEM_PROMPT`'s refinancing-coverage ask needs the
+maturity ladder and nothing else supplies it (2026-08-19 live run) —
 (3) SBC & dilution, (4) concentrations & commitments, (5) acquisitions/goodwill, (6) legal
 contingencies. SEC's Financial Statement **and Notes** data sets are the structured route;
 edgartools text extraction is the cheap route. Sequence this **after** 2a.
@@ -222,12 +206,12 @@ already reads.
   the composite is a scoring change and needs evidence, not an argument.
 - **"Disable `upside_to_target`."** Already recorded at `PREDICTIVE_SIGNALS_RESEARCH.md`
   §Quick wins #1 (Brav & Lehavy: the *level* is negatively related to realised returns; the
-  *revision* predicts). Note the mechanical obstacle: the leg is **hard-coded**
-  (`scoring.py:569`) with mandatory thresholds (`config.yaml:45`) — unlike `shareholder_yield`
-  it cannot be switched off from config. The cheap, honest step is to make it
-  threshold-guarded/opt-out **with the default unchanged**, so a measurement can toggle it;
-  flipping the default without a point-in-time test is the same move the file's own bar
-  forbids.
+  *revision* predicts). The mechanical obstacle is GONE as of 2026-08-18: the leg is now the
+  scorer's one **opt-OUT** block (`scoring.py:_upside_to_target_on`, `value.upside_to_target.
+  enabled`), default ON and byte-identical when the key is absent, so the counterfactual can
+  be run from config. **What is still open is the measurement itself** — nobody has scored the
+  leg-off universe against forward returns point-in-time. Flipping the default without that
+  test remains the move this file's own bar forbids.
 - **"Label the composite heuristic until a survivorship-free, delisting-adjusted, walk-forward,
   multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
   verbatim. No action; do not open a work item that restates it.
@@ -315,10 +299,6 @@ cap — a scheduling/quota problem, not a host problem.
 
 ## Other measurement gaps
 
-- **Re-measure the `net_debt_to_ebitda` axis** on both committed universes. Every prior IC run —
-  including the 2026-07-11 "leverage tilt NOT earned" verdict — scored negative-EBITDA names at
-  the **top** of the inverted leverage band (they read as net cash) before the abstention fix.
-  The verdict may stand, but it was measured on polluted data. One backtest command per universe.
 - **Gate-impact measurement (`negative_fcf` excuse, scope B).** Gates are entirely unmeasured.
   Compare forward returns of *excused* (high-growth) vs *gated* negative-FCF names to test
   whether `revenue_cagr ≥ 0.15 ∧ persistence ≥ 0.70` beats a blanket gate. Needs new machinery
@@ -400,8 +380,13 @@ decision above goes the paid way.
 ## EDGAR / statements minors
 
 - **`get_shares_outstanding_diluted()` returns MCD's count in millions**, not absolute shares
-  (`[716.4, 721.9, 732.3]`). Nothing depends on it for MCD any more, but any future consumer
-  inherits the bug. (`diluted_shares` from the companyconcept fallback *is* absolute, so
+  (`[716.4, 721.9, 732.3]`). Documented at the one call site as of 2026-08-18
+  (`data/sources/edgar.py`), still not fixed: the scalar reaches exactly ONE consumer,
+  `extract_financials`' computed-EPS fallback (`ni / shares_diluted`), which fires only when no
+  as-reported EPS row matched — so a millions-scaled value yields an EPS 1e6x too small there.
+  `ef.diluted_shares` is extracted per-row and does NOT come from it, so `share_count_cagr` and
+  the `dilution` flag are unaffected. No sanity bound was added: every candidate threshold is
+  fitted to this single observation. (`diluted_shares` from the companyconcept fallback *is* absolute, so
   `financial_series` display mixes conventions — scoring is unaffected, `share_count_cagr` being
   scale-invariant.)
 - **Widen the diluted-shares go/no-go beyond the store's 42 tickers** — keyless, costs only
@@ -419,21 +404,8 @@ decision above goes the paid way.
 
 # 5. Code hygiene (fold in when next touching these files)
 
-- **Optional guardrail:** ruff `C901` with a `max-complexity` (or a soft line ceiling) so
-  mega-functions can't silently regrow. Its own small change, not bundled with a refactor.
-- `_TRUE` is duplicated between `edgar/dera.py` and `edgar/insider.py`; `n_joint` counts tickers
-  pre-filter while labelled "filings"; `edgar/index.py:fetch_daily_records`/`fetch_recent_records`
-  are dead code with tests pinning them.
-- An `isinstance` assertion-of-convenience in `tests/test_edgar_insider_parse.py` exists only to
-  satisfy ruff F401 — fold into a real assertion.
-- `docs/PLAN_EDGAR_DILUTED_SHARES.md`'s historical "Step 2"/"Step 3" code blocks quote the
-  original signed-off text (including a false "ultimately ABSTAIN" safety claim). Each is
-  followed by its `[R…]` correction so a linear reader is fine, but someone skimming would copy
-  stale text — annotate them "superseded".
-- **Pin the dev Python via `.python-version`** — a fresh 3.11 venv fails
-  `test_block_bootstrap_ci_*` on a floating-point boundary that 3.13 doesn't hit, so a fresh
-  clone hits a spurious local failure.
-
+- `edgar/index.py:fetch_daily_records`/`fetch_recent_records` are dead code with tests pinning
+  them.
 ---
 
 # 6. Closed with a verdict — do not redo
@@ -468,6 +440,16 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
 - **Do not give an EDGAR client its own `SecThrottle`** — a per-client throttle cannot bound the
   process's request rate, which is exactly how the 2026-08-04 cascade happened. Concurrency buys
   nothing here (~17 ms latency; one serial worker already sustains ~57 req/s).
+- **Python is pinned to 3.12 (`.python-version`) to match production**, NOT to dodge a test
+  failure — that bullet's `test_block_bootstrap_ci_*` premise died with the scout retirement,
+  and the suite passes on 3.11/3.12/3.13 alike. The file is rsynced to `/opt/shortlist`, so
+  the value must track the deployed venv (3.12.3) or a hygiene commit rebuilds the live bot.
+- **The accumulate failure-alert chain is VERIFIED end to end (2026-08-19)** — forced with a
+  transient unit, Telegram message confirmed received. The script always `exit 0` by design,
+  so the proof is the ABSENCE of its two stderr paths in the journal, not the exit code.
+- **The `net_debt_to_ebitda` axis re-measured on DE-POLLUTED data changes nothing** — the
+  2026-07-11 "leverage tilt NOT earned" verdict stands; nothing clears |t|>=2 on either
+  universe. `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`.
 - **`accruals` stays disabled** — re-measured on both reproducible universes 2026-07-18,
   reproducing the 07-12 table bit-for-bit. The 195-name universe that once earned it is
   permanently unreproducible. Nothing left to measure.

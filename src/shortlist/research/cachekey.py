@@ -250,7 +250,8 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     # Every column _render_series prints (assess.py:349-366), not just revenue/FCF.
     series = getattr(m, "financial_series", None) or []
     cols = ("revenue", "gross_profit", "net_income", "operating_cash_flow",
-            "free_cash_flow", "total_debt", "diluted_eps", "diluted_shares")
+            "free_cash_flow", "cash_and_equivalents", "total_debt", "diluted_eps",
+            "diluted_shares")
     parts.append([(_s(r.get("fiscal_year")), _s(r.get("period_end")),
                    *[_sig3(r.get(c)) for c in cols])
                   for r in series if isinstance(r, dict)])

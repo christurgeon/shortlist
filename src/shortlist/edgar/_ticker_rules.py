@@ -15,6 +15,11 @@ _FIFTH_LETTER_SUFFIXES = frozenset("FYWURQX")
 
 _ITEM_RE = re.compile(r"\d+\.\d{2}")
 
+# aff10b5One / isOfficer appear as BOTH 0|1 AND false|true in real Form 4 filings
+# (live-verified 2026-07-26). Shared by dera.py and insider.py, which both parse those
+# same boolean-ish fields off raw filing XML/TSV.
+_TRUE = {"1", "true", "yes", "y"}
+
 
 def junk_suffix(ticker: str) -> bool:
     """5th-letter security-type suffix on a 5-letter symbol. 4-char tickers ending in these

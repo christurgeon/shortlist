@@ -408,6 +408,33 @@ def test_assess_sets_cache_key():
     assert a is not None and a.cache_key == "acc+q"
 
 
+def test_render_series_columns_and_the_cache_key_digest_stay_in_sync():
+    """`cachekey.context_digest` hashes a HARD-CODED column tuple and its comment
+    claims it covers "every column _render_series prints". Nothing enforced that, so
+    adding a column to one list and not the other would silently stop busting the brief
+    cache on a value the model can now see. This is that enforcement."""
+    import inspect
+    import re
+    from shortlist.research import assess, cachekey
+    rendered = set(re.findall(r'\("(?:[A-Za-z]+)", "([a-z_]+)"\)',
+                              inspect.getsource(assess._render_series)))
+    hashed = set(re.findall(r'"([a-z_]+)"',
+                            inspect.getsource(cachekey.context_digest)
+                            .split("cols = (")[1].split(")")[0]))
+    assert rendered, "regex found no rendered columns — the source shape changed"
+    missing = rendered - hashed
+    assert not missing, f"columns rendered into the prompt but not hashed: {missing}"
+
+
+def test_render_series_shows_cash_beside_debt():
+    """Cash is the input `SYSTEM_PROMPT`'s do-the-arithmetic clause needs for cash
+    runway and refinancing coverage; without it the instruction is unanswerable."""
+    from shortlist.research.assess import _render_series
+    out = _render_series([{"fiscal_year": 2025, "cash_and_equivalents": 30e9,
+                           "total_debt": 100e9}])
+    assert "cash 30,000" in out and "debt 100,000" in out
+
+
 def test_render_series_formats_usd_millions_and_eps():
     from shortlist.research.assess import _render_series
     series = [
@@ -464,6 +491,34 @@ def test_quant_context_includes_series_when_present():
 def test_system_prompt_mentions_trajectory():
     from shortlist.research.assess import SYSTEM_PROMPT
     assert "trajectory" in SYSTEM_PROMPT.lower()
+
+
+def test_system_prompt_carries_the_three_2026_08_04_audit_clauses():
+    """D3/D6/D7 of `docs/audits/2026-08-04-deep-brief-assessment.md` are prompt-only
+    fixes, so nothing but the prompt text can pin them. Each was measured saturating
+    or drifting on a 35-brief corpus; losing a clause silently reopens the defect."""
+    from shortlist.research.assess import SYSTEM_PROMPT
+    low = SYSTEM_PROMPT.lower()
+    # D3 — the count caps are ceilings, not a quota (risks 33/35 at cap).
+    assert "hard ceilings, never targets" in low
+    assert "what_would_change_my_mind" in SYSTEM_PROMPT   # bar covers the saturating lists
+    # D7 — the red_flags enumeration is closed (only 24% of 214 flags matched it).
+    assert "limited to" in low and "closed" in low
+    # D6 — no cross-section quote reuse (62 instances across 31/35 briefs).
+    assert "only one item across" in low
+    # worth-building #4 — derived figures are computed, and stay out of quotes.
+    assert "do the arithmetic" in low
+
+
+def test_user_prompt_frames_the_caps_as_ceilings():
+    from shortlist.research.assess import _build_user_prompt
+    from shortlist.research.models import FilingBundle, FilingText
+    tenk = FilingText(ticker="X", accession="a", filing_date="d", business="B.")
+    bundle = FilingBundle(tenk=tenk, primary_accession="a", cache_key="a",
+                          filing_date="d")
+    prompt = _build_user_prompt(bundle, {})
+    assert "Return at most" in prompt          # the section/instruction boundary
+    assert "HARD CEILINGS, not targets" in prompt
 
 
 def _dcf_card():

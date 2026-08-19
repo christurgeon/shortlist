@@ -86,14 +86,18 @@ Idempotent, handles everything. **`/opt/shortlist` is a git checkout of `origin/
 the supported form is `cd /opt/shortlist && sudo git pull && sudo bash
 deploy/install_opt_shortlist.sh` — `git pull` handles deletions. **Never `rm -rf` the source
 tree**: the installer derives `SRC` from its own path, so running it from `/opt/shortlist`
-makes `SRC == DEST` and the rsync copies onto itself, leaving nothing to restore from.
+makes `SRC == DEST` and the sync step is skipped (see next paragraph), leaving nothing to
+restore a deleted `src/` from.
 
-**GOTCHA — running the installer FROM `/opt/shortlist` is a silent no-op deploy.** `SRC` is
-derived from the script's own path, so `cd /opt/shortlist && sudo bash deploy/install_opt_shortlist.sh`
-sets `SRC == DEST` and rsyncs onto itself — it still reports success. Either
-`cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh`, or run the
-installer from a **separate** up-to-date checkout. **Always verify** —
-`git -C /opt/shortlist log --oneline -1` plus a grep for a symbol you just added.
+**Running the installer FROM `/opt/shortlist` sets `SRC == DEST`** (the installer derives
+`SRC` from its own path). The installer detects this (canonical `readlink -f` comparison,
+before any mutation) and **skips the rsync step with a loud notice** instead of copying the
+tree onto itself — it does not refuse to run, since `cd /opt/shortlist && sudo git pull &&
+sudo bash deploy/install_opt_shortlist.sh` is the documented, supported recipe and depends on
+this working. The skip is correct only because `git pull` already put the tree at the right
+commit; running the installer in-place *without* a preceding `git pull` silently deploys
+whatever is already on disk. **Always verify** — `git -C /opt/shortlist log --oneline -1`
+plus a grep for a symbol you just added.
 
 **GOTCHA — the installer generates its unit files inline; it does NOT read
 `deploy/*.service`** (except `shortlist-bot.service`, which is static and real). Only the
@@ -175,6 +179,14 @@ Lazy-Prices signal — `research/textsim.py`, stdlib bag-of-words cosine).
 | Insider conviction (cluster/role/10b5-1) | `insider.conviction` | OFF | one-directional, can only raise `insider` |
 | SUE / earnings-surprise drift | `momentum.sue` | OFF | needs paid Finnhub tier for full accuracy; `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §1 |
 | Residual (de-betaed) momentum | `momentum.residual` | **ON** | only new leg with significant XS rank-IC (t=2.6); §2 of the same doc |
+
+**One leg is opt-OUT, not opt-in**: `value.upside_to_target.enabled` (default **true**, and
+true when the key is absent — an untouched config is byte-identical). It exists so the
+Brav & Lehavy question (the target *level* is negatively related to realised returns; the
+*revision* predicts) can be measured by toggling the leg, **not** because the leg is suspect.
+Do not flip the default without a point-in-time test. `scoring.py:_upside_to_target_on`.
+Note both commented `value:` examples in `config.yaml` — enabling both needs ONE `value:` key,
+since duplicate top-level keys are valid YAML that silently keeps only the last.
 
 ## Secrets
 

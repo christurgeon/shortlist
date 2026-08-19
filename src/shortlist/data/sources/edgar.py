@@ -198,6 +198,20 @@ class EdgarSource(Source):
         trace, matching the `_fetch_sic` pattern below."""
         from ...providers._edgar_facts import diluted_shares_from_concept, extract_financials
         try:
+            # UNITS HAZARD, not fixed here: edgartools returns this scalar in whatever
+            # scale the filer's income statement uses. MCD's is ~716.4 -- MILLIONS, not
+            # absolute shares (TODO.md §4). Filer-presentation scaling is NOT unique to
+            # this scalar: MCD's per-row `ef.diluted_shares` series is the same
+            # convention ([716.4, 721.9, 732.3] -- do not mistake that list for this
+            # scalar; docs/audits/2026-07-31-edgar-concept-match.md:313).
+            # It reaches exactly one consumer: extract_financials' computed-EPS fallback
+            # (`ni / shares_diluted`), which fires only when no as-reported EPS row was
+            # matched -- so a millions-scaled value there yields an EPS 1e6x too small
+            # (MCD's recorded 11,952,819.65 is that bug). share_count_cagr and the
+            # dilution flag are unaffected because they are SCALE-INVARIANT, not because
+            # the series is absolute. No sanity bound is applied: every candidate
+            # threshold is fitted to this one observation, and this repo does not ship
+            # n=1 heuristics.
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
             shares = None

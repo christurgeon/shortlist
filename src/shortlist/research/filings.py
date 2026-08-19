@@ -123,6 +123,34 @@ def _tenq_mda(tenq: Any, ticker: str = "") -> str:
     return text
 
 
+def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
+    """10-Q risk factors are Part II Item 1A — NOT a `risk_factors` attribute (that
+    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names,
+    TODO.md §2a). Mirrors `_tenq_mda`'s extraction pattern: same getter, same
+    never-raises contract, "" on any failure or missing section. Used only by
+    `filing_text_change`'s 10-Q arm (`_filing_sections`).
+
+    RETURNS THE RAW SECTION, AND THAT IS A KNOWN WEAKNESS OF THE METRIC — do not read
+    `_tenq_added_risks` above as precedent that this is safe. That function reads the
+    same Part II Item 1A but DIFFS it against the 10-K Item 1A and caps it at 4,000
+    chars, which is exactly what makes it safe; nothing here does either.
+    `textsim.combined_similarity` pools both sections into ONE bag, so the cosine is
+    length-weighted — and 4 filers in 10 restate EVERY risk factor quarterly (measured
+    2026-08-14: GILD 84K, NVDA 43K, AAPL 19K chars). For those names this near-identical
+    section dominates the pool and drags the similarity toward 1.0, diluting exactly the
+    wholesale-MD&A-rewrite signal `combined_similarity`'s docstring says the weighting
+    exists to protect. Blast radius today is nil — `filing_text_change` has no
+    production caller — but ANY producer wired to it must fix this first (route through
+    `riskdiff.added_risk_blocks`, or cap), not inherit it. `TODO.md` §2a."""
+    try:
+        getter = getattr(tenq, "get_item_with_part", None)
+        value = getter("Part II", "Item 1A", markdown=True) if getter is not None else None
+        return str(value) if value else ""
+    except Exception as e:
+        log_abstain("10-Q risk factors extraction failed", ticker or "?", e)
+        return ""
+
+
 _TENQ_RISK_DEFAULTS = {"enabled": True, "max_blocks": 4, "max_chars": 4000}
 
 
@@ -225,13 +253,15 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
 
 
 def _filing_sections(obj: Any, form: str, ticker: str = "") -> tuple[str, str]:
-    """(risk_factors, mda) text for a parsed filing object. 10-K MD&A is the
-    `management_discussion` attribute; 10-Q MD&A is Part I Item 2 (see _tenq_mda).
-    Item 1A (risk_factors) exists on both. Returns "" for any missing section.
-    `ticker` is passed through so _tenq_mda's stderr diagnostics name the issuer."""
-    risk = _section(obj, "risk_factors")
-    mda = _tenq_mda(obj, ticker) if str(form).upper().startswith("10-Q") else _section(
-        obj, "management_discussion")
+    """(risk_factors, mda) text for a parsed filing object. 10-K risk factors and
+    MD&A are the `risk_factors`/`management_discussion` attributes; a 10-Q has
+    neither — its risk factors are Part II Item 1A (see _tenq_risk_factors) and its
+    MD&A is Part I Item 2 (see _tenq_mda). Returns "" for any missing section.
+    `ticker` is passed through so the 10-Q extractors' stderr diagnostics name the
+    issuer."""
+    is_tenq = str(form).upper().startswith("10-Q")
+    risk = _tenq_risk_factors(obj, ticker) if is_tenq else _section(obj, "risk_factors")
+    mda = _tenq_mda(obj, ticker) if is_tenq else _section(obj, "management_discussion")
     return risk, mda
 
 

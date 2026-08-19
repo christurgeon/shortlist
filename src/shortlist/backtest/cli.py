@@ -444,7 +444,7 @@ def run_residualize(src, hists, spy, *, start: date, end: date, horizons: list[i
     return extra_reports, residualized_json
 
 
-def main(argv=None) -> int:
+def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand dispatch
     load_env()  # pick up SEC_IDENTITY / API keys from a .env file if present
     ap = build_arg_parser()
     args = ap.parse_args(argv)

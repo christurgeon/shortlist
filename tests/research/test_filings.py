@@ -275,3 +275,88 @@ def test_similarity_enabled_defaults_on_and_honours_false():
     cfg = {"research": {"text_similarity": {"enabled": False}}}
     assert filings._similarity_enabled(cfg) is False
     assert filings._similarity_enabled({}) is True          # default ON
+
+
+def test_tenq_risk_factors_uses_part_ii_item_1a():
+    """TenQ has no `risk_factors` attribute (verified live, 10/10 names, TODO.md
+    §2a) — its risk factors live at Part II Item 1A, the same item _tenq_added_risks
+    already reads for the /deep diff."""
+    from shortlist.research.filings import _tenq_risk_factors
+
+    class _FakeTenQ:
+        def get_item_with_part(self, part, item, markdown=True):
+            assert (part, item) == ("Part II", "Item 1A")
+            return "Quarterly risk factors text."
+
+    assert _tenq_risk_factors(_FakeTenQ()) == "Quarterly risk factors text."
+
+
+def test_tenq_risk_factors_empty_on_missing():
+    from shortlist.research.filings import _tenq_risk_factors
+
+    class _Bare:
+        def get_item_with_part(self, *a, **k):
+            return None
+
+    assert _tenq_risk_factors(_Bare()) == ""
+    assert _tenq_risk_factors(object()) == ""          # no method at all -> ""
+
+
+def test_tenq_risk_factors_never_raises(capsys):
+    from shortlist.research.filings import _tenq_risk_factors
+
+    class _Boom:
+        def get_item_with_part(self, *a, **k):
+            raise ValueError("item boundary detection failed")
+
+    assert _tenq_risk_factors(_Boom(), "AAPL") == ""
+    err = capsys.readouterr().err
+    assert "AAPL" in err and "ValueError" in err
+
+
+def test_filing_sections_10q_routes_risk_through_part_ii_item_1a():
+    """The regression this task fixes: filing_text_change(form="10-Q") used to read
+    `_section(obj, "risk_factors")`, which is always "" on a TenQ."""
+    from shortlist.research.filings import _filing_sections
+
+    class _FakeTenQ:
+        risk_factors = None            # TenQ genuinely has no such attribute in prod
+        def get_item_with_part(self, part, item, markdown=True):
+            if (part, item) == ("Part II", "Item 1A"):
+                return "New risk factors this quarter."
+            if (part, item) == ("Part I", "Item 2"):
+                return "Quarterly MD&A."
+            return None
+
+    risk, mda = _filing_sections(_FakeTenQ(), "10-Q", "X")
+    assert risk == "New risk factors this quarter."
+    assert mda == "Quarterly MD&A."
+
+
+def test_filing_sections_10k_stays_on_the_risk_factors_property():
+    """10-K path must stay byte-identical: risk factors come from the `risk_factors`
+    attribute, and get_item_with_part is never called for it."""
+    from shortlist.research.filings import _filing_sections
+
+    class _FakeTenK:
+        risk_factors = "10-K risk factors."
+        management_discussion = "10-K MD&A."
+        def get_item_with_part(self, *a, **k):
+            raise AssertionError("10-K risk factors must not call get_item_with_part")
+
+    risk, mda = _filing_sections(_FakeTenK(), "10-K", "X")
+    assert risk == "10-K risk factors."
+    assert mda == "10-K MD&A."
+
+
+def test_filing_sections_10q_risk_empty_when_extractor_raises(capsys):
+    """An exception (or empty return) from get_item_with_part abstains to "" rather
+    than raising or falling back to a wrong-Part item."""
+    from shortlist.research.filings import _filing_sections
+
+    class _Boom:
+        def get_item_with_part(self, *a, **k):
+            raise RuntimeError("boom")
+
+    risk, mda = _filing_sections(_Boom(), "10-Q", "X")
+    assert risk == "" and mda == ""
