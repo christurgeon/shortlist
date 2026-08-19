@@ -153,16 +153,12 @@ it outranks §3's alpha questions.
   one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
   means.
 
-- **The 2026-08-04 audit's three prompt-only wins SHIPPED 2026-08-18** — materiality bar
-  instead of a count quota (D3), a CLOSED `red_flags` enumeration (D7), no cross-section
-  quote reuse (D6), and an instruction to do the arithmetic (normalized earnings
-  ex-one-offs, cash runway, refinancing coverage). What shipped, the constraint that keeps
-  a derived figure out of an `evidence` quote, and the re-measurement recipe:
-  `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`. **Still open: none of
-  it is measured yet.** The pre-change saturation baselines are recorded in that note; the
-  briefs must be re-counted against them before the change can be called a win, and the
-  failure mode to look for is OVER-application (Sonnet 5 follows instructions more
-  literally than the generation the prompt was tuned against).
+- **The 2026-08-04 audit's prompt-only wins (D3/D6/D7 + do-the-arithmetic) shipped 2026-08-18
+  and are UNMEASURED.** Design, pre-change saturation baselines and the re-measurement recipe:
+  `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`. Re-count the briefs
+  against those baselines before calling it a win. The failure mode to look for is OVER-
+  application, not under: Sonnet 5 follows instructions more literally than the generation the
+  prompt was tuned against, so watch for a filer that discloses ten real risks returning two.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
@@ -395,16 +391,6 @@ decision above goes the paid way.
 
 - `edgar/index.py:fetch_daily_records`/`fetch_recent_records` are dead code with tests pinning
   them.
-- **Python is pinned to 3.12 (`.python-version`), and the reason on the old bullet was
-  STALE.** That bullet said a fresh 3.11 venv fails `test_block_bootstrap_ci_*`; that test no
-  longer exists — it came in with the scout validation harness (#105) and went out with the
-  scout retirement (`6ed0297`), the same way `n_joint` did. Re-measured 2026-08-18: the full
-  suite is **2036 passed on 3.11, 3.12 and 3.13 alike**. The pin was kept anyway, at **3.12
-  to match production** (`/opt/shortlist/.venv` is 3.12.3): it makes dev/CI/prod one
-  interpreter, and it is the only value that costs the deployed bot nothing — `.python-version`
-  is rsynced to `/opt/shortlist`, so pinning 3.13 would have silently rebuilt the live venv on
-  a new interpreter as a side effect of a hygiene commit.
-
 ---
 
 # 6. Closed with a verdict — do not redo
@@ -439,23 +425,16 @@ One line each, so the next session doesn't re-derive them. Evidence is in `docs/
 - **Do not give an EDGAR client its own `SecThrottle`** — a per-client throttle cannot bound the
   process's request rate, which is exactly how the 2026-08-04 cascade happened. Concurrency buys
   nothing here (~17 ms latency; one serial worker already sustains ~57 req/s).
-- **The accumulate failure-alert chain is VERIFIED end to end (2026-08-19).** Forced with
-  `sudo systemd-run --unit=shortlist-alerttest --property=Type=oneshot
-  --property=OnFailure=shortlist-alert-failure@shortlist-alerttest.service /bin/false`. The
-  unit failed (`Result=exit-code`, exit 1), systemd started the template instance, it finished
-  `Result=success`, and the operator confirmed the Telegram message arrived. Note how to read
-  this if you ever re-run it: the script **always** `exit 0` (an `OnFailure` hook must not
-  cascade), so the exit code proves nothing — what proves delivery is that journald captured
-  NEITHER of its two stderr paths (`missing telegram env vars` / `telegram send failed`).
-  Cleanup afterwards: `sudo systemctl reset-failed shortlist-alerttest.service`, or the
-  transient unit lingers in `systemctl --failed`.
-- **The `net_debt_to_ebitda` axis is re-measured on DE-POLLUTED data and the 2026-07-11
-  "leverage tilt NOT earned" verdict STANDS** — no horizon on either committed universe
-  clears |t|>=2 (best: smallmid h=6, t=0.94, the only rows clearing both trust floors;
-  largecap never clears the breadth floor at all). The negative-EBITDA abstention cost
-  smallmid ~10% of its breadth and largecap ~2.5%, and moved the t-stats in both directions —
-  it changed WHICH names contribute, not the absence of edge.
-  `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`.
+- **Python is pinned to 3.12 (`.python-version`) to match production**, NOT to dodge a test
+  failure — that bullet's `test_block_bootstrap_ci_*` premise died with the scout retirement,
+  and the suite passes on 3.11/3.12/3.13 alike. The file is rsynced to `/opt/shortlist`, so
+  the value must track the deployed venv (3.12.3) or a hygiene commit rebuilds the live bot.
+- **The accumulate failure-alert chain is VERIFIED end to end (2026-08-19)** — forced with a
+  transient unit, Telegram message confirmed received. The script always `exit 0` by design,
+  so the proof is the ABSENCE of its two stderr paths in the journal, not the exit code.
+- **The `net_debt_to_ebitda` axis re-measured on DE-POLLUTED data changes nothing** — the
+  2026-07-11 "leverage tilt NOT earned" verdict stands; nothing clears |t|>=2 on either
+  universe. `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`.
 - **`accruals` stays disabled** — re-measured on both reproducible universes 2026-07-18,
   reproducing the 07-12 table bit-for-bit. The 195-name universe that once earned it is
   permanently unreproducible. Nothing left to measure.
