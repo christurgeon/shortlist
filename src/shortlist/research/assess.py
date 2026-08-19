@@ -504,7 +504,7 @@ def _render_series(series) -> str:
     per cell; a row with no numeric value is skipped. '' when nothing renderable."""
     usd_m = (("rev", "revenue"), ("GP", "gross_profit"), ("NI", "net_income"),
              ("OCF", "operating_cash_flow"), ("FCF", "free_cash_flow"),
-             ("debt", "total_debt"))
+             ("cash", "cash_and_equivalents"), ("debt", "total_debt"))
     rows: list[str] = []
     for e in series or []:
         parts = [f"{lbl} {e[k] / 1e6:,.0f}" for lbl, k in usd_m

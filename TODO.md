@@ -154,11 +154,24 @@ it outranks §3's alpha questions.
   means.
 
 - **The 2026-08-04 audit's prompt-only wins (D3/D6/D7 + do-the-arithmetic) shipped 2026-08-18
-  and are UNMEASURED.** Design, pre-change saturation baselines and the re-measurement recipe:
-  `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`. Re-count the briefs
-  against those baselines before calling it a win. The failure mode to look for is OVER-
-  application, not under: Sonnet 5 follows instructions more literally than the generation the
-  prompt was tuned against, so watch for a filer that discloses ten real risks returning two.
+  and are LIVE-VERIFIED at n=3 (AAPL, JPM, INTC — 2026-08-19): HOLDS, with two open items.**
+  Design + baselines: `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`.
+  Measurement: `docs/audits/2026-08-19-deep-prompt-live-verification.md`. `risks` moved off
+  the 33/35-at-cap spike (8–10 of 12 on all three) with no material risk category observed
+  dropped — JPM specifically (the task's own worry case) still returned 8 well-distributed
+  risks, not the feared 2–3. `red_flags` matched its closed category 2/2; JPM's empty list is
+  a defensible boundary call (OCC consent order and CET1 thinning correctly routed elsewhere),
+  not suppression. Still open: **quote reuse dropped but didn't hit zero** (1 violation in 3
+  briefs, AAPL `risks`+`reconciliation`, down from 62/35); **`what_would_change_my_mind` still
+  saturates** (2/3 at its cap of 6 — the materiality bar reached `risks` and `reconciliation`
+  but not the falsifier list); and **the arithmetic clause is UNTESTED, for a structural reason,
+  not a sampling one.** 0/3 briefs computed anything because 2 of its 3 asks were unanswerable:
+  the prompt rendered debt WITHOUT cash, so neither cash runway nor even net debt was derivable,
+  and the maturity ladder lives in a note we do not extract. Cash is now a rendered column
+  (2026-08-19), so the NEXT run is the first real test; refinancing coverage stays blocked on
+  §2b item 2. n=3 on three large caps is not enough to re-certify D3/D6/D7 at the rigor of the
+  original 35-brief corpus — re-run the keyword/substring scans over a larger corpus once more
+  new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
@@ -166,7 +179,9 @@ Statement **notes** never reach the prompt — `assess.py:324-331` sends Item 1,
 and the 10-Q MD&A only. The notes hold segment reporting, revenue disaggregation, customer
 concentration, debt maturities/covenants, SBC, restructuring, acquisitions/goodwill, legal
 contingencies, tax and leases. Build as **targeted extractors, never "send all notes to
-Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity,
+Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity — **now the concrete blocker for a
+shipped prompt instruction**, since `SYSTEM_PROMPT`'s refinancing-coverage ask needs the
+maturity ladder and nothing else supplies it (2026-08-19 live run) —
 (3) SBC & dilution, (4) concentrations & commitments, (5) acquisitions/goodwill, (6) legal
 contingencies. SEC's Financial Statement **and Notes** data sets are the structured route;
 edgartools text extraction is the cheap route. Sequence this **after** 2a.

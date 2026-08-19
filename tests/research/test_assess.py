@@ -408,6 +408,33 @@ def test_assess_sets_cache_key():
     assert a is not None and a.cache_key == "acc+q"
 
 
+def test_render_series_columns_and_the_cache_key_digest_stay_in_sync():
+    """`cachekey.context_digest` hashes a HARD-CODED column tuple and its comment
+    claims it covers "every column _render_series prints". Nothing enforced that, so
+    adding a column to one list and not the other would silently stop busting the brief
+    cache on a value the model can now see. This is that enforcement."""
+    import inspect
+    import re
+    from shortlist.research import assess, cachekey
+    rendered = set(re.findall(r'\("(?:[A-Za-z]+)", "([a-z_]+)"\)',
+                              inspect.getsource(assess._render_series)))
+    hashed = set(re.findall(r'"([a-z_]+)"',
+                            inspect.getsource(cachekey.context_digest)
+                            .split("cols = (")[1].split(")")[0]))
+    assert rendered, "regex found no rendered columns — the source shape changed"
+    missing = rendered - hashed
+    assert not missing, f"columns rendered into the prompt but not hashed: {missing}"
+
+
+def test_render_series_shows_cash_beside_debt():
+    """Cash is the input `SYSTEM_PROMPT`'s do-the-arithmetic clause needs for cash
+    runway and refinancing coverage; without it the instruction is unanswerable."""
+    from shortlist.research.assess import _render_series
+    out = _render_series([{"fiscal_year": 2025, "cash_and_equivalents": 30e9,
+                           "total_debt": 100e9}])
+    assert "cash 30,000" in out and "debt 100,000" in out
+
+
 def test_render_series_formats_usd_millions_and_eps():
     from shortlist.research.assess import _render_series
     series = [
