@@ -211,10 +211,21 @@ def test_collect_never_raises_when_the_notes_index_fails(capsys):
     assert "research:" in capsys.readouterr().err
 
 
-def test_collect_never_raises_when_the_filing_has_no_notes_attribute(capsys):
+def test_a_filing_with_no_notes_attribute_is_reported_not_silent(capsys):
+    """The drift trap. edgartools is pinned only `>=3.0`; if `.notes` is renamed,
+    silence would make a systematic failure look exactly like 'this filer has no
+    debt note' on every single brief."""
     class _Bare:
         pass
     assert collect(_Bare(), "10-K", "acc", "T", CFG) == []
+    assert "no `.notes`" in capsys.readouterr().err
+
+
+def test_no_parsed_filing_is_silent_because_that_is_expected(capsys):
+    """Distinct from the case above: no filing parsed is a normal degraded path
+    (fetch_bundle passes None), not a signal worth printing."""
+    assert collect(None, "10-K", "acc", "T", CFG) == []
+    assert capsys.readouterr().err == ""
 
 
 def test_collect_degrades_only_the_note_that_fails_to_render(capsys):

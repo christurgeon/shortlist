@@ -42,7 +42,8 @@ def _findings_md(findings, empty_label: str) -> list[str]:
         # moat.sources / management_findings) must not read as a failed grounding
         # check — and the label avoids calling it "analyst inference", because a
         # figure from Item 5 or the financial statements is a filing fact we simply
-        # never sent to the model (the haystack is Item 1/7/1A + 10-Q MD&A + 8-K).
+        # never sent to the model (the haystack is Item 1/7/1A + 10-Q MD&A + 8-K +
+        # the debt & liquidity statement notes — NOT the other note families).
         if not f.verified and not (f.evidence or "").strip():
             lines.append(f"- **{f.claim}** _(unquoted — inference or from a section "
                          "not provided)_")

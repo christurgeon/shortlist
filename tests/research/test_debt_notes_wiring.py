@@ -8,6 +8,8 @@ properties that no single module can enforce:
   3. notes do NOT move the cache key — they come from filings already in it — but
      the extractor's SOURCE does, via cachekey._PROMPT_MODULES.
 """
+import pytest
+
 from shortlist.research import filings
 from shortlist.research.assess import _build_user_prompt, _verify_grounding
 from shortlist.research.cachekey import _PROMPT_MODULES
@@ -144,3 +146,23 @@ def test_notes_do_not_add_an_accession_to_the_cache_key(monkeypatch):
     bundle = filings.fetch_bundle("AMT")
     assert bundle.cache_key == "0000123-26-000100"
     assert [n.title for n in bundle.debt_notes] == ["LONG-TERM OBLIGATIONS"]
+
+
+# ------------------------------------------------------- edgartools API drift guard
+
+def test_edgartools_note_api_surface_is_still_what_notes_py_reads():
+    """`edgar` is pinned only as `edgartools>=3.0`, and this repo has been broken by
+    edgartools drift before (a standard_concept rename silently broke accruals).
+
+    The failure mode here is SILENT — if `Note.title` or `Notes.__getitem__` is
+    renamed, collect() degrades to zero notes and every brief quietly loses its
+    maturity ladder. Fail at CI time instead. Offline: inspects the classes only,
+    no network and no filing parse.
+    """
+    import inspect
+
+    edgar_notes = pytest.importorskip("edgar.xbrl.notes")
+    assert hasattr(edgar_notes.Notes, "__len__")
+    assert hasattr(edgar_notes.Notes, "__getitem__")
+    assert "title" in inspect.signature(edgar_notes.Note.__init__).parameters
+    assert callable(getattr(edgar_notes.Note, "to_markdown", None))

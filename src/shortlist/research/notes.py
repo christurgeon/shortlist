@@ -151,8 +151,18 @@ def collect(filing_obj: Any, form: str, accession: str, ticker: str,
     an unrenderable note costs only itself."""
     if not cfg.get("enabled", True):
         return []
+    if filing_obj is None:
+        return []                      # no filing parsed — expected, not a failure
     index = getattr(filing_obj, "notes", None)
     if index is None:
+        # Say so. `edgartools` is pinned only as `>=3.0` and has broken this repo by
+        # renaming things before; a missing `.notes` would otherwise zero out every
+        # brief's notes with no signal at all, which is exactly the "systematic
+        # failure looks identical to no-data" trap log_abstain exists to prevent.
+        # Also fires for a pre-XBRL filing, hence the non-committal wording.
+        log_abstain(f"{form} debt notes (no `.notes` on the parsed filing — "
+                    f"pre-XBRL filing or edgartools API change)", ticker,
+                    AttributeError("notes"))
         return []
     try:
         picked = select(index, cfg)
@@ -168,13 +178,16 @@ def collect(filing_obj: Any, form: str, accession: str, ticker: str,
         if budget <= 0 or (out and budget < _MIN_USEFUL_CHARS):
             break
         try:
+            # `_title` is inside the try, not before it: `select` reading a title
+            # successfully does not promise a second read cannot raise, and the
+            # contract here is never-raises, not usually-raises.
             text, truncated = extract(note, min(per_note, budget))
+            title = _title(note)
         except Exception as e:
             log_abstain(f"{form} debt note render", ticker, e)
             continue
         if not text:
             continue
-        title = _title(note)
         out.append(DebtNote(form=str(form), accession=str(accession or ""), title=title,
                             label=f"{form} note: {title}", text=text, truncated=truncated))
         budget -= len(text) - (len(TRUNCATION_MARK) if truncated else 0)
