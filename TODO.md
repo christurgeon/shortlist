@@ -1,9 +1,10 @@
 # TODO — open follow-ups
 
 **A working set of open work, not a session journal** — when an entry's work ships, delete it
-rather than marking it done. The durable record is `CLAUDE.md` (behaviour + landmines),
-`docs/audits/` (evidence) and git history; a resolved entry left here is pure cost. This file
-reached 2,133 lines by 2026-08-08 because nobody owned removing anything.
+rather than marking it done. The durable record is the code and its docstrings (behaviour +
+landmines), `CLAUDE.md` (policy + where the authority lives), `docs/audits/` (evidence) and git
+history; a resolved entry left here is pure cost. This file reached 2,133 lines by
+2026-08-08 because nobody owned removing anything.
 
 See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for signal designs and `docs/ASSESSMENT_GAPS.md` for
 the scoring roadmap.
