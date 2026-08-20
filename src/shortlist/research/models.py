@@ -240,6 +240,18 @@ class ScreeningCall:
     # guards, so without it a retrospective cannot tell whether a conviction was the
     # model's own or a rule's (see docs/audits/2026-08-04-deep-brief-assessment.md D4).
     confidence: Optional[float] = None
+    # What the MODEL said, before apply_guards overwrote `stance`/`conviction` in place.
+    # Python-owned and never parsed from the payload (the `decided_without` precedent).
+    #
+    # WHY these exist: `clamp_note` records which GATES tripped, never what the model
+    # said before they did, so "Avoid — tripped negative_fcf gate" could not distinguish
+    # "the model also said Avoid and the gate agreed" from "the gate overruled the
+    # model's Buy". That is the most decision-relevant fact about a clamped call and it
+    # used to be discarded. None => that guard did not fire, so there is nothing to
+    # report; None is ALSO what pre-2026-08-20 briefs read back as, and every reader
+    # must treat the two the same (omit the line).
+    model_stance: Optional[str] = None       # pre-clamp stance, set iff stance_clamped
+    model_conviction: Optional[str] = None   # pre-cap conviction, set iff conviction_capped
 
 
 def _screening_call(payload: dict) -> Optional[ScreeningCall]:

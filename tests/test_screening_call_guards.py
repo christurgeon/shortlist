@@ -177,3 +177,46 @@ def test_bearish_high_survives_with_verified_red_flag():
                 red_flags=[_red_flag()])
     apply_guards(a, _card(confidence=0.95), CFG)
     assert a.screening_call.conviction == "HIGH"
+
+
+# --- pre-clamp stance / conviction (PLAN_INVENTORY_DECOMPOSITION §2) --------------
+
+def test_clamp_records_the_stance_it_replaced():
+    """apply_guards overwrites `stance` in place; without model_stance the model's own
+    view is unrecoverable and "Avoid — tripped negative_fcf gate" cannot distinguish a
+    gate CONFIRMING the model from a gate OVERRULING it."""
+    a = _assess(ScreeningCall(stance="STRONG_BUY", conviction="HIGH", rationale="bull"))
+    apply_guards(a, _card(gates=["negative_fcf"]), CFG)
+    assert a.screening_call.stance == "AVOID"
+    assert a.screening_call.model_stance == "STRONG_BUY"     # what the model actually said
+    assert a.screening_call.model_conviction == "HIGH"       # and its pre-cap conviction
+
+
+def test_no_clamp_leaves_the_pre_clamp_fields_none():
+    """None means "no guard fired", which is also how a pre-2026-08-20 brief reads back.
+    Renderers must treat both the same, so an unclamped call must not populate them."""
+    a = _assess(ScreeningCall(stance="HOLD", conviction="MEDIUM", rationale="r"))
+    apply_guards(a, _card(confidence=0.95), CFG)
+    assert a.screening_call.stance_clamped is False
+    assert a.screening_call.model_stance is None
+    assert a.screening_call.model_conviction is None
+
+
+def test_thin_data_cap_records_conviction_but_not_stance():
+    """A conviction cap is not a stance clamp: only the conviction moved, so only
+    model_conviction is populated."""
+    a = _assess(ScreeningCall(stance="HOLD", conviction="HIGH", rationale="r"))
+    apply_guards(a, _card(confidence=0.40), CFG)
+    assert a.screening_call.conviction == "LOW"
+    assert a.screening_call.model_conviction == "HIGH"
+    assert a.screening_call.model_stance is None      # stance was never clamped
+
+
+def test_pre_clamp_fields_survive_into_the_persisted_record():
+    """ScreeningCall is serialized with asdict into the brief JSON — these are a
+    persisted-format change, and a retrospective reads them from there."""
+    import dataclasses
+    a = _assess(ScreeningCall(stance="BUY", conviction="HIGH", rationale="r"))
+    apply_guards(a, _card(gates=["negative_fcf"]), CFG)
+    d = dataclasses.asdict(a.screening_call)
+    assert d["model_stance"] == "BUY" and d["model_conviction"] == "HIGH"

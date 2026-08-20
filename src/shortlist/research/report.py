@@ -97,12 +97,24 @@ def _call_md(a, config=None):
     block = ["", "## Screening call _(triage — not investment advice)_",
              f"- **Call:** {label} · **conviction** {c.conviction.title()}"]
     if c.stance_clamped:
-        why = f"Auto-downgraded: {c.clamp_note}." if c.clamp_note else "Auto-downgraded by a tripped gate."
+        # Name the stance the gate REPLACED, not just the gate. "Avoid, and the model
+        # also said Avoid" and "Avoid, but the model said Buy" are different reads, and
+        # only the second means a rule overrode a judgment. model_stance is None on
+        # pre-2026-08-20 briefs -> fall back to the older wording rather than guessing.
+        if c.model_stance:
+            was = stance_label(c.model_stance, config)
+            why = (f"the {c.clamp_note} overrode the model's {was}" if c.clamp_note
+                   else f"a tripped gate overrode the model's {was}")
+        else:
+            why = (f"Auto-downgraded: {c.clamp_note}." if c.clamp_note
+                   else "Auto-downgraded by a tripped gate.")
         block.append(f"- **Why:** {why}")
         if c.rationale:
             block.append(f"- _Model's pre-clamp view: {c.rationale}_")
     elif c.rationale:
         block.append(f"- **Why:** {c.rationale}")
+    if c.confidence is not None:
+        block.append(f"- **Data confidence:** {c.confidence:.2f}")
     if watch:
         block.append(f"- **But watch:** {watch}")
     if c.decided_without:
@@ -110,7 +122,8 @@ def _call_md(a, config=None):
     if c.not_applicable:
         block.append(f"- **Not applicable:** {'; '.join(c.not_applicable)}")
     if c.conviction_capped and not c.stance_clamped:
-        block.append("- _Conviction capped by data coverage / corroboration._")
+        was = f" (the model said {c.model_conviction.title()})" if c.model_conviction else ""
+        block.append(f"- _Conviction capped by data coverage / corroboration{was}._")
     return badge, block
 
 

@@ -699,6 +699,7 @@ def apply_guards(assessment, card, config: dict) -> None:
     call.confidence = getattr(card, "confidence", None)
 
     orig_conv = call.conviction
+    orig_stance = call.stance
 
     # 1. gate clamp (only ever moves bearish; also caps conviction <= MEDIUM)
     gc = scfg.get("gate_clamp") or {}
@@ -712,6 +713,9 @@ def apply_guards(assessment, card, config: dict) -> None:
         elif gi == ceil_idx:
             ceil_gates.append(g)
     if ceil_idx > _stance_idx(call.stance):
+        # Record what the model said BEFORE overwriting it — clamp_note names the gates,
+        # not the stance they replaced, so without this the model's own view is lost.
+        call.model_stance = orig_stance
         call.stance = STANCES[ceil_idx]
         call.stance_clamped = True
         noun = "gate" if len(ceil_gates) == 1 else "gates"
@@ -733,6 +737,9 @@ def apply_guards(assessment, card, config: dict) -> None:
         call.conviction = "MEDIUM"
 
     call.conviction_capped = call.conviction != orig_conv
+    # Same reasoning as model_stance: keep the pre-cap value, not just the bool.
+    if call.conviction_capped:
+        call.model_conviction = orig_conv
 
 
 def assess(card, bundle: FilingBundle, config: dict,
