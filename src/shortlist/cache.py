@@ -32,7 +32,11 @@ def cache_key(provider: str, endpoint: str, params: dict) -> str:
     Raises TypeError on a non-JSON-serializable param (fail loud — the call site is
     wrong) rather than papering over it with default=str. SHA-256 (not hash()) because
     hash() is PYTHONHASHSEED-salted and unstable across the separate processes a
-    persistent cache must serve."""
+    persistent cache must serve.
+
+    The `v1:` prefix is a manual schema epoch: BUMP IT whenever a source's `_get`
+    changes the SHAPE of what it stores, or warm caches keep serving payloads the
+    new parser cannot read."""
     clean = {k: v for k, v in params.items() if k.lower() not in _SECRET_PARAMS}
     canon = json.dumps(clean, sort_keys=True, separators=(",", ":"))
     raw = f"v1:{provider}:{endpoint}:{canon}"

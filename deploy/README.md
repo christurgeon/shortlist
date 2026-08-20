@@ -54,13 +54,17 @@ installer does both and is idempotent.
 
 Caveats:
 
-- rsync has **no `--delete`**, so a renamed/removed source file leaves a stale copy —
-  clear it first: `rm -rf /opt/shortlist/src && sudo bash deploy/install_opt_shortlist.sh`.
-- Its excludes for `/research/` and `/state/` are **anchored** with a leading `/`; unanchored
-  they'd also match `src/shortlist/research` and ship a broken wheel.
 - **Running the installer from inside `/opt/shortlist`** makes `SRC == DEST`. It detects
   this and skips the rsync rather than copying the tree onto itself — correct only if you
   `git pull` first. Verify with `git -C /opt/shortlist log --oneline -1`.
+- rsync has **no `--delete`**, so a renamed/removed source file leaves a stale copy. On the
+  supported `git pull` path this cannot happen — git removes deleted files itself. Only a
+  deploy from a *separate* checkout needs clearing, and only from that checkout:
+  `sudo rm -rf /opt/shortlist/src && sudo bash /path/to/checkout/deploy/install_opt_shortlist.sh`.
+  **Never run that from inside `/opt/shortlist`** — `SRC == DEST` skips the rsync (above), so
+  the `rm -rf` deletes the only copy of `src/` and nothing restores it.
+- Its excludes for `/research/` and `/state/` are **anchored** with a leading `/`; unanchored
+  they'd also match `src/shortlist/research` and ship a broken wheel.
 
 ## Manual install
 

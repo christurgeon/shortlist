@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any, Iterable, Optional
 
 # Shared SEC Form 4 aggregation, used by the async harness source
-# (data/sources.py's EdgarSource) and the XBRL backtest. (The legacy synchronous
+# (data/sources/edgar.py's EdgarSource) and the XBRL backtest. (The legacy synchronous
 # screener and providers/edgar.py that this once also served were retired.) Kept as a
 # dependency-free leaf module: it imports nothing from `edgar`/`edgartools` (it
 # operates on already-fetched objects) and nothing from the data layer (it returns

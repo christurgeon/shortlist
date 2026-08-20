@@ -17,7 +17,7 @@ from .models import (
 
 def _snap(profile, fund, stmts, analyst, insider, price):
     # The snapshot's ticker comes from the runtime arg `t` (the SAMPLE lookup key),
-    # not a literal here — see sources.py `data["snapshot"](ticker)`.
+    # not a literal here — see sources/mock.py `data["snapshot"](ticker)`.
     def make(t: str) -> TickerSnapshot:
         s = TickerSnapshot(ticker=t)
         s.profile, s.fundamentals, s.statements = profile, fund, stmts

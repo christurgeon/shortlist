@@ -4,7 +4,7 @@ from .mock import MockProvider
 __all__ = ["Provider", "MockProvider", "build_providers"]
 
 # Registry of synchronous `Provider`s. The live fetching providers were retired
-# with the screener engine (the async harness `Source`s in `data/sources.py` are
+# with the screener engine (the async harness `Source`s in `data/sources/` are
 # the production data layer now). What remains: `mock` — a lightweight offline
 # `StockMetrics` factory used by the scoring tests — and the `quiver`/`fred`
 # scaffolds (stubs awaiting a harness-side `Source` implementation). Modules are
