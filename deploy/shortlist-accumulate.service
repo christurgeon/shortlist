@@ -1,6 +1,4 @@
-# DISABLED SAMPLE — not installed, not enabled. See deploy/README.md.
-# A oneshot unit that captures one day of point-in-time snapshots.
-# Edit the two <PLACEHOLDER>s, then follow deploy/README.md to enable.
+# Sample only — not installed automatically. Edit the <PLACEHOLDER>s, then see README.md.
 [Unit]
 Description=shortlist daily point-in-time snapshot capture
 After=network-online.target
@@ -8,14 +6,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# WorkingDirectory must be the repo root so env.load_env() finds .env (keys).
 WorkingDirectory=<REPO_ROOT>
-# uv runs the console script in the project venv.
 ExecStart=/usr/bin/env uv run shortlist-accumulate run --root <STORE_ROOT> --max-tickers 42
-# --max-tickers 42 captures the whole bundled watchlist so accumulated breadth can
-# clear the snapshot backtest's 30-names/date trust floor. This exceeds FMP's free
-# 250/day cap (~13 calls/ticker) so FMP 429s after ~19 names — handled with backoff;
-# the overflow names still save on keyless coverage (Yahoo/EDGAR/Finnhub/FINRA), so
-# only the FMP-only legs go thin. Lower to 15 for an FMP-polite run that stays UNDER
-# the breadth floor (EXPLORATORY-only snapshots). Paid FMP Starter lifts the gating.
 Nice=10

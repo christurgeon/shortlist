@@ -10,12 +10,9 @@ WorkingDirectory=/opt/shortlist
 ExecStart=/opt/shortlist/.venv/bin/shortlist-bot
 Restart=on-failure
 RestartSec=5
-# SIGTERM only takes effect when the in-flight long-poll returns (the blocked socket
-# read is not interrupted), so graceful shutdown takes up to ~poll_timeout(25) + read
-# slack(10) + worker join(5) ≈ 40s. TimeoutStopSec MUST exceed that, or systemd SIGKILLs
-# mid-poll on every restart. 50s gives margin.
+# Graceful shutdown can take ~40s (blocked long-poll read); must exceed that or
+# systemd SIGKILLs mid-poll on every restart.
 TimeoutStopSec=50
-# Single instance only: a second poller on the same token triggers Telegram 409.
 
 [Install]
 WantedBy=multi-user.target
