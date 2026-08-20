@@ -475,6 +475,26 @@ research:
     max_chars: 4000            # measured ceiling across 10 large caps was 2,949 chars (NVDA)
                                # AFTER the diff; the RAW section runs to 84,281 (GILD), which
                                # is precisely why this is a diff and not the raw Item 1A.
+  notes:                       # debt & liquidity STATEMENT NOTES (research/notes.py) — the
+                               # maturity-ladder input SYSTEM_PROMPT's refinancing-coverage
+                               # arithmetic needs and had no producer for (the 2026-08-19 live
+                               # run computed nothing in 0 of 3 briefs). Filing text, so it
+                               # enters the grounding haystack as its own labelled segment.
+                               # NOT a scored signal — research runs after score().
+                               # Evidence: docs/audits/2026-08-20-debt-liquidity-notes-design.md
+    enabled: true              # flip false (or remove the block) for a byte-identical no-op
+    max_notes_per_form: 2      # NKE files SHORT-TERM BORROWINGS + LONG-TERM DEBT, Realty
+                               # Income files Credit Facilities + Notes Payable; both are
+                               # relevant, so two is the measured norm, not a hedge.
+    max_chars_per_note: 16000  # NOT 10000. The 12-month ladder sits within the first 10,000
+                               # chars in 8 of 9 over-cap notes — the exception is DUK at
+                               # 13,022, so a 10,000 cap would silently drop the ladder for a
+                               # whole sector of heavy borrowers while appearing to work.
+    max_chars_10k: 16000       # PER-FORM budgets, deliberately not one shared pool: a shared
+    max_chars_10q: 8000        # pool lets a heavy borrower's annual notes crowd out the
+                               # FRESHER quarterly note, and freshness is the reason the 10-Q
+                               # is in scope at all. Worst case adds 24K chars to a prompt
+                               # already running 127-178K; the median name adds ~6K.
   screening_call:              # buy/hold/avoid capstone on the research brief (spec 2026-06-07)
     enabled: true              # defaults ON; flip false for a byte-identical no-op
     labels:

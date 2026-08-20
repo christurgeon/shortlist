@@ -137,11 +137,19 @@ notes:
 Token alignment is chosen. It cannot sever a number, and a table row cut at a
 column boundary leaves a well-formed prefix.
 
-A truncated note carries an explicit `[… truncated …]` marker. This is
+A truncated note carries an explicit `[…truncated…]` marker. This is
 load-bearing: `SYSTEM_PROMPT` instructs the model to *name a missing input rather
 than estimate it*, which it can only do if a cut ladder is distinguishable from a
-complete one. Per the 8-K `_ELISION` precedent, a quote spanning the marker fails
-the substring check and is correctly marked unverified.
+complete one.
+
+This is **not** the 8-K `_ELISION` case and does not inherit its safety argument.
+An elision *splices* two non-adjacent spans, so a quote crossing it asserts a
+contiguity the filing never had and must fail verification. Truncation only drops a
+suffix — nothing is spliced — so a quote containing the mark is legitimately a
+substring of what the model was shown and correctly verifies. The guarantee here is
+the weaker, sufficient one: text past the cut is **absent from the haystack**, so a
+model that reconstructs a severed figure fails verification.
+(`tests/research/test_debt_notes_wiring.py::test_content_past_the_truncation_cut_cannot_be_quoted`.)
 
 ## 4. Design
 

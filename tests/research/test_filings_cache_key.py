@@ -26,7 +26,11 @@ def _eightk(accession, filed="2026-07-14"):
 def _offline(monkeypatch):
     """Stub every fetch fetch_bundle makes. The 10-Q lookup raises so the function's
     own try/except takes the degraded path — no network, no edgartools."""
-    monkeypatch.setattr(filings, "fetch_10k", lambda *a, **k: _tenk())
+    # `_fetch_10k_parsed`, not `fetch_10k`: fetch_bundle needs the PARSED object too
+    # (research/notes.py reads the statement notes off it), so stubbing the public
+    # wrapper would leave the real fetch running. None => no notes, which is what
+    # keeps these key assertions about 8-K accessions alone.
+    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (_tenk(), None))
     monkeypatch.setattr(filings, "_prior_year_sections", lambda *a, **k: ("", ""))
 
     import edgar
