@@ -26,8 +26,8 @@ _MAX_ATTEMPTS = 3            # one transient 429 must not bail every EDGAR origi
 _RETRY_BACKOFF_S = 1.0       # linear: 1s, 2s
 _MAX_STALE_DAYS = 7          # beyond this a cached index can mis-resolve renamed symbols
 
-# Per-process resolver memo. signals.py loads the index at 5 independent call sites; without
-# this they can DISAGREE inside one session (an early site fetches fresh, a later one falls
+# Per-process resolver memo. A caller with multiple independent call sites in one process
+# can otherwise DISAGREE inside one session (an early site fetches fresh, a later one falls
 # back to an older index mid-outage). Only non-empty results are stored — memoising {} would
 # pin the whole run to the failure this module exists to survive.
 _memo: dict[tuple[str, str, str], dict[str, str]] = {}

@@ -117,8 +117,8 @@ def piotroski_f(*, net_income: list[Optional[float]], ocf: list[Optional[float]]
       (total_debt/revenue), F6 gross margin rising (gross_profit/revenue).
 
     Deliberately asset-free AND equity-free: total assets is not extracted on either
-    stack, and equity denominators darken/distort on buyback-heavy firms (see spec
-    §3). Revenue is the natural denominator; a non-positive (zero or negative) revenue year abstains the three delta legs.
+    stack, and equity denominators darken/distort on buyback-heavy firms
+    (DATA_SOURCES.md D1). Revenue is the natural denominator; a non-positive (zero or negative) revenue year abstains the three delta legs.
 
     Returns RAW (won, evaluated) — no min-legs floor here, so this leaf needs no
     config (the floor is applied by consumers in scoring/backtest). A 1-year input
@@ -183,8 +183,9 @@ def net_debt_from(total_debt: Optional[float],
                   cash: Optional[float]) -> Optional[float]:
     """Net debt = total_debt - cash (signed; net cash -> negative). Returns None
     only when BOTH inputs are missing — a market-cap-only enterprise value would
-    silently ignore leverage, so we abstain rather than guess (spec O1). A single
-    missing side is treated as zero (conservative)."""
+    silently ignore leverage, so we abstain rather than guess
+    (docs/superpowers/specs/2026-06-13-absolute-valuation-leg-ev-ebit-design.md O1).
+    A single missing side is treated as zero (conservative)."""
     if total_debt is None and cash is None:
         return None
     return (total_debt or 0.0) - (cash or 0.0)

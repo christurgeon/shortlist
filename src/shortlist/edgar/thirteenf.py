@@ -16,9 +16,11 @@ from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottl
 SIGNAL = "edgar:13f_new_position"
 SIGNAL_MATERIAL_ADD = "edgar:13f_material_add"
 
-# Emission strength = within-book conviction, capped at 1.0 (design §1.8): a 5%-of-book new
-# position is a full-conviction bet. Below the 13D/Form-4 marquee tier only via the smaller
-# default weight the signal ships at (the information is up to 45 days stale).
+# Emission strength = within-book conviction, capped at 1.0
+# (docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md §1 step 8):
+# a 5%-of-book new position is a full-conviction bet. Below the 13D/Form-4 marquee tier
+# only via the smaller default weight the signal ships at (the information is up to 45
+# days stale).
 
 
 # --- submissions -> latest/prior 13F-HR selection --------------------------------------
@@ -155,8 +157,8 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
                       full_strength_pct: float = 0.05) -> list[dict]:
     """New positions (CUSIP in `latest`, absent in `prior`) that clear `min_position_pct` of
     the latest book, sorted by within-book weight descending. Each carries `weight` and a
-    `strength` = min(1.0, weight / full_strength_pct) (design §1.8 — a `full_strength_pct`
-    position is full conviction). Material ADDS to existing positions are out of scope
+    `strength` = min(1.0, weight / full_strength_pct) (see module header — a
+    `full_strength_pct` position is full conviction). Material ADDS to existing positions are out of scope
     (v1: new positions are the sharpest best-idea event). An empty/zero-total latest book
     yields [] (no division by zero)."""
     total = sum(p["value"] for p in latest.values() if p.get("value"))

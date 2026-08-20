@@ -58,7 +58,8 @@ _ITEM_HEADING_RE = re.compile(r"Item\s+\d\.\d{2}", re.I)
 
 def config_block(config: Optional[dict]) -> dict:
     """The merged `research.eightk` block. An ABSENT block is NOT a no-op — the
-    feature ships ON (spec §3.6) — but `enabled: false` is byte-identical."""
+    feature ships ON (docs/audits/2026-08-13-eightk-text-in-deep-design.md §3.6)
+    — but `enabled: false` is byte-identical."""
     block = ((config or {}).get("research") or {}).get("eightk") or {}
     return {**_DEFAULTS, **block}
 

@@ -1,4 +1,5 @@
-"""Interactive Telegram bot: /screen, /deep and the position monitor (long-poll side).
+"""Interactive Telegram bot: /screen, /deep, and the position-store commands
+(/add, /thesis, /hold, /remove, /sold, /portfolio) (long-poll side).
 
 The poll loop validates the allowlist, advances the offset, and enqueues commands;
 a single worker thread runs the existing run_harness -> build_report -> deliver chain.
@@ -580,8 +581,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"shortlist-bot: {e}", file=sys.stderr)
         return 2
 
-    # Honour the cache block exactly like daily.py so the bot benefits from warm
-    # re-screens and respects the operator's TTL/kill-switch.
+    # Honour the cache block exactly like screen.py's main() so the bot benefits
+    # from warm re-screens and respects the operator's TTL/kill-switch.
     from ..cache import configure_default_cache
     cache_cfg = config.get("cache", {})
     configure_default_cache(enabled=cache_cfg.get("enabled", True),

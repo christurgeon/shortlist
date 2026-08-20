@@ -9,16 +9,16 @@ universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request pe
 **Three things to know before touching this.**
 
 1. **It is undocumented**, the same fragility class as the Yahoo screener this repo
-   retired. That is why every failure path here returns `{}` rather than raising: an empty
-   universe makes the investability floor abstain on everything, which is the byte-identical
-   pre-feature funnel. The floor degrades to inert; it never blocks a run.
+   retired. That is why every failure path here returns `{}` rather than raising: a caller
+   that treats a symbol's absence from this map as *abstain, never a drop* degrades cleanly
+   to inert on a total fetch failure instead of blocking a run.
 2. **It is NOT on sec.gov**, so it draws nothing from the shared `sec_throttle()` budget.
    Do not route it there — that budget exists to keep this box under SEC's fair-access
    ceiling, and padding it with unrelated hosts would misreport the thing it measures.
-3. **It excludes ETFs and funds**, which is load-bearing beyond sizing: a symbol's absence
-   here is weak evidence it is not listed common stock. Absence is still treated as
-   *abstain* (never a drop) because it also captures OTC names, recent listings and plain
-   API gaps.
+3. **It excludes ETFs and funds**, which matters beyond sizing: a symbol's absence here is
+   weak evidence it is not listed common stock, but it also captures OTC names, recent
+   listings and plain API gaps — so a caller should still treat absence as abstain, never
+   a drop.
 
 Rows with an unparseable `marketCap` are skipped **individually** (mirroring
 `secframes.parse_frame`), never failing the whole payload.
@@ -39,8 +39,8 @@ _URL = ("https://api.nasdaq.com/api/screener/stocks"
         "?tableonly=true&limit=25000&offset=0&exchange={exchange}")
 _EXCHANGES = ("NASDAQ", "NYSE", "AMEX")
 
-# A browser-shaped header set. The Yahoo-WAF lesson (CLAUDE.md): bot-shaped requests get an
-# HTML rejection while a full header set returns JSON. Accept-Encoding stays httpx-decodable
+# A browser-shaped header set. The Yahoo-WAF lesson: bot-shaped requests get an HTML
+# rejection while a full header set returns JSON. Accept-Encoding stays httpx-decodable
 # (no br/zstd without the dependency, or .json() fails).
 _HEADERS = {
     "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -69,7 +69,7 @@ def parse_universe(payload) -> dict:
     """Screener JSON -> `{UPPER symbol: (market_cap, last_sale)}`. **Pure, never raises.**
 
     Either value may be `None` — a symbol with a price but no cap is still worth carrying,
-    because the floor's two legs abstain independently.
+    since a consumer can treat the two legs as independently abstainable.
     """
     try:
         rows = (payload or {}).get("data", {}).get("table", {}).get("rows") or []
@@ -126,11 +126,11 @@ def adv_shares_from_finra(rows) -> dict:
     rows — the dataset the harness already fetches and disk-caches, so this costs **zero**
     additional requests.
 
-    `averageDailyVolumeQuantity` is present on ~86% of rows and covers 93% of the tickers
-    this funnel has ever surfaced. The dataset is **semi-monthly**, so a value can be up to
-    ~4 weeks old; that is acceptable for a liquidity floor (ADV is slow-moving) and is why
-    the floor is a floor rather than a ranking input. Non-positive and unparseable values
-    are omitted so the floor abstains rather than reading them as "illiquid".
+    `averageDailyVolumeQuantity` is present on ~86% of rows and covered 93% of the tickers
+    the (now-retired) discovery funnel ever surfaced. The dataset is **semi-monthly**, so a
+    value can be up to ~4 weeks old; that is acceptable for a liquidity floor (ADV is
+    slow-moving) but rules this out as a ranking input. Non-positive and unparseable values
+    are omitted so a consumer abstains rather than reading them as "illiquid".
     """
     out: dict = {}
     for row in rows or []:

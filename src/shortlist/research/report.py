@@ -171,8 +171,9 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
 
 def write(a: QualitativeAssessment, root, config=None) -> Path:
     """Write both the markdown brief and the JSON record; return the brief path.
-    Keyed on a.cache_key (composite 10-K+10-Q), falling back to filing_accession for
-    back-compat with assessments that predate the bundle."""
+    Keyed on a.cache_key (the wide key from research/cachekey.py:brief_key — quote
+    that module for the current composition, not this line), falling back to
+    filing_accession for back-compat with assessments that predate the bundle."""
     key = a.cache_key or a.filing_accession
     bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)

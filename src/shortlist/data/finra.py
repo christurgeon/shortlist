@@ -3,7 +3,7 @@
 The dataset URLs, the paging limit, and the pure row helpers live here so the async
 harness ``FinraSource`` (``data/sources/finra.py``) and any sync fetcher agree on ONE
 definition of the FINRA row shape and the
-disk-cache contract — the ``_form4.py`` / ``_edgar_facts.py`` shared-leaf precedent
+disk-cache contract — the ``_form4.py`` / ``_gaap_tags.py`` shared-leaf precedent
 (``CLAUDE.md`` "edit … not in two places"). No HTTP here; both callers do their own
 (async vs sync) fetch and reuse these helpers.
 

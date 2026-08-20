@@ -138,7 +138,7 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
     # WEAKER proxy, since the actual print lands ~30-45 days later, so this OVER-states
     # staleness. `last_report_date_estimated` marks the fallback so the bridge can
     # refine the anchor with the EDGAR 10-Q/10-K filed date (~0-5d proxy) without ever
-    # degrading a true announcement date. Documented in CLAUDE.md / HARNESS.md.
+    # degrading a true announcement date.
     last_report_date = None
     estimated = True
     past = sorted(d["date"] for d in cal

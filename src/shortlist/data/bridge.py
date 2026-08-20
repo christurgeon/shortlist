@@ -287,7 +287,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         if (m.net_debt_to_ebitda is None and m.ebitda is not None and m.ebitda > 0
                 and debt0 is not None and m.cash_and_equivalents is not None):
             m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
-        # EV/EBIT earnings yield (absolute valuation leg, §2.2). EBIT = operating
+        # EV/EBIT earnings yield (absolute valuation leg, ASSESSMENT_GAPS.md §2.2). EBIT = operating
         # income; EV = market_cap + net_debt. Same positional [0] alignment the
         # net_debt_to_ebitda derivation above already relies on. Sole producer
         # (no source sets it) -> the is-None guard is for symmetry. UNITS: USD.
@@ -340,8 +340,8 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
     soc = snap.social
     if soc:
         # rising/delta are re-derived here from raw facts (the ShortInterest pattern);
-        # the apewisdom leaf computes the parallel WsbMention fields
-        # consumer — keep both derivations in lockstep if you edit either.
+        # the apewisdom leaf computes the parallel WsbMention fields — keep both
+        # derivations in lockstep if you edit either.
         m.social_mentions = soc.mentions
         m.social_rank = soc.rank
         if soc.mentions is not None and soc.mentions_24h_ago is not None:

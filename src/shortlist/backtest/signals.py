@@ -135,9 +135,10 @@ class SnapshotSignalSource:
         # Composite only for cards production would rank with confidence: `scored`
         # alone is toothless here (always True for the unknown bucket, and thin
         # accumulated snapshots usually lack a SIC), so pair it with the validity
-        # floor. Sub-axes stay per-axis None-safe below. Residual (documented in
-        # the spec): a Finnhub-only name can read confidence ~0.32 and still pass
-        # a 0.25 floor — a measurement-policy line to revisit WITH data, not here.
+        # floor. Sub-axes stay per-axis None-safe below. Residual
+        # (docs/superpowers/specs/2026-07-07-accumulation-breadth-fix-design.md):
+        # a Finnhub-only name can read confidence ~0.32 and still pass a 0.25
+        # floor — a measurement-policy line to revisit WITH data, not here.
         sig: dict[str, float] = {}
         floor = scoring._validity(self.config or {})["min_scored_weight"]
         if card.scored and (card.confidence or 0.0) >= floor:
@@ -179,7 +180,7 @@ class XbrlSignalSource:
     unfitted prior), the per-leg value-attribution axes `value_fcf_yield` /
     `value_pe_vs_history`, and `value_plus_evebit` (the value average WITH the
     EV/EBIT leg) so the leg's additive-or-dilutive effect on the combined `value`
-    IC is measurable before any production use (spec §11).
+    IC is measurable before any production use (see scoring.py:ebit_ev_yield_score).
 
     Also emits the investment & earnings-quality axes `asset_growth` (Cooper-Gulen-
     Schill 2008) and `accruals` (Sloan 1996), both unfitted priors and both NEGATIVE

@@ -1,4 +1,5 @@
-"""Historical 13D walker for the Phase-2 backfill (spec §8).
+"""Historical 13D walker for the Phase-2 backfill
+(docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md §8).
 
 One ranged edgartools get_filings call per form string over the whole window (verified live:
 filing_date accepts "YYYY-MM-DD:YYYY-MM-DD"), dedup (edgartools returns rows twice), initial-13D
@@ -133,22 +134,23 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
                            throttle_s: float = 0.2, max_records: Optional[int] = None,
                            _get_filings=None, _stake_fn=None) -> Optional[list[dict]]:
     """Both initial SCHEDULE 13D and SCHEDULE 13D/A amendment records filed in [start, end]
-    (the escalation-pack backfill walker, spec §8) -- initials seed the pair baseline the
-    assembler diffs amendments against. Each kept row also carries a doc-fetched `stake_pct`
-    (percent-of-class off the cover page) and the FILER's CIK (`filer_cik`, distinct from the
-    SUBJECT `cik` -- `stake.pair_key` needs both). None = index fetch failed; [] = none.
+    (the escalation-pack backfill walker, spec §8) -- initials seed the pair baseline a
+    future assembler would diff amendments against. That assembler was never built (no
+    production or test code in this repo pairs initial + amendment records today), so this
+    walker is currently an orphaned building block -- kept for the Phase-2 backfill it was
+    designed for. Each kept row carries a doc-fetched `stake_pct` (percent-of-class off the
+    cover page) and the FILER's CIK (`filer_cik`, distinct from the SUBJECT `cik` -- any
+    future pairing step needs both, since a header failure keeps the record with
+    cik=None/filer_cik=None rather than dropping the row). None = index fetch failed;
+    [] = none.
 
-    Mirrors fetch_activist_window's poisoned-row guard and header-failure semantics (a
-    header failure keeps the record with cik=None/filer_cik=None rather than dropping the
-    row -- downstream, the assembler's pair_key() abstains on the missing CIK, which is a
-    scoped design choice for THIS signal: see _assemble_13d_a_factory).
+    Mirrors fetch_activist_window's poisoned-row guard and header-failure semantics.
 
     Controller-resolution guard (Task 8 review finding): the per-row stake DOC-fetch is
-    SKIPPED (stake_pct stays None) for rows the assembler excludes anyway --
-    is_spac_or_shell(subject_name) or is_affiliate_filing(activist, subject_name), checked
-    on the SAME header-derived fields the assembler re-checks -- so a multi-year walk never
-    burns an SEC document fetch on a filing that can never be selected. Filter-before-fetch,
-    per the design spec; the assembler's own drops are unchanged and still apply.
+    SKIPPED (stake_pct stays None) for rows a future assembler would exclude anyway --
+    is_spac_or_shell(subject_name) or is_affiliate_filing(activist, subject_name) -- so a
+    multi-year walk never burns an SEC document fetch on a filing that could never be
+    selected. Filter-before-fetch, per the design spec.
 
     `_stake_fn(filing) -> float | None` is the test seam (default
     `edgar.stake_pct.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per

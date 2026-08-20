@@ -61,8 +61,8 @@ GLOSSARY: list[Entry] = [
           "Each event has an item number. On average 8-K news skews "
           "NEGATIVE and the filing-day pop often reverses, so a fresh 8-K "
           "means 'read it', not 'buy it'. Here: the recent_8k flag notes "
-          "one; certain reliably-bad items trigger the negative "
-          "veto (see 8-K negative-item veto)."),
+          "one, and select items (item 4.02 restatements, going-concern "
+          "language, defaults) surface as substance in the /deep brief."),
     Entry("Form 4", "SEC filings", ("insider filing",),
           "Insider trade disclosure — officers, directors, and 10% owners "
           "must report their trades within two business days. Open-market "
@@ -113,9 +113,10 @@ GLOSSARY: list[Entry] = [
         text=("A clean-negative 8-K is a current report announcing an unambiguously bad, "
               "dated event: bankruptcy (item 1.03), a lender calling debt due early (2.04), "
               "or that past financial statements can no longer be relied on — a restatement "
-              "(4.02). The position monitor surfaces one against a name you own as an "
-              "attention flag routed to the SEC filing; it is screening triage, not advice, "
-              "and never a recommendation to sell."),
+              "(4.02). Here: the generic recent_8k flag notes any fresh 8-K on a held "
+              "position (see recent_8k); a targeted alert specifically for these clean-"
+              "negative items is not currently wired up. It is screening triage, not "
+              "advice, and never a recommendation to sell."),
     ),
     # -------------------------------------------------------------- Sub-scores
     Entry("quality", "Sub-scores", ("quality score",),
@@ -283,14 +284,6 @@ GLOSSARY: list[Entry] = [
           "heavily year-over-year. Companies leave boilerplate alone until "
           "something changes — and big rewrites predict NEGATIVE returns "
           "('Lazy Prices'). Fires on LOW text similarity. Advisory only."),
-    Entry("8-K negative-item veto", "Gates & flags",
-          ("negative veto", "veto", "vetoed", "8k veto"),
-          "A drop, not a score: certain 8-K items — "
-          "going-concern doubt, defaults, delisting notices, restatements, "
-          "auditor exits — are reliably negative over the following weeks, "
-          "so a fresh match ejects the candidate LOUDLY before it burns a "
-          "deep-screen slot. You'll see 'VETOED: <ticker> — 8-K item …' in "
-          "the run notes."),
     # --------------------------------------------------------- Finance concepts
     Entry("CAGR", "Finance concepts", ("compound annual growth rate",),
           "Compound annual growth rate: the smoothed yearly growth between "

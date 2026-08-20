@@ -560,8 +560,7 @@ class _DeepBlock:
 
     def render_html(self, vm, h) -> str:
         cmds = "".join(h.tag("div", f"/deep {ln}", _class="deepcmd") for ln in self._lines(vm))
-        note = h.tag("div", "activist re-rating candidates — screening triage, "
-                            "not investment advice", _class="muted")
+        note = h.tag("div", "screening triage, not investment advice", _class="muted")
         return h.raw("div", cmds + note, _class="deep")
 
     def render_text(self, vm, detail) -> list[str]:

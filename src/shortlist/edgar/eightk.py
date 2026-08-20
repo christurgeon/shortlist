@@ -20,7 +20,8 @@ from .quality import is_spac_or_shell
 
 SIGNAL = "edgar:8k"
 NEGATIVE_SIGNAL = "edgar:8k_negative"
-# Lerman-Livnat 2010 negative-drift items (see the design spec §1/§4).
+# Lerman-Livnat 2010 negative-drift items
+# (docs/superpowers/specs/2026-07-07-eightk-originator-design.md §1/§4).
 NEGATIVE_ITEMS = frozenset({"1.03", "2.04", "2.05", "2.06", "3.01", "4.02", "5.01"})
 # The curated positive pocket: 1.01 (material agreement) AND 3.03 (security-holder
 # rights). 2.01 is config-expressible but NOT in the default set.

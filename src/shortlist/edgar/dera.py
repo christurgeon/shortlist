@@ -98,7 +98,7 @@ def parse_dera_tsvs(sub_fh, owner_fh, trans_fh) -> list[InsiderTxn]:
             roles=_roles(o.get("RPTOWNER_RELATIONSHIP")),
             title=title,
             # >1 reporting owner: neither source joins a transaction to a PARTICULAR
-            # owner, so any single attribution is a guess. Abstain (spec §5.1).
+            # owner, so any single attribution is a guess. Abstain.
             joint_filing=len(os_) > 1,
             issuer_cik=(s.get("ISSUERCIK") or "").strip(),
         ))
@@ -111,7 +111,7 @@ def build_trade_month_index(txns) -> dict[str, set[tuple[int, int]]]:
     Built from ALL transaction codes, deliberately. An insider who sells every March under a
     standing arrangement is ROUTINE -- precisely the noise the CMP filter strips. Indexing
     only purchases would classify such a trader as opportunistic and the filter would do
-    nothing. (docs/FORM4_INSIDER.md §6)
+    nothing.
 
     Keyed on a zero-padded CIK: owner_cik is the join key between this history index and the
     live Form 4 XML path (classify_tier). If the two sides ever disagreed on zero-padding,
@@ -234,8 +234,7 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
     single network blip on the very first run after deploy persisted an EMPTY (or partial)
     index to disk FOREVER -- every later run hit that cache and never retried the failed
     download, silently classifying every insider UNCLASSIFIED (measured 48.5% of the
-    population would otherwise be ROUTINE and correctly dropped). See the Task-5
-    fix-round-2 report for the reproduction this guards against.
+    population would otherwise be ROUTINE and correctly dropped).
 
     The cache key is the SORTED list of quarters that actually CONTRIBUTED, not the
     requested list (I-5): a quarter that 404s today (DERA publishes ~a quarter in arrears,

@@ -326,7 +326,8 @@ def ebit_ev_yield_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Standalone absolute-valuation axis for the backtest: the EBIT/EV earnings-
     yield band -> 0..100 (higher yield = cheaper scores higher). Backtest-only,
     like share_count_score; there is NO production sub-score reading ebit_ev_yield
-    yet (spec §11 deferred the leg). None when the band or the signal is absent."""
+    yet (docs/superpowers/specs/2026-06-13-absolute-valuation-leg-ev-ebit-design.md
+    §11 deferred the leg). None when the band or the signal is absent."""
     return _band_axis(m.ebit_ev_yield, "ebit_ev_yield", t)
 
 
@@ -616,7 +617,8 @@ def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
 
 
 def _fcf_excused(m: StockMetrics, fc: dict) -> bool:
-    """Negative FCF is excused when growth is strong AND sustained (spec §4)."""
+    """Negative FCF is excused when growth is strong AND sustained
+    (docs/superpowers/specs/2026-06-08-gate-fixes-design.md §4)."""
     return (m.revenue_cagr is not None and m.revenue_cagr >= fc["excuse_min_revenue_cagr"]
             and m.revenue_growth_persistence is not None
             and m.revenue_growth_persistence >= fc["excuse_min_persistence"])

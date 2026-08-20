@@ -45,11 +45,7 @@ def is_trading_day(d: date) -> bool:
 
 def last_session(today: date) -> date:
     """The most recent completed trading session on or before `today` (today itself
-    if it trades, else the prior trading day).
-
-    Anchors to the last completed session: 'today' if today trades, else
-    walk back to the prior trading day.
-    """
+    if it trades, else the prior trading day)."""
     d = today
     for _ in range(10):  # generous bound; never more than a long weekend + holidays
         if is_trading_day(d):

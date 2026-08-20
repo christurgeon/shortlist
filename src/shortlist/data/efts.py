@@ -3,8 +3,7 @@
 The 13D-pattern daily index carries NO item codes; EFTS returns them inline
 (`_source.items`), so a full day of 8-Ks costs 3-6 requests instead of a header fetch
 per filing. Shared-leaf pattern (data/finra.py): the URL, normalization, day-cache
-contract, and windowing live here ONCE so the live EdgarEightKSignal, the negative-item
-veto sweep agree on one definition.
+contract, and windowing live here ONCE.
 
 Live-probed facts this module encodes (2026-07-07, twice — do not "fix" back):
 - `forms=8-K` filters on `root_forms` and RETURNS 8-K/A rows -> `file_type` is preserved
@@ -17,15 +16,17 @@ Live-probed facts this module encodes (2026-07-07, twice — do not "fix" back):
 - Browser-ish UA + Accept headers required; intermittent 500s -> bounded retry+backoff.
 - SEC fair access: THROTTLE_S sleep before every request (~3 req/s).
 
-The default (`q=None`) item-query path is what EdgarEightKSignal / the veto sweep / the 8-K
-backfill ride, and its request params are FROZEN (a byte-identical regression test in
-tests/test_data_efts.py pins them). An OPTIONAL exact-phrase `q` threads a `"..."` full-text
-query through the same fetch discipline for the buyback originator (data/buyback.py), with
-its OWN cache namespace (`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/
-split/finality machinery lives here ONCE; only the params gain a `q` key when a phrase is set.
+The default (`q=None`) item-query path's request params are FROZEN (a byte-identical
+regression test in tests/test_data_efts.py pins them). An OPTIONAL exact-phrase `q` threads
+a `"..."` full-text query through the same fetch discipline, with its own cache namespace
+(`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/split/finality machinery
+lives here ONCE; only the params gain a `q` key when a phrase is set.
 
-**No production caller.** CI pins the parse shapes; the live fetch tests skip by
-default.
+**No production caller** (the discovery-funnel consumers this was built for — an 8-K item
+veto sweep and a buyback-authorization originator — retired with the scout; see
+`docs/audits/2026-08-11-scout-retirement.md`). CI pins the parse shapes; the live fetch
+tests skip by default. Kept for its measured EFTS behavior below, which any future 8-K/
+full-text consumer would have to re-derive.
 """
 from __future__ import annotations
 
@@ -171,8 +172,8 @@ def fetch_eightk_range(start: date, end: date, *, identity: str,
     redacted); [] = none. `_get(params) -> (status, payload|None)` is the test seam; the
     default opens ONE httpx.Client for the whole (possibly split/paginated) range.
 
-    `q` (optional exact phrase) narrows the query to full-text hits — the buyback path; the
-    default `q=None` is the frozen item-query used by the 8-K originator/veto/backfill."""
+    `q` (optional exact phrase) narrows the query to full-text hits; the default `q=None`
+    is the frozen item-query path (see module docstring)."""
     close = None
     get = _get
     if get is None:
@@ -208,7 +209,7 @@ def _day_cache_path(cache_dir: str, day: date) -> Path:
 
 def _fresh(env: dict, day: date, today: date) -> bool:
     """FINAL once fetched >= EFTS_LAG_DAYS after the day; a younger fetch is reused
-    intra-day only (originator + veto share one fetch per run), else it is a miss."""
+    intra-day only (so same-run callers share one fetch), else it is a miss."""
     try:
         fetched = date.fromisoformat(str(env.get("fetched_on")))
     except (TypeError, ValueError):
@@ -292,7 +293,7 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
     return out
 
 
-# --- exact-phrase full-text queries (the buyback originator; own cache namespace) ---
+# --- exact-phrase full-text queries (own cache namespace) ---
 
 BUYBACK_CACHE_DIR = ".cache/efts_buyback"
 
@@ -313,8 +314,7 @@ def fetch_phrase_day(phrase: str, day: date, *, identity: str,
 
     A single-day `fetch_eightk_window(day, day, q=phrase)` — so the phrase day-cache contract
     (phrase-hash subdir choice, envelope, finality rule) has exactly ONE implementation, the
-    one `fetch_phrase_window` also rides. The live buyback signal calls this; the signature is
-    stable."""
+    one `fetch_phrase_window` also rides."""
     return fetch_eightk_window(day, day, identity=identity, cache_dir=cache_dir,
                                today=today, q=phrase, **fetch_kw)
 
@@ -325,8 +325,7 @@ def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,
     """Ranged fetch over [start, end] for EVERY phrase, each with its own phrase-hash day
     cache (fetch_eightk_window namespaces automatically whenever `q` is set); rows are tagged
     with the matched `phrase` and merged (accession dedup is the aggregator's job, never
-    here). None = any phrase's window failed. Used by the 8-K-shaped buyback backfill (the
-    fetch factory)."""
+    here). None = any phrase's window failed."""
     today = today or date.today()
     out: list[dict] = []
     for phrase in phrases:
