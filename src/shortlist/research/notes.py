@@ -61,18 +61,22 @@ _TITLE_RE = re.compile(
 
 _EXCLUDE_RE = re.compile(r"investment|marketable securit|available[- ]for[- ]sale", re.I)
 
-# Marks a prefix cut so the model can tell a severed ladder from a complete one.
-# Load-bearing: SYSTEM_PROMPT tells it to NAME a missing input rather than estimate
-# one, which it can only do if truncation is visible.
+# Truncation is signalled in the PROMPT HEADER (assess.py), never inside the note
+# text. That is a grounding requirement, not a style choice: `DebtNote.text` is a
+# haystack segment, so anything mixed into it becomes quotable filing text. An
+# earlier revision appended a " […truncated…]" marker to the text; normalized it is
+# 13 chars against `assess._MIN_EVIDENCE_CHARS = 12`, so a model emitting the marker
+# ALONE as its evidence got `verified=True` attributed to a real note — non-filing
+# text passing quote-verification, exactly what CLAUDE.md forbids. A one-character
+# margin is not a safety property. The header carries the signal instead, and the
+# text stays purely filing bytes.
 #
-# NOTE this is NOT the 8-K `_ELISION` case and does not inherit its safety argument.
-# An elision SPLICES two non-adjacent spans, so a quote crossing it asserts a
-# contiguity the filing never had and must fail verification. Truncation only drops a
-# suffix: nothing is spliced, so a quote containing the mark is legitimately a
-# substring of what the model was shown and correctly verifies. The guarantee here is
-# the weaker, sufficient one — text past the cut is ABSENT from the haystack, so a
-# model that reconstructs a severed figure fails verification.
-TRUNCATION_MARK = " […truncated…]"
+# What survives the move: SYSTEM_PROMPT tells the model to NAME a missing input
+# rather than estimate one, which it can only do if truncation is visible somewhere.
+# Note this was never the 8-K `_ELISION` case — an elision SPLICES two non-adjacent
+# spans, so a quote crossing it asserts a contiguity the filing never had; truncation
+# only drops a suffix. The guarantee here is the weaker, sufficient one: text past the
+# cut is ABSENT from the haystack, so a model reconstructing a severed figure fails.
 
 # Below this, a leftover budget buys a sliver that carries no ladder and no usable
 # clause — just prompt cost and a segment label implying more than it holds. Applied
@@ -103,14 +107,16 @@ def _norm_ws(text: Any) -> str:
 
 
 def select(notes_index: Any, cfg: dict) -> list:
-    """The debt/liquidity notes of one filing, in document order, capped at
-    `max_notes_per_form`. Empty when the filer files none — which for a 10-Q is
-    the NORMAL case (JPM/XOM/LLY/T/CVS all file none), not a parse failure."""
+    """EVERY debt/liquidity note of one filing, in document order. Empty when the
+    filer files none — which for a 10-Q is the NORMAL case (JPM/XOM/LLY/T/CVS all
+    file none), not a parse failure.
+
+    Deliberately UNCAPPED: `max_notes_per_form` counts notes actually EMITTED, and
+    `collect` drops candidates that render empty. Capping here instead would let a
+    single empty-rendering note consume a slot and silently cost the filer a real
+    note that was sitting right behind it."""
     picked: list = []
-    limit = int(cfg.get("max_notes_per_form") or 0)
     for i in range(len(notes_index)):
-        if len(picked) >= limit:
-            break
         try:
             note = notes_index[i]
             title = _title(note)
@@ -122,13 +128,20 @@ def select(notes_index: Any, cfg: dict) -> list:
 
 
 def extract(note: Any, limit: int) -> tuple[str, bool]:
-    """(text, truncated) for one note, whitespace-collapsed and capped at `limit`.
+    """(text, truncated) for one note, whitespace-collapsed. `text` is never longer
+    than `limit` and is pure filing text — the truncation signal rides in the prompt
+    header, not in here (see TRUNCATION comment above).
 
     A prefix cut lands on the last WHITESPACE inside the limit, never mid-token:
     the tables are the payload, and a cut through `4,100` -> `4,1` would hand a
     wrong figure to a prompt explicitly asked to do arithmetic. Token alignment
     was measured to waste 1-11 chars against up to 3,071 for row alignment (GS,
-    whose note has very long lines) — design §3.4."""
+    whose note has very long lines) — design §3.4.
+
+    When the first `limit` chars contain NO whitespace at all there is no safe cut,
+    so the note is dropped rather than severed. Pathological for a markdown table
+    (they are full of spaces), but "no output" beats "a truncated number presented
+    as a whole one" in a brief whose prompt is told to do arithmetic on it."""
     text = _norm_ws(note.to_markdown())
     if not text:
         return "", False
@@ -138,10 +151,9 @@ def extract(note: Any, limit: int) -> tuple[str, bool]:
         return text, False
     head = text[:limit]
     cut = max(head.rfind(" "), head.rfind("\n"))
-    payload = (head[:cut] if cut > 0 else head).rstrip()
-    if not payload:
+    if cut <= 0:
         return "", True
-    return payload + TRUNCATION_MARK, True
+    return head[:cut].rstrip(), True
 
 
 def collect(filing_obj: Any, form: str, accession: str, ticker: str,
@@ -153,6 +165,25 @@ def collect(filing_obj: Any, form: str, accession: str, ticker: str,
         return []
     if filing_obj is None:
         return []                      # no filing parsed — expected, not a failure
+    try:
+        return _collect(filing_obj, form, accession, ticker, cfg)
+    except Exception as e:
+        # The outer net, and it has to be outer. `.notes` is a `cached_property`
+        # whose body reaches `self.financials` and performs a LIVE XBRL download +
+        # parse, so an HTTP error or a malformed instance surfaces on ATTRIBUTE
+        # ACCESS here, not at fetch time. The 10-K `collect` call in `fetch_bundle`
+        # sits outside every try there, so an escape would discard the ENTIRE brief
+        # for a name whose narrative sections parsed perfectly, reported as a
+        # generic "filing error". A malformed config value (`max_chars_10k: "16k"`)
+        # lands in the same place.
+        log_abstain(f"{form} debt notes", ticker, e)
+        return []
+
+
+def _collect(filing_obj: Any, form: str, accession: str, ticker: str,
+             cfg: dict) -> list[DebtNote]:
+    """`collect`'s body. Split out so the exception boundary can be the WHOLE thing
+    — see the comment there for why a partial boundary was not enough."""
     index = getattr(filing_obj, "notes", None)
     if index is None:
         # Say so. `edgartools` is pinned only as `>=3.0` and has broken this repo by
@@ -164,17 +195,17 @@ def collect(filing_obj: Any, form: str, accession: str, ticker: str,
                     f"pre-XBRL filing or edgartools API change)", ticker,
                     AttributeError("notes"))
         return []
-    try:
-        picked = select(index, cfg)
-    except Exception as e:
-        log_abstain(f"{form} debt notes", ticker, e)
-        return []
 
     budget = int(cfg.get("max_chars_10q" if str(form).upper().startswith("10-Q")
                          else "max_chars_10k") or 0)
     per_note = int(cfg.get("max_chars_per_note") or 0)
+    max_notes = int(cfg.get("max_notes_per_form") or 0)
     out: list[DebtNote] = []
-    for note in picked:
+    for note in select(index, cfg):
+        # `max_notes` counts EMITTED notes, so an empty-rendering candidate cannot
+        # consume a slot a real note behind it wanted.
+        if len(out) >= max_notes:
+            break
         if budget <= 0 or (out and budget < _MIN_USEFUL_CHARS):
             break
         try:
@@ -190,5 +221,5 @@ def collect(filing_obj: Any, form: str, accession: str, ticker: str,
             continue
         out.append(DebtNote(form=str(form), accession=str(accession or ""), title=title,
                             label=f"{form} note: {title}", text=text, truncated=truncated))
-        budget -= len(text) - (len(TRUNCATION_MARK) if truncated else 0)
+        budget -= len(text)            # exact: `text` is all that reaches the prompt
     return out

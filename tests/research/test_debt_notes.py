@@ -8,7 +8,7 @@ filed, and the two selection traps (AMT's `LONG-TERM OBLIGATIONS`, DUK's
 import pytest
 
 from shortlist.research import notes as dn
-from shortlist.research.notes import TRUNCATION_MARK, collect, config_block, extract, select
+from shortlist.research.notes import collect, config_block, extract, select
 
 CFG = config_block(None)
 
@@ -105,10 +105,13 @@ def test_select_keeps_both_notes_when_a_filer_splits_them():
                                          "LONG-TERM DEBT"]
 
 
-def test_select_caps_at_max_notes_per_form_in_document_order():
+def test_select_is_uncapped_so_collect_can_count_emitted_notes():
+    """The cap moved to `collect`. Capping candidates here let an empty-rendering
+    note eat a slot a real note behind it wanted (measured: 3 candidates, cap 2,
+    first renders empty -> 1 note emitted instead of 2)."""
     idx = _Notes([_Note("Debt"), _Note("Borrowings"), _Note("Credit Agreement")])
-    cfg = {**CFG, "max_notes_per_form": 2}
-    assert _titles(select(idx, cfg)) == ["Debt", "Borrowings"]
+    assert _titles(select(idx, {**CFG, "max_notes_per_form": 2})) == [
+        "Debt", "Borrowings", "Credit Agreement"]
 
 
 def test_select_returns_empty_when_no_note_matches():
@@ -137,18 +140,32 @@ def test_extract_leaves_a_short_note_untouched_and_unmarked():
     text, truncated = extract(_Note("Debt", "short note"), 1000)
     assert text == "short note"
     assert truncated is False
-    assert TRUNCATION_MARK not in text
 
 
-def test_extract_truncates_at_a_whitespace_boundary_and_marks_it():
+def test_extract_truncates_at_a_whitespace_boundary_within_the_limit():
     body = "word " * 100                      # 500 chars
     text, truncated = extract(_Note("Debt", body), 50)
     assert truncated is True
-    assert text.endswith(TRUNCATION_MARK)
-    payload = text[:-len(TRUNCATION_MARK)]
-    assert len(payload) <= 50
-    assert not payload.endswith(" ")          # boundary trimmed, not left dangling
-    assert payload.split()[-1] == "word"      # never a partial token
+    assert len(text) <= 50                    # never longer than the limit
+    assert not text.endswith(" ")             # boundary trimmed, not left dangling
+    assert text.split()[-1] == "word"         # never a partial token
+
+
+def test_extract_puts_no_marker_in_the_text():
+    """The truncation signal is a PROMPT HEADER concern. `text` is a grounding
+    segment, so a marker inside it would be non-filing text a model could quote and
+    have verified — the defect an earlier revision shipped."""
+    text, truncated = extract(_Note("Debt", "word " * 100), 50)
+    assert truncated is True
+    assert "truncat" not in text.lower() and "[" not in text
+
+
+def test_extract_drops_rather_than_severs_when_there_is_no_safe_cut():
+    """No whitespace inside the limit => no cut that preserves whole tokens. Emitting
+    `4,100,` from `4,100,000,000` would hand a prompt told to do arithmetic a figure
+    that is wrong by three orders of magnitude."""
+    text, truncated = extract(_Note("Debt", "4,100,000,000,123,456,789"), 6)
+    assert (text, truncated) == ("", True)
 
 
 def test_extract_never_severs_a_number_mid_digits():
@@ -156,8 +173,7 @@ def test_extract_never_severs_a_number_mid_digits():
     wrong figure to a prompt that is explicitly asked to do arithmetic."""
     body = "| 2029 | 4,100 | 3,200 |"
     for limit in range(8, len(body)):
-        text, _ = extract(_Note("Debt", body), limit)
-        payload = text.replace(TRUNCATION_MARK, "")
+        payload, _ = extract(_Note("Debt", body), limit)
         for token in ("4,100", "3,200"):
             head = body[:body.index(token)]
             if head in payload and len(payload) > len(head):
@@ -189,7 +205,7 @@ def test_collect_enforces_the_per_form_total_budget():
            "max_notes_per_form": 2}
     filing = _Filing(_Notes([_Note("Debt", "a " * 60), _Note("Borrowings", "b " * 60)]))
     out = collect(filing, "10-K", "acc", "T", cfg)
-    assert sum(len(n.text.replace(TRUNCATION_MARK, "")) for n in out) <= 120
+    assert sum(len(n.text) for n in out) <= 120
 
 
 def test_collect_drops_a_note_when_the_budget_is_exhausted():
@@ -246,7 +262,7 @@ def test_collect_uses_the_10q_budget_for_a_10q():
     filing = _Filing(_Notes([_Note("Debt", "x " * 100)]))
     out = collect(filing, "10-Q", "acc", "T", cfg)
     assert out[0].truncated is True
-    assert len(out[0].text.replace(TRUNCATION_MARK, "")) <= 20
+    assert len(out[0].text) <= 20
 
 
 # --------------------------------------------------------------------------- config
@@ -269,3 +285,40 @@ def test_per_note_cap_is_16k_because_duk_needs_it():
     notes; DUK's is at 13,022. A 10,000 cap would silently drop the ladder for a
     utility while appearing to work (design §3.3)."""
     assert dn._DEFAULTS["max_chars_per_note"] >= 13022
+
+
+# ----------------------------------------------- exception boundary (adversarial review)
+
+def test_a_notes_property_that_raises_does_not_escape_collect(capsys):
+    """`.notes` is a `cached_property` whose body reaches `self.financials` and does
+    a LIVE XBRL download + parse, so an HTTP error surfaces on ATTRIBUTE ACCESS.
+    `getattr(obj, "notes", None)` only swallows AttributeError. An escape here does
+    not cost the notes — the 10-K collect call in fetch_bundle is outside every try,
+    so it discards the WHOLE brief for a name whose narrative parsed perfectly."""
+    class _Exploding:
+        @property
+        def notes(self):
+            raise ValueError("xbrl instance is malformed")
+
+    assert collect(_Exploding(), "10-K", "acc", "T", CFG) == []
+    assert "research:" in capsys.readouterr().err
+
+
+def test_a_malformed_config_value_does_not_escape_collect(capsys):
+    """An operator typo in a knob the config comments invite tuning must degrade,
+    not take out every ticker in the run with a generic 'filing error'."""
+    filing = _Filing(_Notes([_Note("Debt", "ladder")]))
+    bad = {**CFG, "max_chars_10k": "16k"}
+    assert collect(filing, "10-K", "acc", "T", bad) == []
+    assert "research:" in capsys.readouterr().err
+
+
+def test_an_empty_rendering_candidate_does_not_consume_a_note_slot():
+    """The cap counts EMITTED notes. With the cap on candidates instead, the empty
+    first note ate a slot and this filer got one note where two were available."""
+    cfg = {**CFG, "max_notes_per_form": 2}
+    filing = _Filing(_Notes([_Note("Debt", "   "),
+                             _Note("Borrowings", "ok"),
+                             _Note("Credit Agreement", "also ok")]))
+    assert _titles(collect(filing, "10-K", "acc", "T", cfg)) == [
+        "Borrowings", "Credit Agreement"]

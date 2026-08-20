@@ -68,9 +68,7 @@ def test_content_past_the_truncation_cut_cannot_be_quoted():
     elision splices two non-adjacent spans, so a quote crossing it asserts a false
     contiguity; truncation only drops a suffix. What holds is that cut text is
     ABSENT from the haystack, so a model reconstructing a severed figure fails."""
-    from shortlist.research.notes import TRUNCATION_MARK
-    bundle = _bundle([_note(text="maturities due within one year" + TRUNCATION_MARK,
-                            truncated=True)])
+    bundle = _bundle([_note(text="maturities due within one year", truncated=True)])
     a = _assessment()
     a.reconciliation = [
         Conflict(signal="risk", verdict="confirms", tension="cut text",
@@ -81,6 +79,28 @@ def test_content_past_the_truncation_cut_cannot_be_quoted():
     _verify_grounding(a, bundle)
     assert a.reconciliation[0].verified is False   # never shown => not quotable
     assert a.reconciliation[1].verified is True    # shown => quotable
+
+
+def test_no_non_filing_marker_is_quotable_from_a_truncated_note():
+    """Regression for a real defect. An earlier revision appended " […truncated…]"
+    to the note TEXT; normalized that is 13 chars against assess._MIN_EVIDENCE_CHARS
+    = 12, so a model emitting the marker ALONE as evidence got verified=True against
+    a real note — non-filing text passing quote-verification, which CLAUDE.md
+    forbids. The signal now lives in the prompt header; the segment stays pure
+    filing text. A one-character margin was never a safety property."""
+    note = _note(text="maturities due within one year", truncated=True)
+    assert "truncat" not in note.text.lower()
+    for label, seg in _bundle([note]).segments():
+        assert "truncat" not in seg.lower(), f"non-filing marker leaked into {label}"
+
+
+def test_the_truncation_signal_reaches_the_model_via_the_header():
+    """It still has to be VISIBLE — SYSTEM_PROMPT tells the model to name a missing
+    input rather than estimate one, which it cannot do if a cut ladder looks whole."""
+    p = _build_user_prompt(_bundle([_note(truncated=True)]), {"research": {}}, card=None)
+    assert "(TRUNCATED" in p
+    bare = _build_user_prompt(_bundle([_note(truncated=False)]), {"research": {}}, card=None)
+    assert "TRUNCATED" not in bare
 
 
 # -------------------------------------------------------------------------- prompt

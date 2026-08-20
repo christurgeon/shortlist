@@ -121,8 +121,20 @@ for a utility — a whole sector of heavy borrowers — while appearing to work.
 Per-form totals (`max_chars_10k: 16000`, `max_chars_10q: 8000`) rather than one
 shared pool: a shared pool would let a heavy borrower's annual notes crowd the
 *fresher* quarterly note out entirely, and freshness is the reason the 10-Q is in
-scope at all. Worst case adds 24K chars to a prompt that already runs 127–178K;
-the median name adds ~6K.
+scope at all.
+
+**Measured prompt cost** (real `fetch_bundle` → `cap_bundle` → `_build_user_prompt`,
+notes on vs off):
+
+| Ticker | prompt without | with | delta | notes |
+|---|---:|---:|---:|---|
+| AAPL | 121,494 | 126,716 | +5,222 (4.3%) | 2 |
+| JPM | 142,580 | 155,939 | +13,359 (9.4%) | 1 |
+| AMT | 212,551 | 236,679 | +24,128 (11.4%) | 2 |
+| DUK | 216,495 | 240,631 | +24,136 (11.1%) | 2 |
+
+AMT and DUK are the ceiling case and land exactly on the designed 16K + 8K budget.
+A light filer pays ~4%.
 
 ### 3.4 Truncation cuts at the last whitespace
 

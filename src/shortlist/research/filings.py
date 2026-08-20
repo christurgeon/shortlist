@@ -229,7 +229,8 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
     BEHAVIOUR CHANGE vs `_prior_year_risk_factors`: the `edgar` import now sits
     INSIDE the try, so a missing [edgar] extra degrades to ("", "") + a stderr
     line instead of raising ImportError. That is unreachable in practice —
-    `fetch_10k` runs first in `fetch_bundle` and imports `edgar` at its top — and
+    `_fetch_10k_parsed` runs first in `fetch_bundle` and imports `edgar` at its
+    top — and
     it matches this function's documented never-raises contract."""
     try:
         if company_factory is None:
@@ -421,6 +422,11 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
             tenq_mda = _tenq_mda(qobj, ticker)
             tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
+            # KEEP LAST, and keep `tenq_acc` immediately above it. The `except`
+            # below resets the three 10-Q strings but NOT `debt_notes`, so this only
+            # stays correct because nothing can raise between the accession being
+            # assigned and the notes being appended. Insert a statement after this
+            # line and 10-Q notes can survive with a stale accession.
             debt_notes += debtnotes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
     except Exception:
         tenq_mda, tenq_acc, tenq_added = "", "", ""

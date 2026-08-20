@@ -140,11 +140,12 @@ it outranks §3's alpha questions.
   but not the falsifier list); and **the arithmetic clause is UNTESTED, for a structural reason,
   not a sampling one.** 0/3 briefs computed anything because 2 of its 3 asks were unanswerable:
   the prompt rendered debt WITHOUT cash, so neither cash runway nor even net debt was derivable,
-  and the maturity ladder lives in a note we do not extract. Cash is now a rendered column
-  (2026-08-19), so the NEXT run is the first real test; refinancing coverage stays blocked on
-  §2b item 2. n=3 on three large caps is not enough to re-certify D3/D6/D7 at the rigor of the
-  original 35-brief corpus — re-run the keyword/substring scans over a larger corpus once more
-  new-prompt briefs accumulate.
+  and the maturity ladder lived in a note we did not extract. **Both inputs have since landed** —
+  cash is a rendered column (2026-08-19) and the maturity ladder now reaches the prompt as a
+  statement note (2026-08-20, §2b) — so the next live run is the first real test of all three
+  asks, refinancing coverage included. Nothing blocks it but a run. n=3 on three large caps
+  is not enough to re-certify D3/D6/D7 at the rigor of the original 35-brief corpus — re-run
+  the keyword/substring scans over a larger corpus once more new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 

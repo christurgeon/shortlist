@@ -471,8 +471,13 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     # (2026-08-19 live run: 0 of 3 briefs computed anything). The header names the
     # form and the note title as filed, so the model can see which document it is
     # quoting. Empty list => byte-identical prompt.
+    # The "(TRUNCATED …)" suffix lives in the HEADER, never in `n.text`: the text is a
+    # grounding segment, so a marker mixed into it would be non-filing text that a
+    # model could quote and have "verified" (research/notes.py, TRUNCATION comment).
     notes_section = "".join(
-        f"=== {n.form} STATEMENT NOTE — {n.title} ===\n{n.text}\n\n"
+        f"=== {n.form} STATEMENT NOTE — {n.title}"
+        f"{' (TRUNCATED — this note continues beyond what is shown)' if n.truncated else ''}"
+        f" ===\n{n.text}\n\n"
         for n in getattr(bundle, "debt_notes", None) or [])
     added_section = ""
     if bundle.added_risks_text:
