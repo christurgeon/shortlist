@@ -10,8 +10,6 @@ related-party / CD&A extractor, so v1 reads the structured fields edgartools'
 `ProxyStatement` exposes and renders a curated, evidence-framed line. Fetched in
 the research layer per deep-dive (NOT on every screen's snapshot — the heavy
 per-ticker fetch is deliberately kept out of the harness).
-
-Design + evidence grading: docs/superpowers/specs/2026-06-27-def14a-proxy-reader-design.md
 """
 from __future__ import annotations
 

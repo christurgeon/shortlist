@@ -34,8 +34,8 @@ class InsiderTxn:
     joint_filing: bool = False
     # LAST field (positional back-compat, the convention this repo uses everywhere): the
     # issuer's own CIK. Carried so a discovery Emission can set cik= directly instead of
-    # shipping cik=None like the 13F signal does (a known limitation recorded in
-    # CLAUDE.md) -- both parse_form4_xml and parse_dera_tsvs have it inline already.
+    # shipping cik=None like thirteenf.py's emissions still do (thirteenf.thirteenf_emissions)
+    # -- both parse_form4_xml and parse_dera_tsvs have it inline already.
     issuer_cik: str = ""
 
     @property
@@ -199,7 +199,7 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     if txn.code != "P" or tier == ROUTINE:
         return False
     # Joint filings carry no per-transaction owner attribution, so owner_cik -- and every
-    # tier derived from it -- would be a guess. 9.5% of this population (spec §5.1).
+    # tier derived from it -- would be a guess. 9.5% of this population.
     if txn.joint_filing:
         return False
     if cfg.get("exclude_10b5_1", True) and txn.plan_10b5_1:
@@ -207,7 +207,7 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     if not (txn.roles & set(cfg.get("roles") or ("officer", "director"))):
         return False
     v = txn.value
-    # PER-TRANSACTION floor, never an aggregate (docs/FORM4_INSIDER.md §7).
+    # PER-TRANSACTION floor, never an aggregate.
     return v is not None and v >= float(cfg.get("min_value", 100_000))
 
 

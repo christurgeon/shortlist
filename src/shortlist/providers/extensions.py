@@ -13,15 +13,17 @@ from .base import Provider
 
 
 class QuiverProvider(Provider):
-    """Differentiated alternative data: U.S. congressional trades, government
-    contract awards, and lobbying. Government-contract flow is *directly*
-    relevant to defense/industrial names (e.g. LMT, GEV) and isn't captured by
-    any fundamentals feed. This is where a real edge can come from.
+    """Differentiated alternative data: U.S. congressional trades. Government
+    contract awards and federal lobbying have SHIPPED as free sources instead
+    (`data/sources/govcontracts.py` via USAspending, `data/sources/lobbying.py`
+    via Senate LDA — see `StockMetrics.gov_contract_*`/`lobbying_*`), so
+    congressional trading is the one differentiated signal left that Quiver
+    would add.
 
     Endpoint family: https://api.quiverquant.com/beta/  (paid)
-    Suggested fields to populate: a `gov_contract_momentum` and a
-    `congress_net_buy` signal — add them to StockMetrics and the scorer as a
-    new sub-score weighted low until you've validated it.
+    Suggested field to populate: a `congress_net_buy` signal — add it to
+    StockMetrics and the scorer as a new sub-score weighted low until you've
+    validated it.
     """
 
     name = "quiver"

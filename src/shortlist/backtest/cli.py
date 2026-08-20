@@ -32,7 +32,8 @@ from .signals import MomentumSignalSource, SnapshotSignalSource, XbrlSignalSourc
 from .universe import is_named_universe, load_universe, stale_tickers
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
-_RESIDUALIZE_MIN_NAMES = 10   # hardcoded per design §Implementation 3 -- no flag
+_RESIDUALIZE_MIN_NAMES = 10   # hardcoded per docs/superpowers/specs/2026-07-05-
+                              # leverage-residualized-ic-design.md, Implementation item 3 -- no flag
 
 # Minimum store-wide captured days before --source snapshot will run. Carried over
 # unchanged from the stub gate this replaces -- the bar was never the disputed part,
@@ -44,11 +45,12 @@ _SNAPSHOT_MIN_CAPTURE_DAYS = 24
 # duplicates the existing axis (the EV/EBIT-vs-fcf_yield precedent: don't-ship a
 # correlated leg). Add a pair here when proposing a new standalone axis for scoring.
 _COLLINEARITY_PAIRS = [
-    ("ebit_ev_yield", "value_fcf_yield"),   # EV/EBIT leg vs absolute fcf yield (spec §11)
+    ("ebit_ev_yield", "value_fcf_yield"),   # EV/EBIT leg vs absolute fcf yield (§11 in
+                                             # its design doc, see scoring.py:ebit_ev_yield_score)
     ("net_debt_to_ebitda", "growth"),       # leverage vs scored growth (measured corr ~0.54)
     ("net_debt_to_ebitda", "value"),        # leverage vs scored value
     ("net_debt_to_ebitda", "quality"),      # leverage vs scored quality
-    ("accruals", "piotroski"),              # accruals vs Piotroski CFO>NI overlap (§3)
+    ("accruals", "piotroski"),              # accruals vs Piotroski CFO>NI overlap (PREDICTIVE_SIGNALS §3)
     ("asset_growth", "growth"),             # asset growth vs scored growth (§3)
     ("shareholder_yield", "value_fcf_yield"),  # total payout vs cash GENERATED (§5; the standalone fcf-yield axis)
     ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution (§5)
@@ -193,10 +195,10 @@ async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict
 async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
     # SERIAL BY DESIGN — do not "optimize" into a concurrent gather. This is pure latency,
     # not correctness, and a backtest is offline-batch with nothing to gain from parallelism.
-    # Be precise about WHY, because the obvious citation is a misread: CLAUDE.md's "Yahoo
-    # screener WAF gotcha" describes a HEADER-SHAPE fingerprint block "not throttling", and
-    # it concerns the SCREENER endpoint — this function calls the CHART endpoint with
-    # UA-only headers. So concurrency is not a documented trigger. Serial is kept as the
+    # Be precise about WHY, because the obvious citation is a misread: the known Yahoo
+    # screener WAF gotcha (a HEADER-SHAPE fingerprint block, "not throttling") concerns
+    # the SCREENER endpoint — this function calls the CHART endpoint with UA-only
+    # headers. So concurrency is not a documented trigger. Serial is kept as the
     # conservative default against an unofficial endpoint (see prices.py's own "baits the
     # WAF" note), not because a burst is known to be unsafe. Revisit only if a full-universe
     # run's wall-clock becomes a real bottleneck — then bound it with an
@@ -316,10 +318,11 @@ def _parse_residualize(spec: str) -> tuple[str, list[str]]:
 
 def _raw_target_intersection(observations, target, controls) -> dict[date, dict[str, float]]:
     """Raw `target` values restricted to the SAME co-presence set `residual_rows`
-    uses (target AND every control present) — the paired `_rawx` baseline (design
+    uses (target AND every control present) — the paired `_rawx` baseline
+    (docs/superpowers/specs/2026-07-05-leverage-residualized-ic-design.md,
     review B2). Independent of `residual_rows`' regression floor/singular skips,
-    which only gate the residual computation, not this raw baseline (design
-    §Method 3)."""
+    which only gate the residual computation, not this raw baseline (Method
+    item 3 of the same doc)."""
     out: dict = defaultdict(dict)
     for obs in observations:
         sigs = obs.signals
@@ -333,7 +336,8 @@ def _raw_target_intersection(observations, target, controls) -> dict[date, dict[
 
 def _overlap_fraction(observations, target, raw_intersection) -> Optional[float]:
     """Co-present names / names-with-target-present, averaged over dates where the
-    target is present at all (design §Implementation 3)."""
+    target is present at all (docs/superpowers/specs/2026-07-05-leverage-
+    residualized-ic-design.md, Implementation item 3)."""
     target_present: dict = defaultdict(int)
     for obs in observations:
         if obs.signals.get(target) is not None:
@@ -350,7 +354,8 @@ def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode) -> list[tup
     """Join a `{date: {ticker: value}}` map to a horizon's OWN step=h grid dates +
     forward returns, via the same `fwd_return` the engine uses — the per-horizon
     join that keeps each horizon's aggregation confined to its own non-overlapping
-    grid (design review B1: never the finer union grid)."""
+    grid (docs/superpowers/specs/2026-07-05-leverage-residualized-ic-design.md,
+    review B1: never the finer union grid)."""
     out = []
     for t in grid:
         vals = rows_by_date.get(t)

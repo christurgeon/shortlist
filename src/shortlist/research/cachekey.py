@@ -203,7 +203,8 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     moves annually; the day bucket covers it. The 8-K substance is excluded for the
     same reason (it is fetched in `fetch_bundle`, after the key is needed) — its
     ACCESSIONS mostly ride in via `filing_events` above, and the day bucket covers
-    the residue: an 8-K selected outside the 40-row mixed index (spec F1)."""
+    the residue: an 8-K selected outside the 40-row mixed index
+    (docs/audits/2026-08-13-eightk-text-in-deep-design.md F1)."""
     raw_band = _num(_cache_cfg(config).get("price_band_pct"))
     band = _DEFAULT_PRICE_BAND if raw_band is None else raw_band
     m = getattr(card, "metrics", None)

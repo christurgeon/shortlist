@@ -31,7 +31,9 @@ def call_disclaimer(config: dict | None = None) -> str:
     return _sc_cfg(config).get("disclaimer") or DEFAULT_DISCLAIMER
 
 
-# Reconciliation `signal` taxonomy (see spec §3.2). Card sub-score axes + two
+# Reconciliation `signal` taxonomy
+# (docs/superpowers/specs/2026-06-03-research-reconciliation-thesis-design.md §3.2).
+# Card sub-score axes + two
 # synthetic/derived tokens, plus namespaced gate:/flag: tokens. The four event
 # flags (activist_13d…) are presence-based and harness-only — NOT config-derived,
 # so they must be hardcoded here, not assembled from config.

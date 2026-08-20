@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     load_env()
 
     # This CLI loads no config.yaml, so the cache uses hardcoded TTL defaults (the
-    # spec's on-by-default behavior holds without a config block).
+    # on-by-default behavior documented in DATA_SOURCES.md §6 holds without a config block).
     from ..cache import configure_default_cache
     configure_default_cache(enabled=not args.no_cache, refresh=args.refresh_cache)
 

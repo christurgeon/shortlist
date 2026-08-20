@@ -152,7 +152,8 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
         throttle = _throttle or sec_throttle()
         for f in candidates:
             try:
-                throttle("edgar_form4")   # heaviest SEC consumer -- audit §4
+                throttle("edgar_form4")   # heaviest SEC consumer
+                                          # (docs/audits/2026-08-05-discovery-funnel-audit.md §4)
                 out.append(f.full_text_submission())
             except Exception:  # noqa: BLE001 -- skip one bad filing
                 continue

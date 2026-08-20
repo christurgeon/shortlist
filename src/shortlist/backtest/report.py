@@ -12,8 +12,8 @@ from typing import Any, Optional
 from .engine import BacktestReport
 from .metrics import aggregate_ic
 
-# Endorsement thresholds (see spec §"Default outcome"). Deliberately hard to clear on
-# survivorship-biased data: the default outcome is NO-CHANGE.
+# Endorsement thresholds. Deliberately hard to clear on survivorship-biased data:
+# the default outcome is NO-CHANGE.
 GATE_MIN_PERIODS = 36       # well above the engine's describe-floor of 24
 GATE_MIN_OOS_FOLDS = 5      # needs n_folds >= 6 (loop is range(1, n_folds))
 GATE_MIN_EDGE = 0.02        # mean paired (shrunk - prior) OOS IC; absorbs survivorship inflation

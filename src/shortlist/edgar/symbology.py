@@ -23,7 +23,10 @@ from .cik_tickers import _PREF_SUFFIX, _UNIT_SUFFIX, _norm_cik, build_cik_to_tic
 
 _CDX_URL = "http://web.archive.org/cdx/search/cdx"
 _WB_RAW = "http://web.archive.org/web/{ts}id_/https://www.sec.gov/files/company_tickers.json"
-_MIN_INTERVAL_S = 1.0                       # archive.org politeness ceiling (spec §17)
+_MIN_INTERVAL_S = 1.0                       # archive.org politeness ceiling (0 x 429 over 20
+                                             # sequential spike fetches at ~5.7s/fetch; capped
+                                             # to ~1 req/s as cheap insurance given the VPS's
+                                             # 2x free-host IP-block history)
 _last_request_ts: float = 0.0               # module-level throttle (monotonic seconds)
 
 
@@ -90,7 +93,9 @@ def cdx_snapshots(*, cache_dir: str, client: Optional[httpx.Client] = None,
         client = client or httpx.Client(timeout=60.0, headers={"User-Agent": "shortlist symbology"})
         try:
             _throttle()
-            # limit far above the real count (~660, spec §17) so a single call is complete;
+            # limit far above the real count (~660 snapshots, measured — see
+            # docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md
+            # §17) so a single call is complete;
             # M3 truncation guard: warn if we ever hit the cap (would mean silent pagination).
             _CAP = 100000
             resp = client.get(_CDX_URL, params={"url": "sec.gov/files/company_tickers.json",
@@ -256,7 +261,8 @@ class Symbology:
             return self._overrides[cik10]
         live_tkr = self._live.get(cik10)
         as_of_tkr = self._snapshot_map_for(as_of).get(cik10)
-        if live_tkr is not None:                     # active issuer -> live wins (sidesteps §17 bug)
+        if live_tkr is not None:                     # active issuer -> live wins (sidesteps the
+                                                       # pre-2019 first-occurrence bug — see §17)
             if as_of_tkr is not None and as_of_tkr != live_tkr:
                 self.disagreements.append((cik10, live_tkr, as_of_tkr))
             return live_tkr

@@ -229,7 +229,8 @@ def _salvage_json(text: str) -> Optional[str]:
 # match — it can never manufacture one (a stitched or fabricated quote still fails).
 # Measured: folding recovers 73% of unverified findings, the dominant single character
 # being U+2019 in the FILING text. Does NOT fix filing-extraction artifacts (bare page
-# numbers / bullet markers bled inline) — see the audit doc, D1.
+# numbers / bullet markers bled inline) — see
+# docs/audits/2026-08-04-deep-brief-assessment.md D1.
 _FOLD = str.maketrans({
     "’": "'", "‘": "'",            # curly single quotes
     "“": '"', "”": '"',            # curly double quotes

@@ -12,9 +12,10 @@ import time
 # SEC fair access is ~10 req/s. We run at ~6 (0.167 s) — 60% of the ceiling, NOT the 80%
 # that pure throughput would argue for, because this IP has a RECENT throttling history
 # (real DERA 429s on 2026-08-03/04). The headroom also covers the harness EdgarSource, which
-# fetches on its own asyncio semaphore OUTSIDE this budget — it runs after discovery
-# (`daily.py`: `_scan_discovery` completes before `run_harness`), so the two do not overlap,
-# but nothing enforces that.
+# fetches on its own asyncio semaphore OUTSIDE this budget — `screen.py:main` only starts
+# the research phase (the SecThrottle-metered consumers: index.py, dera.py, thirteenf.py,
+# cik_tickers.py, secframes.py) after run_harness returns, so the two do not overlap in
+# practice, but nothing enforces that.
 #
 # Sizing (measured 2026-08-05): `full_text_submission()` latency is ~17 ms median, so a
 # serial unthrottled loop reaches ~57 req/s — 5.7x over the ceiling. That is what made the

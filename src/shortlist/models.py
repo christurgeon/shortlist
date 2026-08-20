@@ -23,8 +23,10 @@ class StockMetrics:
     pe_ttm: Optional[float] = None
     pe_median_5y: Optional[float] = None
     fcf_yield: Optional[float] = None
-    # EBIT/EV earnings yield (absolute valuation leg, §2.2; higher = cheaper).
-    # Backtest-measured; NOT yet a production sub-score leg (spec §11). UNFITTED prior.
+    # EBIT/EV earnings yield (absolute valuation leg, ASSESSMENT_GAPS.md §2.2; higher
+    # = cheaper). Backtest-measured; NOT yet a production sub-score leg
+    # (docs/superpowers/specs/2026-06-13-absolute-valuation-leg-ev-ebit-design.md §11
+    # deferred it). UNFITTED prior.
     ebit_ev_yield: Optional[float] = None
     peg: Optional[float] = None
     target_median: Optional[float] = None

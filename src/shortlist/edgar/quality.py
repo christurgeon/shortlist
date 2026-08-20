@@ -20,7 +20,7 @@ _GENERIC_TOKENS = {"llc", "lp", "inc", "corp", "co", "company",
 
 # normalized-substring alias map: canonical -> distinctive fragments that identify the filer.
 # Activists file under many entity variants/SPVs, so match on a distinctive fragment, not the
-# full legal name (spec §14 #11). Curated prior, extensible — not exhaustive. NOTE: matching is
+# full legal name. Curated prior, extensible — not exhaustive. NOTE: matching is
 # substring-anywhere, so short bare fragments ("jana", "pershing") could in principle match an
 # unrelated name; acceptable in the narrow 13D filer-name space (and only BOOSTS strength).
 _MARQUEE: dict[str, tuple[str, ...]] = {
