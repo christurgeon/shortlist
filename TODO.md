@@ -140,24 +140,32 @@ it outranks §3's alpha questions.
   but not the falsifier list); and **the arithmetic clause is UNTESTED, for a structural reason,
   not a sampling one.** 0/3 briefs computed anything because 2 of its 3 asks were unanswerable:
   the prompt rendered debt WITHOUT cash, so neither cash runway nor even net debt was derivable,
-  and the maturity ladder lives in a note we do not extract. Cash is now a rendered column
-  (2026-08-19), so the NEXT run is the first real test; refinancing coverage stays blocked on
-  §2b item 2. n=3 on three large caps is not enough to re-certify D3/D6/D7 at the rigor of the
-  original 35-brief corpus — re-run the keyword/substring scans over a larger corpus once more
-  new-prompt briefs accumulate.
+  and the maturity ladder lived in a note we did not extract. **Both inputs have since landed** —
+  cash is a rendered column (2026-08-19) and the maturity ladder now reaches the prompt as a
+  statement note (2026-08-20, §2b) — so the next live run is the first real test of all three
+  asks, refinancing coverage included. Nothing blocks it but a run. n=3 on three large caps
+  is not enough to re-certify D3/D6/D7 at the rigor of the original 35-brief corpus — re-run
+  the keyword/substring scans over a larger corpus once more new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
-Statement **notes** never reach the prompt — `assess.py:324-331` sends Item 1, Item 7, Item 1A
-and the 10-Q MD&A only. The notes hold segment reporting, revenue disaggregation, customer
-concentration, debt maturities/covenants, SBC, restructuring, acquisitions/goodwill, legal
-contingencies, tax and leases. Build as **targeted extractors, never "send all notes to
-Claude"** — order by decision value: (1) segments + disaggregated revenue, (2) debt & liquidity — **now the concrete blocker for a
-shipped prompt instruction**, since `SYSTEM_PROMPT`'s refinancing-coverage ask needs the
-maturity ladder and nothing else supplies it (2026-08-19 live run) —
-(3) SBC & dilution, (4) concentrations & commitments, (5) acquisitions/goodwill, (6) legal
-contingencies. SEC's Financial Statement **and Notes** data sets are the structured route;
-edgartools text extraction is the cheap route. Sequence this **after** 2a.
+**Debt & liquidity (was item 2) SHIPPED 2026-08-20** — `research/notes.py`, config
+`research.notes`. Behaviour and landmines are in the module docstring; design + the
+20-filing probe is `docs/audits/2026-08-20-debt-liquidity-notes-design.md`. Two things
+it settled that the remaining items inherit:
+
+- **`TenK.notes` is an XBRL-derived STRUCTURED INDEX**, not a text blob, so a targeted
+  note extractor needs no heading detection and carries none of the `_tenq_mda`
+  item-boundary fault class. Build the rest the same way.
+- **Title matching needs a per-family exclusion filter.** DUK's `Investments in Debt and
+  Equity Securities` is an *asset* note that matched `debt`. Expect one per family.
+
+What remains: (1) segments + disaggregated revenue, (3) SBC & dilution, (4) concentrations
+& commitments, (5) acquisitions/goodwill, (6) legal contingencies. Still **targeted
+extractors, never "send all notes to Claude"**, and still ordered by decision value.
+Note that none of these has a shipped prompt instruction waiting on it, which is what made
+debt & liquidity first — so they are worth *less* than their position here suggests, and
+rank below §2c.
 
 ## 2c. Peers / market context — the review's headline gap
 

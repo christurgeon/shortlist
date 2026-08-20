@@ -57,7 +57,7 @@ _CONFIDENCE_STEP = 0.05
 # / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "riskdiff",
-                   "filings", "textsim", "eightk")
+                   "filings", "textsim", "eightk", "notes")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
 # content; cache's own values already move the key mechanically.

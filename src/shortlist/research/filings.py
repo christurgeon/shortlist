@@ -229,7 +229,8 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
     BEHAVIOUR CHANGE vs `_prior_year_risk_factors`: the `edgar` import now sits
     INSIDE the try, so a missing [edgar] extra degrades to ("", "") + a stderr
     line instead of raising ImportError. That is unreachable in practice —
-    `fetch_10k` runs first in `fetch_bundle` and imports `edgar` at its top — and
+    `_fetch_10k_parsed` runs first in `fetch_bundle` and imports `edgar` at its
+    top — and
     it matches this function's documented never-raises contract."""
     try:
         if company_factory is None:
@@ -348,21 +349,32 @@ def filing_text_change(
         return None
 
 
-def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:
-    """Fetch the latest 10-K narrative for `ticker` via edgartools.
-    Returns None if there is no usable 10-K (e.g. foreign filers file 20-F) or
-    all narrative sections are empty. Raises RuntimeError if SEC_IDENTITY is unset.
-    """
+def _fetch_10k_parsed(ticker: str,
+                      identity: Optional[str] = None) -> tuple[Optional[FilingText], Any]:
+    """(FilingText|None, parsed filing object|None) — the shared core of fetch_10k.
+
+    Split out so `fetch_bundle` can read the statement notes off the SAME parsed
+    object the narrative sections came from. Re-deriving it would mean a second
+    `.obj()` parse of a multi-hundred-KB document per brief, for data already in
+    hand."""
     from edgar import Company  # lazy: optional [edgar] extra
 
     require_identity(identity)
     latest = Company(ticker).get_filings(form="10-K").latest(1)
     if latest is None:
-        return None
+        return None, None
     tenk = latest.obj()
     filing = _build_filing_text(
         ticker, getattr(latest, "accession_no", ""), getattr(latest, "filing_date", ""), tenk)
-    return filing if filing.has_content() else None
+    return (filing if filing.has_content() else None), tenk
+
+
+def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:
+    """Fetch the latest 10-K narrative for `ticker` via edgartools.
+    Returns None if there is no usable 10-K (e.g. foreign filers file 20-F) or
+    all narrative sections are empty. Raises RuntimeError if SEC_IDENTITY is unset.
+    """
+    return _fetch_10k_parsed(ticker, identity)[0]
 
 
 def no_10k_reason(ticker: str) -> str:
@@ -389,19 +401,33 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     degrade to "" on any failure (failure isolation)."""
     from edgar import Company  # lazy: optional [edgar] extra
 
-    tenk = fetch_10k(ticker, identity)   # sets identity / raises if SEC_IDENTITY unset
+    # sets identity / raises if SEC_IDENTITY unset. Keeps the parsed object so the
+    # statement notes below cost no second parse.
+    tenk, tenk_obj = _fetch_10k_parsed(ticker, identity)
     if tenk is None:
         return None
+
+    # Debt & liquidity notes. Imported here, not at module scope: `notes` imports
+    # log_abstain back out of this module, matching the `eightk` cycle break.
+    from . import notes as debtnotes
+    ncfg = debtnotes.config_block(config)
+    debt_notes = debtnotes.collect(tenk_obj, "10-K", tenk.accession, ticker, ncfg)
 
     tenq_mda, tenq_acc, tenq_added = "", "", ""
     try:
         latest_q = Company(ticker).get_filings(form="10-Q").latest(1)
         if latest_q is not None and str(getattr(latest_q, "form", "")) == "10-Q":
-            # ONE parse feeds both Part I Item 2 and Part II Item 1A.
+            # ONE parse feeds Part I Item 2, Part II Item 1A and the debt notes.
             qobj = latest_q.obj()
             tenq_mda = _tenq_mda(qobj, ticker)
             tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
+            # KEEP LAST, and keep `tenq_acc` immediately above it. The `except`
+            # below resets the three 10-Q strings but NOT `debt_notes`, so this only
+            # stays correct because nothing can raise between the accession being
+            # assigned and the notes being appended. Insert a statement after this
+            # line and 10-Q notes can survive with a stale accession.
+            debt_notes += debtnotes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
     except Exception:
         tenq_mda, tenq_acc, tenq_added = "", "", ""
 
@@ -433,4 +459,4 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
         text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added,
-        tenq_accession=tenq_acc)
+        tenq_accession=tenq_acc, debt_notes=debt_notes)

@@ -466,6 +466,19 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     eightk_section = "".join(
         f"=== RECENT 8-K — {e.filed}, Item(s) {e.items} ===\n{e.text}\n\n"
         for e in getattr(bundle, "eightks", None) or [])
+    # Debt & liquidity statement notes — the maturity-ladder input the DO THE
+    # ARITHMETIC clause's refinancing-coverage ask needs and had no producer for
+    # (2026-08-19 live run: 0 of 3 briefs computed anything). The header names the
+    # form and the note title as filed, so the model can see which document it is
+    # quoting. Empty list => byte-identical prompt.
+    # The "(TRUNCATED …)" suffix lives in the HEADER, never in `n.text`: the text is a
+    # grounding segment, so a marker mixed into it would be non-filing text that a
+    # model could quote and have "verified" (research/notes.py, TRUNCATION comment).
+    notes_section = "".join(
+        f"=== {n.form} STATEMENT NOTE — {n.title}"
+        f"{' (TRUNCATED — this note continues beyond what is shown)' if n.truncated else ''}"
+        f" ===\n{n.text}\n\n"
+        for n in getattr(bundle, "debt_notes", None) or [])
     added_section = ""
     if bundle.added_risks_text:
         added_section = (f"=== NEWLY ADDED RISK FACTORS (vs prior-year 10-K) ===\n"
@@ -479,6 +492,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{tenq_section}"
         f"{tenq_risk_section}"
         f"{eightk_section}"
+        f"{notes_section}"
         f"{added_section}"
         f"Return at most {rcfg.get('max_risks', 8)} risks, "
         f"{rcfg.get('max_red_flags', 8)} red_flags, "

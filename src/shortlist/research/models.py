@@ -98,6 +98,33 @@ class EightKText:
 
 
 @dataclass
+class DebtNote:
+    """One debt & liquidity statement note (research/notes.py). Like EightKText
+    this IS filing text, so it enters the grounding haystack — as its OWN segment,
+    carrying `label` (e.g. "10-K note: LONG-TERM OBLIGATIONS") so a reader is told
+    which document a verified quote came from rather than assuming the 10-K.
+
+    `text` is PURE FILING TEXT and nothing else may be mixed into it — it is a
+    haystack segment, so anything added becomes quotable and can pass
+    quote-verification as a filing fact. An earlier revision appended a
+    " […truncated…]" marker here; normalized it was 13 chars against
+    `assess._MIN_EVIDENCE_CHARS = 12`, so a model emitting the marker alone as its
+    evidence got `verified=True` against a real note.
+
+    `truncated` is therefore just a FLAG: `assess._build_user_prompt` renders it as a
+    "(TRUNCATED …)" suffix on the prompt section header, which is scaffolding outside
+    every segment. That is what lets the model distinguish a severed maturity ladder
+    from a complete one, which SYSTEM_PROMPT's "name the missing input rather than
+    estimating it" depends on."""
+    form: str                      # "10-K" | "10-Q"
+    accession: str
+    title: str                     # as filed, e.g. "Borrowings and Credit Agreements"
+    label: str
+    text: str
+    truncated: bool = False
+
+
+@dataclass
 class FilingBundle:
     """The documents fed to one research brief. `tenk` is the current 10-K (the
     primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
@@ -132,6 +159,12 @@ class FilingBundle:
     # CHANGES (research/filings.py:_tenq_added_risks). Filing text, so unlike
     # `text_similarity` it DOES enter the haystack — as its own segment, so a
     # verified quote is attributed to the 10-Q and not to the 10-K.
+    debt_notes: list = field(default_factory=list)
+    # ^ list[DebtNote] — debt & liquidity statement notes (research/notes.py), the
+    # maturity-ladder input SYSTEM_PROMPT's refinancing-coverage arithmetic needs.
+    # Empty unless `research.notes` is enabled AND the filer files one, which is
+    # what keeps the prompt byte-identical for every other name. 10-K notes first:
+    # a 10-Q debt note is a legitimate subset (5 of 20 filers file none at all).
 
     def segments(self) -> list[tuple[str, str]]:
         """The grounding corpus split into (provenance label, text) pairs, in the
@@ -143,6 +176,7 @@ class FilingBundle:
                  ("10-Q Part II Item 1A", self.tenq_added_risks),
                  ("newly disclosed risks", self.added_risks_text)]
         parts += [(e.label, e.text) for e in self.eightks]
+        parts += [(n.label, n.text) for n in self.debt_notes]
         return [(label, text) for label, text in parts if text]
 
     def haystack(self) -> str:

@@ -36,8 +36,29 @@ Default model is `claude-sonnet-5` with `claude-opus-5` as fallback (`config.yam
 ## What's in a brief
 
 The bundle sent to the model is the latest **10-K** (business, MD&A, risk factors), the latest
-**10-Q's MD&A**, a **YoY Item-1A risk-factor diff** (`riskdiff.py`), and the substance of up to
-three recent **8-Ks** (`research/eightk.py`).
+**10-Q's MD&A**, a **YoY Item-1A risk-factor diff** (`riskdiff.py`), the substance of up to
+three recent **8-Ks** (`research/eightk.py`), and the **debt & liquidity statement notes**
+(`research/notes.py`).
+
+The debt notes exist to feed one specific prompt instruction. `SYSTEM_PROMPT` asks the model to
+compute **refinancing coverage** — debt maturing within twelve months against cash plus
+operating cash flow — and the maturity ladder is disclosed in a statement note, which nothing
+used to send. They are read from `TenK.notes` / `TenQ.notes`, an **XBRL-derived structured
+index** of individually addressable notes, so there is no heading detection and no span slicing.
+Selected by title (`debt|borrow|credit facilit|credit agreement|financing arrangement|notes
+payable|long[- ]term obligation`, minus an `investment|marketable securit` exclusion), capped at
+16K chars per note. Like the 8-Ks, this is **quotable filing text that enters the haystack** as
+its own labelled segment (`10-K note: LONG-TERM OBLIGATIONS`).
+
+Two behaviours worth knowing. A filer that files **no 10-Q debt note is the normal case**, not a
+failure — 5 of 20 measured file none, because the quarterly note is a legitimate subset of the
+annual one; the 10-K is the backbone. And an over-long note is cut at the last whitespace — never
+mid-number — with the truncation flagged in the prompt's section header rather than inside the
+note text, so the model can tell a severed ladder from a complete one and name the missing input
+rather than estimate it. Nothing but filing text goes in the note itself: it is a grounding
+segment, and a marker mixed into it would be non-filing text a model could quote and have
+"verified".
+Design + 20-filing evidence: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`.
 
 The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
 guidance, a non-reliance restatement, a completed acquisition, an officer departure. Selected by
