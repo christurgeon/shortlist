@@ -292,10 +292,21 @@ and hung on a bare `claude -p` probe too.)
   CVS was queued and never got an attempt.
 - **Cost per brief is real:** UAL ran $1.4773 across one parse-failure retry and one
   success; JPM $0.6256.
-- **The XBRL network/latency cost of reading `.notes` is unmeasured.** Attribute
-  access performs a live `Financials.extract`, and roughly a quarter of filers file no
-  matching 10-Q note and pay it for nothing. Worth a timing check against
-  `research.timeout_s` before this is relied on at scale.
+- **The XBRL network/latency cost of reading `.notes` is small — measured, not
+  assumed.** Attribute access performs a live `Financials.extract`, so this was worth
+  checking. `fetch_bundle` wall-clock, notes ON vs OFF, run in both orders because
+  whichever runs second benefits from edgartools' disk cache:
+
+  | Ticker | ON | OFF | delta | order |
+  |---|---:|---:|---:|---|
+  | BA | 19.2s | 15.4s | +3.8s | ON first |
+  | F | 50.5s | 51.8s | −1.3s | ON first |
+  | TGT | 9.6s | 12.2s | −2.6s | OFF first |
+  | KO | 20.0s | 20.6s | −0.6s | OFF first |
+
+  Both orderings agree the delta is single-digit seconds and inside run-to-run noise —
+  the 10-K narrative parse already materialises the financials for these filers.
+  Against `research.timeout_s: 900` and briefs measured at 170–500s, immaterial.
 
 ---
 
