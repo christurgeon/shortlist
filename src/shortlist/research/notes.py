@@ -92,8 +92,23 @@ def config_block(config: Optional[dict]) -> dict:
     return {**_DEFAULTS, **block}
 
 
+_MAX_TITLE_CHARS = 200
+
+
 def _title(note: Any) -> str:
-    return str(getattr(note, "title", None) or getattr(note, "name", "") or "")
+    """The note title as filed, flattened and bounded.
+
+    The flattening is NOT cosmetic. This string is FILER-CONTROLLED and is
+    interpolated into a `=== 10-K STATEMENT NOTE — {title} ===` prompt header and
+    into the segment `label` that `report.py` renders. Left raw, a title carrying
+    newlines and `===` can forge a section boundary in the prompt — a probe with an
+    embedded `=== ITEM 1A — RISK FACTORS ===` produced a convincing fake section.
+    Grounding itself is unaffected (the title is not in the haystack, so nothing
+    smuggled through it can be quoted and verified), but this is the first
+    filer-controlled string to reach a /deep prompt header and it does not get to
+    define the prompt's structure."""
+    raw = str(getattr(note, "title", None) or getattr(note, "name", "") or "")
+    return re.sub(r"\s+", " ", raw).strip()[:_MAX_TITLE_CHARS]
 
 
 def _norm_ws(text: Any) -> str:
@@ -106,15 +121,15 @@ def _norm_ws(text: Any) -> str:
     return re.sub(r"\n{3,}", "\n\n", out).strip()
 
 
-def select(notes_index: Any, cfg: dict) -> list:
+def select(notes_index: Any) -> list:
     """EVERY debt/liquidity note of one filing, in document order. Empty when the
     filer files none — which for a 10-Q is the NORMAL case (JPM/XOM/LLY/T/CVS all
     file none), not a parse failure.
 
-    Deliberately UNCAPPED: `max_notes_per_form` counts notes actually EMITTED, and
-    `collect` drops candidates that render empty. Capping here instead would let a
-    single empty-rendering note consume a slot and silently cost the filer a real
-    note that was sitting right behind it."""
+    Deliberately UNCAPPED — and so it takes no config: `max_notes_per_form` counts
+    notes actually EMITTED, and `collect` drops candidates that render empty.
+    Capping here instead would let a single empty-rendering note consume a slot and
+    silently cost the filer a real note that was sitting right behind it."""
     picked: list = []
     for i in range(len(notes_index)):
         try:
@@ -200,8 +215,17 @@ def _collect(filing_obj: Any, form: str, accession: str, ticker: str,
                          else "max_chars_10k") or 0)
     per_note = int(cfg.get("max_chars_per_note") or 0)
     max_notes = int(cfg.get("max_notes_per_form") or 0)
+    if budget <= 0 or per_note <= 0 or max_notes <= 0:
+        # Say so, for the same reason the `index is None` branch does: a config that
+        # zeroes the feature must not look identical to "this filer files no debt
+        # note". A malformed STRING already logs via the outer boundary; a value that
+        # merely `int()`s to 0 (None, -500) would otherwise pass silently.
+        log_abstain(f"{form} debt notes disabled by config "
+                    f"(budget={budget}, per_note={per_note}, max_notes={max_notes})",
+                    ticker, ValueError("non-positive cap"))
+        return []
     out: list[DebtNote] = []
-    for note in select(index, cfg):
+    for note in select(index):
         # `max_notes` counts EMITTED notes, so an empty-rendering candidate cannot
         # consume a slot a real note behind it wanted.
         if len(out) >= max_notes:

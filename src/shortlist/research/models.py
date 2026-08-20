@@ -104,8 +104,16 @@ class DebtNote:
     carrying `label` (e.g. "10-K note: LONG-TERM OBLIGATIONS") so a reader is told
     which document a verified quote came from rather than assuming the 10-K.
 
-    `truncated` records that a prefix cut was applied and `TRUNCATION_MARK` is in
-    `text`; the mark is what lets the model distinguish a severed maturity ladder
+    `text` is PURE FILING TEXT and nothing else may be mixed into it — it is a
+    haystack segment, so anything added becomes quotable and can pass
+    quote-verification as a filing fact. An earlier revision appended a
+    " […truncated…]" marker here; normalized it was 13 chars against
+    `assess._MIN_EVIDENCE_CHARS = 12`, so a model emitting the marker alone as its
+    evidence got `verified=True` against a real note.
+
+    `truncated` is therefore just a FLAG: `assess._build_user_prompt` renders it as a
+    "(TRUNCATED …)" suffix on the prompt section header, which is scaffolding outside
+    every segment. That is what lets the model distinguish a severed maturity ladder
     from a complete one, which SYSTEM_PROMPT's "name the missing input rather than
     estimating it" depends on."""
     form: str                      # "10-K" | "10-Q"

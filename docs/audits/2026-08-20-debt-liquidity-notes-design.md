@@ -138,6 +138,14 @@ A light filer pays ~4%.
 
 ### 3.4 Truncation cuts at the last whitespace
 
+> **CORRECTION (2026-08-20, same day).** The marker design described below was
+> **implemented and then removed** during adversarial review, before merge. The
+> reasoning in this subsection about the marker being safe to place in the note text
+> was **wrong**, and the current behaviour is in `research/notes.py` (TRUNCATION
+> comment) and `models.py:DebtNote`. Kept, not deleted, because the error is the
+> useful part of the record — see §8.
+
+
 A prefix cut must never sever a number mid-digits (`4,100` → `4,1`), because the
 tables are the payload. Two candidate cut points were measured on the 9 over-cap
 notes:
@@ -214,3 +222,121 @@ coverage and already says to name a missing input rather than estimate it.
   committed so the rule can be re-measured on a wider set.
 - **n=20, large- and mid-cap, one filing each.** Small caps and non-calendar
   filers are unmeasured.
+
+---
+
+## 7. Live verification (2026-08-20)
+
+### 7.1 Structural — holds on all four, including both stress cases
+
+Real `fetch_bundle` on live filings, asserting each note reaches `segments()` and the
+built prompt:
+
+| Ticker | notes | what it proves |
+|---|---|---|
+| AMT | 10-K + 10-Q, both truncated, maturities present | the `long[- ]term obligation` rule fires on the one filer that needs it |
+| DUK | 10-K + 10-Q, `Debt and Credit Facilities` only | the exclusion filter kept `Investments in Debt and Equity Securities` out live |
+| JPM | 10-K only, 13,312 chars, untruncated | the predicted empty 10-Q — confirmed, not inferred |
+| UAL | 10-K + 10-Q, untruncated | ladder + undrawn revolver both present |
+
+Segment labels render as `10-K note: LONG-TERM OBLIGATIONS` / `10-Q note: Borrowings`,
+so a verified quote names the note. Prompt fingerprints moved (`p39beaa39` →
+`p8cb4640c`), confirming `_PROMPT_MODULES` invalidation works.
+
+### 7.2 Behavioural — the arithmetic clause fired for the first time
+
+Baseline (2026-08-19, same corpus): **0 of 3 briefs computed anything.**
+
+**UAL — the ask now answers.** From the brief's `reconciliation`:
+
+> A 1.58x debt-to-equity ratio could read as elevated leverage risk, but $16.6B cash
+> and short-term investments plus a **$3.0B undrawn revolver** against only **$3.0B of
+> debt due within 12 months (per the 10-Q)** implies roughly 5.5x-plus near-term
+> coverage even before operating cash flow, undercutting a distress read.
+
+Both inputs are real and traceable. `$3.0 billion undrawn and available under its
+revolving credit facility` is verbatim in the 10-Q note — and note that undrawn
+capacity is the input the **XBRL route could not have supplied at all** (1 of 12,
+§2). The ladder arrived as a labelled table: `Last Six Months of 2026 $928 | 2027
+$2,049 | 2028 $2,017 | … | Total $23,081`.
+
+The derived ratio correctly landed in a `tension` and not in an `evidence` quote,
+which is `SYSTEM_PROMPT`'s rule for a computed figure — so `verified against 10-Q
+note` is legitimately absent, and that is the guard working, not a miss.
+
+**One imprecision, recorded rather than smoothed over.** "$3.0B due within 12 months"
+is `$928M + $2,049M`, i.e. the last six months of 2026 *plus all of 2027* — an
+**18-month** window, not 12. The column headers were plainly visible to the model, so
+this is prompt/model behaviour, not a data gap: the extractor delivered a correctly
+labelled ladder and the model summed two columns. The error is conservative (it
+overstates near-term maturities), and the conclusion survives either way. **Open item
+for whoever next tunes `SYSTEM_PROMPT`:** the arithmetic clause should say to
+interpolate within the disclosed period, or to state the window it actually used.
+
+**JPM — no arithmetic, and that is the expected answer.** Its brief produced no
+refinancing computation. JPM is a bank: refinancing coverage is not a meaningful
+framing for a deposit-funded issuer, and the 2026-08-19 audit already recorded its
+brief correctly routing capital concerns to CET1. A bank is the weakest possible test
+of this feature, and it was in the baseline corpus only for comparability.
+
+**AAPL was never a clean test either way.** Its *baseline* brief already quoted
+"$12.4 billion payable within 12 months" — that figure appears in Item 7's liquidity
+discussion, so for AAPL the input was never fully missing. (Its 2026-08-20 run failed
+for an unrelated reason: the local `claude` CLI exited in ~2s on all three attempts,
+and hung on a bare `claude -p` probe too.)
+
+### 7.3 Honest limits of this verification
+
+- **n=1 positive.** One brief (UAL) demonstrates the clause firing. That is enough to
+  show the input gap is closed and not enough to characterise how often it fires.
+  CVS was queued and never got an attempt.
+- **Cost per brief is real:** UAL ran $1.4773 across one parse-failure retry and one
+  success; JPM $0.6256.
+- **The XBRL network/latency cost of reading `.notes` is unmeasured.** Attribute
+  access performs a live `Financials.extract`, and roughly a quarter of filers file no
+  matching 10-Q note and pay it for nothing. Worth a timing check against
+  `research.timeout_s` before this is relied on at scale.
+
+---
+
+## 8. What review changed, and the one reasoning error worth keeping
+
+Six defects were found by adversarial review after implementation and before merge;
+all six are fixed and re-verified by fuzz probing. Two are worth recording because
+they are about *reasoning*, not typos.
+
+**The truncation marker was a grounding violation, and the argument for it was the
+kind that sounds rigorous.** §3.4 originally appended `" […truncated…]"` to the note
+text and justified it by analogy to the 8-K `_ELISION` precedent. Two things were
+wrong. First, the analogy does not hold: an elision *splices* two non-adjacent spans,
+so a quote crossing it asserts a contiguity the filing never had; truncation only
+drops a suffix, so nothing is spliced. Second, and worse, the marker went into
+`DebtNote.text`, which **is a haystack segment** — so the marker was non-filing text
+inside the grounding corpus. Normalized it is 13 characters against
+`assess._MIN_EVIDENCE_CHARS = 12`, meaning a model that emitted the marker *alone* as
+its evidence got `verified=True` attributed to a real note. The feature was one
+character away from letting fabricated evidence pass quote-verification, and the
+margin was accidental — nobody chose 13. The signal now lives in the prompt section
+header, which is scaffolding outside every segment.
+
+Generalisable rule, now stated in `models.py:DebtNote`: **anything mixed into a
+haystack segment becomes quotable.** A safety argument about a segment's *contents*
+must reason about the shortest quotable substring, not only about spans.
+
+**`collect` could discard the whole brief.** `TenK.notes` is a `cached_property`
+whose body reaches `self.financials` and performs a live XBRL download and parse, so
+an HTTP error surfaces on *attribute access* — and `getattr(obj, "notes", None)` only
+swallows `AttributeError`. Because the 10-K `collect` call in `fetch_bundle` sits
+outside every `try` there, an escape discarded the entire brief for a name whose
+narrative sections parsed perfectly, reported as a generic "filing error". The lesson
+for the remaining §2b note families: **on this API, attribute access is I/O.** Put the
+exception boundary around the whole body, not around the parts that look like parsing.
+
+Also fixed: a malformed config value escaped the same way; the per-form budget
+under-counted by the marker length; `extract` severed a number when the first `limit`
+chars held no whitespace (the one case its docstring promised it could not); the note
+cap counted candidates rather than emitted notes, so an empty-rendering note could
+cost a filer a real one; and the filer-controlled note title reached the prompt header
+unsanitized, where embedded newlines and `===` could forge a section boundary
+(grounding was unaffected — the title is not in the haystack — but it is the first
+filer-controlled string to reach a `/deep` header).

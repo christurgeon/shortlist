@@ -52,9 +52,12 @@ its own labelled segment (`10-K note: LONG-TERM OBLIGATIONS`).
 
 Two behaviours worth knowing. A filer that files **no 10-Q debt note is the normal case**, not a
 failure — 5 of 20 measured file none, because the quarterly note is a legitimate subset of the
-annual one; the 10-K is the backbone. And an over-long note is cut at the last whitespace and
-marked `[…truncated…]`, so the model can tell a severed ladder from a complete one and name the
-missing input rather than estimate it.
+annual one; the 10-K is the backbone. And an over-long note is cut at the last whitespace — never
+mid-number — with the truncation flagged in the prompt's section header rather than inside the
+note text, so the model can tell a severed ladder from a complete one and name the missing input
+rather than estimate it. Nothing but filing text goes in the note itself: it is a grounding
+segment, and a marker mixed into it would be non-filing text a model could quote and have
+"verified".
 Design + 20-filing evidence: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`.
 
 The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
