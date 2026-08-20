@@ -26,8 +26,9 @@ changed=$({ git diff --name-only; git diff --cached --name-only; } 2>/dev/null |
 [ "$changed" = "TODO.md" ] && exit 0
 
 reason="This session changed files. Before ending, curate TODO.md — a working set of open work, not a session journal."
-reason="$reason Two obligations, not one: (a) record unfinished follow-up work, deferred decisions and known gaps, newest at top, with a dated heading and a closing Status line;"
-reason="$reason (b) DELETE or fold down any entry whose work has now shipped or been resolved — the durable record is CLAUDE.md, docs/audits/ and git, so a resolved entry left in TODO.md is rot, and removing one is a completed obligation rather than a liberty."
+reason="$reason FIRST, retire. DELETE or fold down any entry whose work has now shipped or been resolved: the durable record is CLAUDE.md, docs/audits/ and git, so a resolved entry left here is rot, and removing one is a completed obligation rather than a liberty."
+reason="$reason THEN, and only for work that genuinely remains, record unfinished follow-ups, deferred decisions and known gaps, newest at top, with a dated heading and a closing Status line."
+reason="$reason Before adding anything, ask whether you can just fix it now instead. A contradiction or stale pointer you could resolve in a minute costs more as an entry than as a fix, and an entry is not the cheaper option merely because it is the faster one. Add only what you genuinely cannot resolve in this session, and say why in the Status line."
 reason="$reason Prefer updating an existing entry in place over adding a new dated one for the same thread of work."
 reason="$reason Never record work done ON TODO.md itself, nor a narrative of this session — that is meta-churn, not follow-up work."
 
