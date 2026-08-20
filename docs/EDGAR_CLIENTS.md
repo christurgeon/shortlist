@@ -1,11 +1,37 @@
 # EDGAR clients — implementation notes
 
 "Verified facts, do not fix back" detail for the SEC-EDGAR clients under `shortlist/edgar/`.
-Design rationale lives in `CLAUDE.md`; this file is the landmine list.
+This file is the landmine list; the package docstring (`edgar/__init__.py`) is the summary.
 
 Most of these signals' original design docs live under `docs/superpowers/specs/`, which is
 **gitignored** (`.gitignore:37`) — not tracked, not guaranteed to survive a fresh clone. This
 file is the committed backstop for the facts that used to live only there or in `CLAUDE.md`.
+
+## What each module is
+
+These are **importable clients with no production caller** — nothing on the `/screen` or
+`/deep` path imports them. They exist so the data is reachable by hand during research.
+
+| Module | What |
+|---|---|
+| `thirteenf.py` | 13F infotable parse, position aggregation, new-position and material-add diffs |
+| `insider.py` + `dera.py` | Form 4 parse; DERA owner index for officer/director roles |
+| `index.py` | shared EDGAR daily-index client (13D initial + `/A` amendment streams) |
+| `eightk.py` | 8-K item matching over normalized EFTS rows |
+| `quality.py` | filing classifiers — SPAC/shell, initial-13D, affiliate, marquee activist |
+| `calendar.py` | filing-date calendars |
+| `cusip_map.py`, `cik_tickers.py`, `symbology.py` | CUSIP→ticker and CIK→ticker resolution |
+| `stake_pct.py` | 13D/A cover-page percent-of-class extraction (used by `backtest/edgar_history.py`) |
+| `sec_throttle.py` | the one process-wide sec.gov rate budget (below) |
+| `models.py` | shared dataclasses |
+| `_ticker_rules.py` | shared leaf: 5th-letter junk-suffix rule + 8-K item normalization |
+
+**The deal you take by keeping these uncalled.** CI pins their *parse shapes*; it does **not**
+catch SEC or edgartools changing shape upstream, because the live fetch tests are
+`pytest.mark.live` + `skipif(not SEC_IDENTITY)` and skip by default. Run
+`SEC_IDENTITY=... uv run pytest -m live` before trusting a client after a long gap —
+`edgartools` `standard_concept` drift has broken extraction once already
+([`audits/2026-07-31`](audits/2026-07-31-edgar-concept-match.md)).
 
 ## The shared sec.gov throttle (`edgar/sec_throttle.py`)
 
@@ -109,6 +135,8 @@ front-running).
 - Drop rows with a `putCall` (options) and `sshPrnamtType != "SH"` (PRN convertible debt).
 - The information table is the filing directory's `.xml` that is **neither
   `primary_doc.xml` nor `xslForm13F...`** — an `index.json` fetch is required to find it.
+- **Material adds are detected on share count (`sshPrnamt`), never `value`** — `value` is
+  quarter-end market value, so a price rise alone would read as conviction.
 - The 7 seed CIKs are live-verified *active* filers — stale /ADV shells (e.g. Baupost
   1054420, Appaloosa 1006438) are the trap; the config comment names them.
 

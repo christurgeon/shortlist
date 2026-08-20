@@ -469,9 +469,11 @@ def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
 
 
 def _residual_momentum_on(config: dict) -> bool:
-    """True when the opt-in residual-momentum (momentum) scoring block is present and
-    enabled. Absent (it ships commented out) -> the residual-momentum leg is skipped, so
-    momentum_score is byte-identical to the pre-feature scorer. Mirrors _sue_on."""
+    """True when the residual-momentum (momentum) scoring block is present and enabled.
+    Absent -> the leg is skipped and momentum_score is byte-identical to the pre-feature
+    scorer. Mirrors _sue_on -- but unlike the other opt-in blocks this one SHIPS ENABLED
+    (`config.yaml: momentum.residual.enabled: true`); it is the one new leg that earned a
+    slot on measured cross-sectional rank IC (t=2.6, PREDICTIVE_SIGNALS §2)."""
     d = ((config or {}).get("momentum") or {}).get("residual")
     return bool(d) and d.get("enabled", True)
 

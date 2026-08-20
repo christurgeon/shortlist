@@ -105,7 +105,7 @@ spine's**. These are pre-computed at extraction (the source aligns NI/CFO/Assets
 statement dates because the bridge can't), so they carry no positional risk, but a
 latest-FY scalar attached to a newer spine would read as current in `--json`/CSV with
 nothing marking it as a different vintage. Abstaining follows the repo's
-abstain-rather-than-mis-attribute pattern (`entity_match`, `stake.py`, `cusip_map`).
+abstain-rather-than-mis-attribute pattern (`entity_match`, `edgar/stake_pct.py`, `cusip_map`).
 
 **Abstentions** — never a guess. Two scopes, deliberately different:
 - *Whole-merge*: the spine has no `fiscal_years`, or its `fiscal_years` contains

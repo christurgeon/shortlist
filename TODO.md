@@ -95,7 +95,7 @@ it outranks §3's alpha questions.
     Needs a wider probe first. Same class of fault as INTC's Part II Item 1 returning 71,869
     chars of Note 14.
 - **8-K substance in `/deep`: SHIPPED 2026-08-14, one caveat still open.** Behaviour and
-  landmines are in `CLAUDE.md`; evidence is
+  landmines are in `research/eightk.py`'s docstring; evidence is
   `docs/audits/2026-08-13-eightk-text-in-deep-design.md`. What remains open here:
   **Item 4.02 (non-reliance/restatement) is unexercised by real data** — none appeared in the
   60-filing probe, so the highest-priority branch is pinned by a constructed fixture only. Do
@@ -344,7 +344,8 @@ Unblocks on this:
 
 `config.yaml`'s `harness_sources` orders `fmp` before `edgar`, and `_merge_insider` takes the
 coupled transaction facts **wholesale** from the first source with a present field — yet
-`CLAUDE.md` calls EDGAR "the free authoritative source" for insider data. So enabling a paid
+`data/sources/fmp.py` and `config.yaml:256` both record EDGAR as the free authoritative source
+for insider data (FMP's insider endpoint is paid, 402 on free). So enabling a paid
 FMP Starter tier would silently override EDGAR's insider numbers. A priority/intent question,
 deliberately left out of the FMP-insider classification fix; it becomes live the day the quota
 decision above goes the paid way.
