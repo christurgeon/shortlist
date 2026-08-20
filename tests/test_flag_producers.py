@@ -68,9 +68,15 @@ def test_ast_producer_detection_sees_the_repo_dominant_style():
     reason="filing_text_change has no producer on the screen path: the similarity is "
            "computed in the research layer, which runs AFTER check_flags "
            "(scoring.py:809 inside score(), vs screen.py:188 then :193). Tracked in "
-           "TODO.md §2a. When a collection-time producer ships, this test XPASSes, "
-           "strict=True turns that into a failure, and whoever added it deletes "
-           "this decorator.")
+           "TODO.md §2a. When a collection-time producer ships, this test XPASSes and "
+           "strict=True turns that into a failure — but an XPASS does NOT mean the "
+           "flag is live. As of 2026-08-20 it also needs (a) config.yaml's "
+           "`enabled: false` flipped back and (b) a metric that discriminates: "
+           "textsim.py retains stopwords, so unrelated companies score 0.72-0.90 "
+           "against same-firm YoY ~0.997, and a realistic same-firm rewrite cannot "
+           "reach max_similarity. Fixing the producer alone gives an untrustworthy "
+           "signal, not a working one. "
+           "docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4.")
 def test_declared_flag_inputs_have_a_writer():
     for flag, field in FLAG_INPUTS.items():
         assert _producers(field), (

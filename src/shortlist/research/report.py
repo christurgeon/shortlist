@@ -137,12 +137,12 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     ]
     if a.silent_count:
         lines += [f"_{a.silent_count} reconciliation(s) unaddressed by the filing._"]
-    if a.text_similarity is not None:
-        pct = max(0.0, min(1.0, 1.0 - a.text_similarity)) * 100
-        lines += ["", "## Filing-text change (Lazy Prices)",
-                  f"- Risk-factor + MD&A language is **{pct:.0f}% rewritten** vs the "
-                  f"prior-year 10-K (cosine {a.text_similarity:.2f}). _Computed, not a "
-                  "filing quote; advisory context only._"]
+    # NO Lazy-Prices section. `text_similarity` is still computed and still stored in
+    # the brief JSON, but rendering it stated a falsehood on every brief: the metric
+    # retains stopwords, so on a full-length risk+MD&A section the cosine compresses
+    # near the top of its range and every real YoY pair rounded to "0% rewritten"
+    # (measured 2026-08-20: LULU 0.9966, HDSN 0.9972).
+    # docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
     lines += ["", "## Moat",
               f"- **Trajectory:** {a.moat.trajectory or 'n/a'}",
               f"- {a.moat.summary}"]

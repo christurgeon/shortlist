@@ -15,8 +15,26 @@ a substantive change. The metric is a stdlib **bag-of-words cosine** over the
 normalized token multiset (`collections.Counter`); no new dependency.
 
 `similarity` in [0, 1]: 1.0 == identical normalized text, 0.0 == no shared
-vocabulary. `None` when there is no usable baseline (either side empty). The
-caller turns a LOW similarity into the advisory `filing_text_change` flag."""
+vocabulary. `None` when there is no usable baseline (either side empty).
+
+POOR DISCRIMINATION — read before trusting the absolute level (measured 2026-08-20).
+Retaining stopwords (see the note below) means a full-length risk+MD&A section is
+dominated by shared English function words, so the cosine compresses into a narrow
+band near the top of the range. Two 10-Ks from UNRELATED companies score 0.72-0.90
+(NVDA vs Permian Basin Royalty Trust 0.7216; HDSN vs LULU 0.8973), while real
+same-firm YoY self-comparisons sit at ~0.997. So the scale barely separates "the same
+firm changed nothing" from "a different company in a different industry" — but note
+the low end is only 0.02 above the 0.7 flag threshold, NOT far above it. Do not
+describe 0.897 as a floor.
+
+Same-firm text change cannot realistically reach 0.7: even a de-SPAC transition, where
+the registrant's entire business changes between consecutive 10-Ks of the same CIK,
+scores ~0.90-0.92.
+
+A single-firm absolute cosine is also not what Cohen-Malloy-Nguyen use — they sort on
+the CROSS-SECTIONAL RANK of similarity, so interpreting one number without a peer
+distribution has no basis either way. Fixing this needs IDF or stopword weighting AND
+a reference distribution. docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4."""
 from __future__ import annotations
 
 import math

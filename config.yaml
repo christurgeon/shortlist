@@ -237,11 +237,25 @@ flags:
   # filing_text_change ("Lazy Prices", Cohen-Malloy-Nguyen 2020): a big YoY change in
   # the 10-K/10-Q risk-factor + MD&A language predicts negative returns. Fires when the
   # point-in-time cosine similarity vs the immediately-prior same-type filing is BELOW
-  # max_similarity. Advisory only; never affects passed/composite/scored. The similarity
-  # is computed on the research / accumulation path (full filing text is NOT in the
-  # per-ticker harness snapshot), so this is a no-op on a plain screen. UNFITTED prior —
-  # remove this whole block for the byte-identical pre-feature scorer.
+  # max_similarity. Advisory only; never affects passed/composite/scored.
+  #
+  # DISABLED 2026-08-20 — this flag has NEVER been able to fire, for two independent
+  # reasons. Kept (rather than deleted) so the threshold and the kill-reason stay in
+  # one place; re-enabling needs BOTH fixed. docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
+  #   1. NO PRODUCER. Nothing in src/ ever writes StockMetrics.filing_text_similarity —
+  #      research runs after check_flags, so the input is always None. This is
+  #      structural, is recorded in TODO.md §2a, and is guarded by
+  #      tests/test_flag_producers.py.
+  #   2. THE METRIC BARELY DISCRIMINATES. textsim.py retains stopwords, so the cosine
+  #      compresses near the top of its range: unrelated companies' 10-Ks score
+  #      0.72-0.90 (NVDA vs PBT 0.7216, HDSN vs LULU 0.8973) against same-firm YoY
+  #      ~0.997. A realistic same-firm rewrite cannot reach 0.7 — even a de-SPAC, where
+  #      the whole business changes between consecutive 10-Ks, scores ~0.90. But the
+  #      margin is thin (0.02 at the low end), and SHORT text does cross it: a
+  #      truncated extraction of ~150 tokens trips the flag on an extraction bug
+  #      rather than a rewrite. Fixing (1) alone would not give a trustworthy signal.
   filing_text_change:
+    enabled: false             # see above; both defects must be fixed to re-enable
     max_similarity: 0.7        # similarity < 0.7 (>~30% rewritten) -> flag
   # Advisory only: in a risk-off regime, flag leveraged names. The cyclical arm is
   # a forward-compatible hook — it ships EMPTY because sectors.buckets defines only
