@@ -3,8 +3,15 @@
 **A working set of open work, not a session journal** — when an entry's work ships, delete it
 rather than marking it done. The durable record is the code and its docstrings (behaviour +
 landmines), `CLAUDE.md` (policy + where the authority lives), `docs/audits/` (evidence) and git
-history; a resolved entry left here is pure cost. This file reached 2,133 lines by
-2026-08-08 because nobody owned removing anything.
+history; a resolved entry left here is pure cost. This file reached 2,133 lines by 2026-08-08
+because nobody owned removing anything. **The goal is to empty it and delete it.**
+
+Nothing settled lives here any more. Closed verdicts, and the positions this repo has
+considered and declined, are in **`docs/audits/README.md`** — read that before opening a work
+item, so a closed question is not reopened from scratch.
+
+Section numbers are stable anchors: `src/`, `tests/` and `config.yaml` cite them (`TODO.md
+§2a`), so a retired section leaves a GAP rather than renumbering the rest.
 
 See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for signal designs and `docs/ASSESSMENT_GAPS.md` for
 the scoring roadmap.
@@ -15,24 +22,6 @@ the scoring roadmap.
 >
 > **Discovery is the user's own research**, feeding `/screen` and `/deep`. Work that makes a
 > *supplied* name easier to judge outranks work that measures forward returns.
-
----
-
-# 1. Bot & report
-
-## A null `market_cap` still bypasses the size gate (2026-08-07)
-
-`scoring.py:627` needs `m.market_cap is not None`, so a null cap ⇒ recorded `gated: false` —
-the name passes the size gate unchecked. Measured on the (now-archived) ledger: 13 of 199 picks
-had a null cap and **every one** was ungated. Note the interaction with `50be4ed` (Finnhub
-non-USD abstention) — a correct fix that traded an *inflated* cap for a *null* one, closing the
-wrong-number half of the TSM bug and leaving the silently-passes half.
-
-The funnel-side half of this entry retired with `investable.py`. What remains is the gate, and
-it now matters for `/screen` on a user-supplied ticker rather than for a discovery funnel.
-
-**Status:** defect verified in code; the user was shown the ledger evidence on 2026-08-08 and
-declined to act. Do not re-raise as high-leverage without new evidence.
 
 ---
 
@@ -86,7 +75,10 @@ it outranks §3's alpha questions.
   Highest-value follow-up identified in that session.
 - **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
   `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
-  year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR. On an
+  year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR — measured
+  2026-08-21, EDGAR supplies it on **0 of 1,474** EDGAR-only store snapshots, so this leg is
+  dark on 69% of captures, not just on a 402/429 day
+  (`docs/audits/2026-08-21-operating-income-edgar-gap.md`). On an
   FMP-gated (402) or rate-limited (429) run the DIO leg abstains and only the balance
   trend renders — the FISV 2026-08-21 run hit exactly this. Not free to fix: filers split
   between `us-gaap_GrossProfit` (LULU, non-dimensional) and `CostOfGoodsAndServicesSold`
@@ -107,10 +99,6 @@ it outranks §3's alpha questions.
   the model as a diff against the 10-K Item 1A (`research/filings.py:_tenq_added_risks`,
   `config.yaml: research.tenq_risk_update`). Design + 25-filing probe evidence:
   `docs/audits/2026-08-14-tenq-part-ii-in-deep-design.md`.
-  - **Item 1 (legal proceedings) was deliberately NOT built** — measured, 10 of 15 names are
-    200–800 chars of "Refer to Note 24 of this Form 10-Q". The legal substance is in the
-    **notes**, so it is §2b work (legal contingencies, item 6 on its list), not an item
-    extractor. Do not re-raise it as a 10-Q gap.
 - **`_tenq_mda` silently abstains on one filer in 35 (found 2026-08-14, pre-existing).**
   Both symptoms are edgartools item-boundary detection, not our call. Measured over 35 large
   caps (2026-08-14), and **both are now logged to stderr** by `_tenq_mda`
@@ -118,12 +106,8 @@ it outranks §3's alpha questions.
   - **The real defect: INTC extracts 0 chars (1 of 35)** — its Part I Item 2 heading is not
     detected, so the preceding Part I Item 1 span (135,783 chars) absorbs the MD&A and the
     brief carries no quarterly MD&A at all.
-  - **Over-capture (3 of 35) is NOT harmful.** JPM 0.846, MCD 0.644, PFE 0.566 of the whole
-    document vs a median 0.230 and p90 0.397 for normal names — a clean gap between <=0.40
-    and >=0.566. An earlier revision of this bullet claimed JPM's brief "is fed the first 40K
-    of the wrong span"; that was **wrong**. All three spans start at a genuine MD&A heading,
-    so the prefix surviving `max_chars.tenq_mda` (40,000) is genuine MD&A prose and the model
-    sees correct content. Do not change extraction for this case.
+  - **Over-capture (3 of 35) is NOT harmful — do not "fix" it.** Closed verdict, with the
+    numbers, in `docs/audits/README.md`.
   - **Two measured traps, pinned by regression tests.** `tenq["Item 2"]` is not a fallback —
     on INTC it returns 2,459 chars of *Part II* Item 2 (share repurchases), wrong content
     silently labelled MD&A. `tenq.items` is not a guard — XOM lists an unqualified `Item 2`,
@@ -216,29 +200,20 @@ Cost is the blocker, not design: N peers × the per-ticker call budget against a
 cap (§4). The keyless route is SEC `companyfacts`/`frames`, which is also what `--source xbrl`
 already reads.
 
-## 2d. Recorded, NOT endorsed — where the review argues against committed rules
+## 2d. Recorded, NOT endorsed — moved
 
-- **"Split risk out of the composite."** `weights.risk: 0.10` is the *shipped* design of
-  `ASSESSMENT_GAPS.md` §2.9, deliberately a tilt. The review's point (low trailing vol is a
-  preference, not an expected-return claim) is fair as a **labelling/display** question —
-  expected-return evidence vs fundamental risk vs market exposure, shown separately. Changing
-  the composite is a scoring change and needs evidence, not an argument.
-- **"Disable `upside_to_target`."** Already recorded at `PREDICTIVE_SIGNALS_RESEARCH.md`
-  §Quick wins #1 (Brav & Lehavy: the *level* is negatively related to realised returns; the
-  *revision* predicts). The mechanical obstacle is GONE as of 2026-08-18: the leg is now the
-  scorer's one **opt-OUT** block (`scoring.py:_upside_to_target_on`, `value.upside_to_target.
-  enabled`), default ON and byte-identical when the key is absent, so the counterfactual can
-  be run from config. **What is still open is the measurement itself** — nobody has scored the
-  leg-off universe against forward returns point-in-time. Flipping the default without that
-  test remains the move this file's own bar forbids.
-- **"Label the composite heuristic until a survivorship-free, delisting-adjusted, walk-forward,
-  multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
-  verbatim. No action; do not open a work item that restates it.
-- **Transcripts / estimate-revision history / 13F / news sentiment** are all already triaged in
-  `PREDICTIVE_SIGNALS_RESEARCH.md` (transcripts + estimates paid or no free point-in-time
-  source; 13F a Phase-2 candidate; social/news as trigger not valuation). The one live free item
-  there remains **recommendation-*change*** — we fetch 4 months of consensus history and keep
-  only `trend[0]` (`data/sources/finnhub.py:204`).
+The four positions this repo considered and declined now sit in
+**`docs/audits/README.md`** → *Argued by an external review, recorded but NOT endorsed*.
+Only the one live item stays open, below.
+
+- **Recommendation-*change* is the review's one un-triaged free signal.** We fetch ~4 months
+  of Finnhub consensus history and keep only `trend[0]` (`data/sources/finnhub.py:204`), so
+  the *revision* — the part Brav & Lehavy find predictive, as against the *level* our
+  `upside_to_target` leg uses — is discarded at parse time.
+- **The `upside_to_target` counterfactual is unmeasured.** The leg is now the scorer's one
+  opt-OUT block (`scoring.py:_upside_to_target_on`), so leg-off can be run from config, but
+  nobody has scored the leg-off universe against forward returns point-in-time. Flipping the
+  default without that test is the move this file's own bar forbids.
 
 ## 2e. Net-new source ideas worth keeping (UNVETTED)
 
@@ -283,28 +258,16 @@ because only 10 tickers had been captured that early (42 by 2026-08-08).
   deliberately kept out of the snapshot (`EdgarSource` fetches Form 4 + financials +
   filing-index only). Measuring it needs a collector change to compute EDGAR text similarity
   into the snapshot. Separate feature, not a waiting game.
-
-## `operating_income` missing on 41% of the FMP-gated path — DIAGNOSE, do not assume (2026-08-10)
-
-Scoped out of the ROIC work deliberately (that design was built not to depend on it, and does
-not). It splits into three populations and only one is plausibly a bug — **guessing which is the
-read-past-the-evidence pattern the 2026-07-26 postmortem records**:
-
-- **banks — NOT a bug.** BAC/GS/WFC (SIC 6021/6211) report net interest income, not operating
-  income; JPM's raw income-statement concepts are literally `[]`. SIC abstention already masks
-  ROIC for these buckets, so they are correctly uncomputable.
-- **non-financials that certainly do report it — a real gap.** CVX, XOM (2911), HON (3724),
-  IBM (3570), JNJ/LLY/MRK (2834). Three pharma at one SIC is a striking pattern; they likely tag
-  the line differently.
-- **intra-ticker inconsistency — most concerning.** DIS 23/34 capture days, JPM 27/34, NKE 23/34.
-  Same filing, different result across days ⇒ edgartools version drift over the window or a
-  non-deterministic code path. Distinguish by checking whether the flip is a clean split at one
-  date (version change) or interleaved (non-determinism, a real bug).
-
-Deliverable is an **audit note**, not a fix. `_edgar_facts.py:383` uses
-`_row_by_standard_concept(income_df, "OperatingIncomeLoss")`; the raw-`concept`-first rule
-(`_rows_by_concept`) is the candidate remedy *if* the diagnosis supports it. Fixing this would
-raise the computed-ROIC yield from ~56% toward ~97% of the affected path.
+- **`pe_vs_history` cannot validate on this path either, for the same reason (2026-08-21).**
+  `monthly_closes` is EMPTY on **all 2,146** stored snapshots: the deployed timer runs
+  `--sources fmp,finnhub,edgar` (and the CLI default is narrower still, `fmp,finnhub`), so
+  Yahoo — the only source that populates it — never runs in accumulate. `pe_median_5y` is
+  derived in the bridge from those closes, so a scored `value` leg is structurally absent from
+  every replay. Adding `yahoo` to the chain is the obvious fix and is NOT free: it is a
+  per-ticker quota and runtime cost on a timer already over-subscribed (§4), and it changes the
+  deployed unit.
+  **Status:** measured, not actioned — the fix is a deployed-timer change whose cost sits
+  inside the §4 quota decision, so it should be taken with that decision rather than before it.
 
 ## Momentum Stage 0 prize-bound re-run
 
@@ -323,10 +286,9 @@ cap — a scheduling/quota problem, not a host problem.
   whether `revenue_cagr ≥ 0.15 ∧ persistence ≥ 0.70` beats a blanket gate. Needs new machinery
   (the XBRL source would have to evaluate gates, or a parallel cohort path).
   `docs/ASSESSMENT_GAPS.md` §2.7.
-- **DEF 14A pay-vs-performance axis.** The **XBRL path is a NO-GO** (live-verified): SEC's XBRL
-  APIs serve only `dei`/`us-gaap`, the `ecd` PvP tags are absent from companyfacts, and a
-  `companyconcept/.../ecd/...` probe 404s. It can only be built via snapshot-replay once
-  accumulation captures `research/proxy.py`'s PvP extraction point-in-time. Phase 2 also holds
+- **DEF 14A pay-vs-performance axis.** The XBRL path is a closed NO-GO
+  (`docs/audits/README.md`); it can only be built via snapshot-replay once accumulation
+  captures `research/proxy.py`'s PvP extraction point-in-time. Phase 2 also holds
   the narrative related-party/CD&A sections (no section splitter, ~350K-char raw text).
 - **`dilution`-flag threshold review** instead of a `share_count` scored leg — the payoff is
   tail-concentrated, which suits a flag/screen better than a ranker.
@@ -369,7 +331,11 @@ tool**, never a run-time dependency.
 ## FMP quota is over-subscribed — a config-or-money decision, not a build
 
 Accumulate (42 tickers) alone runs ~550 calls/day against a 250/day free limit, which is why
-**23 of 24 store dates have ZERO fmp-won statements** and EDGAR supplies 100% of production
+**23 of 60 store dates have ZERO fmp-won statements** (re-measured 2026-08-21 over 2,146
+snapshots; FMP wins only 672 of them). This is the **sole** driver of the EDGAR-only
+`operating_income` gap — 100% of fmp-won snapshots carry it against 62.8% of EDGAR-only ones,
+and no EDGAR-side change can close more than 12% of that
+(`docs/audits/2026-08-21-operating-income-edgar-gap.md`). EDGAR supplies ~100% of production
 statements. Options: drop `--max-tickers` to ~18; remove `fmp` from the accumulate chain
 (it contributes nothing today); or paid **Starter** (~$14–20/mo).
 
@@ -412,88 +378,6 @@ decision above goes the paid way.
 - **Widen the diluted-shares go/no-go beyond the store's 42 tickers** — keyless, costs only
   time, and it is the only thing that further reduces residual risk (another code review would
   not).
-- Parked observations: the `pe_ttm` fallback accepts negative EPS (harmless — `pe_vs_history()`
-  guards `> 0` and `pe_ttm` isn't in `--json`); `bridge._close_near` has no max-gap bound (a
-  short monthly history can pair a fiscal end with a months-away close);
-  `Fundamentals.operating_margin`/`current_ratio` are extracted but consumed nowhere.
-
----
-
-# 5. Code hygiene (fold in when next touching these files)
-
-- **Most of `edgar/index.py` is orphaned, not just the pair that was deleted (2026-08-21).**
-  Removing `fetch_daily_records`/`fetch_recent_records` exposed the wider shape: the ONLY
-  symbol `src/` still imports from this module is `_dedup_by_accession`
-  (`backtest/edgar_history.py:18`). `fetch_form4_submissions`, `fetch_activist_records`,
-  `fetch_recent_activist_records`, `fetch_amendment_records`,
-  `fetch_recent_amendment_records` and `activist_stakes_from_records` are reachable only
-  from tests — their caller, `edgar/signals.py`, went with the scout (§6, 2026-08-11).
-  `_walk_back_to_published` is genuinely shared and stays regardless.
-
-  **Status:** deferred, not deferred-because-unexamined. This is the 13D/Form-4 ingestion
-  the scout retirement ARCHIVED rather than disproved, and
-  `docs/audits/2026-08-11-scout-retirement.md` records a decision to stop *acting* on
-  those signals — not to destroy the collectors that feed them. Whether to keep an
-  un-called collector against a possible revival is the user's call to make with that
-  audit in hand, not a hygiene drive-by, so it cannot be settled in-session.
-
----
-
-# 6. Closed with a verdict — do not redo
-
-One line each, so the next session doesn't re-derive them. Evidence is in `docs/audits/`.
-
-- **The autonomous scout is retired (2026-08-11)** — every originator that reached the evaluator
-  came back INSUFFICIENT or KILL, the apparatus that could settle the rest was blocked on a paid
-  price feed, and the stack was 47% of source LOC and 59% of tests. Decision, evidence, the
-  archived 203-pick ledger and the seven committed pre-registration YAMLs:
-  `docs/audits/2026-08-11-scout-retirement.md`. **Do not rebuild an originator without new
-  evidence** — these verdicts are measured and committed.
-- **A weight/confidence threshold cannot express "a composite must rest on a real leg."** A
-  momentum-only name sits at confidence ~0.08 and is pinned as scored; the risk-tilt-only case
-  sits at 0.0. The shipped rule is a **component count**
-  (`validity.min_composite_components`), and a floor of 0.20 was tried first and correctly
-  rejected by `test_scoring_abstention.py`.
-- **Five "obvious" refactors were measured and deliberately rejected** (PR #145): merging
-  `assemble_eightk_events`/`assemble_buyback_events`, splitting `bridge.snapshot_to_metrics`
-  (order-dependent pipeline), splitting `extract_financials`/`panel_to_metrics` (transcription
-  risk in numerics), genericizing the four `_load` double-checked locks, and extracting the
-  `GovContractsSource`/`LobbyingSource` pagination loops. Revisit only with a specific reason
-  *and* a measurement plan. `edgartools` `standard_concept` alias lists stay untouched
-  (version-sensitive; they have broken accruals before).
-- **WSB:** a per-ticker mention-ratio baseline and a market-cap ceiling were both measured and
-  killed — do not rebuild either (`docs/audits/2026-08-07-wsb-novelty-rule.md`).
-- **A market-cap pre-filter in the funnel** deleted the only names there were (13 of 25 sessions
-  → zero candidates). Resolved instead by lowering `gates.min_market_cap` to $300M.
-- **Cohort levels are structurally unmeasurable on free data** (outcome-correlated attrition;
-  22% of events have no price series, monotonic in age). Do **not** build the ABK/value-weighting
-  correction; never quote a RAW-cohort alpha. No data purchase indicated.
-- **Do not give an EDGAR client its own `SecThrottle`** — a per-client throttle cannot bound the
-  process's request rate, which is exactly how the 2026-08-04 cascade happened. Concurrency buys
-  nothing here (~17 ms latency; one serial worker already sustains ~57 req/s).
-- **Python is pinned to 3.12 (`.python-version`) to match production**, NOT to dodge a test
-  failure — that bullet's `test_block_bootstrap_ci_*` premise died with the scout retirement,
-  and the suite passes on 3.11/3.12/3.13 alike. The file is rsynced to `/opt/shortlist`, so
-  the value must track the deployed venv (3.12.3) or a hygiene commit rebuilds the live bot.
-- **The accumulate failure-alert chain is VERIFIED end to end (2026-08-19)** — forced with a
-  transient unit, Telegram message confirmed received. The script always `exit 0` by design,
-  so the proof is the ABSENCE of its two stderr paths in the journal, not the exit code.
-- **The `net_debt_to_ebitda` axis re-measured on DE-POLLUTED data changes nothing** — the
-  2026-07-11 "leverage tilt NOT earned" verdict stands; nothing clears |t|>=2 on either
-  universe. `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`.
-- **`accruals` stays disabled** — re-measured on both reproducible universes 2026-07-18,
-  reproducing the 07-12 table bit-for-bit. The 195-name universe that once earned it is
-  permanently unreproducible. Nothing left to measure.
-- **The three §2 price-refinement axes are measured and parked** — `pct_to_52w_high` and
-  `vol_scaled_momentum` duplicate scored legs; `max_daily_return` is orthogonal but its sign
-  flips across universes. **EV/EBIT** is a don't-ship (corr 0.55–0.72 with `fcf_yield`, no
-  incremental IC). **`share_count`**, **`asset_growth`**, **`shareholder_yield`** and
-  **`piotroski`** all failed the XS bar.
-- **`shortlist-backtest --fit` cannot tune the live unfitted priors.** It fits **only** the four
-  fundamental composite-axis weights (`quality, moat, growth, value`), requires `--source xbrl`,
-  and proposes only (never writes `config.yaml`) — so it does not touch the
-  `thresholds.accruals`/`thresholds.residual_momentum` bands, and `momentum` isn't a fit axis at
-  all. Manual band review against measured IC is the only route.
-- **Two committed double-sort spread claims are RETRACTED** (13D and 13D/A both now span zero);
-  8-K still excludes zero. `docs/audits/2026-08-03-evaluator-rederivation.md` is the current
-  record — quote it, not the older audits.
+- Parked observation: `Fundamentals.operating_margin`/`current_ratio` are extracted but
+  consumed nowhere. They ride along in an existing batch call, so they cost no request —
+  removing them is churn against the stored snapshot schema, not a saving.

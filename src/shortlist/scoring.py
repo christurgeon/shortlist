@@ -660,6 +660,13 @@ def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
     if (m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config)
             and (not fcf_gate_on or not _fcf_excused(m, fc))):
         tripped.append("negative_fcf")
+    # A null market_cap does NOT trip this gate, and that is deliberate (reviewed
+    # 2026-08-21). Every gate here fails OPEN on a missing input -- negative_fcf on a
+    # None fcf_positive, over_leveraged on a None debt_to_equity, heavy_insider_selling
+    # on a None insider_sentiment -- because a hard filter must not disqualify a name for
+    # a DATA gap, the gate-side form of CLAUDE.md's "a missing sub-score is excluded, never
+    # zeroed". `/screen` runs on a ticker the user chose; dropping it because the cap did
+    # not fetch is the worse failure, and coverage.py already marks the source that failed.
     if m.market_cap is not None and m.market_cap < g["min_market_cap"] \
             and gate_applicable(bucket, "below_min_mktcap", config):
         tripped.append("below_min_mktcap")
