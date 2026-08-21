@@ -208,7 +208,14 @@ def build_view_model(cards, session: date, *, assessments: dict[str, dict],
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
     # in conviction (rank_key) order. Suppressed for /portfolio reports — suggesting you
     # /deep names you already hold is noise (the section is for discovery/screen digests).
-    deep_block = ([ld.ticker for ld in leaders if not ld.gates and ld.scored]
+    #
+    # A name that ALREADY has an assessment in this very report is excluded, for the same
+    # reason. Without that, a `/deep LULU` report ended its own brief by telling you to run
+    # `/deep LULU` — the command that produced it. It also fixes `--research N`, which used
+    # to re-suggest the top N names it had just spent ~$0.60 and ~3 minutes each
+    # researching; now the handoff lists only the names still worth the spend.
+    deep_block = ([ld.ticker for ld in leaders
+                   if not ld.gates and ld.scored and ld.ticker not in (assessments or {})]
                   if portfolio is None else [])
     return ReportVM(
         session=session,

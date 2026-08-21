@@ -64,3 +64,44 @@ def test_masked_derived_from_abstentions_not_data_gaps():
     vm = build_view_model([c], _session(), assessments={})
     assert vm.leaders[0].masked == {"moat"}       # subscore-scope inapplicable only
     assert "risk" not in vm.leaders[0].masked     # data-gap None is not masked
+
+
+# --- /deep handoff must not be circular -------------------------------------------
+
+def _brief(ticker):
+    """Minimal assessment record as build_view_model receives it (keyed by ticker)."""
+    return {"business_model_summary": f"{ticker} does things.",
+            "screening_call": {"stance": "HOLD", "conviction": "MEDIUM"}}
+
+
+def test_deep_block_excludes_names_already_researched_in_this_report():
+    """A /deep LULU report used to end by telling you to run /deep LULU — the command
+    that produced it. A name with an assessment in THIS report is already deep-dived."""
+    cards = [_card("LULU", 80.0), _card("GEV", 70.0)]
+    vm = build_view_model(cards, _session(), assessments={"LULU": _brief("LULU")})
+    assert vm.deep_block == ["GEV"]
+
+
+def test_deep_block_empty_when_every_leader_was_researched():
+    """The /deep path: every present name gets researched, so the handoff has nothing
+    left to suggest and the section drops out entirely (_DeepBlock.applies)."""
+    cards = [_card("LULU", 80.0)]
+    vm = build_view_model(cards, _session(), assessments={"LULU": _brief("LULU")})
+    assert vm.deep_block == []
+
+
+def test_deep_block_unchanged_when_nothing_was_researched():
+    """The plain /screen path keeps today's behaviour — this is the handoff's whole
+    purpose and must not regress."""
+    cards = [_card("LULU", 80.0), _card("GEV", 70.0)]
+    vm = build_view_model(cards, _session(), assessments={})
+    assert vm.deep_block == ["LULU", "GEV"]
+
+
+def test_deep_block_still_excludes_gated_and_unscored_names():
+    """The pre-existing filters survive: a gated or unscored name can't be passed to
+    /deep via the handoff regardless of assessments."""
+    cards = [_card("OK", 80.0), _card("GATED", 70.0, gates=["negative_fcf"]),
+             _card("UNSCORED", 60.0, scored=False)]
+    vm = build_view_model(cards, _session(), assessments={})
+    assert vm.deep_block == ["OK"]
