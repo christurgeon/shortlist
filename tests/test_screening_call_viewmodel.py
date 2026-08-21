@@ -62,3 +62,27 @@ def test_clamped_call_surfaces_clamp_reason_not_bull_rationale():
     assert "Auto-downgraded" in vm.call_rationale
     assert "tripped negative_fcf gate" in vm.call_rationale
     assert "compelling bull" not in vm.call_rationale
+
+
+# --- pre-clamp stance (PLAN_INVENTORY_DECOMPOSITION §2) ---------------------------
+
+def test_one_liner_marks_a_gate_override():
+    """The bot reply is often the ONLY surface a user sees. "Avoid · conviction Low"
+    hid that a gate had overruled the model."""
+    from shortlist.bot.report.viewmodel import call_one_liner
+    rec = {"thesis": {"what_would_change_my_mind": ["margins compress"]},
+           "screening_call": {"stance": "AVOID", "conviction": "LOW",
+                              "stance_clamped": True, "model_stance": "HOLD",
+                              "clamp_note": "tripped negative_fcf gate"}}
+    line = call_one_liner(rec)
+    assert "gate override — model said Hold" in line
+    assert "conviction Low" in line
+
+
+def test_one_liner_unchanged_when_nothing_was_clamped():
+    """Back-compat: a clean call, and any brief written before model_stance existed,
+    must render exactly as before."""
+    from shortlist.bot.report.viewmodel import call_one_liner
+    rec = {"thesis": {"what_would_change_my_mind": ["margins compress"]},
+           "screening_call": {"stance": "BUY", "conviction": "MEDIUM"}}
+    assert call_one_liner(rec) == "Buy · conviction Medium — but watch: margins compress"

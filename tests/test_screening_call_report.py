@@ -75,3 +75,45 @@ def test_custom_config_label_in_badge():
     md = report.to_markdown(_assess(call),
                             {"research": {"screening_call": {"labels": {"BUY": "Accumulate"}}}})
     assert "SCREENING CALL: Accumulate" in md
+
+
+# --- pre-clamp stance (PLAN_INVENTORY_DECOMPOSITION §2) ---------------------------
+
+def test_clamped_call_names_the_stance_the_gate_replaced():
+    """"Avoid, and the model agreed" and "Avoid, but the model said Buy" are different
+    reads; only the second is a rule overriding a judgment. Before model_stance the
+    brief could not tell them apart."""
+    call = ScreeningCall(stance="AVOID", conviction="LOW", rationale="balanced",
+                         stance_clamped=True, clamp_note="tripped negative_fcf gate",
+                         model_stance="HOLD")
+    md = report.to_markdown(_assess(call))
+    assert "tripped negative_fcf gate overrode the model's Hold" in md
+    assert "Auto-downgraded" not in md                  # superseded by the richer line
+    assert "_Model's pre-clamp view: balanced_" in md   # rationale still demoted
+
+
+def test_clamped_call_without_model_stance_keeps_the_old_wording():
+    """Briefs written before the field existed read back as None. They must render the
+    pre-2026-08-20 wording, not an empty "overrode the model's "."""
+    call = ScreeningCall(stance="AVOID", conviction="LOW", rationale="r",
+                         stance_clamped=True, clamp_note="tripped negative_fcf gate")
+    md = report.to_markdown(_assess(call))
+    assert "Auto-downgraded: tripped negative_fcf gate." in md
+    assert "overrode the model" not in md
+
+
+def test_capped_conviction_names_the_models_own_conviction():
+    call = ScreeningCall(stance="HOLD", conviction="MEDIUM", rationale="r",
+                         conviction_capped=True, model_conviction="HIGH")
+    md = report.to_markdown(_assess(call))
+    assert "the model said High" in md
+
+
+def test_data_confidence_rendered_when_known_and_omitted_when_not():
+    """HDSN 2026-08-20 shipped confidence 1.0 while reading "conviction Low" — the two
+    are independent and the brief must show both rather than let one imply the other."""
+    md = report.to_markdown(_assess(
+        ScreeningCall(stance="AVOID", conviction="LOW", rationale="r", confidence=1.0)))
+    assert "**Data confidence:** 1.00" in md
+    md_none = report.to_markdown(_assess(ScreeningCall(stance="HOLD", rationale="r")))
+    assert "Data confidence" not in md_none

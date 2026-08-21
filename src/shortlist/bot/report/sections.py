@@ -276,6 +276,9 @@ class _Research:
                         f'color:{rgb_hex(text_on(col))}">'
                         f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
                 line = pill + ' <span class="muted">screen only — not advice</span>'
+                if a.call_model_stance:
+                    # A gate override is not the model's own view; say so by the pill.
+                    line += ' <span class="muted">· gate override</span>'
                 if a.call_watch:
                     line += ' <span class="muted">· but watch: ' + h.esc(a.call_watch) + "</span>"
                 parts.append(h.raw("p", line, _class="call"))
@@ -324,6 +327,8 @@ class _Research:
             if a.call_stance:
                 head = (f"{stance_emoji(a.call_stance)} {ld.ticker}: {a.call_label} · "
                         f"{a.call_conviction.title()} — screen only, not advice")
+                if a.call_model_stance:
+                    head += " · gate override"
                 if a.call_watch:
                     head += f" · but watch: {a.call_watch}"
                 out.append(head)

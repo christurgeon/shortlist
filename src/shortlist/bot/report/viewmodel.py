@@ -66,6 +66,9 @@ class AssessmentVM:
     call_rationale: str = ""
     call_watch: str = ""
     call_decided_without: list[str] = field(default_factory=list)
+    # The stance the gate replaced (None when nothing was clamped, and on briefs
+    # written before the field existed). See research/models.py:ScreeningCall.
+    call_model_stance: str = ""
 
 
 @dataclass
@@ -106,9 +109,13 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
     cmm = [str(x) for x in (th.get("what_would_change_my_mind") or [])]
     watch = (cmm[0] if cmm else th.get("bear_case", "")) if sc else ""
     stance = sc.get("stance", "") if sc else ""
+    model_stance = (sc.get("model_stance") or "") if sc else ""
     if sc and sc.get("stance_clamped"):
         note = sc.get("clamp_note") or "a tripped gate"
-        call_rationale = f"Auto-downgraded: {note}."
+        if model_stance:
+            call_rationale = f"{note} overrode the model's {stance_label(model_stance)}."
+        else:
+            call_rationale = f"Auto-downgraded: {note}."
     else:
         call_rationale = (sc.get("rationale") or "") if sc else ""
     mo = rec.get("moat")
@@ -132,15 +139,20 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         call_rationale=call_rationale,
         call_watch=watch,
         call_decided_without=[str(x) for x in ((sc.get("decided_without") if sc else None) or [])],
+        call_model_stance=model_stance,
     )
 
 
 def call_one_liner(rec: dict) -> str | None:
     """Plain-text one-liner for the bot reply, or None if no call. Reuses _assessment_vm."""
+    from ...research.models import stance_label
     vm = _assessment_vm(rec)
     if not vm.call_stance:
         return None
     line = vm.call_label
+    if vm.call_model_stance:
+        # A clamped call reads as a rule overriding a judgment, not as the model's view.
+        line += f" (gate override — model said {stance_label(vm.call_model_stance)})"
     if vm.call_conviction:
         line += f" · conviction {vm.call_conviction.title()}"
     if vm.call_watch:
