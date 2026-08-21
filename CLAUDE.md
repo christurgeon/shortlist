@@ -99,11 +99,13 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 | Data-source roadmap / what's shipped | `docs/DATA_SOURCES.md` |
 | Signal research and priors | `docs/PREDICTIVE_SIGNALS_RESEARCH.md` |
 | Known gaps, unvalidated assumptions | `docs/ASSESSMENT_GAPS.md`, `TODO.md` |
+| Whether a question is already settled | `docs/audits/README.md` — the verdict register; **read before opening any work item** |
 | Why a past decision went the way it did | `docs/audits/YYYY-MM-DD-*.md` |
 
 **Three doc classes, and only one describes today.** `docs/SCORING.md`, `docs/RESEARCH.md`,
 `docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md` and `README.md` track current
-behaviour. `docs/audits/` is **dated evidence** — cite it for *why*, never as a description of
+behaviour. `docs/audits/` is **dated evidence**, indexed by `docs/audits/README.md`, which also
+carries the register of closed verdicts — cite it for *why*, never as a description of
 how the code behaves. `docs/PLAN_*.md`, `docs/POSITION_MONITOR.md` and `docs/STATEMENTS_MERGE.md`
 are **design-time**: they record intent at the time of writing and their file/line references
 are not maintained. Read the code for behaviour; read these for the reasoning behind it.

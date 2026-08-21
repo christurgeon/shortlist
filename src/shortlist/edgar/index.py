@@ -3,6 +3,22 @@
 The daily index lists ~800-1,500 rows/day (CIK + accession only), so each filing needs one
 further request for its submission text. Live fetching is bounded by a per-day cap; the pure
 aggregation stays testable in isolation.
+
+MOSTLY UNCALLED BY `src/`, DELIBERATELY KEPT (reviewed 2026-08-21). `_dedup_by_accession`
+(via `backtest/edgar_history.py`) and `_walk_back_to_published` are the only symbols
+production still imports. `fetch_form4_submissions`, `fetch_activist_records`,
+`fetch_recent_activist_records`, `fetch_amendment_records`, `fetch_recent_amendment_records`
+and `activist_stakes_from_records` are reachable only from tests: their caller,
+`edgar/signals.py`, retired with the autonomous scout
+(`docs/audits/2026-08-11-scout-retirement.md`).
+
+That audit stopped the repo ACTING on 13D/Form-4 signals; it did not disprove the
+collectors, and archiving them was explicit. They stay because they parse SEC's daily
+index, an external format that drifts, and their ~570 lines of tests (one `live`-marked,
+skipped by default) are exactly what would tell a reviver whether the parsing still holds.
+Deleting them to save lines in a module nothing imports trades days of re-derivation for
+no measurable gain. Do not "clean up" this module without a decision to abandon 13D/Form-4
+ingestion outright.
 """
 from __future__ import annotations
 
