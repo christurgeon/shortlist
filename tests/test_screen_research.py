@@ -124,9 +124,12 @@ def test_enrich_require_passed_false_includes_gated(monkeypatch):
         seen.append(ticker)
         raise RuntimeError("no network in test")   # _enrich_card catches -> ResearchResult(skipped)
 
-    # default (require_passed=True): gated card not selected -> fetch never called, no results
+    # default (require_passed=True): gated card not selected -> fetch never called. It is
+    # still REPORTED as skipped (a silently-empty result printed nothing at all).
     results = enrich([gated], {}, top_n=5, fetch=fake_fetch, assess_fn=lambda *a, **k: None)
-    assert seen == [] and results == []
+    assert seen == []
+    assert len(results) == 1 and results[0].brief_path is None
+    assert "over_leveraged" in results[0].skipped
 
     # require_passed=False: gated card IS selected -> fetch called, a (skipped) ResearchResult
     # is returned end-to-end. Proves selection AND that the pipeline runs the gated name.

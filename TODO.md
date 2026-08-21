@@ -76,16 +76,6 @@ it outranks §3's alpha questions.
        move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
        cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
        similarity, so a single-firm absolute cosine is uninterpretable regardless.
-- **`--research N` silently skips GATED names — no output at all.** `research/__init__.py:110`
-  filters `eligible = [c for c in ranked if c.passed]`, so a gated card never becomes a
-  `ResearchResult` and therefore can never carry `.skipped`. `screen.py:_run_research_phase`
-  only prints its "Qualitative research" header `if results`, so an all-gated selection
-  prints NOTHING — no header, no per-name skip line. Measured 2026-08-21:
-  `shortlist --tickers HDSN --research 1 --refresh` exited 0 having done no research and
-  said nothing, because HDSN trips `negative_fcf` + `below_min_mktcap`. Only `/deep`
-  (`require_passed=False`) researches a gated name. The filter is CORRECT — the fix is to
-  report it, e.g. have `enrich` return a skipped `ResearchResult` for gate-filtered names,
-  or have `_run_research_phase` name what it dropped and why.
 - **Nothing checks a `/deep` brief against ITSELF.** Quote-verification grounds each claim
   against filing text, but no check compares sections. The 2026-08-20 HDSN brief said
   "operating cash flow turned sharply negative in FY2025 **on an inventory build**" in its
@@ -422,9 +412,6 @@ decision above goes the paid way.
 - **Widen the diluted-shares go/no-go beyond the store's 42 tickers** — keyless, costs only
   time, and it is the only thing that further reduces residual risk (another code review would
   not).
-- **`_usable_years` (`data/models.py:510`) does not reject an all-`None` `fiscal_years` list.**
-  Net observable behaviour is identical to rejection, so it is a docstring-vs-contract gap, not
-  a wrong output.
 - Parked observations: the `pe_ttm` fallback accepts negative EPS (harmless — `pe_vs_history()`
   guards `> 0` and `pe_ttm` isn't in `--json`); `bridge._close_near` has no max-gap bound (a
   short monthly history can pair a fiscal end with a months-away close);
@@ -434,8 +421,22 @@ decision above goes the paid way.
 
 # 5. Code hygiene (fold in when next touching these files)
 
-- `edgar/index.py:fetch_daily_records`/`fetch_recent_records` are dead code with tests pinning
-  them.
+- **Most of `edgar/index.py` is orphaned, not just the pair that was deleted (2026-08-21).**
+  Removing `fetch_daily_records`/`fetch_recent_records` exposed the wider shape: the ONLY
+  symbol `src/` still imports from this module is `_dedup_by_accession`
+  (`backtest/edgar_history.py:18`). `fetch_form4_submissions`, `fetch_activist_records`,
+  `fetch_recent_activist_records`, `fetch_amendment_records`,
+  `fetch_recent_amendment_records` and `activist_stakes_from_records` are reachable only
+  from tests — their caller, `edgar/signals.py`, went with the scout (§6, 2026-08-11).
+  `_walk_back_to_published` is genuinely shared and stays regardless.
+
+  **Status:** deferred, not deferred-because-unexamined. This is the 13D/Form-4 ingestion
+  the scout retirement ARCHIVED rather than disproved, and
+  `docs/audits/2026-08-11-scout-retirement.md` records a decision to stop *acting* on
+  those signals — not to destroy the collectors that feed them. Whether to keep an
+  un-called collector against a possible revival is the user's call to make with that
+  audit in hand, not a hygiene drive-by, so it cannot be settled in-session.
+
 ---
 
 # 6. Closed with a verdict — do not redo
