@@ -5,6 +5,9 @@ lives.** Deliberately short. Detail belongs next to the code it constrains — a
 docstring or `docs/` page can be reviewed in the same diff as the change it governs, which
 is why the gotchas that used to be inlined here are pointers now.
 
+The same split applies inside a module: a comment carries constraints and traps, git
+carries what changed and why. The existing comment density is historical, not a target.
+
 **Before changing a feature, read its authority file.** If this file and an authority file
 disagree, the authority file wins and this one is stale — fix it.
 
