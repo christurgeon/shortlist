@@ -37,55 +37,6 @@ def _is_real_ticker(raw: str | None) -> str:
     return t
 
 
-def fetch_daily_records(session: date, max_filings: int, identity: str) -> list[dict]:
-    """Live path: pull the Form 4 daily index for `session`, fetch up to
-    `max_filings` documents, parse each into {ticker, insider, code, value}.
-
-    Wraps synchronous edgartools; honors SEC fair-access via a bounded worker pool
-    SEPARATE from the per-ticker EdgarSource semaphore. Returns [] (never raises) on
-    any failure so the signal degrades. Implementation uses edgartools'
-    get_filings(form='4', filing_date=session) + .obj() transaction parsing; cap the
-    count at max_filings and record truncation in the caller's coverage detail.
-    """
-    try:
-        from edgar import get_filings, set_identity  # edgartools
-        set_identity(identity)
-        filings = get_filings(form="4", filing_date=session.isoformat())
-        records: list[dict] = []
-        for f in list(filings)[:max_filings]:
-            try:
-                form4 = f.obj()
-                mt = getattr(form4, "market_trades", None)
-                if mt is None or getattr(mt, "empty", True):
-                    continue
-                ticker = _is_real_ticker(getattr(getattr(form4, "issuer", None), "ticker", ""))
-                insider = getattr(form4, "insider_name", None)
-                if not insider:
-                    # Each Form 4 is exactly one reporting owner. When the name can't
-                    # be parsed, key the buyer off the filing's unique accession so two
-                    # distinct unnamed insiders don't collapse to one "?" and suppress
-                    # a real cluster (cluster_buys_from_records counts distinct names).
-                    acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
-                    insider = f"acc:{acc}" if acc else "?"
-                for row in mt.itertuples(index=False):
-                    shares = getattr(row, "Shares", None) or 0
-                    price = getattr(row, "Price", None) or 0
-                    records.append({
-                        "ticker": ticker,
-                        "insider": insider,
-                        "code": getattr(row, "Code", "") or "",
-                        "value": float(shares * price),
-                    })
-            except Exception:  # noqa: BLE001 — skip an unparseable filing
-                continue
-        return [r for r in records if r["ticker"]]  # _is_real_ticker() already blanked placeholders
-    except Exception as exc:  # noqa: BLE001 — edgartools missing or SEC error -> degrade
-        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
-        # must not read as "0 filings today".
-        warnings.warn(f"edgar: index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
-        return []
-
-
 def _walk_back_to_published(session: date, lookback: int,
                             fetch_day: Callable[[date], list[dict]]) -> tuple[list[dict], date]:
     """Shared walk-back shape for every "most-recent published SEC daily index" scanner
@@ -106,20 +57,10 @@ def _walk_back_to_published(session: date, lookback: int,
     return [], session
 
 
-def fetch_recent_records(session: date, max_filings: int, identity: str,
-                         lookback: int = 4, _fetch=None) -> tuple[list[dict], date]:
-    """Most-recent *published* Form 4 daily index at or before `session`. See
-    _walk_back_to_published for the fallback rationale. Returns (records, session_used) so
-    the caller can surface the fallback in coverage. Never raises (degrades to ([], session)).
-    """
-    fetch = _fetch or fetch_daily_records
-    return _walk_back_to_published(session, lookback, lambda d: fetch(d, max_filings, identity))
-
-
 def fetch_form4_submissions(session: date, max_filings: int, identity: str,
                             _throttle=None) -> tuple[list[str], date | None]:
     """Form 4 complete-submission texts for `session` (walk-back to the last published
-    index, same rule as fetch_recent_records).
+    index — see _walk_back_to_published for the rationale).
 
     ONE request per filing: `Filing.full_text_submission` downloads the complete-submission
     `.txt` (~4.6 KB, the full ownershipDocument XML embedded) directly from its
@@ -138,8 +79,9 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
     - A normal walk-back exhaustion (the daily index just isn't published yet for any of
       the last `lookback` days) -> `([], session)`, `used == session`. Not an error.
     - A real failure (edgartools missing, SEC outage, identity error, ...) -> `([], None)`.
-      `used is None` is the hard-failure sentinel the caller (signals.py) checks to keep a
-      genuine outage from reading identically to a quiet day in `available()`.
+      `used is None` is the hard-failure sentinel that keeps a genuine outage from reading
+      identically to a quiet day. Its consumer, `edgar/signals.py:available()`, was retired
+      with the scout (2026-08-11); the distinction is kept for whatever reads this next.
     """
     try:
         from edgar import get_filings, set_identity

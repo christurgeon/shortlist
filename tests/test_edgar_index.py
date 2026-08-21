@@ -2,46 +2,50 @@ from datetime import date
 from shortlist.edgar.index import (
     fetch_activist_records,
     fetch_form4_submissions,
-    fetch_recent_records,
     _is_real_ticker,
+    _walk_back_to_published,
 )
 
 
-def test_fetch_recent_walks_back_to_last_published_index():
+# _walk_back_to_published is the shared shape behind fetch_form4_submissions,
+# fetch_recent_activist_records and fetch_recent_amendment_records. It used to be
+# exercised only through fetch_recent_records; these tests moved onto it directly
+# when that dead wrapper was deleted, so the coverage still guards live callers.
+
+def test_walk_back_reaches_the_last_published_index():
     # Wed 2026-06-03's index is unpublished (empty) at after-close run time; the
     # signal should fall back to the prior published session (Tue 2026-06-02).
     published = {date(2026, 6, 2): [{"ticker": "ABC", "insider": "Jane", "code": "P", "value": 1}]}
     seen = []
 
-    def fake_fetch(d, cap, ident):
+    def fake_fetch(d):
         seen.append(d)
         return published.get(d, [])
 
-    recs, used = fetch_recent_records(date(2026, 6, 3), 400, "id", _fetch=fake_fetch)
+    recs, used = _walk_back_to_published(date(2026, 6, 3), 4, fake_fetch)
     assert used == date(2026, 6, 2)
     assert recs and recs[0]["ticker"] == "ABC"
     assert seen[0] == date(2026, 6, 3)  # tried today first
 
 
-def test_fetch_recent_skips_weekend_when_walking_back():
+def test_walk_back_skips_the_weekend():
     # Mon 2026-06-08 unpublished -> must skip Sun/Sat back to Fri 2026-06-05.
     published = {date(2026, 6, 5): [{"ticker": "ABC", "insider": "Jane", "code": "P", "value": 1}]}
     seen = []
 
-    def fake_fetch(d, cap, ident):
+    def fake_fetch(d):
         seen.append(d)
         return published.get(d, [])
 
-    recs, used = fetch_recent_records(date(2026, 6, 8), 400, "id", _fetch=fake_fetch)
+    recs, used = _walk_back_to_published(date(2026, 6, 8), 4, fake_fetch)
     assert used == date(2026, 6, 5)
     assert date(2026, 6, 6) not in seen and date(2026, 6, 7) not in seen  # weekend skipped
 
 
-def test_fetch_recent_exhaustion_returns_original_session():
+def test_walk_back_exhaustion_returns_the_original_session():
     # All sessions empty -> return ([], original session) so the caller's "used != session"
     # fallback-suffix logic stays correct (no false "index empty, used ..." note).
-    recs, used = fetch_recent_records(date(2026, 6, 3), 400, "id",
-                                     lookback=2, _fetch=lambda d, c, i: [])
+    recs, used = _walk_back_to_published(date(2026, 6, 3), 2, lambda d: [])
     assert recs == [] and used == date(2026, 6, 3)
 
 
@@ -69,15 +73,6 @@ def _broken_edgar_module(monkeypatch):
     fake.set_identity = _boom
     fake.get_filings = _boom
     monkeypatch.setitem(sys.modules, "edgar", fake)
-
-
-def test_fetch_daily_records_outage_degrades_loudly(monkeypatch):
-    import pytest
-    from shortlist.edgar.index import fetch_daily_records
-    _broken_edgar_module(monkeypatch)
-    with pytest.warns(UserWarning, match="index fetch failed") as w:
-        assert fetch_daily_records(date(2026, 7, 1), 5, "x@y.z") == []   # still never-raises
-    assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
 
 def test_fetch_activist_records_outage_degrades_loudly(monkeypatch):

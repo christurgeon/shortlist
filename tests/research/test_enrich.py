@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.research import ResearchResult, enrich
 from shortlist.research.models import (FilingBundle, FilingText, Moat,
                                        QualitativeAssessment, Thesis)
@@ -193,3 +195,69 @@ def test_enrich_other_fetch_errors_keep_filing_error_prefix(tmp_path):
     results = enrich([_Card("A", 90)], cfg, top_n=1,
                      fetch=fake_fetch, assess_fn=lambda *a, **k: None)
     assert results[0].skipped == "filing error: boom"
+
+
+# --- gate-filtered names are REPORTED, never silently dropped ---------------
+# Measured 2026-08-21: `shortlist --tickers HDSN --research 1 --refresh` exited 0
+# having done no research and said nothing at all — the gate filter dropped the
+# only name before it could become a ResearchResult, so screen.py's
+# `if results:` header never fired either.
+
+def test_enrich_reports_a_fully_gated_selection_instead_of_returning_nothing(tmp_path):
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    card = _Card("HDSN", 55, gates=["negative_fcf", "below_min_mktcap"])
+    results = enrich([card], cfg, top_n=1,
+                     fetch=lambda t, **k: pytest.fail("a gated name must not be fetched"),
+                     assess_fn=lambda *a, **k: None)
+    assert [r.ticker for r in results] == ["HDSN"]
+    assert results[0].brief_path is None
+    assert "negative_fcf" in results[0].skipped
+    assert "below_min_mktcap" in results[0].skipped
+
+
+def test_enrich_reports_an_unscored_name_as_not_scored(tmp_path):
+    """`passed` is `not gates and scored`; the abstention half needs its own wording."""
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich([_Card("A", 40, scored=False)], cfg, top_n=1,
+                     fetch=lambda t, **k: pytest.fail("an unscored name must not be fetched"),
+                     assess_fn=lambda *a, **k: None)
+    assert "not scored" in results[0].skipped
+
+
+def test_enrich_reports_a_displaced_gated_name_without_shrinking_the_selection(tmp_path):
+    """Reporting is additive: the research budget is still filled from the eligible
+    pool, and the results stay in rank order."""
+    cards = [_Card("A", 90), _Card("B", 80, gates=["over_leveraged"]), _Card("C", 70)]
+    seen = []
+
+    def fake_assess(card, bundle, config, **kw):
+        seen.append(card.ticker)
+        return _assessment(card.ticker)
+
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich(cards, cfg, top_n=2, fetch=lambda t, **k: _bundle(t),
+                     assess_fn=fake_assess)
+    assert seen == ["A", "C"]
+    assert [r.ticker for r in results] == ["A", "B", "C"]
+    assert "over_leveraged" in results[1].skipped
+    assert results[0].brief_path and results[2].brief_path
+
+
+def test_enrich_does_not_report_gated_names_below_the_top_n(tmp_path):
+    """Bounded by top_n — a screen of 200 names must not print 190 skip lines."""
+    cards = [_Card("A", 90), _Card("Z", 10, gates=["negative_fcf"])]
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich(cards, cfg, top_n=1, fetch=lambda t, **k: _bundle(t),
+                     assess_fn=lambda c, b, cfg_, **kw: _assessment(c.ticker))
+    assert [r.ticker for r in results] == ["A"]
+
+
+def test_enrich_does_not_report_gate_filters_when_require_passed_is_false(tmp_path):
+    """`/deep` deliberately researches a gated name, so there is no filter to report."""
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich([_Card("A", 90, gates=["negative_fcf"])], cfg, top_n=1,
+                     fetch=lambda t, **k: _bundle(t),
+                     assess_fn=lambda c, b, cfg_, **kw: _assessment(c.ticker),
+                     require_passed=False)
+    assert [r.ticker for r in results] == ["A"]
+    assert results[0].skipped is None and results[0].brief_path

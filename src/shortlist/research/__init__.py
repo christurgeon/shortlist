@@ -94,6 +94,20 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         synthesis=assessment.synthesis)
 
 
+def _filtered_reason(card) -> str:
+    """Why a card was filtered out of the research selection. `passed` is
+    `not gates and scored`, so BOTH halves must be reportable — a gated name and an
+    abstained one are different answers to "why is there no brief". The final
+    fallback is unreachable by construction (only non-`passed` cards reach here) but
+    must not return "", which downstream reads as "not skipped"."""
+    parts = []
+    if getattr(card, "gates", None):
+        parts.append("gated (" + ", ".join(card.gates) + ")")
+    if not getattr(card, "scored", True):
+        parts.append("not scored (below the validity floor)")
+    return "; ".join(parts) or "filtered out of the research selection"
+
+
 def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
            require_passed: bool = True,
            fetch: Callable = _fetch_bundle, assess_fn: Callable = _assess,
@@ -104,11 +118,26 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     top-N regardless of gate status (used by the interactive `/deep` command, where
     the operator deliberately names the ticker). `fetch`/`assess_fn` are injectable
     for testing. One failure never aborts the batch — each name yields a
-    ResearchResult (with `skipped` set on failure)."""
+    ResearchResult (with `skipped` set on failure).
+
+    Gate-filtered names inside the top-N are RETURNED as skipped results, so a fully
+    gated selection reports itself instead of coming back empty. Results are in rank
+    order and may therefore exceed `top_n` in length — but never more than one entry
+    per name in `ranked[:top_n]` plus the `top_n` researched."""
     root = config.get("research", {}).get("output_root", "research")
     ranked = sorted(cards, key=rank_key, reverse=True)
     eligible = ranked if not require_passed else [c for c in ranked if c.passed]
     selected = eligible[:top_n]
+    picked = {c.ticker for c in selected}
+    # Gate-filtered names that ranked INTO the top-N are reported as skipped rather
+    # than dropped in silence: an all-gated selection used to return [], which made
+    # screen.py's `if results:` header vanish too, so the run printed nothing at all
+    # (measured 2026-08-21 on HDSN). Reporting is additive — `selected` is unchanged,
+    # so the research budget is still filled from the eligible pool — and bounded by
+    # top_n, so a 200-name screen cannot emit 190 skip lines.
+    reported = picked | {c.ticker for c in ranked[:top_n]}
     return [_enrich_card(card, config, root, refresh, fetch, assess_fn, reason_fn,
                          macro=macro)
-            for card in selected]
+            if card.ticker in picked
+            else ResearchResult(card.ticker, skipped=_filtered_reason(card))
+            for card in ranked if card.ticker in reported]
