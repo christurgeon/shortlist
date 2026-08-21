@@ -76,6 +76,24 @@ it outranks §3's alpha questions.
        move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
        cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
        similarity, so a single-firm absolute cosine is uninterpretable regardless.
+- **`--research N` silently skips GATED names — no output at all.** `research/__init__.py:110`
+  filters `eligible = [c for c in ranked if c.passed]`, so a gated card never becomes a
+  `ResearchResult` and therefore can never carry `.skipped`. `screen.py:_run_research_phase`
+  only prints its "Qualitative research" header `if results`, so an all-gated selection
+  prints NOTHING — no header, no per-name skip line. Measured 2026-08-21:
+  `shortlist --tickers HDSN --research 1 --refresh` exited 0 having done no research and
+  said nothing, because HDSN trips `negative_fcf` + `below_min_mktcap`. Only `/deep`
+  (`require_passed=False`) researches a gated name. The filter is CORRECT — the fix is to
+  report it, e.g. have `enrich` return a skipped `ResearchResult` for gate-filtered names,
+  or have `_run_research_phase` name what it dropped and why.
+- **Nothing checks a `/deep` brief against ITSELF.** Quote-verification grounds each claim
+  against filing text, but no check compares sections. The 2026-08-20 HDSN brief said
+  "operating cash flow turned sharply negative in FY2025 **on an inventory build**" in its
+  Bear case while a red flag called the same facts "a genuine cash-burn/liquidity stress
+  trend" — incompatible readings of one number, in one document. That inconsistency is what
+  sent the 2026-08-21 inventory investigation down a wrong path for several hours. Cheap to
+  build (no new data, no new signal, no rank-IC bar) and it would have caught the error.
+  Highest-value follow-up identified in that session.
 - **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
   `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
   year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR. On an
