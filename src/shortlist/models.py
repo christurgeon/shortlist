@@ -123,7 +123,8 @@ class StockMetrics:
 
     # Up-to-5y financial series (newest-first), each entry a dict:
     # {fiscal_year, period_end, revenue, gross_profit, net_income,
-    #  operating_cash_flow, free_cash_flow, diluted_eps, total_debt, diluted_shares}.
+    #  operating_cash_flow, free_cash_flow, diluted_eps, total_debt, diluted_shares,
+    #  cash_and_equivalents, inventory}.
     # Plain list-of-dicts (not the data.Statements type) to avoid a core->data import;
     # research quant-context only, never read by the scorer. None on stacks without
     # full statements (e.g. the lean screener path).

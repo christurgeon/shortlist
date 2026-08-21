@@ -26,6 +26,13 @@ from __future__ import annotations
 # convention requires.
 DILUTED_SHARES_TAG = "WeightedAverageNumberOfDilutedSharesOutstanding"
 
+# Inventory BALANCE (balance-sheet instant). Deliberately the balance only: the
+# cash-flow companion `IncreaseDecreaseInInventories` is NOT extracted, because the
+# two source paths sign it oppositely (raw XBRL: + == build; edgartools applies
+# preferred_sign -1 so + == cash inflow) and nothing downstream needs the cash line.
+# docs/PLAN_INVENTORY_DECOMPOSITION.md §0.1.
+INVENTORY_BALANCE_TAG = "InventoryNet"
+
 DIVIDEND_TAGS = ("PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
                  "PaymentsOfDividendsPreferredStockAndPreferenceStock",
                  "PaymentsOfDividendsMinorityInterest")

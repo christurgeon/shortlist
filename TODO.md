@@ -76,6 +76,15 @@ it outranks §3's alpha questions.
        move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
        cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
        similarity, so a single-firm absolute cosine is uninterpretable regardless.
+- **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
+  `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
+  year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR. On an
+  FMP-gated (402) or rate-limited (429) run the DIO leg abstains and only the balance
+  trend renders — the FISV 2026-08-21 run hit exactly this. Not free to fix: filers split
+  between `us-gaap_GrossProfit` (LULU, non-dimensional) and `CostOfGoodsAndServicesSold`
+  (HDSN, FISV; on LULU every such row is a segment breakdown, dimension=True), and
+  supplying gross_profit from EDGAR would change a SCORED input (gross_margin) and its
+  merge precedence. Needs its own design + evidence, not a drive-by.
 - **`negative_fcf` inventory-build excusal arm — NOT built, measurement stated.** The gate is
   already stage-aware (it excuses fast growers); an inventory-build arm would be the same
   shape. Testable question: among negative-FCF names whose burn is fully explained by an

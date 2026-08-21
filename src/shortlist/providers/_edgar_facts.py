@@ -34,6 +34,7 @@ from ._gaap_tags import (
 )
 from ._gaap_tags import (
     DILUTED_SHARES_TAG,
+    INVENTORY_BALANCE_TAG,
 )
 from ._gaap_tags import (
     DIVIDEND_TAGS as _DIVIDEND_TAGS,
@@ -66,6 +67,11 @@ class EdgarFinancials:
     total_equity: list[float] = field(default_factory=list)
     cash_and_equivalents: list[float] = field(default_factory=list)
     total_assets: list[float] = field(default_factory=list)   # instant total assets, newest-first
+    # Inventory BALANCE, newest-first (research context only; never scored). Same
+    # all-or-nothing `_series` contract as cash_and_equivalents, which is what makes
+    # index-0 pairing with the income-statement spine safe: a gap yields [] rather
+    # than a half-filled list, and both spines are newest-first.
+    inventory: list[float] = field(default_factory=list)
     # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3), computed here
     # because they need each series keyed by its OWN statement dates (NI on income,
     # CFO on cash-flow, Assets on balance-sheet instant) — list positions can differ.
@@ -449,6 +455,14 @@ def extract_financials(
     # concept. Verified on live AAPL (~$30B, not the ~$160B incl. securities).
     fin.cash_and_equivalents = _series(
         _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
+
+    # Inventory balance. Matched on the RAW concept, never standard_concept: HDSN's
+    # inventory rows carry standard_concept NaN and edgartools buckets
+    # InventoryWriteDown as "RestructuringExpenseBenefit". Abstain on anything but a
+    # single non-dimensional row — a duplicated row must not be summed or guessed at.
+    _inv_rows = _rows_by_concept(balance_df, (f"us-gaap_{INVENTORY_BALANCE_TAG}",))
+    if len(_inv_rows) == 1:
+        fin.inventory = _series(_inv_rows[0], bal_inst)
 
     # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Total
     # assets ("Assets" is edgartools' standard_concept for us-gaap:Assets, the

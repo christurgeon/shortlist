@@ -81,6 +81,9 @@ class Statements:
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     cash_and_equivalents: list[float] = field(default_factory=list)
+    # Inventory BALANCE, newest-first. Research context only (the /deep inventory
+    # line); never scored, never flagged. Excluded from coverage below.
+    inventory: list[float] = field(default_factory=list)
     # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). total_assets
     # is plumbing; asset_growth/accruals are pre-computed scalars (the source aligns
     # NI/CFO/Assets by their own statement dates — the bridge can't, so it copies).
@@ -328,6 +331,13 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       # Asset-growth / accruals plumbing + pre-computed scalars (§3) —
                       # surfaced via StockMetrics, not coverage-accounted here.
                       "total_assets", "asset_growth", "accruals",
+                      # Inventory is a /deep research context input only. MUST stay
+                      # excluded: `statements` is in KEY_OBJECTS, so an un-excluded
+                      # field moves the coverage DENOMINATOR for every snapshot ever
+                      # taken (measured: mock GEV 0.855 -> 0.825), which shifts
+                      # accumulate.py's THIN_MARK CAPTURED/THIN split -- the same
+                      # class of break documented above at 16% of 1,432 snapshots.
+                      "inventory",
                       # Shareholder-yield financing legs (§5) — plumbing the bridge
                       # divides by market_cap; surfaced via StockMetrics, not here.
                       "dividends_paid", "repurchases", "debt_repayments", "debt_issuance",

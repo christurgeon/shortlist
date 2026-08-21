@@ -64,7 +64,7 @@ def _financial_series(st) -> list[dict]:
     a cell is None where its series is shorter. Returns [] for empty Statements."""
     cols = ("fiscal_years", "fiscal_period_end", "revenue", "gross_profit",
             "net_income", "operating_cash_flow", "free_cash_flow", "diluted_eps",
-            "total_debt", "cash_and_equivalents", "diluted_shares")
+            "total_debt", "cash_and_equivalents", "diluted_shares", "inventory")
     n = max((len(getattr(st, c)) for c in cols), default=0)
 
     def at(seq, i):
@@ -75,6 +75,7 @@ def _financial_series(st) -> list[dict]:
         "period_end": at(st.fiscal_period_end, i),
         "revenue": at(st.revenue, i),
         "cash_and_equivalents": at(st.cash_and_equivalents, i),
+        "inventory": at(st.inventory, i),
         "gross_profit": at(st.gross_profit, i),
         "net_income": at(st.net_income, i),
         "operating_cash_flow": at(st.operating_cash_flow, i),
