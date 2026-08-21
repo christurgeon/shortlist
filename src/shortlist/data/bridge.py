@@ -18,10 +18,19 @@ from ..stats import (
 )
 from .models import TickerSnapshot
 
+# `monthly_closes` carries ONE point per calendar month, so for any target inside the
+# history the nearest point is <=~31 days away by construction. A wider gap means the
+# target lies OUTSIDE the sampled span -- the bound is the sampling interval plus slack
+# for a month whose last valid observation falls early, NOT a value fitted to an observed
+# failure. Without it a short history pairs an old fiscal end with the oldest close it
+# has, inventing a P/E from a price years away; `pe_vs_history` is a scored value leg.
+_MAX_CLOSE_GAP_DAYS = 45
+
 
 def _close_near(monthly_closes: list, iso_date: str) -> Optional[float]:
     """Close from the sampled history nearest (by absolute day distance) to iso_date.
-    None if no usable point or the target date is unparseable."""
+    None if no usable point, the target date is unparseable, or the nearest point is
+    more than `_MAX_CLOSE_GAP_DAYS` away."""
     if not monthly_closes:
         return None
     try:
@@ -38,7 +47,9 @@ def _close_near(monthly_closes: list, iso_date: str) -> Optional[float]:
             continue
         if best is None or gap < best[0]:
             best = (gap, float(close))
-    return best[1] if best else None
+    if best is None or best[0] > _MAX_CLOSE_GAP_DAYS:
+        return None
+    return best[1]
 
 
 _MAX_PLAUSIBLE_SHORT_PCT = 0.60   # > this of shares-outstanding => broken denominator (ADR/dual-class)
@@ -142,7 +153,7 @@ def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
     return out
 
 
-def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; split measured and rejected (PR #145, TODO.md §6)
+def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; split measured and rejected (PR #145, docs/audits/README.md)
     """Map a harness TickerSnapshot onto the flat StockMetrics that
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
     scorer's weight-redistribution handles them.

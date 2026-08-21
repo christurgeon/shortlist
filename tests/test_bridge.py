@@ -410,3 +410,49 @@ def test_roic_absent_when_equity_series_missing_entirely():
 
 def test_roic_absent_when_no_statements_at_all():
     assert snapshot_to_metrics(TickerSnapshot(ticker="ZZZ")).roic is None
+
+
+def _pe_snap(monthly_closes, eps, ends, price=100.0):
+    return TickerSnapshot(
+        ticker="X",
+        price=Price(price=price, monthly_closes=monthly_closes),
+        statements=Statements(fiscal_years=list(range(2025, 2025 - len(eps), -1)),
+                              diluted_eps=eps, fiscal_period_end=ends),
+    )
+
+
+def test_pe_median_5y_ignores_fiscal_ends_outside_the_price_history():
+    """`monthly_closes` is ONE point per calendar month, so the nearest legitimate close
+    is always within ~a month of the target. A fiscal end far outside the history has no
+    close to pair with, and pairing it with the oldest available one invents a P/E from a
+    price years away -- `pe_vs_history` is a SCORED value leg (scoring.py:107), so that
+    reaches the composite.
+
+    History here starts 2025-06; the 2024 and 2023 fiscal ends sit 6 and 18 months before
+    it and must be dropped rather than matched to the 2025-06 close. Before the bound this
+    returned 25.0 -- a historical P/E anchor inflated by prices up to two years late."""
+    m = snapshot_to_metrics(_pe_snap(
+        monthly_closes=[["2025-06-30", 110.0], ["2025-12-31", 120.0]],
+        eps=[6.0, 4.0, 2.0],
+        ends=["2025-12-31", "2024-12-31", "2023-12-31"]))
+    # Only FY2025 pairs (120/6 = 20); one point is below median_pe's min_points=2.
+    assert m.pe_median_5y is None
+
+
+def test_pe_median_5y_keeps_a_close_just_after_fiscal_year_end():
+    """The bound must not reject the normal case. Monthly sampling means a fiscal end
+    routinely lands weeks from the nearest point -- here FY2024 ends 2024-12-31 and the
+    nearest close is 2025-01-31, 31 days later, which is a legitimate year-end proxy."""
+    m = snapshot_to_metrics(_pe_snap(
+        monthly_closes=[["2025-01-31", 100.0], ["2025-12-31", 120.0]],
+        eps=[6.0, 4.0],
+        ends=["2025-12-31", "2024-12-31"]))
+    assert m.pe_median_5y == pytest.approx(22.5)   # median([120/6, 100/4])
+
+
+def test_pe_median_5y_still_pairs_ends_inside_the_history():
+    m = snapshot_to_metrics(_pe_snap(
+        monthly_closes=[["2023-12-29", 60.0], ["2024-12-31", 84.0], ["2025-12-31", 120.0]],
+        eps=[6.0, 4.0, 2.0],
+        ends=["2025-12-31", "2024-12-31", "2023-12-31"]))
+    assert m.pe_median_5y == pytest.approx(21.0)   # median([20, 21, 30])
