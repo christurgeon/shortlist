@@ -56,7 +56,7 @@ _CONFIDENCE_STEP = 0.05
 # cosine rendered by `_similarity_line`); `filings` also owns `_filing_sections`
 # / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
-                   "gov_contracts", "lobbying", "earnings", "riskdiff",
+                   "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
                    "filings", "textsim", "eightk", "notes")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
@@ -150,7 +150,7 @@ def _s(v: Any) -> str:
 
 
 def _aux_lines(m, config: Optional[dict]) -> list[str]:
-    """The gov-contract / lobbying / earnings context lines, RENDERED. Hashing
+    """The gov-contract / lobbying / earnings / inventory context lines, RENDERED. Hashing
     the rendered string (rather than picked fields) means a future field added
     inside one of these lines is covered automatically. All three are pure and
     network-free. Any failure degrades to "" — never raises."""
@@ -159,10 +159,12 @@ def _aux_lines(m, config: Optional[dict]) -> list[str]:
     try:
         from . import earnings as earnings_ctx
         from . import gov_contracts as gov_contracts_ctx
+        from . import inventory as inventory_ctx
         from . import lobbying as lobbying_ctx
         for mod, key in ((gov_contracts_ctx, "gov_contracts"),
                          (lobbying_ctx, "lobbying"),
-                         (earnings_ctx, "earnings")):
+                         (earnings_ctx, "earnings"),
+                         (inventory_ctx, "inventory")):
             try:
                 out.append(_s(mod.context_line(m, rcfg.get(key))))
             except Exception:

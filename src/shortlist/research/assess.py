@@ -11,6 +11,7 @@ from ..env import redact_secrets
 from . import claude_cli, reverse_dcf
 from . import earnings as earnings_ctx
 from . import gov_contracts as gov_contracts_ctx
+from . import inventory as inventory_ctx
 from . import lobbying as lobbying_ctx
 from . import proxy as proxy_ctx
 from .claude_cli import CliResult
@@ -416,7 +417,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     gaps_line = _data_gaps_line(card) if (scfg.get("enabled", True) and card is not None) else ""
     quant = _quant_context(card, gaps_line, rcfg.get("reverse_dcf"),
                            rcfg.get("gov_contracts"), rcfg.get("lobbying"),
-                           rcfg.get("earnings"))
+                           rcfg.get("earnings"), rcfg.get("inventory"))
     events_line = ""
     if filing_events:
         # 8-K item codes ride along free (already in the edgartools filings index).
@@ -569,7 +570,8 @@ def _fcf_col(series) -> list:
     return [row.get("free_cash_flow") for row in (series or [])]
 
 
-def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=None) -> str:  # noqa: C901 — one optional prompt line per branch; splitting only moves the branches
+def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None,  # noqa: C901 — one optional prompt line per branch; splitting only moves the branches
+                   lbcfg=None, ecfg=None, invcfg=None) -> str:
     """The screener's quant verdict, for reconciliation. Card-resident only; omits
     None scalars (which also keeps the screener engine's null legs out)."""
     if card is None:
@@ -637,6 +639,9 @@ def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None, lbcfg=None, ecfg=N
         e_line = earnings_ctx.context_line(m, ecfg)
         if e_line:
             lines.append(e_line)
+        inv_line = inventory_ctx.context_line(m, invcfg)
+        if inv_line:
+            lines.append(inv_line)
     if card.gates:
         lines.append("Tripped gates: " + ", ".join(card.gates) + ".")
     if card.flags:

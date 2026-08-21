@@ -247,6 +247,7 @@ class EdgarSource(Source):
                 total_debt=ef.total_debt,
                 total_equity=ef.total_equity,
                 cash_and_equivalents=ef.cash_and_equivalents,
+                inventory=ef.inventory,
                 operating_income=ef.operating_income,
                 dep_amort=ef.dep_amort,
                 interest_expense=ef.interest_expense,

@@ -535,6 +535,23 @@ research:
     run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
     display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
+  inventory:                   # Inventory LEVEL + days-inventory-outstanding context line
+                               # (research-only; NOT a scored signal and NOT a flag).
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+                               # Reports the inventory BALANCE and DIO trend only. It
+                               # deliberately does NOT compute "FCF excluding the
+                               # inventory build": measured on HDSN FY24->FY25 that cut
+                               # shows +26.3M -> +32.7M ("improved") while including AR
+                               # and AP shows +26.7M -> +16.3M (declined) — a single-line
+                               # adjustment is not a neutral decomposition. DIO is a
+                               # ratio of figures that move together, so it does not
+                               # depend on which lines you strip.
+                               # docs/PLAN_INVENTORY_DECOMPOSITION.md §0.2, §1.
+                               # NOTE the days-inventory leg needs gross_profit, which
+                               # EDGAR does not supply (it is year-joined from FMP), so
+                               # it abstains on an FMP-gated/429 run and only the
+                               # balance trend renders. See the module docstring.
+
   gov_contracts:               # USAspending gov-contracts context line (research-only;
                                # NOT a scored signal — see docs/.../2026-06-15-gov-contracts-*).
     enabled: true              # flip false for a byte-identical no-op (line omitted)
