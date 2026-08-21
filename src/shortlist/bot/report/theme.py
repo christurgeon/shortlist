@@ -24,7 +24,7 @@ FLAG_DESCRIPTIONS = {
     "dilution":                "Persistent net share issuance (roughly +3%/yr or more).",
     "social_hype":             "Elevated and rising Reddit/WSB mention volume.",
     "news_spike":              "Elevated and rising mainstream news volume.",
-    "filing_text_change":      "Large year-over-year change in 10-K/10-Q risk factors or MD&A (Lazy Prices).",
+    "filing_text_change":      "Large YoY change in 10-K/10-Q risk factors or MD&A (Lazy Prices). DORMANT — never fires.",
     "risk_off_regime":         "Leveraged or cyclical name during a risk-off macro regime.",
     "insider_cluster_buy":     "Multiple distinct insiders buying together.",
     "planned_sale":            "Insider sale appears pre-planned (10b5-1).",

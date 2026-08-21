@@ -55,16 +55,37 @@ it outranks §3's alpha questions.
   digest, and an as-of day bucket (`research.cache.{max_age_days, price_band_pct}` in
   `config.yaml`). Editing the prompt, the guards, `research.max_chars`, or a material price
   move now invalidates the cache instead of silently serving a stale brief.
-  - **Known gap, no producer yet:** the YoY Lazy-Prices text-similarity computed alongside the
-    wide key (`research/filings.py:_prior_year_sections`, `FilingBundle.text_similarity`) only
-    ever reaches `/deep` as a prompt-only context line and a rendered `## Filing-text change
-    (Lazy Prices)` section. Nothing writes `StockMetrics.filing_text_similarity`, so the
-    `filing_text_change` scoring flag still cannot fire — `check_flags` runs inside `score()`
-    (`scoring.py:809`) during `run_harness`, and research runs after it (`screen.py:188`,
-    `:193`), so a research-layer producer is structurally too late for the screen path.
-    Guarded by `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
-    (deliberately `xfail(strict=True)` — delete the decorator, not the test, if a
-    collection-time producer ever ships).
+  - **Lazy Prices: RETIRED 2026-08-20, TWO defects, both must be fixed to revive it.**
+    The `## Filing-text change (Lazy Prices)` render is GONE and the `filing_text_change`
+    config block ships `enabled: false`. `FilingBundle.text_similarity` is still computed
+    and still stored in the brief JSON. Evidence: `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.4.
+    1. **No producer.** Nothing writes `StockMetrics.filing_text_similarity` —
+       `check_flags` runs inside `score()` (`scoring.py:809`) during `run_harness`, and
+       research runs after it (`screen.py:188`, `:193`), so a research-layer producer is
+       structurally too late for the screen path. Guarded by
+       `tests/test_flag_producers.py::test_declared_flag_inputs_have_a_writer`
+       (deliberately `xfail(strict=True)`).
+    2. **The metric barely discriminates.** `research/textsim.py` retains stopwords, so
+       the cosine compresses near the top of its range: unrelated companies' 10-Ks score
+       **0.72-0.90** (NVDA vs PBT 0.7216, HDSN vs LULU 0.8973) against same-firm YoY
+       **~0.997** — which is why every brief rendered "0% rewritten". A realistic
+       same-firm rewrite cannot reach `max_similarity: 0.7`; even a de-SPAC, where the
+       registrant's whole business changes between consecutive 10-Ks, scores ~0.90.
+       Caution for anyone recalibrating: the low end is only 0.02 above the threshold,
+       and a truncated extraction (~150 tokens) DOES cross it — so a naive threshold
+       move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
+       cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
+       similarity, so a single-firm absolute cosine is uninterpretable regardless.
+- **`negative_fcf` inventory-build excusal arm — NOT built, measurement stated.** The gate is
+  already stage-aware (it excuses fast growers); an inventory-build arm would be the same
+  shape. Testable question: among negative-FCF names whose burn is fully explained by an
+  inventory build, is forward realized FCF distinguishable from other negative-FCF names?
+  Until that is measured the gate stands. NOTE the measurement must use a FULL
+  working-capital cut, not inventory alone: for HDSN FY24->FY25, FCF ex-inventory
+  "improves" +26.3M -> +32.7M while FCF ex-(inventory+AR+AP) DECLINES +26.7M -> +16.3M.
+  Stripping the inventory outflow while keeping a +20.2M payables inflow manufactures
+  the improvement. An advisory flag keyed on the inventory-only cut was specified and
+  then CUT for exactly this reason. See `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.2, §1.1.
 - **10-Q Part II Item 1A: SHIPPED 2026-08-14.** The quarter's risk-factor *changes* now reach
   the model as a diff against the 10-K Item 1A (`research/filings.py:_tenq_added_risks`,
   `config.yaml: research.tenq_risk_update`). Design + 25-filing probe evidence:

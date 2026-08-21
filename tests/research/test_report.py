@@ -129,7 +129,14 @@ def test_write_commits_md_last_so_no_stranded_cached_brief(tmp_path, monkeypatch
     assert report.is_cached("AAPL", a.filing_accession, tmp_path) is False
 
 
-def test_brief_renders_the_similarity_line():
+def test_brief_never_renders_the_similarity_line():
+    """The Lazy-Prices line is RETIRED (PLAN_INVENTORY_DECOMPOSITION §0.4): the metric
+    retains stopwords, so every real YoY pair scored ~0.997 and the line always
+    claimed "0% rewritten".
+    text_similarity is still computed and still stored in the JSON — only the render
+    is gone. Inverted from test_brief_renders_the_similarity_line."""
+    import dataclasses
+
     from shortlist.research.models import Moat, QualitativeAssessment, Thesis
     from shortlist.research.report import to_markdown
     a = QualitativeAssessment(
@@ -137,7 +144,10 @@ def test_brief_renders_the_similarity_line():
         model="m", cost_usd=0.0, moat=Moat(), thesis=Thesis(takeaway="t"),
         text_similarity=0.62)
     md = to_markdown(a)
-    assert "Filing-text change" in md and "38%" in md
+    assert "Filing-text change" not in md and "Lazy Prices" not in md
+    assert "38%" not in md
+    # ...but it survives into the persisted record, which is what report.write stores.
+    assert dataclasses.asdict(a)["text_similarity"] == 0.62
 
 
 def test_brief_omits_the_similarity_line_when_none():

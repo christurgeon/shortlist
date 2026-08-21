@@ -280,10 +280,11 @@ GLOSSARY: list[Entry] = [
           "you; carries far less signal than a discretionary sale. "
           "Advisory only."),
     Entry("filing_text_change", "Gates & flags", ("lazy prices",),
-          "FLAG: the 10-K/10-Q risk-factor + MD&A language was rewritten "
-          "heavily year-over-year. Companies leave boilerplate alone until "
-          "something changes — and big rewrites predict NEGATIVE returns "
-          "('Lazy Prices'). Fires on LOW text similarity. Advisory only."),
+          "FLAG: big year-over-year rewrites of 10-K/10-Q risk factors and MD&A "
+          "predict NEGATIVE returns ('Lazy Prices'). DORMANT — it never fires "
+          "today: nothing on the screen path produces the similarity, and the "
+          "metric barely separates a rewrite from an unrelated company's filing. "
+          "Advisory only."),
     # --------------------------------------------------------- Finance concepts
     Entry("CAGR", "Finance concepts", ("compound annual growth rate",),
           "Compound annual growth rate: the smoothed yearly growth between "

@@ -46,8 +46,21 @@ def test_noop_when_config_block_absent():
         _m(filing_text_similarity=0.1), {})
 
 
-def test_metric_does_not_change_composite():
+def _cfg_with_flag_enabled() -> dict:
+    """The shipped config with filing_text_change force-enabled.
+
+    The shipped block is `enabled: false` (2026-08-20 — the flag has no producer AND
+    the metric cannot reach its threshold; see config.yaml). These tests still pin the
+    RULE's behaviour for the day someone fixes both, so they inject the enabled block
+    rather than reading the shipped state. `test_shipped_config_never_fires_the_flag`
+    below pins the shipped state itself."""
     cfg = yaml.safe_load(Path("config.yaml").read_text())
+    cfg["flags"]["filing_text_change"] = {"max_similarity": 0.7}
+    return cfg
+
+
+def test_metric_does_not_change_composite():
+    cfg = _cfg_with_flag_enabled()
     base = StockMetrics(ticker="AAPL", gross_margin=0.4, net_margin=0.25,
                         revenue=4e11, market_cap=3e12)
     changed = StockMetrics(ticker="AAPL", gross_margin=0.4, net_margin=0.25,
@@ -61,8 +74,8 @@ def test_metric_does_not_change_composite():
 def test_disabled_config_is_byte_identical_card():
     # Removing the filing_text_change block yields a card whose flags omit it and
     # whose composite/scored/passed are unchanged vs the no-metric baseline.
-    cfg = yaml.safe_load(Path("config.yaml").read_text())
-    cfg_off = yaml.safe_load(Path("config.yaml").read_text())
+    cfg = _cfg_with_flag_enabled()
+    cfg_off = _cfg_with_flag_enabled()
     cfg_off["flags"].pop("filing_text_change", None)
     m = StockMetrics(ticker="AAPL", gross_margin=0.4, net_margin=0.25,
                      revenue=4e11, market_cap=3e12, filing_text_similarity=0.2)
@@ -71,3 +84,16 @@ def test_disabled_config_is_byte_identical_card():
     assert "filing_text_change" not in (off.flags or [])
     assert on.composite == off.composite
     assert on.scored == off.scored and on.passed == off.passed
+
+
+def test_shipped_config_never_fires_the_flag():
+    """The SHIPPED config must not emit filing_text_change, however low the similarity.
+
+    Guards the 2026-08-20 retirement: `enabled: false` on the block. If someone flips
+    it back on without also supplying a producer for filing_text_similarity and fixing
+    the ~0.9 cosine floor, this fails and points them at the reasons."""
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert cfg["flags"]["filing_text_change"]["enabled"] is False
+    m = StockMetrics(ticker="AAPL", gross_margin=0.4, net_margin=0.25,
+                     revenue=4e11, market_cap=3e12, filing_text_similarity=0.0)
+    assert "filing_text_change" not in (score(m, cfg).flags or [])
