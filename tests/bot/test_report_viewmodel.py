@@ -45,7 +45,7 @@ def test_assessment_present_only_for_researched():
     vm = build_view_model(cards, _session(), assessments={"AAPL": rec})
     a = {ld.ticker: ld for ld in vm.leaders}
     assert a["AAPL"].assessment.bull_case == "AI demand"
-    assert a["AAPL"].assessment.risks == ["China export limits"]
+    assert [f.claim for f in a["AAPL"].assessment.risks] == ["China export limits"]
     assert a["AAPL"].assessment.takeaway == "Cheap-ish AI leader."
     assert a["MSFT"].assessment is None
 

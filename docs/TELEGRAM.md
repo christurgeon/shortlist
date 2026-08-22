@@ -47,6 +47,27 @@ TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
 
 Malformed tickers are dropped **before any API spend**, with a note naming what was ignored.
 
+### What `/deep` evidence looks like here
+
+The HTML attachment carries the brief's grounding layer; the PNG deliberately does not, and
+the chunked text fallback carries it only at `Detail.FULL`. Each finding shows its claim, with
+the filing quote and the document that verified it behind a disclosure. Four states, and they
+are not interchangeable — `research/report.py` is the reference wording, and the two surfaces
+must keep saying the same thing:
+
+| State | Shown as | Means |
+|---|---|---|
+| verified | nothing | the quote was located in one document shown to the model |
+| `unverified` | a mark on the item | a quote was offered and could **not** be located — the fabrication signal |
+| `no filing quote` | a mark on the item | the model declared its own inference. Legal in *sources of advantage* and *management findings* only |
+| unknown | nothing | the brief predates verification, so nothing was ever checked — not a failure |
+
+Only the middle two are marked: measured over the 17-brief corpus on 2026-08-22, 11.4% of
+items (59 of 519) carry a mark, so marking every item would cost the distinction its meaning.
+The two footer counts come straight from the record and are never merged — an unverified claim
+means the model quoted something absent from the filing, and pooling it with declared
+inferences destroys exactly that signal.
+
 ### Request caps
 
 Soft per-request caps bound reply latency and API cost. Over the cap, the bot runs the first

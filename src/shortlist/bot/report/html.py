@@ -192,6 +192,20 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
 .block.flag li::before{background:var(--flag)}
 .bull{color:var(--bull)} .bear{color:var(--bear)} .flag{color:var(--flag)}
 .muted{color:var(--text-3); font-size:12.5px}
+/* evidence: the quote is one click away, so the default view stays as terse as the
+   claim list was before grounding reached this surface. */
+.unver{font:600 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+       color:var(--flag); border:1px solid var(--flag); border-radius:3px;
+       padding:2px 4px; opacity:.75; vertical-align:1px}
+details.ev{margin:3px 0 2px}
+details.ev summary{font:500 11px/1.4 var(--mono); color:var(--text-3); cursor:pointer;
+                   letter-spacing:.06em; list-style:none}
+details.ev summary::-webkit-details-marker{display:none}
+details.ev summary::before{content:"\201C\201D  "; font:600 12px var(--mono)}
+details.ev blockquote{margin:4px 0 0; padding:6px 10px; border-left:2px solid var(--line);
+                      color:var(--text-2); font-size:12.5px; font-style:italic}
+details.ev .src{display:block; margin-top:3px; font:500 10.5px var(--mono);
+                color:var(--text-3); letter-spacing:.04em}
 
 /* ---- footer / coverage ---- */
 .cov{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);

@@ -256,6 +256,82 @@ class _Fundamentals:
         return out
 
 
+# ---- evidence rendering (shared by the HTML card and the FULL text) ----
+# The markdown brief (research/report.py) is the reference wording. These two surfaces
+# must agree about what "verified" means, so the strings are deliberately the same.
+_MARKS = {"unverified": "unverified", "inference": "no filing quote"}
+
+
+def _evidence_counts(a) -> str:
+    """The brief's two footer lines, collapsed to one. Never merge the counts: an
+    unverified claim means the model quoted something absent from the filing, and
+    mixing that population with declared inferences destroys the signal."""
+    parts = []
+    if a.unverified_count:
+        parts.append(f"{a.unverified_count} claim(s) could not be verified "
+                     "against the filing text.")
+    if a.inference_count:
+        parts.append(f"{a.inference_count} claim(s) stated without a filing quote "
+                     "(declared inference, or from a section not provided).")
+    return " ".join(parts)
+
+
+def _evidence_html(h, status: str, quote: str, source: str) -> str:
+    """A visible mark for the exception only, plus the quote behind a native
+    <details>. Marking every item would double the visual weight for no information,
+    and `unknown` is a brief that predates verification, not a failure."""
+    out = ""
+    mark = _MARKS.get(status)
+    if mark:
+        out += ' <span class="unver">' + h.esc(mark) + "</span>"
+    if quote:
+        body = h.raw("blockquote", h.esc(quote))
+        if source:
+            body += h.tag("span", source, _class="src")
+        out += h.raw("details", h.tag("summary", "Evidence") + body, _class="ev")
+    return out
+
+
+def _evidence_text(status: str, quote: str, source: str) -> list[str]:
+    mark = _MARKS.get(status)
+    out = [f"      [{mark}]"] if mark else []
+    if quote:
+        out.append(f'      “{quote}”' + (f" ({source})" if source else ""))
+    return out
+
+
+def _call_html(h, a) -> list[str]:
+    """The screening-call pill and its two footnotes. Empty when the brief carried no
+    call — a pre-screening-call brief renders exactly as it did before."""
+    if not a.call_stance:
+        return []
+    col = stance_to_rgb(a.call_stance)
+    pill = (f'<span class="pill" style="background:{rgb_hex(col)};'
+            f'color:{rgb_hex(text_on(col))}">'
+            f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
+    line = pill + ' <span class="muted">screen only — not advice</span>'
+    if a.call_model_stance:
+        # A gate override is not the model's own view; say so by the pill.
+        line += ' <span class="muted">· gate override</span>'
+    if a.call_watch:
+        line += ' <span class="muted">· but watch: ' + h.esc(a.call_watch) + "</span>"
+    out = [h.raw("p", line, _class="call")]
+    if a.call_rationale:
+        out.append(h.raw("p", "<b>Why:</b> " + h.esc(a.call_rationale)))
+    if a.call_decided_without:
+        out.append(h.raw("p", "<b>Decided without:</b> " + h.esc("; ".join(a.call_decided_without)),
+                         _class="muted"))
+    return out
+
+
+def _findings_block(h, label: str, items, cls: str = "") -> str:
+    lis = "".join(h.raw("li", h.esc(f.claim) +
+                        _evidence_html(h, f.status, f.evidence, f.source))
+                  for f in items)
+    return h.raw("div", h.tag("b", label) + h.raw("ul", lis),
+                 _class=f"block {cls}".strip())
+
+
 # ---- Claude research (owns ALL qualitative content) ----
 class _Research:
     id, title = "research", "Research"
@@ -270,24 +346,7 @@ class _Research:
                 continue
             heading = h.raw("span", h.esc(ld.ticker), _class="tk") + " analysis"
             parts = [h.raw("h2", heading)]
-            if a.call_stance:
-                col = stance_to_rgb(a.call_stance)
-                pill = (f'<span class="pill" style="background:{rgb_hex(col)};'
-                        f'color:{rgb_hex(text_on(col))}">'
-                        f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
-                line = pill + ' <span class="muted">screen only — not advice</span>'
-                if a.call_model_stance:
-                    # A gate override is not the model's own view; say so by the pill.
-                    line += ' <span class="muted">· gate override</span>'
-                if a.call_watch:
-                    line += ' <span class="muted">· but watch: ' + h.esc(a.call_watch) + "</span>"
-                parts.append(h.raw("p", line, _class="call"))
-                if a.call_rationale:
-                    parts.append(h.raw("p", "<b>Why:</b> " + h.esc(a.call_rationale)))
-                if a.call_decided_without:
-                    dw = "; ".join(a.call_decided_without)
-                    parts.append(h.raw("p", "<b>Decided without:</b> " + h.esc(dw),
-                                       _class="muted"))
+            parts += _call_html(h, a)
             if a.takeaway:
                 parts.append(h.tag("p", a.takeaway, _class="takeaway"))
             if a.business_model:
@@ -300,20 +359,30 @@ class _Research:
             if a.bear_case:
                 parts.append(h.raw("div", "<b>Bear:</b> " + h.esc(a.bear_case),
                                    _class="callout bear"))
+            if a.moat_sources:
+                parts.append(_findings_block(h, "Sources of advantage", a.moat_sources))
             if a.reconciliation:
-                lis = "".join(h.tag("li", f"{sig}: {tension}")
-                              for sig, tension in a.reconciliation)
+                lis = "".join(h.raw("li", h.esc(f"{c.signal}: {c.tension}") +
+                                    _evidence_html(h, c.status, c.filing_says, c.source))
+                              for c in a.reconciliation)
                 parts.append(h.raw("div", h.tag("b", "Reconciliation vs. score") +
                                    h.raw("ul", lis), _class="block"))
             for label, items, cls in [("Red flags", a.red_flags, "flag"),
                                       ("Risks", a.risks, ""),
-                                      ("What would change my mind", a.change_my_mind, "")]:
+                                      ("Newly disclosed risks", a.added_risks, "")]:
                 if items:
-                    lis = "".join(h.tag("li", x) for x in items)
-                    parts.append(h.raw("div", h.tag("b", label) + h.raw("ul", lis),
-                                       _class=f"block {cls}".strip()))
+                    parts.append(_findings_block(h, label, items, cls))
+            if a.change_my_mind:
+                lis = "".join(h.tag("li", x) for x in a.change_my_mind)
+                parts.append(h.raw("div", h.tag("b", "What would change my mind") +
+                                   h.raw("ul", lis), _class="block"))
             if a.capital_allocation:
                 parts.append(h.raw("p", "<b>Capital allocation:</b> " + h.esc(a.capital_allocation)))
+            if a.management_findings:
+                parts.append(_findings_block(h, "Management findings", a.management_findings))
+            footer = _evidence_counts(a)
+            if footer:
+                parts.append(h.tag("p", footer, _class="muted"))
             cards.append(h.raw("div", "".join(parts), _class="card"))
         return "".join(cards)
 
@@ -338,10 +407,15 @@ class _Research:
             if detail is Detail.FULL:
                 if a.takeaway and a.takeaway != line:
                     out.append(f"   {a.takeaway}")
-                for sig, tension in a.reconciliation:
-                    out.append(f"   ⚖️ {sig}: {tension}")
-                if a.red_flags:
-                    out.append(f"   🚩 {'; '.join(a.red_flags)}")
+                for c in a.reconciliation:
+                    out.append(f"   ⚖️ {c.signal}: {c.tension}")
+                    out += _evidence_text(c.status, c.filing_says, c.source)
+                for f in a.red_flags:
+                    out.append(f"   🚩 {f.claim}")
+                    out += _evidence_text(f.status, f.evidence, f.source)
+                counts = _evidence_counts(a)
+                if counts:
+                    out.append(f"   {counts}")
         return out
 
 

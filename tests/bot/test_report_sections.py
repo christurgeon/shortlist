@@ -1,6 +1,6 @@
 from datetime import date
 from shortlist.bot.report.viewmodel import (
-    ReportVM, LeaderVM, MetricsVM, AssessmentVM)
+    ReportVM, LeaderVM, MetricsVM, AssessmentVM, FindingVM)
 from shortlist.bot.report.sections import render_html_body, render_text, Detail
 
 
@@ -24,7 +24,8 @@ def test_html_body_lists_every_leader_and_funnel():
 
 
 def test_research_section_only_when_assessment_present():
-    a = AssessmentVM(bull_case="AI demand", bear_case="Cyclical", red_flags=["going concern"])
+    a = AssessmentVM(bull_case="AI demand", bear_case="Cyclical",
+                     red_flags=[FindingVM(claim="going concern")])
     with_res = render_html_body(_vm([_leader("AAPL", 80, assessment=a)]))
     assert "AI demand" in with_res and "going concern" in with_res
     no_res = render_html_body(_vm([_leader("AAPL", 80)]))
@@ -128,7 +129,7 @@ def test_research_section_renders_synthesis_moat_reconciliation():
     a = _assessment_vm(rec)
     assert a.takeaway == "NVIDIA is the most critical AI infra provider with a widening moat."
     assert a.moat == "CUDA ecosystem lock-in across 7.5M+ developers."
-    assert a.reconciliation == [
+    assert [(c.signal, c.tension) for c in a.reconciliation] == [
         ("quality", "Quality score of 70 looks generous given 390bps margin compression.")]
     body = render_html_body(_vm([_leader("NVDA", 78, assessment=a)]))
     assert "NVIDIA is the most critical AI infra" in body      # synthesis surfaced
