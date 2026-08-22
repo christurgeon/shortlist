@@ -302,6 +302,15 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     }
     if c.abstentions:
         d["abstentions"] = c.abstentions
+    if c.metrics is not None and c.metrics.rating_months:
+        # Deltas only, never a prior level: the levels merge across vendors while
+        # these come from one Finnhub payload (data/models.py:Analyst).
+        d["analyst_revision"] = {
+            "months": c.metrics.rating_months,
+            "buy_delta": c.metrics.rating_buy_delta,
+            "hold_delta": c.metrics.rating_hold_delta,
+            "sell_delta": c.metrics.rating_sell_delta,
+        }
     if c.metrics is not None and c.metrics.filing_events:
         d["events"] = {
             "recent_8k": bool(c.metrics.recent_8k),

@@ -79,3 +79,13 @@ def test_no_alias_collisions_and_all_entries_reachable():
     # reachable through its own name
     for e in glossary.GLOSSARY:
         assert lookup(e.name) is e
+
+
+def test_analyst_revision_documented():
+    """The report's Revision cell and the /deep line both need a term a reader can
+    /explain — and the entry must carry the level-vs-revision distinction, which is
+    the whole reason the signal exists."""
+    e = lookup("analyst revision")
+    assert e is not None
+    assert lookup("rating revision") is e
+    assert "level" in e.text.lower()

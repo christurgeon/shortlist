@@ -7,7 +7,13 @@ from ...env import redact_secrets
 from ._common import _load_ticker_name_index, _read_versioned_cache, _write_versioned_cache  # noqa: F401
 from .base import Source, _fetch_sections, _KeyedHttpSource, _retry_after_backoff  # noqa: F401
 from .edgar import EdgarSource, _edgar_semaphore, build_events_section, classify_event_form  # noqa: F401
-from .finnhub import FinnhubSource, _earnings, _news_flow, _normalize_finnhub  # noqa: F401
+from .finnhub import (  # noqa: F401
+    FinnhubSource,
+    _earnings,
+    _news_flow,
+    _normalize_finnhub,
+    _rating_trend,
+)
 from .finra import (  # noqa: F401
     FinraSource,
     _finra_index,

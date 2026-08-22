@@ -205,6 +205,10 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.rating_buy = a.buy
         m.rating_hold = a.hold
         m.rating_sell = a.sell
+        m.rating_months = a.rating_months
+        m.rating_buy_delta = a.buy_delta
+        m.rating_hold_delta = a.hold_delta
+        m.rating_sell_delta = a.sell_delta
 
     ins = snap.insider
     if ins:

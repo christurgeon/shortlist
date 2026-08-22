@@ -116,6 +116,14 @@ class Analyst:
     target_high: Optional[float] = None
     target_low: Optional[float] = None
     consensus: Optional[str] = None
+    # Rating REVISION over the recommendation window. Stored as CHANGES, never as
+    # prior levels: this object merges field-by-field with `fmp` ahead of `finnhub`,
+    # so a prior level here would be differenced against a level from a different
+    # vendor's analyst panel. Deltas are computed inside one source's payload.
+    rating_months: Optional[int] = None   # span of the window; None => no drift known
+    buy_delta: Optional[int] = None
+    hold_delta: Optional[int] = None
+    sell_delta: Optional[int] = None
 
 
 @dataclass
@@ -331,6 +339,12 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       # Asset-growth / accruals plumbing + pre-computed scalars (§3) —
                       # surfaced via StockMetrics, not coverage-accounted here.
                       "total_assets", "asset_growth", "accruals",
+                      # Rating-revision deltas: DERIVED, and only Finnhub-with->=2-periods
+                      # can supply them. `analyst` is a KEY_OBJECT, so leaving them in
+                      # would dilute the coverage denominator of every snapshot ever
+                      # taken and shift accumulate's GATED/THIN/CAPTURED split — the
+                      # same trap the `inventory` and ret_* notes describe.
+                      "rating_months", "buy_delta", "hold_delta", "sell_delta",
                       # Inventory is a /deep research context input only. MUST stay
                       # excluded: `statements` is in KEY_OBJECTS, so an un-excluded
                       # field moves the coverage DENOMINATOR for every snapshot ever

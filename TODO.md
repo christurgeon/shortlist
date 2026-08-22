@@ -39,12 +39,7 @@ it outranks §3's alpha questions.
 
 ## 2a. VERIFIED defects — small, worth building
 
-- **Shipped:** the brief cache is now a wide key — `research/cachekey.py:brief_key` composes
-  the filing accessions with a prompt/config fingerprint, a bucketed quant/event context
-  digest, and an as-of day bucket (`research.cache.{max_age_days, price_band_pct}` in
-  `config.yaml`). Editing the prompt, the guards, `research.max_chars`, or a material price
-  move now invalidates the cache instead of silently serving a stale brief.
-  - **Lazy Prices: RETIRED 2026-08-20, TWO defects, both must be fixed to revive it.**
+- **Lazy Prices: RETIRED 2026-08-20, TWO defects, both must be fixed to revive it.**
     The `## Filing-text change (Lazy Prices)` render is GONE and the `filing_text_change`
     config block ships `enabled: false`. `FilingBundle.text_similarity` is still computed
     and still stored in the brief JSON. Evidence: `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.4.
@@ -65,27 +60,16 @@ it outranks §3's alpha questions.
        move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
        cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
        similarity, so a single-firm absolute cosine is uninterpretable regardless.
-- **Nothing checks a `/deep` brief against ITSELF.** Quote-verification grounds each claim
-  against filing text, but no check compares sections. The 2026-08-20 HDSN brief said
-  "operating cash flow turned sharply negative in FY2025 **on an inventory build**" in its
-  Bear case while a red flag called the same facts "a genuine cash-burn/liquidity stress
-  trend" — incompatible readings of one number, in one document. That inconsistency is what
-  sent the 2026-08-21 inventory investigation down a wrong path for several hours. Cheap to
-  build (no new data, no new signal, no rank-IC bar) and it would have caught the error.
-  **Measure the base rate BEFORE building (2026-08-22).** The evidence is n=1, and the
-  "highest-value" label was written by the session that had just lost hours to it — the point
-  of maximum bias. `research/` holds 17 briefs over 11 tickers; counting real contradictions
-  there is free, needs no code, and is the artifact `CLAUDE.md` wants anyway. Two things that
-  scan must settle, because they decide the design: the document is **built** to hold opposing
-  readings (`bull_case` vs `bear_case`), and the one known defect sat exactly on that boundary
-  (bear case vs red flag), so a detector's hardest discrimination is also its only known
-  target; and briefs written before the 2026-08-18 materiality prompt may over-represent
-  padding-driven contradictions, so record pre/post separately rather than pooling.
-  If the rate is ~1 in 17, the honest fix is a prompt-only clause, not a per-brief second call.
-  **Status:** not built and not scanned. Deprioritised 2026-08-22 behind the Telegram evidence
-  surfacing (now shipped) — a consistency count rendered only into the markdown brief would
-  have reached no reader, since briefs are read on Telegram. That surface now carries findings,
-  so a count would land if the scan earns one.
+- **Brief self-consistency: MEASURED 2026-08-22, detector NOT built.** 2 of 17 briefs
+  overall, **0 of 9** under the current 2026-08-18 materiality prompt — at or below the
+  rate `TODO.md` itself pre-committed as "prompt-only clause, not a per-brief second call".
+  Both confirmed hits are pre-prompt and both involve the **reconciliation** section, not the
+  bull/bear boundary the motivating HDSN case suggested. Evidence, the pre-registered
+  criterion, the five borderline cases a naive detector would fire on, and the reasons `0/9`
+  is weak (rule-of-three upper bound ~33%; effective n≈4-5; the HDSN brief is absent from the
+  corpus): `docs/audits/2026-08-22-brief-self-consistency-base-rate.md`.
+  **What remains:** re-count once more post-prompt briefs on *fresh* tickers accumulate — 7 of
+  the 9 are repeat runs over AAPL/JPM/INTC. Reopen the detector only if that count moves.
 - **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
   `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
   year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR — measured
@@ -119,8 +103,6 @@ it outranks §3's alpha questions.
   - **The real defect: INTC extracts 0 chars (1 of 35)** — its Part I Item 2 heading is not
     detected, so the preceding Part I Item 1 span (135,783 chars) absorbs the MD&A and the
     brief carries no quarterly MD&A at all.
-  - **Over-capture (3 of 35) is NOT harmful — do not "fix" it.** Closed verdict, with the
-    numbers, in `docs/audits/README.md`.
   - **Two measured traps, pinned by regression tests.** `tenq["Item 2"]` is not a fallback —
     on INTC it returns 2,459 chars of *Part II* Item 2 (share repurchases), wrong content
     silently labelled MD&A. `tenq.items` is not a guard — XOM lists an unqualified `Item 2`,
@@ -130,55 +112,34 @@ it outranks §3's alpha questions.
     MD&A heading is fitted to n=1 and would inject wrong text into the grounding haystack.
     Needs a wider probe first. Same class of fault as INTC's Part II Item 1 returning 71,869
     chars of Note 14.
-- **8-K substance in `/deep`: SHIPPED 2026-08-14, one caveat still open.** Behaviour and
-  landmines are in `research/eightk.py`'s docstring; evidence is
-  `docs/audits/2026-08-13-eightk-text-in-deep-design.md`. What remains open here:
-  **Item 4.02 (non-reliance/restatement) is unexercised by real data** — none appeared in the
-  60-filing probe, so the highest-priority branch is pinned by a constructed fixture only. Do
-  not describe it as verified; the first real restatement is its first real test.
-- **Evidence discipline: SHIPPED 2026-08-17 for moat + management.** `moat.sources` is now
-  `list[Finding]` and `management_findings` is new; both are quote-verified, and an empty
-  quote is a legal *declared inference* counted separately from `unverified_count`. Measured
-  defect (45% of moat sources asserted an ungrounded figure; 14–27 bare numbers per
-  management paragraph), design, and three non-obvious constraints:
-  `docs/audits/2026-08-17-moat-management-evidence-design.md`. Two things stay open:
-  - **`business_model_summary` is still bare prose.** Deliberately out of that cut. It is the
-    last narrative section with no grounding standard.
-  - **Live-verified n=3 (AAPL, JPM, INTC — 2026-08-18): holds on all three.** No truncation
-    on either stress filer (`stop=end_turn`; JPM over-captures to 601K chars, INTC's 10-Q
-    MD&A extracts 0), zero rule bleed across all 58 strict-list items, zero fabrications in
-    either new list, and management prose 575/629/601 chars with **0 numeric tokens** against
-    a 900–1,157 char / 14–27 number baseline. INTC answered the open question: on a weak-moat
-    filer the inference list does **not** inflate — it shrinks to 4 (cap 6), 2 verified / 2
-    declared. Still one run each on three large caps.
+- **8-K Item 4.02 (non-reliance/restatement) is unexercised by real data.** None appeared in
+  the 60-filing probe, so `research/eightk.py`'s highest-priority branch is pinned by a
+  constructed fixture only. Do not describe it as verified; the first real restatement is its
+  first real test.
+- **`business_model_summary` is still bare prose** — the last narrative section with no
+  grounding standard, deliberately left out of the 2026-08-17 moat/management evidence cut
+  (`docs/audits/2026-08-17-moat-management-evidence-design.md`, which is also the template
+  for closing it). That cut is live-verified at n=3 only (AAPL/JPM/INTC, 2026-08-18).
 
-- **The 2026-08-04 audit's prompt-only wins (D3/D6/D7 + do-the-arithmetic) shipped 2026-08-18
-  and are LIVE-VERIFIED at n=3 (AAPL, JPM, INTC — 2026-08-19): HOLDS, with two open items.**
-  Design + baselines: `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`.
-  Measurement: `docs/audits/2026-08-19-deep-prompt-live-verification.md`. `risks` moved off
-  the 33/35-at-cap spike (8–10 of 12 on all three) with no material risk category observed
-  dropped — JPM specifically (the task's own worry case) still returned 8 well-distributed
-  risks, not the feared 2–3. `red_flags` matched its closed category 2/2; JPM's empty list is
-  a defensible boundary call (OCC consent order and CET1 thinning correctly routed elsewhere),
-  not suppression. Still open: **quote reuse dropped but didn't hit zero** (1 violation in 3
-  briefs, AAPL `risks`+`reconciliation`, down from 62/35); **`what_would_change_my_mind` still
-  saturates** (2/3 at its cap of 6 — the materiality bar reached `risks` and `reconciliation`
-  but not the falsifier list); and **the arithmetic clause is UNTESTED, for a structural reason,
-  not a sampling one.** 0/3 briefs computed anything because 2 of its 3 asks were unanswerable:
-  the prompt rendered debt WITHOUT cash, so neither cash runway nor even net debt was derivable,
-  and the maturity ladder lived in a note we did not extract. **Both inputs have since landed** —
-  cash is a rendered column (2026-08-19) and the maturity ladder now reaches the prompt as a
-  statement note (2026-08-20, §2b) — so the next live run is the first real test of all three
-  asks, refinancing coverage included. Nothing blocks it but a run. n=3 on three large caps
-  is not enough to re-certify D3/D6/D7 at the rigor of the original 35-brief corpus — re-run
-  the keyword/substring scans over a larger corpus once more new-prompt briefs accumulate.
+- **Three open items from the 2026-08-18 prompt work** (shipped and live-verified at n=3;
+  design `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`, measurement
+  `docs/audits/2026-08-19-deep-prompt-live-verification.md`):
+  - **Quote reuse dropped but did not hit zero** — 1 violation in 3 briefs (AAPL
+    `risks`+`reconciliation`), down from 62/35.
+  - **`what_would_change_my_mind` still saturates** — 2 of 3 at its cap of 6. The materiality
+    bar reached `risks` and `reconciliation` but not the falsifier list.
+  - **The arithmetic clause is still UNTESTED, and nothing blocks it but a run.** 0/3 briefs
+    computed anything because 2 of its 3 asks were unanswerable at the time: debt rendered
+    without cash, and the maturity ladder in a note we did not extract. Both inputs have since
+    landed (cash column 2026-08-19; ladder as a statement note 2026-08-20), so the next live
+    run is the first real test of all three asks, refinancing coverage included.
+  - n=3 on three large caps cannot re-certify D3/D6/D7 at the rigor of the original 35-brief
+    corpus — re-run the keyword/substring scans once more new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
-**Debt & liquidity (was item 2) SHIPPED 2026-08-20** — `research/notes.py`, config
-`research.notes`. Behaviour and landmines are in the module docstring; design + the
-20-filing probe is `docs/audits/2026-08-20-debt-liquidity-notes-design.md`. Two things
-it settled that the remaining items inherit:
+Two constraints the remaining extractors inherit from the shipped debt & liquidity one
+(`research/notes.py`; `docs/audits/2026-08-20-debt-liquidity-notes-design.md`):
 
 - **`TenK.notes` is an XBRL-derived STRUCTURED INDEX**, not a text blob, so a targeted
   note extractor needs no heading detection and carries none of the `_tenq_mda`
@@ -210,10 +171,6 @@ The four positions this repo considered and declined now sit in
 **`docs/audits/README.md`** → *Argued by an external review, recorded but NOT endorsed*.
 Only the one live item stays open, below.
 
-- **Recommendation-*change* is the review's one un-triaged free signal.** We fetch ~4 months
-  of Finnhub consensus history and keep only `trend[0]` (`data/sources/finnhub.py:204`), so
-  the *revision* — the part Brav & Lehavy find predictive, as against the *level* our
-  `upside_to_target` leg uses — is discarded at parse time.
 - **The `upside_to_target` counterfactual is unmeasured.** The leg is now the scorer's one
   opt-OUT block (`scoring.py:_upside_to_target_on`), so leg-off can be run from config, but
   nobody has scored the leg-off universe against forward returns point-in-time. Flipping the
@@ -382,6 +339,3 @@ decision above goes the paid way.
 - **Widen the diluted-shares go/no-go beyond the store's 42 tickers** — keyless, costs only
   time, and it is the only thing that further reduces residual risk (another code review would
   not).
-- Parked observation: `Fundamentals.operating_margin`/`current_ratio` are extracted but
-  consumed nowhere. They ride along in an existing batch call, so they cost no request —
-  removing them is churn against the stored snapshot schema, not a saving.

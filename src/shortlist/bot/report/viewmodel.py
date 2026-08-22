@@ -31,6 +31,11 @@ class MetricsVM:
     rating_buy: int | None = None
     rating_hold: int | None = None
     rating_sell: int | None = None
+    # Rating REVISION over `rating_months` (deltas only — see data/models.py:Analyst).
+    rating_months: int | None = None
+    rating_buy_delta: int | None = None
+    rating_hold_delta: int | None = None
+    rating_sell_delta: int | None = None
     target_upside: float | None = None   # from StockMetrics.upside_to_target()
     insider_net_6m: float | None = None
     # Fundamental quality + leverage (already in --json; surfaced in the report too)
@@ -246,6 +251,8 @@ def _metrics_vm(m) -> MetricsVM:
         price_vs_200dma=m.price_vs_200dma, rel_strength_6m=m.rel_strength_6m,
         realized_vol=m.realized_vol, max_drawdown=m.max_drawdown,
         rating_buy=m.rating_buy, rating_hold=m.rating_hold, rating_sell=m.rating_sell,
+        rating_months=m.rating_months, rating_buy_delta=m.rating_buy_delta,
+        rating_hold_delta=m.rating_hold_delta, rating_sell_delta=m.rating_sell_delta,
         target_upside=m.upside_to_target(), insider_net_6m=m.insider_net_6m,
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
         # net cash (negative) floors to 0.0x for display, matching the --json output.
