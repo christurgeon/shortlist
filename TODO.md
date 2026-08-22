@@ -65,27 +65,16 @@ it outranks §3's alpha questions.
        move would fire on extraction bugs. A real fix needs IDF/stopword weighting AND a
        cross-sectional reference distribution — Cohen-Malloy-Nguyen sort on the RANK of
        similarity, so a single-firm absolute cosine is uninterpretable regardless.
-- **Nothing checks a `/deep` brief against ITSELF.** Quote-verification grounds each claim
-  against filing text, but no check compares sections. The 2026-08-20 HDSN brief said
-  "operating cash flow turned sharply negative in FY2025 **on an inventory build**" in its
-  Bear case while a red flag called the same facts "a genuine cash-burn/liquidity stress
-  trend" — incompatible readings of one number, in one document. That inconsistency is what
-  sent the 2026-08-21 inventory investigation down a wrong path for several hours. Cheap to
-  build (no new data, no new signal, no rank-IC bar) and it would have caught the error.
-  **Measure the base rate BEFORE building (2026-08-22).** The evidence is n=1, and the
-  "highest-value" label was written by the session that had just lost hours to it — the point
-  of maximum bias. `research/` holds 17 briefs over 11 tickers; counting real contradictions
-  there is free, needs no code, and is the artifact `CLAUDE.md` wants anyway. Two things that
-  scan must settle, because they decide the design: the document is **built** to hold opposing
-  readings (`bull_case` vs `bear_case`), and the one known defect sat exactly on that boundary
-  (bear case vs red flag), so a detector's hardest discrimination is also its only known
-  target; and briefs written before the 2026-08-18 materiality prompt may over-represent
-  padding-driven contradictions, so record pre/post separately rather than pooling.
-  If the rate is ~1 in 17, the honest fix is a prompt-only clause, not a per-brief second call.
-  **Status:** not built and not scanned. Deprioritised 2026-08-22 behind the Telegram evidence
-  surfacing (now shipped) — a consistency count rendered only into the markdown brief would
-  have reached no reader, since briefs are read on Telegram. That surface now carries findings,
-  so a count would land if the scan earns one.
+- **Brief self-consistency: MEASURED 2026-08-22, detector NOT built.** 2 of 17 briefs
+  overall, **0 of 9** under the current 2026-08-18 materiality prompt — at or below the
+  rate `TODO.md` itself pre-committed as "prompt-only clause, not a per-brief second call".
+  Both confirmed hits are pre-prompt and both involve the **reconciliation** section, not the
+  bull/bear boundary the motivating HDSN case suggested. Evidence, the pre-registered
+  criterion, the five borderline cases a naive detector would fire on, and the reasons `0/9`
+  is weak (rule-of-three upper bound ~33%; effective n≈4-5; the HDSN brief is absent from the
+  corpus): `docs/audits/2026-08-22-brief-self-consistency-base-rate.md`.
+  **What remains:** re-count once more post-prompt briefs on *fresh* tickers accumulate — 7 of
+  the 9 are repeat runs over AAPL/JPM/INTC. Reopen the detector only if that count moves.
 - **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
   `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
   year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR — measured

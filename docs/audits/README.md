@@ -20,6 +20,15 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **A per-brief self-consistency detector is NOT worth building (2026-08-22)** — measured
+  2 of 17 briefs, and **0 of 9** under the current 2026-08-18 materiality prompt, against a
+  pre-committed "~1 in 17 means a prompt clause, not a second call" rule. Both hits are
+  pre-prompt and both sit on the **reconciliation** section, not the bull/bear boundary the
+  motivating HDSN case implied — the shorter post-prompt red-flag/risk lists appear to have
+  removed the marginal assertions that used to collide. `0/9` is NOT "solved": rule-of-three
+  upper bound ~33%, effective n≈4-5 (7 of 9 are repeat runs on 3 tickers), and no HDSN brief
+  was ever persisted, so the one known positive is excluded by construction.
+  `2026-08-22-brief-self-consistency-base-rate.md`.
 - **A null `market_cap` does not trip the size gate, and that stays (2026-08-21)** — all four
   gates in `check_gates` fail OPEN on a missing input, the gate-side form of "a missing
   sub-score is excluded, never zeroed". `/screen` runs on a ticker the user chose, so dropping
@@ -156,6 +165,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-08-22 | `2026-08-22-brief-self-consistency-base-rate.md` — brief self-consistency base rate | verdict |
 | 2026-08-21 | `2026-08-21-operating-income-edgar-gap.md` — EDGAR `operating_income` gap | verdict |
 | 2026-08-21 | `2026-08-21-inventory-context-line.md` | design |
 | 2026-08-20 | `2026-08-20-debt-liquidity-notes-design.md` | design |
