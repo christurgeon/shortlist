@@ -168,6 +168,23 @@ def _piotroski_text(mvm: MetricsVM) -> "str | None":
     return f"{pf}/{getattr(mvm, 'piotroski_f_legs', None) or 6}"
 
 
+def _revision_text(mvm: MetricsVM) -> "str | None":
+    """Compact rating-revision string, or None when there is nothing to show —
+    e.g. '-2B / +1H / +0S · 3mo'. Absent without a window, and absent when the
+    consensus did not move: a card of zeroes costs a reader attention for no
+    information. The /deep prompt line renders the flat case on purpose, because
+    a model cannot tell an omitted line from an unchanged consensus."""
+    months = getattr(mvm, "rating_months", None)
+    if not months:
+        return None
+    b = getattr(mvm, "rating_buy_delta", None) or 0
+    h = getattr(mvm, "rating_hold_delta", None) or 0
+    s = getattr(mvm, "rating_sell_delta", None) or 0
+    if b == h == s == 0:
+        return None
+    return f"{b:+d}B / {h:+d}H / {s:+d}S · {months}mo"
+
+
 def _earnings_text(mvm: MetricsVM) -> "str | None":
     """Compact earnings-execution string, or None when absent: beat consistency,
     avg surprise, and days to the next report — e.g. '4/4 beats · +3.7% · next 18d'.
@@ -225,6 +242,9 @@ class _Fundamentals:
             pio = _piotroski_text(ld.metrics)   # conditional (None on lean/masked stacks)
             if pio:
                 cells.append(self._metric(h, "Piotroski", pio, False))
+            rev = _revision_text(ld.metrics)    # conditional (None unless ratings moved)
+            if rev:
+                cells.append(self._metric(h, "Revision", rev, False))
             ern = _earnings_text(ld.metrics)    # conditional (None without earnings history)
             if ern:
                 cells.append(self._metric(h, "Earnings", ern, False))
@@ -250,6 +270,9 @@ class _Fundamentals:
             pio = _piotroski_text(ld.metrics)
             if pio:
                 out.append(f"   Piotroski: {pio}")
+            rev = _revision_text(ld.metrics)
+            if rev:
+                out.append(f"   Revision: {rev}")
             ern = _earnings_text(ld.metrics)
             if ern:
                 out.append(f"   Earnings: {ern}")

@@ -567,6 +567,18 @@ research:
     enabled: true              # flip false for a byte-identical no-op (line omitted)
 
 
+  analyst_revision:            # change in sell-side rating counts as a brief context line
+                               # (research-only; prompt-only, NOT a scored signal). Brav &
+                               # Lehavy: the LEVEL of optimism is negatively related to
+                               # realised returns and already reaches the scorer through
+                               # `upside_to_target`; the REVISION is the predictive half and
+                               # previously died at parse time (only trend[0] was kept).
+                               # Deltas only, never a prior level — `analyst` merges across
+                               # sources, so a level here could come from a different
+                               # vendor's panel than the delta.
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+
+
   insider_detail:              # recent Form-4 trades as a brief context line (enrichment;
                                # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
     enabled: true              # flip false for a byte-identical no-op (line omitted)

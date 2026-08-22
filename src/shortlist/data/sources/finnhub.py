@@ -156,6 +156,53 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
         last_report_date=last_report_date, last_report_date_estimated=estimated)
 
 
+def _rating_month(row: dict) -> Optional[tuple[int, int]]:
+    """(year, month) for a recommendation row, or None when unusable for ordering."""
+    p = row.get("period")
+    if not isinstance(p, str) or len(p) < 7:
+        return None
+    try:
+        return int(p[:4]), int(p[5:7])
+    except ValueError:
+        return None
+
+
+def _rating_trend(trend: Optional[list]) -> Optional[Analyst]:
+    """Levels from the newest period plus the REVISION across the whole window.
+
+    The free tier returns ~4 monthly periods. Rows are ordered by `period` rather
+    than trusted in payload order — nothing documents Finnhub's ordering, and a
+    reversed payload would silently invert the sign of every delta. Rows with no
+    usable period cannot be ordered or dated, so the drift abstains (levels still
+    come from the first row, preserving the pre-revision behaviour).
+    """
+    if not isinstance(trend, list) or not trend:
+        return None
+
+    def _counts(r):
+        return ((r.get("strongBuy") or 0) + (r.get("buy") or 0),
+                r.get("hold"),
+                (r.get("sell") or 0) + (r.get("strongSell") or 0))
+
+    dated = sorted(((ym, r) for r in trend if (ym := _rating_month(r))),
+                   key=lambda t: t[0])
+    if len(dated) < 2:
+        buy, hold, sell = _counts(trend[0])
+        return Analyst(buy=buy, hold=hold, sell=sell)
+
+    (oy, om), old = dated[0]
+    (ny, nm), new = dated[-1]
+    buy, hold, sell = _counts(new)
+    old_buy, old_hold, old_sell = _counts(old)
+    return Analyst(
+        buy=buy, hold=hold, sell=sell,
+        rating_months=(ny - oy) * 12 + (nm - om),
+        buy_delta=buy - old_buy,
+        hold_delta=(hold or 0) - (old_hold or 0),
+        sell_delta=sell - old_sell,
+    )
+
+
 def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     snap = TickerSnapshot(ticker=ticker)
     p = raw.get("profile") or {}
@@ -199,14 +246,9 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     msprs = [r.get("mspr") for r in rows if r.get("mspr") is not None]
     if msprs:
         snap.insider = Insider(sentiment_mspr=max(-1.0, min(1.0, (sum(msprs) / len(msprs)) / 100.0)))
-    trend = raw.get("recommendation")
-    if isinstance(trend, list) and trend:
-        t = trend[0]
-        snap.analyst = Analyst(
-            buy=(t.get("strongBuy") or 0) + (t.get("buy") or 0),
-            hold=t.get("hold"),
-            sell=(t.get("sell") or 0) + (t.get("strongSell") or 0),
-        )
+    analyst = _rating_trend(raw.get("recommendation"))
+    if analyst is not None:
+        snap.analyst = analyst
     q = raw.get("quote") or {}
     if q.get("c"):
         snap.price = Price(price=q["c"])

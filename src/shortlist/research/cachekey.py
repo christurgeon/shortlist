@@ -57,6 +57,7 @@ _CONFIDENCE_STEP = 0.05
 # / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
+                   "analyst_revision",
                    "filings", "textsim", "eightk", "notes")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
@@ -150,13 +151,15 @@ def _s(v: Any) -> str:
 
 
 def _aux_lines(m, config: Optional[dict]) -> list[str]:
-    """The gov-contract / lobbying / earnings / inventory context lines, RENDERED. Hashing
-    the rendered string (rather than picked fields) means a future field added
-    inside one of these lines is covered automatically. All three are pure and
-    network-free. Any failure degrades to "" — never raises."""
+    """The auxiliary context lines (gov-contract / lobbying / earnings / inventory /
+    analyst-revision), RENDERED. Hashing the rendered string (rather than picked
+    fields) means a future field added inside one of these lines is covered
+    automatically. All are pure and network-free. Any failure degrades to "" —
+    never raises."""
     rcfg = (config or {}).get("research") or {}
     out = []
     try:
+        from . import analyst_revision as analyst_revision_ctx
         from . import earnings as earnings_ctx
         from . import gov_contracts as gov_contracts_ctx
         from . import inventory as inventory_ctx
@@ -164,7 +167,8 @@ def _aux_lines(m, config: Optional[dict]) -> list[str]:
         for mod, key in ((gov_contracts_ctx, "gov_contracts"),
                          (lobbying_ctx, "lobbying"),
                          (earnings_ctx, "earnings"),
-                         (inventory_ctx, "inventory")):
+                         (inventory_ctx, "inventory"),
+                         (analyst_revision_ctx, "analyst_revision")):
             try:
                 out.append(_s(mod.context_line(m, rcfg.get(key))))
             except Exception:

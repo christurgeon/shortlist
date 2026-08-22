@@ -75,6 +75,12 @@ quote-verification haystack, so a computed value can never pass itself off as a 
 - Recent SEC filings and recent insider Form-4 trades
 - DEF 14A pay and governance fields (`research/proxy.py`)
 - Government contract awards, federal lobbying, earnings execution history, macro regime
+- Sell-side rating **revision** — the change in buy/hold/sell counts over the
+  recommendation window (`research/analyst_revision.py`). Deltas only, never a level:
+  the levels merge across sources while the deltas come from one Finnhub payload, so
+  printing them together would pair one vendor's analyst panel with another's. The
+  flat case renders as "unchanged" rather than abstaining — with no line at all the
+  model cannot tell a still consensus from an unfetched one.
 
 The output covers moat read, material risks, red flags, management and capital allocation,
 business model, a falsifiable thesis (bull / bear / what-would-change-my-mind), and a

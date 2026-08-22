@@ -350,6 +350,14 @@ GLOSSARY: list[Entry] = [
           "stocks with high F-scores historically outperform cheap ones "
           "with low scores: improvement separates bargains from traps. "
           "Here: a Piotroski fraction refines the value_trap flag."),
+    Entry("analyst revision", "Finance concepts",
+          ("rating revision", "recommendation change", "revision"),
+          "The CHANGE in sell-side rating counts over recent months, not the "
+          "level of optimism. Brav & Lehavy: a high target/rating level is "
+          "negatively related to realised returns — crowded names are already "
+          "priced — while the revision predicts. Here: the level feeds the "
+          "value sub-score through upside-to-target; the revision is "
+          "research-only context, shown as +/-B/H/S over the window."),
     Entry("accruals", "Finance concepts", (),
           "(Net income − operating cash flow) ÷ assets: how much of "
           "earnings is paper rather than cash. High accruals predict "

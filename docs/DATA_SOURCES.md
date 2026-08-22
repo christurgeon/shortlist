@@ -53,7 +53,10 @@ These are the holes that matter, ranked by how much they distort an assessment:
    estimates — Alpha Vantage §B1) and beta.
 2. **No forward estimates / revisions breadth.** Everything is trailing (TTM). PEG needs a
    growth rate; `eps_revision` needs an estimate trend. Analyst *target* ≠ analyst
-   *estimate revisions*, which is the cleaner momentum signal.
+   *estimate revisions*, which is the cleaner momentum signal. **Partly closed:** the
+   *rating* revision (change in buy/hold/sell counts) ships as `/deep` + report context
+   from the Finnhub history we already fetch. **Still open:** EPS *estimate* revisions,
+   which are a different feed (Alpha Vantage §B1) and the one `eps_revision` needs.
 3. **No earnings-quality red-flag.** Accruals, restatements, and going-concern language are
    how you avoid value traps. We score profitability but never ask if the earnings are *real*.
 4. **No macro/risk regime.** A 9/10 cyclical in a widening-credit-spread regime is a

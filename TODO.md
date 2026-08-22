@@ -210,10 +210,6 @@ The four positions this repo considered and declined now sit in
 **`docs/audits/README.md`** → *Argued by an external review, recorded but NOT endorsed*.
 Only the one live item stays open, below.
 
-- **Recommendation-*change* is the review's one un-triaged free signal.** We fetch ~4 months
-  of Finnhub consensus history and keep only `trend[0]` (`data/sources/finnhub.py:204`), so
-  the *revision* — the part Brav & Lehavy find predictive, as against the *level* our
-  `upside_to_target` leg uses — is discarded at parse time.
 - **The `upside_to_target` counterfactual is unmeasured.** The leg is now the scorer's one
   opt-OUT block (`scoring.py:_upside_to_target_on`), so leg-off can be run from config, but
   nobody has scored the leg-off universe against forward returns point-in-time. Flipping the

@@ -91,6 +91,12 @@ class StockMetrics:
     rating_buy: Optional[int] = None
     rating_hold: Optional[int] = None
     rating_sell: Optional[int] = None
+    # Rating REVISION (Brav-Lehavy: the change predicts, the level does not). Deltas
+    # only — see Analyst in data/models.py for why a prior level is not stored.
+    rating_months: Optional[int] = None
+    rating_buy_delta: Optional[int] = None
+    rating_hold_delta: Optional[int] = None
+    rating_sell_delta: Optional[int] = None
 
     # Insider activity (the "minimal insider selling" criterion lives here)
     insider_net_6m: Optional[float] = None     # net USD: buys positive, sells negative

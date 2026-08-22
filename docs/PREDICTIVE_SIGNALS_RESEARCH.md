@@ -332,14 +332,15 @@ have, worth a backtest before the bigger builds:
    predicts. Consider industry-neutralizing or down-weighting the level leg, and
    backtest the sign. Pure scoring change, no new data.
 
-2. **We fetch analyst-recommendation history, then discard it.** The Finnhub
+2. **Recommendation-*change*: SHIPPED 2026-08-22, display-only.** The Finnhub
    `stock/recommendation` call returns ~4 months of dated consensus buy/hold/sell
-   counts, but the code keeps only the latest month (`data/sources/finnhub.py:204`,
-   `trend[0]`).
-   Retaining the history yields a **recommendation-*change* momentum** signal —
-   **Jegadeesh, Kim, Krische & Lee (2004), *J. Finance*** found the *change* in
-   consensus predicts returns while the *level* does not. One small code change
-   away from being computable.
+   counts; the parser used to keep only the latest month. `_rating_trend`
+   (`data/sources/finnhub.py`) now keeps the window and stores the buy/hold/sell
+   **deltas** — **Jegadeesh, Kim, Krische & Lee (2004), *J. Finance***: the *change*
+   in consensus predicts returns while the *level* does not.
+   It reaches `/deep`, the report and `--json`, and **is not a scored leg**: adding
+   it to the composite needs cross-universe rank IC nobody has measured, and the
+   level half already enters through `upside_to_target` (see #1 above, still open).
 
 ---
 

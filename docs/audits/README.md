@@ -139,9 +139,13 @@ restates something already recorded.
 - **Transcripts / estimate-revision history / 13F / news sentiment** are all already triaged in
   `docs/PREDICTIVE_SIGNALS_RESEARCH.md` (transcripts + estimates paid or no free point-in-time
   source; 13F a Phase-2 candidate; social/news as trigger not valuation). The one live free item
-  there remains **recommendation-*change***, which stays open in `TODO.md` §2d's place — we
-  fetch 4 months of consensus history and keep only `trend[0]`
-  (`data/sources/finnhub.py:204`).
+  was **recommendation-*change***, which SHIPPED 2026-08-22 as a display-only signal:
+  `_rating_trend` (`data/sources/finnhub.py`) keeps the whole ~4-month window and stores the
+  buy/hold/sell **deltas**, surfaced as the `/deep` `research/analyst_revision.py` line, the
+  report's conditional `Revision` cell and a `--json` `analyst_revision` block. It is not a
+  scored leg and did not need one: the level already reaches the scorer through
+  `upside_to_target`, and adding the revision to the composite would need cross-universe
+  rank IC this repo has not measured.
 
 ---
 
