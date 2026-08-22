@@ -49,17 +49,52 @@ class MetricsVM:
 
 
 @dataclass
+class FindingVM:
+    """One grounded claim. `status` is the reader-facing verification state, and the
+    four values are NOT interchangeable:
+
+    - `verified`   — the quote was located in one document shown to the model;
+    - `unverified` — a quote was offered and could NOT be located (the fabrication
+      signal; research/models.py keeps this population separate for that reason);
+    - `inference`  — the model declared the claim as its own, quoting nothing. Legal
+      in `moat.sources` and `management_findings` ONLY;
+    - `unknown`    — the brief predates verification, so nothing was ever checked.
+      Rendering this as `unverified` would assert a failure that never happened.
+    """
+    claim: str = ""
+    evidence: str = ""
+    source: str = ""       # provenance label of the document that verified it
+    status: str = "unknown"
+
+
+@dataclass
+class ReconciliationVM:
+    signal: str = ""
+    tension: str = ""
+    filing_says: str = ""
+    source: str = ""
+    status: str = "unknown"   # FindingVM statuses, plus "silent" (filing did not address it)
+
+
+@dataclass
 class AssessmentVM:
     business_model: str = ""
     takeaway: str = ""                    # one-line TL;DR (synthesis / thesis.takeaway)
     moat: str = ""                        # moat.summary prose
-    reconciliation: list[tuple[str, str]] = field(default_factory=list)  # (signal, tension)
+    reconciliation: list[ReconciliationVM] = field(default_factory=list)
     bull_case: str = ""
     bear_case: str = ""
     change_my_mind: list[str] = field(default_factory=list)
-    risks: list[str] = field(default_factory=list)
-    red_flags: list[str] = field(default_factory=list)
+    risks: list[FindingVM] = field(default_factory=list)
+    red_flags: list[FindingVM] = field(default_factory=list)
+    added_risks: list[FindingVM] = field(default_factory=list)
+    moat_sources: list[FindingVM] = field(default_factory=list)
+    management_findings: list[FindingVM] = field(default_factory=list)
     capital_allocation: str = ""
+    # Straight from the record, never recomputed here: research/assess.py owns the
+    # classification and the two populations must not be mixed (see FindingVM).
+    unverified_count: int = 0
+    inference_count: int = 0
     call_stance: str = ""
     call_label: str = ""
     call_conviction: str = ""
@@ -98,8 +133,44 @@ class ReportVM:
     deep_block: list[str] = field(default_factory=list)   # non-gated tickers for the /deep handoff
 
 
-def _claim(x) -> str:
-    return x.get("claim", "") if isinstance(x, dict) else str(x)
+def _status(item: dict, *, inference_ok: bool) -> str:
+    """A record written before `verified` existed carries no verification at all, so
+    it is `unknown` rather than a failure. An empty quote is a declared inference in
+    the two lists where research/assess.py counts it as one, and nowhere else."""
+    if "verified" not in item:
+        return "unknown"
+    if item.get("verified"):
+        return "verified"
+    if inference_ok and not str(item.get("evidence") or "").strip():
+        return "inference"
+    return "unverified"
+
+
+def _finding(x, *, inference_ok: bool) -> FindingVM:
+    """Tolerates the bare-string form for the same reason research/models.py does:
+    an advisory list must never sink an otherwise-valid brief."""
+    if not isinstance(x, dict):
+        return FindingVM(claim=str(x))
+    return FindingVM(claim=str(x.get("claim", "")), evidence=str(x.get("evidence", "")),
+                     source=str(x.get("source", "")),
+                     status=_status(x, inference_ok=inference_ok))
+
+
+def _findings(raw, *, inference_ok: bool = False) -> list[FindingVM]:
+    return [_finding(x, inference_ok=inference_ok) for x in (raw or [])]
+
+
+def _reconciliation(raw) -> list[ReconciliationVM]:
+    out = []
+    for e in (raw or []):
+        if not isinstance(e, dict):
+            continue
+        silent = str(e.get("verdict") or "") == "silent"
+        out.append(ReconciliationVM(
+            signal=str(e.get("signal", "")), tension=str(e.get("tension", "")),
+            filing_says=str(e.get("filing_says", "")), source=str(e.get("source", "")),
+            status="silent" if silent else _status(e, inference_ok=False)))
+    return out
 
 
 def _assessment_vm(rec: dict) -> AssessmentVM:
@@ -124,14 +195,18 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         business_model=rec.get("business_model_summary", "") or "",
         takeaway=(rec.get("synthesis") or th.get("takeaway", "") or ""),
         moat=moat,
-        reconciliation=[(str(e.get("signal", "")), str(e.get("tension", "")))
-                        for e in (rec.get("reconciliation") or [])
-                        if isinstance(e, dict)],
+        reconciliation=_reconciliation(rec.get("reconciliation")),
         bull_case=th.get("bull_case", "") or "",
         bear_case=th.get("bear_case", "") or "",
         change_my_mind=[str(x) for x in (th.get("what_would_change_my_mind") or [])],
-        risks=[_claim(x) for x in (rec.get("risks") or [])],
-        red_flags=[_claim(x) for x in (rec.get("red_flags") or [])],
+        risks=_findings(rec.get("risks")),
+        red_flags=_findings(rec.get("red_flags")),
+        added_risks=_findings(rec.get("added_risks")),
+        moat_sources=_findings((mo if isinstance(mo, dict) else {}).get("sources"),
+                               inference_ok=True),
+        management_findings=_findings(rec.get("management_findings"), inference_ok=True),
+        unverified_count=int(rec.get("unverified_count") or 0),
+        inference_count=int(rec.get("inference_count") or 0),
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",

@@ -72,7 +72,20 @@ it outranks §3's alpha questions.
   trend" — incompatible readings of one number, in one document. That inconsistency is what
   sent the 2026-08-21 inventory investigation down a wrong path for several hours. Cheap to
   build (no new data, no new signal, no rank-IC bar) and it would have caught the error.
-  Highest-value follow-up identified in that session.
+  **Measure the base rate BEFORE building (2026-08-22).** The evidence is n=1, and the
+  "highest-value" label was written by the session that had just lost hours to it — the point
+  of maximum bias. `research/` holds 17 briefs over 11 tickers; counting real contradictions
+  there is free, needs no code, and is the artifact `CLAUDE.md` wants anyway. Two things that
+  scan must settle, because they decide the design: the document is **built** to hold opposing
+  readings (`bull_case` vs `bear_case`), and the one known defect sat exactly on that boundary
+  (bear case vs red flag), so a detector's hardest discrimination is also its only known
+  target; and briefs written before the 2026-08-18 materiality prompt may over-represent
+  padding-driven contradictions, so record pre/post separately rather than pooling.
+  If the rate is ~1 in 17, the honest fix is a prompt-only clause, not a per-brief second call.
+  **Status:** not built and not scanned. Deprioritised 2026-08-22 behind the Telegram evidence
+  surfacing (now shipped) — a consistency count rendered only into the markdown brief would
+  have reached no reader, since briefs are read on Telegram. That surface now carries findings,
+  so a count would land if the scan earns one.
 - **Cost of revenue from EDGAR — would make the /deep days-inventory leg FMP-independent.**
   `research/inventory.py` derives COGS as `revenue - gross_profit`, and `gross_profit` is
   year-joined in from FMP (`_merge_statements`) rather than extracted from EDGAR — measured
@@ -138,15 +151,6 @@ it outranks §3's alpha questions.
     a 900–1,157 char / 14–27 number baseline. INTC answered the open question: on a weak-moat
     filer the inference list does **not** inflate — it shrinks to 4 (cap 6), 2 verified / 2
     declared. Still one run each on three large caps.
-
-- **Evidence is invisible on the Telegram surface (pre-existing, applies to risks too).**
-  `/deep` delivers `art.png/html/text` from the viewmodel (`telegram.py:339-341`); the
-  markdown brief — the only artifact carrying quotes, `_(unverified)_` marks and provenance —
-  is never sent. `viewmodel.py:126-127` reduces risks and red flags to `_claim(x)`, dropping
-  evidence entirely. So the whole grounding layer reaches CLI/file readers only. Fixing it is
-  a real design question (Telegram message length, `Detail.GLANCE` vs `FULL`), not a
-  one-liner. Do it for **all** findings at once or the surfaces disagree about what "verified"
-  means.
 
 - **The 2026-08-04 audit's prompt-only wins (D3/D6/D7 + do-the-arithmetic) shipped 2026-08-18
   and are LIVE-VERIFIED at n=3 (AAPL, JPM, INTC — 2026-08-19): HOLDS, with two open items.**

@@ -35,7 +35,8 @@ def _findings_md(findings, empty_label: str) -> list[str]:
     for f in findings:
         # A bare string is the pre-2026-08-17 moat.sources shape. Coerce rather than
         # raise: rendering must never be the thing that drops a brief, and any caller
-        # can still construct Moat(sources=["brand"]). Mirrors viewmodel._claim.
+        # can still construct Moat(sources=["brand"]). Mirrors bot/report/viewmodel.py's
+        # _finding, which tolerates the same shape on the bot surface.
         if isinstance(f, str):
             f = Finding(claim=f, evidence="")
         # Three states, not two. A DECLARED inference (empty quote, legal only in
