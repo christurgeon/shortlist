@@ -20,6 +20,27 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **The `/deep` arithmetic clause works, and its three 2026-08-18 follow-ups are closed
+  (2026-08-22)** — measured 1 of 4 on names with a live refinancing question, diagnosed as a
+  clause with no trigger and no destination field, fixed, re-measured **3 of 3** on a
+  prompt-only A/B against byte-identical filing inputs. The 12-vs-18-month window defect from
+  `2026-08-20-debt-liquidity-notes-design.md` §7.2 is closed with it, and
+  `what_would_change_my_mind` saturation went 6/6/6 → 4/4/4. Zero derived figures reached a
+  quote-verified field. **Known side effect, accepted:** the clause now fires *universally* —
+  the AAPL control computed 12x coverage nobody needed and pushed `reconciliation` to its cap
+  of 6. A correct low-value entry beats the silent failure it replaced, so this is an accepted
+  tradeoff rather than an unexamined one; the open refinement is tracked at `TODO.md` §2a.
+  **D6 quote reuse holds at ~1 per 3 briefs and was
+  deliberately left alone** — do not add a third prompt clause for it without new evidence; the remaining rate
+  is an order of magnitude below the pre-change 62/35 and another clause would have confounded
+  this measurement. `2026-08-22-deep-arithmetic-clause-verification.md`.
+- **Trailing-punctuation quote-verification false negatives are NOT fixed, on purpose
+  (2026-08-22)** — a CCL quote matched 171 of 172 chars, failing only because the filing is
+  dialogue (`2026," Weinstein said`) where the model wrote a sentence period. Trimming trailing
+  terminal punctuation from the needle would be safe (it cannot bridge non-adjacent spans), but
+  `_FOLD` was adopted on a measured 73% recovery and this is **n=1**. The interior case (a
+  footnote marker bled inline, `EBITDA 1 ratio`) is the already-recorded extraction-artifact
+  class, `2026-08-04-deep-brief-assessment.md` D1. Reopen only with a recurrence.
 - **A per-brief self-consistency detector is NOT worth building (2026-08-22)** — measured
   2 of 17 briefs, and **0 of 9** under the current 2026-08-18 materiality prompt, against a
   pre-committed "~1 in 17 means a prompt clause, not a second call" rule. Both hits are
@@ -165,6 +186,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-08-22 | `2026-08-22-deep-arithmetic-clause-verification.md` — arithmetic clause 1/4 → 3/3 | verdict |
 | 2026-08-22 | `2026-08-22-brief-self-consistency-base-rate.md` — brief self-consistency base rate | verdict |
 | 2026-08-21 | `2026-08-21-operating-income-edgar-gap.md` — EDGAR `operating_income` gap | verdict |
 | 2026-08-21 | `2026-08-21-inventory-context-line.md` | design |

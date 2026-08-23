@@ -50,6 +50,14 @@ payable|long[- ]term obligation`, minus an `investment|marketable securit` exclu
 16K chars per note. Like the 8-Ks, this is **quotable filing text that enters the haystack** as
 its own labelled segment (`10-K note: LONG-TERM OBLIGATIONS`).
 
+A selected note does **not guarantee a maturity ladder**. Boeing's `Debt` note — the only one
+in its 28-note index matching the title rule, picked from both forms and untruncated — carries
+a finance-lease schedule and undrawn credit capacity but no principal-maturity table, which
+lives in its MD&A liquidity discussion instead. The 20-filing probe measured selection, not
+contents, so the rate is unknown. `SYSTEM_PROMPT` covers the case: the model falls back to
+balance-sheet short-term debt and names the date it applies to
+(`docs/audits/2026-08-22-deep-arithmetic-clause-verification.md`).
+
 Two behaviours worth knowing. A filer that files **no 10-Q debt note is the normal case**, not a
 failure — 5 of 20 measured file none, because the quarterly note is a legitimate subset of the
 annual one; the 10-K is the backbone. And an over-long note is cut at the last whitespace — never
