@@ -39,6 +39,21 @@ it outranks §3's alpha questions.
 
 ## 2a. VERIFIED defects — small, worth building
 
+- **The arithmetic clause fires UNIVERSALLY, and should probably fire selectively
+  (2026-08-23).** The 2026-08-22 fix took refinancing coverage from 1/4 to 3/3 on leveraged
+  names by making it REQUIRED whenever a maturity ladder is present. The AAPL control shows
+  the cost: it computed 12x coverage nobody needed and pushed `reconciliation` — a list
+  specified as sparse — from 5 of 6 entries to its cap of 6. The refinement is to require the
+  computation but let a comfortably-covered name carry it as a clause in an existing entry or
+  the thesis, instead of a dedicated row. Do NOT take this as a cheap prompt tweak: the same
+  "REQUIRED, no exceptions" bluntness is what produced the 3/3, and a softened version could
+  revert it. Evidence and the exact wording:
+  `docs/audits/2026-08-22-deep-arithmetic-clause-verification.md`.
+  **Status:** deferred, not blocked on a decision — blocked on *evidence*. Judging whether a
+  slot was genuinely displaced needs briefs on cash-rich names that this session could not
+  manufacture (n=1 control, one run). Revisit once several accumulate; re-measure the
+  leveraged 3/3 in the same pass, because that is what a softened clause would put at risk.
+
 - **Lazy Prices: RETIRED 2026-08-20, TWO defects, both must be fixed to revive it.**
     The `## Filing-text change (Lazy Prices)` render is GONE and the `filing_text_change`
     config block ships `enabled: false`. `FilingBundle.text_similarity` is still computed
@@ -120,21 +135,6 @@ it outranks §3's alpha questions.
   grounding standard, deliberately left out of the 2026-08-17 moat/management evidence cut
   (`docs/audits/2026-08-17-moat-management-evidence-design.md`, which is also the template
   for closing it). That cut is live-verified at n=3 only (AAPL/JPM/INTC, 2026-08-18).
-
-- **Three open items from the 2026-08-18 prompt work** (shipped and live-verified at n=3;
-  design `docs/audits/2026-08-18-deep-prompt-materiality-and-arithmetic.md`, measurement
-  `docs/audits/2026-08-19-deep-prompt-live-verification.md`):
-  - **Quote reuse dropped but did not hit zero** — 1 violation in 3 briefs (AAPL
-    `risks`+`reconciliation`), down from 62/35.
-  - **`what_would_change_my_mind` still saturates** — 2 of 3 at its cap of 6. The materiality
-    bar reached `risks` and `reconciliation` but not the falsifier list.
-  - **The arithmetic clause is still UNTESTED, and nothing blocks it but a run.** 0/3 briefs
-    computed anything because 2 of its 3 asks were unanswerable at the time: debt rendered
-    without cash, and the maturity ladder in a note we did not extract. Both inputs have since
-    landed (cash column 2026-08-19; ladder as a statement note 2026-08-20), so the next live
-    run is the first real test of all three asks, refinancing coverage included.
-  - n=3 on three large caps cannot re-certify D3/D6/D7 at the rigor of the original 35-brief
-    corpus — re-run the keyword/substring scans once more new-prompt briefs accumulate.
 
 ## 2b. Filing content we do not extract (bigger, genuinely missing)
 
