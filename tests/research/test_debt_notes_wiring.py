@@ -162,7 +162,7 @@ def test_notes_do_not_add_an_accession_to_the_cache_key(monkeypatch):
     class _Obj:
         notes = _Idx()
 
-    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (tenk, _Obj()))
+    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (tenk, _Obj(), None))
     bundle = filings.fetch_bundle("AMT")
     assert bundle.cache_key == "0000123-26-000100"
     assert [n.title for n in bundle.debt_notes] == ["LONG-TERM OBLIGATIONS"]

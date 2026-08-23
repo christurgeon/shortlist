@@ -1,0 +1,170 @@
+[
+ {
+  "ticker": "CASH",
+  "accession": "0000907471-25-000116",
+  "period_end": "2025-09-30",
+  "expect_adverse": true,
+  "why": "adverse ICFR, dated to its own period end",
+  "text": "erial effect on the financial statements. Management assessed the effectiveness of the Company\u2019s internal control over financial reporting as of September 30, 2025, based on the criteria set forth by the Committee of Sponsoring Organizations of the Treadway Commission in \u201cInternal Control Integrated Framework (2013).\u201d Based on the presence of a material weakness, our management concluded that our internal control over financial reporting was not effective as of September 30, 2025. The effectiveness of the Company\u2019s internal control over financial reporting as of September 30, 2025, has been audited by Crowe LLP, the independent registered public accounting firm that also has audited the Company\u2019s Consolidated Financial Statements included in this Annual Report on Form 10-K. Crowe LLP\u2019s att"
+ },
+ {
+  "ticker": "CMP",
+  "accession": "0001227654-25-000199",
+  "period_end": "2025-09-30",
+  "expect_adverse": true,
+  "why": "third consecutive adverse year",
+  "text": "ief Financial Officer, under the oversight of our Board of Directors, evaluated the effectiveness of the Company\u2019s internal control over financial reporting as of September 30, 2025, using the framework in Internal Control - Integrated Framework (2013), issued by the Committee of Sponsoring Organizations of the Treadway Commission. Based on that evaluation, management concluded that the Company\u2019s internal control over financial reporting was not effective as of September 30, 2025, due to the material weaknesses in internal control over financial reporting. The Company, due to a limited allocation of trained, knowledgeable resources, did not conduct an effective risk assessment process to identify and evaluate at a sufficient level of detail all relevant risks of material misstatement, incl"
+ },
+ {
+  "ticker": "CWH",
+  "accession": "0001558370-25-001939",
+  "period_end": "2024-12-31",
+  "expect_adverse": true,
+  "why": "adverse ICFR and DCP",
+  "text": "reporting as of December 31, 2024, based on the criteria set forth in Internal Control-Integrated Framework issued by the Committee of Sponsoring Organizations of the Treadway Commission (2013 framework). Our management identified control deficiencies that, individually or in the aggregate, constitute a material weakness in our internal control over financial reporting and has concluded that our internal control over financial reporting was not effective as of December 31, 2024. Our management has excluded from its assessment of internal control over financial reporting at December 31, 2024 the internal control over financial reporting of our recently acquired tire rescue roadside assistance business in 2024 (the \u201c2024 Excluded Acquisition\u201d). The 2024 Excluded Acquisition constituted $0.7"
+ },
+ {
+  "ticker": "GIII",
+  "accession": "0001104659-26-033891",
+  "period_end": "2026-01-31",
+  "expect_adverse": true,
+  "why": "'did not maintain effective' phrasing",
+  "text": "w, management concluded that the consolidated financial statements included in this Annual Report on Form 10-K present fairly, in all material respects, our financial position, results of operations, and cash flows for the periods presented in conformity with accounting principles generally accepted in the United States. However, because of this material weakness, management has concluded that we did not maintain effective internal control over financial reporting as of January 31, 2026, based on criteria in Internal Control - Integrated Framework (2013), issued by the COSO. Our independent auditors, Ernst & Young LLP, a registered public accounting firm, have audited and reported on our consolidated financial statements and the effectiveness of our internal control over financial reportin"
+ },
+ {
+  "ticker": "GRBK",
+  "accession": "0001628280-26-033478",
+  "period_end": "2025-12-31",
+  "expect_adverse": true,
+  "why": "10-K/A revising a previously clean assessment",
+  "text": "ualified opinion that the Company maintained, in all material respects, effective internal control over financial reporting as of December 31, 2025, based on the COSO criteria. As a result of the material weakness described below, management has revised its assessment, as presented in the accompanying Management\u2019s Report on Internal Control over Financial Reporting, to conclude that the Company\u2019s internal control over financial reporting was not effective as of December 31, 2025. Accordingly, our present opinion on the effectiveness of internal control over financial reporting as of December 31, 2025, as expressed herein, is different from that expressed in our previous report. A material weakness is a deficiency, or a combination of deficiencies, in internal control over financial reporti"
+ },
+ {
+  "ticker": "HP",
+  "accession": "0000046765-25-000071",
+  "period_end": "2025-09-30",
+  "expect_adverse": true,
+  "why": "conclusion absent from Item 9A extraction",
+  "text": "n, including the effectiveness of controls related to certain inputs used in the valuation of rigs and the recognition of deferred income taxes as of the acquisition date, assumptions used in the valuation of intangible assets, and the allocation of goodwill associated with the business combination to reporting units. As a result of the material weakness, management has concluded that the Company did not maintain effective internal control over financial reporting as of September 30, 2025. Prior to the filing of this Form 10-K, we have performed additional procedures to evaluate the assumptions and inputs used and the conclusions reached with regard to the valuation of rigs and intangible assets, the recognition of deferred income taxes, and the allocation of goodwill to reporting units, a"
+ },
+ {
+  "ticker": "JJSF",
+  "accession": "0001437749-24-036279",
+  "period_end": "2024-09-28",
+  "expect_adverse": true,
+  "why": "adverse in the year it happened",
+  "text": "information technology general controls (ITGCs), including certain controls over logical access and change management. As a result, certain business process controls that are dependent on the ineffective ITGCs, or rely on the data produced from systems impacted by the ineffective ITGCs, were also deemed ineffective. Management has therefore concluded that, as of September 28, 2024, the Company\u2019s internal control over financial reporting was not effective. The material weakness did not result in any material misstatements to our previously issued financial statements, nor in the financial statements included in this Form 10-K. Our independent registered public accounting firm, Grant Thornton LLP, audited our internal control over financial reporting as of September 28, 2024. Their report,"
+ },
+ {
+  "ticker": "NEOG",
+  "accession": "0000950170-25-100064",
+  "period_end": "2025-05-31",
+  "expect_adverse": true,
+  "why": "non-calendar fiscal year end",
+  "text": "sufficiently understand internal control responsibilities. These control deficiencies create a reasonable possibility that a material misstatement to the consolidated financial statements would not be prevented or detected on a timely basis, and therefore, we concluded that the deficiencies represent material weaknesses. As a result of these material weaknesses, management has concluded that our internal control over financial reporting was not effective as of May 31, 2025. However, after giving full consideration to these material weaknesses, and the additional analyses and other procedures that we performed to ensure that our consolidated financial statements were prepared in accordance with US GAAP, we have concluded that our consolidated financial statements present fairly, in all mat"
+ },
+ {
+  "ticker": "NSSC",
+  "accession": "0001558370-24-012547",
+  "period_end": "2024-06-30",
+  "expect_adverse": true,
+  "why": "plural 'internal controls ... were not effective'",
+  "text": "tain appropriate controls in future periods. We identified a material weakness in our internal controls over financial reporting as of June 30, 2024. Refer to Part II - Item 9A, \u201cControls and Procedures\u201d of this Annual Report on Form 10-K for management\u2019s assessment as of June 30, 2024. Based on this material weakness, the Company\u2019s management has concluded that as of June 30, 2024, the Company\u2019s internal controls over financial reporting were not effective. A material weakness is a deficiency or combination of deficiencies in internal control over financial reporting such that there is a reasonable possibility that a material misstatement of our financial statements would not be prevented or detected on a timely basis. Management identified a material weakness related to inventory costing"
+ },
+ {
+  "ticker": "SMP",
+  "accession": "0000093389-26-000012",
+  "period_end": "2025-12-31",
+  "expect_adverse": true,
+  "why": "self-referential period, no explicit date",
+  "text": "nagement, including our Chief Executive Officer and Chief Financial Officer, we conducted an evaluation of the effectiveness of our internal control over financial reporting based on criteria set forth by the Committee of Sponsoring Organizations of the Treadway Commission (COSO) in the Internal Control - Integrated Framework (2013). Based on this assessment, our management has concluded that our internal control over financial reporting was not effective as of December 31, 2025, due to the material weakness at our Nissens Automotive operating segment acquired in November 2024, described below. A material weakness is a deficiency, or combination of deficiencies, in internal control over financial reporting, such that there is a reasonable possibility that a material misstatement of a compa"
+ },
+ {
+  "ticker": "TALO",
+  "accession": "0000950170-24-125528",
+  "period_end": "2023-12-31",
+  "expect_adverse": true,
+  "why": "amended filing, adverse",
+  "text": "lity of our financial reporting and the preparation of our consolidated financial statements in accordance with GAAP. Our independent registered public accounting firm, Ernst & Young LLP, also issued an audit report with respect to our internal control over financial reporting, which was included in the Original Filing. Subsequently, management has now concluded that, as of December 31, 2023, our internal control over financial reporting was not effective because of the material weaknesses in our internal control over financial reporting described below. A material weakness (as defined in Rule 12b-2 under the Exchange Act) is a deficiency, or a combination of deficiencies, in internal control over financial reporting, such that there is a reasonable possibility that a material misstatement"
+ },
+ {
+  "ticker": "UCTT",
+  "accession": "0001628280-25-007865",
+  "period_end": "2024-12-27",
+  "expect_adverse": true,
+  "why": "52/53-week fiscal end",
+  "text": "the future or otherwise fail to maintain an effective system of internal controls which, if not remediated, could adversely affect the accuracy, reliability, and timeliness of our financial reports, our reputation, business operations, and stock price. Based on our evaluation under the COSO framework as further described under \u201cItem 9A - Controls and Procedures,\u201d our management concluded that we did not maintain effective internal control over financial reporting as of December 27, 2024 due to material weaknesses. Effective internal controls over financial reporting are necessary for us to provide reliable and timely financial reports and, together with adequate disclosure controls and procedures, are designed to reasonably detect and prevent fraud. In addition, Section 404 of the Sarbane"
+ },
+ {
+  "ticker": "JJSF",
+  "accession": "0001437749-25-036456",
+  "period_end": "2025-09-27",
+  "expect_adverse": false,
+  "why": "THE TRAP: same phrase, prior period, remediated",
+  "text": "to ineffective information technology general controls (ITGCs), including certain controls over logical access and change management. As a result, certain business process controls that are dependent on the ineffective ITGCs, or rely on the data produced from systems impacted by the ineffective ITGCs, were also deemed ineffective. Management concluded that, as of September 28, 2024, the Company\u2019s internal control over financial reporting was not effective. The material weakness did not result in any material misstatements to our previously issued financial statements as of September 28, 2024. Throughout fiscal 2025, the Company conducted a remediation plan that ensured that change management and user access controls were performed timely and included (i) enhancing our processes around revi"
+ },
+ {
+  "ticker": "USNA",
+  "accession": "0000896264-26-000021",
+  "period_end": "2026-01-03",
+  "expect_adverse": false,
+  "why": "prior-period conclusion quoted in risk factors",
+  "text": "eographically or implement cross-border tax planning strategies that are compliant with applicable laws, our effective tax rate may continue to exceed historical levels and may fluctuate significantly from period to period. If we fail to maintain an effective system of internal controls, we may not be able to accurately report our financial results or prevent fraud. In 2024, we concluded that our disclosure controls and procedures were not effective as of December 30, 2023, due to material weaknesses in internal control over financial reporting. The material weaknesses resulted from an insufficient complement of trained resources with specialized skills and knowledge in information technology general controls (ITGCs), or an alternative contingency plan, to timely respond to the impacts of"
+ },
+ {
+  "ticker": "CENT",
+  "accession": "0000887733-24-000029",
+  "period_end": "2024-09-28",
+  "expect_adverse": false,
+  "why": "prior-period, date precedes the phrase",
+  "text": "ols, which may result in material misstatements or otherwise adversely affect the accuracy, reliability or timeliness of our financial statements. As described under Item 9A. \"Controls and Procedures\" below, we concluded that material weaknesses in our internal control over financial reporting existed as of September 30, 2023 and, accordingly, our internal control over financial reporting and our disclosure controls and procedures were not effective as of such date. A material weakness is a deficiency, or a combination of deficiencies, in internal control over financial reporting, such that there is a reasonable possibility that a material misstatement of our annual or interim consolidated financial statements will not be prevented or detected on a timely basis. As a result of its evaluati"
+ },
+ {
+  "ticker": "CWH",
+  "accession": "0001104659-26-021548",
+  "period_end": "2025-12-31",
+  "expect_adverse": false,
+  "why": "remediated the following year",
+  "text": ". \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 Disruptions or breaches involving our or our third-party providers\u2019 IT Systems or Confidential Information (as defined herein) or our failure to meet increasingly demanding regulatory requireme... Material weaknesses in our internal control over financial reporting could have a significant adverse effect on our business and the price of our Class A common stock. We are subject to risks associated with our organizational structure. There are risks associated with ownership of our Class A common stock. BASIS OF PRESENTATION As used in this Form 10-K, unless the context otherwise requires, ref"
+ },
+ {
+  "ticker": "UCTT",
+  "accession": "0001628280-26-010744",
+  "period_end": "2025-12-26",
+  "expect_adverse": false,
+  "why": "remediated the following year",
+  "text": "ables from them. We have teams leading the implementation of the ERP system at most of our locations, and the integration of acquired entities onto our ERP platform. To the extent these teams or key individuals are not retained through the implementation process, the success of our implementation could be compromised and the expected benefits of the ERP system may not be realized. We may identify material weaknesses in our internal control over financial reporting or otherwise fail to maintain effective internal controls, which could adversely affect our financial reporting, our reputation, operations, and stock price. Maintaining effective internal controls over financial reporting is essential to providing reliable and timely financial reports and, together with adequate disclosure contr"
+ },
+ {
+  "ticker": "NSSC",
+  "accession": "0001558370-25-011750",
+  "period_end": "2025-06-30",
+  "expect_adverse": false,
+  "why": "remediated the following year",
+  "text": "be not effective, which may adversely affect investor confidence in our company and, as a result, the value of our common stock. We have been and are required, pursuant to Section 404 of the Sarbanes-Oxley Act, to furnish a report by management on, among other things, the effectiveness of our internal control over financial reporting on an annual basis. This assessment includes disclosure of any material weaknesses identified by our management in our internal control over financial reporting. During the evaluation and testing process, if we identify one or more material weaknesses in our internal control over financial reporting, we will be unable to assert that our internal controls are effective and would be required to disclose any material weaknesses identified in Management\u2019s Report"
+ },
+ {
+  "ticker": "SPGI",
+  "accession": "0000064040-26-000013",
+  "period_end": "2025-12-31",
+  "expect_adverse": false,
+  "why": "NEGATION: 'no material weaknesses'",
+  "text": "and the PCAOB. We conducted our audit in accordance with the standards of the PCAOB. Those standards require that we plan and perform the audit to obtain reasonable assurance about whether effective internal control over financial reporting was maintained in all material respects. Our audit included obtaining an understanding of internal control over financial reporting, assessing the risk that a material weakness exists, testing and evaluating the design and operating effectiveness of internal control based on the assessed risk, and performing such other procedures as we considered necessary in the circumstances. We believe that our audit provides a reasonable basis for our opinion. Definition and Limitations of Internal Control Over Financial Reporting A company\u2019s internal control over f"
+ },
+ {
+  "ticker": "HMN",
+  "accession": "0000850141-26-000007",
+  "period_end": "2025-12-31",
+  "expect_adverse": false,
+  "why": "NEGATION: 'no material weaknesses'",
+  "text": "management in making its evaluation are the measures in the Internal Control - Integrated Framework (2013) issued by the Committee of Sponsoring Organizations of the Treadway Commission. Horace Mann Educators Corporation Annual Report on Form 10-K 147 Based on our assessment, we concluded that our internal control over financial reporting was effective at December 31, 2025, and that there were no material weaknesses in our internal control over financial reporting as of that date. KPMG LLP, an independent registered public accounting firm, which has audited and reported on the Consolidated Financial Statements contained in this inter-document reference, has issued its report on the effectiveness of our internal control over financial reporting which follows this report. Report of Independe"
+ },
+ {
+  "ticker": "VITL",
+  "accession": "0001193125-26-073423",
+  "period_end": "2025-12-28",
+  "expect_adverse": false,
+  "why": "remediated the following year",
+  "text": "fectively manage our growth; \u2022 the potential influence of our focus on a specific public benefit purpose and producing a positive effect for society; \u2022 our stated Impact Goals, opportunities and initiatives, as well as the standards and expectations of third parties regarding these matters; \u2022 our ability to maintain effective internal controls over financial reporting and to remediate and prevent material weaknesses in our internal controls; \u2022 our ability to compete effectively with existing competitors and new market entrants; \u2022 the impact of adverse economic conditions, including as a result of unfavorable global economic and political conditions, elevated interest rates and inflation; \u2022 the impact of previous or future shutdowns of the U.S. federal government on our and our contracted f"
+ }
+]

@@ -20,6 +20,32 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **A material-weakness KEYWORD search is worthless; the adverse CONCLUSION plus a tense
+  test works (2026-08-23)** — `"material weakness"` matched 226 of 228 filers (auditor
+  boilerplate), and `"material weaknesses in our internal control over financial reporting"`
+  matches NEGATIONS ("there were no material weaknesses" — SPGI, HMN). What discriminates is
+  management's adverse conclusion ANCHORED to the filing's own period end: the dominant false
+  positive is a prior-period weakness, since remediated, restated in a later filing (JJSF's
+  FY2025 10-K carries a 2024-09-28 conclusion). Shipped as `research/controls.py` on the
+  `/deep` path: 16/0/0 tp/fp/fn in-sample over 68 filings, and on 120 HELD-OUT names 16 of 16
+  flagged filings were genuine with no missed positive found. Base rate 5.3% of large/small-mid
+  caps, 10.0% at $300M-$5B. `window_chars`/`tolerance_days` are SLACK, not tuned — the verdict
+  is flat over 100-800 chars and 7-200 days. **The text must come from the whole document**:
+  `FilingText.combined()` alone fires on 2 of 7 known positives and edgartools'
+  `part_ii_item_9a` returns 0 chars for 3 of 15 filers. That costs **2 extra sec.gov requests
+  per brief**, not zero. NOT a ScoreCard flag (score() runs before research) and 10-K only —
+  the 10-Q base rate is unmeasured.
+  `2026-08-23-icfr-adverse-conclusion-detection.md`.
+- **Widening `edgar_events.forms` is free, and low-yield (2026-08-23)** — going from 8 forms to
+  18 made **0 additional HTTP requests** (edgartools filters an already-loaded submissions
+  index). But over 228 names in a YEAR: NT 10-K/NT 10-Q fired **0.0%**, 8-K 4.02 0.4%, 3.01
+  1.3%, 4.01 1.8%; only shelf forms (18-20%) and comment letters (~7%) are common. These are
+  insurance bought at zero price, not features — do not re-litigate their yield.
+  **Form 25/25-NSE are excluded on purpose**: 17 of 228 filed one within a year, essentially
+  all for a matured note or warrant rather than the issuer. Separately,
+  `edgar_events.index_limit: 40` was ALREADY binding for BLK (271 matched filings in 90d,
+  against a p99 of 29) because the slice is taken newest-first BEFORE the lookback filter;
+  raised to 120. `2026-08-23-icfr-adverse-conclusion-detection.md`.
 - **The `/deep` arithmetic clause works, and its three 2026-08-18 follow-ups are closed
   (2026-08-22)** — measured 1 of 4 on names with a live refinancing question, diagnosed as a
   clause with no trigger and no destination field, fixed, re-measured **3 of 3** on a
@@ -186,6 +212,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-08-23 | `2026-08-23-icfr-adverse-conclusion-detection.md` — ICFR adverse conclusions + filing forms | verdict |
 | 2026-08-22 | `2026-08-22-deep-arithmetic-clause-verification.md` — arithmetic clause 1/4 → 3/3 | verdict |
 | 2026-08-22 | `2026-08-22-brief-self-consistency-base-rate.md` — brief self-consistency base rate | verdict |
 | 2026-08-21 | `2026-08-21-operating-income-edgar-gap.md` — EDGAR `operating_income` gap | verdict |

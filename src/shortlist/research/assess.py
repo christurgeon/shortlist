@@ -10,6 +10,7 @@ from typing import Callable, Optional
 from ..env import redact_secrets
 from . import analyst_revision as analyst_revision_ctx
 from . import claude_cli, reverse_dcf
+from . import controls as controls_mod
 from . import earnings as earnings_ctx
 from . import gov_contracts as gov_contracts_ctx
 from . import inventory as inventory_ctx
@@ -501,6 +502,18 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     if bundle.added_risks_text:
         added_section = (f"=== NEWLY ADDED RISK FACTORS (vs prior-year 10-K) ===\n"
                          f"{bundle.added_risks_text}\n\n")
+    # An adverse internal-control conclusion. The QUOTE is filing text and is a
+    # grounding segment, so it must be rendered here too: a segment the model never
+    # saw could still verify a quote, which would make "verified" mean the opposite
+    # of what it says. The derived verdict rides in `controls_line` instead, outside
+    # the haystack (research/controls.py:context_line).
+    controls = getattr(bundle, "controls", None)
+    controls_section = ""
+    if controls is not None:
+        controls_section = (f"=== {controls.form} — INTERNAL CONTROL CONCLUSION ===\n"
+                            f"{controls.quote}\n\n")
+    controls_line = controls_mod.context_line(controls)
+    controls_ctx = f"\n\n{controls_line}" if controls_line else ""
     return (
         f"Ticker: {filing.ticker}\nAccession: {filing.accession}\n\n"
         f"{quant}"
@@ -511,6 +524,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{tenq_risk_section}"
         f"{eightk_section}"
         f"{notes_section}"
+        f"{controls_section}"
         f"{added_section}"
         f"Return at most {rcfg.get('max_risks', 8)} risks, "
         f"{rcfg.get('max_red_flags', 8)} red_flags, "
@@ -525,6 +539,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{events_line}"
         f"{insider_line}"
         f"{proxy_section}"
+        f"{controls_ctx}"
         f"{macro_section}"
         f"{similarity_section}"
     )

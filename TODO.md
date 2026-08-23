@@ -25,6 +25,33 @@ the scoring roadmap.
 
 ---
 
+# 5. Internal-control detection — two deliberate gaps (2026-08-23)
+
+`research/controls.py` ships: management's own adverse ICFR/DCP conclusion, anchored to the
+filing's own period end, as a `/deep` grounding segment plus a prompt-only verdict line. Base
+rates, the confusion matrices, the sensitivity sweep and the phrase set that does NOT work are
+in `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md` — read it before touching the
+phrase list, because a `"material weakness"` keyword search matched 226 of 228 filers and the
+plural ICFR phrasing matches negations.
+
+- **10-K only; the 10-Q base rate is unmeasured.** A weakness first disclosed in a 10-Q Part I
+  Item 4 is invisible for up to three quarters. `fetch_bundle` already holds the 10-Q object,
+  so the extension is small — but ship it only with a measured base rate, the same bar the
+  10-K path cleared. Do not assume the 10-K numbers transfer: quarterly Item 4 is a different
+  disclosure with a different remediation cadence.
+- **Not a `ScoreCard` flag, on purpose.** `score()` runs before research and the screener path
+  never downloads 10-K text, so a flag would mean a whole-document fetch per screened ticker
+  (~2 requests, 1.4-3.8s each, ×10 per `/screen`). Measure that cost against a real `/screen`
+  before paying it. The *filing-form* flags shipped in the same change do reach `ScoreCard`,
+  because those genuinely ride an index already fetched.
+
+**Status:** deferred, not blocked on a decision — blocked on *measurement*. Both need a probe
+pass this session had no budget for after validating the 10-K path in and out of sample. The
+10-Q question is the higher-value of the two; the flag question is only worth opening if
+someone wants control findings visible on `/screen` rather than `/deep`.
+
+---
+
 # 2. `/deep` as market research — external-review triage (2026-08-11)
 
 An outside review of the repo argued that `/deep` is **good issuer diligence but not market
@@ -130,7 +157,11 @@ it outranks §3's alpha questions.
 - **8-K Item 4.02 (non-reliance/restatement) is unexercised by real data.** None appeared in
   the 60-filing probe, so `research/eightk.py`'s highest-priority branch is pinned by a
   constructed fixture only. Do not describe it as verified; the first real restatement is its
-  first real test.
+  first real test. **Why the probe found none (measured 2026-08-23): the base rate is 0.4% of
+  names per YEAR** — 1 of 228 across both committed universes, so no probe of that size was
+  ever going to hit one. A real specimen now exists to build the fixture from: **GRBK**, whose
+  clean FY2025 10-K was followed by an adverse 10-K/A (`0001628280-26-033478`). Same filer also
+  trips the new `restatement_8k` flag. `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`.
 - **`business_model_summary` is still bare prose** — the last narrative section with no
   grounding standard, deliberately left out of the 2026-08-17 moat/management evidence cut
   (`docs/audits/2026-08-17-moat-management-evidence-design.md`, which is also the template
@@ -186,6 +217,16 @@ feed: EIA (energy/utilities), ClinicalTrials.gov + openFDA (biotech/pharma), FDI
 `gov_contracts`). Cheap landing pattern: an **auxiliary** `Source` whose section is not a
 `KEY_OBJECT` (`_AUX_DEFAULTS`, `data/models.py:441`), exactly like `gov_contracts`/`lobbying` —
 it reaches the research layer without touching coverage, gates, flags or scores.
+
+**Liveness probed from oracle-prod 2026-08-23** (the box's IP is what blocks Yahoo's screener
+and `fredgraph.csv`, so this is the answer that matters, not the vendor's docs): **openFDA
+200, ClinicalTrials.gov API v2 200, BLS API v2 keyless 200, SEC `frames` 200, EDGAR full-text
+search (`efts.sec.gov`) 200 keyless, FINRA daily short-volume 200, DERA financial-statement
+data sets 200** (82 MB/quarter; `num.txt` carries a `segments` column, i.e. segment revenue
+`companyfacts` strips, and `sub.txt` carries `sic` + `filed` for a point-in-time panel).
+**Census MARTS 302 and Treasury fiscaldata timed out — unresolved, not confirmed working.
+PatentsView is now API-key-gated** (returned no service without one), so it is no longer the
+keyless option §2e implies.
 
 ---
 

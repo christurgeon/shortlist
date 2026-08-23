@@ -59,7 +59,30 @@ _EVENT_FORM_PREFIXES = (
     ("SC 13G", "passive_13g"), ("SCHEDULE 13G", "passive_13g"),
     ("8-K", "recent_8k"),
     ("144", "planned_insider_sale_144"),
+    # PREFIX MATCHING IS THE TRAP HERE, not a convenience. Every entry below must be
+    # checked against the OTHER forms in `edgar_events.forms`: a prefix that is also
+    # the start of another form silently reclassifies it. "424B5" is why a bare "4"
+    # can never be added (it would swallow Form 4), and it is why these are spelled
+    # in full rather than shortened. `tests/test_edgar_events.py` pins the collisions.
+    ("NT 10-K", "late_filing"), ("NT 10-Q", "late_filing"),
+    ("S-3", "shelf_offering"),        # also S-3ASR / S-3/A / S-3MEF, all shelf capacity
+    ("424B5", "shelf_offering"),      # the takedown itself
+    ("UPLOAD", "sec_comment_letter"), ("CORRESP", "sec_comment_letter"),
 )
+
+# 8-K item codes worth their own flag, read from the `items` column the filings index
+# ALREADY carries (so this costs no request). Deliberately narrow: 8-K items 2.02 and
+# 5.02 fire on 98% and 89% of names per year and would be noise as flags.
+_EIGHTK_ITEM_FLAGS = (
+    ("4.02", "restatement_8k"),
+    ("4.01", "auditor_change"),
+    ("3.01", "listing_deficiency"),
+)
+
+# Form 25 / 25-NSE are EXCLUDED on the evidence, not by oversight: 17 of 228 large and
+# small/mid caps filed one within a year, essentially all for a matured note or warrant
+# rather than the issuer's common stock. As a delisting flag it would be wrong ~7% of
+# the time on exactly the names where a delisting flag matters most.
 
 
 def classify_event_form(form: str) -> Optional[str]:
@@ -72,6 +95,19 @@ def classify_event_form(form: str) -> Optional[str]:
     return None
 
 
+def classify_event_items(items: Any) -> list[str]:
+    """Events flag attributes implied by an 8-K's item codes. Accepts the string the
+    filings index carries ("4.02,9.01") or a list; unknown codes yield nothing.
+
+    Substring matching would be wrong: "4.02" is a substring of "14.02" and of a bare
+    "4.021". Codes are split and compared whole."""
+    if not items:
+        return []
+    raw = items if isinstance(items, (list, tuple)) else str(items).split(",")
+    codes = {str(c).strip() for c in raw}
+    return [attr for code, attr in _EIGHTK_ITEM_FLAGS if code in codes]
+
+
 def build_events_section(records: list[dict], lookback_days: int,
                          today: date) -> Optional[Events]:
     """Pure: filter records to the lookback window, classify, and build an Events.
@@ -82,6 +118,7 @@ def build_events_section(records: list[dict], lookback_days: int,
     a 10-Q/A can land months after the print and would wrongly freshen the anchor."""
     cutoff = today - timedelta(days=lookback_days)
     kept: list[tuple[str, FilingEvent]] = []
+    item_attrs: set[str] = set()
     report_filed: Optional[str] = None
     for r in records:
         form = r.get("form", "")
@@ -97,15 +134,20 @@ def build_events_section(records: list[dict], lookback_days: int,
         attr = classify_event_form(form)
         if attr is None or not in_window:
             continue
+        items = r.get("items") or None
+        if attr == "recent_8k":
+            item_attrs.update(classify_event_items(items))
         kept.append((attr, FilingEvent(
             form=form, filed=filed,
             accession=r.get("accession"), url=r.get("url"),
-            items=r.get("items") or None)))
+            items=items)))
     if not kept and report_filed is None:
         return None
     kept.sort(key=lambda p: p[1].filed, reverse=True)   # newest-first
     ev = Events(recent=[fe for _, fe in kept], last_report_filed=report_filed)
     for attr, _ in kept:
+        setattr(ev, attr, True)
+    for attr in item_attrs:
         setattr(ev, attr, True)
     return ev
 

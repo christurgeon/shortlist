@@ -451,6 +451,12 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.activist_13d = ev.activist_13d
         m.passive_13g = ev.passive_13g
         m.planned_insider_sale_144 = ev.planned_insider_sale_144
+        m.late_filing = ev.late_filing
+        m.shelf_offering = ev.shelf_offering
+        m.sec_comment_letter = ev.sec_comment_letter
+        m.restatement_8k = ev.restatement_8k
+        m.auditor_change = ev.auditor_change
+        m.listing_deficiency = ev.listing_deficiency
         m.filing_events = [dataclasses.asdict(e) for e in ev.recent]
 
     return m

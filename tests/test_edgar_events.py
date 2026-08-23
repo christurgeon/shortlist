@@ -388,3 +388,84 @@ def test_filing_event_items_survive_snapshot_roundtrip():
     legacy = snap.to_dict()
     del legacy["events"]["recent"][0]["items"]
     assert TickerSnapshot.from_dict(legacy).events.recent[0].items is None
+
+
+# ------------------------------------------- distress / dilution / integrity forms
+
+def test_new_forms_classify_to_their_flags():
+    assert classify_event_form("NT 10-K") == "late_filing"
+    assert classify_event_form("NT 10-Q/A") == "late_filing"
+    assert classify_event_form("S-3ASR") == "shelf_offering"
+    assert classify_event_form("424B5") == "shelf_offering"
+    assert classify_event_form("UPLOAD") == "sec_comment_letter"
+    assert classify_event_form("CORRESP") == "sec_comment_letter"
+
+
+def test_prefix_matching_does_not_reclassify_neighbouring_forms():
+    """`classify_event_form` is a PREFIX match over a form list that now contains
+    424B5, so a bare "4" prefix would silently swallow Form 4 — the insider feed.
+    These are the collisions the list was checked against."""
+    assert classify_event_form("4") is None          # Form 4 — insider, not an event
+    assert classify_event_form("4/A") is None
+    assert classify_event_form("3") is None
+    assert classify_event_form("5") is None
+    assert classify_event_form("10-K") is None       # handled separately (SUE anchor)
+    assert classify_event_form("10-Q") is None
+    assert classify_event_form("S-1") is None        # not a shelf
+    assert classify_event_form("") is None
+
+
+def test_form_25_is_excluded_on_purpose():
+    """17 of 228 names filed a 25/25-NSE within a year, essentially all for a matured
+    note or warrant rather than the issuer's common stock. Do not re-add it as a
+    delisting flag without new evidence."""
+    assert classify_event_form("25") is None
+    assert classify_event_form("25-NSE") is None
+
+
+def test_eightk_item_codes_map_to_flags():
+    from shortlist.data.sources.edgar import classify_event_items
+    assert classify_event_items("4.02,9.01") == ["restatement_8k"]
+    assert classify_event_items(["4.01"]) == ["auditor_change"]
+    assert classify_event_items("3.01") == ["listing_deficiency"]
+    assert classify_event_items("2.02,9.01") == []
+    assert classify_event_items(None) == []
+    assert classify_event_items("") == []
+
+
+def test_item_codes_are_matched_whole_not_as_substrings():
+    """"4.02" is a substring of "14.02" and of "4.021"; a substring match would
+    invent a restatement flag out of an unrelated item code."""
+    from shortlist.data.sources.edgar import classify_event_items
+    assert classify_event_items("14.02") == []
+    assert classify_event_items("4.021") == []
+
+
+def test_build_events_sets_item_derived_flags():
+    ev = build_events_section(
+        [{"form": "8-K", "filed": "2026-08-01", "accession": "a", "items": "4.02,9.01"}],
+        lookback_days=90, today=date(2026, 8, 23))
+    assert ev is not None
+    assert ev.recent_8k is True and ev.restatement_8k is True
+    assert ev.auditor_change is False and ev.listing_deficiency is False
+
+
+def test_item_flags_come_only_from_8ks_in_the_window():
+    """An out-of-window 8-K must not set the item flag either — the flags are
+    advisory statements about the CURRENT window, not about history."""
+    ev = build_events_section(
+        [{"form": "8-K", "filed": "2025-01-01", "accession": "a", "items": "4.02"},
+         {"form": "NT 10-K", "filed": "2026-08-01", "accession": "b"}],
+        lookback_days=90, today=date(2026, 8, 23))
+    assert ev is not None
+    assert ev.restatement_8k is False and ev.recent_8k is False
+    assert ev.late_filing is True
+
+
+def test_a_shelf_takedown_sets_only_its_own_flag():
+    ev = build_events_section(
+        [{"form": "424B5", "filed": "2026-08-10", "accession": "a"}],
+        lookback_days=90, today=date(2026, 8, 23))
+    assert ev is not None
+    assert ev.shelf_offering is True
+    assert ev.recent_8k is False and ev.late_filing is False

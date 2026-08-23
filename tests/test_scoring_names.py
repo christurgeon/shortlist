@@ -39,13 +39,13 @@ def test_emitted_literals_are_declared():
 
 def test_declared_sets_are_complete_and_disjoint():
     assert len(scoring.KNOWN_GATES) == 4
-    assert len(scoring.KNOWN_FLAGS) == 14
+    assert len(scoring.KNOWN_FLAGS) == 20
     assert not scoring.KNOWN_GATES & scoring.KNOWN_FLAGS
     assert set(scoring._FILING_STREAM_FLAGS) <= scoring.KNOWN_FLAGS
 
 
 def test_theme_descriptions_bound_to_declared_sets():
-    # theme.py's report-legend maps enumerate the same 18 names; bind them
+    # theme.py's report-legend maps enumerate the same 24 names; bind them
     # into the same tripwire so a new flag can't go green with a stale legend
     from shortlist.bot.report import theme
     assert set(theme.GATE_DESCRIPTIONS) == scoring.KNOWN_GATES

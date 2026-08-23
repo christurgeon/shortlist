@@ -15,7 +15,9 @@ from .stats import sue as _stats_sue
 # each name has an /explain glossary entry. Add a gate/flag -> declare it
 # here AND document it in bot/glossary.py, or CI fails.
 _FILING_STREAM_FLAGS = ("activist_13d", "recent_8k", "passive_13g",
-                        "planned_insider_sale_144")
+                        "planned_insider_sale_144", "late_filing", "shelf_offering",
+                        "sec_comment_letter", "restatement_8k", "auditor_change",
+                        "listing_deficiency")
 KNOWN_GATES = frozenset({
     "negative_fcf", "below_min_mktcap", "over_leveraged",
     "heavy_insider_selling"})

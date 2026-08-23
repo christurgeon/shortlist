@@ -57,8 +57,16 @@ These are the holes that matter, ranked by how much they distort an assessment:
    *rating* revision (change in buy/hold/sell counts) ships as `/deep` + report context
    from the Finnhub history we already fetch. **Still open:** EPS *estimate* revisions,
    which are a different feed (Alpha Vantage §B1) and the one `eps_revision` needs.
-3. **No earnings-quality red-flag.** Accruals, restatements, and going-concern language are
-   how you avoid value traps. We score profitability but never ask if the earnings are *real*.
+3. **No earnings-quality red-flag.** ~~Accruals, restatements, and going-concern language are
+   how you avoid value traps.~~ **Partly closed (research):** `/deep` now detects management's
+   own conclusion that internal control over financial reporting or disclosure controls were
+   **not effective as of this filing's period end** (`research/controls.py`), and the events
+   source flags a fresh 8-K item 4.02 non-reliance restatement, 4.01 auditor change and 3.01
+   listing deficiency. A DISCLOSURE, not an inference — which is why it shipped ahead of the
+   Tier-D M/Z composites below. **Still open:** accruals (measured and disabled), Altman Z,
+   Beneish M, and going-concern language (unvalidatable on the current universes — 0 of 228).
+   Base rates, the phrase set and the tense rule that makes it work:
+   `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`.
 4. **No macro/risk regime.** A 9/10 cyclical in a widening-credit-spread regime is a
    different bet than in a calm one. We assess names in a vacuum.
 5. **Smart-money / alt-data confirmation is partly addressed.** ~~13F institutional flow,

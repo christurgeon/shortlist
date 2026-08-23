@@ -76,6 +76,24 @@ labelled segment. Measured on NKE it surfaced a chief accounting officer's resig
 one-time benefit behind a 407% net-income jump, neither present in the 10-K.
 Design + evidence: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
 
+An **adverse internal-control conclusion** is included when the 10-K carries one
+(`research/controls.py`). This is split deliberately across the grounding boundary: the
+filer's own sentence is quotable filing text and enters the haystack as its own segment
+(`10-K controls conclusion`), while the derived verdict — which conclusion was adverse,
+and the date it anchors to — rides the prompt-only context line, because a computed
+verdict a model could quote would pass quote-verification as a filing fact.
+
+The detector reads the **whole filing text**, not the narrative sections: the conclusion
+lives in Item 9A, which `FilingText` does not extract, and edgartools' Item 9A accessor
+returns nothing at all for some filers. That costs ~2 extra sec.gov requests per brief.
+A bare `"material weakness"` search is worthless (it matched 226 of 228 filers), and the
+adverse phrasing alone is not enough either — the dominant false positive is a
+prior-period weakness, since remediated, restated in a later filing. Only a conclusion
+anchored to the filing's own `period_of_report` counts. Roughly 5% of large and
+small/mid caps and 10% of $300M-$5B names carry one; everyone else pays nothing, because
+the absent finding leaves the prompt byte-identical.
+Evidence: `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`.
+
 Several **prompt-only context lines** ride along. These are deliberately kept out of the
 quote-verification haystack, so a computed value can never pass itself off as a filing fact:
 

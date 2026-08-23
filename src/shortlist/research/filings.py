@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import os
 import sys
+from datetime import date
 from typing import Any, Optional
 
 from ..env import redact_secrets
@@ -349,24 +350,31 @@ def filing_text_change(
         return None
 
 
-def _fetch_10k_parsed(ticker: str,
-                      identity: Optional[str] = None) -> tuple[Optional[FilingText], Any]:
-    """(FilingText|None, parsed filing object|None) — the shared core of fetch_10k.
+def _fetch_10k_parsed(
+        ticker: str,
+        identity: Optional[str] = None) -> tuple[Optional[FilingText], Any, Any]:
+    """(FilingText|None, parsed filing object|None, filing|None) — the shared core
+    of fetch_10k.
 
     Split out so `fetch_bundle` can read the statement notes off the SAME parsed
     object the narrative sections came from. Re-deriving it would mean a second
     `.obj()` parse of a multi-hundred-KB document per brief, for data already in
-    hand."""
+    hand.
+
+    The third element is the FILING, not the parsed object: `controls.detect` needs
+    the whole document's text and the parsed `TenK` exposes no text accessor. Item
+    9A alone is not a substitute — `part_ii_item_9a` returned 0 chars for 3 of 15
+    filers measured and missed HP's adverse conclusion outright."""
     from edgar import Company  # lazy: optional [edgar] extra
 
     require_identity(identity)
     latest = Company(ticker).get_filings(form="10-K").latest(1)
     if latest is None:
-        return None, None
+        return None, None, None
     tenk = latest.obj()
     filing = _build_filing_text(
         ticker, getattr(latest, "accession_no", ""), getattr(latest, "filing_date", ""), tenk)
-    return (filing if filing.has_content() else None), tenk
+    return (filing if filing.has_content() else None), tenk, latest
 
 
 def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:
@@ -393,6 +401,34 @@ def no_10k_reason(ticker: str) -> str:
     return "no 10-K"
 
 
+def _detect_controls(filing: Any, tenk_obj: Any, accession: str, ticker: str,
+                     config: Optional[dict] = None):
+    """The 10-K's adverse internal-control conclusion, or None. Never raises.
+
+    COSTS ~2 EXTRA SEC REQUESTS per brief (the filing index page + the document),
+    measured 2026-08-23 — `filing.text()` re-downloads rather than reusing what
+    `.obj()` parsed, and the parsed `TenK` exposes no text accessor. Bounded by the
+    same process-wide throttle as every other sec.gov call. The cheaper section-only
+    route was measured and rejected: `FilingText.combined()` alone fires on 2 of 7
+    known positives, and adding `part_ii_item_9a` still returns 0 chars for 3 of 15
+    filers. Skipped entirely when the block is disabled, so `enabled: false` costs
+    nothing at all."""
+    from . import controls as controls_mod
+
+    cfg = controls_mod.config_block(config)
+    if not cfg.get("enabled", True):
+        return None
+    try:
+        period = str(getattr(tenk_obj, "period_of_report", "") or "")
+        if not period:
+            return None
+        return controls_mod.detect(
+            filing.text(), date.fromisoformat(period), cfg, accession=accession)
+    except Exception as e:
+        log_abstain("controls conclusion detection failed", ticker or "?", e)
+        return None
+
+
 def fetch_bundle(ticker: str, identity: Optional[str] = None,
                  config: Optional[dict] = None) -> Optional[FilingBundle]:
     """Fetch the documents for one research brief: the current 10-K (required), the
@@ -403,7 +439,7 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
 
     # sets identity / raises if SEC_IDENTITY unset. Keeps the parsed object so the
     # statement notes below cost no second parse.
-    tenk, tenk_obj = _fetch_10k_parsed(ticker, identity)
+    tenk, tenk_obj, tenk_filing = _fetch_10k_parsed(ticker, identity)
     if tenk is None:
         return None
 
@@ -412,6 +448,8 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     from . import notes as debtnotes
     ncfg = debtnotes.config_block(config)
     debt_notes = debtnotes.collect(tenk_obj, "10-K", tenk.accession, ticker, ncfg)
+
+    controls = _detect_controls(tenk_filing, tenk_obj, tenk.accession, ticker, config)
 
     tenq_mda, tenq_acc, tenq_added = "", "", ""
     try:
@@ -459,4 +497,4 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
         text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added,
-        tenq_accession=tenq_acc, debt_notes=debt_notes)
+        tenq_accession=tenq_acc, debt_notes=debt_notes, controls=controls)
