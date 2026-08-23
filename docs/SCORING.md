@@ -76,6 +76,8 @@ both ON) and pinned by `tests/test_gate_backcompat.py`.
 | `social_hype` / `news_spike` | WSB / Finnhub mention-volume spikes |
 | `filing_text_change` | Large YoY 10-K/10-Q rewrite (Lazy-Prices signal) |
 | `activist_13d`, `passive_13g`, `recent_8k`, `planned_insider_sale_144` | A fresh filing of that type exists |
+| `late_filing`, `shelf_offering`, `sec_comment_letter` | A fresh NT 10-K/10-Q, S-3/424B5 shelf, or SEC staff comment letter exists |
+| `restatement_8k`, `auditor_change`, `listing_deficiency` | A fresh 8-K carrying item 4.02, 4.01 or 3.01 |
 
 Gate and flag names are declared in `scoring.py` (`KNOWN_GATES` / `KNOWN_FLAGS`). CI
 AST-scans the emitters and fails if a name is emitted without being declared **and**

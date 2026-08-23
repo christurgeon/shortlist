@@ -651,12 +651,27 @@ lobbying:
 # docs/superpowers/specs/2026-06-01-edgar-events-design.md.
 edgar_events:
   lookback_days: 90
-  index_limit: 40
+  # 120, NOT 40. The slice is taken newest-first BEFORE the lookback filter, so a
+  # high-frequency filer's routine 144/13G stream can crowd a rare event out of the
+  # window entirely. Measured 2026-08-23 over 228 names, 90d: median 6, p95 18,
+  # p99 33 matched filings — so 40 was already binding for 1 name (BLK, 271) BEFORE
+  # this change, and the wider form list moves p99 only 29 -> 33. A BLK-class filer
+  # still truncates; 120 buys ~3.6x headroom over p99 at zero request cost (the slice
+  # is in-memory). Raising it only changes behaviour for names above the old 40.
+  index_limit: 120
   # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
   # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
   # 10-Q/10-K feed only the SUE decay anchor (events.last_report_filed) — they never
   # join the advisory `recent` list, and their /A amendments are dropped in the builder.
-  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G", "10-Q", "10-K"]
+  forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G", "10-Q", "10-K",
+          # Distress / dilution / accounting-integrity forms. These ride the SAME
+          # submissions index as the rest, so they cost NO extra request (measured
+          # 2026-08-23: widening 8 forms -> 18 made 0 additional HTTP calls). The
+          # fetch filter is exact-match, so every spelling is listed in full.
+          # Form 25 / 25-NSE are deliberately ABSENT — 17 of 228 names filed one in a
+          # year, essentially all for a matured note or warrant rather than the
+          # issuer. See data/sources/edgar.py.
+          "NT 10-K", "NT 10-Q", "S-3", "S-3ASR", "424B5", "UPLOAD", "CORRESP"]
   soft_notes:        # reserved; all OFF in v1 (pure enrichment)
     stale_after_8k: false
     activist_13d_note: false

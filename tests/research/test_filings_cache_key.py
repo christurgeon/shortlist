@@ -30,7 +30,10 @@ def _offline(monkeypatch):
     # (research/notes.py reads the statement notes off it), so stubbing the public
     # wrapper would leave the real fetch running. None => no notes, which is what
     # keeps these key assertions about 8-K accessions alone.
-    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (_tenk(), None))
+    # Third element is the FILING (controls.detect needs its whole-document text);
+    # None here means _detect_controls abstains, keeping these assertions about
+    # 8-K accessions alone.
+    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (_tenk(), None, None))
     monkeypatch.setattr(filings, "_prior_year_sections", lambda *a, **k: ("", ""))
 
     import edgar

@@ -268,6 +268,45 @@ GLOSSARY: list[Entry] = [
           "restricted stock. Usually routine diversification and the sale "
           "may never execute; worth a glance, not alarm. Advisory only. "
           "See Form 144."),
+    Entry("restatement_8k", "Gates & flags", ("non-reliance", "4.02"),
+          "FLAG: an 8-K Item 4.02 — management said previously issued "
+          "financial statements should NO LONGER BE RELIED ON. The single "
+          "most decision-relevant 8-K there is: the numbers the screen "
+          "scored may be wrong. Rare (0.4% of names per year). Advisory "
+          "only, because the correction's direction is unknown until the "
+          "restated figures land."),
+    Entry("auditor_change", "Gates & flags", ("4.01",),
+          "FLAG: an 8-K Item 4.01 — the company changed its independent "
+          "auditor. Usually routine (fee, rotation, a merger); occasionally "
+          "it is the tremor before a disagreement over accounting becomes "
+          "public. Read the 8-K for whether the auditor resigned or was "
+          "dismissed. ~1.8% of names per year. Advisory only."),
+    Entry("listing_deficiency", "Gates & flags", ("3.01", "delisting notice"),
+          "FLAG: an 8-K Item 3.01 — the exchange notified the company it "
+          "fails a listing standard (price, market value, late filings, "
+          "board composition). A cure period usually follows, so this is a "
+          "warning rather than a delisting. ~1.3% of names per year. "
+          "Advisory only."),
+    Entry("late_filing", "Gates & flags", ("NT 10-K", "NT 10-Q"),
+          "FLAG: an NT 10-K or NT 10-Q — the company told the SEC it "
+          "could not file its report on time. Cheap to detect and hard to "
+          "explain away: late filings cluster with accounting problems and "
+          "auditor disputes. Very rare among established names (0 of 228 "
+          "in a year), which is exactly why it means something when it "
+          "fires. Advisory only."),
+    Entry("shelf_offering", "Gates & flags", ("S-3", "424B5", "ATM"),
+          "FLAG: a shelf registration or takedown (S-3, S-3ASR, 424B5) — "
+          "the company registered capacity to sell securities. Common and "
+          "often routine housekeeping (18-20% of names per year), but for "
+          "a small cap it is the clearest advance warning of dilution. "
+          "Advisory only — capacity registered is not stock sold."),
+    Entry("sec_comment_letter", "Gates & flags", ("UPLOAD", "CORRESP"),
+          "FLAG: SEC staff correspondence on this filer's disclosures "
+          "(UPLOAD is the staff's letter, CORRESP the company's reply). "
+          "The staff asking about revenue recognition or a non-GAAP "
+          "measure is an accounting-quality signal almost nothing else "
+          "surfaces. ~7% of names per year. Advisory only — most letters "
+          "resolve with no restatement."),
     Entry("insider_cluster_buy", "Gates & flags", ("cluster buy",),
           "FLAG: several distinct insiders bought recently — the strongest "
           "insider configuration, since independent wallets rarely agree "

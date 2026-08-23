@@ -32,6 +32,12 @@ FLAG_DESCRIPTIONS = {
     "activist_13d":            "Activist investor (Schedule 13D) ownership stake filed.",
     "passive_13g":             "Passive large-holder (Schedule 13G) ownership stake filed.",
     "planned_insider_sale_144": "Form 144 notice of intent to sell.",
+    "late_filing":             "NT 10-K/10-Q — the company told the SEC it could not file on time.",
+    "shelf_offering":          "Shelf registration or takedown (S-3 / 424B5) — dilution capacity.",
+    "sec_comment_letter":      "SEC staff correspondence on this filer's disclosures (UPLOAD/CORRESP).",
+    "restatement_8k":          "8-K item 4.02 — prior financial statements should no longer be relied on.",
+    "auditor_change":          "8-K item 4.01 — the independent auditor changed.",
+    "listing_deficiency":      "8-K item 3.01 — exchange notice of a listing-standard failure.",
 }
 
 

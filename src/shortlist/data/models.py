@@ -317,6 +317,18 @@ class Events:
     activist_13d: bool = False         # SC 13D / SCHEDULE 13D (and /A) in window
     passive_13g: bool = False          # SC 13G / SCHEDULE 13G (and /A) in window
     planned_insider_sale_144: bool = False  # Form 144 (and /A) in window
+    # Distress / dilution / accounting-integrity forms. All ride the SAME submissions
+    # index the flags above already read, so they cost no additional request
+    # (measured 2026-08-23: widening the form filter from 8 to 18 made 0 requests).
+    # Base rates over 228 names, 365d: shelf 18-20%, comment letter 6.6-7.5%,
+    # auditor change 1.8%, listing deficiency 1.3%, restatement 0.4%, late filing 0.0%.
+    # The rare ones are insurance, not features — that is the deal their zero cost buys.
+    late_filing: bool = False          # NT 10-K / NT 10-Q (and /A) in window
+    shelf_offering: bool = False       # S-3 / S-3ASR / 424B5 — dilution capacity
+    sec_comment_letter: bool = False   # UPLOAD (staff letter) / CORRESP (reply)
+    restatement_8k: bool = False       # 8-K Item 4.02 — non-reliance on prior financials
+    auditor_change: bool = False       # 8-K Item 4.01
+    listing_deficiency: bool = False   # 8-K Item 3.01 — exchange listing-standard notice
     # Latest exact-form 10-Q/10-K filed date (ISO) — the bridge's SUE decay-anchor
     # refinement (a ~0-5d announcement proxy). NOT an advisory: kept out of `recent`
     # so the research filing-events line and the presence flags are untouched.

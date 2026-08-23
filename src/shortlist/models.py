@@ -119,6 +119,12 @@ class StockMetrics:
     activist_13d: Optional[bool] = None
     passive_13g: Optional[bool] = None
     planned_insider_sale_144: Optional[bool] = None
+    late_filing: Optional[bool] = None
+    shelf_offering: Optional[bool] = None
+    sec_comment_letter: Optional[bool] = None
+    restatement_8k: Optional[bool] = None
+    auditor_change: Optional[bool] = None
+    listing_deficiency: Optional[bool] = None
     # list of {form, filed, accession, url, items} dicts (items = 8-K item codes, else None)
     filing_events: Optional[list[dict]] = None
 

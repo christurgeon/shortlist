@@ -127,6 +127,25 @@ class DebtNote:
 
 
 @dataclass
+class ControlsFinding:
+    """Management's own conclusion that internal controls were not effective as of
+    the filing's period end (research/controls.py).
+
+    `quote` is PURE FILING TEXT and enters the grounding haystack as its own segment,
+    so — exactly as for DebtNote — nothing computed may be mixed into it. `basis` and
+    `as_of` ARE computed (which phrase matched, which date the sentence anchored to),
+    which is why they travel in the prompt-only `controls.context_line` instead: a
+    model that could quote a derived verdict would have it "verified" as a filing fact.
+    """
+    form: str                      # "10-K"
+    accession: str
+    basis: str                     # "icfr" | "dcp" — which conclusion was adverse
+    as_of: str                     # YYYY-MM-DD the conclusion anchors to
+    label: str                     # e.g. "10-K controls conclusion"
+    quote: str
+
+
+@dataclass
 class FilingBundle:
     """The documents fed to one research brief. `tenk` is the current 10-K (the
     primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
@@ -167,6 +186,10 @@ class FilingBundle:
     # Empty unless `research.notes` is enabled AND the filer files one, which is
     # what keeps the prompt byte-identical for every other name. 10-K notes first:
     # a 10-Q debt note is a legitimate subset (5 of 20 filers file none at all).
+    controls: Optional["ControlsFinding"] = None
+    # ^ an ADVERSE internal-control conclusion, or None (the common case — measured
+    # 5.3% of 228 large/small-mid caps, 10.0% of 120 held-out $300M-$5B names).
+    # None keeps the prompt byte-identical, so this costs nothing on a clean filer.
 
     def segments(self) -> list[tuple[str, str]]:
         """The grounding corpus split into (provenance label, text) pairs, in the
@@ -179,6 +202,8 @@ class FilingBundle:
                  ("newly disclosed risks", self.added_risks_text)]
         parts += [(e.label, e.text) for e in self.eightks]
         parts += [(n.label, n.text) for n in self.debt_notes]
+        if self.controls is not None:
+            parts.append((self.controls.label, self.controls.quote))
         return [(label, text) for label, text in parts if text]
 
     def haystack(self) -> str:
