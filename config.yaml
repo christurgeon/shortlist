@@ -579,6 +579,52 @@ research:
     enabled: true              # flip false for a byte-identical no-op (line omitted)
 
 
+  options:                     # options-surface context line (research-only; prompt-only,
+                               # NOT a scored signal, NOT a flag, NOT on /screen and NOT
+                               # in harness_sources — /screen would spend the per-IP
+                               # budget on data no screen renders. Feed, guards and every
+                               # constant: docs/audits/2026-08-24-options-surface-design.md
+    enabled: true              # flip false for a byte-identical no-op (line omitted)
+    timeout: 20                # seconds; a slow chain must never stall a brief
+    delta_tolerance: 0.10      # reject a strike whose ACHIEVED delta is this far from the
+                               # target. Deliberately NOT a minimum contract count: RES
+                               # produced a 77-vol-point skew from a put at delta -0.888
+                               # against a call at 0.869, because only 2-3 contracts per
+                               # side carried usable quotes and "nearest to 0.25" landed
+                               # wherever it could. A count would have passed that chain.
+    max_atm_spread_pct: 40     # reject the STRADDLE above this bid-ask % of mid. Gates the
+                               # implied move alone — the one item priced off a premium mid;
+                               # skew compares volatilities and survives a wide spread.
+                               # Calibrated on EOD quotes (all this feed serves): large-cap
+                               # median 21.5%, small/mid 61.5%. Pass rates 71/80 vs 10/77.
+    earnings_date_uncertainty_days: 8  # the chosen expiry must sit at least this far AFTER
+                               # the predicted print date. The vendor calendar revised a
+                               # still-future date 14 times across 42 tickers in ~2 months,
+                               # median 7d and max 8d (CSCO oscillated 08-11 <-> 08-19 four
+                               # times). Without this a later revision leaves the expiry
+                               # BEFORE the print, pricing no event while the line says it
+                               # prices one — a silent wrong answer, worse than abstaining.
+    max_earnings_expiry_gap_days: 14   # ...and no further out than this, or the straddle
+                               # prices the event PLUS weeks of ordinary drift. Note the
+                               # near-term ladder is weekly (0,2,4,7,9,11,18,25,32,39 DTE
+                               # on AAPL) and then jumps to monthlies (53 -> 88), so a
+                               # print more than ~6 weeks out usually has NO listed expiry
+                               # that safely brackets it and the clause abstains. That is
+                               # correct: the weekly that will straddle the print is not
+                               # listed yet. This is a near-print signal by construction.
+    earnings_date_firm_within_days: 7  # inside this many days to the print, take the date
+                               # at face value and drop the buffer above. Measured: of 14
+                               # observed revisions NONE happened with fewer than 12 days
+                               # to go (leads ran 12-36d) — the date firms up as the print
+                               # approaches. Without this, a print 2 days out would skip
+                               # the weekly expiry that actually straddles it.
+    earnings_lookback_quarters: 6      # realized post-announcement moves rendered beside the
+                               # implied one, from 8-K Item 2.02 dates (validated +0d on
+                               # AAPL/GOOGL/MSFT). An implied move with nothing to compare
+                               # it against is the uninterpretable-single-number trap.
+    max_stale_days: 5          # abstain when the QUOTE time (not the file timestamp) is
+                               # older than this — holiday gaps, or a frozen upstream file.
+
   insider_detail:              # recent Form-4 trades as a brief context line (enrichment;
                                # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).
     enabled: true              # flip false for a byte-identical no-op (line omitted)

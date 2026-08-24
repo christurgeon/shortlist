@@ -12,9 +12,11 @@ from . import analyst_revision as analyst_revision_ctx
 from . import claude_cli, reverse_dcf
 from . import controls as controls_mod
 from . import earnings as earnings_ctx
+from . import earnings_moves as earnings_moves_mod
 from . import gov_contracts as gov_contracts_ctx
 from . import inventory as inventory_ctx
 from . import lobbying as lobbying_ctx
+from . import options as options_ctx
 from . import proxy as proxy_ctx
 from .claude_cli import CliResult
 from .coverage_caveat import coverage_caveats
@@ -426,7 +428,8 @@ def _similarity_line(similarity: Optional[float]) -> str:
 def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None,
                        insider_recent: Optional[list] = None,
-                       proxy_facts=None, macro=None) -> str:
+                       proxy_facts=None, macro=None, options_surface=None,
+                       earnings_moves: Optional[list] = None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
@@ -454,6 +457,12 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     # (a computed/interpretive proxy claim must not pass quote-verification).
     proxy_ctx_line = proxy_ctx.context_line(proxy_facts, rcfg.get("proxy"))
     proxy_section = f"\n\n{proxy_ctx_line}" if proxy_ctx_line else ""
+    # Options surface — PROMPT-ONLY, never the haystack. These are market prices, so a
+    # quote-verified one would be a market price passing as a filing fact.
+    options_line = options_ctx.context_line(
+        options_surface, getattr(card, "metrics", None), rcfg.get("options"),
+        earnings_moves=earnings_moves)
+    options_section = f"\n\n{options_line}" if options_line else ""
     macro_section = _macro_line(macro, rcfg.get("macro"))
     similarity_section = _similarity_line(getattr(bundle, "text_similarity", None))
     tenq_section = ""
@@ -539,6 +548,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{events_line}"
         f"{insider_line}"
         f"{proxy_section}"
+        f"{options_section}"
         f"{controls_ctx}"
         f"{macro_section}"
         f"{similarity_section}"
@@ -815,9 +825,27 @@ def assess(card, bundle: FilingBundle, config: dict,
             proxy_facts = proxy_ctx.fetch_proxy(filing.ticker)
         except Exception:
             proxy_facts = None
+    # Options surface + the realized post-earnings moves that make an implied move
+    # interpretable — research-layer fetches, per deep-dive, NOT on every screen.
+    # Failure-isolated: any error → abstain → the clause simply does not render. Kept
+    # off `harness_sources` deliberately: /screen would spend the per-IP budget (§4.1
+    # of the design) on data no screen renders.
+    ocfg = rcfg.get("options") or {}
+    options_surface, earnings_moves = None, None
+    if ocfg.get("enabled", False):
+        options_surface = options_ctx.fetch_surface(filing.ticker, ocfg)
+        if options_surface is not None:
+            earnings_moves = earnings_moves_mod.fetch_moves(filing.ticker, ocfg)
+    # Passed only when set, so the injected test doubles that take the pre-feature
+    # signature keep working on the default path — same reason as `fallback` above.
+    extra = {}
+    if options_surface is not None:
+        extra["options_surface"] = options_surface
+    if earnings_moves:
+        extra["earnings_moves"] = earnings_moves
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
                                      insider_recent=ir, proxy_facts=proxy_facts,
-                                     macro=macro)
+                                     macro=macro, **extra)
     system = (SYSTEM_PROMPT
               + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
               + (PROXY_SYSTEM_ADDENDUM if pcfg.get("enabled", False) else "")

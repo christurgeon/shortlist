@@ -554,9 +554,17 @@ composite entirely). Assume yours will too. Before writing any code you MUST:
 
 ### Net-new clues (no home yet — feed AND value both unproven)
 
-- **Options-implied signals** — IV rank, put/call skew, unusual-options flow (cf. Unusual
-  Whales). *Vet:* no keyless feed known (mostly paid); likely noise for a fundamental
-  pre-screen. Justify hard before building.
+- ~~**Options-implied signals**~~ — **PARTLY SHIPPED 2026-08-24, and this entry's premise
+  was half wrong.** "No keyless feed known" is measured false: CBOE's `delayed_quotes`
+  endpoint returns a full chain with per-contract IV and greeks, keyless, from the deploy
+  VPS. "Likely noise for a fundamental pre-screen" is **correct**, and the shipped feature
+  concedes it — implied-vs-realized volatility, the implied earnings move against realized
+  post-print moves, and 25-delta skew render **only** as a `/deep` prompt-only line, never
+  on `/screen`, never in the composite, gates or flags. The measured small/mid-cap result
+  independently confirms the noise judgment for exactly that population, and the feature
+  abstains there. **Still open:** IV rank / IV percentile, which need a time series this
+  feed cannot supply and would have to be accumulated; unusual-options flow is not
+  attempted. `docs/audits/2026-08-24-options-surface-design.md`.
 - **Dividend-safety / coverage** — payout ratio vs FCF, streak, cut-risk (cf. Simply Wall
   St, Stock Rover). *Vet:* derivable from existing statements (no feed), but only relevant
   to an income tilt the screener doesn't currently have — scope the use-case first.
