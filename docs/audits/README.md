@@ -20,6 +20,27 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **Options-implied signals: a keyless feed EXISTS, and it belongs in `/deep`, not the
+  pre-screen (2026-08-24)** — `docs/ASSESSMENT_GAPS.md` had recorded "no keyless feed known
+  (mostly paid); likely noise for a fundamental pre-screen". The first half is **measured
+  false**: CBOE's `delayed_quotes` endpoint returns a full chain with per-contract IV and
+  greeks, keyless, 80/80 large caps and 79/80 small/mid from oracle-prod. The second half is
+  **correct**, and the shipped feature concedes it — implied-vs-realized vol, the implied
+  earnings move and 25-delta skew render only as a prompt-only `/deep` line, never on
+  `/screen`, never in the composite, gates or flags. **Quote quality, not coverage, is the
+  constraint**: the delta guard passes 80/80 large caps but 38/77 small/mid, and adding the
+  spread guard leaves 71/80 against 10/77 — so the line abstains on most small caps, which
+  independently confirms the "noise" judgment for exactly the population it was aimed at.
+  **Do not re-probe the feed and do not propose this as a scored leg.** Three things that
+  are settled and cost real measurement: the per-IP rate ceiling (a cookie-less loop dies at
+  60 requests, so this can never be a universe scan), the vendor earnings calendar's
+  reliability (present on 42/42 snapshots but revised 14 times in ~2 months, max 8 days —
+  though never with under 12 days to go), and 8-K Item 2.02 as the authoritative announcement
+  date (+0d on AAPL/GOOGL/MSFT). **Two priors were measured false and must not be restored**:
+  a 30-day realized-vol denominator is *worse* than the shipped 252-day one (earnings-cycle
+  contaminated), and the textbook variance-risk-premium caveat does not hold here — 60 of 80
+  large caps price implied UNDER realized. Still open: IV rank/percentile, which needs a time
+  series this feed cannot supply. `2026-08-24-options-surface-design.md`.
 - **A material-weakness KEYWORD search is worthless; the adverse CONCLUSION plus a tense
   test works (2026-08-23)** — `"material weakness"` matched 226 of 228 filers (auditor
   boilerplate), and `"material weaknesses in our internal control over financial reporting"`
@@ -212,6 +233,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-08-24 | `2026-08-24-options-surface-design.md` — options surface as a `/deep` line | design + verdict |
 | 2026-08-23 | `2026-08-23-icfr-adverse-conclusion-detection.md` — ICFR adverse conclusions + filing forms | verdict |
 | 2026-08-22 | `2026-08-22-deep-arithmetic-clause-verification.md` — arithmetic clause 1/4 → 3/3 | verdict |
 | 2026-08-22 | `2026-08-22-brief-self-consistency-base-rate.md` — brief self-consistency base rate | verdict |
