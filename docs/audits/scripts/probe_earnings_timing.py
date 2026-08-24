@@ -35,6 +35,7 @@ import glob
 import gzip
 import json
 import os
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -120,9 +121,14 @@ def realized_moves(tickers: list[str], quarters: int) -> None:
 
             announcements = []
             for filing in Company(ticker).get_filings(form="8-K").head(30):
-                if "2.02" in str(getattr(filing, "items", "") or ""):
-                    fd = filing.filing_date
-                    announcements.append(fd if isinstance(fd, datetime.date) else _iso(str(fd)))
+                # Anchored, NOT a substring search: a bare `"2.02" in items` also
+                # matches 12.02, a different disclosure, and a wrong announcement
+                # date silently shifts every move computed from it.
+                if not re.search(r"(?<![\d.])2\.02(?![\d])",
+                                 str(getattr(filing, "items", "") or "")):
+                    continue
+                fd = filing.filing_date
+                announcements.append(fd if isinstance(fd, datetime.date) else _iso(str(fd)))
 
             moves = []
             for announced in sorted(announcements, reverse=True)[:quarters]:

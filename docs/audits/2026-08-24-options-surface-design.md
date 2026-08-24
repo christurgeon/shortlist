@@ -319,9 +319,27 @@ answer, which is worse than an abstention.
 **Guard:** require the selected expiry to be at least `earnings_date_uncertainty_days`
 (default **8**, the measured maximum revision) *after* the predicted date, and no more than
 `max_earnings_expiry_gap_days` (default **14**) after it. A late revision then cannot
-invalidate the choice. Large caps carry a median of 16 live expiries so the window is
-usually satisfiable; small/mid caps carry a median of 4 and will often abstain, which is
-consistent with every other guard here.
+invalidate the choice.
+
+**The buffer is proximity-aware, and that refinement came from implementation.** A constant
+8-day buffer is wrong close to the print: it would skip the weekly expiry that actually
+straddles a report two days away, which is the case the reader cares about most. Measuring
+the *lead time* of each revision settles it — **none of the 14 revisions happened with fewer
+than 12 days to go** (leads ran 12 to 36 days). The date firms up as the print approaches,
+so inside `earnings_date_firm_within_days` (default **7**, comfortably below the measured
+minimum of 12) the predicted date is taken at face value and the buffer drops to zero.
+Reproduce with `probe_earnings_timing.py`.
+
+**This is a NEAR-PRINT signal by construction, and that is not a defect.** The listed ladder
+is dense near-term and sparse after: AAPL's tradeable expiries run 0, 2, 4, 7, 9, 11, 18, 25,
+32, 39, 53 days and then jump to 88, 116, 144. With a print 50-65 days out — where AAPL,
+INTC, KO, MSFT and JPM all sat when this was verified — **no listed expiry brackets it**, and
+the clause abstains on all five. The weekly that will eventually straddle the print is simply
+not listed yet. Live-verified firing on the near cases: NVDA and CRM at 2 days out and ORCL
+at 21. Do not "fix" the abstention by widening the gap ceiling — a straddle 30+ days past a
+print prices the event plus a month of ordinary drift, which is the failure the ceiling
+exists to prevent. JPM is the instructive rejection: its 53-day expiry sits only 3 days after
+a 50-day predicted date, so an 8-day slip would put the print *after* the expiry.
 
 #### The anchor: what recent prints actually moved
 
@@ -350,15 +368,34 @@ against a company that has moved 0.8% on its last six prints" is a finding, and 
 reverse. It also lets the reader judge the risk premium from this company's own record
 rather than from a textbook prior that §6.1 shows is not even directionally safe.
 
-**Cost:** this is a *second* research-layer fetcher, not a free rider on the options call —
-one EDGAR 8-K index lookback plus one Yahoo daily-close fetch per `/deep`. Worth it, and
-stated plainly rather than buried.
+**Cost, and a latency trap found while implementing it.** This is a *second*
+research-layer fetcher, not a free rider on the options call: one EDGAR 8-K index lookback
+plus a daily-close series. The first implementation issued its own uncached Yahoo
+`range=2y` request and added **40-60 seconds to every brief** — Yahoo answers the v8 chart
+slowly from a datacenter IP even while returning 200 and 55 KB. EDGAR was never the problem
+(the 8-K index lookback is ~0.2s).
+
+The fix is to take nothing new: `data/sources/yahoo.py` already fetches `range=5y&interval=1d`
+and day-caches it at `.cache/yahoo/{SYMBOL}-{date}.json`, and it leads the harness merge for
+price fields, so on any `/deep` that payload is already on disk. `earnings_moves.daily_closes`
+now reads that same cache key with the same params, falling back to a live fetch only on a
+`--provider`-narrowed path. **Measured added latency per `/deep`: 0.6-1.6s**, of which the
+options chain is ~0.4s. Pinned by a test asserting the cache key matches the price source's
+and that a warm cache issues no HTTP call at all.
 
 **Known imprecision, not yet resolved:** an 8-K 2.02 filed after the close reacts on the
 next session, one filed pre-open reacts the same day. The close-to-close span above is
 correct for after-close filers (most large caps) and shifts by a session for pre-open ones.
 The filing's acceptance timestamp can disambiguate this and should be used; it was not
-tested here.
+tested here. Spot-checked against reality on NVDA, whose six announcements are **all
+Wednesdays** with the reaction landing on the Thursday close, exactly as the span assumes —
+pinned by a live test.
+
+**A matching-bug worth recording:** the first draft matched item codes with
+`"2.02" in items`, which also fires on **12.02** (a different disclosure) and on 2.021. A
+wrong announcement date shifts every realized move computed from it, silently. The shipped
+matcher is anchored on both sides, and the probe script carried the same bug until the unit
+test for it was written.
 
 **Abstains** on both quote-quality guards. This is the item most exposed to them — it is
 priced off premium mids, not IV.

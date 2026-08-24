@@ -101,6 +101,19 @@ quote-verification haystack, so a computed value can never pass itself off as a 
 - Recent SEC filings and recent insider Form-4 trades
 - DEF 14A pay and governance fields (`research/proxy.py`)
 - Government contract awards, federal lobbying, earnings execution history, macro regime
+- The **options surface** — implied volatility against realized, the move priced into the
+  next earnings print, and 25-delta skew (`research/options.py`, fed by
+  `research/earnings_moves.py`). Keyless CBOE end-of-day quotes, fetched per deep dive and
+  deliberately **not** in `harness_sources`: `/screen` renders none of it and would spend
+  a rolling per-IP request budget to fetch it. Every item carries a measured large-cap
+  reference distribution, because a single firm's skew or implied/realized ratio is
+  uninterpretable alone — the trap that retired the Lazy-Prices cosine. Items abstain
+  independently and the whole line abstains on thin quotes, which is most small caps
+  (the implied move clears its guards on 71 of 80 large caps against 10 of 77 small/mid).
+  The implied move is a **near-print** signal by construction: weekly expiries run ~6
+  weeks out and then jump to monthlies, so a print further out usually has no listed
+  expiry that safely brackets it. Evidence and every constant:
+  `docs/audits/2026-08-24-options-surface-design.md`.
 - Sell-side rating **revision** — the change in buy/hold/sell counts over the
   recommendation window (`research/analyst_revision.py`). Deltas only, never a level:
   the levels merge across sources while the deltas come from one Finnhub payload, so
