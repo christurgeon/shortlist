@@ -295,3 +295,14 @@ def test_the_clause_discloses_the_gap_between_print_and_expiry():
     assert line is not None
     assert "straddle" in line.lower()
     assert "after the print" in line.lower()
+
+
+def test_contracts_without_a_delta_are_not_candidates():
+    """A missing delta must drop the contract, not stand in as a far-off near-miss."""
+    expiry = datetime.date(2026, 9, 25)
+    payload = _payload([
+        {"option": f"XYZ{expiry:%y%m%d}P00090000", "bid": 1.0, "ask": 1.1, "iv": 0.30},
+        {"option": f"XYZ{expiry:%y%m%d}C00110000", "bid": 1.0, "ask": 1.1, "iv": 0.28},
+    ])
+    surface = options.build_surface(payload, TODAY, CFG)
+    assert surface is not None and surface.skew_pts is None

@@ -134,7 +134,12 @@ def _pick(rows: list[dict], target: float, tolerance: float) -> Optional[dict]:
     from a put at delta -0.888 against a call at 0.869, because only two or three
     contracts per side carried usable quotes and "nearest to 0.25" landed wherever it
     could. A count would have passed that chain; this does not."""
-    scored = [(abs(abs(_num(o.get("delta")) or 9.0) - target), o) for o in rows]
+    scored = []
+    for o in rows:
+        delta = _num(o.get("delta"))
+        if delta is None:           # no delta at all: not a candidate, not a near-miss
+            continue
+        scored.append((abs(abs(delta) - target), o))
     if not scored:
         return None
     miss, best = min(scored, key=lambda t: t[0])
