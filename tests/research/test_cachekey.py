@@ -1,3 +1,4 @@
+import pathlib
 # tests/research/test_cachekey.py
 from datetime import date
 
@@ -273,3 +274,35 @@ def test_fingerprint_fallback_when_source_unavailable(monkeypatch):
         raise OSError("source not available")
     monkeypatch.setattr(cachekey.inspect, "getsource", _boom)
     assert cachekey._prompt_fingerprint() == cachekey._FINGERPRINT_FALLBACK
+
+
+def test_every_context_line_module_is_hashed():
+    """The completeness rule, enforced by DISCOVERY rather than by memory.
+
+    `_PROMPT_MODULES` says "ADD TO THIS LIST when a new context-line renderer gets its
+    own module", and until this test existed that was enforced only by a hand-written
+    assert per module — which is exactly how `options` and `earnings_moves` shipped in
+    #194 unhashed. A module whose source is not hashed can have its rendered wording
+    changed without invalidating a single cached brief, so a stale brief is served as if
+    it were current.
+    """
+    import pkgutil
+
+    import shortlist.research as research_pkg
+
+    renderers = set()
+    for mod in pkgutil.iter_modules(research_pkg.__path__):
+        name = mod.name
+        if name.startswith("_") or name in ("cachekey", "claude_cli", "phase", "report"):
+            continue
+        src = (pathlib.Path(research_pkg.__path__[0]) / f"{name}.py")
+        if not src.exists():
+            continue
+        text = src.read_text()
+        if "def context_line(" in text or "def format_line(" in text:
+            renderers.add(name)
+
+    missing = renderers - set(cachekey._PROMPT_MODULES)
+    assert not missing, (
+        f"context-line modules missing from _PROMPT_MODULES: {sorted(missing)}. "
+        "Their wording could change without busting the brief cache.")

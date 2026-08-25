@@ -55,9 +55,15 @@ _CONFIDENCE_STEP = 0.05
 # `filings`/`textsim` produce `bundle.text_similarity` (the Lazy-Prices YoY
 # cosine rendered by `_similarity_line`); `filings` also owns `_filing_sections`
 # / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
+# `options` renders the options-surface line; `earnings_moves` computes the realized
+# post-announcement moves rendered inside it, so its source shapes the prompt too.
+# `controls` renders the internal-control verdict line AND selects the quote that
+# becomes a haystack segment. All three were missing until the discovery test below
+# found them (`test_every_context_line_module_is_hashed`), which is why that test
+# enforces the rule by scanning rather than by one hand-written assert per module.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
-                   "analyst_revision",
+                   "analyst_revision", "options", "earnings_moves", "controls",
                    "filings", "textsim", "eightk", "notes")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
