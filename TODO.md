@@ -268,6 +268,12 @@ because only 10 tickers had been captured that early (42 by 2026-08-08).
   every replay. Adding `yahoo` to the chain is the obvious fix and is NOT free: it is a
   per-ticker quota and runtime cost on a timer already over-subscribed (§4), and it changes the
   deployed unit.
+  **Second field, same root cause (2026-08-24):** `Price.realized_vol` is likewise absent on
+  **0 of 42** latest stored snapshots, and it is live on the `/deep` path (AAPL 0.2504) — so
+  the gap is the accumulate chain, not the field. That makes the `/deep` options line's
+  implied-vs-realized comparison unreplayable from the store too
+  (`docs/audits/2026-08-24-options-surface-design.md` §6.1). Two affected consumers now argue
+  for the same one-line timer change, without changing its cost.
   **Status:** measured, not actioned — the fix is a deployed-timer change whose cost sits
   inside the §4 quota decision, so it should be taken with that decision rather than before it.
 

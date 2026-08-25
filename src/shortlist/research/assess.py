@@ -153,6 +153,18 @@ SYSTEM_PROMPT = (
     "exactly this schema:\n" + SCHEMA_HINT
 )
 
+OPTIONS_SYSTEM_ADDENDUM = (
+    "\nAn 'Options market' context line is present below. You MUST account for it in "
+    "`thesis`. State whether the move priced into the next report is large or small "
+    "RELATIVE TO what this company's own recent prints actually delivered, and whether "
+    "the implied-vs-realized volatility ratio and the skew agree or disagree with the "
+    "filing narrative you have just read. REQUIRED whenever the line is present, no "
+    "exceptions. Do not restate the numbers — say what they imply. If the options market "
+    "and your reading of the filing disagree, say so explicitly: that disagreement is the "
+    "most decision-relevant thing on the page. These are MARKET PRICES, not filing facts — "
+    "never present them as filing evidence and never attach a filing quote to them.\n")
+
+
 PROXY_SYSTEM_ADDENDUM = (
     "\nA 'Proxy (DEF 14A …)' context line may be present below: it carries "
     "compensation, pay-for-performance, ownership-concentration, and governance facts "
@@ -852,7 +864,13 @@ def assess(card, bundle: FilingBundle, config: dict,
               # Keyed on the BUNDLE, not the config: a name with no qualifying 8-K
               # renders no block, so describing one would be instructions about
               # text that is not there (and a non-byte-identical system prompt).
-              + (EIGHTK_SYSTEM_ADDENDUM if getattr(bundle, "eightks", None) else ""))
+              + (EIGHTK_SYSTEM_ADDENDUM if getattr(bundle, "eightks", None) else "")
+              # Keyed on the SURFACE, not the config, for the same reason as the 8-K
+              # addendum: a name whose options line abstained must not be told to
+              # account for a line that is not there.
+              + (OPTIONS_SYSTEM_ADDENDUM
+                 if (options_surface is not None
+                     and ocfg.get("require_in_thesis", False)) else ""))
 
     # A single slow `claude` call intermittently exceeds the CLI timeout; that failure
     # is transient (the next call usually succeeds), so retry it rather than dropping the

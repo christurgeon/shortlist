@@ -504,6 +504,9 @@ provenance, explicit about what it is not, and ending in a reconciliation instru
 rather than a conclusion.
 
 **No system-prompt addendum.** `proxy` ships one (`PROXY_SYSTEM_ADDENDUM`); this does not.
+**REVERSED 2026-08-25 — this call was wrong, and measurably so: with no addendum the line was
+used in 0 of 3 briefs. The paragraph below is kept as the record of what was decided and why
+it failed.** `2026-08-25-options-line-destination-verdict.md`.
 The caveat rides in the line itself, as it does for `gov_contracts`, `lobbying` and
 `inventory`. Considered and declined for v1 — revisit only if a brief is observed treating
 an implied move as a forecast.
@@ -606,6 +609,10 @@ Stated up front so the post-ship read is not a story built from the data:
    The earnings-expiry window (§6.2) is the tightest constraint and the likeliest to bind.
 2. **The model treats an implied move as a forecast** despite the caveat — that is the
    `PROXY_SYSTEM_ADDENDUM` question reopening (§8).
+   **ANSWERED 2026-08-25, and §8's "no system-prompt addendum" decision is REVERSED.** The
+   risk was never that the model would misread the line — it was that it would ignore the
+   line entirely: measured 0 of 3 as shipped, 3 of 3 once an addendum named `thesis` as the
+   destination. `2026-08-25-options-line-destination-verdict.md`.
 3. **Either reference distribution drifts enough to mislead** before anyone re-measures it.
    Both the skew reference (§6.3) and the IV/realized reference (§6.1) are single-day
    cross-sections from 2026-08-21, and the IV/realized one is the more fragile of the two:

@@ -624,6 +624,17 @@ research:
                                # it against is the uninterpretable-single-number trap.
     max_stale_days: 5          # abstain when the QUOTE time (not the file timestamp) is
                                # older than this — holiday gaps, or a frozen upstream file.
+    require_in_thesis: true    # attach OPTIONS_SYSTEM_ADDENDUM, which REQUIRES the brief to
+                               # account for the line in `thesis`. Measured 2026-08-25 on a
+                               # controlled 3-arm A/B (byte-identical filing inputs, one
+                               # context digest per ticker): WITHOUT it the line was used in
+                               # 0 of 3 briefs, WITH it 3 of 3. Same defect and same fix as
+                               # the arithmetic clause — a clause with no named destination
+                               # field is ignored. DO NOT SOFTEN the addendum's "REQUIRED,
+                               # no exceptions" wording without re-running that A/B; the
+                               # register records that softening the arithmetic clause's
+                               # equivalent bluntness could revert its result.
+                               # docs/audits/2026-08-25-options-line-destination-verdict.md
 
   insider_detail:              # recent Form-4 trades as a brief context line (enrichment;
                                # prompt-only, NOT a scored signal — 2026-06-15-research-insider-detail).

@@ -20,6 +20,19 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **A `/deep` context line with no destination field is IGNORED — measured twice, on two
+  different features (2026-08-25)** — the options line shipped in #194 reached the prompt on
+  every brief and was used in **0 of 3**. Adding a REQUIRED clause naming `thesis` took it to
+  **3 of 3** on a controlled A/B (one context digest per ticker, three prompt fingerprints).
+  This replicates `2026-08-22-deep-arithmetic-clause-verification.md` exactly: *"conditional
+  and unlocated ... never says which output field should carry it."* **The general rule: a new
+  context line needs a named destination field, or it does nothing.** `PROXY_SYSTEM_ADDENDUM`
+  is the working example inside the same prompt — it names `reconciliation` and a signal token.
+  Do NOT soften the "REQUIRED, no exceptions" phrasing without re-running the A/B. A second
+  finding worth keeping: the BASELINE arm is not optional — `implied`, `market prices` and the
+  figure `6.1` all appear in briefs with NO options line, because `reverse_dcf` renders
+  "price-implied perpetual FCF growth", so anything present in the baseline is disqualified as
+  evidence. `2026-08-25-options-line-destination-verdict.md`.
 - **Options-implied signals: a keyless feed EXISTS, and it belongs in `/deep`, not the
   pre-screen (2026-08-24)** — `docs/ASSESSMENT_GAPS.md` had recorded "no keyless feed known
   (mostly paid); likely noise for a fundamental pre-screen". The first half is **measured
@@ -40,7 +53,9 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   a 30-day realized-vol denominator is *worse* than the shipped 252-day one (earnings-cycle
   contaminated), and the textbook variance-risk-premium caveat does not hold here — 60 of 80
   large caps price implied UNDER realized. Still open: IV rank/percentile, which needs a time
-  series this feed cannot supply. `2026-08-24-options-surface-design.md`.
+  series this feed cannot supply. **As merged the line did NOTHING** — see the 2026-08-25
+  entry above; it needed a destination field before the model would use it.
+  `2026-08-24-options-surface-design.md`.
 - **A material-weakness KEYWORD search is worthless; the adverse CONCLUSION plus a tense
   test works (2026-08-23)** — `"material weakness"` matched 226 of 228 filers (auditor
   boilerplate), and `"material weaknesses in our internal control over financial reporting"`
@@ -233,6 +248,8 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-08-25 | `2026-08-25-options-line-destination-verdict.md` — 0 of 3 -> 3 of 3 | verdict |
+| 2026-08-25 | `2026-08-25-options-line-destination-prereg.md` | pre-registration |
 | 2026-08-24 | `2026-08-24-options-surface-design.md` — options surface as a `/deep` line | design + verdict |
 | 2026-08-23 | `2026-08-23-icfr-adverse-conclusion-detection.md` — ICFR adverse conclusions + filing forms | verdict |
 | 2026-08-22 | `2026-08-22-deep-arithmetic-clause-verification.md` — arithmetic clause 1/4 → 3/3 | verdict |
