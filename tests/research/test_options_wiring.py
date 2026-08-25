@@ -117,3 +117,49 @@ def test_realized_moves_reach_the_prompt():
                      earnings_moves=[("2026-07-30", -7.4), ("2026-04-30", 3.2)])
     assert "8-K Item 2.02" in prompt
     assert "-7.4%" in prompt
+
+
+# --- the destination clause (measured 0 of 3 -> 3 of 3) ---------------------------
+
+def _system(cfg_over, surface):
+    """Capture the SYSTEM prompt assess() would send, without calling the model."""
+    import shortlist.research.assess as A
+
+    cap = {}
+
+    def runner(prompt=None, system=None, **k):
+        cap["system"] = system
+        raise RuntimeError("stop after prompt build")
+
+    orig = A.options_ctx.fetch_surface
+    A.options_ctx.fetch_surface = lambda *a, **k: surface
+    orig_moves = A.earnings_moves_mod.fetch_moves
+    A.earnings_moves_mod.fetch_moves = lambda *a, **k: []
+    try:
+        A.assess(_Card(), _bundle(), {"research": {"options": cfg_over}}, runner=runner)
+    except Exception:
+        pass
+    finally:
+        A.options_ctx.fetch_surface = orig
+        A.earnings_moves_mod.fetch_moves = orig_moves
+    return cap.get("system") or ""
+
+
+def test_addendum_attaches_when_required():
+    """Without this clause the line was used in 0 of 3 briefs; with it, 3 of 3
+    (docs/audits/2026-08-25-options-line-destination-verdict.md)."""
+    sysp = _system({"enabled": True, "require_in_thesis": True}, _surface())
+    assert "MUST account for it in `thesis`" in sysp
+    assert "REQUIRED whenever the line is present, no exceptions" in sysp
+
+
+def test_addendum_absent_when_not_required():
+    sysp = _system({"enabled": True, "require_in_thesis": False}, _surface())
+    assert "MUST account for it in `thesis`" not in sysp
+
+
+def test_addendum_is_keyed_on_the_surface_not_the_config():
+    """A name whose options line abstained must not be told to account for a line that
+    is not there — the same rule EIGHTK_SYSTEM_ADDENDUM follows."""
+    sysp = _system({"enabled": True, "require_in_thesis": True}, None)
+    assert "MUST account for it in `thesis`" not in sysp
