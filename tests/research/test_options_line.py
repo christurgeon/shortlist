@@ -201,7 +201,7 @@ def test_abstains_on_stale_quotes():
 
 def test_renders_the_iv_ratio_against_the_measured_reference():
     surface = options.build_surface(_full_chain(), TODAY, CFG)
-    line = options.context_line(surface, _M(0.25), CFG)
+    line = options.context_line(surface, _M(0.25), CFG, today=TODAY)
     assert line is not None
     assert "1.00" in line                      # iv30 25.0% / realized 25.0%
     assert "0.93" in line                      # the committed large-cap median
@@ -212,14 +212,14 @@ def test_does_not_assert_the_variance_risk_premium():
     """Measured false on this cross-section: 60 of 80 names price implied UNDER
     realized, so the line must not tell the model implied always runs larger."""
     surface = options.build_surface(_full_chain(), TODAY, CFG)
-    line = options.context_line(surface, _M(0.25), CFG)
+    line = options.context_line(surface, _M(0.25), CFG, today=TODAY)
     assert "run larger" not in line
     assert "risk premium" not in line.lower()
 
 
 def test_line_declares_itself_as_market_prices_not_filing_text():
     surface = options.build_surface(_full_chain(), TODAY, CFG)
-    line = options.context_line(surface, _M(0.25), CFG)
+    line = options.context_line(surface, _M(0.25), CFG, today=TODAY)
     assert "not filing facts" in line.lower()
     assert "not a forecast" in line.lower()
 
@@ -233,7 +233,7 @@ def test_items_abstain_independently():
         _contract("XYZ", expiry, "C", 100, delta=0.50, iv=0.29, bid=1.0, ask=5.0),
     ])
     surface = options.build_surface(payload, TODAY, CFG)
-    line = options.context_line(surface, _M(0.25, days_to_next=20), CFG)
+    line = options.context_line(surface, _M(0.25, days_to_next=20), CFG, today=TODAY)
     assert line is not None
     assert "implied volatility" in line.lower()
     assert "straddle" not in line.lower()
@@ -244,7 +244,7 @@ def test_renders_realized_moves_beside_the_implied_one():
     surface = options.build_surface(_full_chain(), TODAY, CFG)
     moves = [("2026-07-30", -7.4), ("2026-04-30", 3.2), ("2026-01-29", 0.5)]
     line = options.context_line(surface, _M(0.25, days_to_next=60), CFG,
-                                earnings_moves=moves)
+                                earnings_moves=moves, today=TODAY)
     assert line is not None
     assert "-7.4" in line and "+3.2" in line
     assert "8-K Item 2.02" in line
@@ -252,7 +252,7 @@ def test_renders_realized_moves_beside_the_implied_one():
 
 def test_earnings_date_uncertainty_is_disclosed():
     surface = options.build_surface(_full_chain(), TODAY, CFG)
-    line = options.context_line(surface, _M(0.25, days_to_next=60), CFG)
+    line = options.context_line(surface, _M(0.25, days_to_next=60), CFG, today=TODAY)
     assert line is not None and "revised" in line.lower()
 
 
@@ -291,7 +291,7 @@ def test_firm_window_boundary_is_inclusive_of_the_buffer():
 def test_the_clause_discloses_the_gap_between_print_and_expiry():
     """The straddle spans the print PLUS the gap, so the gap must be visible."""
     surface = options.build_surface(_full_chain(), TODAY, CFG)
-    line = options.context_line(surface, _M(0.25, days_to_next=24), CFG)
+    line = options.context_line(surface, _M(0.25, days_to_next=24), CFG, today=TODAY)
     assert line is not None
     assert "straddle" in line.lower()
     assert "after the print" in line.lower()

@@ -68,6 +68,10 @@ _ATM_DELTA = 0.50
 _MAX_EXPIRIES = 16
 
 
+def _today() -> datetime.date:               # seam for tests, positions.py pattern
+    return datetime.date.today()
+
+
 @dataclass
 class OptionsSurface:
     """The reduced options chain for one ticker — a few dozen numbers, never the
@@ -97,7 +101,7 @@ class OptionsSurface:
             quoted = datetime.date.fromisoformat(self.quote_time[:10])
         except ValueError:
             return None
-        return ((today or datetime.date.today()) - quoted).days
+        return ((today or _today()) - quoted).days
 
 
 def _num(x: Any) -> Optional[float]:
@@ -391,7 +395,7 @@ def fetch_surface(ticker: str, cfg: Optional[dict] = None,
     """
     from .filings import log_abstain
 
-    today = today or datetime.date.today()
+    today = today or _today()
     if as_of and as_of[:10] != today.isoformat():
         return None
     cfg = cfg or {}

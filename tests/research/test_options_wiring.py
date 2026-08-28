@@ -85,15 +85,17 @@ def test_the_line_never_enters_the_grounding_haystack():
     assert all(line not in text for _, text in bundle.segments())
 
 
-def test_the_line_is_rendered_in_the_prompt():
+def test_the_line_is_rendered_in_the_prompt(monkeypatch):
+    monkeypatch.setattr(options, "_today", lambda: TODAY)
     prompt = _prompt(options_surface=_surface())
     assert "Options market (CBOE delayed quotes" in prompt
     assert "25-delta skew" in prompt
 
 
-def test_the_line_renders_after_the_instruction_block_not_as_a_segment():
+def test_the_line_renders_after_the_instruction_block_not_as_a_segment(monkeypatch):
     """Grounding segments are the `=== ... ===` blocks BEFORE the 'Return at most'
     instruction. Anything after it is prompt-only context."""
+    monkeypatch.setattr(options, "_today", lambda: TODAY)
     prompt = _prompt(options_surface=_surface())
     assert prompt.index("Return at most") < prompt.index("Options market (CBOE")
     assert "=== OPTIONS" not in prompt
@@ -112,7 +114,8 @@ def test_disabled_config_leaves_the_prompt_byte_identical():
     assert baseline == disabled
 
 
-def test_realized_moves_reach_the_prompt():
+def test_realized_moves_reach_the_prompt(monkeypatch):
+    monkeypatch.setattr(options, "_today", lambda: TODAY)
     prompt = _prompt(options_surface=_surface(),
                      earnings_moves=[("2026-07-30", -7.4), ("2026-04-30", 3.2)])
     assert "8-K Item 2.02" in prompt
