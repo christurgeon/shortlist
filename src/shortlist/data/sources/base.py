@@ -75,14 +75,23 @@ async def _fetch_sections(
     get: Callable[..., Awaitable[Any]],
     sections: dict[str, tuple[str, dict[str, Any]]],
 ) -> None:
-    """Fetch each named section into `res.raw`, recording per-section failures as
-    redacted `"<source>.<section>: <err>"` strings. One failed section never aborts
-    the rest."""
-    for name, (path, params) in sections.items():
+    """Fetch each named section into `res.raw` CONCURRENTLY, recording per-section
+    failures as redacted `"<source>.<section>: <err>"` strings. One failed section
+    never aborts the rest — each fetch is isolated inside `_one` and gathered, so a
+    raised exception in one coroutine cannot cancel its siblings (unlike a bare
+    `asyncio.gather` without `return_exceptions`, which would)."""
+    async def _one(name: str, path: str, params: dict[str, Any]) -> tuple[str, Any, Optional[str]]:
         try:
-            res.raw[name] = await get(path, **params)
+            return name, await get(path, **params), None
         except Exception as e:
-            res.errors.append(f"{res.source}.{name}: {redact_secrets(e)}")
+            return name, None, f"{res.source}.{name}: {redact_secrets(e)}"
+
+    for name, value, err in await asyncio.gather(
+            *(_one(name, path, params) for name, (path, params) in sections.items())):
+        if err is not None:
+            res.errors.append(err)
+        else:
+            res.raw[name] = value
 
 
 async def _retry_after_backoff(r: Any, attempt: int, max_retries: int) -> bool:
