@@ -208,6 +208,25 @@ def _gaps_line(card, config: Optional[dict]) -> str:
         return ""
 
 
+def _macro_summary_line(macro, config: Optional[dict]) -> str:
+    """The rendered macro-backdrop line (`assess._macro_line`), hashed as the
+    RENDERED string — same approach as `_gaps_line`/`_aux_lines` — so a same-day
+    move in dgs10/t10y2y/hy_oas/vix/fedfunds that does not cross
+    `classify_regime`'s bucket boundaries still busts the key. Previously only the
+    bucketed `regime` was hashed, so e.g. a VIX move from 22.0 to 28.5 with
+    'neutral' unchanged served a stale brief whose printed macro numbers no longer
+    matched live data. Degrades to "" (no macro fetched, the line disabled in
+    config, or any failure) — never raises, mirroring `_gaps_line`."""
+    if macro is None:
+        return ""
+    rcfg = ((config or {}).get("research") or {}).get("macro") or {}
+    try:
+        from .assess import _macro_line
+        return _s(_macro_line(macro, rcfg))
+    except Exception:
+        return ""
+
+
 def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     """8 hex chars over the bucketed materiality tuple. Deliberately EXCLUDES
     DEF 14A proxy facts: they are fetched inside `assess()` (assess.py:594-598),
@@ -271,7 +290,7 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
 
     parts.extend(_aux_lines(m, config))
     parts.append(_gaps_line(card, config))
-    parts.append(_s(getattr(macro, "regime", None)) or "none")
+    parts.append(_macro_summary_line(macro, config))
     return _sha8(repr(parts))
 
 
