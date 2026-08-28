@@ -1,6 +1,7 @@
 # shortlist.research — opt-in qualitative layer.
 from __future__ import annotations
 
+import concurrent.futures
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -13,6 +14,12 @@ from .filings import log_abstain as _log_abstain
 from .filings import no_10k_reason as _no_10k_reason
 
 __all__ = ["enrich", "ResearchResult", "is_available"]
+
+# Bounds concurrent `claude -p` subprocess + SEC-fetch calls regardless of how high
+# `top_n`/`research.research_top_n` is configured. research_top_n and the bot's
+# max_deep both default to 3, so this ceiling only matters for an unusually large
+# manual --research N.
+_MAX_ENRICH_WORKERS = 5
 
 
 @dataclass
@@ -136,8 +143,28 @@ def enrich(cards, config: dict, *, top_n: int, refresh: bool = False,
     # so the research budget is still filled from the eligible pool — and bounded by
     # top_n, so a 200-name screen cannot emit 190 skip lines.
     reported = picked | {c.ticker for c in ranked[:top_n]}
-    return [_enrich_card(card, config, root, refresh, fetch, assess_fn, reason_fn,
-                         macro=macro)
-            if card.ticker in picked
+    ordered = [card for card in ranked if card.ticker in reported]
+
+    if not picked:
+        return [ResearchResult(card.ticker, skipped=_filtered_reason(card))
+                for card in ordered]
+
+    # The picked names are researched CONCURRENTLY (bounded by _MAX_ENRICH_WORKERS):
+    # each _enrich_card call is an independent per-ticker fetch + `claude -p`
+    # subprocess round-trip with no shared mutable state, so running them serially
+    # only wasted wall-clock time — research/phase.py's own wall-clock-budget
+    # comment already flagged this. _enrich_card never raises (its own docstring's
+    # contract), so future.result() below cannot propagate an exception here.
+    results: dict[str, ResearchResult] = {}
+    with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(len(picked), _MAX_ENRICH_WORKERS)) as pool:
+        futures = {
+            pool.submit(_enrich_card, card, config, root, refresh, fetch, assess_fn,
+                       reason_fn, macro=macro): card.ticker
+            for card in ordered if card.ticker in picked}
+        for future in concurrent.futures.as_completed(futures):
+            results[futures[future]] = future.result()
+
+    return [results[card.ticker] if card.ticker in picked
             else ResearchResult(card.ticker, skipped=_filtered_reason(card))
-            for card in ranked if card.ticker in reported]
+            for card in ordered]

@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from shortlist.research import ResearchResult, enrich
@@ -43,7 +45,9 @@ def test_enrich_selects_top_n_non_gated(tmp_path):
         return _assessment(card.ticker)
     cfg = {"research": {"output_root": str(tmp_path)}}
     results = enrich(cards, cfg, top_n=2, fetch=fake_fetch, assess_fn=fake_assess)
-    assert seen == ["A", "C"]                 # B gated → skipped; top 2 non-gated
+    # B gated → skipped; top 2 non-gated. enrich() now runs assess_fn concurrently,
+    # so completion ORDER is not guaranteed — only membership is.
+    assert set(seen) == {"A", "C"}
     assert all(isinstance(r, ResearchResult) for r in results)
     assert results[0].brief_path and results[0].cost_usd == 0.05
 
@@ -237,7 +241,7 @@ def test_enrich_reports_a_displaced_gated_name_without_shrinking_the_selection(t
     cfg = {"research": {"output_root": str(tmp_path)}}
     results = enrich(cards, cfg, top_n=2, fetch=lambda t, **k: _bundle(t),
                      assess_fn=fake_assess)
-    assert seen == ["A", "C"]
+    assert set(seen) == {"A", "C"}   # concurrent now; completion order is not guaranteed
     assert [r.ticker for r in results] == ["A", "B", "C"]
     assert "over_leveraged" in results[1].skipped
     assert results[0].brief_path and results[2].brief_path
@@ -261,3 +265,23 @@ def test_enrich_does_not_report_gate_filters_when_require_passed_is_false(tmp_pa
                      require_passed=False)
     assert [r.ticker for r in results] == ["A"]
     assert results[0].skipped is None and results[0].brief_path
+
+
+def test_enrich_researches_the_selection_concurrently(tmp_path):
+    """Regression guard for the 'decorative phase budget' inefficiency flagged in
+    research/phase.py: N picked names must not serialize their claude-CLI
+    round-trips. A 3-party Barrier only releases once all 3 threads have arrived
+    AT THE SAME TIME — if enrich() ever regresses to sequential execution, only
+    one thread reaches the barrier at a time, it times out, and the assessment is
+    reported as failed (never a hang, never flaky)."""
+    cards = [_Card(t, 90 - i) for i, t in enumerate(["A", "B", "C"])]
+    barrier = threading.Barrier(3, timeout=2)
+
+    def fake_assess(card, bundle, config, **kw):
+        barrier.wait()
+        return _assessment(card.ticker)
+
+    cfg = {"research": {"output_root": str(tmp_path)}}
+    results = enrich(cards, cfg, top_n=3, fetch=lambda t, **k: _bundle(t),
+                     assess_fn=fake_assess)
+    assert all(r.brief_path for r in results)
