@@ -821,6 +821,8 @@ def assess(card, bundle: FilingBundle, config: dict,
     vs = default_valid_signals()
     max_conflicts = rcfg.get("max_conflicts", 3)
     max_falsifiers = rcfg.get("max_falsifiers", 3)
+    max_risks = rcfg.get("max_risks", 8)
+    max_red_flags = rcfg.get("max_red_flags", 8)
     max_added_risks = rcfg.get("max_added_risks", 8)
     max_moat_sources = rcfg.get("max_moat_sources", 6)
     max_management_findings = rcfg.get("max_management_findings", 6)
@@ -908,7 +910,8 @@ def assess(card, bundle: FilingBundle, config: dict,
                     model=res.model or model, cost_usd=total_cost,
                     stop_reason=res.stop_reason,
                     valid_signals=vs, max_conflicts=max_conflicts,
-                    max_falsifiers=max_falsifiers, max_added_risks=max_added_risks,
+                    max_falsifiers=max_falsifiers, max_risks=max_risks,
+                    max_red_flags=max_red_flags, max_added_risks=max_added_risks,
                     max_moat_sources=max_moat_sources,
                     max_management_findings=max_management_findings)
                 assessment.cache_key = bundle.cache_key
