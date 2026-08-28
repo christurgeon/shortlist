@@ -17,6 +17,15 @@ def _bot(tmp_path, screen_fn=None):
     return b
 
 
+def test_free_sources_matches_the_default_source_chain_minus_fmp(tmp_path):
+    """_free_sources must derive from the SAME default list as self.sources — a
+    hardcoded second copy previously omitted 'finra', so /add and /thesis silently
+    screened without FINRA short-interest whenever bot.deep_screen_sources was
+    absent from config."""
+    b = _bot(tmp_path)
+    assert b._free_sources() == ["yahoo", "finnhub", "edgar", "finra"]
+
+
 def test_add_writes_position_and_confirms(tmp_path):
     b = _bot(tmp_path)
     b._handle(parse_command("/add NVDA 12"))

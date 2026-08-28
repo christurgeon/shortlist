@@ -352,10 +352,10 @@ class TelegramBot:
 
     def _free_sources(self):
         """The source chain minus FMP — rations the metered provider for the free-tier
-        commands. Order-preserving; a no-op when 'fmp' is already absent."""
-        base = self.bot_cfg.get("deep_screen_sources",
-                                  ["yahoo", "fmp", "finnhub", "edgar"])
-        return [s for s in base if s != "fmp"]
+        commands. Order-preserving; a no-op when 'fmp' is already absent. Derives from
+        `self.sources` (not `bot_cfg` directly) so both share exactly one default
+        list — a second hardcoded copy here previously omitted 'finra'."""
+        return [s for s in self.sources if s != "fmp"]
 
     def _do_add(self, raw: str) -> None:
         from .. import positions as pos
