@@ -38,6 +38,14 @@ from .base import _fetch_sections, _KeyedHttpSource
 _MAX_TRADES = 60
 
 
+def _sum_or_none(*vals: Optional[float]) -> Optional[float]:
+    """Sum values, treating a missing (None) one as 0 — but return None only when
+    EVERY value is missing, never when the sum is a legitimate 0 (e.g. unanimous
+    buy ratings: sell=strongSell=0 is complete data, not an absent field)."""
+    present = [v for v in vals if v is not None]
+    return sum(present) if present else None
+
+
 class FMPSource(_KeyedHttpSource):
     name = "fmp"
     # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
@@ -148,9 +156,9 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
             target_median=pt.get("targetMedian") or pt.get("targetConsensus"),
             target_high=pt.get("targetHigh"),
             target_low=pt.get("targetLow"),
-            buy=(grades.get("strongBuy") or 0) + (grades.get("buy") or 0) or None,
+            buy=_sum_or_none(grades.get("strongBuy"), grades.get("buy")),
             hold=grades.get("hold"),
-            sell=(grades.get("sell") or 0) + (grades.get("strongSell") or 0) or None,
+            sell=_sum_or_none(grades.get("sell"), grades.get("strongSell")),
             consensus=grades.get("consensus"),
         )
     q = _first(raw.get("quote")) or {}
