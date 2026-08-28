@@ -25,6 +25,13 @@ def test_bridge_yoy_none_when_prior_zero_or_missing():
                                ).gov_contract_yoy_growth is None
 
 
+def test_bridge_yoy_none_when_prior_negative():
+    """A net de-obligation quarter (prior TTM obligated < 0) must not produce a
+    sign-flipped growth ratio: -1e6 -> +2e6 is not "-300%"."""
+    m = snapshot_to_metrics(_snap(ttm_obligated=2e6, prior_ttm_obligated=-1e6))
+    assert m.gov_contract_yoy_growth is None
+
+
 def test_bridge_to_revenue_only_with_revenue():
     # No revenue on a bare snapshot -> ratio stays None.
     assert snapshot_to_metrics(_snap(ttm_obligated=5e9)

@@ -377,7 +377,9 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.gov_contract_recipient_count = gc.recipient_count
         m.gov_contract_truncated = gc.truncated
         m.gov_contract_total_txns = gc.total_txns
-        if gc.ttm_obligated is not None and gc.prior_ttm_obligated:  # truthy excludes 0
+        if gc.ttm_obligated is not None and (gc.prior_ttm_obligated or 0) > 0:
+            # > 0 excludes both a zero prior AND a negative net de-obligation quarter,
+            # either of which would sign-flip or blow up the ratio.
             m.gov_contract_yoy_growth = (
                 (gc.ttm_obligated - gc.prior_ttm_obligated) / gc.prior_ttm_obligated)
         if gc.ttm_obligated is not None and m.revenue:  # truthy excludes 0/None
