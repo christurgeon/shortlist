@@ -11,8 +11,14 @@ _SECRET_RE = re.compile(rf"((?:{'|'.join(_SECRET_PARAMS)})=)[^&\s]+", re.IGNOREC
 # Bare API tokens that may appear in CLI/subprocess output (not as URL params).
 _TOKEN_RE = re.compile(r"sk-ant-[A-Za-z0-9_-]+")
 
-# Telegram bot token embedded in URL path: /bot<token>/
-_TELEGRAM_BOT_RE = re.compile(r"/bot[^/\s]+/")
+# Telegram bot token embedded in a URL path: /bot<token>/... or /bot<token> at the
+# end of the string (an httpx error's str() can end right after the token, with no
+# trailing path segment — the old regex required one and left that case unredacted).
+_TELEGRAM_BOT_RE = re.compile(r"/bot[^/\s]+/?")
+
+
+def _redact_telegram_match(m: "re.Match[str]") -> str:
+    return "/bot<redacted>/" if m.group(0).endswith("/") else "/bot<redacted>"
 
 
 def redact_secrets(text: object) -> str:
@@ -20,7 +26,7 @@ def redact_secrets(text: object) -> str:
     or a leaked Anthropic token in subprocess output)."""
     s = _SECRET_RE.sub(r"\1<redacted>", str(text))
     s = _TOKEN_RE.sub("<redacted>", s)
-    return _TELEGRAM_BOT_RE.sub("/bot<redacted>/", s)
+    return _TELEGRAM_BOT_RE.sub(_redact_telegram_match, s)
 
 
 def load_env(path: Optional[str] = None) -> Optional[str]:
