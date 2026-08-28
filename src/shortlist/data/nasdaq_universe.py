@@ -20,8 +20,8 @@ universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request pe
    listings and plain API gaps — so a caller should still treat absence as abstain, never
    a drop.
 
-Rows with an unparseable `marketCap` are skipped **individually** (mirroring
-`secframes.parse_frame`), never failing the whole payload.
+Rows with an unparseable `marketCap` are skipped **individually**, never failing the whole
+payload.
 
 **No production caller.** CI pins the parse shapes; the live fetch tests skip by
 default.

@@ -25,9 +25,8 @@ def test_symbols_are_uppercased_and_stripped():
 
 
 def test_one_unparseable_row_does_not_lose_the_payload():
-    """Mirrors secframes.parse_frame: skip the bad row individually. A single malformed
-    entry in a 4,000-row response must not blank the whole universe and silently turn the
-    floor off."""
+    """Skip the bad row individually. A single malformed entry in a 4,000-row response
+    must not blank the whole universe and silently turn the floor off."""
     u = parse_universe(_payload(_row("GOOD"), "not-a-dict", {"no_symbol": 1},
                                 _row("ALSOGOOD")))
     assert set(u) == {"GOOD", "ALSOGOOD"}

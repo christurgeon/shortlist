@@ -14,7 +14,7 @@ import time
 # (real DERA 429s on 2026-08-03/04). The headroom also covers the harness EdgarSource, which
 # fetches on its own asyncio semaphore OUTSIDE this budget — `screen.py:main` only starts
 # the research phase (the SecThrottle-metered consumers: index.py, dera.py, thirteenf.py,
-# cik_tickers.py, secframes.py) after run_harness returns, so the two do not overlap in
+# cik_tickers.py) after run_harness returns, so the two do not overlap in
 # practice, but nothing enforces that.
 #
 # Sizing (measured 2026-08-05): `full_text_submission()` latency is ~17 ms median, so a

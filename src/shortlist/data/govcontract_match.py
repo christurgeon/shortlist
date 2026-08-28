@@ -42,8 +42,3 @@ def match_confidence(sec_name: str, recipient_name: str,
             if set(tok.split()) <= b_tokens:
                 return 1.0  # base is a SequenceMatcher ratio, always <= 1.0 already
     return base
-
-
-def aliases_for(ticker: str) -> tuple[str, ...]:
-    """Public accessor so the source can pass alias_for=(ticker,) ergonomically."""
-    return _ALIAS_SEED.get(ticker.upper(), ())
