@@ -70,6 +70,21 @@ def test_non_mapping_top_level_raises_config_error_with_type(tmp_path):
         load_config(p)
     assert "list" in str(e.value)         # names the offending type
 
+def test_duplicate_top_level_key_raises_config_error(tmp_path):
+    p = tmp_path / "dup.yaml"
+    p.write_text("weights:\n  quality: 0.5\nweights:\n  moat: 0.5\n")
+    with pytest.raises(ConfigError, match="duplicate key") as e:
+        load_config(p)
+    assert "dup.yaml" in str(e.value)
+
+def test_duplicate_nested_key_raises_config_error(tmp_path):
+    # CLAUDE.md's actual documented hazard: two `value:` children under one gate,
+    # not just a duplicated top-level key.
+    p = tmp_path / "dup_nested.yaml"
+    p.write_text("flags:\n  crowded_short:\n    value: 1\n    value: 2\n")
+    with pytest.raises(ConfigError, match="duplicate key"):
+        load_config(p)
+
 def test_missing_required_keys_names_each_missing_key(tmp_path):
     p = tmp_path / "partial.yaml"
     p.write_text("weights: {}\n")
