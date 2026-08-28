@@ -370,12 +370,14 @@ def _evidence_pairs(raw, limit: Optional[int] = None) -> list[Finding]:
     return out
 
 
-def _findings(payload: dict, key: str) -> list[Finding]:
+def _findings(payload: dict, key: str, limit: Optional[int] = None) -> list[Finding]:
     out: list[Finding] = []
     for item in (payload.get(key) or []):
         if not isinstance(item, dict):
             raise ValueError(f"{key} items must be objects")
         out.append(_finding_from(item))
+        if limit is not None and len(out) >= limit:
+            break
     return out
 
 
@@ -440,6 +442,8 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
                             valid_signals: Optional[set[str]] = None,
                             max_conflicts: int = 3,
                             max_falsifiers: int = 3,
+                            max_risks: int = 8,
+                            max_red_flags: int = 8,
                             max_added_risks: int = 8,
                             max_moat_sources: int = 6,
                             max_management_findings: int = 6) -> QualitativeAssessment:
@@ -463,8 +467,8 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         model=model, cost_usd=cost_usd, stop_reason=stop_reason,
         business_model_summary=str(payload["business_model_summary"]),
         moat=moat,
-        risks=_findings(payload, "risks"),
-        red_flags=_findings(payload, "red_flags"),
+        risks=_findings(payload, "risks", max_risks),
+        red_flags=_findings(payload, "red_flags", max_red_flags),
         management_capital_allocation=str(payload["management_capital_allocation"]),
         management_findings=_evidence_pairs(payload.get("management_findings"),
                                             max_management_findings),

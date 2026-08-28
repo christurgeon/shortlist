@@ -33,7 +33,7 @@ def _offline(monkeypatch):
     # Third element is the FILING (controls.detect needs its whole-document text);
     # None here means _detect_controls abstains, keeping these assertions about
     # 8-K accessions alone.
-    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (_tenk(), None, None))
+    monkeypatch.setattr(filings, "_fetch_10k_parsed", lambda *a, **k: (_tenk(), None, None, None))
     monkeypatch.setattr(filings, "_prior_year_sections", lambda *a, **k: ("", ""))
 
     import edgar

@@ -78,6 +78,27 @@ def test_assessment_from_payload_missing_reconciliation_is_empty():
     assert a.reconciliation == []
 
 
+def test_findings_are_capped_at_max_risks_and_max_red_flags():
+    payload = {**PAYLOAD,
+               "risks": [{"claim": f"r{i}", "evidence": ""} for i in range(20)],
+               "red_flags": [{"claim": f"f{i}", "evidence": ""} for i in range(20)]}
+    a = assessment_from_payload(payload, ticker="X", as_of="t", accession="a",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None, max_risks=3, max_red_flags=2)
+    assert len(a.risks) == 3
+    assert len(a.red_flags) == 2
+
+
+def test_findings_default_cap_is_eight():
+    """Matches assess.py's prompt default (rcfg.get('max_risks', 8)) — the model
+    is told 8 is the ceiling, so the parser's default must agree."""
+    payload = {**PAYLOAD, "risks": [{"claim": f"r{i}", "evidence": ""} for i in range(20)]}
+    a = assessment_from_payload(payload, ticker="X", as_of="t", accession="a",
+                                filing_date="d", model="m", cost_usd=None,
+                                stop_reason=None)
+    assert len(a.risks) == 8
+
+
 def test_conflict_and_thesis_defaults():
     from shortlist.research.models import Conflict, Thesis
     c = Conflict(signal="value", tension="cheap vs declining")

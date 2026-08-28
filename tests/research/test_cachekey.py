@@ -118,9 +118,34 @@ def test_financial_series_change_changes_key():
 
 
 def test_macro_regime_changes_key_and_none_is_safe():
+    cfg = {"research": {"cache": {"max_age_days": 1, "price_band_pct": 0.03},
+                         "macro": {"enabled": True}}}
+
     class _Macro:
         regime = "risk-off"
-    assert _key(_Card(metrics=_M()), macro=None) != _key(_Card(metrics=_M()), macro=_Macro())
+        dgs10 = t10y2y = hy_oas = vix = fedfunds = 4.0
+    assert _key(_Card(metrics=_M()), cfg=cfg, macro=None) != \
+        _key(_Card(metrics=_M()), cfg=cfg, macro=_Macro())
+
+
+def test_macro_number_move_changes_key_even_at_the_same_regime():
+    """A macro number can move without crossing classify_regime's bucket boundary
+    (e.g. VIX 22.0 -> 28.5, still 'neutral'); assess._macro_line prints the raw
+    number into the brief, so the cache key must react to it too — previously
+    only the bucketed regime string was hashed."""
+    cfg = {"research": {"cache": {"max_age_days": 1, "price_band_pct": 0.03},
+                         "macro": {"enabled": True}}}
+
+    class _Macro:
+        regime = "neutral"
+        dgs10 = t10y2y = hy_oas = fedfunds = 4.0
+        vix = 22.0
+
+    class _MacroMoved(_Macro):
+        vix = 28.5
+
+    assert _key(_Card(metrics=_M()), cfg=cfg, macro=_Macro()) != \
+        _key(_Card(metrics=_M()), cfg=cfg, macro=_MacroMoved())
 
 
 def test_card_without_metrics_does_not_raise():

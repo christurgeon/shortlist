@@ -25,6 +25,15 @@ def test_redacts_telegram_bot_token_in_url_path():
     assert "/bot<redacted>/" in out
 
 
+def test_redacts_telegram_bot_token_at_end_of_string_no_trailing_slash():
+    # An httpx error message can embed the URL with nothing after the token —
+    # the old regex required a trailing "/" and left this case unredacted.
+    raw = "httpx.ConnectError: https://api.telegram.org/bot123456:ABCdef-token"
+    out = redact_secrets(raw)
+    assert "123456:ABCdef-token" not in out
+    assert "<redacted>" in out
+
+
 # --- load_env: an explicit `export` must always win over the .env file --------
 #
 # load_env() was documented (CLAUDE.md "Secrets") but had zero test coverage:

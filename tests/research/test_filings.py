@@ -269,6 +269,112 @@ def test_prior_year_sections_never_raises():
     assert _prior_year_sections("A", company_factory=_boom) == ("", "")
 
 
+def test_prior_year_sections_reuses_a_given_filings_list_without_fetching():
+    """When `filings` is passed, _prior_year_sections must not call the company
+    factory at all — that's the whole point of reuse."""
+    from shortlist.research.filings import _prior_year_sections
+    rows = [_FakeFiling("2026-02-01", "2025-12-31"), _FakeFiling("2025-02-01", "2024-12-31")]
+
+    def _boom(_ticker):
+        raise AssertionError("company_factory must not be called when filings= is given")
+
+    risk, mda = _prior_year_sections("A", company_factory=_boom, filings=rows)
+    assert (risk, mda) == ("prior risk text", "prior mda text")
+
+
+def test_fetch_10k_parsed_returns_the_filings_index_as_a_fourth_element(monkeypatch):
+    """fetch_bundle needs the raw filings-index object (not just `.latest(1)`) so
+    it can hand the SAME list to _prior_year_sections instead of re-fetching it."""
+    import shortlist.research.filings as filings_mod
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    class _Filings(list):
+        def latest(self, n):
+            return self[0] if self else None
+
+    class _Filing:
+        accession_no = "acc-1"
+        filing_date = "2026-01-01"
+        def obj(self):
+            return _FakeTenK(business="b", mda="m", risk="r")
+
+    filings_index = _Filings([_Filing()])
+
+    class _FakeCompany:
+        def __init__(self, ticker):
+            pass
+        def get_filings(self, form):
+            return filings_index
+
+    import edgar
+    monkeypatch.setattr(edgar, "Company", _FakeCompany)
+    monkeypatch.setattr(filings_mod, "require_identity", lambda *a, **k: None)
+
+    _filing, _obj, _latest, returned_filings = _fetch_10k_parsed("X", "me@x.com")
+
+    assert returned_filings is filings_index
+
+
+def test_fetch_bundle_fetches_the_10k_filings_index_only_once(monkeypatch):
+    """_prior_year_sections used to re-fetch the 10-K filings index from scratch to
+    find the prior fiscal year, costing one extra SEC request per brief. fetch_bundle
+    must fetch it once and hand the SAME list to both _fetch_10k_parsed and
+    _prior_year_sections."""
+    from shortlist.research import eightk, filings as filings_mod
+
+    class _CurTenK:
+        business, management_discussion, risk_factors = "b", "m", "r"
+
+    class _PriorTenK:
+        business, management_discussion, risk_factors = "pb", "pm", "pr"
+
+    class _CurFiling:
+        form = "10-K"
+        accession_no = "acc-cur"
+        filing_date = "2026-08-01"
+        period_of_report = "2026-06-30"
+        def obj(self):
+            return _CurTenK()
+
+    class _PriorFiling:
+        form = "10-K"
+        accession_no = "acc-prior"
+        filing_date = "2025-08-01"
+        period_of_report = "2025-06-30"
+        def obj(self):
+            return _PriorTenK()
+
+    rows = [_CurFiling(), _PriorFiling()]
+
+    class _TenKFilings(list):
+        def latest(self, n):
+            return self[0]
+
+    class _Counts:
+        ten_k = 0
+
+    class _FakeCompany:
+        def __init__(self, ticker):
+            pass
+        def get_filings(self, form):
+            if form == "10-K":
+                _Counts.ten_k += 1
+                return _TenKFilings(rows)
+            return []   # no 10-Q -> fetch_bundle's own try/except degrades to ""
+
+    monkeypatch.setattr(filings_mod, "require_identity", lambda *a, **k: None)
+    monkeypatch.setattr(eightk, "fetch_eightks", lambda *a, **k: [])
+    import edgar
+    monkeypatch.setattr(edgar, "Company", _FakeCompany)
+
+    cfg = {"research": {"notes": {"enabled": False}, "controls": {"enabled": False},
+                         "text_similarity": {"enabled": False}}}
+    bundle = filings_mod.fetch_bundle("X", config=cfg)
+
+    assert bundle is not None
+    assert _Counts.ten_k == 1
+
+
 def test_similarity_enabled_defaults_on_and_honours_false():
     """enabled: false -> no similarity computed (the byte-identical escape hatch)."""
     from shortlist.research import filings

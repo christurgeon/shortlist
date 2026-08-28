@@ -93,6 +93,17 @@ def test_normalize_fmp_history_fields_none_when_annual_absent():
     assert snap.fundamentals.roic_5y_avg is None      # no annual key-metrics -> None
 
 
+def test_normalize_fmp_unanimous_buy_ratings_keep_zero_sell_count():
+    """sell=strongSell=0 is a real, complete answer (unanimous buy ratings) — it
+    must not collapse to None and fall through to a different vendor's sell
+    count in the merge."""
+    from shortlist.data.sources import _normalize_fmp
+    raw = {"grades": [{"strongBuy": 5, "buy": 3, "hold": 0, "sell": 0, "strongSell": 0}]}
+    snap = _normalize_fmp("TEST", raw)
+    assert snap.analyst.buy == 8
+    assert snap.analyst.sell == 0
+
+
 def test_statements_and_price_carry_new_value_fields():
     from shortlist.data.models import Statements, Price
     s = Statements(diluted_eps=[7.46], fiscal_period_end=["2025-09-27"])
