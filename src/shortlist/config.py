@@ -7,6 +7,7 @@ deliberately NOT schema validation. Callers catch :class:`ConfigError`, print it
 """
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -36,10 +37,8 @@ def _construct_mapping_rejecting_duplicates(loader: yaml.SafeLoader, node, deep=
         if is_dup:
             raise yaml.constructor.ConstructorError(
                 None, None, f"duplicate key: {key!r}", key_node.start_mark)
-        try:
+        with contextlib.suppress(TypeError):
             seen.add(key)
-        except TypeError:
-            pass
     return yaml.SafeLoader.construct_mapping(loader, node, deep=deep)
 
 
