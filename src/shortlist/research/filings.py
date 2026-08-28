@@ -216,7 +216,7 @@ def _similarity_enabled(config: Optional[dict]) -> bool:
     return bool(block.get("enabled", True))
 
 
-def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
+def _prior_year_sections(ticker: str, company_factory=None, filings=None) -> tuple[str, str]:
     """(risk_factors, mda) from the prior fiscal year's 10-K — the diff baseline
     AND the Lazy-Prices baseline, taken from ONE already-parsed filing object so
     the similarity costs no extra network request. Excludes 10-K/A amendments and
@@ -227,6 +227,11 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
     `sys.modules`; production always takes the lazy `edgar` import below (the
     [edgar] extra is optional, so it must not be imported at module scope).
 
+    `filings` lets a caller that has ALREADY fetched the 10-K filings index (e.g.
+    `fetch_bundle`, via `_fetch_10k_parsed`'s 4th return value) hand it in directly
+    so this function costs no second network request. None (the default) preserves
+    the original fetch-it-here behavior.
+
     BEHAVIOUR CHANGE vs `_prior_year_risk_factors`: the `edgar` import now sits
     INSIDE the try, so a missing [edgar] extra degrades to ("", "") + a stderr
     line instead of raising ImportError. That is unreachable in practice —
@@ -234,10 +239,11 @@ def _prior_year_sections(ticker: str, company_factory=None) -> tuple[str, str]:
     top — and
     it matches this function's documented never-raises contract."""
     try:
-        if company_factory is None:
-            from edgar import Company
-            company_factory = Company
-        filings = company_factory(ticker).get_filings(form="10-K")
+        if filings is None:
+            if company_factory is None:
+                from edgar import Company
+                company_factory = Company
+            filings = company_factory(ticker).get_filings(form="10-K")
         rows = [f for f in filings if str(getattr(f, "form", "")) == "10-K"]
         if len(rows) < 2:
             return "", ""
@@ -352,9 +358,9 @@ def filing_text_change(
 
 def _fetch_10k_parsed(
         ticker: str,
-        identity: Optional[str] = None) -> tuple[Optional[FilingText], Any, Any]:
-    """(FilingText|None, parsed filing object|None, filing|None) — the shared core
-    of fetch_10k.
+        identity: Optional[str] = None) -> tuple[Optional[FilingText], Any, Any, Any]:
+    """(FilingText|None, parsed filing object|None, filing|None, filings index) — the
+    shared core of fetch_10k.
 
     Split out so `fetch_bundle` can read the statement notes off the SAME parsed
     object the narrative sections came from. Re-deriving it would mean a second
@@ -364,17 +370,23 @@ def _fetch_10k_parsed(
     The third element is the FILING, not the parsed object: `controls.detect` needs
     the whole document's text and the parsed `TenK` exposes no text accessor. Item
     9A alone is not a substitute — `part_ii_item_9a` returned 0 chars for 3 of 15
-    filers measured and missed HP's adverse conclusion outright."""
+    filers measured and missed HP's adverse conclusion outright.
+
+    The 4th element is the raw 10-K filings index (`Company(ticker).get_filings(
+    form="10-K")`), returned so `fetch_bundle` can hand it to `_prior_year_sections`
+    instead of that function re-fetching the same index from scratch — the fetch
+    itself, not just the `.obj()` parse, used to happen twice per brief."""
     from edgar import Company  # lazy: optional [edgar] extra
 
     require_identity(identity)
-    latest = Company(ticker).get_filings(form="10-K").latest(1)
+    filings = Company(ticker).get_filings(form="10-K")
+    latest = filings.latest(1)
     if latest is None:
-        return None, None, None
+        return None, None, None, filings
     tenk = latest.obj()
     filing = _build_filing_text(
         ticker, getattr(latest, "accession_no", ""), getattr(latest, "filing_date", ""), tenk)
-    return (filing if filing.has_content() else None), tenk, latest
+    return (filing if filing.has_content() else None), tenk, latest, filings
 
 
 def fetch_10k(ticker: str, identity: Optional[str] = None) -> Optional[FilingText]:
@@ -439,7 +451,7 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
 
     # sets identity / raises if SEC_IDENTITY unset. Keeps the parsed object so the
     # statement notes below cost no second parse.
-    tenk, tenk_obj, tenk_filing = _fetch_10k_parsed(ticker, identity)
+    tenk, tenk_obj, tenk_filing, tenk_filings = _fetch_10k_parsed(ticker, identity)
     if tenk is None:
         return None
 
@@ -469,7 +481,7 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     except Exception:
         tenq_mda, tenq_acc, tenq_added = "", "", ""
 
-    prior_1a, prior_mda = _prior_year_sections(ticker)
+    prior_1a, prior_mda = _prior_year_sections(ticker, filings=tenk_filings)
     added = riskdiff.added_risk_blocks(tenk.risk_factors, prior_1a, config or {})
     # Lazy-Prices YoY similarity from documents ALREADY in hand — no extra fetch.
     similarity = None
