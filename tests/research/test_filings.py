@@ -466,3 +466,110 @@ def test_filing_sections_10q_risk_empty_when_extractor_raises(capsys):
 
     risk, mda = _filing_sections(_Boom(), "10-Q", "X")
     assert risk == "" and mda == ""
+
+
+class _FormFiling:
+    """A filings-index row with a settable form — the amendment cases turn on it."""
+    def __init__(self, form, accession, filing_date, tenk=None):
+        self.form, self.accession_no, self.filing_date = form, accession, filing_date
+        self._tenk = tenk or _FakeTenK(business="b", mda="m", risk="r")
+        self.obj_calls = 0
+
+    def obj(self):
+        self.obj_calls += 1
+        return self._tenk
+
+
+class _FormFilings(list):
+    def latest(self, n):
+        return self[0] if self else None
+
+
+def _patch_edgar_index(monkeypatch, rows):
+    """Install a fake edgar.Company whose get_filings returns `rows`, newest-first
+    exactly as edgartools orders them."""
+    import shortlist.research.filings as filings_mod
+
+    index = _FormFilings(rows)
+
+    class _FakeCompany:
+        def __init__(self, ticker):
+            pass
+
+        def get_filings(self, form):
+            return index
+
+    import edgar
+    monkeypatch.setattr(edgar, "Company", _FakeCompany)
+    monkeypatch.setattr(filings_mod, "require_identity", lambda *a, **k: None)
+    return index
+
+
+def test_fetch_10k_parsed_skips_a_newer_amendment(monkeypatch):
+    """A 10-K/A is usually a Part III patch with no Item 1/1A/7, and edgartools
+    returns it inside form="10-K". Taking `.latest(1)` blindly picked it and the
+    brief died with "no 10-K" (TSLA, 2026-04-30 accession 0001104659-26-053166) or,
+    worse, ran on a half-empty document (AMD: business=0, risk=0, mda present)."""
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    amendment = _FormFiling("10-K/A", "acc-amend", "2026-04-30",
+                            _FakeTenK(business=None, mda=None, risk=None))
+    original = _FormFiling("10-K", "acc-10k", "2026-01-29")
+    _patch_edgar_index(monkeypatch, [amendment, original])
+
+    filing, tenk, latest, _index = _fetch_10k_parsed("TSLA", "me@x.com")
+
+    assert filing is not None
+    assert filing.accession == "acc-10k"
+    assert filing.filing_date == "2026-01-29"
+    assert latest is original
+    assert tenk is original._tenk
+    assert amendment.obj_calls == 0        # never parse the amendment
+
+
+def test_fetch_10k_parsed_uses_an_amendment_when_no_exact_10k_exists(monkeypatch):
+    """Preferring the exact form must not strand a filer whose index holds only
+    amendments — there is nothing else to fall back to."""
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    amendment = _FormFiling("10-K/A", "acc-amend", "2026-04-30")
+    _patch_edgar_index(monkeypatch, [amendment])
+
+    filing, _tenk, latest, _index = _fetch_10k_parsed("X", "me@x.com")
+
+    assert latest is amendment
+    assert filing is not None and filing.accession == "acc-amend"
+
+
+def test_fetch_10k_parsed_picks_the_newest_10k_regardless_of_index_order(monkeypatch):
+    """Selection is by filing_date, not by position — same convention as
+    _prior_year_sections, which already sorts rather than trusting the index."""
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    older = _FormFiling("10-K", "acc-2025", "2025-01-30")
+    newer = _FormFiling("10-K", "acc-2026", "2026-01-29")
+    _patch_edgar_index(monkeypatch, [older, newer])
+
+    filing, _tenk, _latest, _index = _fetch_10k_parsed("X", "me@x.com")
+
+    assert filing.accession == "acc-2026"
+
+
+def test_fetch_10k_parsed_keeps_a_falsy_10k_instead_of_the_amendment(monkeypatch):
+    """Selection must test for None, not truthiness. edgartools' EntityFiling
+    defines no __bool__/__len__ today, but a filing row that ever became falsy
+    would silently hand the brief back to the amendment this function exists to
+    avoid — the same quiet-degradation shape as the AMD case."""
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    class _FalsyFiling(_FormFiling):
+        def __len__(self):
+            return 0
+
+    amendment = _FormFiling("10-K/A", "acc-amend", "2026-04-30")
+    original = _FalsyFiling("10-K", "acc-10k", "2026-01-29")
+    _patch_edgar_index(monkeypatch, [amendment, original])
+
+    _filing, _tenk, latest, _index = _fetch_10k_parsed("X", "me@x.com")
+
+    assert latest is original

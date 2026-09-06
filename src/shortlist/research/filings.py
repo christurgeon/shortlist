@@ -356,6 +356,27 @@ def filing_text_change(
         return None
 
 
+def _latest_exact_10k(filings: Any) -> Any:
+    """The newest exact-form 10-K in a filings index, or None if it holds only
+    amendments. edgartools returns 10-K/A rows inside `get_filings(form="10-K")`,
+    and an amendment is usually a Part III patch carrying no Item 1/1A/7 — so
+    `.latest(1)` picked a document the brief cannot be built from. Two failure
+    shapes, both live: TSLA's 2026-04-30 10-K/A yields nothing and the brief
+    abstains with the misleading "no 10-K"; AMD's yields an MD&A but zero business
+    and zero risk-factors text, so `has_content()` passes and the brief is built on
+    a partial filing without saying so.
+
+    Selecting by filing_date rather than index position matches
+    `_prior_year_sections` and `filing_text_change`, which already drop /A rows.
+    The cost of that choice: a genuine full-restatement amendment is ignored in
+    favour of the superseded original."""
+    rows = [f for f in filings if str(getattr(f, "form", "")) == "10-K"]
+    if not rows:
+        return None
+    rows.sort(key=lambda f: str(getattr(f, "filing_date", "")), reverse=True)
+    return rows[0]
+
+
 def _fetch_10k_parsed(
         ticker: str,
         identity: Optional[str] = None) -> tuple[Optional[FilingText], Any, Any, Any]:
@@ -380,7 +401,11 @@ def _fetch_10k_parsed(
 
     require_identity(identity)
     filings = Company(ticker).get_filings(form="10-K")
-    latest = filings.latest(1)
+    # `is None`, not truthiness: a falsy filing row must not fall through to the
+    # amendment this selection exists to avoid.
+    latest = _latest_exact_10k(filings)
+    if latest is None:
+        latest = filings.latest(1)      # amendment-only filer: nothing else to use
     if latest is None:
         return None, None, None, filings
     tenk = latest.obj()
