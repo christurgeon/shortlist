@@ -553,3 +553,23 @@ def test_fetch_10k_parsed_picks_the_newest_10k_regardless_of_index_order(monkeyp
     filing, _tenk, _latest, _index = _fetch_10k_parsed("X", "me@x.com")
 
     assert filing.accession == "acc-2026"
+
+
+def test_fetch_10k_parsed_keeps_a_falsy_10k_instead_of_the_amendment(monkeypatch):
+    """Selection must test for None, not truthiness. edgartools' EntityFiling
+    defines no __bool__/__len__ today, but a filing row that ever became falsy
+    would silently hand the brief back to the amendment this function exists to
+    avoid — the same quiet-degradation shape as the AMD case."""
+    from shortlist.research.filings import _fetch_10k_parsed
+
+    class _FalsyFiling(_FormFiling):
+        def __len__(self):
+            return 0
+
+    amendment = _FormFiling("10-K/A", "acc-amend", "2026-04-30")
+    original = _FalsyFiling("10-K", "acc-10k", "2026-01-29")
+    _patch_edgar_index(monkeypatch, [amendment, original])
+
+    _filing, _tenk, latest, _index = _fetch_10k_parsed("X", "me@x.com")
+
+    assert latest is original

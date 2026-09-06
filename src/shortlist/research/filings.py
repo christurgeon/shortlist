@@ -401,8 +401,11 @@ def _fetch_10k_parsed(
 
     require_identity(identity)
     filings = Company(ticker).get_filings(form="10-K")
-    # Amendment-only filers keep the old behaviour: there is nothing else to use.
-    latest = _latest_exact_10k(filings) or filings.latest(1)
+    # `is None`, not truthiness: a falsy filing row must not fall through to the
+    # amendment this selection exists to avoid.
+    latest = _latest_exact_10k(filings)
+    if latest is None:
+        latest = filings.latest(1)      # amendment-only filer: nothing else to use
     if latest is None:
         return None, None, None, filings
     tenk = latest.obj()
