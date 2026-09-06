@@ -25,6 +25,29 @@ the scoring roadmap.
 
 ---
 
+# 6. `has_content()` passes on one section out of three (2026-09-06)
+
+`FilingText.has_content()` (`research/models.py:85`) is
+`bool(self.business or self.mda or self.risk_factors)`, and `_fetch_10k_parsed` uses it as the
+sole usability test before a brief is built. A filing that parses to MD&A alone — no Item 1,
+no Item 1A — is therefore accepted, and the brief is written from it with no indication that
+two thirds of its evidence base is missing.
+
+This is not hypothetical. It was measured: AMD's 2026 10-K/A yielded `business=0, mda=42454,
+risk=0`, so the guard passed and the abstention path was never reached. The amendment-selection
+fix (`918ad6d`) removed the path that produced that document, but the guard itself is unchanged
+— a stripped filing arriving by any other route still degrades silently. Evidence and the
+measured section sizes are in `docs/audits/2026-09-06-tenk-amendment-selection.md`.
+
+**The open question is policy, not a bug:** should `fetch_10k` abstain when `business` or
+`risk_factors` is empty? Abstaining costs real briefs whenever a section merely fails to parse
+rather than being genuinely absent, and the parser's per-section failure rate is unmeasured —
+so the honest options are a hard abstention, a partial-filing note carried into the brief
+header, or leaving it as is. Measure the failure rate before choosing; do not tighten the guard
+on the strength of a single observed case.
+
+---
+
 # 5. Internal-control detection — two deliberate gaps (2026-08-23)
 
 `research/controls.py` ships: management's own adverse ICFR/DCP conclusion, anchored to the
