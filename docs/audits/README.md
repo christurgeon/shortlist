@@ -20,6 +20,16 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **`/deep` filing selection must exclude 10-K/A amendments (2026-09-06)** — `.latest(1)` off
+  `get_filings(form="10-K")` returns amendments too, and most are Part III patches with no
+  Item 1/1A/7. **462 listed tickers** currently have an amendment as their newest 10-K-family
+  filing (647 CIKs; EDGAR form indexes 2025-QTR1→2026-QTR3, a floor). Two shapes: TSLA/DASH/
+  LUV/MO/CRCL abstained outright with a misleading "no 10-K"; **AMD built a brief with
+  business=0 and risk=0** because one non-empty section satisfies `has_content()`. That silent
+  shape is why the fix prefers the exact form UNCONDITIONALLY rather than falling back when the
+  10-K is empty. Accepted cost: a true restatement amendment is ignored. Do NOT reintroduce
+  amendment rows into `_fetch_10k_parsed`. Still open: `has_content()` passing on a single
+  section. `2026-09-06-tenk-amendment-selection.md`.
 - **A `/deep` context line with no destination field is IGNORED — measured twice, on two
   different features (2026-08-25)** — the options line shipped in #194 reached the prompt on
   every brief and was used in **0 of 3**. Adding a REQUIRED clause naming `thesis` took it to
