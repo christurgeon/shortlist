@@ -20,6 +20,19 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **An adverse-controls `ScoreCard` flag costs 22-56% of a `/screen` — NO-GO, measured
+  2026-09-07** — `detect()` is 0.019s/ticker and was never the cost; the whole-document
+  fetch is. Measured against a real 10-ticker `/screen` (warm baseline **120.2s**, cold
+  129.1s): the producer adds **+45.7s (+38%)** for `filing.text()` alone and **+67.3s
+  (+56%)** including index selection. **JPM alone is 17-38s of that**, and its ~16.6s
+  `get_filings(form="10-K")` selection reproduced across two runs — structural, not
+  variance. Concurrency does not rescue it: a parallel version cannot beat its slowest
+  ticker, and `EdgarSource` fetches OUTSIDE the process-wide `SecThrottle`
+  (`sec_throttle.py:14-18`), so ten concurrent document downloads are the 2026-08-04
+  starvation class. The cost lands on 100% of screened names for a flag that fires on ~5%,
+  surfacing something `/deep` already shows one step later. Reopen only with a keyless-FTS
+  prefilter, a filing index shared with `EdgarSource`, or a materially higher base rate —
+  **not** on the argument that the detector is cheap. `2026-09-07-controls-scorecard-flag-cost.md`.
 - **A 10-Q adverse-controls arm buys NOTHING — 0 of 228, measured 2026-09-07** — the
   detector ports to the quarterly form cleanly (11 of 228 tickers flagged, 4.8%, **27/27
   hand-read precision**, tense rule unmodified), so the temptation is to ship it. Do not.

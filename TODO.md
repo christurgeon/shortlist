@@ -48,34 +48,6 @@ on the strength of a single observed case.
 
 ---
 
-# 5. Internal-control detection — two deliberate gaps (2026-08-23)
-
-`research/controls.py` ships: management's own adverse ICFR/DCP conclusion, anchored to the
-filing's own period end, as a `/deep` grounding segment plus a prompt-only verdict line. Base
-rates, the confusion matrices, the sensitivity sweep and the phrase set that does NOT work are
-in `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md` — read it before touching the
-phrase list, because a `"material weakness"` keyword search matched 226 of 228 filers and the
-plural ICFR phrasing matches negations.
-
-- **10-Q arm: CLOSED 2026-09-07, measured null — do not rebuild it.** The base rate is real
-  (11 of 228 tickers, 27/27 hand-read precision) but the incremental lead-time yield is
-  **0 of 228**: the state "adverse in a quarter the latest 10-K does not cover, clean in that
-  10-K" was never observed. Widening `controls._SELF_REF` for "this quarterly report" also
-  gains exactly 0. Verdict, the remediation-vs-lead-time trap that nearly shipped it, and the
-  reopening condition: `docs/audits/2026-09-07-tenq-controls-base-rate.md`.
-- **Not a `ScoreCard` flag, on purpose.** `score()` runs before research and the screener path
-  never downloads 10-K text, so a flag would mean a whole-document fetch per screened ticker
-  (~2 requests, 1.4-3.8s each, ×10 per `/screen`). Measure that cost against a real `/screen`
-  before paying it. The *filing-form* flags shipped in the same change do reach `ScoreCard`,
-  because those genuinely ride an index already fetched.
-
-**Status:** one gap left. The 10-Q question is answered and closed (above). The **flag**
-question remains blocked on *measurement* — it is only worth opening if someone wants control
-findings visible on `/screen` rather than `/deep`, and it must be costed against a real
-`/screen` first.
-
----
-
 # 2. `/deep` as market research — external-review triage (2026-08-11)
 
 An outside review of the repo argued that `/deep` is **good issuer diligence but not market
