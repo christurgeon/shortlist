@@ -150,6 +150,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   removed the marginal assertions that used to collide. `0/9` is NOT "solved": rule-of-three
   upper bound ~33%, effective n≈4-5 (7 of 9 are repeat runs on 3 tickers), and no HDSN brief
   was ever persisted, so the one known positive is excluded by construction.
+  **Reopen only if a re-count on FRESH tickers moves the rate** — not on a single new hit.
   `2026-08-22-brief-self-consistency-base-rate.md`.
 - **A null `market_cap` does not trip the size gate, and that stays (2026-08-21)** — all four
   gates in `check_gates` fail OPEN on a missing input, the gate-side form of "a missing

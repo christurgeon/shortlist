@@ -34,6 +34,13 @@ consequences drive the shape of this module:
   10,000 cap would silently drop the ladder for a whole sector of heavy borrowers
   while appearing to work.
 
+**Build any further targeted note extractor the same way** — segments / disaggregated
+revenue, SBC & dilution, concentrations & commitments, acquisitions & goodwill, legal
+contingencies. Each inherits both constraints above: the structured index means no heading
+detection is needed, and each family needs its own `_EXCLUDE_RE` (expect one DUK per family).
+None of them has a shipped prompt instruction waiting on it, which is what made debt &
+liquidity first — so none is worth building until one does.
+
 Never raises: any index/render failure degrades that note (or the whole form) to
 nothing via `log_abstain`. No throttle of its own — it goes through edgartools
 like the rest of the research layer (CLAUDE.md).
