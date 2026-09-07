@@ -12,10 +12,17 @@ NOT yet cover. So the case that matters is: the ticker's LATEST 10-Q flags, its 
 end is AFTER the latest 10-K's period end, and that 10-K is clean. That is also what
 `fetch_bundle` would actually see — it takes `get_filings(form="10-Q").latest(1)`.
 
-Shipped 10-K semantics are replicated exactly: `get_filings(form="10-K").latest(1)`
-takes the newest annual filing, amendments included, so this reads submissions JSON and
-takes the newest 10-K or 10-K/A. Scanning a window of 10-Ks would credit the shipped
-path with catches it cannot make.
+Shipped 10-K semantics are replicated exactly: since #199 (2026-09-05)
+`_fetch_10k_parsed` selects the newest **exact-form** 10-K and never a 10-K/A, so this
+reads submissions JSON and does the same. Scanning a window of 10-Ks would credit the
+shipped path with catches it cannot make; accepting amendments would read a document the
+brief never sees.
+
+The first run of this probe accepted 10-K/A rows (the pre-#199 rule, and the checkout it
+ran against predated the fix). Re-checked: none of the 11 flagged tickers has an
+amendment as its newest 10-K-family filing, so the verdict is identical either way. The
+script reports `amendment_superseded` per ticker so a future corpus cannot hide the
+difference — #199 measured 462 listed tickers currently in that state.
 
 Reads tenq_controls_hits.json from stage 1. Throwaway probe.
 """
@@ -31,17 +38,28 @@ import probe_tenq_controls as P
 
 
 def latest_annual(cik):
-    """(filed, accession, primary_doc, period_of_report, form) for newest 10-K/10-K/A."""
+    """(filed, accession, primary_doc, period_of_report, form, amendment_superseded)
+    for the newest EXACT-FORM 10-K, matching `_latest_exact_10k` since #199.
+
+    `amendment_superseded` is True when a 10-K/A is newer than the 10-K returned — the
+    state #199 fixed, and the only shape in which the pre-#199 rule would have read a
+    different document."""
     d = P._get(f"https://data.sec.gov/submissions/CIK{cik}.json", timeout=60)
     r = d["filings"]["recent"]
-    best = None
+    exact, amended = None, None
     for i, form in enumerate(r["form"]):
-        if form in ("10-K", "10-K/A"):
-            row = (r["filingDate"][i], r["accessionNumber"][i],
-                   r["primaryDocument"][i], r["reportDate"][i], form)
-            if best is None or row[0] > best[0]:
-                best = row
-    return best
+        if form not in ("10-K", "10-K/A"):
+            continue
+        row = (r["filingDate"][i], r["accessionNumber"][i],
+               r["primaryDocument"][i], r["reportDate"][i], form)
+        if form == "10-K":
+            if exact is None or row[0] > exact[0]:
+                exact = row
+        elif amended is None or row[0] > amended[0]:
+            amended = row
+    if exact is None:
+        return None
+    return exact + (bool(amended and amended[0] > exact[0]),)
 
 
 def latest_quarterly_period(cik):
@@ -72,7 +90,7 @@ def main():
         if best is None:
             print(f"{tk:6s} no 10-K", flush=True)
             continue
-        filed, adsh, doc, k_period, form = best
+        filed, adsh, doc, k_period, form, superseded = best
         text = P.document_text(cik, adsh, doc)
         per = datetime.date.fromisoformat(k_period) if k_period else None
         f = P.controls.detect(text, per, P.CFG, form=form, accession=adsh)
@@ -81,6 +99,7 @@ def main():
         latest_q_flags = lq in flagged_periods[tk]
         out.append({"ticker": tk, "form": form, "accession": adsh,
                     "tenk_period": k_period, "tenk_filed": filed,
+                    "amendment_superseded": superseded,
                     "latest_tenq_period": lq, "uncovered_quarter": uncovered,
                     "latest_tenq_flags": latest_q_flags,
                     "flagged_quarters": sorted(flagged_periods[tk]),
@@ -104,6 +123,9 @@ def main():
     print(f"  ...and the latest 10-Q flags          : "
           f"{[r['ticker'] for r in out if r['uncovered_quarter'] and r['latest_tenq_flags']]}")
     print(f"  ...and the latest 10-K is clean       : {len(lead)}  {lead}")
+    sup = [r["ticker"] for r in out if r["amendment_superseded"]]
+    print(f"\ntickers with a NEWER 10-K/A than the 10-K read (pre-#199 divergence): "
+          f"{len(sup)}  {sup}")
     print(f"\nINCREMENTAL LEAD-TIME YIELD: {len(lead)} tickers")
 
 

@@ -106,6 +106,18 @@ Two tickers have a flagging latest 10-Q, and neither is incremental:
 
 **Incremental lead-time yield: 0 of 228.**
 
+### One correction, which changes nothing
+
+The first run of stage 2 selected the newest 10-K **or 10-K/A**, the pre-#199 rule (the
+checkout it ran against predated that fix). Since #199, merged 2026-09-05,
+`_fetch_10k_parsed` takes the newest **exact-form** 10-K and never an amendment
+(`2026-09-06-tenk-amendment-selection.md`). Re-checked against submissions data: **none of
+the 11 flagged tickers has a 10-K/A newer than the 10-K read**, so every comparison above
+used the document the shipped path would use and the verdict is identical under either
+rule. The script now enforces the exact-form rule and reports `amendment_superseded` per
+ticker, because #199 measured 462 listed tickers currently in that state — a future corpus
+will not be so lucky.
+
 This is a complete answer for the universe, not a sample of it. Any lead-time case must be
 a ticker that flags on some 10-Q, and all 228 were swept for exactly that.
 
