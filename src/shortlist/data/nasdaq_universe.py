@@ -23,8 +23,19 @@ universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request pe
 Rows with an unparseable `marketCap` are skipped **individually**, never failing the whole
 payload.
 
-**No production caller.** CI pins the parse shapes; the live fetch tests skip by
-default.
+**No production caller, and this must never become one.** The obvious-looking use — generate
+`universe_largecap.txt` / `universe_smallmid.txt` at RUN TIME instead of maintaining them —
+would destroy the reproducibility those files exist for. `CLAUDE.md` gates new scoring legs on
+*reproducible* cross-universe rank IC, and a membership set that silently differs between runs
+makes two verdicts non-comparable: you could no longer separate a decaying signal from drifting
+membership. The correct role is a **deliberate membership-refresh tool**, run by a human who
+then commits the diff. (Those files key on tickers, which are not stable identifiers — ~3-4%/yr
+rot, measured 2026-08-15. `backtest/universe.py:stale_tickers` aborts a bundled-universe run on
+symbols absent from SEC's map, so staleness cannot silently corrupt a measurement; a ticker
+REASSIGNED to a different issuer still resolves and is the residual hole. Storing `CIK,TICKER`
+pairs and resolving via `edgar/symbology.py` is the fix if it ever earns the half day.)
+
+CI pins the parse shapes; the live fetch tests skip by default.
 """
 from __future__ import annotations
 

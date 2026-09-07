@@ -450,3 +450,33 @@ returns `None` and `/deep` / `--research` report a skip (NVO/Novo Nordisk, ASML,
   extraction**: pull individual sections, cap chars *before* materializing the whole document, and
   measure peak RSS against the VPS budget before wiring it into the live bot. A naive port of the
   10-K path will crash `shortlist-bot`. (10-K parsing currently fits; 20-F as-built does not.)
+
+---
+
+## 8. Keyless-source liveness, probed from oracle-prod (2026-08-23)
+
+Probed **from the VPS**, because the box's own IP is what blocks Yahoo's screener and
+`fredgraph.csv` — a vendor's docs are not the answer that matters here.
+
+| Source | Result |
+|---|---|
+| openFDA | 200 |
+| ClinicalTrials.gov API v2 | 200 |
+| BLS API v2 (keyless) | 200 |
+| SEC `frames` | 200 |
+| EDGAR full-text search (`efts.sec.gov`) | 200, keyless |
+| FINRA daily short volume | 200 |
+| DERA financial-statement data sets | 200 — 82 MB/quarter; `num.txt` carries a `segments` column (segment revenue `companyfacts` strips) and `sub.txt` carries `sic` + `filed`, i.e. a point-in-time panel |
+| Census MARTS | **302 — unresolved, not confirmed working** |
+| Treasury fiscaldata | **timed out — unresolved** |
+| PatentsView | **now API-key-gated** (no service without one) — no longer the keyless option older notes imply |
+
+The motivating idea is **independent, non-issuer-authored industry data**: everything `/deep`
+reads today is written by the company. Census QSS / Economic Census, BEA input-output and BLS
+PPI are the general layer; sector adapters (EIA, ClinicalTrials.gov + openFDA, FDIC call
+reports, DOT/BTS, FCC, USAspending) fit better than one universal feed. **Unvetted — no
+evidence that any of it changes a judgement.**
+
+Cheap landing pattern if one is ever tried: an **auxiliary** `Source` whose section is not a
+`KEY_OBJECT` (`_AUX_DEFAULTS`, `data/models.py:441`), exactly like `gov_contracts` / `lobbying`
+— it reaches the research layer without touching coverage, gates, flags or scores.

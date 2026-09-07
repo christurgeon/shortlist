@@ -4,8 +4,18 @@ Decides — before any measurement harness is built — whether swapping the mom
 sub-score leg can move the composite shortlist at momentum's ~0.08 weight. Re-blends
 each real ScoreCard's composite with the momentum leg replaced, for a candidate-
 independent maximum-churn weight bound (A) and for each candidate (B), then reports
-top-N overlap + Kendall tau vs the real ranking. See
-docs/superpowers/specs/2026-06-14-multi-horizon-momentum-design.md.
+top-N overlap + Kendall tau vs the real ranking.
+
+**Recorded result, and the rule for the re-run (moved here from TODO.md 2026-09-07).**
+The 2026-06-14 marginal PROCEED used a 28-name SUBSET, and a quota-starved run inflates
+momentum's effective weight, so the verdict is not final: re-run on the full 80-name
+largecap basket and compare `mom_12_1`'s tau to the recorded **0.947**. Holds or drops =>
+the prize is real, write the Stage 1 plan; rises toward 1.0 => **stop**, momentum at its
+0.08 weight is a near-zero mover. Drop `mom_6m` either way — tau 0.995 against the
+incumbent `rel_strength_6m`, fully redundant. The re-run costs ~1,000 FMP calls against a
+250/day free cap, so it is scheduling-bound (TODO.md 4, the quota decision), not
+host-bound. Design notes were `docs/superpowers/specs/2026-06-14-multi-horizon-momentum-design.md`,
+which is gitignored and may no longer exist — these numbers are the surviving record.
 """
 from __future__ import annotations
 
