@@ -57,21 +57,22 @@ in `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md` — read it bef
 phrase list, because a `"material weakness"` keyword search matched 226 of 228 filers and the
 plural ICFR phrasing matches negations.
 
-- **10-K only; the 10-Q base rate is unmeasured.** A weakness first disclosed in a 10-Q Part I
-  Item 4 is invisible for up to three quarters. `fetch_bundle` already holds the 10-Q object,
-  so the extension is small — but ship it only with a measured base rate, the same bar the
-  10-K path cleared. Do not assume the 10-K numbers transfer: quarterly Item 4 is a different
-  disclosure with a different remediation cadence.
+- **10-Q arm: CLOSED 2026-09-07, measured null — do not rebuild it.** The base rate is real
+  (11 of 228 tickers, 27/27 hand-read precision) but the incremental lead-time yield is
+  **0 of 228**: the state "adverse in a quarter the latest 10-K does not cover, clean in that
+  10-K" was never observed. Widening `controls._SELF_REF` for "this quarterly report" also
+  gains exactly 0. Verdict, the remediation-vs-lead-time trap that nearly shipped it, and the
+  reopening condition: `docs/audits/2026-09-07-tenq-controls-base-rate.md`.
 - **Not a `ScoreCard` flag, on purpose.** `score()` runs before research and the screener path
   never downloads 10-K text, so a flag would mean a whole-document fetch per screened ticker
   (~2 requests, 1.4-3.8s each, ×10 per `/screen`). Measure that cost against a real `/screen`
   before paying it. The *filing-form* flags shipped in the same change do reach `ScoreCard`,
   because those genuinely ride an index already fetched.
 
-**Status:** deferred, not blocked on a decision — blocked on *measurement*. Both need a probe
-pass this session had no budget for after validating the 10-K path in and out of sample. The
-10-Q question is the higher-value of the two; the flag question is only worth opening if
-someone wants control findings visible on `/screen` rather than `/deep`.
+**Status:** one gap left. The 10-Q question is answered and closed (above). The **flag**
+question remains blocked on *measurement* — it is only worth opening if someone wants control
+findings visible on `/screen` rather than `/deep`, and it must be costed against a real
+`/screen` first.
 
 ---
 

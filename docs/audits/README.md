@@ -20,6 +20,22 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **A 10-Q adverse-controls arm buys NOTHING — 0 of 228, measured 2026-09-07** — the
+  detector ports to the quarterly form cleanly (11 of 228 tickers flagged, 4.8%, **27/27
+  hand-read precision**, tense rule unmodified), so the temptation is to ship it. Do not.
+  A 10-Q only buys lead time on a quarter the annual report does not yet cover, and the
+  state "adverse in an uncovered quarter, clean in the latest 10-K" was **not observed
+  once**: filers ineffective at year end disclose in the 10-K concurrently (CASH, SMP),
+  and interim-only weaknesses are usually remediated by year end (7 of 11). **The trap
+  that nearly shipped it:** comparing two years of 10-Q hits against the *latest* 10-K
+  returns 9 of 11 "missed" — that measures REMEDIATION, not lead time, because the clean
+  10-K's period end is later than the flagged quarter. It would have put resolved findings
+  into briefs as current facts. **Also measured false:** widening `controls._SELF_REF` to
+  accept "this quarterly report" gains **0 tickers and 0 filings** — the `_AS_OF` branch
+  already rescues every case, despite 2,955 10-Qs using that phrasing in 2026. Do not
+  widen it on phrase counts. Reopening needs a measured lead-time case, not a higher base
+  rate. The `ScoreCard`-flag half of `TODO.md` §5 is untouched and still open.
+  `2026-09-07-tenq-controls-base-rate.md`.
 - **`/deep` filing selection must exclude 10-K/A amendments (2026-09-06)** — `.latest(1)` off
   `get_filings(form="10-K")` returns amendments too, and most are Part III patches with no
   Item 1/1A/7. **462 listed tickers** currently have an amendment as their newest 10-K-family
