@@ -168,6 +168,33 @@ Ordering note: everything here answers an alpha question, which the prioritisati
 top ranks *below* work on judging a supplied name. Take these when they are cheap or when they
 unblock something.
 
+## Shipped weights still unvalidated or failing (2026-09-25)
+
+- **`insider` (weight 0.135) and the `heavy_insider_selling` gate.** Neither has ever been
+  measured: insider history is not in companyfacts, so the only route is snapshot replay. Both
+  are driven mostly by *sales* (Finnhub MSPR), the side the literature finds uninformative
+  (Lakonishok-Lee 2001; Cohen-Malloy-Pomorski 2012 — purchases predict, routine sales do not).
+  On the 2026-09-24 store the gate removed **6 of 42** large caps, including NVDA, the top
+  composite at 77.4, plus COST, CSCO and QCOM; `insider_sentiment` sat at the 0 clamp for 17
+  of 42. The candidate change is weight down and gate → flag, but that is an argument, and the
+  register's rule needs evidence first.
+- **`roe` saturates.** 19 of 42 large caps sit at the 100 clamp (p90 ROE 0.96); buybacks shrink
+  equity, so the leg mostly measures capital structure. Measure a replacement band or leg on
+  `--source xbrl` before changing it — `quality` IC is ~0 on both universes, and survivorship
+  bias works against it, so a band change cannot be judged by IC alone.
+
+- **`moat` (weight 0.18) is negative on both universes at every horizon** (XS t −0.4 to
+  −1.6), the same sign failure that zeroed `risk`. It was kept on magnitude and role, which is
+  a judgement (`docs/audits/2026-09-25-risk-tilt-disable.md`, "Why risk, and not moat"). A
+  weight change needs a pre-registered `no_moat` variant through
+  `docs/audits/scripts/probe_composite_weights.py`, not a post-hoc read of the existing runs.
+
+**Status:** open. The insider half is blocked on calendar time: the store holds 42 names and
+~3 non-overlapping monthly periods, far below the 24-period floor. The `roe` and `moat` halves
+are measurements nobody has run; each is a separate pre-registration, and neither fitted
+into this session without becoming a post-hoc variant search. Evidence of the shipped weights' state:
+`docs/audits/2026-09-25-risk-tilt-disable.md`.
+
 ## Snapshot-replay path: live, with two standing constraints (2026-08-09)
 
 `--source snapshot` is un-gated and smoke-tested. What survives is the part that constrains

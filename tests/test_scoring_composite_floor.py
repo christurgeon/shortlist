@@ -48,6 +48,14 @@ class TestFloorCatchesTheNoDataCase:
         # passed = not gates and scored — an unscored name can never rank.
         assert score(_no_data(), CFG).passed is False
 
+    def test_risk_only_card_posts_zero_at_the_shipped_zero_risk_weight(self):
+        # weights.risk is 0.0, so the only part has zero weight: den == 0 -> composite 0.0,
+        # not a ZeroDivisionError, and risk is still displayed.
+        assert CFG["weights"]["risk"] == 0.0
+        card = score(_no_data(), CFG)
+        assert card.composite == 0.0
+        assert card.risk == 100.0
+
 
 class TestBackCompat:
     def test_absent_key_restores_the_old_behaviour_exactly(self):

@@ -358,7 +358,13 @@ value-trap pattern — informative — and `max()` silently takes the high side.
 - **Plug:** keep `max()` for the score, but emit a `momentum_value_divergence` flag when the
   two axes strongly disagree, so the deep dive knows to ask "value trap or mispricing?"
 
-#### 2.9 Risk metrics computed but never scored — **SHIPPED (vol+drawdown axis)**
+#### 2.9 Risk metrics computed but never scored — **SHIPPED, then MEASURED and WEIGHTED 0.0 (2026-09-25)**
+
+> **Status:** the 0.10 weight below was backtested and failed: standalone XS rank IC negative
+> on both committed universes at every horizon, and dropping it improved the composite's IC
+> in all 8 universe×horizon cells (none significant). `weights.risk` is now `0.0`; the
+> sub-score is still computed and displayed. `audits/2026-09-25-risk-tilt-disable.md`.
+
 `realized_vol` and `max_drawdown` are bridged into `StockMetrics` (`bridge.py:91-92`) and
 were explicitly marked unscored; `beta` lives in `Profile` and isn't mapped. There was no
 risk overlay and no risk-adjusted ranking.

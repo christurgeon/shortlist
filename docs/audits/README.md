@@ -20,6 +20,23 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **The `risk` tilt is weighted 0.0 — measured 2026-09-25** — its standalone XS rank IC is
+  NEGATIVE on both committed universes at every horizon (large cap t −1.1 to −1.9, small/mid
+  −0.4 to −1.1). Removing it raised the composite's XS
+  IC in all 8 universe×horizon cells, but the paired gain is **not significant** (large cap
+  t 1.0–1.8, small/mid ~0) — so the verdict rests on the leg failing its own bar, the accruals
+  precedent, not on a better composite. The sub-score is still computed and displayed: `0.0`,
+  not a deleted key, which would hide it. **`moat` is also negative on both universes** and
+  was kept: the rule applied is NOT "negative sign means disable" — risk's large-cap IC is
+  5-6x moat's, and moat describes what the funnel screens for while risk was a tilt pending
+  validation. That second reason is a judgement; the note says so. **Survivorship bias works
+  against both legs** (dead names were high-vol and low-moat), so read the result as "not
+  demonstrated on this data", not "low vol underperforms". Reopen only on a survivorship-free
+  universe. Measured
+  in the same run and NOT acted on: momentum rebuilt from the residual leg alone beats the
+  shipped momentum axis on small/mid (paired t 1.3–1.5 at h≤6) but not on large cap, so
+  momentum is unchanged; and `pe_vs_history` changes sign between universes.
+  `2026-09-25-risk-tilt-disable.md`.
 - **An adverse-controls `ScoreCard` flag costs 22-56% of a `/screen` — NO-GO, measured
   2026-09-07** — `detect()` is 0.019s/ticker and was never the cost; the whole-document
   fetch is. Measured against a real 10-ticker `/screen` (warm baseline **120.2s**, cold
@@ -250,15 +267,13 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Argued by an external review, recorded but NOT endorsed
 
-The 2026-08-11 review of `/deep` (see §2 of `TODO.md` for the open half). These four are
-positions this repo has considered and declined; each conflicts with a committed rule or
-restates something already recorded.
+The 2026-08-11 review of `/deep` (see §2 of `TODO.md` for the open half). These four were
+positions this repo considered and declined at the time; each conflicted with a committed rule or
+restated something already recorded. One has since been settled by measurement.
 
-- **"Split risk out of the composite."** `weights.risk: 0.10` is the *shipped* design of
-  `docs/ASSESSMENT_GAPS.md` §2.9, deliberately a tilt. The review's point (low trailing vol is
-  a preference, not an expected-return claim) is fair as a **labelling/display** question —
-  expected-return evidence vs fundamental risk vs market exposure, shown separately. Changing
-  the composite is a scoring change and needs evidence, not an argument.
+- **"Split risk out of the composite."** Declined here on 2026-08-11 because it was an
+  argument, not evidence. **The evidence arrived 2026-09-25 and the review was right**: see
+  the register entry "The `risk` tilt is weighted 0.0" above.
 - **"Disable `upside_to_target`."** Already recorded at
   `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §Quick wins #1 (Brav & Lehavy: the *level* is
   negatively related to realised returns; the *revision* predicts). The mechanical obstacle is
@@ -288,6 +303,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-09-25 | `2026-09-25-risk-tilt-disable.md` — risk weight 0.10 -> 0.0 | verdict |
 | 2026-08-25 | `2026-08-25-options-line-destination-verdict.md` — 0 of 3 -> 3 of 3 | verdict |
 | 2026-08-25 | `2026-08-25-options-line-destination-prereg.md` | pre-registration |
 | 2026-08-24 | `2026-08-24-options-surface-design.md` — options surface as a `/deep` line | design + verdict |

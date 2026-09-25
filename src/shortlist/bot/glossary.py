@@ -159,14 +159,14 @@ GLOSSARY: list[Entry] = [
           "this score, never lower it; 10b5-1 planned sells are forgiven."),
     Entry("risk", "Sub-scores", ("risk score",),
           "0–100, higher = calmer: inverted realized volatility and max "
-          "drawdown. A composite-only tilt toward names that hurt less to "
-          "hold — but trailing risk peaks at bottoms, so it can be "
-          "anti-predictive at turning points. Deliberately excluded from "
-          "the confidence/scored bookkeeping."),
+          "drawdown. Shown for context only: it carries zero composite "
+          "weight, because calmer names did NOT outperform in backtests on "
+          "either universe. Read it as how much a name hurts to hold, not "
+          "as a reason to buy."),
     Entry("composite", "Sub-scores", ("score", "overall score"),
-          "The headline 0–100 number: a weighted blend of the seven "
-          "sub-scores (quality, moat, growth, value, momentum, insider, "
-          "risk). Weights are ratios — only their proportions matter. When "
+          "The headline 0–100 number: a weighted blend of six "
+          "sub-scores (quality, moat, growth, value, momentum, insider); "
+          "risk is shown but weighted zero. Weights are ratios — only their proportions matter. When "
           "a sub-score has no inputs its weight is redistributed across the "
           "rest, never silently zeroed, so a thin name isn't quietly "
           "dragged down. Rank with it, but read gates/flags/confidence "

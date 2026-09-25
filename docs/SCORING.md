@@ -20,16 +20,18 @@ band in `config.yaml`, so tuning never requires a code change.
 | **Value** | 0.22 | FCF yield, P/E vs own 5y median, upside to analyst target, PEG |
 | **Momentum** | 0.08 | Price vs 200DMA, 6m relative strength vs SPY, estimate-revision trend, residual momentum |
 | **Insider** | 0.135 | Net Form-4 flow (scaled by market cap) + insider sentiment |
-| **Risk** | 0.10 | Realized volatility + max drawdown, both inverted (safer scores higher) |
+| **Risk** | 0.0 | Realized volatility + max drawdown, both inverted (safer scores higher) — **displayed, not weighted** |
 
 Notes that matter:
 
 - **`roic` is a `moat` leg only** — it is not part of quality.
 - **Value survives FMP gating.** FCF yield and P/E-vs-history are recoverable from free EDGAR
   + Yahoo data; only analyst-target upside and PEG genuinely require FMP.
-- **Risk is a composite-only tilt.** It is sector-neutral, never masked, and excluded from
-  `confidence`. It is also an unfitted prior — trailing vol and drawdown peak at the bottom
-  and can be anti-predictive at turning points. Backtest before trusting it.
+- **Risk is displayed, not weighted.** The sub-score is still computed and shown (report, CSV,
+  `/deep`), but `weights.risk` is `0.0`: its standalone cross-sectional rank IC was negative on
+  both committed universes at every horizon
+  ([`audits/2026-09-25`](audits/2026-09-25-risk-tilt-disable.md)). It stays sector-neutral,
+  never masked, and excluded from `confidence`.
 
 ## The composite
 

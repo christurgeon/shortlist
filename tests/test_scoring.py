@@ -821,22 +821,23 @@ def test_no_keyerror_on_config_without_risk():
     assert card.risk is None
 
 
-def test_shipped_config_activates_risk():
+def test_shipped_config_displays_risk_without_weighting_it():
+    # risk is still computed and shown, but carries no composite weight: its standalone
+    # XS rank IC was negative on both committed universes at every horizon
+    # (docs/audits/2026-09-25-risk-tilt-disable.md).
     cfg = yaml.safe_load((Path(__file__).parent.parent / "config.yaml").read_text())
     w = cfg["weights"]
-    assert w["risk"] == 0.10
-    # The value/momentum split intentionally lifts the price/value bloc to 0.30
-    # (value 0.22 + momentum 0.08) vs the old opportunity 0.27, so the weights no
-    # longer sum to 1.0. That is cosmetic: the composite is a normalized weighted
-    # average, so only ratios matter (spec 2026-06-02 §3.1). Pin the new schema.
+    assert w["risk"] == 0.0
     assert "opportunity" not in w
     assert (w["value"], w["momentum"]) == (0.22, 0.08)
-    assert abs(sum(w.values()) - 1.03) < 1e-9
     t = cfg["thresholds"]
     assert t["realized_vol"] == [0.45, 0.15]
     assert t["max_drawdown"] == [-0.50, -0.10]
-    m = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10)
-    assert score(m, cfg).risk == 100.0
+    safe = dataclasses.replace(metrics_all_50(), realized_vol=0.15, max_drawdown=-0.10)
+    risky = dataclasses.replace(metrics_all_50(), realized_vol=0.45, max_drawdown=-0.50)
+    assert score(safe, cfg).risk == 100.0
+    assert score(risky, cfg).risk == 0.0
+    assert score(safe, cfg).composite == score(risky, cfg).composite
 
 
 def test_csv_has_aligned_risk_column(tmp_path):
