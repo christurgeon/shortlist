@@ -594,6 +594,28 @@ def test_peg_contributes_to_value_score():
     assert value_score(StockMetrics(ticker="T", peg=1.75), t) == pytest.approx(50.0)
 
 
+@pytest.mark.parametrize("peg", [-5.9, -0.9, 0.0])
+def test_non_positive_peg_abstains_instead_of_scoring_max(peg):
+    # A PEG <= 0 means shrinking (or zero) earnings growth: the ratio is undefined as a
+    # "growth at a discount" measure. On the inverted band it would clamp to 100 —
+    # the best possible PEG — so it must abstain (excluded, never zeroed).
+    t = {
+        "peg": [3.0, 0.5],
+        "upside_to_target": [0.0, 1.0],
+        "fcf_yield": [0.0, 1.0],
+        "pe_vs_history": [0.0, 1.0],
+    }
+    assert value_score(StockMetrics(ticker="T", peg=peg), t) is None
+    assert value_score(StockMetrics(ticker="T", peg=peg, fcf_yield=0.5), t) == pytest.approx(50.0)
+
+
+def test_non_positive_peg_abstains_on_the_production_path():
+    base = score(metrics_all_50(), CONFIG)
+    neg = score(dataclasses.replace(metrics_all_50(), peg=-5.9), CONFIG)
+    assert neg.value == base.value
+    assert neg.composite == base.composite
+
+
 # --- integration: real config.yaml + mock provider -----------------------
 
 def test_score_runs_against_shipped_config_and_mock_data():

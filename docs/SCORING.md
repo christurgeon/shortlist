@@ -25,6 +25,8 @@ band in `config.yaml`, so tuning never requires a code change.
 Notes that matter:
 
 - **`roic` is a `moat` leg only** — it is not part of quality.
+- **A PEG ≤ 0 abstains.** Shrinking earnings make the ratio undefined; on the inverted band
+  it would otherwise clamp to 100, the best score the leg can give.
 - **Value survives FMP gating.** FCF yield and P/E-vs-history are recoverable from free EDGAR
   + Yahoo data; only analyst-target upside and PEG genuinely require FMP.
 - **Risk is a composite-only tilt.** It is sector-neutral, never masked, and excluded from
