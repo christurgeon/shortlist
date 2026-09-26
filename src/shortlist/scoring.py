@@ -44,6 +44,12 @@ def _norm(value: Optional[float], lo: float, hi: float) -> Optional[float]:
     return max(0.0, min(1.0, pct)) * 100.0
 
 
+def _scorable_peg(m: StockMetrics) -> Optional[float]:
+    """PEG <= 0 means shrinking (or zero) earnings growth, where the ratio is undefined.
+    The inverted band would read it as the cheapest possible growth and clamp to 100."""
+    return m.peg if m.peg is not None and m.peg > 0 else None
+
+
 def _avg(components: list[Optional[float]]) -> Optional[float]:
     present = [c for c in components if c is not None]
     return mean(present) if present else None
@@ -107,7 +113,7 @@ def value_score(m: StockMetrics, t: dict) -> Optional[float]:
         _norm(m.upside_to_target(), *t["upside_to_target"]),
         _norm(m.fcf_yield, *t["fcf_yield"]),
         _norm(m.pe_vs_history(), *t["pe_vs_history"]),
-        _norm(m.peg, *t["peg"]),
+        _norm(_scorable_peg(m), *t["peg"]),
     ])
 
 
@@ -358,7 +364,7 @@ def value_plus_evebit_score(m: StockMetrics, t: dict) -> Optional[float]:
         _norm(m.upside_to_target(), *t["upside_to_target"]),
         _norm(m.fcf_yield, *t["fcf_yield"]),
         _norm(m.pe_vs_history(), *t["pe_vs_history"]),
-        _norm(m.peg, *t["peg"]),
+        _norm(_scorable_peg(m), *t["peg"]),
     ]
     if "ebit_ev_yield" in t and m.ebit_ev_yield is not None:
         legs.append(_norm(m.ebit_ev_yield, *t["ebit_ev_yield"]))
@@ -600,7 +606,7 @@ def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     legs = [
         _Leg("fcf_yield", m.fcf_yield, "fcf_yield"),
         _Leg("pe_vs_history", m.pe_vs_history(), "pe_vs_history"),
-        _Leg("peg", m.peg, "peg"),
+        _Leg("peg", _scorable_peg(m), "peg"),
     ]
     # Opt-OUT (see _upside_to_target_on): ON unless config disables it, and inserted at
     # the front so the leg ORDER is unchanged from before the knob existed — _eval_subscore
