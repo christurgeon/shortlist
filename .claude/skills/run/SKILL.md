@@ -159,9 +159,9 @@ Either way the data is missing because of throttling, **not** per-symbol gating,
 | Value | 22% | upside to analyst target + FCF yield + P/E vs own 5y median + PEG |
 | Momentum | 8% | price vs 200DMA + 6m relative strength + EPS revision |
 | Insider | 13.5% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
-| Risk | 10% | Realized volatility + max drawdown (both inverted — safer scores higher) |
+| Risk | 0% | Realized volatility + max drawdown (both inverted — safer scores higher); displayed, not weighted |
 
-`value` and `momentum` are weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only and **not** fed into the composite. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. The **`risk`** axis is a composite-only tilt — it feeds the weighted blend but is excluded from `confidence`/`scored`, and its weight is an unfitted prior (trailing vol/drawdown can be anti-predictive at turning points). All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
+`value` and `momentum` are weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only and **not** fed into the composite. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. The **`risk`** axis (inverted vol/drawdown) is shown for context but ships at weight `0.0` — it measured anti-predictive on both backtest universes, so do not narrate a high risk score as a reason to buy. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
 
 ---
 

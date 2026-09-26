@@ -812,6 +812,9 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     # is a normalized weighted average (num/den over present parts), so risk's
     # presence/absence only re-normalizes over present components — absolute weight
     # magnitudes are cosmetic and only ratios matter. See docs/ASSESSMENT_GAPS.md.
+    # Shipped at weight 0.0: computed and displayed, never moving the composite
+    # (docs/audits/2026-09-25-risk-tilt-disable.md). A risk-only card then has den == 0
+    # and posts 0.0, which min_composite_components already marks unscored.
     risk_on = ("risk" in w) and ("realized_vol" in t) and ("max_drawdown" in t)
     ri = risk_score(m, t) if risk_on else None
 

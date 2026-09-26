@@ -1,0 +1,530 @@
+{
+ "universe": "smallmid",
+ "universe_n": 148,
+ "price_asof": "2026-09-25",
+ "xs_ic": {
+  "h1 comp_cur": {
+   "n": 174,
+   "mean": 0.0063,
+   "t": 0.62,
+   "hit": 0.517
+  },
+  "h1 comp_cur_r": {
+   "n": 174,
+   "mean": 0.0069,
+   "t": 0.69,
+   "hit": 0.494
+  },
+  "h1 comp_equal": {
+   "n": 174,
+   "mean": 0.0025,
+   "t": 0.22,
+   "hit": 0.511
+  },
+  "h1 comp_fund": {
+   "n": 174,
+   "mean": 0.0085,
+   "t": 0.91,
+   "hit": 0.506
+  },
+  "h1 comp_lit": {
+   "n": 174,
+   "mean": 0.01,
+   "t": 1.03,
+   "hit": 0.54
+  },
+  "h1 comp_no_risk": {
+   "n": 174,
+   "mean": 0.0079,
+   "t": 0.85,
+   "hit": 0.511
+  },
+  "h1 comp_no_risk_r": {
+   "n": 174,
+   "mean": 0.0086,
+   "t": 0.91,
+   "hit": 0.506
+  },
+  "h1 growth": {
+   "n": 174,
+   "mean": 0.0159,
+   "t": 1.58,
+   "hit": 0.575
+  },
+  "h1 moat": {
+   "n": 174,
+   "mean": -0.0088,
+   "t": -0.66,
+   "hit": 0.466
+  },
+  "h1 momentum": {
+   "n": 174,
+   "mean": -0.0089,
+   "t": -0.69,
+   "hit": 0.511
+  },
+  "h1 momentum_r": {
+   "n": 174,
+   "mean": 0.0136,
+   "t": 1.26,
+   "hit": 0.569
+  },
+  "h1 quality": {
+   "n": 174,
+   "mean": -0.0083,
+   "t": -0.91,
+   "hit": 0.477
+  },
+  "h1 risk": {
+   "n": 174,
+   "mean": -0.017,
+   "t": -1.12,
+   "hit": 0.494
+  },
+  "h1 risk_dd": {
+   "n": 174,
+   "mean": -0.0157,
+   "t": -1.06,
+   "hit": 0.489
+  },
+  "h1 risk_vol": {
+   "n": 174,
+   "mean": -0.0125,
+   "t": -0.89,
+   "hit": 0.489
+  },
+  "h1 value": {
+   "n": 174,
+   "mean": 0.015,
+   "t": 1.39,
+   "hit": 0.511
+  },
+  "h3 comp_cur": {
+   "n": 57,
+   "mean": 0.0141,
+   "t": 1.01,
+   "hit": 0.561
+  },
+  "h3 comp_cur_r": {
+   "n": 57,
+   "mean": 0.0175,
+   "t": 1.2,
+   "hit": 0.579
+  },
+  "h3 comp_equal": {
+   "n": 57,
+   "mean": 0.0054,
+   "t": 0.35,
+   "hit": 0.526
+  },
+  "h3 comp_fund": {
+   "n": 57,
+   "mean": 0.0202,
+   "t": 1.4,
+   "hit": 0.596
+  },
+  "h3 comp_lit": {
+   "n": 57,
+   "mean": 0.0161,
+   "t": 1.17,
+   "hit": 0.561
+  },
+  "h3 comp_no_risk": {
+   "n": 57,
+   "mean": 0.0167,
+   "t": 1.23,
+   "hit": 0.561
+  },
+  "h3 comp_no_risk_r": {
+   "n": 57,
+   "mean": 0.0206,
+   "t": 1.42,
+   "hit": 0.579
+  },
+  "h3 growth": {
+   "n": 57,
+   "mean": 0.025,
+   "t": 1.52,
+   "hit": 0.579
+  },
+  "h3 moat": {
+   "n": 57,
+   "mean": -0.009,
+   "t": -0.39,
+   "hit": 0.526
+  },
+  "h3 momentum": {
+   "n": 57,
+   "mean": -0.0201,
+   "t": -0.89,
+   "hit": 0.421
+  },
+  "h3 momentum_r": {
+   "n": 57,
+   "mean": 0.0273,
+   "t": 1.37,
+   "hit": 0.561
+  },
+  "h3 quality": {
+   "n": 57,
+   "mean": -0.01,
+   "t": -0.62,
+   "hit": 0.421
+  },
+  "h3 risk": {
+   "n": 57,
+   "mean": -0.0248,
+   "t": -0.94,
+   "hit": 0.439
+  },
+  "h3 risk_dd": {
+   "n": 57,
+   "mean": -0.0235,
+   "t": -0.89,
+   "hit": 0.421
+  },
+  "h3 risk_vol": {
+   "n": 57,
+   "mean": -0.0198,
+   "t": -0.83,
+   "hit": 0.404
+  },
+  "h3 value": {
+   "n": 57,
+   "mean": 0.0301,
+   "t": 1.67,
+   "hit": 0.649
+  },
+  "h6 comp_cur": {
+   "n": 28,
+   "mean": 0.0202,
+   "t": 0.98,
+   "hit": 0.571
+  },
+  "h6 comp_cur_r": {
+   "n": 28,
+   "mean": 0.0214,
+   "t": 1.04,
+   "hit": 0.643
+  },
+  "h6 comp_equal": {
+   "n": 28,
+   "mean": 0.0149,
+   "t": 0.63,
+   "hit": 0.536
+  },
+  "h6 comp_fund": {
+   "n": 28,
+   "mean": 0.022,
+   "t": 1.13,
+   "hit": 0.643
+  },
+  "h6 comp_lit": {
+   "n": 28,
+   "mean": 0.0235,
+   "t": 1.18,
+   "hit": 0.679
+  },
+  "h6 comp_no_risk": {
+   "n": 28,
+   "mean": 0.0208,
+   "t": 1.11,
+   "hit": 0.643
+  },
+  "h6 comp_no_risk_r": {
+   "n": 28,
+   "mean": 0.0228,
+   "t": 1.17,
+   "hit": 0.643
+  },
+  "h6 growth": {
+   "n": 28,
+   "mean": 0.0389,
+   "t": 1.54,
+   "hit": 0.643
+  },
+  "h6 moat": {
+   "n": 28,
+   "mean": -0.0224,
+   "t": -0.7,
+   "hit": 0.464
+  },
+  "h6 momentum": {
+   "n": 28,
+   "mean": -0.0067,
+   "t": -0.22,
+   "hit": 0.536
+  },
+  "h6 momentum_r": {
+   "n": 28,
+   "mean": 0.06,
+   "t": 2.17,
+   "hit": 0.714
+  },
+  "h6 quality": {
+   "n": 28,
+   "mean": -0.0106,
+   "t": -0.5,
+   "hit": 0.464
+  },
+  "h6 risk": {
+   "n": 28,
+   "mean": -0.0232,
+   "t": -0.56,
+   "hit": 0.5
+  },
+  "h6 risk_dd": {
+   "n": 28,
+   "mean": -0.025,
+   "t": -0.62,
+   "hit": 0.429
+  },
+  "h6 risk_vol": {
+   "n": 28,
+   "mean": -0.0154,
+   "t": -0.43,
+   "hit": 0.5
+  },
+  "h6 value": {
+   "n": 28,
+   "mean": 0.0353,
+   "t": 1.65,
+   "hit": 0.571
+  },
+  "h12 comp_cur": {
+   "n": 14,
+   "mean": 0.0344,
+   "t": 1.15,
+   "hit": 0.643
+  },
+  "h12 comp_cur_r": {
+   "n": 14,
+   "mean": 0.04,
+   "t": 1.36,
+   "hit": 0.714
+  },
+  "h12 comp_equal": {
+   "n": 14,
+   "mean": 0.0222,
+   "t": 0.61,
+   "hit": 0.714
+  },
+  "h12 comp_fund": {
+   "n": 14,
+   "mean": 0.0392,
+   "t": 1.41,
+   "hit": 0.786
+  },
+  "h12 comp_lit": {
+   "n": 14,
+   "mean": 0.0345,
+   "t": 1.25,
+   "hit": 0.786
+  },
+  "h12 comp_no_risk": {
+   "n": 14,
+   "mean": 0.0354,
+   "t": 1.3,
+   "hit": 0.786
+  },
+  "h12 comp_no_risk_r": {
+   "n": 14,
+   "mean": 0.0399,
+   "t": 1.44,
+   "hit": 0.786
+  },
+  "h12 growth": {
+   "n": 14,
+   "mean": 0.0439,
+   "t": 1.1,
+   "hit": 0.5
+  },
+  "h12 moat": {
+   "n": 14,
+   "mean": -0.0356,
+   "t": -0.69,
+   "hit": 0.429
+  },
+  "h12 momentum": {
+   "n": 14,
+   "mean": -0.0319,
+   "t": -0.8,
+   "hit": 0.429
+  },
+  "h12 momentum_r": {
+   "n": 14,
+   "mean": 0.0882,
+   "t": 2.05,
+   "hit": 0.786
+  },
+  "h12 quality": {
+   "n": 14,
+   "mean": 0.0065,
+   "t": 0.2,
+   "hit": 0.5
+  },
+  "h12 risk": {
+   "n": 14,
+   "mean": -0.0267,
+   "t": -0.42,
+   "hit": 0.571
+  },
+  "h12 risk_dd": {
+   "n": 14,
+   "mean": -0.036,
+   "t": -0.6,
+   "hit": 0.5
+  },
+  "h12 risk_vol": {
+   "n": 14,
+   "mean": -0.0077,
+   "t": -0.14,
+   "hit": 0.571
+  },
+  "h12 value": {
+   "n": 14,
+   "mean": 0.058,
+   "t": 1.96,
+   "hit": 0.643
+  }
+ },
+ "paired": {
+  "h1 comp_no_risk - comp_cur": {
+   "n": 174,
+   "mean": 0.0017,
+   "t": 0.56,
+   "hit": 0.489
+  },
+  "h1 comp_cur_r - comp_cur": {
+   "n": 174,
+   "mean": 0.0006,
+   "t": 0.33,
+   "hit": 0.5
+  },
+  "h1 comp_no_risk_r - comp_no_risk": {
+   "n": 174,
+   "mean": 0.0007,
+   "t": 0.36,
+   "hit": 0.494
+  },
+  "h1 comp_fund - comp_no_risk": {
+   "n": 174,
+   "mean": 0.0006,
+   "t": 0.32,
+   "hit": 0.5
+  },
+  "h1 momentum_r - momentum": {
+   "n": 174,
+   "mean": 0.0225,
+   "t": 1.26,
+   "hit": 0.534
+  },
+  "h3 comp_no_risk - comp_cur": {
+   "n": 57,
+   "mean": 0.0026,
+   "t": 0.5,
+   "hit": 0.544
+  },
+  "h3 comp_cur_r - comp_cur": {
+   "n": 57,
+   "mean": 0.0034,
+   "t": 1.0,
+   "hit": 0.526
+  },
+  "h3 comp_no_risk_r - comp_no_risk": {
+   "n": 57,
+   "mean": 0.0038,
+   "t": 1.19,
+   "hit": 0.561
+  },
+  "h3 comp_fund - comp_no_risk": {
+   "n": 57,
+   "mean": 0.0035,
+   "t": 1.06,
+   "hit": 0.561
+  },
+  "h3 momentum_r - momentum": {
+   "n": 57,
+   "mean": 0.0473,
+   "t": 1.49,
+   "hit": 0.544
+  },
+  "h6 comp_no_risk - comp_cur": {
+   "n": 28,
+   "mean": 0.0005,
+   "t": 0.08,
+   "hit": 0.607
+  },
+  "h6 comp_cur_r - comp_cur": {
+   "n": 28,
+   "mean": 0.0011,
+   "t": 0.28,
+   "hit": 0.429
+  },
+  "h6 comp_no_risk_r - comp_no_risk": {
+   "n": 28,
+   "mean": 0.0021,
+   "t": 0.44,
+   "hit": 0.536
+  },
+  "h6 comp_fund - comp_no_risk": {
+   "n": 28,
+   "mean": 0.0012,
+   "t": 0.26,
+   "hit": 0.536
+  },
+  "h6 momentum_r - momentum": {
+   "n": 28,
+   "mean": 0.0667,
+   "t": 1.46,
+   "hit": 0.571
+  },
+  "h12 comp_no_risk - comp_cur": {
+   "n": 14,
+   "mean": 0.0009,
+   "t": 0.09,
+   "hit": 0.571
+  },
+  "h12 comp_cur_r - comp_cur": {
+   "n": 14,
+   "mean": 0.0055,
+   "t": 1.29,
+   "hit": 0.571
+  },
+  "h12 comp_no_risk_r - comp_no_risk": {
+   "n": 14,
+   "mean": 0.0045,
+   "t": 0.9,
+   "hit": 0.643
+  },
+  "h12 comp_fund - comp_no_risk": {
+   "n": 14,
+   "mean": 0.0039,
+   "t": 0.75,
+   "hit": 0.571
+  },
+  "h12 momentum_r - momentum": {
+   "n": 14,
+   "mean": 0.1202,
+   "t": 1.9,
+   "hit": 0.643
+  }
+ },
+ "axis_corr": {
+  "quality~moat": 0.0463,
+  "quality~growth": 0.1607,
+  "quality~value": 0.2859,
+  "quality~momentum": 0.0067,
+  "quality~risk": 0.1546,
+  "moat~growth": 0.2218,
+  "moat~value": -0.0495,
+  "moat~momentum": -0.0387,
+  "moat~risk": 0.0203,
+  "growth~value": 0.1466,
+  "growth~momentum": 0.0172,
+  "growth~risk": -0.1663,
+  "value~momentum": -0.208,
+  "value~risk": -0.0038,
+  "momentum~risk": 0.2407
+ }
+}

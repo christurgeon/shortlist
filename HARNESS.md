@@ -183,9 +183,9 @@ from the 5y `Statements` via the shared `shortlist.stats` helpers (also used by 
 XBRL backtest): `gross_margin_stability`, `fcf_positive` (most-recent free cash flow),
 and the **growth** legs `revenue_cagr` / `fcf_cagr` / `eps_cagr` (net-income proxy)
 / `revenue_growth_persistence`. It surfaces Yahoo's `realized_vol` and
-`max_drawdown`, which now feed the scored **7th risk axis** — a composite-only
-tilt (sector-neutral, deliberately excluded from `confidence`/`scored`; see
-`docs/SCORING.md` → The seven axes).
+`max_drawdown`, which feed the **risk** sub-score — displayed on every card but
+weighted 0.0 in the composite since 2026-09-25 (sector-neutral, excluded from
+`confidence`/`scored`; see `docs/SCORING.md` → The seven axes).
 
 `FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge
 maps `pe_median_5y` (`value` runs on the full 4 legs, via the shared

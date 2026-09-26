@@ -1,0 +1,1161 @@
+{
+  "universe": [
+    "ABCB",
+    "ADUS",
+    "AGCO",
+    "AGO",
+    "AGYS",
+    "AIN",
+    "AIT",
+    "ALG",
+    "AMBA",
+    "AMPH",
+    "ATKR",
+    "ATRC",
+    "AUB",
+    "BANF",
+    "BCC",
+    "BL",
+    "BOOT",
+    "CALM",
+    "CALX",
+    "CASH",
+    "CCS",
+    "CENT",
+    "CEVA",
+    "CHRD",
+    "CMP",
+    "CNMD",
+    "CNX",
+    "COHU",
+    "COKE",
+    "COLL",
+    "CORT",
+    "CRI",
+    "CRK",
+    "CRVL",
+    "CSW",
+    "CVBF",
+    "CVCO",
+    "CWH",
+    "DBI",
+    "DIOD",
+    "DORM",
+    "DY",
+    "ETD",
+    "EXTR",
+    "FBNC",
+    "FELE",
+    "FFBC",
+    "FFIN",
+    "FIBK",
+    "FORM",
+    "FOXF",
+    "GBX",
+    "GIII",
+    "GRBK",
+    "GVA",
+    "HAE",
+    "HAYW",
+    "HELE",
+    "HLIO",
+    "HMN",
+    "HNI",
+    "HP",
+    "HRMY",
+    "HSTM",
+    "HWKN",
+    "IART",
+    "INDB",
+    "IOSP",
+    "JBSS",
+    "JJSF",
+    "KAI",
+    "KMPR",
+    "KMT",
+    "KOP",
+    "LCII",
+    "LKFN",
+    "LMAT",
+    "LZB",
+    "MED",
+    "MGY",
+    "MHO",
+    "MLI",
+    "MMSI",
+    "MNRO",
+    "MTDR",
+    "MTRN",
+    "MYGN",
+    "MYRG",
+    "MZTI",
+    "NBR",
+    "NBTB",
+    "NEOG",
+    "NGVT",
+    "NMIH",
+    "NOG",
+    "NSSC",
+    "NTCT",
+    "NWBI",
+    "OSIS",
+    "OXM",
+    "PATK",
+    "PCRX",
+    "PFS",
+    "PLAB",
+    "PLMR",
+    "POST",
+    "POWI",
+    "POWL",
+    "PRGO",
+    "PRGS",
+    "PRIM",
+    "PTEN",
+    "RES",
+    "RPD",
+    "SAFT",
+    "SBCF",
+    "SCL",
+    "SHOO",
+    "SITM",
+    "SLAB",
+    "SLVM",
+    "SM",
+    "SMP",
+    "SMPL",
+    "SPSC",
+    "STBA",
+    "SUPN",
+    "SXT",
+    "TALO",
+    "TENB",
+    "THG",
+    "TRMK",
+    "TRN",
+    "TROX",
+    "UCB",
+    "UCTT",
+    "UFPT",
+    "UNFI",
+    "USNA",
+    "UTMD",
+    "VCEL",
+    "VRNS",
+    "WABC",
+    "WAFD",
+    "WNC",
+    "WOR",
+    "WSFS",
+    "WTS"
+  ],
+  "universe_size": 148,
+  "price_asof": "2026-09-25",
+  "horizons": [
+    1,
+    3,
+    6,
+    12
+  ],
+  "return_mode": "excess",
+  "caveats": [
+    "Universe is currently-listed names (survivorship bias): realized spreads are an UPPER BOUND. Read this as relative signal validation, not tradeable PnL.",
+    "Gross signal IC \u2014 not net of transaction costs.",
+    "Forward returns are excess (over SPY).",
+    "Adjusted close is total-return adjusted (splits + dividends).",
+    "Time-series IC t-stat assumes per-name independence (names share factor exposure over common windows) \u2014 it is anti-conservative; weight the mean IC and hit-rate over the TS t-stat.",
+    "Quantile spread pools all (date, name) rows into one sort, not a time-averaged cross-sectional spread."
+  ],
+  "signals": [
+    {
+      "signal": "max_daily_return",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.0072,
+        "std": 0.063,
+        "icir": -0.1135,
+        "t_stat": -1.381,
+        "hit_rate": 0.446,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0113,
+        "std": 0.1506,
+        "icir": 0.0753,
+        "t_stat": 1.511,
+        "hit_rate": 0.553,
+        "n": 403
+      },
+      "spread": {
+        "buckets": [
+          0.0402,
+          0.0058,
+          0.002,
+          0.0022,
+          0.0004
+        ],
+        "spread": -0.0397,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 46076,
+      "breadth": 114.3,
+      "notes": []
+    },
+    {
+      "signal": "momentum",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.0122,
+        "std": 0.0641,
+        "icir": -0.1896,
+        "t_stat": -2.307,
+        "hit_rate": 0.419,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0158,
+        "std": 0.161,
+        "icir": -0.0982,
+        "t_stat": -1.971,
+        "hit_rate": 0.457,
+        "n": 403
+      },
+      "spread": {
+        "buckets": [
+          0.0375,
+          0.0011,
+          0.0006,
+          0.0041,
+          0.0074
+        ],
+        "spread": -0.0301,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 46076,
+      "breadth": 114.3,
+      "notes": []
+    },
+    {
+      "signal": "pct_to_52w_high",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.0193,
+        "std": 0.0639,
+        "icir": -0.3021,
+        "t_stat": -3.676,
+        "hit_rate": 0.318,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0111,
+        "std": 0.1698,
+        "icir": -0.0654,
+        "t_stat": -1.312,
+        "hit_rate": 0.484,
+        "n": 403
+      },
+      "spread": {
+        "buckets": [
+          -0.0165,
+          0.0587,
+          0.0031,
+          0.003,
+          0.0023
+        ],
+        "spread": 0.0188,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 46076,
+      "breadth": 114.3,
+      "notes": []
+    },
+    {
+      "signal": "price_vs_200dma",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.0144,
+        "std": 0.0632,
+        "icir": -0.2282,
+        "t_stat": -2.776,
+        "hit_rate": 0.378,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0132,
+        "std": 0.1594,
+        "icir": -0.0826,
+        "t_stat": -1.659,
+        "hit_rate": 0.476,
+        "n": 403
+      },
+      "spread": {
+        "buckets": [
+          -0.003,
+          0.0413,
+          0.0011,
+          0.0032,
+          0.008
+        ],
+        "spread": 0.011,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 46076,
+      "breadth": 114.3,
+      "notes": []
+    },
+    {
+      "signal": "rel_strength_6m",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.009,
+        "std": 0.0649,
+        "icir": -0.1383,
+        "t_stat": -1.682,
+        "hit_rate": 0.459,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0161,
+        "std": 0.1563,
+        "icir": -0.1031,
+        "t_stat": -2.054,
+        "hit_rate": 0.448,
+        "n": 397
+      },
+      "spread": {
+        "buckets": [
+          -0.0385,
+          0.0769,
+          0.0016,
+          0.0017,
+          0.0088
+        ],
+        "spread": 0.0473,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 45707,
+      "breadth": 115.1,
+      "notes": []
+    },
+    {
+      "signal": "residual_momentum",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": 0.0151,
+        "std": 0.058,
+        "icir": 0.2608,
+        "t_stat": 3.173,
+        "hit_rate": 0.608,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0238,
+        "std": 0.1377,
+        "icir": 0.1727,
+        "t_stat": 3.44,
+        "hit_rate": 0.552,
+        "n": 397
+      },
+      "spread": {
+        "buckets": [
+          0.0026,
+          0.0059,
+          0.0058,
+          0.0054,
+          0.0307
+        ],
+        "spread": 0.0281,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 45707,
+      "breadth": 115.1,
+      "notes": []
+    },
+    {
+      "signal": "vol_scaled_momentum",
+      "horizon": 1,
+      "ts_ic": {
+        "mean": -0.0122,
+        "std": 0.0594,
+        "icir": -0.206,
+        "t_stat": -2.506,
+        "hit_rate": 0.399,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0029,
+        "std": 0.1476,
+        "icir": 0.0197,
+        "t_stat": 0.395,
+        "hit_rate": 0.524,
+        "n": 403
+      },
+      "spread": {
+        "buckets": [
+          -0.08,
+          0.1211,
+          0.0014,
+          0.0043,
+          0.0038
+        ],
+        "spread": 0.0839,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 45767,
+      "breadth": 113.6,
+      "notes": []
+    },
+    {
+      "signal": "max_daily_return",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0273,
+        "std": 0.1113,
+        "icir": -0.2456,
+        "t_stat": -2.988,
+        "hit_rate": 0.372,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0031,
+        "std": 0.1489,
+        "icir": 0.0205,
+        "t_stat": 0.237,
+        "hit_rate": 0.549,
+        "n": 133
+      },
+      "spread": {
+        "buckets": [
+          0.1517,
+          0.0187,
+          0.0096,
+          0.0037,
+          0.0002
+        ],
+        "spread": -0.1515,
+        "monotonic": true,
+        "n_buckets": 5
+      },
+      "n_obs": 15188,
+      "breadth": 114.2,
+      "notes": []
+    },
+    {
+      "signal": "momentum",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0064,
+        "std": 0.1112,
+        "icir": -0.0574,
+        "t_stat": -0.698,
+        "hit_rate": 0.453,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0154,
+        "std": 0.1565,
+        "icir": -0.0982,
+        "t_stat": -1.133,
+        "hit_rate": 0.474,
+        "n": 133
+      },
+      "spread": {
+        "buckets": [
+          0.1316,
+          0.006,
+          0.0028,
+          0.0215,
+          0.022
+        ],
+        "spread": -0.1096,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15188,
+      "breadth": 114.2,
+      "notes": []
+    },
+    {
+      "signal": "pct_to_52w_high",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0344,
+        "std": 0.1083,
+        "icir": -0.3174,
+        "t_stat": -3.862,
+        "hit_rate": 0.358,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0114,
+        "std": 0.1653,
+        "icir": -0.0692,
+        "t_stat": -0.798,
+        "hit_rate": 0.459,
+        "n": 133
+      },
+      "spread": {
+        "buckets": [
+          -0.0169,
+          0.1787,
+          0.0062,
+          0.0043,
+          0.0118
+        ],
+        "spread": 0.0287,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15188,
+      "breadth": 114.2,
+      "notes": []
+    },
+    {
+      "signal": "price_vs_200dma",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0241,
+        "std": 0.1082,
+        "icir": -0.2225,
+        "t_stat": -2.706,
+        "hit_rate": 0.358,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0189,
+        "std": 0.157,
+        "icir": -0.1205,
+        "t_stat": -1.39,
+        "hit_rate": 0.489,
+        "n": 133
+      },
+      "spread": {
+        "buckets": [
+          0.008,
+          0.1391,
+          0.0047,
+          0.0111,
+          0.021
+        ],
+        "spread": 0.013,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15188,
+      "breadth": 114.2,
+      "notes": []
+    },
+    {
+      "signal": "rel_strength_6m",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": 0.0035,
+        "std": 0.1183,
+        "icir": 0.0292,
+        "t_stat": 0.355,
+        "hit_rate": 0.486,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0149,
+        "std": 0.1548,
+        "icir": -0.096,
+        "t_stat": -1.099,
+        "hit_rate": 0.458,
+        "n": 131
+      },
+      "spread": {
+        "buckets": [
+          -0.0691,
+          0.2002,
+          0.0092,
+          0.0122,
+          0.0303
+        ],
+        "spread": 0.0994,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15065,
+      "breadth": 115.0,
+      "notes": []
+    },
+    {
+      "signal": "residual_momentum",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0001,
+        "std": 0.1134,
+        "icir": -0.0012,
+        "t_stat": -0.015,
+        "hit_rate": 0.486,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0118,
+        "std": 0.1362,
+        "icir": 0.087,
+        "t_stat": 0.996,
+        "hit_rate": 0.489,
+        "n": 131
+      },
+      "spread": {
+        "buckets": [
+          0.0185,
+          0.0182,
+          0.0177,
+          0.0152,
+          0.1132
+        ],
+        "spread": 0.0946,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15065,
+      "breadth": 115.0,
+      "notes": []
+    },
+    {
+      "signal": "vol_scaled_momentum",
+      "horizon": 3,
+      "ts_ic": {
+        "mean": -0.0407,
+        "std": 0.0988,
+        "icir": -0.4117,
+        "t_stat": -5.008,
+        "hit_rate": 0.372,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0086,
+        "std": 0.1526,
+        "icir": -0.0562,
+        "t_stat": -0.648,
+        "hit_rate": 0.436,
+        "n": 133
+      },
+      "spread": {
+        "buckets": [
+          -0.1305,
+          0.2903,
+          0.0072,
+          0.0096,
+          0.0071
+        ],
+        "spread": 0.1376,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 15085,
+      "breadth": 113.4,
+      "notes": []
+    },
+    {
+      "signal": "max_daily_return",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": -0.0382,
+        "std": 0.1757,
+        "icir": -0.2174,
+        "t_stat": -2.644,
+        "hit_rate": 0.412,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0088,
+        "std": 0.1615,
+        "icir": 0.0547,
+        "t_stat": 0.444,
+        "hit_rate": 0.53,
+        "n": 66
+      },
+      "spread": {
+        "buckets": [
+          0.4725,
+          0.0376,
+          0.0259,
+          0.0061,
+          0.0012
+        ],
+        "spread": -0.4713,
+        "monotonic": true,
+        "n_buckets": 5
+      },
+      "n_obs": 7501,
+      "breadth": 113.7,
+      "notes": []
+    },
+    {
+      "signal": "momentum",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": 0.0128,
+        "std": 0.1548,
+        "icir": 0.0827,
+        "t_stat": 1.006,
+        "hit_rate": 0.514,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0105,
+        "std": 0.1607,
+        "icir": -0.0655,
+        "t_stat": -0.532,
+        "hit_rate": 0.53,
+        "n": 66
+      },
+      "spread": {
+        "buckets": [
+          0.4278,
+          0.0087,
+          0.0133,
+          0.0465,
+          0.0472
+        ],
+        "spread": -0.3807,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7501,
+      "breadth": 113.7,
+      "notes": []
+    },
+    {
+      "signal": "pct_to_52w_high",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": -0.0475,
+        "std": 0.1534,
+        "icir": -0.3097,
+        "t_stat": -3.768,
+        "hit_rate": 0.439,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0171,
+        "std": 0.1818,
+        "icir": -0.0942,
+        "t_stat": -0.765,
+        "hit_rate": 0.424,
+        "n": 66
+      },
+      "spread": {
+        "buckets": [
+          -0.0418,
+          0.5283,
+          0.0252,
+          0.0108,
+          0.0209
+        ],
+        "spread": 0.0627,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7501,
+      "breadth": 113.7,
+      "notes": []
+    },
+    {
+      "signal": "price_vs_200dma",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": -0.011,
+        "std": 0.1547,
+        "icir": -0.0713,
+        "t_stat": -0.867,
+        "hit_rate": 0.486,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0191,
+        "std": 0.164,
+        "icir": -0.1163,
+        "t_stat": -0.945,
+        "hit_rate": 0.485,
+        "n": 66
+      },
+      "spread": {
+        "buckets": [
+          -0.0504,
+          0.5058,
+          0.0248,
+          0.0241,
+          0.039
+        ],
+        "spread": 0.0894,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7501,
+      "breadth": 113.7,
+      "notes": []
+    },
+    {
+      "signal": "rel_strength_6m",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": 0.0263,
+        "std": 0.1613,
+        "icir": 0.1631,
+        "t_stat": 1.984,
+        "hit_rate": 0.568,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0045,
+        "std": 0.1564,
+        "icir": -0.029,
+        "t_stat": -0.234,
+        "hit_rate": 0.538,
+        "n": 65
+      },
+      "spread": {
+        "buckets": [
+          -0.105,
+          0.5299,
+          0.021,
+          0.0335,
+          0.062
+        ],
+        "spread": 0.167,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7440,
+      "breadth": 114.5,
+      "notes": []
+    },
+    {
+      "signal": "residual_momentum",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": 0.0047,
+        "std": 0.1508,
+        "icir": 0.0311,
+        "t_stat": 0.379,
+        "hit_rate": 0.561,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0213,
+        "std": 0.1285,
+        "icir": 0.1658,
+        "t_stat": 1.337,
+        "hit_rate": 0.569,
+        "n": 65
+      },
+      "spread": {
+        "buckets": [
+          0.0318,
+          0.0305,
+          0.0311,
+          0.0439,
+          0.4042
+        ],
+        "spread": 0.3724,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7440,
+      "breadth": 114.5,
+      "notes": []
+    },
+    {
+      "signal": "vol_scaled_momentum",
+      "horizon": 6,
+      "ts_ic": {
+        "mean": -0.0464,
+        "std": 0.1506,
+        "icir": -0.3079,
+        "t_stat": -3.746,
+        "hit_rate": 0.432,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0028,
+        "std": 0.1566,
+        "icir": -0.0176,
+        "t_stat": -0.143,
+        "hit_rate": 0.515,
+        "n": 66
+      },
+      "spread": {
+        "buckets": [
+          -0.1894,
+          0.6903,
+          0.0043,
+          0.0171,
+          0.0221
+        ],
+        "spread": 0.2115,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 7441,
+      "breadth": 112.7,
+      "notes": []
+    },
+    {
+      "signal": "max_daily_return",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0916,
+        "std": 0.2684,
+        "icir": -0.3415,
+        "t_stat": -4.154,
+        "hit_rate": 0.311,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0042,
+        "std": 0.185,
+        "icir": 0.0229,
+        "t_stat": 0.132,
+        "hit_rate": 0.545,
+        "n": 33
+      },
+      "spread": {
+        "buckets": [
+          0.6738,
+          0.0552,
+          0.033,
+          -0.001,
+          -0.0049
+        ],
+        "spread": -0.6787,
+        "monotonic": true,
+        "n_buckets": 5
+      },
+      "n_obs": 3728,
+      "breadth": 113.0,
+      "notes": []
+    },
+    {
+      "signal": "momentum",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0326,
+        "std": 0.2413,
+        "icir": -0.1349,
+        "t_stat": -1.641,
+        "hit_rate": 0.405,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0234,
+        "std": 0.1645,
+        "icir": -0.1422,
+        "t_stat": -0.817,
+        "hit_rate": 0.515,
+        "n": 33
+      },
+      "spread": {
+        "buckets": [
+          0.5826,
+          0.03,
+          0.0005,
+          0.0694,
+          0.0737
+        ],
+        "spread": -0.5089,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3728,
+      "breadth": 113.0,
+      "notes": []
+    },
+    {
+      "signal": "pct_to_52w_high",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0922,
+        "std": 0.2312,
+        "icir": -0.3988,
+        "t_stat": -4.836,
+        "hit_rate": 0.32,
+        "n": 147
+      },
+      "xs_ic": {
+        "mean": -0.0169,
+        "std": 0.1903,
+        "icir": -0.0888,
+        "t_stat": -0.51,
+        "hit_rate": 0.545,
+        "n": 33
+      },
+      "spread": {
+        "buckets": [
+          0.0213,
+          0.6826,
+          0.0127,
+          0.0186,
+          0.0218
+        ],
+        "spread": 0.0005,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3728,
+      "breadth": 113.0,
+      "notes": []
+    },
+    {
+      "signal": "price_vs_200dma",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0666,
+        "std": 0.2236,
+        "icir": -0.2979,
+        "t_stat": -3.625,
+        "hit_rate": 0.345,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0288,
+        "std": 0.1646,
+        "icir": -0.1747,
+        "t_stat": -1.004,
+        "hit_rate": 0.364,
+        "n": 33
+      },
+      "spread": {
+        "buckets": [
+          0.1232,
+          0.5148,
+          0.0282,
+          0.0331,
+          0.0575
+        ],
+        "spread": -0.0657,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3728,
+      "breadth": 113.0,
+      "notes": []
+    },
+    {
+      "signal": "rel_strength_6m",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0031,
+        "std": 0.2469,
+        "icir": -0.0124,
+        "t_stat": -0.151,
+        "hit_rate": 0.507,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0179,
+        "std": 0.1673,
+        "icir": -0.1069,
+        "t_stat": -0.605,
+        "hit_rate": 0.562,
+        "n": 32
+      },
+      "spread": {
+        "buckets": [
+          -0.109,
+          0.7041,
+          0.0068,
+          0.0556,
+          0.0945
+        ],
+        "spread": 0.2035,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3667,
+      "breadth": 114.6,
+      "notes": []
+    },
+    {
+      "signal": "residual_momentum",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": 0.042,
+        "std": 0.2593,
+        "icir": 0.1618,
+        "t_stat": 1.969,
+        "hit_rate": 0.568,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": -0.0006,
+        "std": 0.1292,
+        "icir": -0.0049,
+        "t_stat": -0.028,
+        "hit_rate": 0.5,
+        "n": 32
+      },
+      "spread": {
+        "buckets": [
+          0.0864,
+          0.0975,
+          0.0632,
+          0.0916,
+          0.4141
+        ],
+        "spread": 0.3277,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3667,
+      "breadth": 114.6,
+      "notes": []
+    },
+    {
+      "signal": "vol_scaled_momentum",
+      "horizon": 12,
+      "ts_ic": {
+        "mean": -0.0684,
+        "std": 0.2337,
+        "icir": -0.2926,
+        "t_stat": -3.559,
+        "hit_rate": 0.399,
+        "n": 148
+      },
+      "xs_ic": {
+        "mean": 0.0087,
+        "std": 0.1484,
+        "icir": 0.0588,
+        "t_stat": 0.338,
+        "hit_rate": 0.485,
+        "n": 33
+      },
+      "spread": {
+        "buckets": [
+          -0.2589,
+          0.9425,
+          0.027,
+          0.0106,
+          0.0301
+        ],
+        "spread": 0.2889,
+        "monotonic": false,
+        "n_buckets": 5
+      },
+      "n_obs": 3699,
+      "breadth": 112.1,
+      "notes": []
+    }
+  ],
+  "collinearity": {
+    "residual_momentum~momentum": -0.2233,
+    "pct_to_52w_high~price_vs_200dma": 0.7381,
+    "pct_to_52w_high~rel_strength_6m": 0.6346,
+    "pct_to_52w_high~momentum": 0.7133,
+    "max_daily_return~momentum": -0.0718,
+    "vol_scaled_momentum~residual_momentum": 0.2341,
+    "vol_scaled_momentum~price_vs_200dma": 0.5221,
+    "vol_scaled_momentum~momentum": 0.52
+  }
+}

@@ -4,7 +4,7 @@
 
 **Hand it a ticker list. Get back a ranked shortlist worth your judgment.**
 
-Pulls fundamentals from FMP / Finnhub / SEC EDGAR / Yahoo, scores seven axes, and does
+Pulls fundamentals from FMP / Finnhub / SEC EDGAR / Yahoo, scores six weighted axes, and does
 the mechanical half of stock research — so your deep dive is spent on fewer, better names.
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
@@ -73,7 +73,8 @@ A missing key just skips that source with a warning, so set only what you need. 
 
 ## What it scores
 
-Seven sub-scores, each 0–100, every metric normalized over a configurable band:
+Seven sub-scores, each 0–100, every metric normalized over a configurable band. Six are
+weighted into the composite; `risk` is displayed only:
 
 | Axis | Weight | Built from |
 |---|---|---|
@@ -83,7 +84,7 @@ Seven sub-scores, each 0–100, every metric normalized over a configurable band
 | **Value** | 0.22 | FCF yield, P/E vs own 5y median, upside to target, PEG |
 | **Momentum** | 0.08 | Price vs 200DMA, 6m relative strength vs SPY, revision trend, residual momentum |
 | **Insider** | 0.135 | Net Form-4 flow scaled by market cap + insider sentiment |
-| **Risk** | 0.10 | Realized volatility + max drawdown, both inverted |
+| **Risk** | 0.0 | Realized volatility + max drawdown, both inverted — displayed, not weighted ([why](docs/audits/2026-09-25-risk-tilt-disable.md)) |
 
 **Gates** are hard filters that disqualify a name (negative FCF, sub-$300M market cap,
 over-leverage, heavy insider selling). **Flags** are advisory — `crowded_short`,

@@ -80,9 +80,8 @@ thresholds:
   # opt-in value.shareholder_yield leg below. Check collinearity vs fcf_yield.
   shareholder_yield: [-0.02, 0.10]   # -2%/yr (net issuer) -> 0 ; +10%/yr payout -> 100
 
-# A defensible prior, not a fitted result. The risk weight especially: trailing
-# vol/drawdown peak at the bottom and can be anti-predictive at turning points —
-# backtest its standalone rank IC (docs/ASSESSMENT_GAPS.md §2.1, §2.9) first.
+# A defensible prior, not a fitted result (docs/ASSESSMENT_GAPS.md §2.1). Only ratios
+# matter: the composite is a weighted average over the components present.
 weights:
   quality:      0.18
   moat:         0.18
@@ -90,7 +89,11 @@ weights:
   value:        0.22   # value-tilt: independent leg
   momentum:     0.08   # independent leg; value pulls ~3x momentum
   insider:      0.135
-  risk:         0.10   # vol/drawdown tilt; composite-only, excluded from confidence
+  # 0.0, NOT deleted: the risk sub-score is still computed and displayed (report, CSV,
+  # /deep), it just carries no composite weight. Its standalone XS rank IC was NEGATIVE
+  # on both committed universes at every horizon; deleting the key would also hide it.
+  # docs/audits/2026-09-25-risk-tilt-disable.md
+  risk:         0.0
 
 gates:
   # An INVESTABILITY MANDATE, not an alpha claim — no backtest says $300M outperforms
@@ -154,9 +157,10 @@ validity:
                                 # Lowered 0.34->0.25 for the value/momentum split: a gated financials name with
                                 # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
   min_composite_components: 1   # ALL buckets, including 'unknown'. A composite must rest on at least this many
-                                # real sub-scores. `risk` is a composite-only TILT and does not count — a card
-                                # with every component null still posts a composite from the tilt alone (BRVE,
-                                # 2026-08-10: composite 100.0, ranked #1, because it reports no debt).
+                                # real sub-scores. `risk` does not count. While risk carried weight, a card with
+                                # every component null posted a composite from risk alone (BRVE, 2026-08-10:
+                                # composite 100.0, ranked #1, because it reports no debt). At weights.risk 0.0
+                                # that card posts 0.0; the floor is what keeps it unscored either way.
                                 # Deliberately a COUNT, not a weight: a momentum-only name sits at confidence
                                 # ~0.08 and is pinned as scored, so no weight threshold separates the two
                                 # safely. Remove the key for the exact pre-2026-08-11 behaviour.
