@@ -25,8 +25,9 @@ band in `config.yaml`, so tuning never requires a code change.
 Notes that matter:
 
 - **`roic` is a `moat` leg only** — it is not part of quality.
-- **A PEG ≤ 0 abstains.** Shrinking earnings make the ratio undefined; on the inverted band
-  it would otherwise clamp to 100, the best score the leg can give.
+- **PEG scores only with a positive PEG and a positive P/E.** Shrinking earnings make PEG ≤ 0,
+  which the inverted band would clamp to 100; a loss-maker with shrinking losses makes a
+  positive PEG out of two negatives. Either way the leg abstains.
 - **Value survives FMP gating.** FCF yield and P/E-vs-history are recoverable from free EDGAR
   + Yahoo data; only analyst-target upside and PEG genuinely require FMP.
 - **Risk is displayed, not weighted.** The sub-score is still computed and shown (report, CSV,

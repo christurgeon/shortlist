@@ -45,9 +45,13 @@ def _norm(value: Optional[float], lo: float, hi: float) -> Optional[float]:
 
 
 def _scorable_peg(m: StockMetrics) -> Optional[float]:
-    """PEG <= 0 means shrinking (or zero) earnings growth, where the ratio is undefined.
-    The inverted band would read it as the cheapest possible growth and clamp to 100."""
-    return m.peg if m.peg is not None and m.peg > 0 else None
+    """PEG is defined only for positive P/E over positive growth. PEG <= 0 (shrinking
+    earnings) would clamp to 100 on the inverted band, and a loss-maker with shrinking
+    losses divides a negative P/E by negative growth into a positive, cheap-looking PEG.
+    Without a known positive P/E the sign cannot be trusted, so the leg abstains."""
+    if m.peg is None or m.peg <= 0 or m.pe_ttm is None or m.pe_ttm <= 0:
+        return None
+    return m.peg
 
 
 def _avg(components: list[Optional[float]]) -> Optional[float]:

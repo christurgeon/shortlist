@@ -587,11 +587,12 @@ def test_peg_contributes_to_value_score():
         "fcf_yield": [0.0, 1.0],
         "pe_vs_history": [0.0, 1.0],
     }
-    # Only peg is set; other value inputs None → peg drives the score alone.
-    assert value_score(StockMetrics(ticker="T", peg=0.5), t) == 100.0
-    assert value_score(StockMetrics(ticker="T", peg=3.0), t) == 0.0
+    # Only peg is set among the value legs (pe_ttm alone scores nothing: pe_vs_history also
+    # needs pe_median_5y) → peg drives the score alone.
+    assert value_score(StockMetrics(ticker="T", peg=0.5, pe_ttm=20.0), t) == 100.0
+    assert value_score(StockMetrics(ticker="T", peg=3.0, pe_ttm=20.0), t) == 0.0
     # Midpoint PEG midway through the inverted band.
-    assert value_score(StockMetrics(ticker="T", peg=1.75), t) == pytest.approx(50.0)
+    assert value_score(StockMetrics(ticker="T", peg=1.75, pe_ttm=20.0), t) == pytest.approx(50.0)
 
 
 @pytest.mark.parametrize("peg", [-5.9, -0.9, 0.0])
@@ -605,8 +606,17 @@ def test_non_positive_peg_abstains_instead_of_scoring_max(peg):
         "fcf_yield": [0.0, 1.0],
         "pe_vs_history": [0.0, 1.0],
     }
-    assert value_score(StockMetrics(ticker="T", peg=peg), t) is None
-    assert value_score(StockMetrics(ticker="T", peg=peg, fcf_yield=0.5), t) == pytest.approx(50.0)
+    assert value_score(StockMetrics(ticker="T", peg=peg, pe_ttm=20.0), t) is None
+    assert value_score(StockMetrics(ticker="T", peg=peg, pe_ttm=20.0, fcf_yield=0.5), t) == pytest.approx(50.0)
+
+
+@pytest.mark.parametrize("pe_ttm", [-15.0, 0.0, None])
+def test_positive_peg_without_positive_pe_abstains(pe_ttm):
+    # A loss-maker with shrinking losses has negative P/E over negative growth: a POSITIVE
+    # PEG that reads as cheap growth. Without a known positive P/E the sign cannot be trusted.
+    t = {"peg": [3.0, 0.5], "upside_to_target": [0.0, 1.0],
+         "fcf_yield": [0.0, 1.0], "pe_vs_history": [0.0, 1.0]}
+    assert value_score(StockMetrics(ticker="T", peg=0.8, pe_ttm=pe_ttm), t) is None
 
 
 def test_non_positive_peg_abstains_on_the_production_path():
