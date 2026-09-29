@@ -31,7 +31,7 @@ The CLI is locked down to behave as a stateless model call rather than an agent:
 
 **Never add `--bare`** — it forces `ANTHROPIC_API_KEY` and breaks the keyless path.
 
-Default model is `claude-sonnet-5` with `claude-opus-5` as fallback (`config.yaml: research`).
+Default model is `claude-sonnet-5-5` with `claude-opus-5` as fallback (`config.yaml: research`).
 
 ## What's in a brief
 
