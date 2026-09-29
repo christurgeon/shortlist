@@ -372,7 +372,7 @@ cache:
 #   `notes` feed real FILING TEXT, so they enter the quote-grounding haystack — each as
 #   its own labelled segment (docs/RESEARCH.md → Quote verification).
 research:
-  model: claude-sonnet-5       # pinned to a family, not the cross-version "sonnet" alias —
+  model: claude-sonnet-5-5       # pinned to a family, not the cross-version "sonnet" alias —
                                # so it tracks the family's latest snapshot, not a frozen build.
                                # Reproducibility is anchored by the wide cache key
                                # (research/cachekey.py), not the model string.
