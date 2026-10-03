@@ -916,6 +916,7 @@ def assess(card, bundle: FilingBundle, config: dict,
                     max_management_findings=max_management_findings)
                 assessment.cache_key = bundle.cache_key
                 assessment.text_similarity = getattr(bundle, "text_similarity", None)
+                assessment.stub_sections = bundle.tenk.stub_sections()
                 _verify_grounding(assessment, bundle)
                 if scfg.get("enabled", True):
                     assessment.screening_call = _screening_call(payload)

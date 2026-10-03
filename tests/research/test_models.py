@@ -275,3 +275,38 @@ def test_segments_drops_empty_documents_so_no_label_matches_the_empty_string():
                      filing_date="2026-01-01")
     assert b.segments() == [("10-K", "b\n\nm\n\nr")]
     assert b.haystack() == "b\n\nm\n\nr"        # unchanged with no 8-K, no 10-Q
+
+
+# ---- stub 10-K sections ----
+
+def _ft(**sections):
+    from shortlist.research.models import FilingText
+    return FilingText(ticker="JPM", accession="a", filing_date="2026-02-13", **sections)
+
+
+def test_stub_sections_names_a_cross_reference_mda():
+    """JPM's real Item 7 (2026-02-13 10-K): a 396-char pointer to pages 46-160.
+    It is non-empty, so has_content() alone passes it."""
+    ft = _ft(business="x" * 39_220, risk_factors="x" * 112_862,
+             mda="Management's discussion and analysis ... appears on pages 46-160.")
+    assert ft.has_content()
+    assert ft.stub_sections() == ["Item 7 (MD&A)"]
+
+
+def test_stub_sections_counts_an_empty_section_and_keeps_filing_order():
+    ft = _ft(business="", mda="x" * 5_000, risk_factors="Not applicable.")
+    assert ft.stub_sections() == ["Item 1 (Business)", "Item 1A (Risk factors)"]
+
+
+def test_stub_sections_is_empty_for_a_full_filing():
+    from shortlist.research.models import STUB_SECTION_CHARS
+    full = "x" * STUB_SECTION_CHARS
+    assert _ft(business=full, mda=full, risk_factors=full).stub_sections() == []
+
+
+def test_stub_sections_note_names_every_section_and_is_empty_when_none():
+    from shortlist.research.models import stub_sections_note
+    assert stub_sections_note([]) == ""
+    note = stub_sections_note(["Item 7 (MD&A)", "Item 1A (Risk factors)"])
+    assert "Item 7 (MD&A), Item 1A (Risk factors)" in note
+    assert "not" in note.lower()

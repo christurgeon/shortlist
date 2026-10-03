@@ -180,3 +180,16 @@ def test_an_unverified_finding_never_claims_a_source():
     a.red_flags[0].source = "8-K 2026-07-30 (Item 2.02)"   # cannot happen; belt and braces
     md = report.to_markdown(a)
     assert "- **Invented** _(unverified)_" in md
+
+
+def test_markdown_flags_stub_sections_under_the_header():
+    a = _assessment()
+    a.stub_sections = ["Item 7 (MD&A)"]
+    md = report.to_markdown(a)
+    header_end = md.index("## Thesis")
+    assert "Item 7 (MD&A)" in md[:header_end]
+
+
+def test_markdown_without_stub_sections_has_no_such_line():
+    md = report.to_markdown(_assessment())
+    assert "not extracted" not in md
