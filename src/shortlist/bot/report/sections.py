@@ -286,10 +286,13 @@ _MARKS = {"unverified": "unverified", "inference": "no filing quote"}
 
 
 def _evidence_counts(a) -> str:
-    """The brief's two footer lines, collapsed to one. Never merge the counts: an
+    """The brief's evidence caveats, collapsed to one line. Never merge the counts: an
     unverified claim means the model quoted something absent from the filing, and
     mixing that population with declared inferences destroys the signal."""
+    from ...research.models import stub_sections_note
     parts = []
+    if a.stub_sections:
+        parts.append(stub_sections_note(a.stub_sections))
     if a.unverified_count:
         parts.append(f"{a.unverified_count} claim(s) could not be verified "
                      "against the filing text.")

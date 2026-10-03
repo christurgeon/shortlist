@@ -84,6 +84,35 @@ class FilingText:
     def has_content(self) -> bool:
         return bool(self.business or self.mda or self.risk_factors)
 
+    def stub_sections(self) -> list[str]:
+        """Labels of the sections too short to be the item's real text."""
+        return [label for name, label in _SECTION_LABELS
+                if len(getattr(self, name)) < STUB_SECTION_CHARS]
+
+
+# A section under this length is a stub, and has_content() still passes it. Measured
+# 2026-10-02 over 327 exact-form 10-Ks: 11 had one. 8 were MD&A cross-references of
+# 242-396 chars pointing at a separate financial section or at EX-13 (JPM, XOM, CVX,
+# WFC); 2 were an empty Item 1 under a combined "Items 1 and 2" heading (SM, GTE); 1
+# was a smaller reporting company's "Not applicable" Item 1A (LEGH). Every other
+# section was >= 3,151 chars. Abstaining was rejected: in 10 of the 11 the text exists
+# and the rest of the brief is sound. A length floor cannot catch a span of the WRONG
+# text — PGR's 3,151-char "MD&A" is risk-factor prose.
+STUB_SECTION_CHARS = 2000
+
+_SECTION_LABELS = (("business", "Item 1 (Business)"),
+                   ("mda", "Item 7 (MD&A)"),
+                   ("risk_factors", "Item 1A (Risk factors)"))
+
+
+def stub_sections_note(sections: list[str]) -> str:
+    """The reader-facing wording, shared by the markdown brief and the bot report."""
+    if not sections:
+        return ""
+    return (f"Not extracted from the 10-K: {', '.join(sections)} — the filing points "
+            "elsewhere or omits it, so the model never saw that text. A claim it "
+            "marks as unaddressed there may be in the filing.")
+
 
 @dataclass
 class EightKText:
@@ -328,6 +357,7 @@ class QualitativeAssessment:
                                # fingerprint + context digest + day bucket) before report.write,
                                # so the two never diverge on disk
     text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
+    stub_sections: list[str] = field(default_factory=list)  # FilingText.stub_sections() of the 10-K
     screening_call: Optional[ScreeningCall] = None
 
     @property

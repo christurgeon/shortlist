@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .models import Finding, QualitativeAssessment, call_disclaimer, stance_label
+from .models import Finding, QualitativeAssessment, call_disclaimer, stance_label, stub_sections_note
 
 
 def _safe(accession: str) -> str:
@@ -139,6 +139,7 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
         f"> **LLM-generated** from {a.filing_accession} ({a.filing_date}) by "
         f"`{a.model}`. Verify against the source filing. Not investment advice.",
         "",
+        *([f"> **{stub_sections_note(a.stub_sections)}**", ""] if a.stub_sections else []),
         *([call_badge, ""] if call_badge else []),
         "## Thesis _(analyst judgment — not filing facts)_",
         f"- **Bull:** {t.bull_case or 'n/a'}",

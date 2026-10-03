@@ -741,3 +741,13 @@ def test_prompt_is_byte_identical_when_similarity_is_none():
     block = f"=== RECENT 8-K — 2026-07-30, Item(s) 2.02,9.01 ===\n{e.text}\n\n"
     assert (_build_user_prompt(with8k, cfg)
             == none_prompt.replace("Return at most", block + "Return at most", 1))
+
+
+def test_assess_records_stub_sections_from_the_10k():
+    """Python-owned, from the filing the model saw — never from the payload."""
+    ft = FilingText(ticker="XOM", accession="acc", filing_date="2026-02-18",
+                    business="x" * 6_640, risk_factors="x" * 35_671,
+                    mda="Reference is made to the section entitled MD&A in the Financial Section.")
+    a = assess(card=None, bundle=_wrap(ft), config=CONFIG,
+               runner=_runner_returning(json.dumps(GOOD)))
+    assert a.stub_sections == ["Item 7 (MD&A)"]

@@ -100,6 +100,7 @@ class AssessmentVM:
     # classification and the two populations must not be mixed (see FindingVM).
     unverified_count: int = 0
     inference_count: int = 0
+    stub_sections: list[str] = field(default_factory=list)
     call_stance: str = ""
     call_label: str = ""
     call_conviction: str = ""
@@ -212,6 +213,7 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         management_findings=_findings(rec.get("management_findings"), inference_ok=True),
         unverified_count=int(rec.get("unverified_count") or 0),
         inference_count=int(rec.get("inference_count") or 0),
+        stub_sections=[str(x) for x in (rec.get("stub_sections") or [])],
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",

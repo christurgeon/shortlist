@@ -74,8 +74,10 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   business=0 and risk=0** because one non-empty section satisfies `has_content()`. That silent
   shape is why the fix prefers the exact form UNCONDITIONALLY rather than falling back when the
   10-K is empty. Accepted cost: a true restatement amendment is ignored. Do NOT reintroduce
-  amendment rows into `_fetch_10k_parsed`. Still open: `has_content()` passing on a single
-  section. `2026-09-06-tenk-amendment-selection.md`.
+  amendment rows into `_fetch_10k_parsed`. The follow-up — `has_content()` passing on a
+  single section — was measured 2026-10-02 and closed as a reader-facing note, not an
+  abstention; the evidence is at `models.py:STUB_SECTION_CHARS`.
+  `2026-09-06-tenk-amendment-selection.md`.
 - **A `/deep` context line with no destination field is IGNORED — measured twice, on two
   different features (2026-08-25)** — the options line shipped in #194 reached the prompt on
   every brief and was used in **0 of 3**. Adding a REQUIRED clause naming `thesis` took it to

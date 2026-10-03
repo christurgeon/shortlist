@@ -200,3 +200,16 @@ def test_full_text_carries_the_quote_and_the_mark():
     joined = "\n".join(lines)
     assert _QUOTE in joined
     assert "unverified" in joined
+
+
+def test_stub_sections_come_from_the_record():
+    vm = _assessment_vm(_rec(stub_sections=["Item 7 (MD&A)"]))
+    assert vm.stub_sections == ["Item 7 (MD&A)"]
+    assert _assessment_vm(_rec()).stub_sections == []
+
+
+def test_html_names_stub_sections_with_the_brief_s_wording():
+    from shortlist.research.models import stub_sections_note
+    html = _html(AssessmentVM(stub_sections=["Item 7 (MD&A)"],
+                              risks=[FindingVM(claim="c", status="verified")]))
+    assert HtmlBuilder().esc(stub_sections_note(["Item 7 (MD&A)"])) in html
