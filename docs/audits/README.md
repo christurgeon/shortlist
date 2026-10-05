@@ -305,6 +305,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-04 | `2026-10-04-moat-durability-prereg.md` — does a top-quintile ROIC persist, and can that be predicted? | pre-registration |
 | 2026-09-25 | `2026-09-25-risk-tilt-disable.md` — risk weight 0.10 -> 0.0 | verdict |
 | 2026-08-25 | `2026-08-25-options-line-destination-verdict.md` — 0 of 3 -> 3 of 3 | verdict |
 | 2026-08-25 | `2026-08-25-options-line-destination-prereg.md` | pre-registration |
