@@ -190,6 +190,10 @@ def _run(rows: list[ds.Row], *, with_bounds: bool) -> dict:
         _log(f"  {pred} / {outcome}")
         m = ds.measure(rows, pred, outcome, with_bounds=with_bounds)
         m["exit_rate_by_tercile"] = ds.exit_rate_by_tercile(rows, pred)
+        try:        # reported, never decision-bearing: SIC-2 cells do not hold a sub-industry fixed
+            m["beta_sic3_cells"] = ds.fit(ds.sample(rows, pred, outcome), pred, digits=3)
+        except (ValueError, ZeroDivisionError):
+            m["beta_sic3_cells"] = None
         m["beta_by_year"] = {}
         for y in sorted({r.year for r in rows}):
             try:

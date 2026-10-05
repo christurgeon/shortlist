@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 from bisect import bisect_right
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from statistics import median, pstdev
 from typing import Iterable, Optional
@@ -25,7 +25,6 @@ HISTORY = 4                      # buckets t-3..t
 MIN_HISTORY = 3
 MIN_PEERS = 5
 MIN_IC_GROWTH = 1.05             # P6 is defined only when invested capital grew > 5%
-MIN_SECTOR_ROWS = 20
 DISCOVERY = range(2011, 2018)    # start years; outcomes 2014-2020
 HOLDOUT = range(2018, 2022)      # start years; outcomes 2021-2024
 BOOT_REPS = 2000
@@ -35,6 +34,7 @@ PREDICTORS = ("track", "stability", "investment", "share_stability", "gross_marg
 # `investment` has no registered sign for `compounded`, so it is not tested there.
 TESTS = tuple((p, o) for o in ("held", "compounded") for p in PREDICTORS
               if not (p == "investment" and o == "compounded"))
+NO_SIC = "none"                  # a firm with no SIC code: in the universe, out of the regressions
 
 
 @dataclass
@@ -118,6 +118,7 @@ class Row:
     c0: float = 0.0
     c2: float = 0.0
     p: dict[str, float] = field(default_factory=dict)
+    sic3: str = NO_SIC                    # only the reported SIC-3 cut reads it
 
 
 def _sic(f: Firm, digits: int) -> Optional[str]:
@@ -205,9 +206,10 @@ def build_cohort(firms: list[Firm], year: int) -> list[Row]:
             state = "exit"
         ratio = (row3.revenue / now.revenue
                  if row3 is not None and (row3.revenue or 0) > 0 else None)
-        rows.append(Row(cik=f.cik, year=year, sic2=_sic(f, 2) or "none", roic=now.roic,
+        rows.append(Row(cik=f.cik, year=year, sic2=_sic(f, 2) or NO_SIC, roic=now.roic,
                         revenue=now.revenue, preds=_predictors(f, year, hist, floors, peers),
-                        state=state, held=held, rank_t3=rank, rev_ratio=ratio))
+                        state=state, held=held, rank_t3=rank, rev_ratio=ratio,
+                        sic3=_sic(f, 3) or NO_SIC))
     _finish(rows)
     return rows
 
@@ -245,77 +247,64 @@ def _outcome(r: Row, outcome: str, exits: Optional[bool]) -> Optional[float]:
 
 def sample(rows: Iterable[Row], pred: Optional[str], outcome: str,
            exits: Optional[bool] = None) -> list[tuple[Row, float]]:
+    """The rows of one run with their outcome value. With a predictor this is a regression
+    sample, and a firm with no SIC code is left out: it has no sector to be held to.
+    `pred=None` (the instrument gate, the base rates) keeps it."""
     out = []
     for r in rows:
         y = _outcome(r, outcome, exits)
-        if y is not None and (pred is None or pred in r.p):
-            out.append((r, y))
+        if y is None or (pred is not None and (pred not in r.p or r.sic2 == NO_SIC)):
+            continue
+        out.append((r, y))
     return out
 
 
-def sector_rates(samp: list[tuple[Row, float]]) -> dict[tuple[str, int], float]:
-    """C1: {(cik, year) -> the mean outcome of the row's SIC-2 sector}, leaving out the row's
-    own start year and its own firm. Sectors under 20 rows pool into 'other'. A sector with
-    nothing left after the exclusion falls back to the sample mean."""
-    size: dict = defaultdict(int)
-    for r, _ in samp:
-        size[r.sic2] += 1
-    sec = {s: (s if n >= MIN_SECTOR_ROWS else "other") for s, n in size.items()}
-    n: dict = defaultdict(int)
-    h: dict = defaultdict(float)
-    for r, y in samp:
-        s = sec[r.sic2]
-        for k in ((s,), (s, "y", r.year), (s, "c", r.cik), (s, r.year, r.cik)):
-            n[k] += 1
-            h[k] += y
-    overall = sum(y for _, y in samp) / len(samp)
-    out = {}
-    for r, _ in samp:
-        s = sec[r.sic2]
-        ks = ((s,), (s, "y", r.year), (s, "c", r.cik), (s, r.year, r.cik))
-        cnt = n[ks[0]] - n[ks[1]] - n[ks[2]] + n[ks[3]]
-        tot = h[ks[0]] - h[ks[1]] - h[ks[2]] + h[ks[3]]
-        out[(r.cik, r.year)] = tot / cnt if cnt > 0 else overall
-    return out
-
-
-def _demean_by_year(samp: list[tuple[Row, float]], cols: list[list[float]]) -> list[list[float]]:
+def _demean(samp: list[tuple[Row, float]], cols: list[list[float]], key) -> list[list[float]]:
     out = []
     for col in cols:
         tot: dict = defaultdict(float)
         cnt: dict = defaultdict(int)
         for (r, _), v in zip(samp, col, strict=True):
-            tot[r.year] += v
-            cnt[r.year] += 1
-        out.append([v - tot[r.year] / cnt[r.year] for (r, _), v in zip(samp, col, strict=True)])
+            tot[key(r)] += v
+            cnt[key(r)] += 1
+        out.append([v - tot[key(r)] / cnt[key(r)] for (r, _), v in zip(samp, col, strict=True)])
     return out
 
 
-def fit(samp: list[tuple[Row, float]], pred: str,
-        c1: Optional[dict[tuple[str, int], float]] = None) -> float:
-    """β: the change in the outcome from the worst to the best rank of `pred`, holding ROIC
-    level (rank and rank²), sector and size, with start-year fixed effects. Raises ValueError
-    on a singular design (for example a predictor that IS the level rank)."""
-    c1 = sector_rates(samp) if c1 is None else c1
+def fit(samp: list[tuple[Row, float]], pred: str, digits: int = 2) -> float:
+    """β: the change in the outcome from the worst to the best rank of `pred`, among firms of
+    the same sector and start year, holding ROIC level (rank and rank²) and size.
+
+    THE SECTOR CONTROL IS A FIXED EFFECT PER (SIC-2, START YEAR) CELL: every column is demeaned
+    within its cell. A row alone in its cell therefore adds nothing, and small sectors are NOT
+    pooled — pooling, or a sector effect that is not also by start year, or an estimated sector
+    mean used as a covariate (the note's original C1), each let a predictor that is only a
+    sector label earn β (docs/audits/scripts/probe_durability_sector_control.py). `digits=3`
+    is the reported SIC-3 cut: SIC-2 cells do not hold a sub-industry fixed.
+
+    Raises ValueError on a singular design (for example a predictor that IS the level rank,
+    or a sample in which every row is alone in its cell)."""
+    if digits not in (2, 3):
+        raise ValueError(f"fit: digits must be 2 or 3, got {digits!r}")
     cols = [[y for _, y in samp],
             [r.c0 for r, _ in samp], [r.c0 ** 2 for r, _ in samp],
-            [c1[(r.cik, r.year)] for r, _ in samp], [r.c2 for r, _ in samp],
+            [r.c2 for r, _ in samp],
             [r.p[pred] for r, _ in samp]]
-    y, *xs = _demean_by_year(samp, cols)
+    y, *xs = _demean(samp, cols, lambda r: (r.sic2 if digits == 2 else r.sic3, r.year))
     return ols(y, [list(t) for t in zip(*xs, strict=True)])[-1]
 
 
 def level_slope(samp: list[tuple[Row, float]]) -> float:
     """The instrument gate: the slope of the outcome on the ROIC rank alone, within year."""
-    y, x = _demean_by_year(samp, [[v for _, v in samp], [r.c0 for r, _ in samp]])
+    y, x = _demean(samp, [[v for _, v in samp], [r.c0 for r, _ in samp]], lambda r: r.year)
     return ols(y, [[v] for v in x])[-1]
 
 
 def bootstrap(samp: list[tuple[Row, float]], pred: str, *, reps: int = BOOT_REPS,
               seed: int = BOOT_SEED) -> dict:
-    """Resample FIRMS (each carries all its cohort-years). Ranks and C1 are fixed from the full
-    sample — they are properties of the population cross-section, not of the resample."""
-    c1 = sector_rates(samp)
+    """Resample FIRMS (each carries all its cohort-years). Ranks are fixed from the full
+    sample — they are properties of the population cross-section, not of the resample. The
+    cell means are NOT fixed: `fit` recomputes them inside every resample."""
     by_cik: dict = defaultdict(list)
     for item in samp:
         by_cik[item[0].cik].append(item)
@@ -325,7 +314,7 @@ def bootstrap(samp: list[tuple[Row, float]], pred: str, *, reps: int = BOOT_REPS
     for _ in range(reps):
         draw = [item for c in rng.choices(ciks, k=len(ciks)) for item in by_cik[c]]
         try:
-            betas.append(fit(draw, pred, c1))
+            betas.append(fit(draw, pred))
         except ValueError:
             singular += 1
     betas.sort()
@@ -366,10 +355,22 @@ def passes(discovery: dict[str, bool], holdout: bool) -> bool:
 def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
             seed: int = BOOT_SEED, with_bounds: bool) -> dict:
     """Everything the note reports for one predictor, one outcome, one window. Never raises:
-    a test that cannot be computed returns {"n", "error"} and counts as not passed."""
+    a test that cannot be computed returns the counts and "error", and counts as not passed.
+
+    The counts say what the sector control could not use. A missing SIC code kept `n_no_sic`
+    rows out of the primary sample and `n_no_sic_exit` exit rows out of the two bounds runs —
+    a dead filer is the likeliest to have no code, and the bounds exist to bracket attrition.
+    `n_alone_in_cell` of the `n` sample rows are the only row of their (SIC-2, start year) cell
+    and carry no weight in β."""
     samp = sample(rows, pred, outcome)
+    cells = Counter((r.sic2, r.year) for r, _ in samp)
+    no_sic = [r for r in rows if r.sic2 == NO_SIC and pred in r.p]
+    counts = {"n": len(samp),
+              "n_no_sic": sum(_outcome(r, outcome, None) is not None for r in no_sic),
+              "n_no_sic_exit": sum(r.state == "exit" for r in no_sic),
+              "n_alone_in_cell": sum(cells[(r.sic2, r.year)] == 1 for r, _ in samp)}
     try:
-        out = {"n": len(samp), "beta": fit(samp, pred),
+        out = {**counts, "beta": fit(samp, pred),
                "raw_tercile_spread": raw_tercile_spread(samp, pred),
                **bootstrap(samp, pred, reps=reps, seed=seed)}
         if with_bounds:
@@ -379,7 +380,7 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
     except (ValueError, ZeroDivisionError) as e:
         # A singular design or an empty sample fails THIS test; it must not sink a run that
         # has already spent minutes on the others.
-        return {"n": len(samp), "error": f"{type(e).__name__}: {e}"}
+        return {**counts, "error": f"{type(e).__name__}: {e}"}
     return out
 
 
