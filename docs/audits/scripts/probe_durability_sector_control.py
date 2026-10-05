@@ -1,10 +1,12 @@
 """Does the sector control hold sector fixed? SYNTHETIC DATA ONLY (2026-10-05).
 
-Evidence for the amendment in docs/audits/2026-10-04-moat-durability-prereg.md (§Amendments).
-It reads no SEC data and no file: every row is drawn from `random.Random(seed)`. Run from the
-repo root (about 5 minutes, pure Python):
+Evidence for both amendments in docs/audits/2026-10-04-moat-durability-prereg.md (§Amendments):
+tables 1-10 for the sector control, tables 11-26 for pass rule 5. It reads no SEC data and no
+file: every row is drawn from `random.Random(seed)`. Run from the repo root (about 8 minutes,
+pure Python; the second form runs tables 11-26 only, about 4 minutes):
 
     uv run python docs/audits/scripts/probe_durability_sector_control.py
+    uv run python docs/audits/scripts/probe_durability_sector_control.py 200 rule5
 
 THE QUESTION. The note's original sector control C1 was a leave-out SIC-2 mean of the outcome,
 with sectors under 20 rows pooled. Its purpose: no predictor may pass by being a sector label.
@@ -34,7 +36,7 @@ _CDF = statistics.NormalDist().cdf
 
 
 def world(seed, *, label="sector", align=1.0, between=0.5, within=0.0, firms=1000, sectors=65,
-          none_share=0.0, years=YEARS):
+          none_share=0.0, years=YEARS, subs=4):
     """One synthetic discovery window: rows of dict(cik, year, sec, sec3, y, c0, c2, p).
 
     The outcome depends on the SIC-2 sector, the ROIC level, a firm-persistent part and — only
@@ -49,13 +51,13 @@ def world(seed, *, label="sector", align=1.0, between=0.5, within=0.0, firms=100
     b = [rng.gauss(0, 1) for _ in range(sectors)]
     g = {(s, y): rng.gauss(0, sd) for s in range(sectors) for y in years}    # sector x year shock
     b2 = {k: rng.gauss(0, 1) for k in g}
-    c3 = {(s, k): rng.gauss(0, sd) for s in range(sectors) for k in range(4)}  # sub-industry shift
+    c3 = {(s, k): rng.gauss(0, sd) for s in range(sectors) for k in range(subs)}  # sub-industry shift
     b3 = {k: rng.gauss(0, 1) for k in c3}
     weights = [1 / (k + 1) for k in range(sectors)]      # a few large sectors, a long thin tail
     rows = []
     for i in range(firms):
         s = rng.choices(range(sectors), weights)[0]
-        k = rng.randrange(4)
+        k = rng.randrange(subs)
         u = rng.gauss(0, 0.15)                           # firm-persistent part of the outcome
         e = rng.gauss(0, 1)                              # firm-persistent part of the predictor
         n_years = rng.choice((2, 3, 3, 4))
@@ -72,7 +74,7 @@ def world(seed, *, label="sector", align=1.0, between=0.5, within=0.0, firms=100
             level = rng.random()
             prob = 0.5 + a[s] + shift + 0.3 * (level - 0.5) + u + within * (_CDF(w) - 0.5)
             rows.append({"cik": i, "year": y, "sec": "none" if no_sic else f"{s:02d}",
-                         "sec3": "none" if no_sic else f"{s:02d}{k}",
+                         "sec3": "none" if no_sic else f"{s:02d}-{k}",
                          "z": between ** 0.5 * comp + (1 - between) ** 0.5 * w, "level": level,
                          "size": rng.random(), "y": float(rng.random() < min(0.98, max(0.02, prob)))})
     for y in years:                                      # ranks within the cohort-year
@@ -193,9 +195,98 @@ def table(title, worlds, **kw):
     return betas
 
 
+ALL_YEARS = list(range(2011, 2022))      # discovery start years 2011-2017, holdout 2018-2021
+SUB_FLOOR = 0.03                         # a fixed floor, measured and not adopted
+
+
+def rule5_table(title, worlds, **kw):
+    """Does a sub-industry floor earn its place as a pass rule, and which floor? One world spans
+    both windows, so a label and its group's hold rate persist from discovery into the holdout,
+    as they would in real data. BASE is rules 1-2: beta >= max(0.10, 2 sd) on discovery and
+    beta >= max(0.06, 1.64 sd) on holdout, `sd` being the spread across worlds (it stands in for
+    the bootstrap SE). Each variant adds a condition on b3, the beta under SIC-3 x year cells:
+
+      half       b3 >= half of beta, in both windows     (ADOPTED as rule 5)
+      third, two-thirds   the same with 1/3 and 2/3: how much the result leans on "half"
+      floor      b3 >= 0.03 in both windows (the floor the note uses for the bounds rule)
+      disc-only  b3 >= 0.03 on discovery only
+      bars       b3 >= 0.10 on discovery and >= 0.06 on holdout (the floors of rules 1-2)"""
+    res, alone = [], []
+    for seed in range(worlds):
+        rows = world(seed, years=ALL_YEARS, firms=1600, **kw)
+        d, h = [r for r in rows if r["year"] <= 2017], [r for r in rows if r["year"] >= 2018]
+        res.append((fit_cells(d), fit_cells(h), fit_cells(d, key="sec3"), fit_cells(h, key="sec3")))
+        cells = defaultdict(int)
+        for r in d:
+            cells[r["sec3"], r["year"]] += 1
+        alone.append(sum(cells[r["sec3"], r["year"]] == 1 for r in d) / len(d))
+    sd = [statistics.pstdev(x[i] for x in res) for i in range(4)]
+    def share(k):
+        return lambda x: x[2] >= k * x[0] and x[3] >= k * x[1]
+
+    variants = {
+        "rules 1-2": lambda x: True,
+        "HALF": share(1 / 2),
+        "third": share(1 / 3),
+        "two-thirds": share(2 / 3),
+        "floor": lambda x: x[2] >= SUB_FLOOR and x[3] >= SUB_FLOOR,
+        "disc-only": lambda x: x[2] >= SUB_FLOOR,
+        "bars": lambda x: x[2] >= 0.10 and x[3] >= 0.06,
+    }
+    base = [x[0] >= max(0.10, 2 * sd[0]) and x[1] >= max(0.06, 1.64 * sd[1]) for x in res]
+    print(f"\n== {title}")
+    print(f"   mean beta: discovery {statistics.mean(x[0] for x in res):+.3f}, holdout "
+          f"{statistics.mean(x[1] for x in res):+.3f} | under SIC-3 cells: "
+          f"{statistics.mean(x[2] for x in res):+.3f} (sd {sd[2]:.3f}), "
+          f"{statistics.mean(x[3] for x in res):+.3f} (sd {sd[3]:.3f}) | "
+          f"discovery rows alone in their SIC-3 cell: {statistics.mean(alone):.0%}")
+    print("   joint pass: " + " | ".join(
+        f"{name} {sum(b and ok(x) for b, x in zip(base, res, strict=True)) / worlds:.1%}"
+        for name, ok in variants.items()))
+
+
+def rule5(worlds) -> None:
+    print("\n\nRULE 5 — how much of beta must survive SIC-3 x year cells.")
+    print(f"{worlds} worlds per table, 1,600 firms over 11 start years (about 3,050 discovery and "
+          "1,750 holdout rows).")
+    null = dict(align=0.0, between=0.0)
+    rule5_table("11. NULL, no group structure in the predictor", worlds, **null)
+    rule5_table("12. NULL, SIC-2 label, fully aligned", worlds)
+    rule5_table("13. NULL, sub-industry label, fully aligned", worlds, label="sic3")
+    rule5_table("14. NULL, sub-industry label, half aligned", worlds, label="sic3", align=0.5)
+    rule5_table("15. NULL, sub-industry label, fully aligned, 12 sub-industries per sector", worlds,
+                label="sic3", subs=12)
+    rule5_table("16. NULL, sub-industry label, fully aligned, 40 sub-industries per sector", worlds,
+                label="sic3", subs=40)
+    rule5_table("17. NULL, sub-industry label, fully aligned, 120 sub-industries per sector", worlds,
+                label="sic3", subs=120)
+    rule5_table("18. REAL within-sector effect 0.12, predictor all within-sector", worlds, within=0.12,
+                **null)
+    rule5_table("19. REAL 0.12, all within-sector, 12 sub-industries per sector", worlds, within=0.12,
+                subs=12, **null)
+    rule5_table("20. REAL 0.12, all within-sector, 40 sub-industries per sector", worlds, within=0.12,
+                subs=40, **null)
+    rule5_table("21. REAL 0.12, all within-sector, 120 sub-industries per sector", worlds, within=0.12,
+                subs=120, **null)
+    rule5_table("22. REAL within-sector effect 0.20, predictor all within-sector", worlds, within=0.20,
+                **null)
+    rule5_table("23. REAL 0.20, all within-sector, 120 sub-industries per sector", worlds, within=0.20,
+                subs=120, **null)
+    rule5_table("24. REAL within-sector effect 0.12, predictor half between-sector", worlds, align=0.0,
+                within=0.12)
+    rule5_table("25. REAL 0.12, half between-sector, 40 sub-industries per sector", worlds, align=0.0,
+                within=0.12, subs=40)
+    rule5_table("26. MIXED: real within-sector effect 0.12 PLUS a fully aligned sub-industry label",
+                worlds, label="sic3", within=0.12)
+
+
 def main() -> None:
     worlds = int(sys.argv[1]) if len(sys.argv) > 1 else 200
     t0 = time.time()
+    if sys.argv[2:] == ["rule5"]:        # tables 11-26 only
+        rule5(worlds)
+        print(f"\n[{time.time() - t0:.0f}s]")
+        return
     print("TRUE WITHIN-SECTOR EFFECT = 0 in every table marked NULL.")
     null = table("1. NULL, SIC-2 label, fully aligned (the defect)", worlds)
     table("2. NULL, SIC-2 label, half aligned", worlds, align=0.5)
@@ -216,6 +307,7 @@ def main() -> None:
         truth = statistics.pstdev(null[name])
         print(f"   {name:30s} mean bootstrap SE {statistics.mean(ses):.3f} (20 worlds, 200 reps) | "
               f"sd across worlds {truth:.3f} | ratio {statistics.mean(ses) / truth:.2f}")
+    rule5(worlds)
     print(f"\n[{time.time() - t0:.0f}s]")
 
 

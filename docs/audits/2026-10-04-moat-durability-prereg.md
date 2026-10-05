@@ -4,8 +4,9 @@
 `docs/superpowers/specs/2026-10-04-moat-durability-design.md` (gitignored; this note is the
 committed record and is complete without it).
 
-**Amended once, 2026-10-05 (the sector control), also before any SEC bulk data was read.** The
-change, the original wording and the evidence are in §Amendments at the end.
+**Amended twice on 2026-10-05 (the sector control; a fifth pass rule), both before any SEC bulk
+data was read.** Each change, the wording it replaced and the evidence are in §Amendments at the
+end.
 
 ## What has already been seen, and what has not
 
@@ -122,19 +123,24 @@ printed beside every β (`raw_tercile_spread`) so the gap is visible, and it dec
 | instrument | slope of `held` on the ROIC rank alone, within year, on discovery, > 0 | stop |
 | tag artefact | no outcome year's `gap` rate is more than 5 points above both neighbours | widen the tag list, re-run the gates, record it here |
 
-## Pass rule — all four, per test
+## Pass rule — all five, per test
 
 1. Discovery: β ≥ max(10 pp, 2 × SE).
 2. Holdout: β ≥ max(6 pp, 1.64 × SE).
 3. Bounds, on discovery: with `exit` coded all-held and then all-not-held, β ≥ 3 pp in both.
 4. Continuous check, on discovery: the same model with the outcome replaced by the universe
    percentile rank of ROIC at `t+3` (observed firms only) has β > 0.
+5. Sub-industry check, on discovery **and** on holdout: on the primary outcome sample, the same
+   model with SIC-3 × start-year cells in place of SIC-2 cells has a β at least **half** of that
+   window's β. A cut that cannot be computed fails. The SIC-3 β (`beta_sic3_cells`) is printed
+   for every test, and the verdict states it beside every pass (amendment 2).
 
 Under the null the per-test false-pass rate is between about 0.1% and 3.5%, so one marginal pass
 among eleven is weak evidence and the verdict must say so. The upper figure is the discovery arm
 alone on synthetic rows under the amended control (2.5% to 3.5% of nulls over 200 worlds, ±1.2
 points). The range assumes a predictor with no industry structure finer than SIC-2; a
-sub-industry label is not such a null (Limitations).
+sub-industry label is not such a null, and rule 5 cuts its pass rate without removing it
+(Limitations).
 
 ## Decision rule
 
@@ -151,10 +157,10 @@ In every case: no scoring leg, no gate, no flag, no discovery list. `scoring.sco
 
 β by start year · the holdout restricted to CIKs absent from every discovery cohort · β excluding
 SIC-2 10, 12, 13, 14, 29 · exit rate by predictor tercile · state shares · `investment` on outcome B ·
-β with SIC-3 × start-year cells (`beta_sic3_cells`, a point estimate with no SE; the verdict
-states it beside every pass, and no pass is withdrawn because of it) · per test, the rows left
-out for a missing SIC code (`n_no_sic`, and `n_no_sic_exit` for the bounds runs) and the rows
-alone in their cell (`n_alone_in_cell`).
+per test, the rows left out for a missing SIC code (`n_no_sic`, and `n_no_sic_exit` for the
+bounds runs) and the rows alone in their cell (`n_alone_in_cell`, `n_alone_in_sic3_cell`) · in
+`gates.json`, the share of discovery cohort rows alone in their SIC-2 and SIC-3 cell
+(`discovery_share_alone_in_cell`), to be read before any β.
 
 **Deliberately not run**, because each is a parameter change that invites a search: a top-decile
 cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed within SIC-2.
@@ -184,8 +190,16 @@ cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed wit
   can still earn β from differences in hold rates between sub-industries (synthetic worst case:
   β +0.20 with no effect inside any sub-industry). `gross_margin` and `share_stability` are the
   most exposed by construction — both are industry-level traits, and the second is computed on
-  SIC-3 peers — but no predictor was shown to be safe. The SIC-3 cut is reported for this reason
-  and decides nothing.
+  SIC-3 peers — but no predictor was shown to be safe. Rule 5 is the guard, and it is a filter,
+  not a proof: on synthetic rows a fully aligned sub-industry label passes both windows in 0% to
+  2% of worlds with it and in 89% to 100% without it, **provided SIC-3 holds the label fixed**. A
+  label at a grain finer than SIC-3 is not controlled at all.
+- **Rule 5 costs power where sub-industries are thin, and it fails a mixed predictor.** With 57%
+  of discovery rows alone in their SIC-3 cell, a real within-sector effect of 0.12 passes 44.0%
+  of synthetic worlds against 56.0% without the rule; at 15% alone it costs nothing. A predictor
+  with a real effect of 0.12 **and** a fully aligned sub-industry component passes 40.5%: most
+  of its β is the sub-industry, and the rule is built to say so. The real share of rows alone
+  is unknown until the gates run, and no rule here adjusts for it.
 - **β is per unit of the cohort-wide rank, and the 10 pp arm is not the same hurdle for every
   predictor.** Firms in one cell span only part of the rank range when a predictor varies
   mostly between sectors, so the same within-sector difference reads as a larger β (synthetic:
@@ -289,7 +303,8 @@ SIC-3 cells were **not** adopted as the registered control. That is a judgement,
 measurement: SIC-2 is the sector level this note registered, moving it is a parameter change
 beyond the defect, and the cost in power at the real SIC-3 grain is unknown (16% wider spread on
 synthetic rows with four sub-industries per sector). The SIC-3 cut is reported beside every β
-instead, and the verdict must state it for every pass.
+instead, and the verdict must state it for every pass. *(Superseded the same day by amendment 2:
+the SIC-3 cut now feeds pass rule 5.)*
 
 **Considered and not adopted** (reasoning, not in the probe): repairing C1 by shrinkage or an
 errors-in-variables correction adds a free constant; adding the sector mean of the predictor
@@ -298,3 +313,90 @@ sector-cycle leak and the pooling leak.
 
 **A side effect.** β by start year is now computable. Under the original C1 a one-year sample
 left C1 constant after the leave-out, and every per-year fit was singular.
+
+### 2 — a fifth pass rule: the sub-industry check (2026-10-05)
+
+**State of knowledge when made.** As for amendment 1: nothing had run in between. No SEC bulk
+archive had been downloaded and no predictor had been measured on real data. The evidence is
+**synthetic**, tables 11-26 of the same probe. Each table is 200 seeded worlds of 1,600 firms
+over 11 start years (about 3,050 discovery and 1,750 holdout firm-years). One world spans both
+windows, so a label and its group's hold rate persist from discovery into the holdout, as they
+would in real data. The other parameters are those of amendment 1, and are as invented.
+
+**What changed.** In place: the two-sentence paragraph under the header; the pass-rule heading ("all four"
+became "all five") and the new rule 5; one clause of the false-pass sentence; in the reported
+list, the SIC-3 item moved into rule 5, the alone-in-cell item gained `n_alone_in_sic3_cell`, and
+the `gates.json` share was added; in the limitations, the end of the sub-industry bullet was
+replaced and one bullet was added; one sentence of amendment 1 is marked superseded. The two
+passages of amendment 1 that this replaces were:
+
+> … (`beta_sic3_cells`, a point estimate with no SE; the verdict states it beside every pass,
+> and no pass is withdrawn because of it)
+>
+> The SIC-3 cut is reported for this reason and decides nothing.
+
+Nothing else changed. Rules 1 to 4 and their bars are as first registered.
+
+**Why a rule at all.** Amendment 1 left a hole it named: SIC-2 cells do not hold a sub-industry
+fixed. A reported number with no rule would have had its rule chosen after the number was seen,
+which is the choice a pre-registration exists to make first.
+
+**The evidence.** "Joint pass" is rule 1 and rule 2 together, with the spread of β across worlds
+standing in for the bootstrap SE. Rule 3 is not simulated because the synthetic rows have no
+exits, and rule 4 because they have no rank outcome. "Alone" is the share of discovery rows that
+are the only row of their SIC-3 × start-year cell. The sampling error of a share over 200 worlds
+is about ±1 point near 2%, ±2.3 near 12% and ±3.5 near 50%.
+
+| synthetic world (table) | alone | rules 1-2 | **+ rule 5: half of β** | + a fixed 3 pp floor (not adopted) |
+|---|---|---|---|---|
+| null, no group structure (11) | 15% | 0.5% | 0.5% | 0.5% |
+| null, SIC-2 label, fully aligned (12) | 15% | 0.5% | 0.5% | 0.5% |
+| **null, sub-industry label, fully aligned (13)** | 15% | **89.0%** | **0.0%** | 11.5% |
+| null, sub-industry label, half aligned (14) | 15% | 29.5% | 2.0% | 7.5% |
+| null, sub-industry label, 12 per sector (15) | 34% | 100.0% | 0.0% | 13.5% |
+| null, sub-industry label, 40 per sector (16) | 57% | 100.0% | 2.0% | 12.0% |
+| null, sub-industry label, 120 per sector (17) | 78% | 99.5% | 2.0% | 17.5% |
+| real effect 0.12, all within-sector (18) | 15% | 54.5% | 54.5% | 54.5% |
+| real 0.12, 12 sub-industries per sector (19) | 34% | 59.5% | 54.0% | 57.5% |
+| real 0.12, 40 per sector (20) | 57% | 56.0% | 44.0% | 50.5% |
+| real 0.12, 120 per sector (21) | 78% | 61.5% | 38.0% | 45.0% |
+| real effect 0.20, all within-sector (22) | 15% | 99.0% | 98.5% | 99.0% |
+| real 0.20, 120 per sector (23) | 78% | 98.5% | 73.5% | 88.0% |
+| real 0.12, predictor half between-sector (24) | 15% | 66.5% | 66.0% | 66.5% |
+| real 0.12, half between-sector, 40 per sector (25) | 57% | 63.0% | 43.0% | 56.5% |
+| mixed: real 0.12 plus a fully aligned sub-industry label (26) | 15% | 100.0% | 40.5% | 96.5% |
+
+**Why half of β, and not a fixed floor.** The first draft of this amendment registered a fixed
+floor of 3 pp, the number this note already uses for the bounds rule. Measured, it left 11.5% to
+17.5% of pure sub-industry labels passing: 3 pp is about half a standard error of the SIC-3
+estimate, so the rule was close to two coin flips. A share of β asks the question the rule is
+for — does most of the effect survive holding the sub-industry fixed? — and it is the same hurdle
+in scale for every predictor, which a fixed floor is not, because β is per unit of the cohort-wide rank
+(Limitations). It leaves 0% to 2%.
+
+**0.5 is a new constant, chosen after seeing these synthetic tables.** No real number informed
+it. The result does not hang on it: with one third in its place a fully aligned label passes
+1.0% to 9.0% (tables 13 and 15-17), and with two thirds 0% to 1%; a real effect of 0.12 at 57%
+alone passes 49.5%, 44.0% and 36.0% at one third, one half and two thirds.
+
+**What it costs.** Nothing measurable where sub-industries are not thin (tables 18, 22, 24). As
+they thin out it costs power: 5.5 points at 34% alone, 12 at 57%, 23.5 at 78% for a real effect
+of 0.12. The fixed floor costs less there (2, 5.5 and 16.5 points) and filters far less. A null is an
+acceptable result in this study; a pass enters the register as a closed verdict.
+
+**What it fails on purpose.** A mixed predictor (table 26): a real within-sector effect whose β
+is mostly a sub-industry component passes 40.5%. The verdict must not read such a failure as
+"no effect"; `beta_sic3_cells` is printed so the split can be seen.
+
+**What it does not fix.**
+
+- A label at a grain finer than SIC-3. The 0% to 2% assumes SIC-3 holds the label fixed.
+- The real SIC-3 grain is unknown. `gates.json` reports the share of rows alone in their cell
+  before any β is read, and the verdict must quote it. No rule here adjusts for it.
+- A cut that cannot be computed fails the rule. β and its SE are still reported.
+
+**Considered and not adopted** (all measured, same tables): a fixed 3 pp floor in both windows
+(above); the same floor on discovery only (23.5% to 38.0% of labels pass); the point floors of
+rules 1 and 2 applied to the SIC-3 β, 10 pp and 6 pp (0.5% to 6.5% of labels, and less power
+than half of β in most tables: 43.0% against 54.0% at 34% alone). Not measured: a floor scaled
+to the SE of the SIC-3 estimate, which would add a multiplier and a second bootstrap.
