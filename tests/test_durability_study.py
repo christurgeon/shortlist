@@ -117,12 +117,32 @@ def test_low_ic_with_an_operating_loss_did_not_hold():
     assert rows[18].state == "low_ic" and rows[18].held is False
 
 
+def test_observed_under_the_later_floor_did_not_hold():
+    firms = _world()
+    firms[19].snaps[2018][2018] = _yr(2018, 0.10, revenue=1.5e9)     # the 2018 floor is 0.28
+    row = {int(r.cik): r for r in build_cohort(firms, 2015)}[19]
+    assert row.state == "observed" and row.held is False and row.rank_t3 < 0.5
+
+
+def test_a_last_year_end_in_the_outcome_bucket_is_a_gap_not_an_exit():
+    firms = _world()
+    firms[16].last_bucket = 2018
+    assert {int(r.cik): r for r in build_cohort(firms, 2015)}[16].state == "gap"
+
+
 def test_compounded_needs_held_and_above_median_revenue_growth():
     rows = {int(r.cik): r for r in build_cohort(_world(), 2015)}
     assert rows[19].rev_ratio == 1.5 and rows[18].rev_ratio == pytest.approx(1.2)
     assert rows[19].compounded is True          # held, 1.5 >= median(1.5, 1.2)
     assert rows[18].compounded is False         # held, but below the median
     assert rows[16].compounded is None and rows[17].compounded is None
+
+
+def test_compounded_is_false_for_a_firm_that_did_not_hold_however_fast_it_grew():
+    firms = _world()
+    firms[19].snaps[2018][2018] = _yr(2018, 0.10, revenue=1.5e9)     # fastest growth, not held
+    row = {int(r.cik): r for r in build_cohort(firms, 2015)}[19]
+    assert row.rev_ratio == 1.5 and row.compounded is False
 
 
 def test_cohort_is_empty_when_a_cross_section_is_too_thin():
@@ -342,8 +362,53 @@ def test_fit_recovers_a_real_effect_and_zeroes_a_level_proxy():
     assert raw_tercile_spread(proxy_samp, "proxy") > 0.15
 
 
+def _confounded(prob, proxy, seed=3):
+    """Rows whose outcome follows `prob(level, size)` and whose predictor `proxy(level, size)`
+    has no effect of its own."""
+    rng = random.Random(seed)
+    rows = []
+    for y in (2011, 2012, 2013):
+        batch = []
+        for i in range(1500):
+            level, size = rng.random(), rng.random()
+            batch.append(Row(cik=f"f{i}", year=y, sic2=f"{i % 5}", roic=level, revenue=size,
+                             preds={"proxy": proxy(level, size) + rng.random()}, state="observed",
+                             held=rng.random() < prob(level, size), rank_t3=None, rev_ratio=None))
+        ds.PREDICTORS, keep = ("proxy",), ds.PREDICTORS
+        try:
+            ds._finish(batch)
+        finally:
+            ds.PREDICTORS = keep
+        rows += batch
+    return sample(rows, "proxy", "held")
+
+
+def test_fit_holds_size_fixed():
+    samp = _confounded(lambda level, size: 0.2 + 0.5 * size, lambda level, size: size)
+    assert abs(fit(samp, "proxy")) < 0.10
+    assert raw_tercile_spread(samp, "proxy") > 0.15
+
+
+def test_fit_holds_the_level_curve_fixed():
+    # The hold rate is U-shaped in level, and the proxy is the squared distance from the
+    # middle. A straight line in the level rank cannot absorb that; the squared term does.
+    samp = _confounded(lambda level, size: 0.2 + 2.4 * (level - 0.5) ** 2,
+                       lambda level, size: 8 * (level - 0.5) ** 2)
+    assert abs(fit(samp, "proxy")) < 0.20          # 0.54 with the squared term dropped
+    assert raw_tercile_spread(samp, "proxy") > 0.15
+
+
 def test_level_slope_is_positive_when_level_drives_the_outcome():
     assert level_slope(sample(_synthetic(), None, "held")) > 0.3
+
+
+def test_level_slope_is_within_the_start_year():
+    # Pooled, a higher rank goes with holding: 2012 has the higher ranks and all but one of the
+    # holds. Inside each start year the firm with the higher rank is the one that did not hold.
+    samp = [(_row("a", 2011, c0=0.1), 1.0), (_row("b", 2011, c0=0.3), 0.0),
+            (_row("c", 2011, c0=0.2), 0.0), (_row("d", 2012, c0=0.7), 1.0),
+            (_row("e", 2012, c0=0.8), 1.0), (_row("f", 2012, c0=0.9), 0.0)]
+    assert level_slope(samp) < 0
 
 
 def test_fit_raises_on_a_predictor_that_is_the_level_rank():
@@ -361,6 +426,25 @@ def test_bootstrap_is_seeded_and_resamples_firms():
     assert a != bootstrap(samp, "real", reps=40, seed=2)
     assert a["firms"] == 120 and a["reps"] == 40 and a["singular"] == 0
     assert a["se"] > 0 and a["lo"] < a["hi"]
+
+
+def test_bootstrap_resamples_firms_and_not_rows():
+    # Each firm repeats one predictor value and one outcome over six start years, so its rows
+    # are one observation. A row-level resample would read them as six and shrink the SE by
+    # about the square root of six; giving every row its own CIK shows that smaller number.
+    rng = random.Random(11)
+    rows = []
+    for i in range(100):
+        p, held = rng.random(), rng.random() < 0.5
+        for y in range(2011, 2017):
+            r = _row(f"f{i}", y, sic2=f"{i % 3}", c0=rng.random(), p=p, held=held)
+            r.c2 = rng.random()
+            rows.append(r)
+    samp = sample(rows, "x", "held")
+    by_firm = bootstrap(samp, "x", reps=120, seed=1)["se"]
+    for k, (r, _) in enumerate(samp):
+        r.cik = f"row{k}"
+    assert by_firm > 1.6 * bootstrap(samp, "x", reps=120, seed=1)["se"]
 
 
 # ---------------------------------------------------------------- the pass rule
@@ -465,6 +549,21 @@ def test_measure_keeps_beta_when_the_sic3_cut_cannot_be_computed():
     m = measure(rows, "real", "held", reps=20, with_bounds=False)
     assert "error" not in m and m["beta"] > 0 and m["beta_sic3_cells"] is None
     assert m["n_alone_in_sic3_cell"] == m["n"] == 600
+
+
+def test_measure_keeps_beta_when_a_third_of_the_predictor_is_empty():
+    # `track` takes at most seven values. With over two thirds of the rows tied at the top
+    # their shared rank is under 2/3, the top third is empty and THE WRONG METRIC has no value.
+    rows = _synthetic(firms=200)
+    rng = random.Random(2)
+    for y in (2011, 2012, 2013):
+        batch = [r for r in rows if r.year == y]
+        ranks = avg_ranks({i: (1.0 if i % 10 < 8 else rng.random()) for i in range(len(batch))})
+        for i, r in enumerate(batch):
+            r.p["tied"] = ranks[i]
+    m = measure(rows, "tied", "held", reps=20, with_bounds=True)
+    assert "error" not in m and m["raw_tercile_spread"] is None
+    assert {"beta", "se", "bound_held", "bound_not", "rank_beta"} <= set(m)
 
 
 def test_share_alone_in_cell_ignores_firms_with_no_sic():

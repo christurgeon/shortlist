@@ -387,9 +387,14 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
               "n_alone_in_cell": sum(cells[(r.sic2, r.year)] == 1 for r, _ in samp),
               "n_alone_in_sic3_cell": sum(cells3[(r.sic3, r.year)] == 1 for r, _ in samp)}
     try:
-        out = {**counts, "beta": fit(samp, pred),
-               "raw_tercile_spread": raw_tercile_spread(samp, pred),
-               **bootstrap(samp, pred, reps=reps, seed=seed)}
+        out = {**counts, "beta": fit(samp, pred)}
+        try:
+            out["raw_tercile_spread"] = raw_tercile_spread(samp, pred)
+        except ZeroDivisionError:
+            # A third of the predictor is empty (`track` takes at most seven values, and over
+            # two thirds of the rows can tie). The wrong metric must not sink the right one.
+            out["raw_tercile_spread"] = None
+        out.update(bootstrap(samp, pred, reps=reps, seed=seed))
         try:
             out["beta_sic3_cells"] = fit(samp, pred, digits=3)
         except ValueError:
