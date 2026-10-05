@@ -24,7 +24,6 @@ from shortlist.backtest.durability_study import (
     raw_tercile_spread,
     reproduction_failures,
     sample,
-    sector_rates,
     state_shares,
 )
 from shortlist.durability import TAX, YearRow
@@ -100,6 +99,14 @@ def test_cohort_is_the_top_quintile_with_one_state_each():
     assert [rows[i].state for i in (16, 17, 18, 19)] == ["exit", "gap", "low_ic", "observed"]
     assert [rows[i].held for i in (16, 17, 18, 19)] == [None, None, True, True]
     assert rows[19].rank_t3 == 1.0 and rows[18].rank_t3 is None
+
+
+def test_cohort_rows_carry_the_sic2_and_sic3_sector():
+    firms = _world()
+    firms[19].sic = None
+    rows = {int(r.cik): r for r in build_cohort(firms, 2015)}
+    assert (rows[18].sic2, rows[18].sic3) == ("35", "357")
+    assert (rows[19].sic2, rows[19].sic3) == (ds.NO_SIC, ds.NO_SIC)
 
 
 def test_low_ic_with_an_operating_loss_did_not_hold():
@@ -193,7 +200,7 @@ def test_windows_do_not_overlap_and_the_holdout_stops_before_the_censored_year()
     assert list(ds.DISCOVERY) == [2011, 2012, 2013, 2014, 2015, 2016, 2017]
     assert list(ds.HOLDOUT) == [2018, 2019, 2020, 2021]
 
-# ---------------------------------------------------------------- sample + sector control
+# ---------------------------------------------------------------- sample
 
 def _row(cik, year, *, state="observed", held=True, sic2="35", c0=0.5, p=0.5, rank=0.9,
          compounded=None):
@@ -214,25 +221,88 @@ def test_sample_codes_exits_only_in_a_bounds_run_and_never_takes_gaps():
     assert len(sample(rows, None, "held")) == 2                            # no predictor filter
 
 
-def test_sector_rate_leaves_out_the_rows_own_year_and_own_firm(monkeypatch):
-    monkeypatch.setattr(ds, "MIN_SECTOR_ROWS", 1)
-    rows = [_row("a", 2011, held=True), _row("a", 2012, held=True),
-            _row("b", 2011, held=False), _row("b", 2012, held=True),
-            _row("c", 2012, held=False), _row("z", 2011, held=True, sic2="99")]
-    c1 = sector_rates(sample(rows, "x", "held"))
-    # for (a, 2011): other firms, other years in sector 35 -> b/2012 (1), c/2012 (0)
-    assert c1[("a", 2011)] == 0.5
-    # for (c, 2012): a/2011 (1), b/2011 (0)
-    assert c1[("c", 2012)] == 0.5
-    # the lone sector-99 row has nothing left: falls back to the sample mean (4 of 6)
-    assert c1[("z", 2011)] == pytest.approx(4 / 6)
+def test_sample_leaves_out_a_firm_with_no_sic_only_when_a_predictor_is_regressed():
+    rows = [_row("a", 2011), _row("b", 2011, sic2="none"), _row("c", 2011, held=False)]
+    assert [r.cik for r, _ in sample(rows, "x", "held")] == ["a", "c"]
+    assert [r.cik for r, _ in sample(rows, "x", "held", exits=True)] == ["a", "c"]
+    assert [r.cik for r, _ in sample(rows, "x", "rank")] == ["a", "c"]
+    assert [r.cik for r, _ in sample(rows, None, "held")] == ["a", "b", "c"]   # the gates keep it
 
 
-def test_small_sectors_pool_into_other():
-    rows = [_row(f"f{i}", 2011 + i % 2, held=bool(i % 2), sic2=f"{10 + i}") for i in range(6)]
-    c1 = sector_rates(sample(rows, "x", "held"))       # every sector has 1 row -> all 'other'
-    # for f0 (2011, held False): other firms in other years = f1, f3, f5 (all held)
-    assert c1[("f0", 2011)] == 1.0
+# ---------------------------------------------------------------- the sector control
+
+def _label_world(kind, seed=5, firms=1800, years=(2011, 2012, 2013), sectors=12):
+    """A predictor `label` with NO effect inside any group. Half its variance is the hold-rate
+    shift of the firm's group; the group is its SIC-2 sector ("sector"), its sector in that
+    start year ("sector_year"), or its sub-industry ("sic3"). The outcome depends on that shift
+    and on nothing else."""
+    rng = random.Random(seed)
+    shift: dict = {}
+    rows = []
+    for y in years:
+        batch = []
+        for i in range(firms):
+            sec, sub = i % sectors, (i // sectors) % 3
+            key = {"sector": (sec,), "sector_year": (sec, y), "sic3": (sec, sub)}[kind]
+            if key not in shift:
+                shift[key] = rng.uniform(-0.3, 0.3)
+            batch.append(Row(cik=f"f{i}", year=y, sic2=f"{sec:02d}", roic=rng.random(),
+                             revenue=rng.random(),
+                             preds={"label": shift[key] / 0.173 + rng.gauss(0, 1)},
+                             state="observed", held=rng.random() < 0.5 + shift[key],
+                             rank_t3=None, rev_ratio=None, sic3=f"{sec:02d}{sub}"))
+        ds.PREDICTORS, keep = ("label",), ds.PREDICTORS
+        try:
+            ds._finish(batch)
+        finally:
+            ds.PREDICTORS = keep
+        rows += batch
+    return rows
+
+
+def test_fit_gives_a_sector_label_no_credit():
+    samp = sample(_label_world("sector"), "label", "held")
+    assert abs(fit(samp, "label")) < 0.15
+    # THE WRONG METRIC says the label is strong. A control that leaks sector agrees with it.
+    assert raw_tercile_spread(samp, "label") > 0.20
+
+
+def test_small_sectors_are_not_pooled():
+    # 180 sectors of 15 rows: every one is under the 20-row line at which the note's original
+    # control pooled. Merged into one group, the label keeps its whole sector effect (0.44 here).
+    samp = sample(_label_world("sector", firms=900, sectors=180), "label", "held")
+    assert abs(fit(samp, "label")) < 0.15
+
+
+def test_fit_gives_a_sector_by_year_label_no_credit():
+    # A sector cycle: the label tracks its sector's shock in THAT start year. A sector fixed
+    # effect that is not also by start year leaves all of it in beta.
+    samp = sample(_label_world("sector_year"), "label", "held")
+    assert abs(fit(samp, "label")) < 0.15
+    assert raw_tercile_spread(samp, "label") > 0.20
+
+
+def test_sic2_cells_do_not_hold_a_sub_industry_fixed_and_sic3_cells_do():
+    # The registered limit of the control, pinned: a SIC-3 trait still earns beta under SIC-2
+    # cells. The SIC-3 cut is reported beside every beta for this reason.
+    samp = sample(_label_world("sic3"), "label", "held")
+    assert fit(samp, "label") > 0.20
+    assert abs(fit(samp, "label", digits=3)) < 0.15
+    with pytest.raises(ValueError):
+        fit(samp, "label", digits=4)
+
+
+def test_fit_reads_the_effect_inside_a_cell_and_a_lone_row_adds_nothing():
+    rng = random.Random(1)
+    samp = []
+    for sec, year, base in (("10", 2011, 0.9), ("10", 2012, 0.1), ("20", 2011, 0.4)):
+        for i in range(30):
+            r = _row(f"{sec}-{i}", year, sic2=sec, c0=rng.random(), p=rng.random())
+            r.c2 = rng.random()
+            samp.append((r, base + 0.3 * r.p["x"]))      # the cell's level, plus 0.3 x P
+    assert fit(samp, "x") == pytest.approx(0.3, abs=1e-9)
+    lone = _row("lone", 2011, sic2="99", c0=0.1, p=0.99)  # the only row of its cell
+    assert fit(samp + [(lone, 1e6)], "x") == pytest.approx(0.3, abs=1e-6)
 
 
 # ---------------------------------------------------------------- the regression
@@ -357,3 +427,16 @@ def test_measure_reports_every_field_and_never_raises():
     assert bad["n"] == 600 and bad["error"].startswith("ValueError")
     empty = measure([], "real", "held", reps=20, with_bounds=False)
     assert empty["n"] == 0 and "error" in empty
+
+
+def test_measure_counts_the_rows_the_sector_control_cannot_use():
+    rows = _synthetic(firms=200)
+    for r in rows[:7]:
+        r.sic2 = "none"                                  # no SIC: out of the regression
+    rows[0].state, rows[0].held = "exit", None           # ... and out of the bounds runs
+    rows[10].sic2 = "77"                                 # the only row of its cell
+    m = measure(rows, "real", "held", reps=20, with_bounds=True)
+    assert (m["n"], m["n_no_sic"], m["n_no_sic_exit"], m["n_alone_in_cell"]) == (593, 6, 1, 1)
+    bad = measure(rows, "missing_pred", "held", reps=20, with_bounds=False)
+    assert "error" in bad
+    assert [bad[k] for k in ("n", "n_no_sic", "n_no_sic_exit", "n_alone_in_cell")] == [0, 0, 0, 0]
