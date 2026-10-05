@@ -4,6 +4,9 @@
 `docs/superpowers/specs/2026-10-04-moat-durability-design.md` (gitignored; this note is the
 committed record and is complete without it).
 
+**Amended once, 2026-10-05 (the sector control), also before any SEC bulk data was read.** The
+change, the original wording and the evidence are in §Amendments at the end.
+
 ## What has already been seen, and what has not
 
 Seen (`scripts/probe_durability_frames.py`, committed with this note; it reads SEC `frames`,
@@ -65,9 +68,10 @@ No substitution of `t+4` for `t+3`. CIK successors are not merged.
 
 Every covariate is a percentile rank within its cohort-year; ties share the average rank.
 
-Controls: **C0** ROIC rank and its square · **C1** SIC-2 sector mean of the outcome, leaving out
-the row's own start year and own firm, within the window; sectors under 20 rows pool into
-`other` · **C2** revenue rank.
+Controls: **C0** ROIC rank and its square · **C1** a fixed effect for every SIC-2 sector ×
+start-year cell: each variable is demeaned within its cell, small sectors are **not** pooled,
+and a firm with no SIC code is left out of the regressions (amended 2026-10-05, §Amendments) ·
+**C2** revenue rank.
 
 | id | predictor (code name) | definition, from snapshot `t` | registered sign | tested on |
 |---|---|---|---|---|
@@ -84,16 +88,18 @@ registered sign stays positive.
 
 ## The deciding metric
 
-Per test, a linear probability model on the pooled cohort-years where the predictor is defined,
-every variable demeaned within start year:
+Per test, a linear probability model on the pooled cohort-years where the predictor is defined
+and the firm has a SIC code, every variable demeaned within its SIC-2 sector × start-year cell:
 
-`outcome ~ C0 + C0² + C1 + C2 + P`
+`outcome ~ C0 + C0² + C2 + P`, within cell
 
 **β** = the coefficient on P: the change in the probability of the outcome from the worst to the
-best rank of the predictor, oriented so the registered sign is positive.
+best rank of the predictor, among firms of the same sector and start year, oriented so the
+registered sign is positive. A firm alone in its cell adds nothing to β.
 
 Standard error: bootstrap over **CIKs** (each carries all its cohort-years), 2,000 replications,
-seed 20261004, percentile interval. Ranks and C1 are fixed from the full sample.
+seed 20261004, percentile interval. Ranks are fixed from the full sample; the cell means are
+recomputed in every resample.
 
 **The wrong metric, labelled wrong:** the raw difference in hold rate between the best and worst
 third of a predictor. It is large for anything that tracks level or sector. It is computed and
@@ -124,8 +130,11 @@ printed beside every β (`raw_tercile_spread`) so the gap is visible, and it dec
 4. Continuous check, on discovery: the same model with the outcome replaced by the universe
    percentile rank of ROIC at `t+3` (observed firms only) has β > 0.
 
-Under the null the per-test false-pass rate is between about 0.1% and 2.5%, so one marginal pass
-among eleven is weak evidence and the verdict must say so.
+Under the null the per-test false-pass rate is between about 0.1% and 3.5%, so one marginal pass
+among eleven is weak evidence and the verdict must say so. The upper figure is the discovery arm
+alone on synthetic rows under the amended control (2.5% to 3.5% of nulls over 200 worlds, ±1.2
+points). The range assumes a predictor with no industry structure finer than SIC-2; a
+sub-industry label is not such a null (Limitations).
 
 ## Decision rule
 
@@ -141,7 +150,11 @@ In every case: no scoring leg, no gate, no flag, no discovery list. `scoring.sco
 ## Reported, not decision-bearing
 
 β by start year · the holdout restricted to CIKs absent from every discovery cohort · β excluding
-SIC-2 10, 12, 13, 14, 29 · exit rate by predictor tercile · state shares · `investment` on outcome B.
+SIC-2 10, 12, 13, 14, 29 · exit rate by predictor tercile · state shares · `investment` on outcome B ·
+β with SIC-3 × start-year cells (`beta_sic3_cells`, a point estimate with no SE; the verdict
+states it beside every pass, and no pass is withdrawn because of it) · per test, the rows left
+out for a missing SIC code (`n_no_sic`, and `n_no_sic_exit` for the bounds runs) and the rows
+alone in their cell (`n_alone_in_cell`).
 
 **Deliberately not run**, because each is a parameter change that invites a search: a top-decile
 cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed within SIC-2.
@@ -167,9 +180,121 @@ cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed wit
 - Accounting ROIC flatters intangible-heavy firms; IC includes cash.
 - Buyback compounders have no ROIC at `t` (`low_ic`) and are never in a cohort.
 - Cyclical peaks look like moats; energy and mining are a reported cut, not an exclusion.
+- **SIC-2 cells do not hold a sub-industry fixed.** A predictor that is a SIC-3 or SIC-4 trait
+  can still earn β from differences in hold rates between sub-industries (synthetic worst case:
+  β +0.20 with no effect inside any sub-industry). `gross_margin` and `share_stability` are the
+  most exposed by construction — both are industry-level traits, and the second is computed on
+  SIC-3 peers — but no predictor was shown to be safe. The SIC-3 cut is reported for this reason
+  and decides nothing.
+- **β is per unit of the cohort-wide rank, and the 10 pp arm is not the same hurdle for every
+  predictor.** Firms in one cell span only part of the rank range when a predictor varies
+  mostly between sectors, so the same within-sector difference reads as a larger β (synthetic:
+  a planted 0.20 reads +0.194 for an all-within predictor and +0.252 for a half-between one).
+  The `2 × SE` arm scales with it; the 10 pp arm does not. The original control read +0.143 on
+  the half-between row, so the hurdle differed there too, in the other direction.
+- The sector control costs power where a predictor varies between sectors: on synthetic rows
+  the spread of β is 38% to 46% wider than under the original control for a predictor that is
+  half between-sector (tables 3 and 9), and about the same (0.035 against 0.034, table 8) for one
+  that is all within-sector.
+- A firm alone in its cell carries no weight in β, and nothing here sets a floor on how many
+  rows do carry weight. Read `n_alone_in_cell` before any β.
 - The top-quintile floor is about 14–16% ROIC: above the cost of capital, not "dominant".
 - Current SIC, not point-in-time. Nominal revenue floor.
 - CIK successors read as exits (Google → Alphabet).
 - Late filers (more than 120 days) are outside the universe in that year.
 - Six predictors and two outcomes were chosen by one author in one sitting from the literature;
   the holdout is the only protection against that.
+
+## Amendments
+
+### 1 — the sector control (2026-10-05)
+
+**State of knowledge when made.** No SEC bulk archive had been downloaded. `fetch`, `gates`,
+`discovery` and `holdout` had never run. No predictor, conditional rate or regression had been
+computed on real data. All evidence below is **synthetic**:
+`scripts/probe_durability_sector_control.py`, committed with this amendment. Tables 1-6, 8 and 9
+are each 200 seeded worlds of about 3,000 firm-years from 1,000 firms over 7 start years, in 65
+sectors of very unequal size, with a sector hold-rate standard deviation of 0.10. Table 7 is
+600 firms over 4 start years (about 1,770 firm-years); table 10 is 20 worlds. Those parameters
+are invented; the size of every leak below depends on them. "Fully aligned" is a worst case, not
+an estimate of real data.
+
+**What changed.** In place: a new two-sentence paragraph under the header; the C1 definition; the
+model sentence, which now also requires a SIC code; the model line; the β sentence (the words
+"among firms of the same sector and start year" and "A firm alone in its cell adds nothing to
+β"); the bootstrap sentence; the false-pass sentence under the pass rule (its upper figure, and
+two sentences added after it); two reported items; four limitations. The name C1 is kept for
+the new control. The text first registered on 2026-10-04 was:
+
+> **C1** SIC-2 sector mean of the outcome, leaving out the row's own start year and own firm,
+> within the window; sectors under 20 rows pool into `other`
+>
+> Per test, a linear probability model on the pooled cohort-years where the predictor is
+> defined, every variable demeaned within start year: `outcome ~ C0 + C0² + C1 + C2 + P`
+>
+> **β** = the coefficient on P: the change in the probability of the outcome from the worst to
+> the best rank of the predictor, oriented so the registered sign is positive.
+>
+> Ranks and C1 are fixed from the full sample.
+>
+> Under the null the per-test false-pass rate is between about 0.1% and 2.5%, so one marginal
+> pass among eleven is weak evidence and the verdict must say so.
+
+Nothing else changed. The predictors, their signs, the outcomes, the windows, the four pass
+rules and their bars, the gates, the bootstrap unit, count and seed are as first registered. The
+instrument gate is still the slope within start year only. No threshold or free constant was
+added: the 20-row pooling line was removed and nothing replaced it.
+
+**Why.** C1 existed so that no predictor could pass by being a sector label. It did not do that.
+A leave-out sector mean is a noisy estimate entered as a covariate, and a pooled sector is
+controlled only for the pooled mean, so part of the sector effect stays in β. With a **true
+within-sector effect of zero** and a predictor whose sector component copies the sector's hold
+rate (table 1 of the probe):
+
+| control | mean β | share of worlds with β ≥ max(10 pp, 2 × sd) |
+|---|---|---|
+| original C1 | +0.127 | 71.5% |
+| sector + start-year fixed effects, sectors under 20 rows pooled | +0.045 | 12.0% |
+| sector + start-year fixed effects, no pooling | +0.000 | 2.5% |
+| **SIC-2 × start-year cells (adopted)** | +0.000 | 3.0% |
+
+`sd` is the spread of β across the 200 worlds, standing in for the bootstrap SE. With no
+alignment every control gives a mean β within 0.001 of zero (table 3). A sector label and its
+sector's hold rate are both persistent, so the holdout would repeat the bias rather than catch
+it: at holdout scale, with the alignment present there too, the original C1 gives +0.153
+(table 7).
+
+**Why cells, and not sector plus start-year effects.** A sector cycle — a sector whose hold rate
+moves in one start year while the predictor's sector mean moves the same way — passes through
+additive sector and year effects untouched: mean β +0.198, against −0.000 with cells (table 4).
+This note already names cyclical peaks as a known confound. Where both are unbiased the spread
+is nearly the same: 0.049 with cells against 0.048 (table 1).
+
+**Why a firm with no SIC code is left out of the regressions.** Kept as one group, such firms
+are a pooled sector: with 5% of firms uncoded, mean β is +0.022 with them in and +0.001 with
+them out (table 6). They are left out of every regression sample, the two bounds runs included;
+`n_no_sic` and `n_no_sic_exit` report how many rows that removes. They stay in the universe, the
+quintile floors, the cohort, the base rates and the instrument gate.
+
+**What still works.** A planted within-sector effect of 0.20 is recovered: mean β +0.194 for a
+predictor that varies only within sectors (table 8) and +0.252 for one that is half
+between-sector (table 9) — β is per unit of the cohort-wide rank, which is now a registered
+limitation. The firm bootstrap, with the cell means recomputed in every resample, is within
+about 5% of the true spread (ratio 1.00 over 20 worlds at 200 resamples; the registered count is
+2,000).
+
+**What it does not fix.** A sub-industry label. With the predictor copying a SIC-3 hold-rate
+shift, the adopted control gives mean β +0.199; SIC-3 × start-year cells give −0.001 (table 5).
+SIC-3 cells were **not** adopted as the registered control. That is a judgement, not a
+measurement: SIC-2 is the sector level this note registered, moving it is a parameter change
+beyond the defect, and the cost in power at the real SIC-3 grain is unknown (16% wider spread on
+synthetic rows with four sub-industries per sector). The SIC-3 cut is reported beside every β
+instead, and the verdict must state it for every pass.
+
+**Considered and not adopted** (reasoning, not in the probe): repairing C1 by shrinkage or an
+errors-in-variables correction adds a free constant; adding the sector mean of the predictor
+rank as a covariate is the additive sector effect by another route, and inherits both the
+sector-cycle leak and the pooling leak.
+
+**A side effect.** β by start year is now computable. Under the original C1 a one-year sample
+left C1 constant after the leave-out, and every per-year fit was singular.
