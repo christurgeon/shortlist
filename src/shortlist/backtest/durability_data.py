@@ -8,6 +8,7 @@ from __future__ import annotations
 import gzip
 import json
 import zipfile
+import zlib
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -57,26 +58,46 @@ def require_zip(path: str | Path) -> None:
         raise ValueError(f"{p.name} is not a ZIP archive")
 
 
-def compact_companyfacts_zip(zip_path: str | Path, out_path: str | Path) -> int:
+# What reading one member can raise when the member, not the archive, is bad: invalid JSON or
+# text (ValueError), a failed CRC (BadZipFile), a broken or truncated deflate stream.
+_BAD_MEMBER = (ValueError, zipfile.BadZipFile, zlib.error, EOFError)
+
+
+def compact_companyfacts_zip(zip_path: str | Path, out_path: str | Path,
+                             unreadable: Optional[list[str]] = None) -> int:
     """Write one gzip JSONL line per kept filer: {"cik", "name", "facts"}. Returns the count.
-    A member that is not valid JSON is skipped — one bad file must not sink a 1.4 GB pass."""
+    A member that cannot be read is skipped — one bad file must not sink a 1.4 GB pass — and
+    its name is appended to `unreadable`, because a skipped member is a filer missing from the
+    study.
+
+    Written beside `out_path` and renamed on success. A pass that fails halfway would otherwise
+    leave a partial file, and a partial gzip stream reads back as a valid, shorter one."""
+    out_path = Path(out_path)
+    tmp = out_path.with_name(out_path.name + ".tmp")
     n = 0
-    with zipfile.ZipFile(zip_path) as z, gzip.open(out_path, "wt", encoding="utf-8") as out:
-        for member in z.namelist():
-            cik = _cik_of(member)
-            if cik is None:
-                continue
-            try:
-                raw = json.loads(z.read(member))
-            except ValueError:
-                continue
-            kept = compact_facts(raw) if isinstance(raw, dict) else None
-            if kept is None:
-                continue
-            kept["cik"] = cik
-            kept["name"] = raw.get("entityName")
-            out.write(json.dumps(kept, separators=(",", ":")) + "\n")
-            n += 1
+    try:
+        with zipfile.ZipFile(zip_path) as z, gzip.open(tmp, "wt", encoding="utf-8") as out:
+            for member in z.namelist():
+                cik = _cik_of(member)
+                if cik is None:
+                    continue
+                try:
+                    raw = json.loads(z.read(member))
+                except _BAD_MEMBER:
+                    if unreadable is not None:
+                        unreadable.append(member)
+                    continue
+                kept = compact_facts(raw) if isinstance(raw, dict) else None
+                if kept is None:
+                    continue
+                kept["cik"] = cik
+                kept["name"] = raw.get("entityName")
+                out.write(json.dumps(kept, separators=(",", ":")) + "\n")
+                n += 1
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(out_path)
     return n
 
 
@@ -98,7 +119,7 @@ def sic_from_submissions_zip(zip_path: str | Path, ciks: set[str]) -> dict[str, 
                 continue
             try:
                 sic = json.loads(z.read(member)).get("sic")
-            except (ValueError, AttributeError):
+            except (*_BAD_MEMBER, AttributeError):
                 continue
             if sic:
                 out[cik] = str(sic)

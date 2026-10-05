@@ -3,6 +3,7 @@ import zipfile
 
 import pytest
 
+from shortlist.backtest import durability_data
 from shortlist.backtest.durability_data import (
     _cik_of,
     compact_companyfacts_zip,
@@ -58,6 +59,48 @@ def test_zip_roundtrip_reads_back_through_the_real_extractor(tmp_path):
     assert snapshot(rec, 2015)[2015].op_income == 100.0
 
 
+def _corrupt(zp, payload: bytes) -> None:
+    """Flip one byte of a stored member, so the archive still opens and that member fails its
+    CRC check."""
+    data = bytearray(zp.read_bytes())
+    data[data.index(payload)] ^= 0x01
+    zp.write_bytes(bytes(data))
+
+
+def test_a_corrupt_member_is_skipped_and_named(tmp_path):
+    zp, out = tmp_path / "cf.zip", tmp_path / "cf.jsonl.gz"
+    with zipfile.ZipFile(zp, "w") as z:                                        # stored, not deflated
+        z.writestr("CIK0000320193.json", json.dumps(_raw()))
+        z.writestr("CIK0000000007.json", json.dumps({**_raw(), "entityName": "BROKEN CO"}))
+        z.writestr("CIK0000000003.json", "{not json")
+    _corrupt(zp, b"BROKEN CO")
+    unreadable: list[str] = []
+    assert compact_companyfacts_zip(zp, out, unreadable) == 1
+    assert unreadable == ["CIK0000000007.json", "CIK0000000003.json"]
+    assert [rec["cik"] for rec in iter_compacted(out)] == ["0000320193"]
+
+
+def test_a_failed_pass_leaves_no_partial_file(tmp_path, monkeypatch):
+    zp, out = tmp_path / "cf.zip", tmp_path / "cf.jsonl.gz"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("CIK0000320193.json", json.dumps(_raw()))
+        z.writestr("CIK0000000002.json", json.dumps(_raw()))
+    out.write_bytes(b"the last good file")
+    calls = []
+
+    def boom(raw):
+        calls.append(raw)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        return compact_facts(raw)
+
+    monkeypatch.setattr(durability_data, "compact_facts", boom)
+    with pytest.raises(OSError, match="disk full"):
+        compact_companyfacts_zip(zp, out)
+    assert out.read_bytes() == b"the last good file"       # a partial gzip reads as a valid one
+    assert sorted(f.name for f in tmp_path.iterdir()) == ["cf.jsonl.gz", "cf.zip"]
+
+
 def test_sic_lookup_reads_only_wanted_main_files(tmp_path):
     zp = tmp_path / "sub.zip"
     with zipfile.ZipFile(zp, "w") as z:
@@ -68,6 +111,15 @@ def test_sic_lookup_reads_only_wanted_main_files(tmp_path):
         z.writestr("CIK0000000005.json", "[]")
     got = sic_from_submissions_zip(zp, {"0000320193", "0000000004", "0000000005"})
     assert got == {"0000320193": "3571"}
+
+
+def test_sic_lookup_skips_a_corrupt_member(tmp_path):
+    zp = tmp_path / "sub.zip"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("CIK0000320193.json", json.dumps({"sic": "3571"}))
+        z.writestr("CIK0000000007.json", json.dumps({"sic": "2834", "name": "BROKEN CO"}))
+    _corrupt(zp, b"BROKEN CO")
+    assert sic_from_submissions_zip(zp, {"0000320193", "0000000007"}) == {"0000320193": "3571"}
 
 
 def test_require_zip_deletes_a_block_page_and_keeps_a_real_archive(tmp_path):

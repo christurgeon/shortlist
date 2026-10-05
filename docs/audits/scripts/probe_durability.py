@@ -12,11 +12,18 @@ calls shortlist.backtest.durability_study. Run from the repo root, in this order
     uv run python docs/audits/scripts/probe_durability.py holdout
 
 `discovery` refuses to run until the pre-registration is committed and `gates` has passed.
-`holdout` refuses to run until discovery.json is committed and unmodified. Both checks read
-git, so an uncommitted edit cannot pass as pre-registered. There is no flag to skip them.
+`holdout` refuses to run until discovery.json and the discovery section of the verdict note are
+committed and unmodified. Both checks read git, so an uncommitted edit cannot pass as
+pre-registered. There is no flag to skip them.
 
-Disk: the two SEC archives are 1.41 GB and 1.57 GB. Each is compacted and deleted before the
-next is fetched; neither is extracted.
+A STEP IS BOUND TO ITS DATA AND ITS CODE. Every output records the SHA-256 of the compacted
+file and of the SIC map, the commit, and a digest of the files in `CODE`. No step runs while one of those files has
+an uncommitted change, and `discovery` / `holdout` refuse a gates.json / discovery.json written
+from other data or other code: after any change, re-run from `gates`.
+
+Disk: the two SEC archives are 1.41 GB and 1.57 GB, and neither is extracted. companyfacts.zip
+is kept until the gates pass, because a failed gate is diagnosed against it; submissions.zip is
+deleted as soon as the SIC map is read. Peak use is about 3.5 GB.
 """
 import hashlib
 import json
@@ -44,7 +51,14 @@ SUBS_URL = "https://www.sec.gov/Archives/edgar/daily-index/bulkdata/submissions.
 CACHE = Path(".cache/durability")
 RAW = Path("docs/audits/raw-2026-10-04-durability")
 PREREG = Path("docs/audits/2026-10-04-moat-durability-prereg.md")
+VERDICT = Path("docs/audits/2026-10-04-moat-durability-verdict.md")
+# The files whose text decides a number. Paths from the repo root.
+CODE = ("docs/audits/scripts/probe_durability.py", "src/shortlist/durability.py",
+        "src/shortlist/backtest/durability_data.py", "src/shortlist/backtest/durability_study.py",
+        "src/shortlist/backtest/_ols.py", "src/shortlist/providers/_xbrl_facts.py",
+        "src/shortlist/sectors.py", "config.yaml")
 COMPACT = CACHE / "companyfacts-10k.jsonl.gz"
+FACTS_ZIP = CACHE / "companyfacts.zip"
 YEARS = range(2011, 2025)        # snapshot years: start years 2011-2021 plus their outcomes
 
 # Filers that stopped filing, with the last bucket they must reach. Verified present in
@@ -92,12 +106,39 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _code_state() -> dict:
+    """The commit and a digest of `CODE`. Refuses when one of those files has an uncommitted
+    change: an output must be reproducible from the commit it names."""
+    dirty = subprocess.run(["git", "status", "--porcelain", "--", *CODE],
+                           capture_output=True, text=True).stdout.rstrip()
+    if dirty:
+        raise SystemExit(f"uncommitted changes in the study's code. Commit them first:\n{dirty}")
+    h = hashlib.sha256()
+    for rel in CODE:
+        h.update(rel.encode() + b"\0" + Path(rel).read_bytes())
+    head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
+    return {"code_commit": head.stdout.strip(), "code_sha256": h.hexdigest()}
+
+
+def _inputs() -> dict:
+    return {"compacted_sha256": _sha256(COMPACT), "sic_sha256": _sha256(RAW / "sic.json"),
+            **_code_state()}
+
+
 def _write(name: str, payload: dict) -> None:
     RAW.mkdir(parents=True, exist_ok=True)
     payload = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-               "compacted_sha256": _sha256(COMPACT), **payload}
+               **_inputs(), **payload}
     (RAW / name).write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n")
     _log(f"wrote {RAW / name}")
+
+
+def _require_same_inputs(prior: dict, name: str) -> None:
+    """A pass counts only for the data file and the code it was computed from."""
+    now = _inputs()
+    for key in ("compacted_sha256", "sic_sha256", "code_sha256"):
+        if prior.get(key) != now[key]:
+            raise SystemExit(f"{name} was written from a different {key}. Re-run from `gates`.")
 
 
 def _committed(path: Path) -> bool:
@@ -110,16 +151,20 @@ def _committed(path: Path) -> bool:
 
 
 def fetch() -> None:
-    zp = CACHE / "companyfacts.zip"
-    _download(FACTS_URL, zp)
-    n = compact_companyfacts_zip(zp, COMPACT)
+    _code_state()                               # refuse before the download, not after it
+    _download(FACTS_URL, FACTS_ZIP)
+    unreadable: list[str] = []
+    n = compact_companyfacts_zip(FACTS_ZIP, COMPACT, unreadable)
     if n == 0:
         # The member layout ('CIK##########.json') is ASSUMED from the per-CIK API; this run
         # is its first test. Keep the archive so the layout can be read without a re-download.
+        COMPACT.unlink(missing_ok=True)
         raise SystemExit(f"compacted 0 filers: the archive layout is not what "
-                         f"durability_data._cik_of expects. Archive kept at {zp}.")
-    zp.unlink()
+                         f"durability_data._cik_of expects. Archive kept at {FACTS_ZIP}.")
+    # FACTS_ZIP is NOT deleted here. `gates` deletes it once it passes.
     _log(f"compacted {n} filers -> {COMPACT}")
+    if unreadable:
+        _log(f"  {len(unreadable)} members could not be read (listed in fetch.json)")
     ciks = {rec["cik"] for rec in iter_compacted(COMPACT)}
     zp = CACHE / "submissions.zip"
     _download(SUBS_URL, zp)
@@ -128,6 +173,8 @@ def fetch() -> None:
     RAW.mkdir(parents=True, exist_ok=True)
     (RAW / "sic.json").write_text(json.dumps(sic, indent=0, sort_keys=True) + "\n")
     _log(f"SIC for {len(sic)} of {len(ciks)} filers -> {RAW / 'sic.json'}")
+    _write("fetch.json", {"filers": n, "sic_found": len(sic),
+                          "unreadable_members": sorted(unreadable)})
 
 
 def load_firms() -> list[ds.Firm]:
@@ -150,6 +197,9 @@ def cohorts(firms: list[ds.Firm], window: range) -> list[ds.Row]:
 
 
 def gates() -> None:
+    _code_state()
+    # An older pass must not outlive a run that dies before it writes its own result.
+    (RAW / "gates.json").unlink(missing_ok=True)
     firms = load_firms()
     by_cik = {f.cik: f for f in firms}
     dead = {cik: {"name": name, "need": need,
@@ -184,7 +234,9 @@ def gates() -> None:
                             and slope > 0 and not result["gap_spikes"])
     _write("gates.json", result)
     if not result["passed"]:
-        raise SystemExit("GATES FAILED — no verdict. Diagnose first (prereg §5.6).")
+        raise SystemExit("GATES FAILED — no verdict. Diagnose first (prereg §Gates). "
+                         f"{FACTS_ZIP} is kept for that.")
+    FACTS_ZIP.unlink(missing_ok=True)
 
 
 def _run(rows: list[ds.Row], *, with_bounds: bool) -> dict:
@@ -223,12 +275,14 @@ def _descriptive(rows: list[ds.Row]) -> dict:
 
 
 def discovery() -> None:
+    _code_state()
     if not _committed(PREREG):
         raise SystemExit(f"{PREREG} is not committed (or has uncommitted edits). "
                          "Pre-register first.")
     gate_file = RAW / "gates.json"
     if not gate_file.exists() or not json.loads(gate_file.read_text()).get("passed"):
         raise SystemExit("gates.json is missing or did not pass. Run `gates` first.")
+    _require_same_inputs(json.loads(gate_file.read_text()), "gates.json")
     rows = cohorts(load_firms(), ds.DISCOVERY)
     tests = _run(rows, with_bounds=True)
     for m in tests.values():
@@ -242,10 +296,16 @@ def discovery() -> None:
 
 
 def holdout() -> None:
+    _code_state()
     disc_file = RAW / "discovery.json"
     if not _committed(disc_file):
         raise SystemExit(f"{disc_file} is not committed (or was modified). Write the discovery "
                          "section of the verdict note and commit both before opening the holdout.")
+    if not _committed(VERDICT) or not any(
+            line.startswith("## Discovery") for line in VERDICT.read_text().splitlines()):
+        raise SystemExit(f"the verdict note {VERDICT} is not committed with its '## Discovery' "
+                         "section. The discovery result is written down before the holdout opens.")
+    _require_same_inputs(json.loads(disc_file.read_text()), "discovery.json")
     disc = json.loads(disc_file.read_text())["tests"]
     firms = load_firms()
     seen = {r.cik for r in cohorts(firms, ds.DISCOVERY)}
