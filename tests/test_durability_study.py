@@ -24,6 +24,7 @@ from shortlist.backtest.durability_study import (
     raw_tercile_spread,
     reproduction_failures,
     sample,
+    share_alone_in_cell,
     state_shares,
 )
 from shortlist.durability import TAX, YearRow
@@ -284,7 +285,7 @@ def test_fit_gives_a_sector_by_year_label_no_credit():
 
 def test_sic2_cells_do_not_hold_a_sub_industry_fixed_and_sic3_cells_do():
     # The registered limit of the control, pinned: a SIC-3 trait still earns beta under SIC-2
-    # cells. The SIC-3 cut is reported beside every beta for this reason.
+    # cells. Pass rule 5 reads the SIC-3 cut for this reason.
     samp = sample(_label_world("sic3"), "label", "held")
     assert fit(samp, "label") > 0.20
     assert abs(fit(samp, "label", digits=3)) < 0.15
@@ -365,24 +366,36 @@ def test_bootstrap_is_seeded_and_resamples_firms():
 # ---------------------------------------------------------------- the pass rule
 
 def test_discovery_bar_is_the_larger_of_ten_points_and_two_standard_errors():
-    ok = {"bound_held": 0.05, "bound_not": 0.05, "rank_beta": 0.1}
+    ok = {"bound_held": 0.05, "bound_not": 0.05, "rank_beta": 0.1, "beta_sic3": 0.1}
     assert discovery_rules(0.10, 0.04, **ok)["magnitude"] is True
     assert discovery_rules(0.099, 0.04, **ok)["magnitude"] is False
     assert discovery_rules(0.11, 0.06, **ok)["magnitude"] is False     # needs 0.12
 
 
 def test_bounds_need_three_points_in_both_runs_and_the_rank_check_a_positive_sign():
-    assert discovery_rules(0.2, 0.01, 0.03, 0.09, 0.1)["bounds"] is True
-    assert discovery_rules(0.2, 0.01, 0.029, 0.09, 0.1)["bounds"] is False
-    assert discovery_rules(0.2, 0.01, 0.09, -0.01, 0.1)["bounds"] is False
-    assert discovery_rules(0.2, 0.01, 0.09, 0.09, 0.0)["continuous_sign"] is False
+    assert discovery_rules(0.2, 0.01, 0.03, 0.09, 0.1, 0.1)["bounds"] is True
+    assert discovery_rules(0.2, 0.01, 0.029, 0.09, 0.1, 0.1)["bounds"] is False
+    assert discovery_rules(0.2, 0.01, 0.09, -0.01, 0.1, 0.1)["bounds"] is False
+    assert discovery_rules(0.2, 0.01, 0.09, 0.09, 0.0, 0.1)["continuous_sign"] is False
+
+
+def test_sub_industry_rule_needs_half_of_beta_and_an_uncomputable_cut_fails():
+    assert discovery_rules(0.2, 0.01, 0.09, 0.09, 0.1, 0.10)["sub_industry"] is True
+    assert discovery_rules(0.2, 0.01, 0.09, 0.09, 0.1, 0.099)["sub_industry"] is False
+    assert discovery_rules(0.2, 0.01, 0.09, 0.09, 0.1, None)["sub_industry"] is False
+    # a negative beta cannot pass by having a less negative SIC-3 cut
+    assert discovery_rules(-0.2, 0.01, 0.09, 0.09, 0.1, -0.05)["sub_industry"] is False
+    assert set(discovery_rules(0.2, 0.01, 0.09, 0.09, 0.1, 0.1)) == {
+        "magnitude", "bounds", "continuous_sign", "sub_industry"}
 
 
 def test_holdout_bar_and_the_conjunction():
-    assert holdout_rule(0.06, 0.03) is True
-    assert holdout_rule(0.059, 0.03) is False
-    assert holdout_rule(0.07, 0.05) is False                           # needs 0.082
-    good = {"magnitude": True, "bounds": True, "continuous_sign": True}
+    assert holdout_rule(0.06, 0.03, 0.03) is True
+    assert holdout_rule(0.059, 0.03, 0.03) is False
+    assert holdout_rule(0.07, 0.05, 0.07) is False                     # needs 0.082
+    assert holdout_rule(0.06, 0.03, 0.029) is False                    # under half of beta
+    assert holdout_rule(0.06, 0.03, None) is False
+    good = {"magnitude": True, "bounds": True, "continuous_sign": True, "sub_industry": True}
     assert passes(good, True) is True
     assert passes(good, False) is False
     assert passes({**good, "bounds": False}, True) is False
@@ -420,7 +433,7 @@ def test_measure_reports_every_field_and_never_raises():
     rows = _synthetic(firms=200)
     m = measure(rows, "real", "held", reps=20, with_bounds=True)
     assert {"n", "beta", "raw_tercile_spread", "se", "lo", "hi", "bound_held", "bound_not",
-            "rank_beta"} <= set(m)
+            "rank_beta", "beta_sic3_cells"} <= set(m)
     for r in rows:
         r.p["clone"] = r.c0
     bad = measure(rows, "clone", "held", reps=20, with_bounds=True)
@@ -435,8 +448,28 @@ def test_measure_counts_the_rows_the_sector_control_cannot_use():
         r.sic2 = "none"                                  # no SIC: out of the regression
     rows[0].state, rows[0].held = "exit", None           # ... and out of the bounds runs
     rows[10].sic2 = "77"                                 # the only row of its cell
+    rows[11].sic3 = "777"                                # alone at SIC-3, not at SIC-2
     m = measure(rows, "real", "held", reps=20, with_bounds=True)
     assert (m["n"], m["n_no_sic"], m["n_no_sic_exit"], m["n_alone_in_cell"]) == (593, 6, 1, 1)
+    assert m["n_alone_in_sic3_cell"] == 1                # row 11; the fixture gives no other a sic3
     bad = measure(rows, "missing_pred", "held", reps=20, with_bounds=False)
     assert "error" in bad
-    assert [bad[k] for k in ("n", "n_no_sic", "n_no_sic_exit", "n_alone_in_cell")] == [0, 0, 0, 0]
+    assert [bad[k] for k in ("n", "n_no_sic", "n_no_sic_exit", "n_alone_in_cell",
+                             "n_alone_in_sic3_cell")] == [0, 0, 0, 0, 0]
+
+
+def test_measure_keeps_beta_when_the_sic3_cut_cannot_be_computed():
+    rows = _synthetic(firms=200)
+    for i, r in enumerate(rows):
+        r.sic3 = f"u{i}"                                 # every row alone in its SIC-3 cell
+    m = measure(rows, "real", "held", reps=20, with_bounds=False)
+    assert "error" not in m and m["beta"] > 0 and m["beta_sic3_cells"] is None
+    assert m["n_alone_in_sic3_cell"] == m["n"] == 600
+
+
+def test_share_alone_in_cell_ignores_firms_with_no_sic():
+    rows = [_row("a", 2011), _row("b", 2011), _row("c", 2012), _row("d", 2011, sic2="none")]
+    rows[0].sic3, rows[1].sic3, rows[2].sic3 = "351", "352", "351"
+    assert share_alone_in_cell(rows, 2) == pytest.approx(1 / 3)      # c is alone in (35, 2012)
+    assert share_alone_in_cell(rows, 3) == 1.0
+    assert share_alone_in_cell([rows[3]], 2) is None
