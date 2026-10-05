@@ -174,6 +174,9 @@ def gates() -> None:
         "gap_spikes": ds.gap_spikes(gap),
         "discovery_cohort_n_by_year": {y: sum(r.year == y for r in disc) for y in ds.DISCOVERY},
         "discovery_state_shares": ds.state_shares(disc),
+        # Not a gate. Read it before any beta: a row alone in its cell carries no weight.
+        "discovery_share_alone_in_cell": {"sic2": ds.share_alone_in_cell(disc, 2),
+                                          "sic3": ds.share_alone_in_cell(disc, 3)},
         "sectors_config_sha256": hashlib.sha256(json.dumps(
             load_config("config.yaml")["sectors"]["buckets"], sort_keys=True).encode()).hexdigest(),
     }
@@ -190,10 +193,6 @@ def _run(rows: list[ds.Row], *, with_bounds: bool) -> dict:
         _log(f"  {pred} / {outcome}")
         m = ds.measure(rows, pred, outcome, with_bounds=with_bounds)
         m["exit_rate_by_tercile"] = ds.exit_rate_by_tercile(rows, pred)
-        try:        # reported, never decision-bearing: SIC-2 cells do not hold a sub-industry fixed
-            m["beta_sic3_cells"] = ds.fit(ds.sample(rows, pred, outcome), pred, digits=3)
-        except (ValueError, ZeroDivisionError):
-            m["beta_sic3_cells"] = None
         m["beta_by_year"] = {}
         for y in sorted({r.year for r in rows}):
             try:
@@ -233,10 +232,10 @@ def discovery() -> None:
     rows = cohorts(load_firms(), ds.DISCOVERY)
     tests = _run(rows, with_bounds=True)
     for m in tests.values():
-        m["rules"] = (dict.fromkeys(("magnitude", "bounds", "continuous_sign"), False)
+        m["rules"] = (dict.fromkeys(("magnitude", "bounds", "continuous_sign", "sub_industry"), False)
                       if "error" in m else
                       ds.discovery_rules(m["beta"], m["se"], m["bound_held"], m["bound_not"],
-                                         m["rank_beta"]))
+                                         m["rank_beta"], m["beta_sic3_cells"]))
     _write("discovery.json", {"window": [ds.DISCOVERY.start, ds.DISCOVERY.stop - 1],
                               "rows": len(rows), "tests": tests,
                               "descriptive": _descriptive(rows)})
@@ -255,7 +254,8 @@ def holdout() -> None:
     fresh = [r for r in rows if r.cik not in seen]
     for key, m in tests.items():
         pred, outcome = key.split("/")
-        m["holdout_rule"] = "error" not in m and ds.holdout_rule(m["beta"], m["se"])
+        m["holdout_rule"] = "error" not in m and ds.holdout_rule(m["beta"], m["se"],
+                                                                 m["beta_sic3_cells"])
         m["passes"] = ds.passes(disc[key]["rules"], m["holdout_rule"])
         samp = ds.sample(fresh, pred, outcome)
         try:

@@ -118,7 +118,7 @@ class Row:
     c0: float = 0.0
     c2: float = 0.0
     p: dict[str, float] = field(default_factory=dict)
-    sic3: str = NO_SIC                    # only the reported SIC-3 cut reads it
+    sic3: str = NO_SIC                    # only the SIC-3 cut of pass rule 5 reads it
 
 
 def _sic(f: Firm, digits: int) -> Optional[str]:
@@ -280,7 +280,7 @@ def fit(samp: list[tuple[Row, float]], pred: str, digits: int = 2) -> float:
     pooled — pooling, or a sector effect that is not also by start year, or an estimated sector
     mean used as a covariate (the note's original C1), each let a predictor that is only a
     sector label earn β (docs/audits/scripts/probe_durability_sector_control.py). `digits=3`
-    is the reported SIC-3 cut: SIC-2 cells do not hold a sub-industry fixed.
+    is the SIC-3 cut that pass rule 5 reads: SIC-2 cells do not hold a sub-industry fixed.
 
     Raises ValueError on a singular design (for example a predictor that IS the level rank,
     or a sample in which every row is alone in its cell)."""
@@ -335,17 +335,29 @@ def raw_tercile_spread(samp: list[tuple[Row, float]], pred: str) -> float:
 DISC_MIN, DISC_SE = 0.10, 2.0
 HOLD_MIN, HOLD_SE = 0.06, 1.64
 BOUND_MIN = 0.03
+# Rule 5 (amendment 2): at least this share of β must survive SIC-3 x start-year cells, in both
+# windows. SIC-2 cells let a predictor that is only a SUB-industry label through: on synthetic
+# rows it passed both windows in 89% of worlds, and in 0% to 2% with this rule. A fixed floor
+# on the SIC-3 β was measured and NOT adopted (it left 11.5% to 17.5%); β is per unit of
+# cohort-wide rank, so only a share of β is the same hurdle for every predictor.
+SUB_SHARE = 0.5
+
+
+def _sub_industry(beta: float, beta_sic3: Optional[float]) -> bool:
+    """A cut that could not be computed fails: an arm nobody can check is not passed."""
+    return beta_sic3 is not None and beta > 0 and beta_sic3 >= SUB_SHARE * beta
 
 
 def discovery_rules(beta: float, se: float, bound_held: float, bound_not: float,
-                    rank_beta: float) -> dict[str, bool]:
+                    rank_beta: float, beta_sic3: Optional[float]) -> dict[str, bool]:
     return {"magnitude": beta >= max(DISC_MIN, DISC_SE * se),
             "bounds": min(bound_held, bound_not) >= BOUND_MIN,
-            "continuous_sign": rank_beta > 0}
+            "continuous_sign": rank_beta > 0,
+            "sub_industry": _sub_industry(beta, beta_sic3)}
 
 
-def holdout_rule(beta: float, se: float) -> bool:
-    return beta >= max(HOLD_MIN, HOLD_SE * se)
+def holdout_rule(beta: float, se: float, beta_sic3: Optional[float]) -> bool:
+    return beta >= max(HOLD_MIN, HOLD_SE * se) and _sub_industry(beta, beta_sic3)
 
 
 def passes(discovery: dict[str, bool], holdout: bool) -> bool:
@@ -361,18 +373,27 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
     rows out of the primary sample and `n_no_sic_exit` exit rows out of the two bounds runs —
     a dead filer is the likeliest to have no code, and the bounds exist to bracket attrition.
     `n_alone_in_cell` of the `n` sample rows are the only row of their (SIC-2, start year) cell
-    and carry no weight in β."""
+    and carry no weight in β; `n_alone_in_sic3_cell` is the same for the SIC-3 cut.
+
+    `beta_sic3_cells` feeds rule 5. It has its own `try`: when the SIC-3 cut cannot be computed
+    the value is None and rule 5 fails, but β and its SE are still reported."""
     samp = sample(rows, pred, outcome)
     cells = Counter((r.sic2, r.year) for r, _ in samp)
+    cells3 = Counter((r.sic3, r.year) for r, _ in samp)
     no_sic = [r for r in rows if r.sic2 == NO_SIC and pred in r.p]
     counts = {"n": len(samp),
               "n_no_sic": sum(_outcome(r, outcome, None) is not None for r in no_sic),
               "n_no_sic_exit": sum(r.state == "exit" for r in no_sic),
-              "n_alone_in_cell": sum(cells[(r.sic2, r.year)] == 1 for r, _ in samp)}
+              "n_alone_in_cell": sum(cells[(r.sic2, r.year)] == 1 for r, _ in samp),
+              "n_alone_in_sic3_cell": sum(cells3[(r.sic3, r.year)] == 1 for r, _ in samp)}
     try:
         out = {**counts, "beta": fit(samp, pred),
                "raw_tercile_spread": raw_tercile_spread(samp, pred),
                **bootstrap(samp, pred, reps=reps, seed=seed)}
+        try:
+            out["beta_sic3_cells"] = fit(samp, pred, digits=3)
+        except ValueError:
+            out["beta_sic3_cells"] = None
         if with_bounds:
             out["bound_held"] = fit(sample(rows, pred, outcome, exits=True), pred)
             out["bound_not"] = fit(sample(rows, pred, outcome, exits=False), pred)
@@ -409,6 +430,18 @@ def gap_spikes(rates: dict[int, float]) -> list[int]:
     return [y for y in sorted(rates)
             if y - 1 in rates and y + 1 in rates
             and rates[y] - rates[y - 1] > GAP_SPIKE and rates[y] - rates[y + 1] > GAP_SPIKE]
+
+
+def share_alone_in_cell(rows: list[Row], digits: int) -> Optional[float]:
+    """Share of the rows with a SIC code that are the only row of their (SIC-`digits`, start
+    year) cell, or None with no such row. No outcome and no predictor enters it, so it can be
+    read with the gates: it says how much of a cohort the sector control can use at all."""
+    coded = [r for r in rows if r.sic2 != NO_SIC]
+    if not coded:
+        return None
+    key = (lambda r: (r.sic2, r.year)) if digits == 2 else (lambda r: (r.sic3, r.year))
+    cells = Counter(key(r) for r in coded)
+    return sum(cells[key(r)] == 1 for r in coded) / len(coded)
 
 
 def state_shares(rows: list[Row]) -> dict[str, float]:
