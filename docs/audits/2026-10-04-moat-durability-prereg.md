@@ -4,9 +4,9 @@
 `docs/superpowers/specs/2026-10-04-moat-durability-design.md` (gitignored; this note is the
 committed record and is complete without it).
 
-**Amended twice on 2026-10-05 (the sector control; a fifth pass rule), both before any SEC bulk
-data was read.** Each change, the wording it replaced and the evidence are in §Amendments at the
-end.
+**Amended three times on 2026-10-05 (the sector control; a fifth pass rule; the reproduction
+gate and the points the first text left open), all before any SEC bulk data was read.** Each
+change, the wording it replaced and the evidence are in §Amendments at the end.
 
 ## What has already been seen, and what has not
 
@@ -15,8 +15,9 @@ which returns restated values): the **unconditional** persistence of a top-quint
 at 1 year, 45.7% at 3 years, 38.2% at 5 years, with 17.1% not observed at 3 years (55.2% among
 firms still observed) — the effect of an invested-capital floor on that number (none: 45.7% →
 46.1%, while the largest top-quintile ROIC falls from 6,190% to 190%), the per-year universe
-sizes used by the reproduction gate, and that companyfacts keeps nine named filers that stopped
-filing. **Those figures are not carried into the verdict; §Gates rebuilds them.**
+sizes used by the reproduction gate, the share of each of those with no `US-` address (8.3% to
+10.6%, amendment 3), and that companyfacts keeps nine named filers that stopped filing.
+**Those figures are not carried into the verdict; §Gates rebuilds them.**
 
 Not seen: any predictor, any conditional rate, any regression. The code that computes them
 (`shortlist.backtest.durability_study`) has run on synthetic data only.
@@ -46,14 +47,15 @@ free SEC data. Nothing below measures a return, and a pass is not evidence that 
   The sector ranges are `config.yaml: sectors.buckets` at this commit; `gates.json` records their hash.
 - **Cohort at `t`:** the top universe-wide ROIC quintile (ties at the floor are in).
 - **Data:** `companyfacts.zip` and `submissions.zip` from sec.gov, as downloaded on the run date.
-  `gates.json` records the SHA-256 of the compacted file.
+  Every output records the SHA-256 of the compacted file and of the SIC map, the commit, and a
+  digest of the code that decides a number (`probe_durability.py: CODE`).
 
 ## Outcomes at `t+3`
 
 | id | outcome |
 |---|---|
 | **A `held`** | ROIC in snapshot `t+3` ≥ the top-quintile floor of the `t+3` universe. The firm need not meet the revenue floor. |
-| **B `compounded`** | `held`, and revenue(`t+3`) / revenue(`t`) ≥ the cohort median of that ratio |
+| **B `compounded`** | `held`, and revenue(`t+3`) / revenue(`t`) ≥ the median of that ratio in the cohort-year, over the rows with a determined `held` and a revenue ratio. The ratio exists when revenue(`t+3`) is tagged and above zero. A row with no ratio is out of outcome B, whether it held or not. |
 
 | state at `t+3` | rule | primary | bounds run |
 |---|---|---|---|
@@ -63,6 +65,7 @@ free SEC data. Nothing below measures a return, and a pass is not evidence that 
 | `gap` | no ROIC, but an annual fact with an end in bucket ≥ `t+3` exists | out | out |
 | `exit` | no annual fact with an end in bucket ≥ `t+3` | out | all held, then all not held |
 
+For outcome B the two bounds runs code `exit` as all compounded, then all not compounded.
 No substitution of `t+4` for `t+3`. CIK successors are not merged.
 
 ## Controls and predictors
@@ -76,12 +79,16 @@ and a firm with no SIC code is left out of the regressions (amended 2026-10-05, 
 
 | id | predictor (code name) | definition, from snapshot `t` | registered sign | tested on |
 |---|---|---|---|---|
-| P1 | `track` | share of buckets `t-3..t` in the top quintile; ≥ 3 of 4 observed | more → more | A, B |
-| P2 | `stability` | SD of the universe percentile rank over `t-3..t`; ≥ 3 of 4 observed | lower → more | A, B |
+| P1 | `track` | share of buckets `t-3..t` in the top quintile; ≥ 3 of 4 observed; start years from 2012 | more → more | A, B |
+| P2 | `stability` | SD of the universe percentile rank over `t-3..t`; ≥ 3 of 4 observed; start years from 2012 | lower → more | A, B |
 | P3 | `investment` | IC(`t`) / IC(`t-1`) − 1 | higher → **less** | A |
-| P4 | `share_stability` | abs. change in share of SIC-3 revenue, `t-3` to `t`; peers = all filers with revenue in both years; ≥ 5 peers | smaller → more | A, B |
+| P4 | `share_stability` | abs. change in share of SIC-3 revenue, `t-3` to `t`; peers = all filers with revenue in both years; ≥ 5 peers, the firm included | smaller → more | A, B |
 | P5 | `gross_margin` | gross profit / revenue at `t` | higher → more | A, B |
 | P6 | `incremental_roic` | ΔNOPAT / ΔIC over `t-3..t`; only when IC grew > 5% | higher → more | A, B |
+
+For P1 and P2 a history bucket is observed when the firm's ROIC is defined in it and the
+universe of that bucket has a quintile floor. The firm's own history years need not meet the
+revenue floor; the universe it is ranked against does.
 
 Eleven tests. A significant result with the opposite sign is a finding and **does not pass**.
 P6 may be wrong-signed mechanically (a NOPAT jump is also what a transient peak looks like); the
@@ -100,15 +107,18 @@ registered sign is positive. A firm alone in its cell adds nothing to β.
 
 Standard error: bootstrap over **CIKs** (each carries all its cohort-years), 2,000 replications,
 seed 20261004, percentile interval. Ranks are fixed from the full sample; the cell means are
-recomputed in every resample.
+recomputed in every resample. All 2,000 must be fitted: a test with a replication that cannot be
+fitted is recorded as an error and does not pass (amendment 3).
 
 **The wrong metric, labelled wrong:** the raw difference in hold rate between the best and worst
 third of a predictor. It is large for anything that tracks level or sector. It is computed and
-printed beside every β (`raw_tercile_spread`) so the gap is visible, and it decides nothing.
+printed beside every β (`raw_tercile_spread`) so the gap is visible, and it decides nothing. It
+has no value when a third of the predictor is empty (`track` takes at most seven values).
 
 ## Windows
 
-- **Discovery:** start years 2011–2017. `track` and `stability` are defined from 2012.
+- **Discovery:** start years 2011–2017. `track` and `stability` are defined from 2012: the code
+  leaves both undefined for start year 2011 (amendment 3).
 - **Holdout:** start years 2018–2021. **Not computed until the discovery section of the verdict
   note and `discovery.json` are committed** — the script checks git and has no override.
 - Start year 2022 is excluded: its outcome bucket is censored for June fiscal year ends.
@@ -119,9 +129,29 @@ printed beside every β (`raw_tercile_spread`) so the gap is visible, and it dec
 | gate | rule | on failure |
 |---|---|---|
 | completeness | nine named dead filers are in the compacted file through their last year (list in `probe_durability.py: DEAD_FILERS`) | stop |
-| reproduction | universe size per year 2011–2024 within ±15% of: 2114 · 2102 · 2052 · 2066 · 1995 · 2161 · 2254 · 2214 · 2190 · 2207 · 2359 · 2309 · 2245 · 2179 | stop and diagnose |
+| reproduction | the **comparison count** per year 2011–2024 within ±15% of: 2114 · 2102 · 2052 · 2066 · 1995 · 2161 · 2254 · 2214 · 2190 · 2207 · 2359 · 2309 · 2245 · 2179 | stop and diagnose |
 | instrument | slope of `held` on the ROIC rank alone, within year, on discovery, > 0 | stop |
 | tag artefact | no outcome year's `gap` rate is more than 5 points above both neighbours | widen the tag list, re-run the gates, record it here |
+
+The **comparison count** is not the study's universe. It is the number of filers with ROIC
+defined and revenue ≥ $100M in the bucket, read from each filer's latest values (whenever
+filed), with no sector mask, on forms 10-K and 10-K/A and on the foreign annual forms 20-F and
+40-F and their amendments. The targets were counted on SEC `frames`, which has no sector mask,
+no filing date and no form filter and returns restated values, so this is the count that can
+be compared with them (amendment 3). The foreign forms are read for this count and for nothing
+else. `gates.json` also writes the study's universe size and the same size without the sector
+mask, for every year. No bar is set on either.
+
+**If the reproduction gate fails, one thing can settle it.** A place is found where the code
+does not do what this note says. It is fixed under a dated amendment that quotes the failed
+counts, and everything is run again from `fetch`, on the kept archives. Where the note is
+silent, the reading is registered by that amendment before the run. An archive that is itself
+damaged may be downloaded again, with the failed counts quoted the same way. No definition,
+band or target is changed to make the gate pass. With no such fault there is no verdict.
+
+The tag-artefact gate keeps its own remedy, and that remedy is not one for this gate: a wider
+tag list is judged by the `gap` rate alone, its effect on the comparison count is recorded, and
+if the reproduction gate also failed it stays failed.
 
 ## Pass rule — all five, per test
 
@@ -160,7 +190,11 @@ SIC-2 10, 12, 13, 14, 29 · exit rate by predictor tercile · state shares · `i
 per test, the rows left out for a missing SIC code (`n_no_sic`, and `n_no_sic_exit` for the
 bounds runs) and the rows alone in their cell (`n_alone_in_cell`, `n_alone_in_sic3_cell`) · in
 `gates.json`, the share of discovery cohort rows alone in their SIC-2 and SIC-3 cell
-(`discovery_share_alone_in_cell`), to be read before any β.
+(`discovery_share_alone_in_cell`), to be read before any β · in `gates.json`, three counts per
+year (`universe_sizes`, `universe_sizes_unmasked`, `comparison_counts`) and the share of the
+universe and of each discovery cohort with zero debt (`zero_debt_share`) · in `fetch.json`, the
+archive members that could not be read (`unreadable_members`) and the filers on foreign forms
+only (`foreign_only_filers`) · per test, the sample size by start year (`n_by_year`).
 
 **Deliberately not run**, because each is a parameter change that invites a search: a top-decile
 cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed within SIC-2.
@@ -216,6 +250,31 @@ cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed wit
 - Current SIC, not point-in-time. Nominal revenue floor.
 - CIK successors read as exits (Google → Alphabet).
 - Late filers (more than 120 days) are outside the universe in that year.
+- **A firm with no debt tag in the panel has debt zero.** So has a firm that reports its debt
+  under another tag (a combined debt-and-lease tag, for example). Its invested capital is then
+  too small and its ROIC too high, which favours entry to the cohort. `zero_debt_share` in
+  `gates.json` is an upper bound on the firm-years this can touch: it also counts a firm that
+  has no debt and one that tags a debt of zero, and it cannot tell the cases apart.
+- **A year end on or after 2 July (1 July in a leap year) is in the bucket of that calendar
+  year; an earlier one is in the bucket of the year before.** A 52/53-week filer whose year
+  ends near 30 June can therefore have an empty bucket, and later two year ends in one bucket
+  (year ends 2015-06-28 and 2016-07-03 are buckets 2014 and 2016). In the empty bucket the firm
+  is outside the universe, and as an outcome year it is a `gap`. A few filers; not corrected.
+- **The reproduction gate tests the data path, not the study's universe.** It reads restated,
+  unmasked values on more forms than the study, and it counts membership: a wrong ROIC value
+  that leaves a firm on the same side of the floors would not fail it, and neither would an
+  error in the 120-day snapshot or in the sector mask. The two other counts in `gates.json` are
+  the only check on those, and they have no bar.
+- **Revenue is read from the first tag, in a fixed order, that has the year end; the ASC 606
+  tag is first.** A filer that reports both that tag and a `Revenues` total has the ASC 606
+  figure from about 2018, and it is typically the narrower one. A start year before the change
+  and an outcome year after it then understate growth (outcome B), and the revenue floor,
+  `gross_margin` and `share_stability` read that figure too. Not measured.
+- **Early start years are thin for two predictors.** `share_stability` and `incremental_roic`
+  both read the year `t-3`. For start years 2011 and 2012 that year can be before a filer's
+  first XBRL filing (the phase-in ran from 2009 to 2011, the largest filers first), so each is
+  expected to be defined for fewer, larger filers there. `n_by_year` shows it; nothing adjusts
+  for it.
 - Six predictors and two outcomes were chosen by one author in one sitting from the literature;
   the holdout is the only protection against that.
 
@@ -400,3 +459,157 @@ is mostly a sub-industry component passes 40.5%. The verdict must not read such 
 rules 1 and 2 applied to the SIC-3 β, 10 pp and 6 pp (0.5% to 6.5% of labels, and less power
 than half of β in most tables: 43.0% against 54.0% at 34% alone). Not measured: a floor scaled
 to the SE of the SIC-3 estimate, which would add a multiplier and a second bootstrap.
+
+### 3 — the reproduction gate, and the points the first text left open (2026-10-05)
+
+**State of knowledge when made.** As for amendments 1 and 2: no SEC bulk archive had been
+downloaded, and `fetch`, `gates`, `discovery` and `holdout` had never run on real data. One new
+number was read, from the `frames` responses the first probe had already cached: the share of
+each reproduction target with no `US-` address (`scripts/probe_durability_frames.py`, section 4).
+No outcome, predictor or conditional rate enters it.
+
+**Why now.** A review of the whole branch listed the places where the note and the code could
+part, and the places where the note was silent and the code had chosen. Each is settled here
+while a change is still free. After the gates run, the same change would follow a seen number.
+
+**What changed. In place:** the paragraph under the header; one clause of "What has already
+been seen"; the Data line of the definitions; the outcome-B row and one sentence under the
+states table; the P1, P2 and P4 rows and a new paragraph under the predictor table; one sentence
+added to the standard-error paragraph and one to the wrong-metric paragraph; a clause of the
+Windows discovery line; the reproduction row of the gates table and two new paragraphs under
+the table; four reported items; five limitations. The wording replaced is quoted in 3a, 3b, 3c
+and here:
+
+> **Amended twice on 2026-10-05 (the sector control; a fifth pass rule), both before any SEC
+> bulk data was read.**
+>
+> … the per-year universe sizes used by the reproduction gate, and that companyfacts keeps
+> nine named filers that stopped filing.
+>
+> `gates.json` records the SHA-256 of the compacted file.
+
+Every other change is an addition; the text beside it is as registered.
+
+**3a. The reproduction gate compares like with like.** The row first registered was:
+
+> | reproduction | universe size per year 2011–2024 within ±15% of: 2114 · 2102 · … · 2179 | stop and diagnose |
+
+The fourteen targets and the ±15% band are unchanged. What is counted against them changed.
+
+| | the targets (SEC `frames`) | the study's universe | the comparison count (adopted) |
+|---|---|---|---|
+| sector mask | none | financials, REITs and insurers out | none |
+| filing date | none | filed within 120 days of the year end | none |
+| values | restated | as first reported | restated |
+| forms | any | 10-K and 10-K/A | 10-K, 10-K/A, 20-F, 40-F and their amendments |
+
+The mask, the filing date and the form filter each lower the study's universe against the
+targets. Restated values move a firm either way across a floor. A band around the targets would
+then have tested the size of those differences, not whether the archive was read correctly, and
+a failure would have had to be explained after the numbers were seen.
+
+The size of the mask and of the filing-date rule was **not measured**: the mask needs a SIC
+code for every filer, and those come only from the bulk download. That is why no bar is set on
+the study's universe or on its unmasked size. Both are written for every year, and the verdict
+prints all three counts beside the target.
+
+The form filter could be bounded. A filer on forms 20-F or 40-F is a foreign issuer, and many
+filers with a non-US address file a 10-K, so the share of a target with no `US-` address (a
+blank address included) is close to an upper bound on what a 10-K filter removes:
+
+| year | 2011 | 2012 | 2013 | 2014 | 2015 | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| no `US-` address | 10.1% | 9.4% | 9.1% | 8.8% | 8.3% | 8.3% | 9.4% | 9.8% | 10.6% | 10.6% | 10.4% | 9.7% | 10.0% | 10.6% |
+
+Up to a tenth, against a band of 15%: a 10-K count would have left a margin of 4.4 points in
+the worst year. So the comparison count reads the foreign annual forms too. The compaction
+keeps their facts apart from the study's, each row read as a 10-K row, and only this count
+reads them. A first draft kept the 10-K count and registered a recount with the foreign forms
+as the one thing that could clear a failure on the low side. It was withdrawn before commit: a
+rule applied after a failure, by code not yet written, is the discretion this note exists to
+remove.
+
+Differences that stay, of unknown sign and size and expected to be small: a filer whose only
+annual facts for a year are on another form (a 10-KT, a registration statement) is in the
+target and not in the count; the targets add the current portion of debt on top of
+`LongTermDebt`; they take the balance sheet at the calendar year end, which for a non-December
+filer comes from a 10-Q; and they read the revenue tags in another order.
+
+What settles a failure is fixed now and not after one (§Gates): a place where the code does not
+do what this note says. Nothing else clears the gate, and a wider tag list (the remedy of the
+tag-artefact gate) is not such a fix. What the gate no longer tests is a
+registered limitation: an error in the 120-day snapshot or in the sector mask would not fail
+it, and it counts membership, not values.
+
+**Considered and not adopted:** a wider band (a bar moved with no evidence); recounting the
+targets with a sector mask (needs the bulk download before the gates); keeping the first gate
+and reporting the other counts beside it (leaves a gate that is expected to fail for a known
+reason, and a fix that would follow a seen number); a 10-K comparison count with a recount
+rule (above).
+
+**3b. `track` and `stability` start in 2012 — now enforced.** The Windows section registered
+"`track` and `stability` are defined from 2012". The code did not enforce it: it defined both
+whenever three of the four history buckets were observed. For start year 2011 those buckets are
+2008 to 2011, and XBRL was phased in by filer size for fiscal periods ending after 15 June 2009,
+2010 and 2011. A 2011 row with three observed buckets would be an early adopter, ranked against
+a universe of early adopters. The code now leaves both predictors undefined for start year
+2011. The registered sentence stands; a clause was added to it and to the P1 and P2 rows.
+
+**3c. Outcome B: three readings the code had already fixed, now stated. No code change.**
+The row first registered was:
+
+> | **B `compounded`** | `held`, and revenue(`t+3`) / revenue(`t`) ≥ the cohort median of that ratio |
+
+- *The median.* The text did not say over which rows. The code takes it within the cohort-year,
+  over the rows with a determined `held` and a revenue ratio.
+- *A row with no revenue ratio.* It is out of outcome B, whether it held or not. A firm that did
+  not hold did not compound, so its B is known without the ratio, and a first draft of this
+  amendment kept such rows as "not compounded". That was withdrawn before commit: keeping them
+  while dropping the firms that held and have no ratio selects the outcome-B sample on outcome
+  A, and moves β towards any predictor of `held`. The n of a predictor's B test against its A
+  test shows how many rows this leaves out.
+- *The bounds runs.* The text said `exit` is coded "all held, then all not held". For outcome B
+  the code codes it all compounded, then all not compounded.
+
+**3d. Readings the code had already fixed, now stated.** "≥ 5 peers" counts the firm itself.
+For P1 and P2 the firm's own history years need a defined ROIC and not the revenue floor. No
+code changed for either. One code change belongs here: `raw_tercile_spread` has no value when a
+third of the predictor is empty; that used to make the whole test an error, and it now leaves β
+alone.
+
+**3e. The bootstrap must be complete.** The note registered 2,000 replications. The code left
+out a replication whose resample could not be fitted and took the SE over the rest; with one
+survivor the SE is 0 and the `2 × SE` arm is no hurdle. Now a test with any such replication is
+recorded as an error and does not pass. β, the SE over the fitted replications and their count
+are still written, so the verdict can tell "not computed" from "not shown". How often this
+happens on real data was not measured. It is expected to be rare: a resample cannot be fitted
+when too few of its rows share a cell, or when the predictor is an exact combination of the
+controls. No constant was added: a tolerated share of failed replications would have been one.
+
+**3f. Five limitations and four reported numbers were added.** The limitations: zero debt; the
+52/53-week year end near 30 June; what the reproduction gate does not test; the revenue tag
+order; thin early start years for `share_stability` and `incremental_roic`. None is new
+behaviour: each describes what the code as registered already did. The numbers:
+`zero_debt_share`, the three counts per year, `unreadable_members`, `n_by_year`. A change to the
+182-day bucket shift was considered and not made: it is a registered constant, the last bucket
+required of each completeness filer was derived with it, and the defect touches a few filers.
+
+**3g. The procedure, not the definitions.** For the reader of the outputs: every output records
+the data and the code it came from (§Definitions, Data), read when the step starts; the same
+archive always compacts to the same bytes; no step runs while a file of that code differs from
+its committed version; `discovery` refuses a `gates.json`, and `holdout` a `discovery.json`,
+written from other data or other code; `discovery` needs `gates.json` committed; `holdout`
+checks in git that the verdict note is committed with its `## Discovery` section, as the
+Windows section already said it would; no step replaces its own earlier output until that
+output is committed, so a failed gate is in git before the run that follows its diagnosis,
+unless the file is deleted by hand; both archives are kept until the gates pass, and `fetch`
+reads a kept archive again without a new download, so that run is on the same data.
+
+**Nothing else changed.** The predictors and their signs, both outcomes, the outcome states,
+the windows, the controls, the five pass rules and their bars, the other three gates, the
+fourteen targets and the ±15% band, the decision rule, the forms the study reads (10-K and
+10-K/A), and the bootstrap unit, count and seed are as registered.
+
+**Evidence.** Section 4 of `scripts/probe_durability_frames.py` for the table above. The rest is
+pinned by tests: `tests/test_durability_study.py`, `tests/test_durability.py`,
+`tests/test_probe_durability.py`.
