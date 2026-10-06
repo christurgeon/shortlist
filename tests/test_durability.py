@@ -38,6 +38,15 @@ def test_bucket_shifts_early_year_ends_back():
     assert fy_bucket("2012-09-30") == 2012
 
 
+def test_a_year_end_just_after_june_can_leave_a_bucket_empty():
+    # A registered limitation, pinned: a 52/53-week filer whose year ends near 30 June.
+    assert [fy_bucket(e) for e in ("2015-06-28", "2016-07-03", "2017-07-02", "2018-07-01")] == [
+        2014, 2016, 2017, 2017]
+    # The line is between 1 and 2 July, and a day earlier in a leap year.
+    assert [fy_bucket(e) for e in ("2015-07-01", "2015-07-02", "2016-06-30", "2016-07-01")] == [
+        2014, 2015, 2015, 2016]
+
+
 def test_roic_is_flat_tax_over_equity_plus_debt():
     f = _firm(LongTermDebtNoncurrent=[_inst("2015-12-31", 100.0, "2016-02-20")])
     row = snapshot(f, 2015)[2015]
