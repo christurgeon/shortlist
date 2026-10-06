@@ -10,6 +10,9 @@ from shortlist.backtest.durability_study import (
     avg_ranks,
     bootstrap,
     build_cohort,
+    build_firm,
+    comparison_count,
+    comparison_panel,
     cross_section,
     discovery_rules,
     exit_rate_by_tercile,
@@ -26,13 +29,14 @@ from shortlist.backtest.durability_study import (
     sample,
     share_alone_in_cell,
     state_shares,
+    zero_debt_share,
 )
 from shortlist.durability import TAX, YearRow
 
 
-def _yr(year, roic, *, revenue=1e9, ic=1000.0, assets=None, gp=None, op_income=None):
+def _yr(year, roic, *, revenue=1e9, ic=1000.0, assets=None, gp=None, op_income=None, debt=0.0):
     oi = roic * ic / (1 - TAX) if op_income is None else op_income
-    return YearRow(end=f"{year}-12-31", revenue=revenue, op_income=oi, equity=ic, debt=0.0,
+    return YearRow(end=f"{year}-12-31", revenue=revenue, op_income=oi, equity=ic - debt, debt=debt,
                    assets=2 * abs(ic) if assets is None else assets, gross_profit=gp)
 
 
@@ -75,6 +79,67 @@ def test_cross_section_applies_the_universe_rules():
         _firm(5, {2015: {2014: _yr(2014, 0.20)}}),                      # no row for the bucket
     ]
     assert list(cross_section(firms, 2015, 2015)) == ["0000000001"]
+
+
+def _facts(filed="2016-02-20", oi=100.0, revenue=2e9):
+    def fact(val, **kw):
+        return {"end": "2015-12-31", "val": val, "filed": filed, "form": "10-K", **kw}
+    return {"facts": {"us-gaap": {t: {"units": {"USD": [row]}} for t, row in {
+        "Revenues": fact(revenue, start="2015-01-01"),
+        "OperatingIncomeLoss": fact(oi, start="2015-01-01"),
+        "StockholdersEquity": fact(400.0), "Assets": fact(1000.0)}.items()}}}
+
+
+def test_the_sector_mask_can_be_left_off_the_universe():
+    firms = [_firm(1, {2015: {2015: _yr(2015, 0.20)}}),
+             _firm(2, {2015: {2015: _yr(2015, 0.20)}}, masked=True)]
+    assert [int(c) for c in cross_section(firms, 2015, 2015)] == [1]
+    assert [int(c) for c in cross_section(firms, 2015, 2015, masked=False)] == [1, 2]
+
+
+def test_the_comparison_panel_reads_latest_values_from_10k_and_foreign_annual_forms():
+    restated = _facts()
+    restated["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"].append(
+        {"start": "2015-01-01", "end": "2015-12-31", "val": 55.0, "filed": "2017-02-20",
+         "form": "10-K"})
+    assert comparison_panel(restated)[2015].op_income == 55.0              # not as first reported
+    late = _facts(filed="2016-09-01")                                       # after the 120 days
+    assert build_firm("1", "3571", False, late, [2015]).snaps[2015] == {}
+    assert comparison_panel(late)[2015].status == "ok"
+    # A filer on form 20-F: no study facts at all, and still in the count.
+    empty = {"facts": {"us-gaap": {}}}
+    assert comparison_panel({**empty, "foreign_forms": _facts()})[2015].op_income == 100.0
+    assert comparison_panel(empty) == {}
+    # Both: the two sets of rows are read as one, and the later filing wins.
+    both = {**_facts(), "foreign_forms": _facts(filed="2018-03-01", oi=70.0)}
+    assert comparison_panel(both)[2015].op_income == 70.0
+
+
+def test_the_comparison_count_applies_the_universe_floors_to_the_panels():
+    panels = [{2015: _yr(2015, 0.20)}, {2015: _yr(2015, 0.20, revenue=9e7)},
+              {2015: _yr(2015, 0.20, ic=10.0, assets=1000.0)}, {2014: _yr(2014, 0.20)}, {}]
+    assert comparison_count(panels, 2015) == 1 and comparison_count(panels, 2013) == 0
+
+
+def test_build_firm_keeps_one_point_in_time_snapshot_per_year():
+    facts = _facts()
+    facts["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"].append(
+        {"start": "2015-01-01", "end": "2015-12-31", "val": 55.0, "filed": "2017-02-20",
+         "form": "10-K"})
+    f = build_firm("0000000001", "3571", False, facts, range(2014, 2017))
+    assert sorted(f.snaps) == [2015] and f.last_bucket == 2015
+    assert f.snaps[2015][2015].op_income == 100.0          # as first reported
+    assert build_firm("0000000002", None, False, {"facts": {}}, range(2014, 2017)) is None
+
+
+def test_zero_debt_share_is_over_the_universe_or_a_named_part_of_it():
+    firms = [_firm(1, {2015: {2015: _yr(2015, 0.20)}}),
+             _firm(2, {2015: {2015: _yr(2015, 0.20, debt=300.0)}}),
+             _firm(3, {2015: {2015: _yr(2015, 0.20)}}),
+             _firm(4, {2015: {2015: _yr(2015, 0.20)}}, masked=True)]     # not in the universe
+    assert zero_debt_share(firms, 2015) == pytest.approx(2 / 3)
+    assert zero_debt_share(firms, 2015, {"0000000002", "0000000003"}) == 0.5
+    assert zero_debt_share(firms, 2014) is None
 
 
 # ---------------------------------------------------------------- cohort + outcome states
@@ -145,6 +210,30 @@ def test_compounded_is_false_for_a_firm_that_did_not_hold_however_fast_it_grew()
     assert row.rev_ratio == 1.5 and row.compounded is False
 
 
+def test_a_row_with_no_revenue_ratio_is_out_of_outcome_b_whether_it_held_or_not():
+    # Dropping only the held ones would select the outcome-B sample on outcome A.
+    firms = _world()
+    firms[19].snaps[2018][2018] = _yr(2018, 0.10, revenue=None)      # did not hold, no revenue
+    row = {int(r.cik): r for r in build_cohort(firms, 2015)}[19]
+    assert row.held is False and row.compounded is None
+    firms[19].snaps[2018][2018] = _yr(2018, 0.40, revenue=None)      # held, no revenue
+    row = {int(r.cik): r for r in build_cohort(firms, 2015)}[19]
+    assert row.held is True and row.compounded is None
+
+
+def test_the_outcome_b_median_is_over_rows_with_a_determined_held_and_a_ratio():
+    firms = _world()
+    firms[16].last_bucket = 2030
+    firms[16].snaps[2018] = {2018: _yr(2018, 0.05, revenue=0.5e9)}   # not held, ratio 0.5
+    firms[17].snaps[2018] = {2018: YearRow(end="2018-12-31", revenue=3e9, op_income=None,
+                                           equity=None, debt=0.0, assets=None, gross_profit=None)}
+    rows = {int(r.cik): r for r in build_cohort(firms, 2015)}
+    assert (rows[17].state, rows[17].rev_ratio, rows[17].compounded) == ("gap", 3.0, None)
+    # The median of 0.5, 1.2 and 1.5 is 1.2. With the gap row's 3.0 in it, or with the row that
+    # did not hold left out, it is 1.35 and firm 18 falls under it.
+    assert [rows[i].compounded for i in (16, 18, 19)] == [False, True, True]
+
+
 def test_cohort_is_empty_when_a_cross_section_is_too_thin():
     assert build_cohort(_world()[:4], 2015) == []
     assert build_cohort(_world(), 2016) == []   # no 2016 snapshots at all
@@ -172,11 +261,29 @@ def test_track_and_stability_from_four_years_of_history():
     assert mixed["track"] == 0.75 and mixed["stability"] < 0
 
 
+def test_a_history_year_under_the_revenue_floor_still_counts_for_track():
+    p = _preds({**{y: _yr(y, 0.40, revenue=5e7) for y in range(2012, 2015)}, 2015: _yr(2015, 0.40)})
+    assert p["track"] == 1.0 and p["stability"] == 0.0
+
+
 def test_track_abstains_under_three_observed_years():
     p = _preds({2014: _yr(2014, 0.40), 2015: _yr(2015, 0.40)})
     assert p["track"] is None and p["stability"] is None
     three = _preds({y: _yr(y, 0.40) for y in range(2013, 2016)})
     assert three["track"] == 1.0
+
+
+def test_track_and_stability_are_undefined_for_start_year_2011():
+    # In 2011 the history buckets reach 2008, before XBRL for all but the largest filers.
+    def top(year):
+        firms = [_flat(i, 0.02 * (i + 1), years=(year, year + 3)) for i in range(19)]
+        firms.append(_firm(19, {year: {y: _yr(y, 0.40, ic=1000.0 + y) for y in range(year - 3, year + 1)},
+                                year + 3: {year + 3: _yr(year + 3, 0.40)}}))
+        return {int(r.cik): r for r in build_cohort(firms, year)}[19].preds
+    assert (top(2012)["track"], top(2012)["stability"]) == (1.0, 0.0)
+    early = top(2011)
+    assert early["track"] is None and early["stability"] is None
+    assert early["investment"] is not None                 # the other predictors are untouched
 
 
 def test_investment_is_oriented_so_low_growth_is_favourable():
@@ -240,6 +347,14 @@ def test_sample_codes_exits_only_in_a_bounds_run_and_never_takes_gaps():
     assert [r.cik for r, _ in sample(rows, "x", "rank")] == ["a"]          # observed only
     assert sample(rows, "missing_pred", "held") == []
     assert len(sample(rows, None, "held")) == 2                            # no predictor filter
+
+
+def test_bounds_runs_code_an_exit_as_compounded_then_not_compounded():
+    rows = [_row("a", 2011, compounded=True), _row("b", 2011, compounded=False),
+            _row("c", 2011, state="exit", held=None, rank=None)]
+    assert [y for _, y in sample(rows, "x", "compounded")] == [1.0, 0.0]
+    assert [y for _, y in sample(rows, "x", "compounded", exits=True)] == [1.0, 0.0, 1.0]
+    assert [y for _, y in sample(rows, "x", "compounded", exits=False)] == [1.0, 0.0, 0.0]
 
 
 def test_sample_leaves_out_a_firm_with_no_sic_only_when_a_predictor_is_regressed():
@@ -447,6 +562,12 @@ def test_bootstrap_resamples_firms_and_not_rows():
     assert by_firm > 1.6 * bootstrap(samp, "x", reps=120, seed=1)["se"]
 
 
+def test_bootstrap_with_no_replication_that_can_be_fitted_raises():
+    samp = [(_row(f"f{i}", 2011, sic2=f"{i}"), 1.0) for i in range(6)]     # every row alone
+    with pytest.raises(ValueError, match="none of 20 replications"):
+        bootstrap(samp, "x", reps=20, seed=1)
+
+
 # ---------------------------------------------------------------- the pass rule
 
 def test_discovery_bar_is_the_larger_of_ten_points_and_two_standard_errors():
@@ -564,6 +685,30 @@ def test_measure_keeps_beta_when_a_third_of_the_predictor_is_empty():
     m = measure(rows, "tied", "held", reps=20, with_bounds=True)
     assert "error" not in m and m["raw_tercile_spread"] is None
     assert {"beta", "se", "bound_held", "bound_not", "rank_beta"} <= set(m)
+
+
+def test_a_bootstrap_with_a_replication_that_cannot_be_fitted_fails_the_test():
+    # Ten firms: 59 of 60 resamples are singular and the one survivor gives SE = 0, under
+    # which any positive beta clears the 2 x SE arm.
+    rows = _synthetic(firms=10, years=(2011,))
+    m = measure(rows, "real", "held", reps=60, seed=1, with_bounds=False)
+    assert m["error"] == "ValueError: bootstrap: 59 of 60 replications could not be fitted"
+    assert m["beta"] > 0.10 and m["se"] == 0.0 and (m["reps"], m["singular"]) == (1, 59)
+
+
+def test_one_replication_that_cannot_be_fitted_is_enough_to_fail_the_test(monkeypatch):
+    real, calls = ds.fit, []
+
+    def fit_once_singular(samp, pred, digits=2):
+        calls.append(1)
+        if len(calls) == 5:                              # the fourth resample
+            raise ValueError("ols: singular normal-equations matrix")
+        return real(samp, pred, digits)
+
+    monkeypatch.setattr(ds, "fit", fit_once_singular)
+    m = measure(_synthetic(firms=200), "real", "held", reps=20, with_bounds=False)
+    assert m["error"] == "ValueError: bootstrap: 1 of 20 replications could not be fitted"
+    assert (m["reps"], m["singular"]) == (19, 1) and m["se"] > 0
 
 
 def test_share_alone_in_cell_ignores_firms_with_no_sic():

@@ -8,6 +8,7 @@ from shortlist.backtest.durability_data import (
     _cik_of,
     compact_companyfacts_zip,
     compact_facts,
+    foreign_annual_facts,
     iter_compacted,
     require_zip,
     sic_from_submissions_zip,
@@ -39,6 +40,18 @@ def test_compact_drops_a_filer_with_no_annual_revenue_or_operating_income():
     assert compact_facts({}) is None
 
 
+def test_foreign_annual_forms_are_kept_apart_and_read_as_10k():
+    # They are not in the study. SEC frames counts their filers, so the reproduction gate must.
+    raw = _raw(forms=("10-K", "20-F", "40-F/A", "10-Q", "6-K"))
+    assert [r["form"] for r in compact_facts(raw)["facts"]["us-gaap"]["OperatingIncomeLoss"][
+        "units"]["USD"]] == ["10-K"]
+    rows = foreign_annual_facts(raw)["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"]
+    assert [r["form"] for r in rows] == ["10-K", "10-K"]            # relabelled: 20-F, 40-F/A
+    assert set(rows[0]) == {"start", "end", "val", "filed", "form"}
+    assert foreign_annual_facts(_raw(forms=("10-K", "10-Q"))) is None
+    assert foreign_annual_facts(_raw(forms=("20-F",), tag="Assets")) is None
+
+
 def test_cik_of_rejects_paging_and_foreign_names():
     assert _cik_of("CIK0000320193.json") == "0000320193"
     assert _cik_of("CIK0000320193-submissions-001.json") is None
@@ -57,6 +70,32 @@ def test_zip_roundtrip_reads_back_through_the_real_extractor(tmp_path):
     assert rec["cik"] == "0000320193" and rec["name"] == "TEST CO"
     # the compacted shape is what annual_series expects: the real snapshot reads it
     assert snapshot(rec, 2015)[2015].op_income == 100.0
+
+
+def test_a_filer_on_foreign_forms_only_is_kept_with_no_study_facts(tmp_path):
+    zp, out = tmp_path / "cf.zip", tmp_path / "cf.jsonl.gz"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("CIK0000320193.json", json.dumps(_raw(forms=("10-K", "20-F"))))
+        z.writestr("CIK0000000009.json", json.dumps(_raw(forms=("20-F",))))
+    assert compact_companyfacts_zip(zp, out) == 2
+    both, foreign = iter_compacted(out)
+    assert set(both["foreign_forms"]["facts"]["us-gaap"]) == {"OperatingIncomeLoss"}
+    assert foreign["cik"] == "0000000009" and foreign["facts"] == {"us-gaap": {}}
+    assert snapshot(foreign, 2015) is None                 # the study reads `facts` and sees no firm
+    assert snapshot(foreign["foreign_forms"], 2015)[2015].op_income == 100.0
+
+
+def test_the_same_archive_always_compacts_to_the_same_bytes(tmp_path, monkeypatch):
+    # The SHA-256 of this file binds the gates to the data. A timestamp in the gzip header
+    # would give the same archive a new hash on every pass.
+    zp = tmp_path / "cf.zip"
+    with zipfile.ZipFile(zp, "w") as z:
+        z.writestr("CIK0000320193.json", json.dumps(_raw()))
+    monkeypatch.setattr("time.time", lambda: 1_000_000_000.0)
+    compact_companyfacts_zip(zp, tmp_path / "a.jsonl.gz")
+    monkeypatch.setattr("time.time", lambda: 1_700_000_000.0)
+    compact_companyfacts_zip(zp, tmp_path / "b.jsonl.gz")
+    assert (tmp_path / "a.jsonl.gz").read_bytes() == (tmp_path / "b.jsonl.gz").read_bytes()
 
 
 def _corrupt(zp, payload: bytes) -> None:

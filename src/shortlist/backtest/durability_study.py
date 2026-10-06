@@ -13,16 +13,21 @@ import random
 from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from datetime import date
 from statistics import median, pstdev
 from typing import Iterable, Optional
 
-from ..durability import YearRow, fiscal_ends, snapshot
+from ..durability import YearRow, fiscal_ends, panel_rows, snapshot
 from ._ols import ols
 
 REV_FLOOR = 1e8
 HORIZON = 3
 HISTORY = 4                      # buckets t-3..t
 MIN_HISTORY = 3
+# `track` and `stability` are defined from this start year. In 2011 the history buckets reach
+# 2008, and XBRL was phased in by filer size from 2009 to 2011: a firm with three observed
+# buckets would be an early adopter, ranked against a universe of early adopters.
+HISTORY_FROM = 2012
 MIN_PEERS = 5
 MIN_IC_GROWTH = 1.05             # P6 is defined only when invested capital grew > 5%
 DISCOVERY = range(2011, 2018)    # start years; outcomes 2014-2020
@@ -88,16 +93,43 @@ def avg_ranks(values: dict) -> dict:
     return out
 
 
-def cross_section(firms: Iterable[Firm], snap_year: int, bucket: int) -> dict[str, float]:
-    """{cik -> ROIC} of the universe for `bucket`, as seen in snapshot `snap_year`."""
+def _in_universe(row: Optional[YearRow]) -> bool:
+    return row is not None and row.status == "ok" and (row.revenue or 0.0) >= REV_FLOOR
+
+
+def cross_section(firms: Iterable[Firm], snap_year: int, bucket: int, *,
+                  masked: bool = True) -> dict[str, float]:
+    """{cik -> ROIC} of the universe for `bucket`, as seen in snapshot `snap_year`.
+    `masked=False` keeps the financial sectors; only the gates report that size."""
     out = {}
     for f in firms:
-        if f.masked:
+        if masked and f.masked:
             continue
         row = f.snaps.get(snap_year, {}).get(bucket)
-        if row is not None and row.status == "ok" and (row.revenue or 0.0) >= REV_FLOOR:
+        if _in_universe(row):
             out[f.cik] = row.roic
     return out
+
+
+def comparison_panel(rec: dict) -> dict[int, YearRow]:
+    """{bucket -> row} for one compacted filer record on its LATEST values, whenever filed,
+    from its 10-K rows and its foreign annual forms read as one. NOT THE STUDY'S DATA: the
+    study reads the 10-K rows alone, as of a date. This is what SEC frames holds for the filer,
+    and only the reproduction gate reads it."""
+    merged: dict = defaultdict(list)
+    for part in (rec, rec.get("foreign_forms") or {}):
+        for tag, node in ((part.get("facts") or {}).get("us-gaap") or {}).items():
+            merged[tag] += node["units"]["USD"]
+    return panel_rows({"facts": {"us-gaap": {t: {"units": {"USD": rows}}
+                                             for t, rows in merged.items()}}}, date.max)
+
+
+def comparison_count(panels: Iterable[dict[int, YearRow]], bucket: int) -> int:
+    """The number of filers with ROIC defined and revenue over the floor in `bucket`, with NO
+    sector mask and NO as-of date: the population the frames targets count. `cross_section` is
+    lower than those targets by construction (the mask, the 120-day rule, the 10-K filter),
+    which a band around them would misread as a data fault."""
+    return sum(_in_universe(panel.get(bucket)) for panel in panels)
 
 
 # ---------------------------------------------------------------- cohort rows
@@ -133,7 +165,7 @@ def _predictors(f: Firm, year: int, hist: dict[int, list[float]],
     seen = [(y, snap[y]) for y in range(year - HISTORY + 1, year + 1)
             if y in snap and snap[y].status == "ok" and floors.get(y) is not None]
     track = stability = None
-    if len(seen) >= MIN_HISTORY:
+    if year >= HISTORY_FROM and len(seen) >= MIN_HISTORY:
         track = sum(r.roic >= floors[y] for y, r in seen) / len(seen)
         stability = -pstdev(pct_rank(r.roic, hist[y]) for y, r in seen)
 
@@ -222,6 +254,9 @@ def _finish(rows: list[Row]) -> None:
     c2 = avg_ranks({i: r.revenue for i, r in enumerate(rows)})
     for i, r in enumerate(rows):
         r.c0, r.c2 = c0[i], c2[i]
+        # A row with no revenue ratio is out of outcome B WHETHER IT HELD OR NOT. A firm that
+        # did not hold did not compound, so its B is known without the ratio; but keeping those
+        # rows while dropping the held ones would select the sample on outcome A.
         if r.held is not None and r.rev_ratio is not None and cut is not None:
             r.compounded = bool(r.held and r.rev_ratio >= cut)
     for name in PREDICTORS:
@@ -317,6 +352,8 @@ def bootstrap(samp: list[tuple[Row, float]], pred: str, *, reps: int = BOOT_REPS
             betas.append(fit(draw, pred))
         except ValueError:
             singular += 1
+    if not betas:
+        raise ValueError(f"bootstrap: none of {reps} replications could be fitted")
     betas.sort()
     return {"se": pstdev(betas), "lo": betas[int(0.025 * len(betas))],
             "hi": betas[int(0.975 * len(betas)) - 1], "reps": len(betas),
@@ -367,7 +404,12 @@ def passes(discovery: dict[str, bool], holdout: bool) -> bool:
 def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
             seed: int = BOOT_SEED, with_bounds: bool) -> dict:
     """Everything the note reports for one predictor, one outcome, one window. Never raises:
-    a test that cannot be computed returns the counts and "error", and counts as not passed.
+    a test that cannot be computed returns "error" beside whatever was computed before the
+    failure, and counts as not passed.
+
+    THE BOOTSTRAP MUST BE COMPLETE. A resample that cannot be fitted is not dropped silently:
+    the SE over the survivors is too small (one survivor gives 0, under which any positive β
+    clears the 2 x SE arm), so one such replication makes the test an error.
 
     The counts say what the sector control could not use. A missing SIC code kept `n_no_sic`
     rows out of the primary sample and `n_no_sic_exit` exit rows out of the two bounds runs —
@@ -386,8 +428,9 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
               "n_no_sic_exit": sum(r.state == "exit" for r in no_sic),
               "n_alone_in_cell": sum(cells[(r.sic2, r.year)] == 1 for r, _ in samp),
               "n_alone_in_sic3_cell": sum(cells3[(r.sic3, r.year)] == 1 for r, _ in samp)}
+    out = dict(counts)
     try:
-        out = {**counts, "beta": fit(samp, pred)}
+        out["beta"] = fit(samp, pred)
         try:
             out["raw_tercile_spread"] = raw_tercile_spread(samp, pred)
         except ZeroDivisionError:
@@ -395,6 +438,9 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
             # two thirds of the rows can tie). The wrong metric must not sink the right one.
             out["raw_tercile_spread"] = None
         out.update(bootstrap(samp, pred, reps=reps, seed=seed))
+        if out["singular"]:
+            raise ValueError(f"bootstrap: {out['singular']} of {reps} replications could not be "
+                             "fitted")
         try:
             out["beta_sic3_cells"] = fit(samp, pred, digits=3)
         except ValueError:
@@ -406,7 +452,7 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
     except (ValueError, ZeroDivisionError) as e:
         # A singular design or an empty sample fails THIS test; it must not sink a run that
         # has already spent minutes on the others.
-        return {**counts, "error": f"{type(e).__name__}: {e}"}
+        return {**out, "error": f"{type(e).__name__}: {e}"}
     return out
 
 
@@ -447,6 +493,18 @@ def share_alone_in_cell(rows: list[Row], digits: int) -> Optional[float]:
     key = (lambda r: (r.sic2, r.year)) if digits == 2 else (lambda r: (r.sic3, r.year))
     cells = Counter(key(r) for r in coded)
     return sum(cells[key(r)] == 1 for r in coded) / len(coded)
+
+
+def zero_debt_share(firms: Iterable[Firm], year: int,
+                    ciks: Optional[set[str]] = None) -> Optional[float]:
+    """Share of the universe at `year` (or of `ciks` within it) with debt of zero, or None when
+    that group is empty. NO DEBT TAG READS AS ZERO DEBT, and so does debt reported under a tag
+    outside the panel. Either makes invested capital too small and ROIC too high, which favours
+    entry to the cohort; this share bounds how many firm-years that can touch."""
+    xs = cross_section(firms, year, year)
+    debts = [f.snaps[year][year].debt for f in firms
+             if f.cik in xs and (ciks is None or f.cik in ciks)]
+    return sum(d == 0 for d in debts) / len(debts) if debts else None
 
 
 def state_shares(rows: list[Row]) -> dict[str, float]:

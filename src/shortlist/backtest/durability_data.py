@@ -6,6 +6,7 @@ the study had 9.4 GB free."""
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import zipfile
 import zlib
@@ -19,23 +20,43 @@ KEEP_TAGS = tuple(REVENUE + OP_INCOME + EQUITY + ASSETS + LT_NONCURRENT + LT_TOT
                   + GROSS_PROFIT + COGS)
 # 20-F is in _xbrl_facts._ANNUAL_FORMS; the study is 10-K filers only, so it is dropped HERE.
 KEEP_FORMS = frozenset({"10-K", "10-K/A"})
+# The annual forms of foreign issuers. NOT IN THE STUDY. They are kept apart, under their own
+# key, for the reproduction gate alone: SEC frames counts these filers, so the count that is
+# compared with the frames targets has to count them too.
+FOREIGN_ANNUAL_FORMS = frozenset({"20-F", "20-F/A", "40-F", "40-F/A"})
 _FIELDS = ("start", "end", "val", "filed", "form")
 _NEEDS_ONE_OF = tuple(REVENUE + OP_INCOME)
 
 
-def compact_facts(raw: dict) -> Optional[dict]:
-    """The us-gaap USD facts the study needs, 10-K forms only, or None when the filer has no
-    annual revenue or operating-income fact at all."""
+def _kept(raw: dict, forms: frozenset[str]) -> Optional[dict]:
     gaap = (raw.get("facts") or {}).get("us-gaap") or {}
     out: dict[str, dict] = {}
     for tag in KEEP_TAGS:
         rows = ((gaap.get(tag) or {}).get("units") or {}).get("USD") or []
-        kept = [{k: f[k] for k in _FIELDS if k in f} for f in rows if f.get("form") in KEEP_FORMS]
+        kept = [{k: f[k] for k in _FIELDS if k in f} for f in rows if f.get("form") in forms]
         if kept:
             out[tag] = {"units": {"USD": kept}}
     if not any(t in out for t in _NEEDS_ONE_OF):
         return None
     return {"facts": {"us-gaap": out}}
+
+
+def compact_facts(raw: dict) -> Optional[dict]:
+    """The us-gaap USD facts the study needs, 10-K forms only, or None when the filer has no
+    annual revenue or operating-income fact at all."""
+    return _kept(raw, KEEP_FORMS)
+
+
+def foreign_annual_facts(raw: dict) -> Optional[dict]:
+    """The same facts from the foreign annual forms, each row relabelled 10-K so that
+    `annual_series` reads 40-F as it reads 20-F. None when there is no such revenue or
+    operating-income fact."""
+    kept = _kept(raw, FOREIGN_ANNUAL_FORMS)
+    if kept is not None:
+        for node in kept["facts"]["us-gaap"].values():
+            for row in node["units"]["USD"]:
+                row["form"] = "10-K"
+    return kept
 
 
 def _cik_of(member: str) -> Optional[str]:
@@ -65,10 +86,16 @@ _BAD_MEMBER = (ValueError, zipfile.BadZipFile, zlib.error, EOFError)
 
 def compact_companyfacts_zip(zip_path: str | Path, out_path: str | Path,
                              unreadable: Optional[list[str]] = None) -> int:
-    """Write one gzip JSONL line per kept filer: {"cik", "name", "facts"}. Returns the count.
+    """Write one gzip JSONL line per kept filer: {"cik", "name", "facts"} and, for a filer with
+    foreign annual forms, "foreign_forms". Returns the count. `facts` is what the study reads;
+    a filer on foreign forms only has an empty one and is no firm to the study.
+
     A member that cannot be read is skipped — one bad file must not sink a 1.4 GB pass — and
     its name is appended to `unreadable`, because a skipped member is a filer missing from the
     study.
+
+    THE SAME ARCHIVE GIVES THE SAME BYTES. The SHA-256 of the output binds the gates to the
+    data, so the gzip header carries no timestamp and no file name.
 
     Written beside `out_path` and renamed on success. A pass that fails halfway would otherwise
     leave a partial file, and a partial gzip stream reads back as a valid, shorter one."""
@@ -76,7 +103,9 @@ def compact_companyfacts_zip(zip_path: str | Path, out_path: str | Path,
     tmp = out_path.with_name(out_path.name + ".tmp")
     n = 0
     try:
-        with zipfile.ZipFile(zip_path) as z, gzip.open(tmp, "wt", encoding="utf-8") as out:
+        with zipfile.ZipFile(zip_path) as z, tmp.open("wb") as fh, \
+                gzip.GzipFile(filename="", mode="wb", fileobj=fh, mtime=0) as gz, \
+                io.TextIOWrapper(gz, encoding="utf-8") as out:
             for member in z.namelist():
                 cik = _cik_of(member)
                 if cik is None:
@@ -87,12 +116,17 @@ def compact_companyfacts_zip(zip_path: str | Path, out_path: str | Path,
                     if unreadable is not None:
                         unreadable.append(member)
                     continue
-                kept = compact_facts(raw) if isinstance(raw, dict) else None
-                if kept is None:
+                if not isinstance(raw, dict):
                     continue
-                kept["cik"] = cik
-                kept["name"] = raw.get("entityName")
-                out.write(json.dumps(kept, separators=(",", ":")) + "\n")
+                kept, foreign = compact_facts(raw), foreign_annual_facts(raw)
+                if kept is None and foreign is None:
+                    continue
+                rec = kept or {"facts": {"us-gaap": {}}}
+                rec["cik"] = cik
+                rec["name"] = raw.get("entityName")
+                if foreign is not None:
+                    rec["foreign_forms"] = foreign
+                out.write(json.dumps(rec, separators=(",", ":")) + "\n")
                 n += 1
     except BaseException:
         tmp.unlink(missing_ok=True)
