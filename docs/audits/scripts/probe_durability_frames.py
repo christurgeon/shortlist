@@ -14,9 +14,9 @@ and for a plausibility band. It is NOT the verdict, and no predictor is tested h
 predictors were pre-registered first and are measured by probe_durability.py on companyfacts.
 
 ROIC here is operating income x 0.79 / (equity + long-term debt + current debt), missing debt
-= 0. The verdict's definition (shortlist/durability.py) differs in one way: it does not add the
-current portion on top of `LongTermDebt`. That is one reason the reproduction gate is a +/-15%
-band and not an equality.
+= 0. The verdict's definition (shortlist/durability.py) does not add the current portion on top
+of `LongTermDebt`. That is one reason the reproduction gate is a +/-15% band and not an
+equality; the pre-registration (amendment 3, 3a) lists the others.
 """
 import json
 import os
@@ -135,7 +135,19 @@ def main() -> None:
     print("\n== 3. reproduction-gate targets: universe n by year at the 0.10 floor")
     print({y: len(universe(y, 0.10)) for y in range(2011, 2025)})
 
-    print("\n== 4. does companyfacts keep filers that stopped filing?")
+    print("\n== 4. what the reproduction-gate targets count that a 10-K filter does not")
+    # frames has no form field. A filer on forms 20-F or 40-F has a non-US address, so the share
+    # of a target with no `US-` address (a blank one included) is close to an upper bound on
+    # what a 10-K filter removes: many filers with a non-US address file a 10-K. Backs
+    # amendment 3 of the pre-registration.
+    for y in range(2011, 2025):
+        target = universe(y, 0.10)
+        loc = {row["cik"]: row.get("loc") or "" for row in
+               frame("OperatingIncomeLoss", f"CY{y}").get("data", [])}
+        abroad = sum(not loc[c].startswith("US-") for c in target)
+        print(f"{y}: target {len(target)}, no US- address {abroad} ({abroad / len(target):.1%})")
+
+    print("\n== 5. does companyfacts keep filers that stopped filing?")
     for name, cik in DEAD.items():
         try:
             d = _get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json")
