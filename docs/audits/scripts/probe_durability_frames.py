@@ -147,7 +147,24 @@ def main() -> None:
         abroad = sum(not loc[c].startswith("US-") for c in target)
         print(f"{y}: target {len(target)}, no US- address {abroad} ({abroad / len(target):.1%})")
 
-    print("\n== 5. does companyfacts keep filers that stopped filing?")
+    print("\n== 5. filers with ROIC inputs and none of the four revenue tags")
+    # The universe needs revenue for its $100M floor. A filer that reports revenue under another
+    # tag is outside it, and outside the reproduction targets too, so that gate cannot see the
+    # hole. Backs amendment 4 of the pre-registration.
+    for y in range(2011, 2025):
+        oi = by_cik(["OperatingIncomeLoss"], f"CY{y}")
+        eq = by_cik(["StockholdersEquity"], f"CY{y}Q4I")
+        assets = by_cik(["Assets"], f"CY{y}Q4I")
+        rev = by_cik(REV, f"CY{y}")
+        have = [c for c in oi if c in eq and c in assets]
+        none = [c for c in have if c not in rev]
+        big = [c for c in have if assets[c] >= 5e8]
+        big_none = sum(c not in rev for c in big)
+        print(f"{y}: {len(have)} filers, no revenue tag {len(none)} ({len(none) / len(have):.1%}) | "
+              f"assets >= $500M: {len(big)} filers, no revenue tag {big_none} "
+              f"({big_none / len(big):.1%})")
+
+    print("\n== 6. does companyfacts keep filers that stopped filing?")
     for name, cik in DEAD.items():
         try:
             d = _get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json")
