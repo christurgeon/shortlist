@@ -9,6 +9,7 @@ ROIC level or sector, and it measures "high-ROIC software stays high-ROIC softwa
 deciding number is `fit`'s coefficient, which holds level, sector and size fixed."""
 from __future__ import annotations
 
+import math
 import random
 from bisect import bisect_right
 from collections import Counter, defaultdict
@@ -179,7 +180,12 @@ def _predictors(f: Firm, year: int, hist: dict[int, list[float]],
     if (key in peers and peers[key][2] >= MIN_PEERS and base is not None
             and (base.revenue or 0) > 0 and (now.revenue or 0) > 0):
         tot_now, tot_base, _n = peers[key]
-        share_stability = -abs(now.revenue / tot_now - base.revenue / tot_base)
+        # The RELATIVE change in share (a log ratio), not the absolute one. An absolute change
+        # grows with the share itself: on synthetic firms whose growth does not depend on size
+        # its rank correlation with the firm's SIC-3 share is -0.82 to -0.88, against +0.05 to
+        # +0.09 for this form (docs/audits/scripts/probe_durability_share_form.py). The
+        # absolute form would have measured size inside the industry.
+        share_stability = -abs(math.log((now.revenue / tot_now) / (base.revenue / tot_base)))
 
     gross_margin = (now.gross_profit / now.revenue
                     if now.gross_profit is not None and (now.revenue or 0) > 0 else None)
@@ -507,15 +513,31 @@ def zero_debt_share(firms: Iterable[Firm], year: int,
     return sum(d == 0 for d in debts) / len(debts) if debts else None
 
 
+def no_revenue_count(firms: Iterable[Firm], year: int, min_assets: float = 0.0) -> int:
+    """Firms outside the masked sectors with ROIC defined at `year` and NO revenue value: the
+    universe needs revenue for its floor, so a filer that reports revenue under a tag outside
+    the panel is left out of it. The reproduction gate cannot see this (its targets read the
+    same tags). With no `min_assets` the count also holds small filers that have no revenue to
+    report; with one it is the firms that would most likely have met the floor."""
+    return sum(1 for f in firms if not f.masked
+               and (row := f.snaps.get(year, {}).get(year)) is not None
+               and row.status == "ok" and row.revenue is None and row.assets >= min_assets)
+
+
 def state_shares(rows: list[Row]) -> dict[str, float]:
     return {s: sum(r.state == s for r in rows) / len(rows) for s in STATES} if rows else {}
 
 
-def exit_rate_by_tercile(rows: list[Row], pred: str) -> list[Optional[float]]:
-    """Share of 'exit' rows in the worst, middle and best third of a predictor. Attrition that
-    differs across the thirds is what the bounds run exists to catch."""
+def state_rate_by_tercile(rows: list[Row], pred: str, state: str) -> list[Optional[float]]:
+    """Share of rows in `state` in the worst, middle and best third of a predictor. A state
+    whose share differs across the thirds can move β: 'exit' is what the bounds runs bracket;
+    'gap' is outside them; 'low_ic' is coded by the sign of operating income."""
     out: list[Optional[float]] = []
     for lo, hi in ((0.0, 1 / 3), (1 / 3, 2 / 3), (2 / 3, 1.01)):
         grp = [r for r in rows if pred in r.p and lo <= r.p[pred] < hi]
-        out.append(sum(r.state == "exit" for r in grp) / len(grp) if grp else None)
+        out.append(sum(r.state == state for r in grp) / len(grp) if grp else None)
     return out
+
+
+def exit_rate_by_tercile(rows: list[Row], pred: str) -> list[Optional[float]]:
+    return state_rate_by_tercile(rows, pred, "exit")

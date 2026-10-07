@@ -70,7 +70,8 @@ def _filer(i: int, rng: random.Random) -> dict:
         revenue = equity * rng.uniform(0.8, 2.0)
         dur = {"start": f"{y}-01-01", "end": f"{y}-12-31", "filed": f"{y + 1}-{filed}", "form": "10-K"}
         inst = {"end": f"{y}-12-31", "filed": f"{y + 1}-{filed}", "form": "10-K"}
-        tags["Revenues"].append({**dur, "val": revenue})
+        if i % 13 != 5:                                           # one in thirteen: another tag
+            tags["Revenues"].append({**dur, "val": revenue})
         tags["OperatingIncomeLoss"].append(
             {**dur, "val": quality * rng.uniform(0.8, 1.2) * (equity + debt) / 0.79})
         tags["GrossProfit"].append({**dur, "val": revenue * rng.uniform(0.2, 0.7)})
@@ -78,6 +79,9 @@ def _filer(i: int, rng: random.Random) -> dict:
         tags["Assets"].append({**inst, "val": 2.5 * equity})
         if debt:
             tags["LongTermDebt"].append({**inst, "val": debt})
+    if i == 0:                         # one period typed with the wrong year, never to be read
+        tags["OperatingIncomeLoss"].append({"start": "2105-01-01", "end": "2105-12-31", "val": 1.0,
+                                            "filed": "2012-02-20", "form": "10-K"})
     return {"entityName": f"FILER {i}",
             "facts": {"us-gaap": {t: {"units": {"USD": rows}} for t, rows in tags.items() if rows}}}
 
@@ -197,6 +201,11 @@ def test_an_output_names_the_code_the_step_started_on(probe):
     assert _read(probe, "x.json")["code_commit"] == started["code_commit"] != _git("rev-parse", "HEAD")
 
 
+def test_the_descriptive_block_survives_an_empty_cohort(probe):
+    # It is computed after the bootstrap. A division by zero there would lose the whole step.
+    assert probe._descriptive([])["hold_rate"] == {"held": None, "compounded": None}
+
+
 # ---------------------------------------------------------------- fetch
 
 def test_fetch_keeps_the_archive_and_names_the_members_it_could_not_read(probe, monkeypatch):
@@ -296,7 +305,13 @@ def test_the_steps_run_only_in_order_on_one_data_file_and_one_code_state(probe, 
     study, unmasked, compared = (failed[k] for k in (
         "universe_sizes", "universe_sizes_unmasked", "comparison_counts"))
     assert all(study[y] < unmasked[y] < compared[y] for y in study)
-    assert compared["2011"] == 170 and compared["2024"] < 170       # some stop filing in 2019
+    missing = sum(1 for i in range(170) if i % 13 == 5)             # filers with no revenue tag
+    assert compared["2011"] == 170 - missing and compared["2024"] < compared["2011"]
+    assert 0 < failed["universe_no_revenue_tag"]["2011"] <= missing  # the unmasked ones of those
+    assert failed["universe_no_revenue_tag_assets_500m"]["2011"] <= failed[
+        "universe_no_revenue_tag"]["2011"]
+    assert failed["facts_filed_before_period_end"] == {"rows": 1, "filers": 1}
+    assert failed["python_version"].count(".") == 2
     assert all(0.3 < v < 0.7 for v in failed["zero_debt_share"]["universe"].values())   # half
     assert all(0 <= v <= 1 for v in failed["zero_debt_share"]["discovery_cohort"].values())
     assert sorted(failed["zero_debt_share"]["discovery_cohort"]) == [str(y) for y in ds.DISCOVERY]
@@ -347,7 +362,8 @@ def test_the_steps_run_only_in_order_on_one_data_file_and_one_code_state(probe, 
     for m in disc["tests"].values():
         assert set(m["rules"]) == {"magnitude", "bounds", "continuous_sign", "sub_industry"}
         assert {"n", "n_no_sic", "n_no_sic_exit", "n_alone_in_cell", "n_alone_in_sic3_cell",
-                "exit_rate_by_tercile", "beta_by_year"} <= set(m)
+                "exit_rate_by_tercile", "gap_rate_by_tercile", "low_ic_rate_by_tercile",
+                "beta_by_year"} <= set(m)
         assert "error" in m or {"beta", "se", "raw_tercile_spread", "bound_held", "bound_not",
                                 "rank_beta", "beta_sic3_cells"} <= set(m)
     assert any("error" not in m for m in disc["tests"].values())

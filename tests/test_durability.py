@@ -3,6 +3,7 @@ from datetime import date
 from shortlist.durability import (
     YearRow,
     as_of_for,
+    count_filed_before_period_end,
     fiscal_ends,
     fy_bucket,
     panel_rows,
@@ -102,6 +103,24 @@ def test_late_filer_is_missing_at_its_own_as_of():
     assert as_of_for("2015-12-31") == date(2016, 4, 29)
     assert fiscal_ends(late) == {2015: "2015-12-31"}
     assert snapshot(late, 2015) == {}                # nothing filed yet: no row at all
+
+
+def test_a_fact_filed_before_its_period_ended_is_never_read():
+    # A context typed with the wrong year. Both periods are a full year long, so only the
+    # filing date shows that nobody could have known them: no value, no bucket, no later
+    # "last year end" that would turn a dead filer's exit into a gap.
+    f = _firm()                                                   # FY2015, filed 2016-02-20
+    for tag in ("Revenues", "OperatingIncomeLoss"):
+        f["facts"]["us-gaap"][tag]["units"]["USD"] += [_dur("2016-12-31", 7.0, "2016-02-20"),
+                                                       _dur("2105-12-31", 7.0, "2016-02-20")]
+    assert fiscal_ends(f) == {2015: "2015-12-31"}
+    assert snapshot(f, 2016) is None
+    assert sorted(panel_rows(f, date(2018, 1, 1))) == [2015]
+    assert snapshot(f, 2015)[2015].op_income == 100.0             # the real year is untouched
+    # ... and counted, so a large number on real data shows if "end <= filed" is a wrong premise
+    assert count_filed_before_period_end(f) == 4 and count_filed_before_period_end(_firm()) == 0
+    same_day = _firm(filed="2015-12-31")                          # filed on the day the year ended
+    assert fiscal_ends(same_day) == {2015: "2015-12-31"} and count_filed_before_period_end(same_day) == 0
 
 
 def test_snapshot_is_none_without_a_year_end_in_the_bucket():

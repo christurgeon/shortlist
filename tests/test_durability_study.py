@@ -1,3 +1,4 @@
+import math
 import random
 
 import pytest
@@ -16,6 +17,7 @@ from shortlist.backtest.durability_study import (
     cross_section,
     discovery_rules,
     exit_rate_by_tercile,
+    no_revenue_count,
     fit,
     gap_spikes,
     holdout_rule,
@@ -28,6 +30,7 @@ from shortlist.backtest.durability_study import (
     reproduction_failures,
     sample,
     share_alone_in_cell,
+    state_rate_by_tercile,
     state_shares,
     zero_debt_share,
 )
@@ -130,6 +133,19 @@ def test_build_firm_keeps_one_point_in_time_snapshot_per_year():
     assert sorted(f.snaps) == [2015] and f.last_bucket == 2015
     assert f.snaps[2015][2015].op_income == 100.0          # as first reported
     assert build_firm("0000000002", None, False, {"facts": {}}, range(2014, 2017)) is None
+
+
+def test_no_revenue_count_is_the_firms_with_a_roic_and_no_revenue_tag():
+    # The universe needs revenue for its floor, so these firms are outside it for a tag.
+    firms = [_firm(1, {2015: {2015: _yr(2015, 0.20)}}),
+             _firm(2, {2015: {2015: _yr(2015, 0.20, revenue=None)}}),
+             _firm(3, {2015: {2015: _yr(2015, 0.20, revenue=None)}}, masked=True),
+             _firm(4, {2015: {2015: _yr(2015, 0.20, revenue=None, ic=10.0, assets=1000.0)}}),
+             _firm(5, {2015: {2015: _yr(2015, 0.20, revenue=9e7)}})]
+    assert no_revenue_count(firms, 2015) == 1 and no_revenue_count(firms, 2014) == 0
+    # `_yr` gives assets of 2,000: only a firm that large can be compared with the frames count
+    assert no_revenue_count(firms, 2015, min_assets=2000.0) == 1
+    assert no_revenue_count(firms, 2015, min_assets=2001.0) == 0
 
 
 def test_zero_debt_share_is_over_the_universe_or_a_named_part_of_it():
@@ -310,9 +326,13 @@ def test_share_stability_needs_five_peers_with_revenue_in_both_years():
     peers = [_firm(100 + k, {2015: {2012: _yr(2012, 0.01, revenue=1e9),
                                     2015: _yr(2015, 0.01, revenue=1e9)}}, sic="7372")
              for k in range(4)]
-    # 5 peers: share goes 1/5 -> 3/7
+    # 5 peers: share goes 1/5 -> 3/7. The change is RELATIVE (a log ratio): an absolute change
+    # grows with the share itself and ranks firms by their size inside the industry.
     assert _preds(rows, sic="7372", extra_firms=peers)["share_stability"] == pytest.approx(
-        -(3 / 7 - 1 / 5))
+        -math.log((3 / 7) / (1 / 5)))
+    lost = {2012: _yr(2012, 0.40, revenue=3e9), 2015: _yr(2015, 0.40, revenue=1e9)}
+    assert _preds(lost, sic="7372", extra_firms=peers)["share_stability"] == pytest.approx(
+        -math.log((3 / 7) / (1 / 5)))                     # losing share is as unstable as gaining
     assert _preds(rows, sic="7372", extra_firms=peers[:3])["share_stability"] is None
     assert _preds(rows, sic=None, extra_firms=peers)["share_stability"] is None
 
@@ -632,6 +652,15 @@ def test_exit_rate_by_tercile_reads_the_predictor_rank():
     rows = [_row("a", 2011, p=0.1, state="exit", held=None), _row("b", 2011, p=0.2),
             _row("c", 2011, p=0.5), _row("d", 2011, p=0.9), _row("e", 2011, p=0.95)]
     assert exit_rate_by_tercile(rows, "x") == [0.5, 0.0, 0.0]
+
+
+def test_state_rate_by_tercile_reads_any_state():
+    rows = [_row("a", 2011, p=0.1, state="gap", held=None), _row("b", 2011, p=0.2),
+            _row("c", 2011, p=0.5, state="low_ic"), _row("d", 2011, p=0.9, state="low_ic"),
+            _row("e", 2011, p=0.95)]
+    assert state_rate_by_tercile(rows, "x", "gap") == [0.5, 0.0, 0.0]
+    assert state_rate_by_tercile(rows, "x", "low_ic") == [0.0, 1.0, 0.5]
+    assert state_rate_by_tercile(rows, "x", "exit") == exit_rate_by_tercile(rows, "x") == [0, 0, 0]
 
 
 def test_measure_reports_every_field_and_never_raises():
