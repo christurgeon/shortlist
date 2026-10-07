@@ -158,3 +158,194 @@ puts `gross_margin` above `track`.
 
 The other eight tests, the full per-year table and the counts of rows the sector control could
 not use are in `raw-2026-10-04-durability/discovery.json`.
+
+## Holdout (start years 2018-2021)
+
+Computed after the section above was committed (`80bf4a7`), on the same data file and the same
+code digest. A temporal replication with overlapping firms, not an independent sample.
+
+1,481 cohort firm-years. States at `t+3`: observed 86.6%, `exit` 7.8%, `gap` 3.4%, `low_ic`
+2.2%. Hold rate (outcome A) 53.9%; compounded (outcome B) 32.4%. No bootstrap had a replication
+that could not be fitted. The bar is max(6 pp, 1.64 × SE), and half of β must survive the SIC-3
+cells.
+
+| test | n | β | SE | bar | 95% interval | β SIC-3 | raw spread (the wrong metric) | holdout rule | β on firms in no discovery cohort (n) | passes all five |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `track/held` | 1250 | +0.338 | 0.072 | 0.117 | +0.200 to +0.483 | +0.329 | +0.341 | Y | +0.312 (508) | no |
+| `stability/held` | 1250 | +0.216 | 0.066 | 0.108 | +0.089 to +0.348 | +0.257 | +0.288 | Y | +0.272 (508) | **YES** |
+| `investment/held` | 1288 | +0.201 | 0.055 | 0.091 | +0.090 to +0.306 | +0.202 | +0.158 | Y | +0.234 (541) | **YES** |
+| `share_stability/held` | 1069 | +0.111 | 0.066 | 0.108 | -0.011 to +0.243 | +0.058 | +0.087 | Y | +0.118 (421) | no |
+| `gross_margin/held` | 996 | -0.037 | 0.076 | 0.124 | -0.176 to +0.118 | -0.115 | +0.018 | n | -0.022 (412) | no |
+| `incremental_roic/held` | 868 | -0.071 | 0.075 | 0.123 | -0.227 to +0.065 | -0.091 | +0.027 | n | -0.128 (313) | no |
+| `track/compounded` | 1250 | +0.188 | 0.068 | 0.112 | +0.058 to +0.328 | +0.153 | +0.173 | Y | +0.125 (508) | no |
+| `stability/compounded` | 1250 | +0.105 | 0.068 | 0.111 | -0.032 to +0.230 | +0.102 | +0.150 | n | +0.052 (508) | no |
+| `share_stability/compounded` | 1069 | +0.032 | 0.071 | 0.117 | -0.114 to +0.174 | -0.003 | +0.055 | n | +0.098 (421) | no |
+| `gross_margin/compounded` | 996 | +0.107 | 0.083 | 0.136 | -0.041 to +0.271 | -0.037 | +0.050 | n | +0.087 (412) | no |
+| `incremental_roic/compounded` | 868 | +0.081 | 0.077 | 0.126 | -0.082 to +0.221 | +0.083 | +0.067 | n | +0.117 (313) | no |
+
+The three discovery survivors:
+
+| test | discovery β (SE) · SIC-3 β | holdout β (SE) · bar · SIC-3 β | result |
+|---|---|---|---|
+| `investment/held` | +0.149 (0.047) · +0.150 | +0.201 (0.055) · 0.091 · +0.202 | **passes all five** |
+| `stability/held` | +0.150 (0.059) · +0.086 | +0.216 (0.066) · 0.108 · +0.257 | **passes all five** |
+| `gross_margin/compounded` | +0.167 (0.069) · +0.113 | +0.107 (0.083) · 0.136 · −0.037 | fails rule 2 and rule 5 |
+
+β by start year across both windows, for the two passes and for `track`:
+
+| test | 2011 | 2012 | 2013 | 2014 | 2015 | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `investment/held` | +0.236 | +0.219 | +0.147 | +0.131 | +0.062 | +0.144 | +0.122 | +0.169 | +0.072 | +0.200 | +0.333 |
+| `stability/held` | — | +0.007 | +0.199 | +0.320 | −0.023 | +0.128 | +0.219 | −0.037 | −0.084 | +0.347 | +0.617 |
+| `track/held` | — | −0.062 | +0.182 | +0.252 | +0.014 | +0.085 | +0.153 | +0.062 | −0.080 | +0.533 | +0.785 |
+
+## Verdict
+
+**Two tests passed all five rules: `investment/held` and `stability/held`.** By the
+pre-registered decision rule, the first row applies (at least one test passes): Phase 1 is a
+`/deep` context line with the passing predictors only. The row "only `track` and/or
+`stability` pass" does not apply, because `investment` passed. `stability` is still to be
+labelled a track-record line: that comes from the reading fixed in the pre-registration
+(Limitations, amendment 4f), not from that row. No scoring leg, no gate, no flag, no discovery
+list. `scoring.score()` is not touched.
+
+**How strong the evidence is.** No test of "marginal" was registered. The margins:
+
+| | `investment/held` | `stability/held` |
+|---|---|---|
+| β over its bar, discovery | 4.9 points | 3.2 points |
+| β over its bar, holdout | 11.0 points | 10.9 points |
+| SIC-3 β over half of β, discovery | 7.5 points | **1.1 points** |
+| SIC-3 β over half of β, holdout | 10.1 points | 14.9 points |
+
+Two or more discovery survivors among eleven tests would occur by chance at most about 5% of
+the time at the registered false-pass rate of 3.5% a test, before the holdout. The holdout
+adds less than its name suggests: the windows share firms, the predictors are correlated, and
+five of the eleven tests clear the holdout rule (three of them had failed discovery:
+`track/held`, `track/compounded`, `share_stability/held`). This is evidence against chance for
+`investment`, not proof. For `stability` chance is not the right comparison: a track-record
+measure is expected to be positive with no durability trait at all (amendment 4f).
+
+**`investment` is the more consistent pass.** Its β is not larger than that of `stability`
+(+0.149 and +0.150 on discovery, +0.201 and +0.216 on the holdout). It is positive in every
+start year, it does not rest on two of them, and its SIC-3 β equals its β. In words: among
+firms with a top-quintile ROIC, of the same sector and start year and with ROIC level and size
+held fixed, the firm with the lowest growth of invested capital in the last year is 15 points
+(discovery) to 20 points (holdout) more likely to still be in the top quintile three years
+later than the firm with the highest, on a straight-line fit across the rank range and around
+a base rate of 59% and 54%.
+
+- β is positive in all eleven start years, 2011 to 2021.
+- The SIC-3 β equals β in both windows (+0.150 and +0.202): it is not a sub-industry label.
+- Among firms that were in no discovery cohort the holdout β is +0.234 (n = 541).
+- Both bounds runs on discovery are over 13 points (+0.166 and +0.133); without energy and
+  mining β is +0.145 and +0.197.
+- One caveat, seen in discovery and stated before the holdout: the lowest-growth third ends in
+  `low_ic` more often (5.2% against 1.3% and 1.2% on discovery; 2.9% against 1.7% and 1.2% on
+  the holdout), and a `low_ic` firm with positive operating income is coded as held. The rank
+  outcome on observed firms is positive (+0.098 on discovery), so the coding is not the whole
+  effect. The excess `low_ic` share of the best third is 4.0 points on discovery and 1.5 on the
+  holdout, which bounds what the coding can add to a β of 15 and 20 points. The test was not
+  run without those firms.
+- A possible reading, NOT tested here: a firm that shrinks its invested capital, for example by
+  buying back shares, raises an accounting ROIC with no change in the business, and a firm that
+  adds capital fast, for example by an acquisition, lowers it.
+
+**`stability` passes, and its holdout rests on two start years.** A firm whose ROIC rank moved
+less over the four years to `t` holds more often: +0.150 on discovery, +0.216 on the holdout.
+
+- The holdout β by start year is −0.037 (2018), −0.084 (2019), +0.347 (2020) and +0.617
+  (2021). The pass comes from the cohorts formed in 2020 and 2021, whose outcome years are 2023
+  and 2024. In 2018 and 2019 the sign is the other way. On discovery it is positive in five of
+  six years.
+- By the reading fixed before the data (pre-registration, Limitations and 4f), this is a longer
+  measure of the same level: a track record adds to one year's figure. It is not evidence of a
+  separate trait of durability, and Phase 1 must label it as a track-record line.
+- `track`, the other history predictor, shows the same shape and did not pass: it failed two
+  discovery rules (+0.109 against a bar of 0.137; +0.038 under SIC-3 cells) and then cleared
+  the holdout rule with +0.338, which is +0.533 in 2020 and +0.785 in 2021. A predictor that
+  fails discovery does not pass, whatever its holdout.
+
+**`gross_margin` on outcome B survived discovery and failed the holdout.** +0.107 against a bar
+of 0.136, and −0.037 under SIC-3 cells. This is what the holdout is for. It is positive in both
+windows (+0.167, +0.107), so this too is "not shown" and not "no effect"; a failure of rule 5
+says that most of the holdout β did not survive holding the sub-industry fixed.
+
+**The other eight tests did not pass. That is "not shown", not "no effect".** To clear its bar
+an effect had to be about 12 to 16 points on discovery and 11 to 13 on the holdout, from the
+worst to the best rank. An effect of exactly that size clears the bar about half the time, and
+a smaller one is not shown either way. `share_stability/held` is positive in both windows
+(+0.068, +0.111): it failed discovery (bar 0.124) and cleared the holdout rule by 0.4 point.
+`incremental_roic/held` is negative in both (−0.056, −0.071) with intervals that include zero;
+the pre-registration expected that it could be wrong-signed.
+
+**The raw tercile spread is not the result.** On discovery it is +0.243 for `track/held`
+against a controlled β of +0.109, and +0.058 for `gross_margin/held` against +0.121. Do not
+quote a raw spread.
+
+What this does NOT show, in any case: that predicted persistence earns a return. The claim is
+about an accounting ratio staying in the top quintile.
+
+## Reported, not decision-bearing
+
+- **β by start year:** the table above for the passes. For the other tests,
+  `raw-2026-10-04-durability/discovery.json` and `holdout.json`. On the holdout the history
+  predictors (`track`, `stability`, on both outcomes) are small or negative in 2018 and 2019
+  and large and positive in 2020 and 2021 (`track/held`: +0.062, −0.080, +0.533, +0.785).
+  `incremental_roic` goes the other way on both outcomes (on A: +0.155, +0.234, −0.252,
+  −0.463).
+- **Sample size by start year (`n_by_year`):** `track` and `stability` have no 2011 rows.
+  On outcome A `share_stability` has 85 rows in 2011 and 212 to 241 a year after;
+  `incremental_roic` has 47 in 2011, 103 in 2012 and 135 to 184 a year after: the thin early
+  years the pre-registration expected.
+- **Excluding mining, oil and gas, and refining:** every β moves by less than 2 points on
+  both windows. The largest move is `incremental_roic/held` on the holdout, −0.071 to −0.089.
+- **Exit rate by predictor tercile:** one predictor differs by more than 5 points across its
+  thirds, in both windows: `share_stability` (9.9% / 15.9% / 12.7% on discovery, 11.4% / 6.0% /
+  6.7% on the holdout). `stability` on the holdout is 10.1% / 6.6% / 5.6%. `investment` is
+  level in both windows (12.7% / 12.6% / 12.7% and 7.9% / 7.3% / 7.1%).
+- **`investment` on outcome B** (no registered sign, not a test): −0.090 on discovery, +0.065
+  on the holdout.
+- **Firms in no discovery cohort** (holdout): `investment/held` +0.234 (541), `stability/held`
+  +0.272 (508), `track/held` +0.312 (508).
+- **The sector control:** 3.8% of discovery rows are alone in their SIC-2 cell and 17.3% in
+  their SIC-3 cell. No cohort row lacks a SIC code. Within the samples of the two passes the
+  rows alone in their SIC-3 cell are 380 of 1,883 (`investment`) and 325 of 1,552
+  (`stability`) on discovery, and 227 of 1,288 and 231 of 1,250 on the holdout; alone in their
+  SIC-2 cell, 90 and 79, then 41 and 44.
+- **A correction to the first half, which is not edited.** "Read before any β" says rule 5
+  cost no power at 15% alone on the synthetic tables. The share for the two passes is about 20%
+  on discovery and 18% on the holdout. The synthetic cost was nil at 15% and 5.5 points at 34%;
+  it is likely small here and was not measured at this value.
+- **`gap` and `low_ic` by tercile on the holdout** (worst / mid / best). `investment/held`:
+  `gap` 4.4% / 1.9% / 4.1%, `low_ic` 1.7% / 1.2% / 2.9%. `stability/held`: `gap` 2.8% / 3.2% /
+  4.3%, `low_ic` 2.8% / 2.4% / 0.9%. The best third of `stability` has the most `gap` rows, and
+  `gap` is not bracketed by any bounds run.
+- **The two windows differ.** The hold rate is 58.6% on discovery and 53.9% on the holdout; the
+  `exit` share is 12.9% and 7.8%. The bounds runs are a discovery rule only.
+- **Provenance.** The three outputs carry the same data hashes and the same code digest. Their
+  `code_commit` differs (`8f86335`, `e3c6c77`, `80bf4a7`) because each result was committed
+  before the next step ran; no code file changed between them.
+
+## Limits of this verdict
+
+All limitations of the pre-registration apply. Four matter most for a reader of the two passes:
+
+- **Coverage.** In 2011–2017 the universe leaves out 257 to 282 larger filers a year for a
+  revenue tag (§Gates). The discovery cohorts are drawn from the filers that used one of four
+  revenue tags.
+- **Accounting ROIC.** Invested capital is equity plus tagged debt. 39% to 51% of each
+  discovery cohort has debt of zero, tagged or not. Buybacks and write-downs move the
+  denominator.
+- **One author, one sitting, six predictors.** Before the data, with no number seen and on
+  reviewers' findings, the definition of `share_stability` was changed (amendment 4) and the
+  2012 start of `track` and `stability` was enforced (amendment 3). The holdout is the only
+  protection against the choice of predictors.
+- **Two start years carry the `stability` pass.** In the 2020 and 2021 cohorts β is large and
+  positive for the history predictors and for `share_stability`, and negative for
+  `incremental_roic`. The study does not explain why.
+
+## Not run, on purpose
+
+A top-decile cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed
+within SIC-2. Each needs its own pre-registration.
