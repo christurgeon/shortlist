@@ -1,0 +1,12 @@
+{
+ "code_commit": "8f86335f101835a5be16812508d0ad6a14e4d604",
+ "code_sha256": "f7780551508fb8f62eb911e2211d3953efd25c50ca26d9b8be06d6477d16b6d9",
+ "compacted_sha256": "2d617f7045cbe83e674ac6626b8dcc28a0870b19f66be0c572a759044aaa5639",
+ "filers": 12539,
+ "foreign_only_filers": 919,
+ "generated": "2026-10-07T14:46:02+00:00",
+ "python_version": "3.12.13",
+ "sic_found": 12523,
+ "sic_sha256": "b5dd2d4d0955397e712ed5110734e819ce07f550148eec17e60b541a5e2bfb69",
+ "unreadable_members": []
+}
