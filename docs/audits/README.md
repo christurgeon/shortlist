@@ -20,6 +20,30 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 
 ## Closed with a verdict — do not redo
 
+- **Two of six predictors of top-quintile ROIC persistence passed the registered tests
+  (`investment`, and `stability` as a track-record line) — measured 2026-10-07,
+  pre-registered** — two of eleven tests passed all five rules, holding ROIC level,
+  SIC-2 sector × start year and size fixed, on 2,290 discovery and 1,481 holdout firm-years in
+  CIK space with dead filers included. **`investment`** (growth of invested capital in the last
+  year; LOW growth holds more): discovery β +0.149 (SE 0.047), holdout +0.201 (0.055), positive
+  in all eleven start years, unchanged under SIC-3 cells. **`stability`** (spread of the ROIC
+  rank over four years): +0.150 (0.059) and +0.216 (0.066), **but the holdout pass rests on
+  start years 2020 and 2021 and the sign is negative in 2018 and 2019**; by the pre-registered
+  reading it is a track-record line, not a separate durability trait. `gross_margin` on
+  held-and-grew survived discovery and failed the holdout. The other eight were not shown
+  (a test needed an effect of about 12 to 16 points to clear its bar). **This is a claim about
+  an accounting ratio, not returns**: nothing here shows that predicted persistence pays. It
+  licenses a `/deep` display line only — not a scoring leg, gate, flag or discovery list.
+  **The trap the design exists for:** the raw tercile spread of the hold rate is +0.243 for `track` against a controlled β
+  of +0.109 (it failed), and +0.058 for `gross_margin` against +0.121; the difference is ROIC
+  level and sector. Do not quote a raw spread. Two more traps, both caught before the data:
+  an absolute change in market share ranks firms by their size inside the industry, and a
+  reproduction gate against SEC `frames` counts must count the same population (it then
+  matched within 1.2%). Do not re-run these six predictors; a new one needs its own
+  pre-registration against the same controls. A top-decile cohort, a 5-year horizon, an
+  indexed revenue floor and sector-relative cohorts were not run, on purpose; each needs its
+  own. `2026-10-04-moat-durability-verdict.md`.
+
 - **The `risk` tilt is weighted 0.0 — measured 2026-09-25** — its standalone XS rank IC is
   NEGATIVE on both committed universes at every horizon (large cap t −1.1 to −1.9, small/mid
   −0.4 to −1.1). Removing it raised the composite's XS
@@ -305,6 +329,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-04 | `2026-10-04-moat-durability-verdict.md` — is the persistence of a top-quintile ROIC predictable? Two of eleven tests passed (run 2026-10-07) | verdict |
 | 2026-10-04 | `2026-10-04-moat-durability-prereg.md` — does a top-quintile ROIC persist, and can that be predicted? (amended four times, 2026-10-05 and 2026-10-07: the sector control; a fifth pass rule; the reproduction gate; the share-stability predictor) | pre-registration |
 | 2026-09-25 | `2026-09-25-risk-tilt-disable.md` — risk weight 0.10 -> 0.0 | verdict |
 | 2026-08-25 | `2026-08-25-options-line-destination-verdict.md` — 0 of 3 -> 3 of 3 | verdict |
