@@ -50,6 +50,7 @@ from shortlist.backtest.durability_data import (
     sic_from_submissions_zip,
 )
 from shortlist.config import load_config
+from shortlist.durability import count_filed_before_period_end
 from shortlist.edgar.sec_throttle import sec_throttle
 from shortlist.env import load_env, redact_secrets
 from shortlist.sectors import resolve_bucket
@@ -133,7 +134,8 @@ def _code_state() -> dict:
         raise SystemExit("uncommitted changes in the study's code. Commit them first:\n  "
                          + "\n  ".join(changed))
     head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True)
-    return {"code_commit": head.stdout.strip(), "code_sha256": h.hexdigest()}
+    return {"code_commit": head.stdout.strip(), "code_sha256": h.hexdigest(),
+            "python_version": ".".join(map(str, sys.version_info[:3]))}
 
 
 def _data_state() -> dict:
@@ -217,15 +219,18 @@ def fetch() -> None:
            {**_data_state(), **code})
 
 
-def load_firms(panels: Optional[list] = None) -> list[ds.Firm]:
+def load_firms(panels: Optional[list] = None, dropped: Optional[list] = None) -> list[ds.Firm]:
     """The study's firms. With `panels`, also appends every filer's comparison panel to it —
-    the reproduction gate's population, which holds filers that are no firm to the study."""
+    the reproduction gate's population, which holds filers that are no firm to the study. With
+    `dropped`, appends per filer the number of 10-K rows filed before their period ended."""
     config = load_config("config.yaml")
     sic = json.loads((RAW / "sic.json").read_text())
     firms = []
     for i, rec in enumerate(iter_compacted(COMPACT)):
         if panels is not None:
             panels.append(ds.comparison_panel(rec))
+        if dropped is not None:
+            dropped.append(count_filed_before_period_end(rec))
         code = sic.get(rec["cik"])
         firm = ds.build_firm(rec["cik"], code, resolve_bucket(code, config) != "unknown",
                              rec, YEARS)
@@ -244,7 +249,8 @@ def gates() -> None:
     inputs = _inputs()
     _keep_on_record("gates.json")
     panels: list = []
-    firms = load_firms(panels)
+    dropped: list = []
+    firms = load_firms(panels, dropped)
     by_cik = {f.cik: f for f in firms}
     dead = {cik: {"name": name, "need": need,
                   "got": by_cik[cik].last_bucket if cik in by_cik else None}
@@ -267,6 +273,12 @@ def gates() -> None:
         "universe_sizes": sizes,
         "universe_sizes_unmasked": {y: len(ds.cross_section(firms, y, y, masked=False))
                                     for y in ds.FRAMES_UNIVERSE},
+        # Not a gate. Firms with a ROIC that are out of the universe for a revenue tag.
+        "universe_no_revenue_tag": {y: ds.no_revenue_count(firms, y) for y in ds.FRAMES_UNIVERSE},
+        "universe_no_revenue_tag_assets_500m": {y: ds.no_revenue_count(firms, y, min_assets=5e8)
+                                                for y in ds.FRAMES_UNIVERSE},
+        # Not a gate. Rows never read because they were filed before their own period ended.
+        "facts_filed_before_period_end": {"rows": sum(dropped), "filers": sum(n > 0 for n in dropped)},
         "comparison_counts": compared,
         "reproduction_failures": ds.reproduction_failures(compared),
         "level_slope_discovery": slope,
@@ -301,6 +313,8 @@ def _run(rows: list[ds.Row], *, with_bounds: bool) -> dict:
         _log(f"  {pred} / {outcome}")
         m = ds.measure(rows, pred, outcome, with_bounds=with_bounds)
         m["exit_rate_by_tercile"] = ds.exit_rate_by_tercile(rows, pred)
+        m["gap_rate_by_tercile"] = ds.state_rate_by_tercile(rows, pred, "gap")
+        m["low_ic_rate_by_tercile"] = ds.state_rate_by_tercile(rows, pred, "low_ic")
         m["beta_by_year"], m["n_by_year"] = {}, {}
         for y in sorted({r.year for r in rows}):
             samp = ds.sample([r for r in rows if r.year == y], pred, outcome)
@@ -327,8 +341,8 @@ def _descriptive(rows: list[ds.Row]) -> dict:
         "ex_energy_mining": {f"{p}/{o}": beta(no_energy, p, o) for p, o in ds.TESTS},
         "investment_on_compounded": beta(rows, "investment", "compounded"),
         "state_shares": ds.state_shares(rows),
-        "hold_rate": {o: (lambda s: sum(y for _, y in s) / len(s))(ds.sample(rows, None, o))
-                      for o in ("held", "compounded")},
+        "hold_rate": {o: (lambda s: sum(y for _, y in s) / len(s) if s else None)(
+            ds.sample(rows, None, o)) for o in ("held", "compounded")},
     }
 
 

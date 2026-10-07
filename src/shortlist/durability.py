@@ -92,16 +92,43 @@ def _debt(end: str, noncur: dict, total: dict, cur: dict) -> float:
     return cur.get(end, 0.0)
 
 
-def fiscal_ends(facts: dict) -> dict[int, str]:
-    """{bucket -> fiscal year end} over EVERY filing, whenever filed. Used only to locate a
-    firm's year ends (and so its as-of dates) — never to read a value. Two ends in one bucket
-    (a fiscal-year change): the later end wins."""
+def _ended(facts: dict) -> dict:
+    """`facts` without the rows that were filed before their own period ended. NO VALUE CAN BE
+    KNOWN BEFORE ITS PERIOD ENDS, so such a row is a context typed with the wrong year. Left
+    in, a year-long period ending in 2105 gives a dead filer a "last year end" in 2105, and its
+    exit reads as a gap; one ending next year puts last year's values in a bucket that the
+    firm never reported. Rows with no `filed` or no `end` are left for `annual_series` to drop."""
+    gaap = facts.get("facts", {}).get("us-gaap", {})
+    kept = {}
+    for tag, node in gaap.items():
+        units = {u: [r for r in rows if not (r.get("filed") and r.get("end")) or r["filed"] >= r["end"]]
+                 for u, rows in (node.get("units") or {}).items()}
+        kept[tag] = {**node, "units": units}
+    return {**facts, "facts": {**facts.get("facts", {}), "us-gaap": kept}}
+
+
+def count_filed_before_period_end(facts: dict) -> int:
+    """The number of rows `_ended` drops. Reported with the gates: real facts are expected to
+    satisfy end <= filed, and a large count would say that expectation is wrong."""
+    gaap = facts.get("facts", {}).get("us-gaap", {})
+    return sum(1 for node in gaap.values() for rows in (node.get("units") or {}).values()
+               for r in rows if r.get("filed") and r.get("end") and r["filed"] < r["end"])
+
+
+def _fiscal_ends(facts: dict) -> dict[int, str]:
     ends = set(annual_series(facts, OP_INCOME, _FAR_FUTURE)) | set(
         annual_series(facts, REVENUE, _FAR_FUTURE))
     out: dict[int, str] = {}
     for e in sorted(ends):
         out[fy_bucket(e)] = e
     return out
+
+
+def fiscal_ends(facts: dict) -> dict[int, str]:
+    """{bucket -> fiscal year end} over EVERY filing, whenever filed. Used only to locate a
+    firm's year ends (and so its as-of dates) — never to read a value. Two ends in one bucket
+    (a fiscal-year change): the later end wins."""
+    return _fiscal_ends(_ended(facts))
 
 
 def as_of_for(end_iso: str) -> date:
@@ -112,6 +139,10 @@ def panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
     """{bucket -> YearRow} from the facts filed on or before `as_of` (the existing
     point-in-time rule in `annual_series`). Every year a reader at `as_of` would have,
     comparatives included, and nothing filed later."""
+    return _panel_rows(_ended(facts), as_of)
+
+
+def _panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
     rev = annual_series(facts, REVENUE, as_of)
     oi = annual_series(facts, OP_INCOME, as_of)
     eq = annual_series(facts, EQUITY, as_of, instant=True)
@@ -131,7 +162,8 @@ def panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
 def snapshot(facts: dict, bucket: int) -> Optional[dict[int, YearRow]]:
     """The firm's panel as of (its `bucket` fiscal year end + 120 days), or None when the firm
     has no fiscal year end in that bucket."""
-    end = fiscal_ends(facts).get(bucket)
+    facts = _ended(facts)
+    end = _fiscal_ends(facts).get(bucket)
     if end is None:
         return None
-    return panel_rows(facts, as_of_for(end))
+    return _panel_rows(facts, as_of_for(end))
