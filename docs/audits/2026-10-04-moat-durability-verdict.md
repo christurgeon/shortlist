@@ -349,3 +349,62 @@ All limitations of the pre-registration apply. Four matter most for a reader of 
 
 A top-decile cohort, a 5-year horizon, an inflation-indexed revenue floor, cohorts formed
 within SIC-2. Each needs its own pre-registration.
+
+## Addendum 1 — after the final review of the whole branch (2026-10-07)
+
+Appended. Nothing above is edited. A fresh reviewer read the whole branch after the verdict was
+committed. The pass list is unchanged. What changes is how the `investment` pass may be read.
+
+**The `investment` pass is under-caveated above.** The predictor is last year's growth of the
+outcome's own denominator. Four ways that can produce the result with no change in what a
+business earns on its capital, none of them tested by this study:
+
+- **The denominator persists.** Growth of invested capital is serially correlated. Low growth
+  at `t` forecasts a smaller invested capital at `t+3` than a fast grower has, and so a higher
+  ROIC on the same profit.
+- **Cash and payout.** Invested capital is equity plus debt, cash included. 39% to 51% of each
+  discovery cohort has debt of zero, and for those firms `investment` is the growth of book
+  equity, which is mostly retained earnings less payouts and buybacks.
+- **Acquired capital.** A purchase is booked at the price paid, so the capital it adds earns
+  close to the cost of capital by construction.
+- **A windfall year.** A profit spike raises NOPAT and retained equity together. At a fixed
+  ROIC rank, high `investment` can mark a firm that has just arrived in the top quintile.
+
+So `investment` is a regularity that replicated in every start year, and it is NOT yet a
+finding about businesses. `stability` carries a label that deflates it (a track-record line).
+`investment` needs one at least as strong: **a statement about the ratio and about capital
+growth.** Phase 1 must word it that way unless the decomposition below says more.
+
+**Not shown: that the two passes are two findings.** No model holds `stability`, `track` or the
+prior year's ROIC fixed while testing `investment`, or the reverse.
+
+**Corrections and unregistered conditions.**
+
+- The header says every table is printed by `scripts/print_durability_tables.py`. That holds
+  for the gates table and the two eleven-row tables. The tables of survivors, margins and
+  start years across both windows were assembled by hand from the same files; an independent
+  check recomputed every cell.
+- `investment` is defined only when the prior year's ROIC is defined in snapshot `t`
+  (`durability_study._predictors`). The pre-registration says IC(`t`) / IC(`t-1`) − 1 and does
+  not state the condition. It removes few rows: the `investment` sample is the largest of the
+  six.
+- The count of commits on the branch and the order of every commit against the timestamps in
+  the raw outputs were checked: the pre-registration was last edited before the first
+  real-data output, no code changed after it, and the first half of this note was not edited
+  after the holdout ran. Git cannot prove more than local timestamps: the branch is not pushed.
+
+**Before a `/deep` line imports `shortlist/durability.py` (Phase 1), two things must be fixed.**
+The 10-K-only form filter lives in the compaction (`backtest/durability_data.py`), not in the
+shared module, so `durability.snapshot` on raw company facts would read a 20-F row the study
+never saw; the module's docstring says the two can never differ, and that is not yet true. And
+importing it makes `providers/_xbrl_facts.py` a dependency of a production path, which the
+repo's extractor rule says it is not.
+
+**The data file.** `companyfacts.zip` is overwritten by the SEC every night and the copy this
+study read is gone. The compacted file (11 MB, SHA-256 `2d617f70…aa5639`) is the only record of
+the data. It is committed beside the raw outputs as `companyfacts-10k.jsonl.gz`; to run a step
+again, copy it to `.cache/durability/`.
+
+**A follow-up, registered before it is run:** `2026-10-07-durability-decomposition-prereg.md`.
+It asks whether operating profit held or only the denominator, and whether the two passes are
+one. It is a decomposition of a result that has been seen. It cannot change the pass list.

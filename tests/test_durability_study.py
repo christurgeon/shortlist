@@ -205,6 +205,14 @@ def test_observed_under_the_later_floor_did_not_hold():
     assert row.state == "observed" and row.held is False and row.rank_t3 < 0.5
 
 
+def test_held_is_judged_against_the_floor_of_the_outcome_year_not_the_start_year():
+    # The 2015 floor is 0.34 and the 2018 floor is 0.30. A firm at 0.31 in 2018 held.
+    firms = _world()
+    firms[19].snaps[2018][2018] = _yr(2018, 0.31)
+    row = {int(r.cik): r for r in build_cohort(firms, 2015)}[19]
+    assert row.held is True and row.rank_t3 == pytest.approx(16 / 17)
+
+
 def test_a_last_year_end_in_the_outcome_bucket_is_a_gap_not_an_exit():
     firms = _world()
     firms[16].last_bucket = 2018
@@ -674,6 +682,23 @@ def test_measure_reports_every_field_and_never_raises():
     assert bad["n"] == 600 and bad["error"].startswith("ValueError")
     empty = measure([], "real", "held", reps=20, with_bounds=False)
     assert empty["n"] == 0 and "error" in empty
+
+
+def test_measure_fits_the_rank_outcome_and_each_bounds_run_on_its_own_sample():
+    rows = _synthetic(firms=300)
+    for r in rows:
+        r.rank_t3 = 1.0 - r.p["real"]                    # the rank outcome runs AGAINST `real`
+    for r in rows:
+        if r.p["real"] > 0.8 and int(r.cik[1:]) % 2:     # exits sit at the favourable end
+            r.state, r.held, r.rank_t3 = "exit", None, None
+    m = measure(rows, "real", "held", reps=10, with_bounds=True)
+    assert m["rank_beta"] < -0.8 and m["beta"] > 0.05
+    assert m["bound_held"] > m["beta"] > m["bound_not"]  # exits coded held raise it, not held lower it
+
+
+def test_the_bootstrap_se_is_on_the_scale_of_its_own_interval():
+    b = bootstrap(sample(_synthetic(firms=300), "real", "held"), "real", reps=200, seed=3)
+    assert 0.75 < b["se"] / ((b["hi"] - b["lo"]) / 3.92) < 1.25
 
 
 def test_measure_counts_the_rows_the_sector_control_cannot_use():
