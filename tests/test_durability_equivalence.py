@@ -105,7 +105,13 @@ def test_the_measured_numbers_are_the_verdicts(table):
     }
     # exit + gap: 12.9% + 2.9% on discovery, 7.8% + 3.4% on the holdout.
     assert [round(table["cohorts"][w]["not_counted"], 3) for w in ("discovery", "holdout")] == [0.158, 0.111]
-    assert table["passed"] == ["investment", "stability"] and table["predictors_tested"] == 6
+    assert table["passed"] == ["investment", "stability"]
+    assert (table["tests_run"], table["predictors_tested"]) == (11, 6)
+    # `track` and `stability` have no 2011 rows (amendment 3): the first window starts in 2012.
+    assert [inv[w]["years"] for w in ("discovery", "holdout")] == [[2011, 2017], [2018, 2021]]
+    assert [stab[w]["years"] for w in ("discovery", "holdout")] == [[2012, 2017], [2018, 2021]]
+    # low_ic over observed + low_ic: 2.8 / 84.2 and 2.2 / 88.9.
+    assert [round(table["cohorts"][w]["low_capital_share"], 3) for w in ("discovery", "holdout")] == [0.033, 0.025]
 
 
 def test_the_fixed_wording_of_the_section_still_matches_the_table(table):
@@ -120,8 +126,11 @@ def test_the_fixed_wording_of_the_section_still_matches_the_table(table):
     by_year = stab["holdout_beta_by_year"]
     assert by_year["2018"] < 0 and by_year["2019"] < 0 and by_year["2020"] > 0 and by_year["2021"] > 0
     assert sorted(by_year) == ["2018", "2019", "2020", "2021"]
-    # "Six predictors were tested. These two passed"
-    assert table["predictors_tested"] == 6 and len(table["passed"]) == 2
+    # "Eleven tests were run on six predictors; two (capital growth and steadiness) passed"
+    assert (table["tests_run"], table["predictors_tested"]) == (11, 6)
+    assert table["passed"] == ["investment", "stability"]
+    # "A few counted firms, under 4%, had too little invested capital for a ROIC by then"
+    assert all(0 < table["cohorts"][w]["low_capital_share"] < 0.04 for w in ("discovery", "holdout"))
     assert [table["cohorts"][w]["years"] for w in ("discovery", "holdout")] == [[2011, 2017], [2018, 2021]]
 
 

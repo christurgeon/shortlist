@@ -42,7 +42,7 @@ TABLE_SCHEMA = 1
 _TABLE_PATH = Path(__file__).with_name("durability_table.json")
 _YEAR_KEYED = ("universe", "floors")
 _TABLE_KEYS = ("table_year", "universe", "floors", "cohort", "cohorts", "effects", "passed",
-               "predictors_tested")
+               "predictors_tested", "tests_run")
 
 # Days between two consecutive fiscal year ends. A fiscal-year change puts two year ends in
 # one bucket and the later one wins, so "the year before" can be two years back. No member of
@@ -225,7 +225,8 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
 
     now, floor = snap[t], table["floors"][ref(t)]
     if now.roic < floor:
-        return None, NOT_TOP_FIFTH, {**detail, "roic": now.roic, "floor": floor}
+        return None, NOT_TOP_FIFTH, {**detail, "roic": now.roic, "floor": floor,
+                                     "table_year": table_year}
     hist = {y: table["universe"][ref(y)] for y in years}
     floors = {y: table["floors"][ref(y)] for y in years}
     _track, stability, _in_top, seen = history_predictors(snap, t, hist, floors)

@@ -92,10 +92,17 @@ def measured() -> dict:
     for window, run in out.items():
         shares = run["descriptive"]["state_shares"]
         cohorts[window] = {"years": WINDOWS[window], "hold_rate": run["descriptive"]["hold_rate"]["held"],
-                           "not_counted": shares["exit"] + shares["gap"]}
+                           "not_counted": shares["exit"] + shares["gap"],
+                           # Of the firms the hold rate counts, the share with too little
+                           # invested capital for a ROIC at t+3. Such a firm is coded as held
+                           # when its operating income is positive, so this bounds that coding.
+                           "low_capital_share": shares["low_ic"] / (shares["observed"] + shares["low_ic"])}
         for p in effects:
             test = run["tests"][f"{p}/held"]
-            effects[p][window] = {"beta": test["beta"], "ci": [test["lo"], test["hi"]]}
+            # The start years the test has rows for: `stability` has none in 2011.
+            years = sorted(int(y) for y, n in test["n_by_year"].items() if n)
+            effects[p][window] = {"beta": test["beta"], "ci": [test["lo"], test["hi"]],
+                                  "years": [years[0], years[-1]]}
     inv = effects["investment"]
     # The part of the predictor's association with the change in ln ROIC that runs through
     # capital (decomposition pre-registration, reading C; it decides nothing).
@@ -106,6 +113,7 @@ def measured() -> dict:
     effects["stability"]["holdout_beta_by_year"] = out["holdout"]["tests"]["stability/held"]["beta_by_year"]
     passed = sorted(k.split("/")[0] for k, t in out["holdout"]["tests"].items() if t["passes"])
     return {"cohorts": cohorts, "effects": effects, "passed": passed,
+            "tests_run": len(out["holdout"]["tests"]),
             "predictors_tested": len({k.split("/")[0] for k in out["holdout"]["tests"]})}
 
 

@@ -245,10 +245,17 @@ def test_the_persistence_section_is_in_the_html_report_word_for_word_and_escaped
 def test_the_chat_message_points_to_the_report_and_never_shortens_the_reading():
     shown = _text(AssessmentVM(roic_persistence=_PERSISTENCE, roic_persistence_shown=True))
     (line,) = [ln for ln in shown if "ROIC persistence" in ln]
-    assert "caveats are in the report" in line and "59%" not in line and "31.2%" not in line
-    body = ("Not shown: banks, insurers and REITs are outside the study. The study covers only "
-            "non-financial 10-K filers with revenue of $100M or more and a top-fifth ROIC. "
-            "Absence says nothing about this company.")
-    (line,) = [ln for ln in _text(AssessmentVM(roic_persistence=body)) if "ROIC persistence" in ln]
-    assert line == "   📏 ROIC persistence: not shown — banks, insurers and REITs are outside the study"
+    assert line == ("   📏 ROIC persistence (a historical pattern in a ratio, not a forecast): this "
+                    "company's ROIC is in the top fifth on the study's basis — the history and its "
+                    "limits are in the report")
+    assert "59%" not in line and "31.2%" not in line
+    from shortlist.durability_profile import SECTOR_NOT_COVERED, UNAVAILABLE
+    from shortlist.research.durability import not_shown
+    (line,) = [ln for ln in _text(AssessmentVM(roic_persistence=not_shown(SECTOR_NOT_COVERED)))
+               if "ROIC persistence" in ln]
+    assert line == ("   📏 ROIC persistence: not shown: banks, lenders, brokers, insurers and REITs are "
+                    "outside the study.")
+    (line,) = [ln for ln in _text(AssessmentVM(roic_persistence=not_shown(UNAVAILABLE)))
+               if "ROIC persistence" in ln]
+    assert line == "   📏 ROIC persistence: not shown: SEC data could not be read."
     assert not [ln for ln in _text(AssessmentVM()) if "ROIC persistence" in ln]

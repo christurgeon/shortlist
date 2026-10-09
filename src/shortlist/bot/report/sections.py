@@ -365,10 +365,12 @@ def _persistence_text(a) -> str:
     """One line for the chat message. The full section, with its caveats, is in the report: a
     shortened reading here would be the measured claim without what qualifies it."""
     if a.roic_persistence_shown:
-        return ("   📏 ROIC persistence: top-fifth ROIC on the study's basis — the historical "
-                "frequencies and their caveats are in the report")
-    reason = a.roic_persistence.removeprefix("Not shown: ").split(". The study covers")[0]
-    return f"   📏 ROIC persistence: not shown — {reason}"
+        return ("   📏 ROIC persistence (a historical pattern in a ratio, not a forecast): this "
+                "company's ROIC is in the top fifth on the study's basis — the history and its "
+                "limits are in the report")
+    from ...research.durability import _DATA_LIMIT, _SCOPE
+    reason = a.roic_persistence.removesuffix(" " + _SCOPE).removesuffix(" " + _DATA_LIMIT)
+    return "   📏 ROIC persistence: " + reason[0].lower() + reason[1:]
 
 
 def _findings_block(h, label: str, items, cls: str = "") -> str:

@@ -15,6 +15,8 @@ addenda. Every sentence below is licensed there, and the caveats are part of the
   slowly; the profit part is not established on the later cohorts) and the untested causes;
 - steadiness is always labelled a track record, with the two cohort years that went the
   other way;
+- an effect is the gap between the two EXTREME firms of a straight-line fit, with its interval,
+  and is said that way: beside a company's third it would otherwise read as third against third;
 - a company gets its THIRD among top-fifth firms, never a probability, and never a raw spread.
 The fixed words are tied to the table by tests/test_durability_equivalence.py.
 
@@ -73,21 +75,27 @@ CACHE_KEEP_DAYS = 7
 # late is far outside the study's 120-day rule.)
 LAG_DAYS = 300
 
+# Two endings. A name the study does not cover is told what the study covers; a name whose
+# DATA could not be used is told that, so a fetch failure never reads as "not covered".
 _SCOPE = ("The study covers only non-financial 10-K filers with revenue of $100M or more and a "
           "top-fifth ROIC. Absence says nothing about this company.")
+_DATA_LIMIT = "This is a limit of the data, not a reading of the company."
 _REASONS = {
-    NOT_TOP_FIFTH: "ROIC {roic} for the year ended {period_end} (the study's basis) is below the "
-                   "{floor} top-fifth cutoff",
-    SECTOR_NOT_COVERED: "banks, insurers and REITs are outside the study",
-    SIC_UNKNOWN: "no SIC code is available, so the sector rule cannot be applied",
+    NOT_TOP_FIFTH: "ROIC {roic} for the year ended {period_end} (the study's basis) is below "
+                   "{floor}, the top-fifth cutoff of fiscal {table_year}",
+    SECTOR_NOT_COVERED: "banks, lenders, brokers, insurers and REITs are outside the study",
+    SIC_UNKNOWN: "no SIC code is available, so the study cannot tell whether it is a bank, an "
+                 "insurer or a REIT",
     NO_ANNUAL_FACTS: "the SEC has no 10-K financial data for it (a foreign filer, a fund or a new "
                      "registrant)",
-    STALE: "the latest annual data is for the year ended {period_end}; a newer year should be on file",
-    LATEST_YEAR_UNUSABLE: "the latest year has no operating income, equity, total assets or revenue "
-                          "under the tags the study reads, or its 10-K was filed more than 120 days "
-                          "after the year end",
-    LOW_CAPITAL: "invested capital is negative or under 10% of assets, so this ROIC is not defined "
-                 "(common after large buybacks)",
+    STALE: "the latest annual data is for the year ended {period_end}; a newer year should be on "
+           "file, or the company has stopped filing",
+    LATEST_YEAR_UNUSABLE: "the latest year lacks at least one of operating income, equity, total "
+                          "assets or revenue under the tags the study reads, or its 10-K was filed "
+                          "more than 120 days after the year end, which the study excludes",
+    LOW_CAPITAL: "invested capital (equity plus tagged debt) is zero, negative or under 10% of "
+                 "total assets, so the study cannot compute a ROIC. This says nothing about how "
+                 "much the business earns",
     REVENUE_BELOW_FLOOR: "revenue is under $100M",
     REFERENCE_OUT_OF_DATE: "the reference table (fiscal {table_year}) does not cover the year ended "
                            "{period_end}",
@@ -95,9 +103,10 @@ _REASONS = {
     FACTS_LAG_FILING: "SEC data does not yet include the latest 10-K",
     UNAVAILABLE: "SEC data could not be read",
 }
+_DATA_REASONS = (STALE, REFERENCE_OUT_OF_DATE, FACTS_LAG_FILING, UNAVAILABLE)
 _GROWTH_THIRDS = ("fastest-growing", "middle", "slowest-growing")
 _STEADY_THIRDS = ("least steady", "middle", "steadiest")
-_WORDS = {2: "two", 3: "three", 6: "Six"}
+_WORDS = {2: "two", 6: "six", 11: "Eleven"}
 
 
 def _today() -> date:               # seam for tests, options.py pattern
@@ -134,14 +143,16 @@ def _span(years: list[int]) -> str:
     return f"{years[0]}-{years[1]}"
 
 
-def _effect(effect: dict, windows: dict) -> str:
-    """'by 15 points (95% interval 6 to 24) in the 2011-2017 cohorts and 20 points (9 to 31) in
-    2018-2021'. Two point estimates, each with its own interval: not a range."""
+def _effect(effect: dict, slow: str, fast: str) -> str:
+    """Two point estimates, each with its own interval and its own cohort years: not a range.
+    The coefficient is the change from rank 0 to rank 1 on a straight-line fit, so it is said
+    as a gap between the two EXTREME firms, never between thirds."""
     d, h = effect["discovery"], effect["holdout"]
-    return (f"by {_points(d['beta'])} points (95% interval {_points(d['ci'][0])} to "
-            f"{_points(d['ci'][1])}) in the {_span(windows['discovery']['years'])} cohorts and "
-            f"{_points(h['beta'])} points ({_points(h['ci'][0])} to {_points(h['ci'][1])}) in "
-            f"{_span(windows['holdout']['years'])}")
+    return (f"a firm at the {slow} extreme is estimated to have been {_points(d['beta'])} "
+            f"percentage points more likely (95% interval {_points(d['ci'][0])} to "
+            f"{_points(d['ci'][1])}) than one at the {fast} extreme to hold a top-fifth ROIC three "
+            f"years later in the {_span(d['years'])} cohorts, and {_points(h['beta'])} points "
+            f"({_points(h['ci'][0])} to {_points(h['ci'][1])}) in {_span(h['years'])}")
 
 
 # ---------------------------------------------------------------- the words
@@ -150,12 +161,14 @@ def _company_line(p: DurabilityProfile) -> str:
     line = (f"- This company: ROIC {_pct(p.roic, 1)} for the year ended {p.period_end} (operating "
             f"income x {_round(1 - TAX, 2)} / (equity + tagged debt); the study's basis, which can "
             f"differ from the scorecard's ROIC). That is above {_pct(p.floor, 1)}, the top-fifth "
-            f"cutoff among {p.universe_n:,} non-financial 10-K filers with revenue of $100M or more "
-            f"in fiscal {p.reference_year}.")
+            f"cutoff among the {p.universe_n:,} firms in the study's fiscal-{p.reference_year} "
+            f"universe (non-financial 10-K filers with revenue of $100M or more and a computable "
+            f"ROIC).")
     if p.bucket != p.reference_year:
-        line += " The cutoff for this company's own fiscal year is not built yet."
+        line += (f" The study has no cutoff for this company's fiscal year yet, so the "
+                 f"fiscal-{p.reference_year} cutoff is used.")
     if p.roic - p.floor < 0.01:
-        line += " It is within 1 point of the cutoff."
+        line += " It is within 1 percentage point of the cutoff."
     if not p.has_debt:
         line += " No debt is reported in the tagged data, so invested capital here is book equity."
     return line
@@ -163,72 +176,79 @@ def _company_line(p: DurabilityProfile) -> str:
 
 def _cohorts_line(table: dict) -> str:
     d, h = table["cohorts"]["discovery"], table["cohorts"]["holdout"]
-    return (f"- Past cohorts: of top-fifth firms that still reported usable annual data three years "
-            f"later, {_pct(d['hold_rate'])} (cohorts formed {_span(d['years'])}) and "
-            f"{_pct(h['hold_rate'])} ({_span(h['years'])}) were still in the top fifth. Firms with "
-            f"no usable annual data by then are not counted: {_pct(d['not_counted'])} and "
-            f"{_pct(h['not_counted'])} of those cohorts. This is a group average, not adjusted for "
-            f"this company's ROIC level.")
+    return (f"- Past cohorts: {_pct(d['hold_rate'])} of top-fifth firms (cohorts formed "
+            f"{_span(d['years'])}) and {_pct(h['hold_rate'])} ({_span(h['years'])}) were again at "
+            f"or above the top-fifth cutoff three years later. Only firms that still filed usable "
+            f"10-K data then are counted. The {_pct(d['not_counted'])} and {_pct(h['not_counted'])} "
+            f"that did not (stopped filing, for example after a takeover or a failure; filed late; "
+            f"or left an input untagged) are left out. A few counted firms, under 4%, had too "
+            f"little invested capital for a ROIC by then and count as held because their operating "
+            f"income was positive. This is a group average, not adjusted for this company's ROIC "
+            f"level.")
 
 
 def _growth_line(p: DurabilityProfile, table: dict) -> str:
     inv = table["effects"]["investment"]
     low, high = cut_points(table)["investment"]
-    later = _span(table["cohorts"]["holdout"]["years"])
     share = inv["capital_share"]
-    return (f"- Capital growth: invested capital {_signed_pct(p.capital_growth)} in the last year: "
-            f"the {_GROWTH_THIRDS[p.investment_third]} third of top-fifth firms (thirds split at "
-            f"{_signed_pct(low)} and {_signed_pct(high)}, across all sectors, not within a sector). "
-            f"Among firms of the same two-digit SIC sector and cohort year, with ROIC rank and "
-            f"revenue rank held fixed, the slowest-growing end held more often than the "
-            f"fastest-growing end: {_effect(inv, table['cohorts'])}, on a straight-line fit across "
-            f"the rank range. A little over half of the link between slow capital growth and a "
-            f"higher later ROIC ({_pct(share['discovery'])}, {_pct(share['holdout'])}) is capital "
-            f"that kept growing slowly. The rest is profit, which is positive but not "
-            f"distinguishable from zero in {later}. Not tested: acquired capital, retained cash, a "
-            f"one-year profit spike. This is a pattern in the ratio, not a finding about the "
-            f"business.")
+    return (f"- Capital growth: invested capital {_signed_pct(p.capital_growth)} in the last year, "
+            f"the {_GROWTH_THIRDS[p.investment_third]} third of top-fifth firms (slowest third: "
+            f"under {_signed_pct(low)}; fastest third: over {_signed_pct(high)}; all sectors "
+            f"pooled, not sector-adjusted). Within the same two-digit SIC sector and cohort year, "
+            f"with ROIC rank and revenue rank held fixed, "
+            f"{_effect(inv, 'slowest-growing', 'fastest-growing')}. These are the two ends of a "
+            f"straight-line fit, not a gap between thirds. Among firms still profitable three "
+            f"years later, a little over half of the link with a higher later ROIC "
+            f"({_pct(share['discovery'])}, {_pct(share['holdout'])}) runs through capital that kept "
+            f"growing slowly. The rest runs through profit, which is positive but not "
+            f"distinguishable from zero in {_span(inv['holdout']['years'])}. This split is "
+            f"descriptive. Not tested: acquired capital, cash and payouts (buybacks lower invested "
+            f"capital), a one-year profit spike. This is a pattern in the ratio and in capital "
+            f"growth, not a finding about the business.")
 
 
 def _steadiness_line(p: DurabilityProfile, table: dict) -> str:
     stab = table["effects"]["stability"]
     low, high = cut_points(table)["stability"]
-    later = _span(table["cohorts"]["holdout"]["years"])
-    by_year = ", ".join(_signed_points(stab["holdout_beta_by_year"][y])
-                        for y in sorted(stab["holdout_beta_by_year"]))
-    return (f"- ROIC steadiness (a track-record measure: a longer view of the same ROIC level, not "
-            f"a separate trait): its ROIC percentile rank varied by {_points(p.stability_spread, 1)} "
-            f"points over the {p.years_seen} years with a ROIC out of its last four: the "
-            f"{_STEADY_THIRDS[p.stability_third]} third of top-fifth firms (thirds split at "
-            f"{_points(low, 1)} and {_points(high, 1)} points). Steadier firms held more often: "
-            f"{_effect(stab, table['cohorts'])}. By cohort year in {later}: {by_year} points. The "
-            f"later result comes from the 2020 and 2021 cohorts; 2018 and 2019 went the other way.")
+    years = ("its last 4 years" if p.years_seen == 4
+             else f"the {p.years_seen} of its last 4 years that have a ROIC")
+    return (f"- ROIC steadiness (a track-record line: a longer view of the same ROIC level, not "
+            f"evidence of a separate trait): over {years} its ROIC percentile rank in the study's "
+            f"universe had a standard deviation of {_points(p.stability_spread, 1)} percentile "
+            f"points, the {_STEADY_THIRDS[p.stability_third]} third of top-fifth firms (steadiest "
+            f"third: under {_points(low, 1)}; least steady third: over {_points(high, 1)}). With "
+            f"the same controls, {_effect(stab, 'steadiest', 'least steady')}. The "
+            f"{_span(stab['holdout']['years'])} result comes from the 2020 and 2021 cohorts; in "
+            f"2018 and 2019 the effect went the other way.")
 
 
 def brief_section(p: DurabilityProfile, table: dict) -> str:
     """The section body for a top-fifth company. Plain lines, no markup beyond the leading
     "- ": the markdown brief and the Telegram report both print it as it is."""
-    lines = ["Historical frequencies for an accounting ratio. Not a forecast for this company. It "
+    lines = ["A historical pattern in an accounting ratio, not a forecast for this company. It "
              "says nothing about moat, price or returns.",
              _company_line(p), _cohorts_line(table)]
     if p.capital_growth is not None:
         lines.append(_growth_line(p, table))
     if p.stability_spread is not None:
         lines.append(_steadiness_line(p, table))
-    tested, passed = table["predictors_tested"], len(table["passed"])
-    lines.append(f"- {_WORDS.get(tested, tested)} predictors were tested. These "
-                 f"{_WORDS.get(passed, passed)} passed a check on later years that shares firms "
-                 f"with the first period.")
+    run, tested, passed = table["tests_run"], table["predictors_tested"], len(table["passed"])
+    lines.append(f"- {_WORDS.get(run, run)} tests were run on {_WORDS.get(tested, tested)} "
+                 f"predictors; {_WORDS.get(passed, passed)} (capital growth and steadiness) passed. "
+                 f"Both were then checked on the {_span(table['cohorts']['holdout']['years'])} "
+                 f"cohorts, which share firms with the earlier cohorts, so that check is not an "
+                 f"independent sample.")
     return "\n".join(lines)
 
 
 def not_shown(reason: str, detail: Optional[dict] = None) -> str:
-    """The section body for a name the study does not cover, or whose data could not be read."""
+    """The section body for a name the study does not cover, or whose data could not be used."""
     d = dict(detail or {})
     for key in ("roic", "floor"):
         if key in d:
             d[key] = _pct(d[key], 1)
-    return f"Not shown: {_REASONS[reason].format(**d)}. {_SCOPE}"
+    tail = _DATA_LIMIT if reason in _DATA_REASONS else _SCOPE
+    return f"Not shown: {_REASONS[reason].format(**d)}. {tail}"
 
 
 # ---------------------------------------------------------------- the fetch
@@ -255,14 +275,21 @@ def _write_cache(path: Path, record: dict, today: date) -> None:
 
 
 def _download(cik: int, identity: str, deadline_s: float, transport=None) -> bytes:
-    """The response body. ONE DEADLINE FOR THE WHOLE REQUEST and a size cap: httpx timeouts are
-    per phase, so a slow trickle could otherwise run for minutes, and the research phase has
-    about 100 s of slack against `research_phase_budget_s`."""
+    """The response body, within `deadline_s` of wall clock and under a size cap. The research
+    phase has about 100 s of slack against `research_phase_budget_s`, and a slow body must not
+    use it.
+
+    HOW THE DEADLINE HOLDS. An httpx timeout is PER PHASE (connect, each read), not for the
+    request, so `timeout=deadline_s` alone would let a server that drips one byte per phase run
+    for ever. Each phase gets a third of the deadline, and no new read starts once two thirds
+    are gone: connecting, the headers and the last read then end inside the deadline. (Name
+    resolution is outside every httpx timeout, here as for every request in this codebase.)"""
     import httpx
 
     sec_throttle()("durability")                # the one process-wide sec.gov budget
+    phase = deadline_s / 3
     start = time.monotonic()
-    with httpx.Client(timeout=deadline_s, transport=transport,
+    with httpx.Client(timeout=phase, transport=transport,
                       headers={"User-Agent": identity, "Accept": "application/json"}) as client, \
             client.stream("GET", FACTS_URL.format(cik=cik)) as r:
         if r.status_code != 200:
@@ -272,9 +299,9 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
             size += len(chunk)
             if size > MAX_BYTES:
                 raise RuntimeError("the response is over the size cap")
-            if time.monotonic() - start > deadline_s:
-                raise TimeoutError("the response is over the deadline")
             chunks.append(chunk)
+            if time.monotonic() - start > deadline_s - phase:
+                raise TimeoutError("the response is over the deadline")
     return b"".join(chunks)
 
 
