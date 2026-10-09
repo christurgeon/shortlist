@@ -3,6 +3,7 @@ can never cost a brief."""
 import inspect
 import itertools
 import json
+import time
 from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,14 +42,15 @@ def test_the_section_quotes_the_verdicts_numbers():
                  "above 15.5%, the top-fifth cutoff among the 1,787 firms in the study's fiscal-2025 universe",
                  "59% of top-fifth firms (cohorts formed 2011-2017) and 54% (2018-2021)",
                  "The 16% and 11% that did not",
-                 "invested capital +34% in the last year, the fastest-growing third",
-                 "(slowest third: under +2%; fastest third: over +14%; all sectors pooled, not sector-adjusted)",
+                 "invested capital +34.0% in the last year, the fastest-growing third",
+                 "(slowest third: +2.5% or less; fastest third: over +14.5%; all sectors pooled, not "
+                 "sector-adjusted)",
                  "15 percentage points more likely (95% interval 6 to 24) than one at the fastest-growing extreme",
                  "in the 2011-2017 cohorts, and 20 points (9 to 31) in 2018-2021",
                  "(54%, 59%) runs through capital that kept growing slowly",
                  "over its last 4 years its ROIC percentile rank in the study's universe had a standard "
                  "deviation of 2.1 percentile points, the steadiest third",
-                 "(steadiest third: under 3.1; least steady third: over 9.1)",
+                 "(steadiest third: 3.1 or less; least steady third: over 9.1)",
                  "15 percentage points more likely (95% interval 3 to 26) than one at the least steady extreme",
                  # `stability` has no 2011 cohort: its first window is 2012-2017, not 2011-2017.
                  "in the 2012-2017 cohorts, and 22 points (9 to 35) in 2018-2021",
@@ -62,7 +64,24 @@ def test_the_section_quotes_the_verdicts_numbers():
 def test_three_years_of_history_are_said_as_three():
     line = next(ln for ln in rd.brief_section(_profile(years_seen=3), TABLE).split("\n")
                 if ln.startswith("- ROIC steadiness"))
-    assert "over the 3 of its last 4 years that have a ROIC its ROIC percentile rank" in line
+    assert "over the 3 of its last 4 years that can be ranked its ROIC percentile rank" in line
+
+
+def test_the_printed_cut_points_and_the_label_cannot_disagree():
+    # One definition for both (durability_profile.cuts). On the real table, for every capital
+    # growth from -60% to +60% and every rank spread from 0 to 30 points, the third the profile
+    # assigns is the one a reader would work out from the cut values printed beside it.
+    slow, fast = dp.cut_points(TABLE)["investment"]
+    for i in range(-2400, 2401):
+        g = i / 4000
+        want = 2 if g <= slow else (0 if g > fast else 1)
+        assert dp.third(-g, TABLE["cohort"]["investment"]) == want, g
+    steady, unsteady = dp.cut_points(TABLE)["stability"]
+    for i in range(3001):
+        spread = i / 10000
+        want = 2 if spread <= steady else (0 if spread > unsteady else 1)
+        assert dp.third(-spread, TABLE["cohort"]["stability"]) == want, spread
+    assert (rd._signed_pct(slow, 1), rd._signed_pct(fast, 1)) == ("+2.5%", "+14.5%")
 
 
 def test_the_caveats_the_verdict_requires_are_always_there():
@@ -148,10 +167,10 @@ def test_the_company_line_says_when_the_reading_is_weaker():
             in rd.brief_section(_profile(has_debt=False), TABLE))
 
 
-@pytest.mark.parametrize("growth, want", [(0.004, "invested capital 0% in"), (-0.004, "invested capital 0% in"),
-                                          (-0.105, "invested capital -11% in"), (0.125, "invested capital +13% in"),
-                                          (15.39, "invested capital +1539% in")])
-def test_capital_growth_rounds_half_up_and_never_prints_minus_zero(growth, want):
+@pytest.mark.parametrize("growth, want", [(0.0004, "invested capital 0.0% in"), (-0.0004, "invested capital 0.0% in"),
+                                          (-0.105, "invested capital -10.5% in"), (0.125, "invested capital +12.5% in"),
+                                          (15.39, "invested capital +1539.0% in")])
+def test_capital_growth_never_prints_minus_zero(growth, want):
     assert want in rd.brief_section(_profile(capital_growth=growth), TABLE)
 
 
@@ -302,8 +321,44 @@ def test_a_bad_response_is_unavailable_and_is_not_cached(env, capsys, response):
 def test_malformed_facts_cost_the_section_and_never_the_brief(env, capsys, damage):
     body = _body(FOUR_YEARS)
     damage(body["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"])
-    assert _fetch(env, _Net(_json(body)))[1] == dp.UNAVAILABLE
+    net = _Net(_json(body))
+    assert _fetch(env, net)[1] == dp.UNAVAILABLE
     assert capsys.readouterr().err.count("\n") == 1
+    # A record that `profile` could not read is NOT cached: the next brief asks again, so a
+    # body the SEC corrects the same day is picked up.
+    assert not env.cache.exists() or not list(env.cache.iterdir())
+    assert _fetch(env, net)[1] == dp.UNAVAILABLE and len(net.requests) == 2
+
+
+def test_a_failed_cache_write_leaves_no_temp_file(env, monkeypatch):
+    monkeypatch.setattr(rd.os, "replace", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+    assert list(env.cache.iterdir()) == []
+
+
+def test_a_closed_stderr_does_not_cost_the_brief(env, monkeypatch):
+    class Closed:
+        def write(self, _):
+            raise ValueError("I/O operation on closed file")
+
+    monkeypatch.setattr(rd.sys, "stderr", Closed())
+    assert _fetch(env, _Net(httpx.Response(403)))[1] == dp.UNAVAILABLE
+
+
+@pytest.mark.parametrize("bad", [True, "on", 1, ["enabled"], None])
+def test_a_config_block_of_the_wrong_type_is_off_and_loses_nothing(tmp_path, monkeypatch, bad):
+    monkeypatch.setattr(rd, "fetch_section", lambda *a: pytest.fail("the section is off"))
+    config = {"research": {"output_root": str(tmp_path), "durability": bad}}
+    (result,) = research.enrich([_rank_card()], config, top_n=1, fetch=lambda t, **k: _bundle(),
+                                assess_fn=lambda *a, **k: _assessment())
+    assert result.brief_path and not result.skipped
+
+
+def test_a_wrong_type_inside_the_section_config_falls_back_to_the_defaults(env, monkeypatch):
+    monkeypatch.setattr(rd, "DEFAULT_CACHE_DIR", str(env.cache))
+    env.config["research"]["durability"] = True
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+    assert [p.name for p in env.cache.iterdir()] == ["CIK0000001234-2026-03-15.json"]
 
 
 def test_without_an_identity_no_request_is_made(env, monkeypatch):
@@ -331,24 +386,33 @@ def test_a_response_over_the_size_cap_is_dropped(env, monkeypatch):
     assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.UNAVAILABLE
 
 
-def test_the_deadline_bounds_the_whole_request(env, monkeypatch):
-    # An httpx timeout is per phase. Each phase gets a third of the 15 s deadline, and no read
-    # starts after two thirds of it, so connecting + headers + the last read end within 15 s.
-    net = _Net(_json(_body(FOUR_YEARS)))
-    clock = itertools.chain([0.0], itertools.repeat(9.9))
+def test_the_deadline_bounds_the_whole_request_whatever_the_server_does(env):
+    # An httpx timeout is per phase and per read, so a server that keeps a read alive is never
+    # timed out. The caller waits `deadline_s` for the worker thread and no longer.
+    env.config["research"]["durability"]["deadline_s"] = 0.2
+
+    def stall(request):
+        time.sleep(1.5)
+        return _json(_body(FOUR_YEARS))
+
+    start = time.monotonic()
+    assert _fetch(env, _Net(stall))[1] == dp.UNAVAILABLE
+    assert time.monotonic() - start < 1.0
+    assert not env.cache.exists() or not list(env.cache.iterdir())
+
+
+def test_a_body_that_arrives_after_the_deadline_is_dropped(env, monkeypatch):
+    clock = itertools.chain([0.0], itertools.repeat(16.0))
     monkeypatch.setattr(rd.time, "monotonic", lambda: next(clock))
-    assert _fetch(env, net)[1] == dp.SHOWN
-    assert net.requests[0].extensions["timeout"] == dict.fromkeys(("connect", "read", "write", "pool"), 5.0)
-
-    clock = itertools.chain([0.0], itertools.repeat(10.1))
-    assert _fetch(env, net, today=TODAY + timedelta(days=1))[1] == dp.UNAVAILABLE
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.UNAVAILABLE
 
 
-def test_the_deadline_is_a_config_knob(env, monkeypatch):
-    env.config["research"]["durability"]["deadline_s"] = 6
-    net = _Net(_json(_body(FOUR_YEARS)))
-    assert _fetch(env, net)[1] == dp.SHOWN
-    assert net.requests[0].extensions["timeout"]["read"] == 2.0
+def test_an_error_in_the_worker_thread_reaches_the_guard(env, capsys):
+    def boom(request):
+        raise httpx.ConnectError("no route to host")
+
+    assert _fetch(env, _Net(boom))[1] == dp.UNAVAILABLE
+    assert "ConnectError" in capsys.readouterr().err
 
 
 def test_a_bank_gets_its_reason_without_a_request(env, monkeypatch):

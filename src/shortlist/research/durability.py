@@ -28,6 +28,7 @@ number, a list where a dict is expected) and `annual_series` then raises; one op
 section must never cost a brief."""
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -125,8 +126,8 @@ def _pct(x: float, places: int = 0) -> str:
     return f"{_round(x * 100, places)}%"
 
 
-def _signed_pct(x: float) -> str:
-    v = _round(x * 100)
+def _signed_pct(x: float, places: int = 0) -> str:
+    v = _round(x * 100, places)
     return f"+{v}%" if v > 0 else f"{v}%"
 
 
@@ -191,10 +192,12 @@ def _growth_line(p: DurabilityProfile, table: dict) -> str:
     inv = table["effects"]["investment"]
     low, high = cut_points(table)["investment"]
     share = inv["capital_share"]
-    return (f"- Capital growth: invested capital {_signed_pct(p.capital_growth)} in the last year, "
+    return (f"- Capital growth: invested capital {_signed_pct(p.capital_growth, 1)} in the last "
+            f"year, "
             f"the {_GROWTH_THIRDS[p.investment_third]} third of top-fifth firms (slowest third: "
-            f"under {_signed_pct(low)}; fastest third: over {_signed_pct(high)}; all sectors "
-            f"pooled, not sector-adjusted). Within the same two-digit SIC sector and cohort year, "
+            f"{_signed_pct(low, 1)} or less; fastest third: over {_signed_pct(high, 1)}; all "
+            f"sectors pooled, not sector-adjusted). Within the same two-digit SIC sector and cohort "
+            f"year, "
             f"with ROIC rank and revenue rank held fixed, "
             f"{_effect(inv, 'slowest-growing', 'fastest-growing')}. These are the two ends of a "
             f"straight-line fit, not a gap between thirds. Among firms still profitable three "
@@ -211,12 +214,12 @@ def _steadiness_line(p: DurabilityProfile, table: dict) -> str:
     stab = table["effects"]["stability"]
     low, high = cut_points(table)["stability"]
     years = ("its last 4 years" if p.years_seen == 4
-             else f"the {p.years_seen} of its last 4 years that have a ROIC")
+             else f"the {p.years_seen} of its last 4 years that can be ranked")
     return (f"- ROIC steadiness (a track-record line: a longer view of the same ROIC level, not "
             f"evidence of a separate trait): over {years} its ROIC percentile rank in the study's "
             f"universe had a standard deviation of {_points(p.stability_spread, 1)} percentile "
             f"points, the {_STEADY_THIRDS[p.stability_third]} third of top-fifth firms (steadiest "
-            f"third: under {_points(low, 1)}; least steady third: over {_points(high, 1)}). With "
+            f"third: {_points(low, 1)} or less; least steady third: over {_points(high, 1)}). With "
             f"the same controls, {_effect(stab, 'steadiest', 'least steady')}. The "
             f"{_span(stab['holdout']['years'])} result comes from the 2020 and 2021 cohorts; in "
             f"2018 and 2019 the effect went the other way.")
@@ -261,9 +264,9 @@ def _write_cache(path: Path, record: dict, today: date) -> None:
     """Best-effort. A unique temp name, then a rename: two share classes of one company can be
     researched in two threads and would write the same path. Old days are pruned here, for
     every CIK, or names researched once would stay for ever."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(record, separators=(",", ":")))
         os.replace(tmp, path)
         cutoff = (today - timedelta(days=CACHE_KEEP_DAYS)).isoformat()
@@ -271,25 +274,15 @@ def _write_cache(path: Path, record: dict, today: date) -> None:
             if old.stem[-10:] < cutoff:
                 old.unlink(missing_ok=True)
     except OSError:
-        pass
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
 
 
-def _download(cik: int, identity: str, deadline_s: float, transport=None) -> bytes:
-    """The response body, within `deadline_s` of wall clock and under a size cap. The research
-    phase has about 100 s of slack against `research_phase_budget_s`, and a slow body must not
-    use it.
-
-    HOW THE DEADLINE HOLDS. An httpx timeout is PER PHASE (connect, each read), not for the
-    request, so `timeout=deadline_s` alone would let a server that drips one byte per phase run
-    for ever. Each phase gets a third of the deadline, and no new read starts once two thirds
-    are gone: connecting, the headers and the last read then end inside the deadline. (Name
-    resolution is outside every httpx timeout, here as for every request in this codebase.)"""
+def _stream(cik: int, identity: str, deadline_s: float, transport, stop: threading.Event) -> bytes:
     import httpx
 
-    sec_throttle()("durability")                # the one process-wide sec.gov budget
-    phase = deadline_s / 3
     start = time.monotonic()
-    with httpx.Client(timeout=phase, transport=transport,
+    with httpx.Client(timeout=deadline_s, transport=transport,
                       headers={"User-Agent": identity, "Accept": "application/json"}) as client, \
             client.stream("GET", FACTS_URL.format(cik=cik)) as r:
         if r.status_code != 200:
@@ -299,24 +292,57 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
             size += len(chunk)
             if size > MAX_BYTES:
                 raise RuntimeError("the response is over the size cap")
-            chunks.append(chunk)
-            if time.monotonic() - start > deadline_s - phase:
+            if stop.is_set() or time.monotonic() - start > deadline_s:
                 raise TimeoutError("the response is over the deadline")
+            chunks.append(chunk)
     return b"".join(chunks)
 
 
-def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
-                    transport=None) -> dict:
-    """The company's facts, compacted by the study's own `compact_facts`: what `profile` reads.
-    A filer with no annual 10-K fact gives an empty record. RAISES on any failure;
-    `fetch_section` is the guard.
+def _download(cik: int, identity: str, deadline_s: float, transport=None) -> bytes:
+    """The response body, within `deadline_s` of wall clock and under a size cap. The research
+    phase has about 100 s of slack against `research_phase_budget_s`; past it EVERY brief of
+    the run is lost, so one optional section must never be able to wait.
 
-    THE COMPACTED RECORD IS WHAT IS CACHED (kilobytes, for the day), and only after the body
-    was checked: an SEC block page or a JSON error object must not be served for a day."""
+    WHY A THREAD. An httpx timeout is per phase and per read, not for the request. A server
+    that drips one header byte inside every read timeout is never timed out at all (measured
+    2026-10-09 on a loopback socket: 79 s against a 1 s timeout, ended only by the header size
+    limit), and name resolution is outside every httpx timeout. So the request runs in a
+    daemon thread and the caller waits `deadline_s` for it, no longer. An abandoned thread ends
+    on its own timeouts and holds one socket until then; it cannot delay a brief."""
+    sec_throttle()("durability")                # the one process-wide sec.gov budget
+    box: dict = {}
+    stop = threading.Event()
+
+    def work() -> None:
+        try:
+            box["body"] = _stream(cik, identity, deadline_s, transport, stop)
+        except BaseException as e:      # noqa: BLE001 — carried to the caller below
+            box["error"] = e
+
+    worker = threading.Thread(target=work, name="durability-fetch", daemon=True)
+    worker.start()
+    worker.join(deadline_s)
+    if worker.is_alive():
+        stop.set()
+        raise TimeoutError("the request is over the deadline")
+    if "error" in box:
+        raise box["error"]
+    return box["body"]
+
+
+def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
+                    transport=None) -> tuple[dict, Optional[Path]]:
+    """(the company's facts compacted by the study's own `compact_facts`, the cache path to
+    write them to — None when they came from the cache). A filer with no annual 10-K fact gives
+    an empty record. RAISES on any failure; `fetch_section` is the guard.
+
+    NOTHING IS CACHED HERE. The caller writes the record only after `profile` has read it: a
+    body can pass the checks below and still hold a row that makes `annual_series` raise, and
+    cached, it would fail every later brief of the day without a new request."""
     path = _cache_path(Path(cfg.get("cache_dir") or DEFAULT_CACHE_DIR), cik, today)
     if use_cache:
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text()), None
         except (OSError, ValueError):
             pass
     identity = os.environ.get("SEC_IDENTITY")
@@ -324,12 +350,12 @@ def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
         raise RuntimeError("SEC_IDENTITY is not set")
     deadline = float(cfg.get("deadline_s") or DEFAULT_DEADLINE_S)
     body = json.loads(_download(cik, identity, deadline, transport))
+    # An SEC block page is not JSON; an error object has no `facts`; another company's body
+    # would be a wrong section with nothing to show for it.
     if (not isinstance(body, dict) or not isinstance(body.get("facts"), dict)
             or int(body["cik"]) != cik):
         raise ValueError("the response is not the company facts of this CIK")
-    record = compact_facts(body) or {"facts": {"us-gaap": {}}}
-    _write_cache(path, record, today)
-    return record
+    return compact_facts(body) or {"facts": {"us-gaap": {}}}, path
 
 
 def _cik(ticker: str) -> int:
@@ -351,7 +377,8 @@ def _lags(bundle, period_end: Optional[str]) -> bool:
 
 
 def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, str]:
-    cfg = (config.get("research") or {}).get("durability") or {}
+    cfg = (config.get("research") or {}).get("durability")
+    cfg = cfg if isinstance(cfg, dict) else {}
     table = load_table()
     if table is None:
         return not_shown(UNAVAILABLE), UNAVAILABLE
@@ -363,8 +390,12 @@ def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, s
     max_gap = int(cfg.get("max_table_gap_years", 1))
 
     def read(use_cache: bool):
-        compacted = fetch_compacted(cik, cfg, today=today, use_cache=use_cache, transport=transport)
-        return profile(compacted, today, table, sic=sic, config=config, max_gap=max_gap)
+        compacted, fresh = fetch_compacted(cik, cfg, today=today, use_cache=use_cache,
+                                           transport=transport)
+        result = profile(compacted, today, table, sic=sic, config=config, max_gap=max_gap)
+        if fresh is not None:                   # only a record that `profile` could read
+            _write_cache(fresh, compacted, today)
+        return result
 
     prof, status, detail = read(True)
     if _lags(bundle, prof.period_end if prof else detail.get("period_end")):
@@ -384,6 +415,7 @@ def fetch_section(card, bundle, config: dict, *, today: Optional[date] = None,
     try:
         return _section(card, bundle, config, today or _today(), transport)
     except Exception as e:      # noqa: BLE001 — never-raises contract
-        print(f"research: ROIC-persistence section failed for {getattr(card, 'ticker', '?')}: "
-              f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
+        with contextlib.suppress(Exception):    # a closed stderr must not cost the brief either
+            print(f"research: ROIC-persistence section failed for {getattr(card, 'ticker', '?')}: "
+                  f"{type(e).__name__}: {redact_secrets(str(e))[:200]}", file=sys.stderr)
         return not_shown(UNAVAILABLE), UNAVAILABLE

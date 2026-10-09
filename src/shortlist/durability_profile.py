@@ -124,7 +124,7 @@ def load_table() -> Optional[dict]:
 class DurabilityProfile:
     period_end: str                     # the latest reported fiscal year end
     bucket: int                         # the study's fiscal-year bucket of that end
-    reference_year: int                 # the table bucket the name is ranked against
+    reference_year: int                 # the table year whose universe and floor it is read against
     roic: float
     floor: float                        # the top-fifth floor of the reference year
     universe_n: int
@@ -136,24 +136,40 @@ class DurabilityProfile:
     years_seen: int
 
 
+def cuts(ascending: list[float]) -> tuple[float, float]:
+    """(the lowest member value outside the bottom third, the lowest member value in the top
+    third). A MEMBER's third is the study's own: its mid-rank among the cohort, `rank >= 2/3`
+    the top and `rank < 1/3` the bottom, tested in integers so that a tie on a boundary cannot
+    move with a rounding error. With no member in a third its cut is +inf."""
+    n, middle, top = len(ascending), float("inf"), float("inf")
+    for value in ascending:
+        twice_rank = bisect_left(ascending, value) + bisect_right(ascending, value)
+        if middle == float("inf") and 3 * twice_rank >= 2 * n:
+            middle = value
+        if 3 * twice_rank >= 4 * n:
+            top = value
+            break
+    return middle, top
+
+
 def third(value: float, ascending: list[float]) -> int:
-    """0, 1 or 2: the third of `ascending` that `value` falls in by its mid-rank, 2 = highest.
-    The study's own cut (`rank >= 2/3` is the top, `rank < 1/3` the bottom), in integers so
-    that a value exactly on a boundary cannot move with a rounding error."""
-    lo, hi, n = bisect_left(ascending, value), bisect_right(ascending, value), len(ascending)
-    if 3 * (lo + hi) >= 4 * n:
+    """0, 1 or 2: the third `value` falls in, 2 = highest. ONE DEFINITION with `cut_points`: a
+    value is in the top third when it is at or above the lowest top-third member, so the label
+    can never disagree with the cut values the section prints beside it."""
+    middle, top = cuts(ascending)
+    if value >= top:
         return 2
-    return 0 if 3 * (lo + hi) < 2 * n else 1
+    return 0 if value < middle else 1
 
 
 def cut_points(table: dict) -> dict[str, tuple[float, float]]:
-    """{predictor -> (the capital growth or rank spread at the lower cut, at the upper cut)},
-    NOT oriented, for the sentence that says where the thirds split."""
+    """{predictor -> (a, b)}, NOT oriented: a capital growth (or a rank spread) of `a` or less
+    is the slowest-growing (steadiest) third, and one over `b` the fastest-growing (least
+    steady) third."""
     out = {}
     for name in ("investment", "stability"):
-        values = table["cohort"][name]
-        n = len(values)
-        out[name] = (-values[(2 * n) // 3], -values[n // 3])
+        middle, top = cuts(table["cohort"][name])
+        out[name] = (-top, -middle)
     return out
 
 
@@ -202,7 +218,9 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
     """(profile, SHOWN, {}) or (None, a NOT_SHOWN code, the detail its sentence needs).
 
     `compacted` is the output of `durability.compact_facts`. A name whose fiscal year is past
-    the table's reference year is ranked against the reference year, up to `max_gap` years.
+    the table's last year is ranked against that year, up to `max_gap` years. A history year
+    before the table's first year is not seen: that is a company in the weeks before its new
+    10-K, whose latest year on file is one the table does hold.
 
     IT CAN RAISE on malformed facts (a `val` that is not a number, a list where a dict is
     expected): `annual_series` does. `research/durability.py` is where that is caught."""
@@ -216,8 +234,8 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
         return None, reason, detail
     t, snap = latest
     table_year = table["table_year"]
-    years = range(t - HISTORY + 1, t + 1)
-    if t - table_year > max_gap or years[0] < min(table["universe"]):
+    first_year = min(table["universe"])
+    if t - table_year > max_gap or t < first_year:
         return None, REFERENCE_OUT_OF_DATE, {**detail, "table_year": table_year}
 
     def ref(y: int) -> int:
@@ -226,7 +244,8 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
     now, floor = snap[t], table["floors"][ref(t)]
     if now.roic < floor:
         return None, NOT_TOP_FIFTH, {**detail, "roic": now.roic, "floor": floor,
-                                     "table_year": table_year}
+                                     "table_year": ref(t)}
+    years = [y for y in range(t - HISTORY + 1, t + 1) if y >= first_year]
     hist = {y: table["universe"][ref(y)] for y in years}
     floors = {y: table["floors"][ref(y)] for y in years}
     _track, stability, _in_top, seen = history_predictors(snap, t, hist, floors)
@@ -235,7 +254,7 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
         return None, NO_PREDICTOR, detail
     cohort = table["cohort"]
     return DurabilityProfile(
-        period_end=now.end, bucket=t, reference_year=table_year, roic=now.roic, floor=floor,
+        period_end=now.end, bucket=t, reference_year=ref(t), roic=now.roic, floor=floor,
         universe_n=len(table["universe"][ref(t)]), has_debt=now.debt > 0,
         capital_growth=None if inv is None else -inv,
         investment_third=None if inv is None else third(inv, cohort["investment"]),

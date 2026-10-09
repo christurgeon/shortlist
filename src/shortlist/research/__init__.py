@@ -95,7 +95,8 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         assessment.cache_key = key
         # AFTER the model call, on purpose: the ROIC-persistence section is display-only and
         # must not reach the prompt. fetch_section never raises.
-        if ((config.get("research") or {}).get("durability") or {}).get("enabled", False):
+        dcfg = (config.get("research") or {}).get("durability")
+        if isinstance(dcfg, dict) and dcfg.get("enabled", False):
             from . import durability
             assessment.durability_line, assessment.durability_status = durability.fetch_section(
                 card, bundle, config)
