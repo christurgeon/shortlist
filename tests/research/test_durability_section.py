@@ -54,7 +54,8 @@ def test_the_section_quotes_the_verdicts_numbers():
                  "15 percentage points more likely (95% interval 3 to 26) than one at the least steady extreme",
                  # `stability` has no 2011 cohort: its first window is 2012-2017, not 2011-2017.
                  "in the 2012-2017 cohorts, and 22 points (9 to 35) in 2018-2021",
-                 "Eleven tests were run on six predictors; two (capital growth and steadiness) passed"):
+                 "Eleven tests were run on six predictors. Three cleared the 2011-2017 cohorts; two of "
+                 "them (capital growth and steadiness) also cleared the 2018-2021 cohorts"):
         assert want in text, want
     # The four by-cohort-year figures are in the verdict and NOT here: +62 is the number a
     # hurried reader would keep. The sentence that the result rests on two years stays.
@@ -64,7 +65,7 @@ def test_the_section_quotes_the_verdicts_numbers():
 def test_three_years_of_history_are_said_as_three():
     line = next(ln for ln in rd.brief_section(_profile(years_seen=3), TABLE).split("\n")
                 if ln.startswith("- ROIC steadiness"))
-    assert "over the 3 of its last 4 years that can be ranked its ROIC percentile rank" in line
+    assert "over the 3 of its last 4 years that have a ROIC its ROIC percentile rank" in line
 
 
 def test_the_printed_cut_points_and_the_label_cannot_disagree():
@@ -115,8 +116,10 @@ def test_the_caveats_the_verdict_requires_are_always_there():
                    "and count as held because their operating income was positive",
                    "a group average, not adjusted for this company's ROIC level"):
         assert clause in cohorts, clause
-    assert lines[-1].endswith("which share firms with the earlier cohorts, so that check is not an "
-                              "independent sample.")
+    # The pass rule includes the later cohorts: never "two passed and were then checked".
+    assert lines[-1].endswith("which share firms with the earlier ones, so the second stage is not "
+                              "an independent sample.")
+    assert "then checked" not in text
     # One unit per number: an effect is in percentage points, a rank spread in percentile points.
     assert " points more often" not in text and "varied by" not in text
 
@@ -183,7 +186,8 @@ def test_rounding_is_half_up_on_the_printed_decimal():
 def test_every_reason_has_one_sentence_and_no_other():
     assert set(rd._REASONS) == set(dp.NOT_SHOWN)
     detail = {"roic": 0.091, "floor": 0.1553, "period_end": "2025-12-31", "table_year": 2025}
-    data_limits = {dp.STALE, dp.REFERENCE_OUT_OF_DATE, dp.FACTS_LAG_FILING, dp.UNAVAILABLE}
+    data_limits = {dp.STALE, dp.REFERENCE_OUT_OF_DATE, dp.BEFORE_REFERENCE, dp.FACTS_LAG_FILING,
+                   dp.UNAVAILABLE}
     for reason in dp.NOT_SHOWN:
         text = rd.not_shown(reason, detail)
         assert text.startswith("Not shown: ") and "{" not in text and "moat" not in text.lower()
@@ -197,6 +201,12 @@ def test_every_reason_has_one_sentence_and_no_other():
         assert "buyback" not in text            # one cause among several, and a judgment
     assert ("ROIC 9.1% for the year ended 2025-12-31 (the study's basis) is below 15.5%, the top-fifth "
             "cutoff of fiscal 2025") in rd.not_shown(dp.NOT_TOP_FIFTH, detail)
+    # Never "15.5% is below 15.5%": a second decimal when one cannot tell the two apart.
+    close = rd.not_shown(dp.NOT_TOP_FIFTH, {**detail, "roic": 0.15512, "floor": 0.15533})
+    assert "ROIC 15.51% for the year ended" in close and "is below 15.53%, the top-fifth cutoff" in close
+    assert ("its latest year on file ended 2025-12-31, which is before the year the reference table is "
+            "built for (fiscal 2025); the section needs its newer 10-K") in rd.not_shown(dp.BEFORE_REFERENCE, detail)
+    assert len(dp.NOT_SHOWN) == 13
 
 
 # ---------------------------------------------------------------- the fetch
@@ -328,6 +338,30 @@ def test_malformed_facts_cost_the_section_and_never_the_brief(env, capsys, damag
     # body the SEC corrects the same day is picked up.
     assert not env.cache.exists() or not list(env.cache.iterdir())
     assert _fetch(env, net)[1] == dp.UNAVAILABLE and len(net.requests) == 2
+
+
+def test_an_orphan_temp_file_from_a_dead_process_is_pruned_with_the_old_days(env):
+    env.cache.mkdir()
+    orphan = env.cache / "CIK0000009999-2026-03-01.json.123.456.tmp"
+    recent = env.cache / "CIK0000009999-2026-03-14.json.123.456.tmp"
+    other = env.cache / "notes.txt"
+    for f in (orphan, recent, other):
+        f.write_text("x")
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+    assert sorted(p.name for p in env.cache.iterdir()) == [
+        "CIK0000001234-2026-03-15.json", recent.name, "notes.txt"]
+
+
+@pytest.mark.parametrize("knobs", [{"max_table_gap_years": None, "deadline_s": None},
+                                   {"max_table_gap_years": "one", "deadline_s": "soon"},
+                                   {"max_table_gap_years": True, "deadline_s": -5}])
+def test_a_null_or_mistyped_knob_falls_back_to_its_default(env, knobs):
+    env.config["research"]["durability"].update(knobs)
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+
+
+def test_a_filing_date_that_is_not_a_date_is_not_a_lag(env):
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))), bundle=_bundle(filed="n/a"))[1] == dp.SHOWN
 
 
 def test_a_failed_cache_write_leaves_no_temp_file(env, monkeypatch):

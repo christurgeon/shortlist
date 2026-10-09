@@ -106,7 +106,7 @@ def test_the_measured_numbers_are_the_verdicts(table):
     # exit + gap: 12.9% + 2.9% on discovery, 7.8% + 3.4% on the holdout.
     assert [round(table["cohorts"][w]["not_counted"], 3) for w in ("discovery", "holdout")] == [0.158, 0.111]
     assert table["passed"] == ["investment", "stability"]
-    assert (table["tests_run"], table["predictors_tested"]) == (11, 6)
+    assert (table["tests_run"], table["predictors_tested"], table["discovery_survivors"]) == (11, 6, 3)
     # `track` and `stability` have no 2011 rows (amendment 3): the first window starts in 2012.
     assert [inv[w]["years"] for w in ("discovery", "holdout")] == [[2011, 2017], [2018, 2021]]
     assert [stab[w]["years"] for w in ("discovery", "holdout")] == [[2012, 2017], [2018, 2021]]
@@ -126,8 +126,9 @@ def test_the_fixed_wording_of_the_section_still_matches_the_table(table):
     by_year = stab["holdout_beta_by_year"]
     assert by_year["2018"] < 0 and by_year["2019"] < 0 and by_year["2020"] > 0 and by_year["2021"] > 0
     assert sorted(by_year) == ["2018", "2019", "2020", "2021"]
-    # "Eleven tests were run on six predictors; two (capital growth and steadiness) passed"
-    assert (table["tests_run"], table["predictors_tested"]) == (11, 6)
+    # "Eleven tests were run on six predictors. Three cleared the 2011-2017 cohorts; two of
+    # them (capital growth and steadiness) also cleared the 2018-2021 cohorts"
+    assert (table["tests_run"], table["predictors_tested"], table["discovery_survivors"]) == (11, 6, 3)
     assert table["passed"] == ["investment", "stability"]
     # "A few counted firms, under 4%, had too little invested capital for a ROIC by then"
     assert all(0 < table["cohorts"][w]["low_capital_share"] < 0.04 for w in ("discovery", "holdout"))
@@ -150,6 +151,11 @@ def test_the_reference_year_is_as_complete_as_the_year_before_it(table):
     # above, the top-fifth floor would move by under half a point.
     lo, hi = c["floor_bounds"]
     assert lo <= table["floors"][2025] <= hi and hi - lo < 0.005
+    # Fiscal 2024 has two floors, and the live profile must not mistake one for the other: its
+    # own (the study's 2024 universe, 1,812 firms) and the one in `floors`, which is 2024 as
+    # seen in the 2025 snapshot, without the firms that left in between.
+    assert round(c["floor_2024_own"], 4) == 0.1575 and round(table["floors"][2024], 4) == 0.1592
+    assert [round(table["floors"][y], 4) for y in (2022, 2023, 2025)] == [0.1886, 0.1664, 0.1553]
     assert table["table_year"] == 2025 and sorted(table["universe"]) == [2022, 2023, 2024, 2025]
     assert table["cohort"]["n"] == 357
     assert (len(table["cohort"]["investment"]), len(table["cohort"]["stability"])) == (348, 341)

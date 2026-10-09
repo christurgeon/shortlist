@@ -70,9 +70,10 @@ inferences destroys exactly that signal.
 
 With `research.durability.enabled`, the HTML attachment also carries the **ROIC persistence**
 section, word for word as `research/durability.py` wrote it. It is computed from SEC data and
-is the one part of the report the model did not write. The chat text carries one line that
-points to it, and never a shortened reading: the caveats are part of what the measurement
-licenses (`docs/RESEARCH.md` → the ROIC-persistence section).
+is the one part of the research block the model did not write. The chat text carries one line.
+For a section that is shown it only points to the report, and never gives a shortened reading:
+the caveats are part of what the measurement licenses. For one that is not shown it gives the
+reason (`docs/RESEARCH.md` → the ROIC-persistence section).
 
 ### Request caps
 

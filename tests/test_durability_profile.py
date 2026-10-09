@@ -170,31 +170,26 @@ def test_two_fiscal_years_past_the_table_abstains():
     assert _profile(_raw(later), today=date(2028, 3, 15), max_gap=2)[1] == dp.SHOWN
 
 
-def test_the_year_before_the_tables_last_is_read_against_its_own_universe():
-    # A company in the weeks before its new 10-K: the latest year on file is 2024, which the
-    # table holds. Its fourth history year, 2021, is before the table and is simply not seen.
+def test_a_latest_year_before_the_tables_year_abstains_and_says_why():
+    # A company in the weeks before its new 10-K. The table holds a list for fiscal 2024, but
+    # it is 2024 as seen in the 2025 snapshot, without the firms that left in between: its
+    # floor is not fiscal 2024's, and the thirds come from the 2025 cohort. Not shown, and the
+    # reason is NOT "the table is too old".
     earlier = {y - 1: v for y, v in STEADY.items()}         # year ends 2021 .. 2024
-    prof, status, _ = _profile(_raw(earlier), today=date(2025, 3, 15))
-    assert status == dp.SHOWN
-    assert (prof.period_end, prof.bucket, prof.reference_year, prof.years_seen) == ("2024-12-31", 2024, 2024, 3)
-    assert prof.stability_third is not None and prof.capital_growth is not None
+    assert _profile(_raw(earlier), today=date(2025, 3, 15)) == (
+        None, dp.BEFORE_REFERENCE, {"period_end": "2024-12-31", "table_year": 2025})
+    # Even with a ROIC below the floor: that floor is not this year's either.
+    earlier[2024] = (100.0, 500.0)
+    assert _profile(_raw(earlier), today=date(2025, 3, 15))[1] == dp.BEFORE_REFERENCE
+    old = {y - 4: v for y, v in STEADY.items()}             # latest year end 2021-12-31
+    assert _profile(_raw(old), today=date(2022, 3, 15))[1] == dp.BEFORE_REFERENCE
 
 
 def test_a_roic_below_the_floor_names_the_year_of_the_cutoff_it_was_read_against():
-    earlier = {y - 1: v for y, v in STEADY.items()}         # latest year end 2024-12-31
-    earlier[2024] = (100.0, 500.0)                          # 15.8% against a floor of 18%
-    _, status, detail = _profile(_raw(earlier), today=date(2025, 3, 15))
-    assert status == dp.NOT_TOP_FIFTH and detail["table_year"] == 2024
     later = {y + 1: v for y, v in STEADY.items()}           # latest year end 2026-12-31
-    later[2026] = (100.0, 500.0)
+    later[2026] = (100.0, 500.0)                            # 15.8% against a floor of 18%
     _, status, detail = _profile(_raw(later), today=date(2027, 3, 15))
     assert status == dp.NOT_TOP_FIFTH and detail["table_year"] == 2025
-
-
-def test_a_fiscal_year_before_the_tables_first_year_abstains():
-    old = {y - 4: v for y, v in STEADY.items()}             # latest year end 2021-12-31
-    assert _profile(_raw(old), today=date(2022, 3, 15)) == (
-        None, dp.REFERENCE_OUT_OF_DATE, {"period_end": "2021-12-31", "table_year": 2025})
 
 
 def test_no_predictor_with_one_year_of_history():
@@ -234,9 +229,9 @@ def test_before_the_as_of_date_the_profile_reads_what_is_on_file_today():
     raw = _raw(STEADY)                                      # filed 2026-02-19
     prof, status, _ = _profile(raw, today=date(2026, 2, 19))
     assert status == dp.SHOWN and prof.period_end == "2025-12-31"
-    # The day before, the latest year on file is 2024, and that is the year shown.
-    before, status, _ = _profile(raw, today=date(2026, 2, 18))
-    assert status == dp.SHOWN and (before.period_end, before.reference_year) == ("2024-12-31", 2024)
+    # The day before, the latest year on file is 2024: before the table's year, not shown.
+    assert _profile(raw, today=date(2026, 2, 18)) == (
+        None, dp.BEFORE_REFERENCE, {"period_end": "2024-12-31", "table_year": 2025})
 
 
 @pytest.mark.parametrize("end, kept", [("2025-12-15", False), ("2025-12-16", True),

@@ -443,7 +443,8 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
 # ---------------------------------------------------------------- gates and descriptives
 
 # Universe size per year on SEC frames with the invested-capital floor, measured 2026-10-04.
-# frames returns RESTATED values, so this is a plausibility band, not a target.
+# frames returns RESTATED values on more forms than the study reads, so the reproduction gate
+# compares these with `comparison_count`, never with the study's own universe (amendment 3).
 FRAMES_UNIVERSE = {2011: 2114, 2012: 2102, 2013: 2052, 2014: 2066, 2015: 1995, 2016: 2161,
                    2017: 2254, 2018: 2214, 2019: 2190, 2020: 2207, 2021: 2359, 2022: 2309,
                    2023: 2245, 2024: 2179}

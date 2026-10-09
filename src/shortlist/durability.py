@@ -16,7 +16,6 @@ long-term and a current debt tag (a debt-free filer gets no ROIC), adds the curr
 top of `LongTermDebt` (which already includes it), and returns a list with no fiscal-year keys.
 It is left untouched so the backtest stays byte-identical.
 
-Spec: docs/superpowers/specs/2026-10-04-moat-durability-design.md §4.
 Pre-registration: docs/audits/2026-10-04-moat-durability-prereg.md."""
 from __future__ import annotations
 
