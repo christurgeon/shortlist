@@ -11,24 +11,27 @@ from __future__ import annotations
 
 import math
 import random
-from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from statistics import median, pstdev
 from typing import Iterable, Optional
 
-from ..durability import YearRow, fiscal_ends, panel_rows, snapshot
+from ..durability import (
+    HISTORY,
+    YearRow,
+    fiscal_ends,
+    history_predictors,
+    in_universe,
+    investment,
+    panel_rows,
+    pct_rank,
+    quintile_floor,
+    snapshot,
+)
 from ._ols import ols
 
-REV_FLOOR = 1e8
 HORIZON = 3
-HISTORY = 4                      # buckets t-3..t
-MIN_HISTORY = 3
-# `track` and `stability` are defined from this start year. In 2011 the history buckets reach
-# 2008, and XBRL was phased in by filer size from 2009 to 2011: a firm with three observed
-# buckets would be an early adopter, ranked against a universe of early adopters.
-HISTORY_FROM = 2012
 MIN_PEERS = 5
 MIN_IC_GROWTH = 1.05             # P6 is defined only when invested capital grew > 5%
 DISCOVERY = range(2011, 2018)    # start years; outcomes 2014-2020
@@ -67,18 +70,6 @@ def build_firm(cik: str, sic: Optional[str], masked: bool, facts: dict,
 
 # ---------------------------------------------------------------- cross-section helpers
 
-def quintile_floor(values: Iterable[float]) -> Optional[float]:
-    """The lowest value still in the top fifth, or None under 5 values. Ties at the floor are
-    all in."""
-    xs = sorted(values, reverse=True)
-    return xs[len(xs) // 5 - 1] if len(xs) >= 5 else None
-
-
-def pct_rank(value: float, sorted_values: list[float]) -> float:
-    """Share of `sorted_values` (ascending) at or below `value`."""
-    return bisect_right(sorted_values, value) / len(sorted_values)
-
-
 def avg_ranks(values: dict) -> dict:
     """{key -> rank in (0,1)}; ties share the average rank. One value ranks 0.5."""
     order = sorted(values, key=values.get)
@@ -94,10 +85,6 @@ def avg_ranks(values: dict) -> dict:
     return out
 
 
-def _in_universe(row: Optional[YearRow]) -> bool:
-    return row is not None and row.status == "ok" and (row.revenue or 0.0) >= REV_FLOOR
-
-
 def cross_section(firms: Iterable[Firm], snap_year: int, bucket: int, *,
                   masked: bool = True) -> dict[str, float]:
     """{cik -> ROIC} of the universe for `bucket`, as seen in snapshot `snap_year`.
@@ -107,7 +94,7 @@ def cross_section(firms: Iterable[Firm], snap_year: int, bucket: int, *,
         if masked and f.masked:
             continue
         row = f.snaps.get(snap_year, {}).get(bucket)
-        if _in_universe(row):
+        if in_universe(row):
             out[f.cik] = row.roic
     return out
 
@@ -130,7 +117,7 @@ def comparison_count(panels: Iterable[dict[int, YearRow]], bucket: int) -> int:
     sector mask and NO as-of date: the population the frames targets count. `cross_section` is
     lower than those targets by construction (the mask, the 120-day rule, the 10-K filter),
     which a band around them would misread as a data fault."""
-    return sum(_in_universe(panel.get(bucket)) for panel in panels)
+    return sum(in_universe(panel.get(bucket)) for panel in panels)
 
 
 # ---------------------------------------------------------------- cohort rows
@@ -163,16 +150,7 @@ def _predictors(f: Firm, year: int, hist: dict[int, list[float]],
                 floors: dict[int, Optional[float]], peers: dict) -> dict[str, Optional[float]]:
     snap = f.snaps[year]
     now = snap[year]
-    seen = [(y, snap[y]) for y in range(year - HISTORY + 1, year + 1)
-            if y in snap and snap[y].status == "ok" and floors.get(y) is not None]
-    track = stability = None
-    if year >= HISTORY_FROM and len(seen) >= MIN_HISTORY:
-        track = sum(r.roic >= floors[y] for y, r in seen) / len(seen)
-        stability = -pstdev(pct_rank(r.roic, hist[y]) for y, r in seen)
-
-    prev = snap.get(year - 1)
-    investment = (-(now.ic / prev.ic - 1.0)
-                  if prev is not None and prev.status == "ok" else None)
+    track, stability, _in_top, _seen = history_predictors(snap, year, hist, floors)
 
     share_stability = None
     base = snap.get(year - HORIZON)
@@ -194,7 +172,7 @@ def _predictors(f: Firm, year: int, hist: dict[int, list[float]],
     if base is not None and base.status == "ok" and now.ic > MIN_IC_GROWTH * base.ic:
         incremental = (now.nopat - base.nopat) / (now.ic - base.ic)
 
-    return {"track": track, "stability": stability, "investment": investment,
+    return {"track": track, "stability": stability, "investment": investment(snap, year),
             "share_stability": share_stability, "gross_margin": gross_margin,
             "incremental_roic": incremental}
 
