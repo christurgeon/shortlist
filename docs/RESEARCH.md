@@ -125,6 +125,51 @@ The output covers moat read, material risks, red flags, management and capital a
 business model, a falsifiable thesis (bull / bear / what-would-change-my-mind), and a
 score-vs-filing reconciliation.
 
+### The ROIC-persistence section — computed, not written by the model
+
+Off by default (`research.durability.enabled`). When on, every brief carries one more section,
+**"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. It is the only
+part of a brief the model did not write, and the model never sees it.
+
+- **What it is.** A pre-registered study measured, among firms with a ROIC in the top fifth,
+  which ones still had it three years later
+  (`docs/audits/2026-10-04-moat-durability-verdict.md`). Two of six predictors passed: low
+  growth of invested capital, and a steady ROIC rank. The section shows the historical
+  pattern, and the company's **third** among top-fifth firms on each of the two. It never
+  gives a probability for the company and never a raw spread.
+- **What it is not.** Not a score, a gate, a flag or a discovery list, and not a claim about
+  the business or about returns. The verdict licenses a display line only. The heading is
+  "ROIC persistence", never "moat", and each bullet carries the caveat the verdict attaches
+  to it: the base rate leaves out firms that stopped reporting, a little over half of the
+  capital-growth effect is capital that kept growing slowly, and steadiness is a track-record
+  measure whose later result rests on two cohort years.
+- **When it is not shown.** Most names are not in the top fifth. A brief then carries one
+  sentence, "Not shown: …", with the reason from a closed set (below the cutoff, a bank or
+  REIT, no 10-K data, a year the study's rules exclude, SEC data unavailable, and so on;
+  `durability_profile.NOT_SHOWN`). Silence would read as "nothing to report".
+- **Where it is computed.** `research/__init__.py:_enrich_card`, **after** `assess()`
+  returns. `research/assess.py` does not know the section exists, so both prompts are
+  byte-identical with the flag on or off, and the section is never a grounding segment.
+  Giving the line to the model is a separate decision: its risk is misuse (a "confirmed
+  moat" argument), which only a measured A/B can bound
+  (`docs/audits/2026-10-08-moat-durability-phase1.md`).
+- **The same basis as the study.** One request to `data.sec.gov` company facts per brief,
+  through the process-wide throttle, compacted with the study's own `compact_facts`, read with
+  the study's own functions (`shortlist/durability.py`) at the study's point in time (the year
+  end plus 120 days, or today when that is sooner). A test recomputes the profile of every
+  firm in the reference cohort and compares it with what the study path gives.
+- **The reference table.** `src/shortlist/durability_table.json` holds the ROIC universe and
+  the top-fifth cohort of **fiscal 2025**, and the measured effects, which are copied from the
+  study's raw outputs. A name one fiscal year past the table is ranked against it and the
+  section says so; further out it is not shown. To refresh it on new SEC data, run the
+  study's `fetch` step for a new compacted file and then
+  `docs/audits/scripts/build_durability_table.py`; never raise `max_table_gap_years` instead.
+  A rebuild cannot change a measured effect.
+- **Failure.** `fetch_section` never raises. A bad response, malformed facts or a missing
+  table give "Not shown: SEC data could not be read" and one redacted stderr line. The request
+  runs in a daemon thread and the caller waits `deadline_s` for it: an httpx timeout is per
+  phase and per read, and is not a deadline.
+
 ## Quote verification
 
 Factual findings — risks and red flags — must carry a **verbatim quote that is verified to

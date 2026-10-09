@@ -118,7 +118,9 @@ These are the constraints no single module can enforce — the reason to keep th
   and `providers/_gaap_tags.py` (GAAP tag sets) have multiple importers. But
   `providers/_edgar_facts.py` and `providers/_xbrl_facts.py` are **separate** extractors —
   the harness uses the former, the backtest the latter. Changing one does not change the
-  other; decide deliberately which needs the fix.
+  other; decide deliberately which needs the fix. One production path reads the backtest's
+  on purpose: the `/deep` ROIC-persistence section (`durability.py`,
+  `durability_profile.py`), which must be computed on the basis its study measured.
 - **One process-wide sec.gov throttle** (`edgar/sec_throttle.py`). Never give a client its
   own — that broke the funnel outright on 2026-08-04.
 - **Redact before printing.** Any error string that may embed a request URL MUST pass

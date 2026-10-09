@@ -483,3 +483,72 @@ not be fitted.
 read, on the same data. Addendum 1 named four mechanisms; this tests the first (the denominator
 persists) and bears on the second (cash and payout). It does not test acquired capital or a
 windfall year. And nothing here, as before, is about returns.
+
+## Addendum 3 — the hashes after the merge, and what Phase 1 changed (2026-10-09)
+
+Appended. Nothing above is edited. No result changes.
+
+**The commit hashes in this note and in the raw outputs are not on `main`.** PR #209 was merged
+on 2026-10-09 with GitHub's "Rebase and merge", which writes new commits. Their content, their
+author dates and their order are the same; the tree of `main` after the merge is identical to
+the tree of the branch's last commit. The original commits stay fetchable for good:
+`git fetch origin refs/pull/209/head`.
+
+| cited above or in a raw output | on `main` | what it is |
+|---|---|---|
+| `394a4ad` | `2da654c` | the last edit of the pre-registration (amendment 4) |
+| `8f86335` | `f25323e` | the last code change before the data; `code_commit` of `fetch.json` and `gates.json` |
+| `e3c6c77` | `10db726` | the gates result; `code_commit` of `discovery.json` |
+| `80bf4a7` | `e4e8b49` | the discovery half of this note; `code_commit` of `holdout.json` |
+| `490a3d4` | `d45e6ac` | the verdict |
+| `ab71873` | `1dbc399` | the compacted data file |
+| `5104d98` | `7b73979` | Addendum 1 and the decomposition pre-registration; `code_commit` of `decomposition.json` |
+| `9130634` | `f533623` | Addendum 2; the tip of the branch and of `refs/pull/209/head` |
+
+What git on `main` still shows: the order of the commits and their author dates. Their
+committer dates are now the time of the merge. The `generated` times inside the raw outputs
+are unchanged. The ordering argument of Addendum 1 ("the pre-registration was last edited
+before the first real-data output…") holds on `main` by commit order and author date, and on
+`refs/pull/209/head` exactly as it was written.
+
+**Phase 1 changed files that `probe_durability.py: CODE` names.** The raw outputs carry
+`code_sha256` `f7780551…16b6d9`, the digest of the code from `8f86335` to the end of the
+branch. With the `/deep` section
+(`2026-10-08-moat-durability-phase1.md`) the digest is `8b351c4a…0a3a13f7`:
+
+- `src/shortlist/durability.py` gained the 10-K form filter, the compaction and the arithmetic
+  of the two passing predictors, moved from the two study modules;
+- `src/shortlist/backtest/durability_data.py` and `durability_study.py` now import them;
+- `config.yaml` gained one block, `research.durability`. Its `sectors` block, the only part the
+  study reads, is unchanged, and a test ties its hash to `gates.json`.
+
+No study step was re-run, and none should be on the new code: `discovery` and `holdout`
+refuse outputs written by other code, by design. To run a step again, check out `f533623`.
+
+**That the move changed no number is shown, not assumed.** Before the move,
+`scripts/probe_durability_equivalence.py` digested every `YearRow` of every snapshot (608,419),
+every cohort row with its outcomes, controls, predictors and ranks (3,771 = 2,290 + 1,481), and
+the inputs of the section's reference table, from the committed data file, on code whose
+digest was `f7780551…`. `tests/test_durability_equivalence.py` recomputes all of it on the
+current code in every test run. `equivalence.json: code_commit` names a hash from before the
+Phase 1 branch was rebased; in history it is the commit titled "feat(audits): durability
+equivalence probe".
+
+**The three prerequisites of Addendum 1 are closed.**
+
+- The 10-K form filter is in `shortlist/durability.py`, in front of every reader. On raw
+  company facts a 20-F row is no longer read, and the docstring claim is true.
+- `providers/_xbrl_facts.py` is now read by a production path, on purpose and without an edit
+  to it. `CLAUDE.md` states the exception.
+- The unregistered condition on `investment` (defined only when the prior year's ROIC is
+  defined) is in the docstring of `durability.investment`.
+
+**What was shipped is a display section only, and it is off**
+(`research.durability.enabled: false`). The model never sees it. Two things about it are
+outside what this note measured, and `2026-10-08-moat-durability-phase1.md` gives the
+evidence for each:
+
+- its reference population is fiscal 2025, one year past the years the reproduction gate
+  covered;
+- it adds three guards the study did not need (an unknown SIC, a fiscal-year change, facts that
+  lag the filing), none of which changes a firm of the reference cohort.

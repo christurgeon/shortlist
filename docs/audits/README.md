@@ -40,6 +40,10 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   (a test needed an effect of about 12 to 16 points to clear its bar). **This is a claim about
   an accounting ratio, not returns**: nothing here shows that predicted persistence pays. It
   licenses a `/deep` display line only — not a scoring leg, gate, flag or discovery list.
+  **Shipped dark 2026-10-08 as the "ROIC persistence" section of the brief
+  (`research.durability.enabled: false`): deterministic, display only, never shown to the
+  model** — `2026-10-08-moat-durability-phase1.md`. Do not put the line in the prompt without
+  a measurement of MISUSE first (that note, "For a Phase 2").
   **The trap the design exists for:** the raw tercile spread of the hold rate is +0.243 for `track` against a controlled β
   of +0.109 (it failed), and +0.058 for `gross_margin` against +0.121; the difference is ROIC
   level and sector. Do not quote a raw spread. Two more traps, both caught before the data:
@@ -337,6 +341,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-08 | `2026-10-08-moat-durability-phase1.md` — the ROIC-persistence section of the `/deep` brief: what was built, the evidence that the shared code moved no study number, why fiscal 2025 is the reference year, and what a prompt integration must measure first | design + evidence |
 | 2026-10-07 | `2026-10-07-durability-decomposition-prereg.md` — the two durability passes: did profit hold, and are they one finding? Result in the verdict's Addendum 2 | pre-registration |
 | 2026-10-04 | `2026-10-04-moat-durability-verdict.md` — is the persistence of a top-quintile ROIC predictable? Two of eleven tests passed (run 2026-10-07) | verdict |
 | 2026-10-04 | `2026-10-04-moat-durability-prereg.md` — does a top-quintile ROIC persist, and can that be predicted? (amended four times, 2026-10-05 and 2026-10-07: the sector control; a fifth pass rule; the reproduction gate; the share-stability predictor) | pre-registration |

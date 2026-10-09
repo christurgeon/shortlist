@@ -68,6 +68,12 @@ The two footer counts come straight from the record and are never merged — an 
 means the model quoted something absent from the filing, and pooling it with declared
 inferences destroys exactly that signal.
 
+With `research.durability.enabled`, the HTML attachment also carries the **ROIC persistence**
+section, word for word as `research/durability.py` wrote it. It is computed from SEC data and
+is the one part of the report the model did not write. The chat text carries one line that
+points to it, and never a shortened reading: the caveats are part of what the measurement
+licenses (`docs/RESEARCH.md` → the ROIC-persistence section).
+
 ### Request caps
 
 Soft per-request caps bound reply latency and API cost. Over the cap, the bot runs the first
