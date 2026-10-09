@@ -218,3 +218,18 @@ def test_history_predictors_start_in_2012():
     snap = {y: _yr(f"{y}-12-31", 100.0, 400.0) for y in (2009, 2010, 2011)}
     out = history_predictors(snap, 2011, dict.fromkeys(snap, grid), dict.fromkeys(snap, 0.15))
     assert out == (None, None, 3, 3)
+
+
+def test_the_tags_the_basis_reads_are_pinned():
+    # These lists come from providers/_xbrl_facts.py, which the backtest also edits. A change
+    # there moves what BOTH the study's compaction and the live section read, and no digest of
+    # the compacted file can see a tag that was never kept. Change this list on purpose.
+    assert durability.KEEP_TAGS == (
+        "RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues",
+        "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet",
+        "OperatingIncomeLoss", "StockholdersEquity", "Assets", "LongTermDebtNoncurrent",
+        "LongTermDebt", "LongTermDebtCurrent", "DebtCurrent", "GrossProfit",
+        "CostOfGoodsAndServicesSold", "CostOfRevenue", "CostOfGoodsSold")
+    raw = {"facts": {"us-gaap": {tag: {"units": {"USD": [_dur("2015-12-31", 1.0, "2016-02-20")]}}
+                                 for tag in (*durability.KEEP_TAGS, "Goodwill")}}}
+    assert set(durability.compact_facts(raw)["facts"]["us-gaap"]) == set(durability.KEEP_TAGS)

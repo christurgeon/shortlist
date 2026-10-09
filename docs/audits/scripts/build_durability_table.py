@@ -17,8 +17,9 @@ TWO KINDS OF CONTENT, and only one can be refreshed.
 
 THE REFERENCE YEAR IS 2025, ONE PAST THE YEARS THE PHASE 0 GATES COVERED (2011-2024). The
 reproduction gate has no target for it. `completeness` records why it is usable: the size of
-the 2025 universe against 2024, and the share of each year's universe that has a usable row
-one year later (docs/audits/2026-10-08-moat-durability-phase1.md).
+the 2025 universe against 2024, the share of each year's universe that has a usable row one
+year later, and the range the top-fifth floor could take if every firm of the shortfall were
+at one end (docs/audits/2026-10-08-moat-durability-phase1.md).
 
 NOT A STUDY STEP. No beta is computed and no gate is read."""
 import hashlib
@@ -55,8 +56,18 @@ def _continued(firms, year: int) -> float:
     return have / len(members)
 
 
+def _floor_bounds(roics: list[float], missing: int) -> list[float]:
+    """The top-fifth floor if `missing` more firms were in the universe, all below every firm
+    in it, and all above. The floor of a universe that is short of late filers lies between."""
+    desc = sorted(roics, reverse=True)
+    cut = (len(desc) + missing) // 5 - 1
+    return [desc[cut], desc[cut - missing]]
+
+
 def _reference(firms) -> dict:
     t = eq.table_inputs(firms)
+    n_before = len(ds.cross_section(firms, TABLE_YEAR - 1, TABLE_YEAR - 1))
+    n_now = len(t["hist"][TABLE_YEAR])
     cohort = {p: sorted(v[p] for v in t["members"].values() if v[p] is not None)
               for p in ("investment", "stability")}
     return {
@@ -64,8 +75,10 @@ def _reference(firms) -> dict:
         "floors": {str(y): t["floors"][y] for y in sorted(t["floors"])},
         "cohort": {"n": len(t["members"]), **cohort},
         "completeness": {
-            f"universe_{TABLE_YEAR - 1}": len(ds.cross_section(firms, TABLE_YEAR - 1, TABLE_YEAR - 1)),
-            f"universe_{TABLE_YEAR}": len(ds.cross_section(firms, TABLE_YEAR, TABLE_YEAR)),
+            f"universe_{TABLE_YEAR - 1}": n_before,
+            f"universe_{TABLE_YEAR}": n_now,
+            # [all of the shortfall against the year before at the bottom, all at the top]
+            "floor_bounds": _floor_bounds(t["hist"][TABLE_YEAR], max(n_before - n_now, 0)),
             f"continued_{TABLE_YEAR - 2}_{TABLE_YEAR - 1}": _continued(firms, TABLE_YEAR - 2),
             f"continued_{TABLE_YEAR - 1}_{TABLE_YEAR}": _continued(firms, TABLE_YEAR - 1)},
     }
