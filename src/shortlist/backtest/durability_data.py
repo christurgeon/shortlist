@@ -13,7 +13,7 @@ import zlib
 from pathlib import Path
 from typing import Iterator, Optional
 
-from ..durability import _kept, compact_facts
+from ..durability import compact_facts, facts_on_forms
 
 # The annual forms of foreign issuers. NOT IN THE STUDY. They are kept apart, under their own
 # key, for the reproduction gate alone: SEC frames counts these filers, so the count that is
@@ -25,7 +25,7 @@ def foreign_annual_facts(raw: dict) -> Optional[dict]:
     """The same facts from the foreign annual forms, each row relabelled 10-K so that
     `annual_series` reads 40-F as it reads 20-F. None when there is no such revenue or
     operating-income fact."""
-    kept = _kept(raw, FOREIGN_ANNUAL_FORMS)
+    kept = facts_on_forms(raw, FOREIGN_ANNUAL_FORMS)
     if kept is not None:
         for node in kept["facts"]["us-gaap"].values():
             for row in node["units"]["USD"]:

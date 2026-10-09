@@ -85,3 +85,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Without this a built wheel has no table and the /deep ROIC-persistence section reads
+# "not shown" for every name. The deploy is an editable install and does not need it.
+[tool.setuptools.package-data]
+shortlist = ["durability_table.json"]
