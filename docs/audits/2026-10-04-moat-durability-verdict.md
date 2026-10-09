@@ -408,3 +408,78 @@ again, copy it to `.cache/durability/`.
 **A follow-up, registered before it is run:** `2026-10-07-durability-decomposition-prereg.md`.
 It asks whether operating profit held or only the denominator, and whether the two passes are
 one. It is a decomposition of a result that has been seen. It cannot change the pass list.
+
+## Addendum 2 — the decomposition (run 2026-10-08)
+
+Appended. Registered in `2026-10-07-durability-decomposition-prereg.md` and committed
+(`5104d98`) before it was run. Script: `scripts/probe_durability_decomposition.py`. Output:
+`raw-2026-10-04-durability/decomposition.json`, on the same data hashes and code digest as the
+verdict. **It is a decomposition of a seen result. The pass list is unchanged.**
+
+**Both reading rules came out on the favourable side, in both windows.**
+
+**R1 — profit or denominator: "operating profit held", for both predictors.** Sample: cohort
+rows observed at `t+3`. `beta_frozen` asks whether the profit of `t+3` over the capital of `t`
+still clears the `t+3` floor. The rule needs at least half of `beta_observed`.
+
+| | n | `beta_observed` (SE) | `beta_frozen` (SE) | share kept |
+|---|---|---|---|---|
+| `investment`, discovery | 1825 | +0.154 (0.050) | +0.116 (0.044) | 75% |
+| `investment`, holdout | 1260 | +0.208 (0.057) | +0.124 (0.051) | 60% |
+| `stability`, discovery | 1504 | +0.163 (0.061) | +0.143 (0.051) | 88% |
+| `stability`, holdout | 1222 | +0.218 (0.066) | +0.290 (0.059) | 133% |
+
+The frozen-denominator outcome is biased AGAINST `investment`: a firm that added capital has
+more of it earning at `t+3`, and that profit is counted over its old capital. Three fifths to
+three quarters of the effect survives that. So the `investment` pass is not only the
+denominator: the firms that added little capital would more often still clear the floor on the
+capital they already had.
+
+**The exact split (reported, decides nothing).** On the rows with a positive profit at `t+3`,
+the association of each predictor with the change in ln ROIC, split into profit and capital
+(`log` = `profit` − `capital`):
+
+| | n | `beta_log` (SE) | `beta_profit` (SE) | `beta_capital` (SE) | part through capital |
+|---|---|---|---|---|---|
+| `investment`, discovery | 1681 | +0.390 (0.082) | +0.178 (0.084) | −0.212 (0.058) | 54% |
+| `investment`, holdout | 1155 | +0.220 (0.099) | +0.091 (0.108) | −0.130 (0.068) | 59% |
+| `stability`, discovery | 1391 | +0.358 (0.111) | +0.150 (0.106) | −0.208 (0.085) | 58% |
+| `stability`, holdout | 1123 | +0.340 (0.117) | +0.272 (0.125) | −0.068 (0.081) | 20% |
+
+For `investment`, a little over half of the association runs through capital: the firms that
+grew capital slowly kept growing it slowly (`beta_capital` −0.212 and −0.130). The rest runs
+through profit, and that part is positive in both windows but not distinguishable from zero on
+the holdout (+0.091, SE 0.108). The rows left out for a loss at `t+3` are 144 and 105
+(`investment`), 113 and 99 (`stability`); this table conditions on a profit and is a
+description, as registered.
+
+**The `low_ic` coding adds nothing.** `beta_observed` leaves out the `low_ic` rows. It is +0.154
+and +0.208 for `investment`, against the registered +0.149 and +0.201 with them in. The caveat
+in the verdict (the coding "bounds what it can add") is settled: it adds nothing.
+
+**R2 — one finding or two: "two findings".** On the registered primary sample, rows where both
+predictors are defined (n = 1,545 and 1,245):
+
+| | `beta_alone` (SE) | `beta_joint`, the other held fixed (SE) |
+|---|---|---|
+| `investment`, discovery | +0.136 (0.052) | +0.150 (0.052) |
+| `investment`, holdout | +0.193 (0.058) | +0.199 (0.057) |
+| `stability`, discovery | +0.151 (0.060) | +0.166 (0.060) |
+| `stability`, holdout | +0.216 (0.066) | +0.222 (0.065) |
+
+Neither loses anything with the other held fixed. No bootstrap had a replication that could
+not be fitted.
+
+**What Phase 1 may say, by the table registered before the run.**
+
+- `investment`: "firms that added little capital kept both their profit and their return" is
+  allowed. An honest line also carries the split: a little over half of the effect is slower
+  growth of capital, and the profit part is not established on the holdout.
+- The two predictors may be shown as separate lines.
+- `stability` keeps its track-record label, and its holdout still rests on start years 2020
+  and 2021. Nothing here changes that.
+
+**What this does not settle.** It is post hoc: the question was chosen after the verdict was
+read, on the same data. Addendum 1 named four mechanisms; this tests the first (the denominator
+persists) and bears on the second (cash and payout). It does not test acquired capital or a
+windfall year. And nothing here, as before, is about returns.

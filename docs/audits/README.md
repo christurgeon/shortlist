@@ -26,11 +26,13 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   SIC-2 sector × start year and size fixed, on 2,290 discovery and 1,481 holdout firm-years in
   CIK space with dead filers included. **`investment`** (growth of invested capital in the last
   year; LOW growth holds more): discovery β +0.149 (SE 0.047), holdout +0.201 (0.055), positive
-  in all eleven start years, unchanged under SIC-3 cells. **What it measures is open:** the
-  predictor is last year's growth of the ROIC denominator (equity + debt, cash included),
-  capital growth persists, and the lowest-growth third ends in `low_ic` (coded held) more
-  often. A `/deep` line must word it as a statement about the ratio and capital growth, not
-  about the business, unless the decomposition (verdict, addenda) says more. **`stability`** (spread of the ROIC
+  in all eleven start years, unchanged under SIC-3 cells. **It is not only the denominator,
+  and it is partly the denominator:** the predictor is last year's growth of the ROIC
+  denominator and capital growth persists, so a decomposition was registered and run after
+  the verdict (Addendum 2). On a frozen denominator (profit at `t+3` over capital at `t`) 75%
+  and 60% of β survives, and the `low_ic` coding adds nothing; in an exact log split 54% to
+  59% of the effect is slower capital growth and the profit part is not established on the
+  holdout. With `stability` held fixed its β is unchanged: two findings. **`stability`** (spread of the ROIC
   rank over four years): +0.150 (0.059) and +0.216 (0.066), **but the holdout pass rests on
   start years 2020 and 2021 and the sign is negative in 2018 and 2019**; by the pre-registered
   reading it is a track-record line, not a separate durability trait. `gross_margin` on
@@ -44,8 +46,9 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   an absolute change in market share ranks firms by their size inside the industry, and a
   reproduction gate against SEC `frames` counts must count the same population (it then
   matched within 1.2%). Do not re-run these six predictors; a new one needs its own
-  pre-registration against the same controls. One follow-up is registered: a split of the two
-  passes into numerator and denominator (`2026-10-07-durability-decomposition-prereg.md`). A top-decile cohort, a 5-year horizon, an
+  pre-registration against the same controls. The one registered follow-up, a split of the two
+  passes into numerator and denominator, is done (`2026-10-07-durability-decomposition-prereg.md`,
+  verdict Addendum 2); acquired capital and a windfall year are not tested. A top-decile cohort, a 5-year horizon, an
   indexed revenue floor and sector-relative cohorts were not run, on purpose; each needs its
   own. `2026-10-04-moat-durability-verdict.md`.
 
@@ -334,6 +337,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-07 | `2026-10-07-durability-decomposition-prereg.md` — the two durability passes: did profit hold, and are they one finding? Result in the verdict's Addendum 2 | pre-registration |
 | 2026-10-04 | `2026-10-04-moat-durability-verdict.md` — is the persistence of a top-quintile ROIC predictable? Two of eleven tests passed (run 2026-10-07) | verdict |
 | 2026-10-04 | `2026-10-04-moat-durability-prereg.md` — does a top-quintile ROIC persist, and can that be predicted? (amended four times, 2026-10-05 and 2026-10-07: the sector control; a fifth pass rule; the reproduction gate; the share-stability predictor) | pre-registration |
 | 2026-09-25 | `2026-09-25-risk-tilt-disable.md` — risk weight 0.10 -> 0.0 | verdict |
