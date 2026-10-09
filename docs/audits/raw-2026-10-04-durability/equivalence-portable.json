@@ -1,0 +1,18 @@
+{
+ "cohort_rows": {
+  "n": 3771,
+  "sha256": "2169a4375162ad718bd150137c50a0d16833b8f36b7541af9f5ed1fa107fcd74"
+ },
+ "compacted_sha256": "2d617f7045cbe83e674ac6626b8dcc28a0870b19f66be0c572a759044aaa5639",
+ "libm_predictors": [
+  "share_stability"
+ ],
+ "n_firms": 12320,
+ "sic_sha256": "b5dd2d4d0955397e712ed5110734e819ce07f550148eec17e60b541a5e2bfb69",
+ "significant_digits": 12,
+ "table_inputs": {
+  "n": 361,
+  "sha256": "c3e73e2c491cf2f7f34adb44790b346e186dffbbedee31c2fe43b7a69ecfcb38"
+ },
+ "written_on": "macOS-26.4.1-arm64-arm-64bit"
+}
