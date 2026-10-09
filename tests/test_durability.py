@@ -1,11 +1,17 @@
 from datetime import date
 
+from statistics import pstdev
+
+from shortlist import durability
+from shortlist.backtest import durability_data, durability_study
 from shortlist.durability import (
     YearRow,
     as_of_for,
     count_filed_before_period_end,
     fiscal_ends,
     fy_bucket,
+    history_predictors,
+    investment,
     panel_rows,
     snapshot,
 )
@@ -147,3 +153,68 @@ def test_yearrow_properties_on_a_bare_row():
     r = YearRow(end="2015-12-31", revenue=None, op_income=None, equity=None, debt=0.0,
                 assets=None, gross_profit=None)
     assert r.ic is None and r.nopat is None and r.roic is None and r.status == "missing"
+
+
+def test_a_foreign_annual_form_is_never_read_from_raw_facts():
+    # `annual_series` admits 20-F and 20-F/A. The study is 10-K filers only, and the filter must
+    # hold on RAW company facts too: left in, a later-filed 20-F/A row replaces the 10-K value.
+    f = _firm()
+    f["facts"]["us-gaap"]["OperatingIncomeLoss"]["units"]["USD"].append(
+        _dur("2015-12-31", 999.0, "2016-03-01", form="20-F/A"))
+    assert snapshot(f, 2015) == snapshot(_firm(), 2015)
+    assert snapshot(f, 2015)[2015].op_income == 100.0
+
+    foreign = _firm()
+    for node in foreign["facts"]["us-gaap"].values():
+        for row in node["units"]["USD"]:
+            row["form"] = "20-F"
+    assert fiscal_ends(foreign) == {}
+    assert panel_rows(foreign, date(2017, 1, 1)) == {}
+    assert snapshot(foreign, 2015) is None
+
+
+def test_the_study_and_the_live_path_share_one_compaction_and_one_set_of_helpers():
+    assert durability_data.compact_facts is durability.compact_facts
+    assert durability_study.quintile_floor is durability.quintile_floor
+    assert durability_study.pct_rank is durability.pct_rank
+    assert {"10-K", "10-K/A"} == durability.STUDY_FORMS
+
+
+def _yr(end, oi, eq, assets=1000.0):
+    return YearRow(end=end, revenue=2e8, op_income=oi, equity=eq, debt=0.0, assets=assets,
+                   gross_profit=None)
+
+
+def test_investment_is_high_for_low_capital_growth_and_needs_a_defined_prior_year():
+    now = _yr("2015-12-31", 100.0, 500.0)
+    assert investment({2014: _yr("2014-12-31", 100.0, 400.0), 2015: now}, 2015) == -(500.0 / 400.0 - 1.0)
+    fell = investment({2014: _yr("2014-12-31", 100.0, 625.0), 2015: now}, 2015)
+    assert abs(fell - 0.2) < 1e-12                       # capital fell by a fifth
+    assert investment({2015: now}, 2015) is None
+    # A prior year under the capital floor has no ROIC, so the growth from it is not read.
+    assert investment({2014: _yr("2014-12-31", 100.0, 50.0), 2015: now}, 2015) is None
+
+
+def test_history_predictors_count_seen_years_and_need_three_of_them():
+    grid = [0.05, 0.10, 0.15, 0.20, 0.25]
+    hist = dict.fromkeys(range(2012, 2016), grid)
+    floors = dict.fromkeys(range(2012, 2016), 0.15)
+    snap = {2013: _yr("2013-12-31", 100.0, 400.0),      # ROIC 0.1975 -> rank 0.6, in the top
+            2014: _yr("2014-12-31", 50.0, 400.0),       # ROIC 0.09875 -> rank 0.2, below
+            2015: _yr("2015-12-31", 150.0, 400.0)}      # ROIC 0.29625 -> rank 1.0, in the top
+    track, stability, in_top, seen = history_predictors(snap, 2015, hist, floors)
+    assert (in_top, seen) == (2, 3)
+    assert track == 2 / 3
+    assert stability == -pstdev([0.6, 0.2, 1.0])
+
+    del snap[2013]
+    assert history_predictors(snap, 2015, hist, floors) == (None, None, 1, 2)
+    # A year with no floor (a universe under 5 firms) is not seen.
+    assert history_predictors(snap, 2015, hist, {**floors, 2014: None})[3] == 1
+
+
+def test_history_predictors_start_in_2012():
+    grid = [0.05, 0.10, 0.15, 0.20, 0.25]
+    snap = {y: _yr(f"{y}-12-31", 100.0, 400.0) for y in (2009, 2010, 2011)}
+    out = history_predictors(snap, 2011, dict.fromkeys(snap, grid), dict.fromkeys(snap, 0.15))
+    assert out == (None, None, 3, 3)

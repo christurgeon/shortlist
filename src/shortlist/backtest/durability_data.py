@@ -13,38 +13,12 @@ import zlib
 from pathlib import Path
 from typing import Iterator, Optional
 
-from ..durability import CUR_DEBT, LT_NONCURRENT, LT_TOTAL
-from ..providers._xbrl_facts import ASSETS, COGS, EQUITY, GROSS_PROFIT, OP_INCOME, REVENUE
+from ..durability import _kept, compact_facts
 
-KEEP_TAGS = tuple(REVENUE + OP_INCOME + EQUITY + ASSETS + LT_NONCURRENT + LT_TOTAL + CUR_DEBT
-                  + GROSS_PROFIT + COGS)
-# 20-F is in _xbrl_facts._ANNUAL_FORMS; the study is 10-K filers only, so it is dropped HERE.
-KEEP_FORMS = frozenset({"10-K", "10-K/A"})
 # The annual forms of foreign issuers. NOT IN THE STUDY. They are kept apart, under their own
 # key, for the reproduction gate alone: SEC frames counts these filers, so the count that is
 # compared with the frames targets has to count them too.
 FOREIGN_ANNUAL_FORMS = frozenset({"20-F", "20-F/A", "40-F", "40-F/A"})
-_FIELDS = ("start", "end", "val", "filed", "form")
-_NEEDS_ONE_OF = tuple(REVENUE + OP_INCOME)
-
-
-def _kept(raw: dict, forms: frozenset[str]) -> Optional[dict]:
-    gaap = (raw.get("facts") or {}).get("us-gaap") or {}
-    out: dict[str, dict] = {}
-    for tag in KEEP_TAGS:
-        rows = ((gaap.get(tag) or {}).get("units") or {}).get("USD") or []
-        kept = [{k: f[k] for k in _FIELDS if k in f} for f in rows if f.get("form") in forms]
-        if kept:
-            out[tag] = {"units": {"USD": kept}}
-    if not any(t in out for t in _NEEDS_ONE_OF):
-        return None
-    return {"facts": {"us-gaap": out}}
-
-
-def compact_facts(raw: dict) -> Optional[dict]:
-    """The us-gaap USD facts the study needs, 10-K forms only, or None when the filer has no
-    annual revenue or operating-income fact at all."""
-    return _kept(raw, KEEP_FORMS)
 
 
 def foreign_annual_facts(raw: dict) -> Optional[dict]:
