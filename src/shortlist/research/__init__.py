@@ -93,6 +93,12 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         # assess() sets the narrow bundle key (assess.py:659); the brief is written
         # under the wide key so the two never diverge on disk.
         assessment.cache_key = key
+        # AFTER the model call, on purpose: the ROIC-persistence section is display-only and
+        # must not reach the prompt. fetch_section never raises.
+        if ((config.get("research") or {}).get("durability") or {}).get("enabled", False):
+            from . import durability
+            assessment.durability_line, assessment.durability_status = durability.fetch_section(
+                card, bundle, config)
         bp = report.write(assessment, root, config)
     except Exception as e:  # assess/render/write errors
         return ResearchResult(card.ticker, skipped=f"research error: {redact_secrets(e)}")

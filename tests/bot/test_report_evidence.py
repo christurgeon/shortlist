@@ -120,6 +120,10 @@ def _html(a: AssessmentVM) -> str:
     return _Research().render_html(_vm(a), HtmlBuilder())
 
 
+def _text(a: AssessmentVM) -> list[str]:
+    return _Research().render_text(_vm(a), Detail.FULL)
+
+
 def test_html_carries_the_quote_behind_a_disclosure():
     html = _html(AssessmentVM(risks=[FindingVM(claim="Customer concentration",
                                                evidence=_QUOTE, source="10-K Item 1A",
@@ -213,3 +217,38 @@ def test_html_names_stub_sections_with_the_brief_s_wording():
     html = _html(AssessmentVM(stub_sections=["Item 7 (MD&A)"],
                               risks=[FindingVM(claim="c", status="verified")]))
     assert HtmlBuilder().esc(stub_sections_note(["Item 7 (MD&A)"])) in html
+
+
+# ---- the deterministic "ROIC persistence" section ----
+
+_PERSISTENCE = ("Historical frequencies for an accounting ratio. Not a forecast <for> this company.\n"
+                "- This company: ROIC 31.2% & above the cutoff.\n"
+                "- Past cohorts: 59% and 54% were still in the top fifth.")
+
+
+def test_the_persistence_section_reaches_the_viewmodel_from_the_record():
+    vm = _assessment_vm(_rec(durability_line=_PERSISTENCE, durability_status="shown"))
+    assert (vm.roic_persistence, vm.roic_persistence_shown) == (_PERSISTENCE, True)
+    old = _assessment_vm(_rec())                       # a brief from before the section existed
+    assert (old.roic_persistence, old.roic_persistence_shown) == ("", False)
+
+
+def test_the_persistence_section_is_in_the_html_report_word_for_word_and_escaped():
+    html = _html(AssessmentVM(roic_persistence=_PERSISTENCE, roic_persistence_shown=True))
+    assert "ROIC persistence (computed from SEC data — not LLM-generated, not filing text)" in html
+    assert "Not a forecast &lt;for&gt; this company." in html and "<for>" not in html
+    assert "<li>This company: ROIC 31.2% &amp; above the cutoff.</li>" in html
+    assert "<li>Past cohorts: 59% and 54% were still in the top fifth.</li>" in html
+    assert "ROIC persistence" not in _html(AssessmentVM())
+
+
+def test_the_chat_message_points_to_the_report_and_never_shortens_the_reading():
+    shown = _text(AssessmentVM(roic_persistence=_PERSISTENCE, roic_persistence_shown=True))
+    (line,) = [ln for ln in shown if "ROIC persistence" in ln]
+    assert "caveats are in the report" in line and "59%" not in line and "31.2%" not in line
+    body = ("Not shown: banks, insurers and REITs are outside the study. The study covers only "
+            "non-financial 10-K filers with revenue of $100M or more and a top-fifth ROIC. "
+            "Absence says nothing about this company.")
+    (line,) = [ln for ln in _text(AssessmentVM(roic_persistence=body)) if "ROIC persistence" in ln]
+    assert line == "   📏 ROIC persistence: not shown — banks, insurers and REITs are outside the study"
+    assert not [ln for ln in _text(AssessmentVM()) if "ROIC persistence" in ln]

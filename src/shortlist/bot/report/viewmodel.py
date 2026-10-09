@@ -101,6 +101,10 @@ class AssessmentVM:
     unverified_count: int = 0
     inference_count: int = 0
     stub_sections: list[str] = field(default_factory=list)
+    # The deterministic "ROIC persistence" section, as research/durability.py wrote it.
+    # "" on a brief written with the section off, and on every brief from before it existed.
+    roic_persistence: str = ""
+    roic_persistence_shown: bool = False
     call_stance: str = ""
     call_label: str = ""
     call_conviction: str = ""
@@ -214,6 +218,8 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         unverified_count=int(rec.get("unverified_count") or 0),
         inference_count=int(rec.get("inference_count") or 0),
         stub_sections=[str(x) for x in (rec.get("stub_sections") or [])],
+        roic_persistence=str(rec.get("durability_line") or ""),
+        roic_persistence_shown=rec.get("durability_status") == "shown",
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",

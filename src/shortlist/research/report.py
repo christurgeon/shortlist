@@ -152,6 +152,11 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     ]
     if a.silent_count:
         lines += [f"_{a.silent_count} reconciliation(s) unaddressed by the filing._"]
+    # Deterministic, and the one section of the brief the model did not write
+    # (research/durability.py). Its heading says so, against the banner above.
+    if a.durability_line:
+        from .durability import HEADING
+        lines += ["", f"## {HEADING}", a.durability_line]
     # NO Lazy-Prices section. `text_similarity` is still computed and still stored in
     # the brief JSON, but rendering it stated a falsehood on every brief: the metric
     # retains stopwords, so on a full-length risk+MD&A section the cosine compresses
