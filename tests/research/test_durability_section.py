@@ -1,6 +1,7 @@
 """The "ROIC persistence" section: what it says, what it must always say, and that fetching it
 can never cost a brief."""
 import inspect
+import itertools
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -37,40 +38,68 @@ def _profile(**over):
 def test_the_section_quotes_the_verdicts_numbers():
     text = rd.brief_section(_profile(), TABLE)
     for want in ("ROIC 31.2% for the year ended 2025-12-31",
-                 "above 15.5%, the top-fifth cutoff among 1,787 non-financial 10-K filers",
-                 "59% (cohorts formed 2011-2017) and 54% (2018-2021)",
-                 "not counted: 16% and 11% of those cohorts",
-                 "invested capital +34% in the last year: the fastest-growing third",
-                 "by 15 points (95% interval 6 to 24) in the 2011-2017 cohorts and 20 points (9 to 31) in 2018-2021",
-                 "(54%, 59%) is capital that kept growing slowly",
-                 "varied by 2.1 points over the 4 years with a ROIC out of its last four: the steadiest third",
-                 "by 15 points (95% interval 3 to 26) in the 2011-2017 cohorts and 22 points (9 to 35) in 2018-2021",
-                 "By cohort year in 2018-2021: -4, -8, +35, +62 points",
-                 "Six predictors were tested. These two passed"):
+                 "above 15.5%, the top-fifth cutoff among the 1,787 firms in the study's fiscal-2025 universe",
+                 "59% of top-fifth firms (cohorts formed 2011-2017) and 54% (2018-2021)",
+                 "The 16% and 11% that did not",
+                 "invested capital +34% in the last year, the fastest-growing third",
+                 "(slowest third: under +2%; fastest third: over +14%; all sectors pooled, not sector-adjusted)",
+                 "15 percentage points more likely (95% interval 6 to 24) than one at the fastest-growing extreme",
+                 "in the 2011-2017 cohorts, and 20 points (9 to 31) in 2018-2021",
+                 "(54%, 59%) runs through capital that kept growing slowly",
+                 "over its last 4 years its ROIC percentile rank in the study's universe had a standard "
+                 "deviation of 2.1 percentile points, the steadiest third",
+                 "(steadiest third: under 3.1; least steady third: over 9.1)",
+                 "15 percentage points more likely (95% interval 3 to 26) than one at the least steady extreme",
+                 # `stability` has no 2011 cohort: its first window is 2012-2017, not 2011-2017.
+                 "in the 2012-2017 cohorts, and 22 points (9 to 35) in 2018-2021",
+                 "Eleven tests were run on six predictors; two (capital growth and steadiness) passed"):
         assert want in text, want
+    # The four by-cohort-year figures are in the verdict and NOT here: +62 is the number a
+    # hurried reader would keep. The sentence that the result rests on two years stays.
+    assert "+62" not in text and "+35" not in text
+
+
+def test_three_years_of_history_are_said_as_three():
+    line = next(ln for ln in rd.brief_section(_profile(years_seen=3), TABLE).split("\n")
+                if ln.startswith("- ROIC steadiness"))
+    assert "over the 3 of its last 4 years that have a ROIC its ROIC percentile rank" in line
 
 
 def test_the_caveats_the_verdict_requires_are_always_there():
     text = rd.brief_section(_profile(), TABLE)
     lines = text.split("\n")
-    assert lines[0] == ("Historical frequencies for an accounting ratio. Not a forecast for this "
+    assert lines[0] == ("A historical pattern in an accounting ratio, not a forecast for this "
                         "company. It says nothing about moat, price or returns.")
     growth = next(ln for ln in lines if ln.startswith("- Capital growth:"))
-    for clause in ("across all sectors, not within a sector",
+    for clause in ("all sectors pooled, not sector-adjusted",
                    "same two-digit SIC sector and cohort year, with ROIC rank and revenue rank held fixed",
-                   "on a straight-line fit across the rank range",
-                   "A little over half of the link",
+                   "These are the two ends of a straight-line fit, not a gap between thirds",
+                   "Among firms still profitable three years later, a little over half of the link",
                    "positive but not distinguishable from zero in 2018-2021",
-                   "Not tested: acquired capital, retained cash, a one-year profit spike",
-                   "a pattern in the ratio, not a finding about the business"):
+                   "This split is descriptive",
+                   "Not tested: acquired capital, cash and payouts (buybacks lower invested capital), "
+                   "a one-year profit spike",
+                   "a pattern in the ratio and in capital growth, not a finding about the business"):
         assert clause in growth, clause
     steady = next(ln for ln in lines if ln.startswith("- ROIC steadiness"))
-    for clause in ("a track-record measure: a longer view of the same ROIC level, not a separate trait",
-                   "The later result comes from the 2020 and 2021 cohorts; 2018 and 2019 went the other way"):
+    for clause in ("a track-record line: a longer view of the same ROIC level, not evidence of a separate trait",
+                   "With the same controls,",
+                   "The 2018-2021 result comes from the 2020 and 2021 cohorts; in 2018 and 2019 the "
+                   "effect went the other way"):
         assert clause in steady, clause
     cohorts = next(ln for ln in lines if ln.startswith("- Past cohorts:"))
-    assert "still reported usable annual data" in cohorts and "are not counted" in cohorts
-    assert "a group average, not adjusted for this company's ROIC level" in cohorts
+    for clause in ("were again at or above the top-fifth cutoff three years later",
+                   "Only firms that still filed usable 10-K data then are counted",
+                   "(stopped filing, for example after a takeover or a failure; filed late; or left an "
+                   "input untagged) are left out",
+                   "A few counted firms, under 4%, had too little invested capital for a ROIC by then "
+                   "and count as held because their operating income was positive",
+                   "a group average, not adjusted for this company's ROIC level"):
+        assert clause in cohorts, clause
+    assert lines[-1].endswith("which share firms with the earlier cohorts, so that check is not an "
+                              "independent sample.")
+    # One unit per number: an effect is in percentage points, a rank spread in percentile points.
+    assert " points more often" not in text and "varied by" not in text
 
 
 def test_the_section_never_calls_it_a_moat_or_a_good_sign():
@@ -107,13 +136,14 @@ def test_a_predictor_that_cannot_be_computed_drops_its_line():
 
 def test_the_company_line_says_when_the_reading_is_weaker():
     plain = rd.brief_section(_profile(), TABLE)
-    for clause in ("not built yet", "within 1 point of the cutoff", "book equity"):
+    for clause in ("no cutoff for this company's fiscal year", "within 1 percentage point", "book equity"):
         assert clause not in plain
-    assert "The cutoff for this company's own fiscal year is not built yet." in rd.brief_section(
-        _profile(bucket=2026, period_end="2026-12-31"), TABLE)
+    assert ("The study has no cutoff for this company's fiscal year yet, so the fiscal-2025 cutoff is "
+            "used.") in rd.brief_section(_profile(bucket=2026, period_end="2026-12-31"), TABLE)
     floor = TABLE["floors"][2025]
-    assert "It is within 1 point of the cutoff." in rd.brief_section(_profile(roic=floor + 0.0099), TABLE)
-    assert "within 1 point" not in rd.brief_section(_profile(roic=floor + 0.0101), TABLE)
+    assert "It is within 1 percentage point of the cutoff." in rd.brief_section(
+        _profile(roic=floor + 0.0099), TABLE)
+    assert "within 1 percentage point" not in rd.brief_section(_profile(roic=floor + 0.0101), TABLE)
     assert ("No debt is reported in the tagged data, so invested capital here is book equity."
             in rd.brief_section(_profile(has_debt=False), TABLE))
 
@@ -134,12 +164,20 @@ def test_rounding_is_half_up_on_the_printed_decimal():
 def test_every_reason_has_one_sentence_and_no_other():
     assert set(rd._REASONS) == set(dp.NOT_SHOWN)
     detail = {"roic": 0.091, "floor": 0.1553, "period_end": "2025-12-31", "table_year": 2025}
+    data_limits = {dp.STALE, dp.REFERENCE_OUT_OF_DATE, dp.FACTS_LAG_FILING, dp.UNAVAILABLE}
     for reason in dp.NOT_SHOWN:
         text = rd.not_shown(reason, detail)
-        assert text.startswith("Not shown: ") and text.endswith("Absence says nothing about this company.")
-        assert "{" not in text and "moat" not in text.lower()
-    assert "ROIC 9.1% for the year ended 2025-12-31 (the study's basis) is below the 15.5% top-fifth cutoff" in (
-        rd.not_shown(dp.NOT_TOP_FIFTH, detail))
+        assert text.startswith("Not shown: ") and "{" not in text and "moat" not in text.lower()
+        # A name the study does not cover is told what it covers. A name whose DATA could not be
+        # used is told that, and never that it is "not covered".
+        if reason in data_limits:
+            assert text.endswith("This is a limit of the data, not a reading of the company.")
+            assert "The study covers only" not in text
+        else:
+            assert text.endswith("Absence says nothing about this company.")
+        assert "buyback" not in text            # one cause among several, and a judgment
+    assert ("ROIC 9.1% for the year ended 2025-12-31 (the study's basis) is below 15.5%, the top-fifth "
+            "cutoff of fiscal 2025") in rd.not_shown(dp.NOT_TOP_FIFTH, detail)
 
 
 # ---------------------------------------------------------------- the fetch
@@ -293,10 +331,24 @@ def test_a_response_over_the_size_cap_is_dropped(env, monkeypatch):
     assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.UNAVAILABLE
 
 
-def test_a_response_slower_than_the_deadline_is_dropped(env, monkeypatch):
-    clock = iter([0.0, 16.0, 17.0, 18.0])
+def test_the_deadline_bounds_the_whole_request(env, monkeypatch):
+    # An httpx timeout is per phase. Each phase gets a third of the 15 s deadline, and no read
+    # starts after two thirds of it, so connecting + headers + the last read end within 15 s.
+    net = _Net(_json(_body(FOUR_YEARS)))
+    clock = itertools.chain([0.0], itertools.repeat(9.9))
     monkeypatch.setattr(rd.time, "monotonic", lambda: next(clock))
-    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.UNAVAILABLE
+    assert _fetch(env, net)[1] == dp.SHOWN
+    assert net.requests[0].extensions["timeout"] == dict.fromkeys(("connect", "read", "write", "pool"), 5.0)
+
+    clock = itertools.chain([0.0], itertools.repeat(10.1))
+    assert _fetch(env, net, today=TODAY + timedelta(days=1))[1] == dp.UNAVAILABLE
+
+
+def test_the_deadline_is_a_config_knob(env, monkeypatch):
+    env.config["research"]["durability"]["deadline_s"] = 6
+    net = _Net(_json(_body(FOUR_YEARS)))
+    assert _fetch(env, net)[1] == dp.SHOWN
+    assert net.requests[0].extensions["timeout"]["read"] == 2.0
 
 
 def test_a_bank_gets_its_reason_without_a_request(env, monkeypatch):
@@ -319,6 +371,7 @@ def test_a_company_the_study_does_not_cover_gets_its_reason(env):
     low = {**FOUR_YEARS, 2025: (50.0, 400.0)}                   # a ROIC of 9.9%
     text, status = _fetch(env, _Net(_json(_body(low))))
     assert status == dp.NOT_TOP_FIFTH and "ROIC 9.9% for the year ended 2025-12-31" in text
+    assert "the top-fifth cutoff of fiscal 2025" in text
     assert _fetch(env, _Net(_json(_body(FOUR_YEARS, form="20-F"))), today=TODAY + timedelta(days=1)) == (
         rd.not_shown(dp.NO_ANNUAL_FACTS), dp.NO_ANNUAL_FACTS)
 

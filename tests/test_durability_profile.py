@@ -147,7 +147,8 @@ def test_a_roic_below_the_floor_reports_both_numbers():
     low = {**STEADY, 2025: (100.0, 500.0)}                  # 15.8% against a floor of 18%
     prof, status, detail = _profile(_raw(low))
     assert (prof, status) == (None, dp.NOT_TOP_FIFTH)
-    assert detail == {"period_end": "2025-12-31", "roic": 100.0 * 0.79 / 500.0, "floor": 0.18}
+    assert detail == {"period_end": "2025-12-31", "roic": 100.0 * 0.79 / 500.0, "floor": 0.18,
+                      "table_year": 2025}
 
 
 def test_a_roic_exactly_on_the_floor_is_in():
