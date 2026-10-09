@@ -7,7 +7,7 @@ the thesis or the call, and it is not in `bundle.segments()`, so it cannot verif
 Giving it to the model is a separate decision that needs its own measurement of MISUSE (a
 "confirmed moat" story); see docs/audits/2026-10-08-moat-durability-phase1.md.
 
-WHAT IT MAY SAY is fixed by docs/audits/2026-10-04-moat-durability-verdict.md and its two
+WHAT IT MAY SAY is fixed by docs/audits/2026-10-04-moat-durability-verdict.md and its
 addenda. Every sentence below is licensed there, and the caveats are part of the licence:
 - the heading is "ROIC persistence", never "moat": the study measured an accounting ratio;
 - the base rate leaves out firms with no usable annual data three years later, and says so;
@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -41,6 +42,7 @@ from typing import Optional
 
 from ..durability import TAX, compact_facts
 from ..durability_profile import (
+    BEFORE_REFERENCE,
     FACTS_LAG_FILING,
     LATEST_YEAR_UNUSABLE,
     LOW_CAPITAL,
@@ -70,6 +72,7 @@ DEFAULT_DEADLINE_S = 15.0
 # The largest company-facts bodies are tens of megabytes. Past this, the body is not one.
 MAX_BYTES = 64 * 1024 * 1024
 CACHE_KEEP_DAYS = 7
+_CACHE_DAY = re.compile(r"CIK\d{10}-(\d{4}-\d{2}-\d{2})\.json")
 # A 10-K is filed 30 to 90 days after its year end. When the brief's 10-K was filed more than
 # this long after the latest year end in the facts, the facts do not hold that 10-K's year: a
 # same-day cache from before the filing, or the API lagging it. (A 10-K that is itself this
@@ -98,16 +101,19 @@ _REASONS = {
                  "total assets, so the study cannot compute a ROIC. This says nothing about how "
                  "much the business earns",
     REVENUE_BELOW_FLOOR: "revenue is under $100M",
-    REFERENCE_OUT_OF_DATE: "the reference table (fiscal {table_year}) does not cover the year ended "
-                           "{period_end}",
+    REFERENCE_OUT_OF_DATE: "the reference table (fiscal {table_year}) is too old for the year "
+                           "ended {period_end}",
+    BEFORE_REFERENCE: "its latest year on file ended {period_end}, which is before the year the "
+                      "reference table is built for (fiscal {table_year}); the section needs its "
+                      "newer 10-K",
     NO_PREDICTOR: "neither capital growth nor ROIC steadiness can be computed from its history",
     FACTS_LAG_FILING: "SEC data does not yet include the latest 10-K",
     UNAVAILABLE: "SEC data could not be read",
 }
-_DATA_REASONS = (STALE, REFERENCE_OUT_OF_DATE, FACTS_LAG_FILING, UNAVAILABLE)
+_DATA_REASONS = (STALE, REFERENCE_OUT_OF_DATE, BEFORE_REFERENCE, FACTS_LAG_FILING, UNAVAILABLE)
 _GROWTH_THIRDS = ("fastest-growing", "middle", "slowest-growing")
 _STEADY_THIRDS = ("least steady", "middle", "steadiest")
-_WORDS = {2: "two", 6: "six", 11: "Eleven"}
+_WORDS = {2: "two", 3: "Three", 6: "six", 11: "Eleven"}
 
 
 def _today() -> date:               # seam for tests, options.py pattern
@@ -214,7 +220,7 @@ def _steadiness_line(p: DurabilityProfile, table: dict) -> str:
     stab = table["effects"]["stability"]
     low, high = cut_points(table)["stability"]
     years = ("its last 4 years" if p.years_seen == 4
-             else f"the {p.years_seen} of its last 4 years that can be ranked")
+             else f"the {p.years_seen} of its last 4 years that have a ROIC")
     return (f"- ROIC steadiness (a track-record line: a longer view of the same ROIC level, not "
             f"evidence of a separate trait): over {years} its ROIC percentile rank in the study's "
             f"universe had a standard deviation of {_points(p.stability_spread, 1)} percentile "
@@ -236,20 +242,25 @@ def brief_section(p: DurabilityProfile, table: dict) -> str:
     if p.stability_spread is not None:
         lines.append(_steadiness_line(p, table))
     run, tested, passed = table["tests_run"], table["predictors_tested"], len(table["passed"])
+    first, later = (_span(table["cohorts"][w]["years"]) for w in ("discovery", "holdout"))
+    survivors = table["discovery_survivors"]
+    # The pass rule INCLUDES the later cohorts. "Two passed and were then checked" would read
+    # as a pass plus a confirmation; a third test cleared the first cohorts and failed there.
     lines.append(f"- {_WORDS.get(run, run)} tests were run on {_WORDS.get(tested, tested)} "
-                 f"predictors; {_WORDS.get(passed, passed)} (capital growth and steadiness) passed. "
-                 f"Both were then checked on the {_span(table['cohorts']['holdout']['years'])} "
-                 f"cohorts, which share firms with the earlier cohorts, so that check is not an "
-                 f"independent sample.")
+                 f"predictors. {_WORDS.get(survivors, survivors)} cleared the {first} cohorts; "
+                 f"{_WORDS.get(passed, passed)} of them (capital growth and steadiness) also "
+                 f"cleared the {later} cohorts, which share firms with the earlier ones, so the "
+                 f"second stage is not an independent sample.")
     return "\n".join(lines)
 
 
 def not_shown(reason: str, detail: Optional[dict] = None) -> str:
     """The section body for a name the study does not cover, or whose data could not be used."""
     d = dict(detail or {})
-    for key in ("roic", "floor"):
-        if key in d:
-            d[key] = _pct(d[key], 1)
+    if "roic" in d and "floor" in d:
+        # Never "ROIC 15.5% is below 15.5%": a second decimal when the first cannot tell them apart.
+        places = 1 if _pct(d["roic"], 1) != _pct(d["floor"], 1) else 2
+        d["roic"], d["floor"] = _pct(d["roic"], places), _pct(d["floor"], places)
     tail = _DATA_LIMIT if reason in _DATA_REASONS else _SCOPE
     return f"Not shown: {_REASONS[reason].format(**d)}. {tail}"
 
@@ -270,8 +281,9 @@ def _write_cache(path: Path, record: dict, today: date) -> None:
         tmp.write_text(json.dumps(record, separators=(",", ":")))
         os.replace(tmp, path)
         cutoff = (today - timedelta(days=CACHE_KEEP_DAYS)).isoformat()
-        for old in path.parent.glob("CIK*-*.json"):
-            if old.stem[-10:] < cutoff:
+        for old in path.parent.glob("CIK*-*.json*"):        # the day files and any orphan temp
+            day = _CACHE_DAY.match(old.name)
+            if day and day.group(1) < cutoff:
                 old.unlink(missing_ok=True)
     except OSError:
         with contextlib.suppress(OSError):
@@ -307,8 +319,12 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
     that drips one header byte inside every read timeout is never timed out at all (measured
     2026-10-09 on a loopback socket: 79 s against a 1 s timeout, ended only by the header size
     limit), and name resolution is outside every httpx timeout. So the request runs in a
-    daemon thread and the caller waits `deadline_s` for it, no longer. An abandoned thread ends
-    on its own timeouts and holds one socket until then; it cannot delay a brief."""
+    daemon thread and the caller waits `deadline_s` for it, no longer. It cannot delay a brief.
+
+    AN ABANDONED THREAD IS NOT STOPPED. It holds one socket until the server ends the response
+    or one of its own read timeouts fires, and `stop` is seen only between two body chunks. A
+    brief makes at most two requests (the lag re-read), so the section costs at most twice
+    `deadline_s`."""
     sec_throttle()("durability")                # the one process-wide sec.gov budget
     box: dict = {}
     stop = threading.Event()
@@ -316,7 +332,7 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
     def work() -> None:
         try:
             box["body"] = _stream(cik, identity, deadline_s, transport, stop)
-        except BaseException as e:      # noqa: BLE001 — carried to the caller below
+        except Exception as e:          # noqa: BLE001 — carried to the caller below
             box["error"] = e
 
     worker = threading.Thread(target=work, name="durability-fetch", daemon=True)
@@ -327,7 +343,7 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
         raise TimeoutError("the request is over the deadline")
     if "error" in box:
         raise box["error"]
-    return box["body"]
+    return box["body"]              # KeyError if the worker died without either: caught above us
 
 
 def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
@@ -348,8 +364,8 @@ def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
     identity = os.environ.get("SEC_IDENTITY")
     if not identity:
         raise RuntimeError("SEC_IDENTITY is not set")
-    deadline = float(cfg.get("deadline_s") or DEFAULT_DEADLINE_S)
-    body = json.loads(_download(cik, identity, deadline, transport))
+    body = json.loads(_download(cik, identity, _number(cfg, "deadline_s", DEFAULT_DEADLINE_S),
+                                transport))
     # An SEC block page is not JSON; an error object has no `facts`; another company's body
     # would be a wrong section with nothing to show for it.
     if (not isinstance(body, dict) or not isinstance(body.get("facts"), dict)
@@ -369,11 +385,20 @@ def _cik(ticker: str) -> int:
     return int(Company(ticker).cik)
 
 
+def _number(cfg: dict, key: str, default: float) -> float:
+    """A positive number from the config, or the default: a null or mistyped knob must not turn
+    every section into "SEC data could not be read"."""
+    value = cfg.get(key)
+    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+    return float(value) if ok else float(default)
+
+
 def _lags(bundle, period_end: Optional[str]) -> bool:
     filed = str(getattr(getattr(bundle, "tenk", None), "filing_date", "") or "")[:10]
-    if not filed or not period_end:
+    try:
+        return (date.fromisoformat(filed) - date.fromisoformat(period_end or "")).days > LAG_DAYS
+    except ValueError:              # no date, or one that is not ISO: nothing to compare
         return False
-    return (date.fromisoformat(filed) - date.fromisoformat(period_end)).days > LAG_DAYS
 
 
 def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, str]:
@@ -387,7 +412,7 @@ def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, s
     if reason:                                  # no request for a bank
         return not_shown(reason), reason
     cik = _cik(card.ticker)
-    max_gap = int(cfg.get("max_table_gap_years", 1))
+    max_gap = int(_number(cfg, "max_table_gap_years", 1))
 
     def read(use_cache: bool):
         compacted, fresh = fetch_compacted(cik, cfg, today=today, use_cache=use_cache,

@@ -40,7 +40,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   (a test needed an effect of about 12 to 16 points to clear its bar). **This is a claim about
   an accounting ratio, not returns**: nothing here shows that predicted persistence pays. It
   licenses a `/deep` display line only — not a scoring leg, gate, flag or discovery list.
-  **Shipped dark 2026-10-08 as the "ROIC persistence" section of the brief
+  **Built 2026-10-09 as the "ROIC persistence" section of the brief, off by default
   (`research.durability.enabled: false`): deterministic, display only, never shown to the
   model** — `2026-10-08-moat-durability-phase1.md`. Do not put the line in the prompt without
   a measurement of MISUSE first (that note, "For a Phase 2").

@@ -5,7 +5,7 @@ became a section of the `/deep` brief: what was built, what was decided and at w
 the evidence that the section is computed on the basis the study measured. It is evidence as
 of its date. For how the code behaves today, read `docs/RESEARCH.md`.
 
-**Status: shipped dark.** `research.durability.enabled` is `false`. Nothing changes in a brief
+**Status: built 2026-10-08 and 2026-10-09, off.** `research.durability.enabled` is `false`. Nothing changes in a brief
 until it is turned on.
 
 ## What was built
@@ -18,7 +18,7 @@ markdown brief and in the Telegram HTML report.
   firms on the two predictors that passed (growth of invested capital; steadiness of the ROIC
   rank), each with the caveats the verdict attaches to it.
 - For every other company: one sentence, "Not shown: …", with a reason from a closed set of
-  twelve.
+  thirteen.
 
 It is computed after the model call. The model never sees it.
 
@@ -65,8 +65,10 @@ of every reader, and a 20-F row in raw company facts is no longer read.
 
 **The code digest changed.** `probe_durability.py: CODE` names `durability.py`,
 `durability_data.py`, `durability_study.py` and `config.yaml`, all edited here. The raw outputs
-carry `code_sha256` `f7780551…16b6d9`; with this change the digest is `8b351c4a…0a3a13f7`. No
-study step was re-run. The table loader, the profile and the section are deliberately in
+carry `code_sha256` `f7780551…16b6d9`, and the code no longer has that digest. (No new value
+is given here: `config.yaml` is in `CODE`, so any later config edit moves it again.) Three
+stale comments in the study code, left alone in Phase 0 only to keep the digest, were corrected
+in the same change. No study step was re-run. The table loader, the profile and the section are deliberately in
 modules outside `CODE` (`durability_profile.py`, `research/durability.py`), so later edits to
 them do not move the digest again.
 
@@ -97,7 +99,8 @@ What the digests do not reach, and what covers it:
   compacted file): pinned literally in `tests/test_durability.py`.
 - The form filter (the compacted file has no foreign row to drop): a unit test on raw facts.
 
-A fresh reviewer ran sixteen deliberate mutations of the moved code against these digests.
+A fresh reviewer ran sixteen deliberate mutations of the moved code against these digests (on
+scratch copies; a record of the review, not reproducible evidence).
 Ten changed a digest, two crashed, two were caught by a unit test only (the form filter, a
 missing floor), and two survived: a tag dropped from `KEEP_TAGS`, and the year-gap constant.
 Both now have a test.
@@ -148,8 +151,13 @@ that window is missing.
 
 A company one fiscal year past the table is ranked against fiscal 2025 and the section says so.
 Two years past, it is not shown. The table lasts until fiscal-2027 10-Ks, from about September
-2027. To refresh it, compact a new SEC bulk file with the study's `fetch` step and run the
-builder; the builder cannot change a measured effect.
+2027.
+
+**A refresh is not built. Do not run `probe_durability.py fetch` in this tree to make one:** it
+overwrites `sic.json` and `fetch.json` of the study, whose hashes the raw outputs name, and the
+builder would still read the committed 2026-10-07 data file and a hard-coded table year. A
+refresh needs a builder that takes its own data directory and its own table year. When it is
+built, it cannot change a measured effect: those are copied from the study's outputs.
 
 ## Three guards that the study does not have
 
@@ -166,10 +174,13 @@ The study never met these cases; the live path does.
   more than 300 days after the latest year end in the facts, the facts are fetched once more
   past the day cache; if they still lag, the section says so.
 
-One case needs no guard and is worth knowing. In the weeks before a company files its new 10-K,
-its latest year on file is one year behind the table's last year. The table holds that year, so
-the company is shown for it, read against that year's own universe and cutoff; its fourth
-history year is before the table and is not seen.
+**A company whose latest year on file is before the table's year is not shown**, and is told
+that the section needs its newer 10-K. This is a company in the weeks before it files. The
+table does hold a list for fiscal 2024, but it is 2024 as seen in the fiscal-2025 snapshot,
+without the firms that left in between: 1,766 firms and a cutoff of 15.92%, against the
+study's own fiscal-2024 universe of 1,812 firms and 15.75%. Shown against it, the section would
+name a population that is not the study's, and the thirds would still come from the 2025
+cohort. (An earlier fix on this branch did show it; the final review caught that.)
 
 ## What the section can and cannot fail
 
@@ -182,9 +193,10 @@ history year is before the table and is not seen.
   HEADERS ran for 79 s, stopped only by the header size limit. (A one-off measurement on the
   reviewer's scratch scripts; the test that holds the behaviour is
   `test_the_deadline_bounds_the_whole_request_whatever_the_server_does`.) The request now runs
-  in a daemon thread and the caller waits `deadline_s` (15 s) for it. An abandoned thread ends
-  on its own timeouts. Past `research_phase_budget_s` every brief of a run is lost, which is
-  why an optional section must not be able to wait.
+  in a daemon thread and the caller waits `deadline_s` (15 s) for it. An abandoned thread is not
+  stopped; it ends when the server ends the response or a read times out. Past
+  `research_phase_budget_s` every brief of a run is lost, which is why an optional section
+  must not be able to wait.
 - `fetch_section` never raises. Malformed company facts make `annual_series` raise; that costs
   the section and never the brief.
 - `research/assess.py` is not edited. Both prompts are byte-identical with the flag on or off.
@@ -209,11 +221,13 @@ history year is before the table and is not seen.
   and the reproduction-gate counts, and made the reference-year argument reproducible.
 - **The profile, the section and the wiring.** The first reviewer stalled and returned nothing.
   It was replaced by a scripted mutation pass and two narrower fresh Sonnet reviews.
-  - *Mutations:* 75 deliberate bugs in the profile, the section, the fetch, the wiring, the
-    cache key and the Telegram rendering. 70 turned a test red at once; each of the other five
-    now has a test (a late 10-K replaced by an older year end in the same bucket; a tie exactly
-    on a third boundary, twice; the cutoff year named for a below-cutoff company; a config
-    block of the wrong type).
+  - *Mutations:* 84 deliberate bugs in the profile, the section, the fetch, the wiring, the
+    cache key and the Telegram rendering, in three passes as the code changed. 79 turned a
+    test red at once; each of the other five now has a test (a late 10-K replaced by an older
+    year end in the same bucket; a tie exactly on a third boundary, twice; the cutoff year
+    named for a below-cutoff company; a config block of the wrong type). The mutation scripts
+    were scratch files and are not committed, so these counts are a record of the review and
+    not reproducible evidence; the tests they led to are.
   - *Failure paths:* the deadline, the pre-10-K case, the cut points and the cache order above
     all come from this review, with a closed stderr and an orphan temp file.
   - *Wording against the verdict:* every printed number matched. The sentences changed: the
@@ -227,6 +241,14 @@ history year is before the table and is not seen.
     "the study does not cover it"; the four by-cohort-year figures of `stability` were removed
     (the +62 is what a hurried reader would keep) and the sentence that the result rests on
     2020 and 2021 stays.
+- **The whole branch** (one fresh Opus reviewer): "merge-ready after fixes". The code was safe
+  with the flag off and the study stood. What it found, all fixed here: the documented table
+  refresh was wrong and would have overwritten two evidence files of the study; the
+  before-the-new-10-K case named a population that is not the study's (now not shown); two
+  cutoff figures in this note were inconsistent and one was held by no test; the last line of
+  the section read as "two passed, then were checked" when the pass rule includes the later
+  cohorts and a third test cleared the first cohorts and failed there; a below-cutoff sentence
+  could print the same number twice.
 
 ## For a Phase 2 that gives the line to the model
 
@@ -250,16 +272,26 @@ Not built. If it is ever proposed, these are the findings to start from.
 
 ## Limits
 
-- A fiscal-2026 company is ranked against fiscal-2025 firms. In the table the cutoffs of fiscal
-  2022 to 2025 are 18.9%, 16.6%, 15.9% and 15.5%, and 41 of the 357 firms in the 2025 top fifth
-  are within one point above the cutoff (33 more are within one point below it). The section
-  says when a company is within one point.
+- A fiscal-2026 company is ranked against fiscal-2025 firms. 41 of the 357 firms in the 2025 top
+  fifth are within one point above the cutoff, and 33 more are within one point below it. The
+  section says when a company is within one point.
+- The table's cutoffs for fiscal 2022 to 2024 (18.9%, 16.6%, 15.9%) are those years as seen in
+  the fiscal-2025 snapshot and are higher than each year's own cutoff, because the lists omit
+  the firms that left before 2025 (fiscal 2024 in its own snapshot: 15.75%,
+  `completeness.floor_2024_own`). They are used only to rank a company's own earlier years for
+  the steadiness measure, as the study does for a cohort's history.
+- A brief is cached for the day with the section it was written with. A section that failed
+  ("SEC data could not be read", "does not yet include the latest 10-K") stays in that brief
+  until the day bucket turns or the brief is refreshed, as for the proxy and options lines.
+- A stalled download is abandoned after `deadline_s`, not stopped: its thread holds one socket
+  until the server ends the response or a read times out. A brief makes at most two requests.
 - The thirds are positions across all top-fifth firms; the effects are within a sector. One
   sector can sit mostly in one third.
 - Before the year end plus 120 days the profile reads what is on file today, which is less
   than the study read at 120 days if an amendment arrives in between.
 - A company that does not tag operating income, equity, total assets or revenue under the tags
-  the study reads is not shown. Exxon Mobil is one: it reports no operating-income line.
+  the study reads is not shown. Exxon Mobil is one: its record in the committed data file has
+  no `OperatingIncomeLoss` tag.
 - Zero tagged debt reads as no debt, as in the study (39% to 51% of each discovery cohort, per
   the verdict). The section says so per company.
 - Current SIC decides the sector mask, as in the study.

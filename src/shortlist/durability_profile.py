@@ -17,7 +17,8 @@ THREE GUARDS HERE ARE NOT IN THE STUDY, because the study never met their cases:
 - an unknown SIC abstains (in the study 12,523 of 12,539 filers had one; live, a failed SIC
   fetch would let a bank through the sector mask);
 - `investment` is dropped unless the two year ends are about a year apart (YEAR_GAP_DAYS);
-- the reference table covers a few fiscal years, so a year outside them abstains."""
+- the reference table is for ONE fiscal year. A company one year past it is read against it
+  and told so; one further out, or one whose latest year on file is BEFORE it, abstains."""
 from __future__ import annotations
 
 import json
@@ -42,7 +43,7 @@ TABLE_SCHEMA = 1
 _TABLE_PATH = Path(__file__).with_name("durability_table.json")
 _YEAR_KEYED = ("universe", "floors")
 _TABLE_KEYS = ("table_year", "universe", "floors", "cohort", "cohorts", "effects", "passed",
-               "predictors_tested", "tests_run")
+               "predictors_tested", "tests_run", "discovery_survivors")
 
 # Days between two consecutive fiscal year ends. A fiscal-year change puts two year ends in
 # one bucket and the later one wins, so "the year before" can be two years back. No member of
@@ -65,12 +66,13 @@ LATEST_YEAR_UNUSABLE = "latest_year_unusable"
 LOW_CAPITAL = "low_capital"
 REVENUE_BELOW_FLOOR = "revenue_below_floor"
 REFERENCE_OUT_OF_DATE = "reference_out_of_date"
+BEFORE_REFERENCE = "before_reference"
 NOT_TOP_FIFTH = "not_top_fifth"
 NO_PREDICTOR = "no_predictor"
 FACTS_LAG_FILING = "facts_lag_filing"
 NOT_SHOWN = (UNAVAILABLE, SIC_UNKNOWN, SECTOR_NOT_COVERED, NO_ANNUAL_FACTS, STALE,
              LATEST_YEAR_UNUSABLE, LOW_CAPITAL, REVENUE_BELOW_FLOOR, REFERENCE_OUT_OF_DATE,
-             NOT_TOP_FIFTH, NO_PREDICTOR, FACTS_LAG_FILING)
+             BEFORE_REFERENCE, NOT_TOP_FIFTH, NO_PREDICTOR, FACTS_LAG_FILING)
 
 
 # ---------------------------------------------------------------- the reference table
@@ -124,7 +126,7 @@ def load_table() -> Optional[dict]:
 class DurabilityProfile:
     period_end: str                     # the latest reported fiscal year end
     bucket: int                         # the study's fiscal-year bucket of that end
-    reference_year: int                 # the table year whose universe and floor it is read against
+    reference_year: int                 # the table's year: the universe and floor it is read against
     roic: float
     floor: float                        # the top-fifth floor of the reference year
     universe_n: int
@@ -218,9 +220,14 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
     """(profile, SHOWN, {}) or (None, a NOT_SHOWN code, the detail its sentence needs).
 
     `compacted` is the output of `durability.compact_facts`. A name whose fiscal year is past
-    the table's last year is ranked against that year, up to `max_gap` years. A history year
-    before the table's first year is not seen: that is a company in the weeks before its new
-    10-K, whose latest year on file is one the table does hold.
+    the table's year is ranked against that year, up to `max_gap` years.
+
+    A NAME WHOSE LATEST YEAR ON FILE IS BEFORE THE TABLE'S YEAR ABSTAINS (a company in the
+    weeks before its new 10-K). The table does hold lists for the three years before its own,
+    but they are those years AS SEEN IN THE TABLE-YEAR SNAPSHOT: they omit every firm that
+    left in between, so their floor is not that year's floor (fiscal 2024: 15.92% in the
+    table against 15.75% in its own snapshot), and the cohort the thirds come from is the
+    table year's. Shown, the section would name a population that is not the study's.
 
     IT CAN RAISE on malformed facts (a `val` that is not a number, a list where a dict is
     expected): `annual_series` does. `research/durability.py` is where that is caught."""
@@ -234,18 +241,19 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
         return None, reason, detail
     t, snap = latest
     table_year = table["table_year"]
-    first_year = min(table["universe"])
-    if t - table_year > max_gap or t < first_year:
+    if t < table_year:
+        return None, BEFORE_REFERENCE, {**detail, "table_year": table_year}
+    if t - table_year > max_gap:
         return None, REFERENCE_OUT_OF_DATE, {**detail, "table_year": table_year}
 
     def ref(y: int) -> int:
         return min(y, table_year)
 
-    now, floor = snap[t], table["floors"][ref(t)]
+    now, floor = snap[t], table["floors"][table_year]
     if now.roic < floor:
         return None, NOT_TOP_FIFTH, {**detail, "roic": now.roic, "floor": floor,
-                                     "table_year": ref(t)}
-    years = [y for y in range(t - HISTORY + 1, t + 1) if y >= first_year]
+                                     "table_year": table_year}
+    years = [y for y in range(t - HISTORY + 1, t + 1) if ref(y) in table["universe"]]
     hist = {y: table["universe"][ref(y)] for y in years}
     floors = {y: table["floors"][ref(y)] for y in years}
     _track, stability, _in_top, seen = history_predictors(snap, t, hist, floors)
@@ -254,8 +262,8 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
         return None, NO_PREDICTOR, detail
     cohort = table["cohort"]
     return DurabilityProfile(
-        period_end=now.end, bucket=t, reference_year=ref(t), roic=now.roic, floor=floor,
-        universe_n=len(table["universe"][ref(t)]), has_debt=now.debt > 0,
+        period_end=now.end, bucket=t, reference_year=table_year, roic=now.roic, floor=floor,
+        universe_n=len(table["universe"][table_year]), has_debt=now.debt > 0,
         capital_growth=None if inv is None else -inv,
         investment_third=None if inv is None else third(inv, cohort["investment"]),
         stability_spread=None if stability is None else -stability,

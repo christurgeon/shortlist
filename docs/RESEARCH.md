@@ -161,14 +161,17 @@ part of a brief the model did not write, and the model never sees it.
 - **The reference table.** `src/shortlist/durability_table.json` holds the ROIC universe and
   the top-fifth cohort of **fiscal 2025**, and the measured effects, which are copied from the
   study's raw outputs. A name one fiscal year past the table is ranked against it and the
-  section says so; further out it is not shown. To refresh it on new SEC data, run the
-  study's `fetch` step for a new compacted file and then
-  `docs/audits/scripts/build_durability_table.py`; never raise `max_table_gap_years` instead.
-  A rebuild cannot change a measured effect.
+  section says so; further out it is not shown, and neither is a name whose latest year on
+  file is before the table's (a company in the weeks before its new 10-K). **A refresh on new
+  SEC data is not built.** Do not run `probe_durability.py fetch` to make one: it overwrites
+  two evidence files of the study. Do not raise `max_table_gap_years` to keep an old table
+  alive. The table lasts until fiscal-2027 10-Ks, from about September 2027
+  (`docs/audits/2026-10-08-moat-durability-phase1.md` → The reference year).
 - **Failure.** `fetch_section` never raises. A bad response, malformed facts or a missing
   table give "Not shown: SEC data could not be read" and one redacted stderr line. The request
   runs in a daemon thread and the caller waits `deadline_s` for it: an httpx timeout is per
-  phase and per read, and is not a deadline.
+  phase and per read, and is not a deadline. A brief is cached for the day with the section it
+  was written with, so a section that failed stays until the day bucket turns or `--refresh`.
 
 ## Quote verification
 

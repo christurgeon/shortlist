@@ -329,7 +329,7 @@ def _run(rows: list[ds.Row], *, with_bounds: bool) -> dict:
 
 
 def _descriptive(rows: list[ds.Row]) -> dict:
-    """Reported, never decision-bearing (prereg §5.9)."""
+    """Reported, never decision-bearing (pre-registration, "Reported, not decision-bearing")."""
     no_energy = [r for r in rows if r.sic2 not in ENERGY_MINING_SIC2]
     def beta(sub, p, o):
         try:

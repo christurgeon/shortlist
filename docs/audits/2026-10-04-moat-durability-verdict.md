@@ -513,12 +513,16 @@ before the first real-data output…") holds on `main` by commit order and autho
 
 **Phase 1 changed files that `probe_durability.py: CODE` names.** The raw outputs carry
 `code_sha256` `f7780551…16b6d9`, the digest of the code from `8f86335` to the end of the
-branch. With the `/deep` section
-(`2026-10-08-moat-durability-phase1.md`) the digest is `8b351c4a…0a3a13f7`:
+branch. With the `/deep` section (`2026-10-08-moat-durability-phase1.md`) the code no longer
+has that digest. No new value is recorded: `config.yaml` is in `CODE`, so any config edit on
+`main` moves the digest again. What changed in `CODE`:
 
 - `src/shortlist/durability.py` gained the 10-K form filter, the compaction and the arithmetic
   of the two passing predictors, moved from the two study modules;
 - `src/shortlist/backtest/durability_data.py` and `durability_study.py` now import them;
+- three comments in the study code that Phase 0 had left stale only to keep the digest were
+  corrected (a spec citation in `durability.py`, the note on the frames targets in
+  `durability_study.py`, a section reference in `probe_durability.py`);
 - `config.yaml` gained one block, `research.durability`. Its `sectors` block, the only part the
   study reads, is unchanged, and a test ties its hash to `gates.json`.
 

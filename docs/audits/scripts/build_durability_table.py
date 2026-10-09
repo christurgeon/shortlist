@@ -77,6 +77,11 @@ def _reference(firms) -> dict:
         "completeness": {
             f"universe_{TABLE_YEAR - 1}": n_before,
             f"universe_{TABLE_YEAR}": n_now,
+            # The prior year's floor in ITS OWN snapshot. `floors` holds the same year as seen
+            # in the reference-year snapshot, which is higher: that list omits the firms that
+            # left in between.
+            f"floor_{TABLE_YEAR - 1}_own": ds.quintile_floor(
+                ds.cross_section(firms, TABLE_YEAR - 1, TABLE_YEAR - 1).values()),
             # [all of the shortfall against the year before at the bottom, all at the top]
             "floor_bounds": _floor_bounds(t["hist"][TABLE_YEAR], max(n_before - n_now, 0)),
             f"continued_{TABLE_YEAR - 2}_{TABLE_YEAR - 1}": _continued(firms, TABLE_YEAR - 2),
@@ -114,6 +119,9 @@ def measured() -> dict:
     passed = sorted(k.split("/")[0] for k, t in out["holdout"]["tests"].items() if t["passes"])
     return {"cohorts": cohorts, "effects": effects, "passed": passed,
             "tests_run": len(out["holdout"]["tests"]),
+            # Tests that cleared every rule read on the first cohorts, before the later ones.
+            "discovery_survivors": sum(all(t["rules"].values())
+                                       for t in out["discovery"]["tests"].values()),
             "predictors_tested": len({k.split("/")[0] for k in out["holdout"]["tests"]})}
 
 
