@@ -83,8 +83,9 @@ _REASONS = {
     NO_ANNUAL_FACTS: "the SEC has no 10-K financial data for it (a foreign filer, a fund or a new "
                      "registrant)",
     STALE: "the latest annual data is for the year ended {period_end}; a newer year should be on file",
-    LATEST_YEAR_UNUSABLE: "the latest year lacks a required figure, or its 10-K was filed more than "
-                          "120 days after the year end",
+    LATEST_YEAR_UNUSABLE: "the latest year has no operating income, equity, total assets or revenue "
+                          "under the tags the study reads, or its 10-K was filed more than 120 days "
+                          "after the year end",
     LOW_CAPITAL: "invested capital is negative or under 10% of assets, so this ROIC is not defined "
                  "(common after large buybacks)",
     REVENUE_BELOW_FLOOR: "revenue is under $100M",
