@@ -170,9 +170,31 @@ def test_two_fiscal_years_past_the_table_abstains():
     assert _profile(_raw(later), today=date(2028, 3, 15), max_gap=2)[1] == dp.SHOWN
 
 
-def test_a_fiscal_year_before_the_tables_history_abstains():
+def test_the_year_before_the_tables_last_is_read_against_its_own_universe():
+    # A company in the weeks before its new 10-K: the latest year on file is 2024, which the
+    # table holds. Its fourth history year, 2021, is before the table and is simply not seen.
+    earlier = {y - 1: v for y, v in STEADY.items()}         # year ends 2021 .. 2024
+    prof, status, _ = _profile(_raw(earlier), today=date(2025, 3, 15))
+    assert status == dp.SHOWN
+    assert (prof.period_end, prof.bucket, prof.reference_year, prof.years_seen) == ("2024-12-31", 2024, 2024, 3)
+    assert prof.stability_third is not None and prof.capital_growth is not None
+
+
+def test_a_roic_below_the_floor_names_the_year_of_the_cutoff_it_was_read_against():
     earlier = {y - 1: v for y, v in STEADY.items()}         # latest year end 2024-12-31
-    assert _profile(_raw(earlier), today=date(2025, 3, 15))[1] == dp.REFERENCE_OUT_OF_DATE
+    earlier[2024] = (100.0, 500.0)                          # 15.8% against a floor of 18%
+    _, status, detail = _profile(_raw(earlier), today=date(2025, 3, 15))
+    assert status == dp.NOT_TOP_FIFTH and detail["table_year"] == 2024
+    later = {y + 1: v for y, v in STEADY.items()}           # latest year end 2026-12-31
+    later[2026] = (100.0, 500.0)
+    _, status, detail = _profile(_raw(later), today=date(2027, 3, 15))
+    assert status == dp.NOT_TOP_FIFTH and detail["table_year"] == 2025
+
+
+def test_a_fiscal_year_before_the_tables_first_year_abstains():
+    old = {y - 4: v for y, v in STEADY.items()}             # latest year end 2021-12-31
+    assert _profile(_raw(old), today=date(2022, 3, 15)) == (
+        None, dp.REFERENCE_OUT_OF_DATE, {"period_end": "2021-12-31", "table_year": 2025})
 
 
 def test_no_predictor_with_one_year_of_history():
@@ -212,8 +234,9 @@ def test_before_the_as_of_date_the_profile_reads_what_is_on_file_today():
     raw = _raw(STEADY)                                      # filed 2026-02-19
     prof, status, _ = _profile(raw, today=date(2026, 2, 19))
     assert status == dp.SHOWN and prof.period_end == "2025-12-31"
-    # The day before, the latest year on file is 2024, which the table's history does not reach.
-    assert _profile(raw, today=date(2026, 2, 18))[1] == dp.REFERENCE_OUT_OF_DATE
+    # The day before, the latest year on file is 2024, and that is the year shown.
+    before, status, _ = _profile(raw, today=date(2026, 2, 18))
+    assert status == dp.SHOWN and (before.period_end, before.reference_year) == ("2024-12-31", 2024)
 
 
 @pytest.mark.parametrize("end, kept", [("2025-12-15", False), ("2025-12-16", True),
@@ -239,11 +262,29 @@ def test_a_changed_year_end_does_not_read_two_year_growth():
 
 
 @pytest.mark.parametrize("value, want", [
-    (1.0, 0), (2.0, 0), (2.5, 1),       # rank 1/12, 3/12, then exactly 1/3: the middle
-    (3.0, 1), (4.0, 1), (4.5, 2),       # 5/12, 7/12, then exactly 2/3: the top
-    (5.0, 2), (99.0, 2), (-1.0, 0)])
-def test_thirds_use_the_studys_cut_and_are_exact_on_a_boundary(value, want):
-    assert dp.third(value, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]) == want
+    (1.0, 0), (2.0, 0),                 # members at mid-rank 1/12 and 3/12: the bottom third
+    (3.0, 1), (4.0, 1),                 # 5/12 and 7/12: the middle
+    (5.0, 2), (6.0, 2),                 # 9/12 and 11/12: the top
+    (2.5, 0), (2.99, 0), (4.5, 1),      # between two members: below the cut above it
+    (99.0, 2), (-1.0, 0)])
+def test_a_members_third_is_the_studys_and_a_value_between_two_is_below_the_cut(value, want):
+    members = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    assert dp.cuts(members) == (3.0, 5.0)
+    assert dp.third(value, members) == want
+
+
+def test_a_third_boundary_is_exact_in_integers():
+    # 9 members: ranks 0.5/9 .. 8.5/9. Rank 3/9 would be exactly 1/3 and 6/9 exactly 2/3; the
+    # members beside them sit at 2.5/9 (bottom), 3.5/9 (middle), 5.5/9 (middle), 6.5/9 (top).
+    assert dp.cuts(list(range(9))) == (3, 6)
+    # 3 members: ranks 1/6, 1/2, 5/6.
+    assert dp.cuts([10, 20, 30]) == (20, 30)
+    assert dp.cuts([7]) == (7, float("inf"))                 # one value ranks 0.5: the middle
+    # A tie whose shared mid-rank is EXACTLY a boundary. The study's cut is `rank < 1/3` for
+    # the bottom and `rank >= 2/3` for the top, so a rank of exactly 1/3 is the middle and a
+    # rank of exactly 2/3 is the top.
+    assert dp.cuts([1, 2, 2, 3, 4, 5]) == (2, 4)             # the 2s share rank (1 + 3) / 12 = 1/3
+    assert dp.cuts([1, 2, 3, 4, 4, 5]) == (3, 4)             # the 4s share rank (3 + 5) / 12 = 2/3
 
 
 def test_a_tie_shares_the_mid_rank():
