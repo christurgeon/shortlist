@@ -398,6 +398,9 @@ def test_the_steps_run_only_in_order_on_one_data_file_and_one_code_state(probe, 
     probe.holdout()
     hold = _read(probe, "holdout.json")
     assert list(hold["tests"]) == list(disc["tests"])
+    assert hold["window"] == [2018, 2021] and disc["window"] == [2011, 2017]
+    assert set(hold["tests"]["gross_margin/held"]["n_by_year"]) == {"2018", "2019", "2020", "2021"}
+    assert set(disc["tests"]["gross_margin/held"]["n_by_year"]) == {str(y) for y in range(2011, 2018)}
     errored = hold["tests"]["track/held"]
     assert errored["beta"] == 0.5 and errored["holdout_rule"] is False
     for key, m in hold["tests"].items():
