@@ -1,0 +1,135 @@
+{
+ "code_commit": "5104d9835cfe04871d3e55967ce061d98b6b6195",
+ "code_sha256": "f7780551508fb8f62eb911e2211d3953efd25c50ca26d9b8be06d6477d16b6d9",
+ "compacted_sha256": "2d617f7045cbe83e674ac6626b8dcc28a0870b19f66be0c572a759044aaa5639",
+ "discovery": {
+  "investment": {
+   "beta_capital": -0.21173459005991654,
+   "beta_frozen": 0.11562336002364965,
+   "beta_log": 0.3896856620553399,
+   "beta_observed": 0.15447733040583314,
+   "beta_profit": 0.17795107199542343,
+   "n": 1825,
+   "n_positive_profit": 1681,
+   "se_capital": 0.057933387034930235,
+   "se_frozen": 0.04385750029602412,
+   "se_log": 0.0818110987120198,
+   "se_observed": 0.04969987833462881,
+   "se_profit": 0.08449315995731849,
+   "singular_capital": 0,
+   "singular_frozen": 0,
+   "singular_log": 0,
+   "singular_observed": 0,
+   "singular_profit": 0
+  },
+  "joint": {
+   "investment": {
+    "beta_alone": 0.1359313926160417,
+    "beta_joint": 0.14968809995316812,
+    "n": 1545,
+    "se_alone": 0.05208133726214014,
+    "se_joint": 0.0520010001628379,
+    "singular": 0
+   },
+   "stability": {
+    "beta_alone": 0.15143003547840383,
+    "beta_joint": 0.1656883181542003,
+    "n": 1545,
+    "se_alone": 0.0600134072300843,
+    "se_joint": 0.05990942592869045,
+    "singular": 0
+   }
+  },
+  "observed": 1864,
+  "rows": 2290,
+  "stability": {
+   "beta_capital": -0.2082010083092241,
+   "beta_frozen": 0.14316678640417108,
+   "beta_log": 0.357717246146074,
+   "beta_observed": 0.16272890375348084,
+   "beta_profit": 0.14951623783684997,
+   "n": 1504,
+   "n_positive_profit": 1391,
+   "se_capital": 0.08481324911170318,
+   "se_frozen": 0.05057479848918297,
+   "se_log": 0.11082264966353043,
+   "se_observed": 0.06099158417447636,
+   "se_profit": 0.10589435099383368,
+   "singular_capital": 0,
+   "singular_frozen": 0,
+   "singular_log": 0,
+   "singular_observed": 0,
+   "singular_profit": 0
+  }
+ },
+ "generated": "2026-10-09T00:53:41+00:00",
+ "holdout": {
+  "investment": {
+   "beta_capital": -0.1297157016472899,
+   "beta_frozen": 0.12368264668232683,
+   "beta_log": 0.22030799377676857,
+   "beta_observed": 0.20770350189444117,
+   "beta_profit": 0.09059229212947867,
+   "n": 1260,
+   "n_positive_profit": 1155,
+   "se_capital": 0.06820568182117899,
+   "se_frozen": 0.051209978821994497,
+   "se_log": 0.09851287676996277,
+   "se_observed": 0.056829065280433515,
+   "se_profit": 0.10782568527439451,
+   "singular_capital": 0,
+   "singular_frozen": 0,
+   "singular_log": 0,
+   "singular_observed": 0,
+   "singular_profit": 0
+  },
+  "joint": {
+   "investment": {
+    "beta_alone": 0.1929800225864286,
+    "beta_joint": 0.1986858497045199,
+    "n": 1245,
+    "se_alone": 0.05793357602470799,
+    "se_joint": 0.057252200603030164,
+    "singular": 0
+   },
+   "stability": {
+    "beta_alone": 0.21614720310097635,
+    "beta_joint": 0.22203526963197137,
+    "n": 1245,
+    "se_alone": 0.06604799021131517,
+    "se_joint": 0.06528025727678137,
+    "singular": 0
+   }
+  },
+  "observed": 1283,
+  "rows": 1481,
+  "stability": {
+   "beta_capital": -0.0678193252778735,
+   "beta_frozen": 0.28971664615955867,
+   "beta_log": 0.33974213970955025,
+   "beta_observed": 0.21814364936772804,
+   "beta_profit": 0.27192281443167676,
+   "n": 1222,
+   "n_positive_profit": 1123,
+   "se_capital": 0.08118493236663683,
+   "se_frozen": 0.059004340798398766,
+   "se_log": 0.1173985950650048,
+   "se_observed": 0.06607466549999659,
+   "se_profit": 0.12452563410507897,
+   "singular_capital": 0,
+   "singular_frozen": 0,
+   "singular_log": 0,
+   "singular_observed": 0,
+   "singular_profit": 0
+  }
+ },
+ "python_version": "3.12.13",
+ "readings": {
+  "R1_operating_profit_held": {
+   "investment": true,
+   "stability": true
+  },
+  "R2_two_findings": true
+ },
+ "sic_sha256": "b5dd2d4d0955397e712ed5110734e819ce07f550148eec17e60b541a5e2bfb69"
+}
