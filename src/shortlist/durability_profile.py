@@ -157,7 +157,7 @@ def cut_points(table: dict) -> dict[str, tuple[float, float]]:
     return out
 
 
-def _sector_reason(sic, config: dict) -> str:
+def sector_reason(sic, config: dict) -> str:
     code = _as_int(sic)
     if code is None:
         return SIC_UNKNOWN
@@ -208,7 +208,7 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
     expected): `annual_series` does. `research/durability.py` is where that is caught."""
     if table is None:
         return None, UNAVAILABLE, {}
-    reason = _sector_reason(sic, config)
+    reason = sector_reason(sic, config)
     if reason:
         return None, reason, {}
     latest, reason, detail = _latest(compacted, today)

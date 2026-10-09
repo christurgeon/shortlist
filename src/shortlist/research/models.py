@@ -358,6 +358,11 @@ class QualitativeAssessment:
                                # so the two never diverge on disk
     text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
     stub_sections: list[str] = field(default_factory=list)  # FilingText.stub_sections() of the 10-K
+    # The "ROIC persistence" section (research/durability.py) and its status code. COMPUTED
+    # FROM SEC DATA AFTER assess() RETURNS: the model never sees it and it is never a
+    # grounding segment. Both stay "" unless `research.durability.enabled`.
+    durability_line: str = ""
+    durability_status: str = ""
     screening_call: Optional[ScreeningCall] = None
 
     @property

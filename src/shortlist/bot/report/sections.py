@@ -350,6 +350,27 @@ def _call_html(h, a) -> list[str]:
     return out
 
 
+def _persistence_html(h, body: str) -> str:
+    """The "ROIC persistence" section, word for word as research/durability.py wrote it: the
+    caveats are part of what the measurement licenses, so nothing here shortens them."""
+    from ...research.durability import HEADING
+    lines = body.split("\n")
+    intro = [ln for ln in lines if not ln.startswith("- ")]
+    bullets = "".join(h.tag("li", ln[2:]) for ln in lines if ln.startswith("- "))
+    return h.raw("div", h.tag("b", HEADING) + "".join(h.tag("p", ln) for ln in intro)
+                 + (h.raw("ul", bullets) if bullets else ""), _class="block")
+
+
+def _persistence_text(a) -> str:
+    """One line for the chat message. The full section, with its caveats, is in the report: a
+    shortened reading here would be the measured claim without what qualifies it."""
+    if a.roic_persistence_shown:
+        return ("   📏 ROIC persistence: top-fifth ROIC on the study's basis — the historical "
+                "frequencies and their caveats are in the report")
+    reason = a.roic_persistence.removeprefix("Not shown: ").split(". The study covers")[0]
+    return f"   📏 ROIC persistence: not shown — {reason}"
+
+
 def _findings_block(h, label: str, items, cls: str = "") -> str:
     lis = "".join(h.raw("li", h.esc(f.claim) +
                         _evidence_html(h, f.status, f.evidence, f.source))
@@ -393,6 +414,8 @@ class _Research:
                               for c in a.reconciliation)
                 parts.append(h.raw("div", h.tag("b", "Reconciliation vs. score") +
                                    h.raw("ul", lis), _class="block"))
+            if a.roic_persistence:
+                parts.append(_persistence_html(h, a.roic_persistence))
             for label, items, cls in [("Red flags", a.red_flags, "flag"),
                                       ("Risks", a.risks, ""),
                                       ("Newly disclosed risks", a.added_risks, "")]:
@@ -436,6 +459,8 @@ class _Research:
                 for c in a.reconciliation:
                     out.append(f"   ⚖️ {c.signal}: {c.tension}")
                     out += _evidence_text(c.status, c.filing_says, c.source)
+                if a.roic_persistence:
+                    out.append(_persistence_text(a))
                 for f in a.red_flags:
                     out.append(f"   🚩 {f.claim}")
                     out += _evidence_text(f.status, f.evidence, f.source)
