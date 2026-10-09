@@ -107,6 +107,22 @@ def test_a_late_10k_is_outside_the_universe_as_in_the_study():
         None, dp.LATEST_YEAR_UNUSABLE, {"period_end": "2025-12-31"})
 
 
+def test_a_late_10k_is_not_replaced_by_an_older_year_end_in_the_same_bucket():
+    # A 52/53-week filer: the years ended 2025-07-05 and 2026-07-01 are both bucket 2025, and
+    # the later one wins. Its 10-K came 150 days after the year end, so at the as-of date the
+    # bucket still holds the OLDER year. That older year must not be shown as the latest.
+    ends = {2023: "2023-07-08", 2024: "2024-07-06", 2025: "2025-07-05", 2026: "2026-07-01"}
+    raw = _raw(dict.fromkeys(ends, (152.0, 400.0)), ends=ends)
+    for node in raw["facts"]["us-gaap"].values():
+        for row in node["units"]["USD"]:
+            if row["end"] == "2026-07-01":
+                row["filed"] = "2026-11-28"
+    assert _profile(raw, today=date(2026, 12, 15)) == (
+        None, dp.LATEST_YEAR_UNUSABLE, {"period_end": "2026-07-01"})
+    # Before that late 10-K is on file, the older year IS the latest one and is shown.
+    assert _profile(raw, today=date(2026, 11, 1))[0].period_end == "2025-07-05"
+
+
 def test_a_latest_year_without_equity_or_revenue_is_unusable():
     raw = _raw(STEADY)
     raw["facts"]["us-gaap"]["StockholdersEquity"]["units"]["USD"].pop()
