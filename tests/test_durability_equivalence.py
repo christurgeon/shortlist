@@ -56,8 +56,36 @@ def test_the_refactor_moved_no_row_of_the_study(probe, firms):
     committed = json.loads((RAW / "equivalence.json").read_text())
     now = probe.digests(firms)
     assert committed["n_firms"] == len(firms)
+    # `cohort_rows` and `table_inputs` hash `share_stability`, a `math.log`, to the last bit.
+    # The C library's `log` differs between platforms in that bit (10 of 2,906 cohort values,
+    # Apple's against glibc), so those two digests are compared only where they were written.
+    # The portable form below is compared everywhere.
+    libm = () if probe.exact_platform() else ("cohort_rows", "table_inputs")
     for key in ("year_rows", "cohort_rows", "table_inputs", "universe_sizes"):
-        assert now[key] == committed[key], key
+        if key not in libm:
+            assert now[key] == committed[key], key
+    portable = json.loads((RAW / "equivalence-portable.json").read_text())
+    assert portable["n_firms"] == len(firms)
+    assert {k: portable[k] for k in ("compacted_sha256", "sic_sha256")} == {
+        k: committed[k] for k in ("compacted_sha256", "sic_sha256")}
+    now = probe.portable_digests(firms)
+    for key in ("cohort_rows", "table_inputs", "libm_predictors", "significant_digits"):
+        assert now[key] == portable[key], key
+
+
+def test_the_portable_digests_leave_out_only_the_last_digits_of_a_log(probe):
+    # Every other value is hashed exactly as in the exact digests, and a `share_stability` that
+    # moved in its 12th digit is still a different digest.
+    preds = {"investment": -0.123456789012345678, "share_stability": -0.5923998159926442, "track": None}
+    assert probe._preds(preds, portable=False) == sorted(preds.items())
+    assert probe._preds(preds, portable=True) == [
+        ("investment", -0.123456789012345678), ("share_stability", "-0.592399815993"), ("track", None)]
+    one_ulp = dict(preds, share_stability=-0.5923998159926444)           # glibc's value
+    assert probe._preds(one_ulp, portable=True) == probe._preds(preds, portable=True)
+    moved = dict(preds, share_stability=-0.5923998159936442)
+    assert probe._preds(moved, portable=True) != probe._preds(preds, portable=True)
+    assert probe._preds({"share_stability": None}, portable=True) == [("share_stability", None)]
+    assert probe.LIBM_PREDICTORS == ("share_stability",)
 
 
 def test_the_reproduction_gate_population_did_not_move(records):

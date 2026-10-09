@@ -91,6 +91,42 @@ commit had before the branch was rebased; cite it by its title.)
 run. The cohort row count is 2,290 + 1,481, as in the verdict, and the universe sizes for
 2011–2024 equal `gates.json`.
 
+**The second and third digests are exact only where they were written: macOS, arm64.** The
+first CI run of the Phase 1 pull request (Linux) failed on the second digest. The cause is the
+platform and not the refactor:
+
+- One digested value, `share_stability`, is a `math.log`. It is the only call into the C math
+  library on the digested path, and that library's `log` is not the same on every platform.
+- On the same commit and the same Python (3.12): under glibc, 10 of the 2,906 cohort values of
+  `share_stability` differ from Apple's by one unit in the last place. No other field of the
+  3,771 rows differs, and the first digest (608,419 rows) is identical.
+- **No rank differs.** The study's fits read the rank of a predictor and never its value.
+  `share_stability` did not pass, and the reference table does not hold it.
+- The Linux digests are the same on the code before the refactor and on the code after it
+  (`ea71bd33…0215abfdb` and `edac5f13…`). Linux alone shows that the refactor moved no row.
+
+So the probe has a second form, `portable_digests`. It hashes `share_stability` to 12
+significant digits and every other value exactly as before:
+
+| what | rows | SHA-256 |
+|---|---|---|
+| every cohort row, `share_stability` to 12 digits | 3,771 | `2169a437…107fcd74` |
+| the table inputs at fiscal 2025, the same | 361 | `c3e73e2c…9ecfcb38` |
+
+`raw-2026-10-04-durability/equivalence-portable.json` holds them. **It was written after the
+refactor**, on macOS, and names no commit. Two things tie it to the code before the refactor.
+It is a function of the rows the exact digests cover, and on macOS arm64 the test holds both
+files against the same rows in one run. And the new probe text, copied into the tree of `main`
+as it was before Phase 1, gives these two values on macOS and on Linux (glibc 2.36, arm64).
+The test compares the portable digests on every platform, and the exact ones on macOS arm64
+only. `equivalence.json` is not changed.
+
+What the portable form gives up: a change confined to the 13th and later digits of
+`share_stability`, off macOS arm64. Three deliberate changes to that line (a reordered
+division, `log2`, a value moved by one part in 10⁹) each turned the portable comparison red on
+Linux. The Linux runs and these three changes were made on scratch copies, in a container:
+a record of the diagnosis, not reproducible evidence. A third C library was not tried.
+
 What the digests do not reach, and what covers it:
 
 - `comparison_panel` / `comparison_count` (the reproduction gate's population): a test
