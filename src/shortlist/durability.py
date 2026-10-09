@@ -17,9 +17,12 @@ Spec: docs/superpowers/specs/2026-10-04-moat-durability-design.md §4.
 Pre-registration: docs/audits/2026-10-04-moat-durability-prereg.md."""
 from __future__ import annotations
 
+import json
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import lru_cache
+from pathlib import Path
 from statistics import pstdev
 from typing import Iterable, Optional
 
@@ -62,6 +65,11 @@ MIN_HISTORY = 3
 # 2008, and XBRL was phased in by filer size from 2009 to 2011: a firm with three observed
 # buckets would be an early adopter, ranked against a universe of early adopters.
 HISTORY_FROM = 2012
+# Days between two consecutive fiscal year ends. A fiscal-year change puts two year ends in
+# one bucket and the later one wins, so "the year before" can be two years back. The study's
+# cohorts have no such member (tests/test_durability_equivalence.py); the live profile drops
+# `investment` outside this range and never prints a two-year growth as "the last year".
+YEAR_GAP_DAYS = (350, 380)
 
 _FAR_FUTURE = date(9999, 12, 31)
 
@@ -264,3 +272,43 @@ def investment(snap: dict[int, YearRow], year: int) -> Optional[float]:
     if prev is None or prev.status != "ok":
         return None
     return -(snap[year].ic / prev.ic - 1.0)
+
+
+# ---------------------------------------------------------------- the reference table
+
+TABLE_SCHEMA = 1
+_TABLE_PATH = Path(__file__).with_name("durability_table.json")
+_YEAR_KEYED = ("universe", "floors")
+_TABLE_KEYS = ("table_year", "universe", "floors", "cohort", "cohorts", "effects", "passed",
+               "predictors_tested")
+
+
+def table_source() -> str:
+    """The text of the committed table, or "" when it cannot be read. The brief cache key
+    hashes it, so it must not raise."""
+    try:
+        return _TABLE_PATH.read_text()
+    except OSError:
+        return ""
+
+
+def parse_table(text: str) -> Optional[dict]:
+    """The table with its year keys as ints, or None when the text is not a table of this
+    schema. BUILT BY `docs/audits/scripts/build_durability_table.py`, never edited by hand:
+    `tests/test_durability_equivalence.py` rebuilds it from the committed study data."""
+    try:
+        table = json.loads(text)
+        if table["schema"] != TABLE_SCHEMA or any(k not in table for k in _TABLE_KEYS):
+            return None
+        for key in _YEAR_KEYED:
+            table[key] = {int(y): v for y, v in table[key].items()}
+        if set(table["universe"]) != set(table["floors"]) or table["table_year"] not in table["floors"]:
+            return None
+        return table
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+@lru_cache(maxsize=1)
+def load_table() -> Optional[dict]:
+    return parse_table(table_source())
