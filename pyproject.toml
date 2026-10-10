@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-edgar = ["edgartools>=3.0"]
+edgar = ["edgartools>=5.61"]
 fred = ["fredapi>=0.5"]
 bot = ["pillow>=10.0"]   # report dashboard PNG
 
