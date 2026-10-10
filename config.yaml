@@ -556,7 +556,10 @@ research:
                                # A MEASURED historical frequency on SEC facts, DISPLAY ONLY:
                                # never scored and never shown to the model. Verdict:
                                # docs/audits/2026-10-04-moat-durability-verdict.md.
-    enabled: false             # one sec.gov request per brief (day-cached, compacted).
+    enabled: true              # at most one sec.gov request per brief (day-cached, compacted).
+                               # On since 2026-10-10, after one real brief on a top-fifth name
+                               # and one on a bank
+                               # (docs/audits/2026-10-08-moat-durability-phase1.md → Turned on).
     max_table_gap_years: 1     # abstain when the name's fiscal year is further than this past
                                # the table's reference year (fiscal 2025); 0 = that year only.
                                # Do not raise it to keep an old table alive: a refresh on new

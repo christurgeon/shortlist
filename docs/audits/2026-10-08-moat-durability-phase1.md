@@ -5,8 +5,8 @@ became a section of the `/deep` brief: what was built, what was decided and at w
 the evidence that the section is computed on the basis the study measured. It is evidence as
 of its date. For how the code behaves today, read `docs/RESEARCH.md`.
 
-**Status: built 2026-10-08 and 2026-10-09, off.** `research.durability.enabled` is `false`. Nothing changes in a brief
-until it is turned on.
+**Status: built 2026-10-08 and 2026-10-09; turned on 2026-10-10** (`research.durability.enabled:
+true`; see "Turned on" at the end). Everything below was written while the flag was off.
 
 ## What was built
 
@@ -375,6 +375,36 @@ Not built. If it is ever proposed, these are the findings to start from.
 
 ## Not done
 
-- The flag is off. Turning it on is the maintainer's decision.
 - The prompt integration (Phase 2 above).
 - A table refresh on newer SEC data.
+
+## Turned on (2026-10-10)
+
+The maintainer's decision, after one real run with the flag on in a copy of the config:
+`shortlist --tickers MSFT,JPM --config <copy> --research 2`, two model calls, $0.72.
+
+| | MSFT | JPM |
+|---|---|---|
+| status in the brief record | `shown` | `sector_not_covered` |
+| section body | 3,144 characters | 218 characters |
+| request to `data.sec.gov` | one; the day cache then held one file | none (no request for a bank) |
+| "section failed" lines on stderr | 0 | 0 |
+
+- MSFT, year ended 2026-06-30: ROIC 25.4% on the study's basis, above the 15.5% cutoff of the
+  fiscal-2025 universe of 1,787 firms; invested capital +24.8% in the last year, the
+  fastest-growing third; rank steadiness 1.5 percentile points, the steadiest third. Every
+  caveat sentence was in the brief.
+- JPM: "Not shown: banks, lenders, brokers, insurers and REITs are outside the study", with
+  the sentence on what the study covers.
+- In the markdown brief the section sits between "Reconciliation" and "Moat". The Telegram
+  HTML section, rendered from the same two records without sending it, carries every sentence
+  of the record, after the reconciliation block, with no unescaped `<` or `>`. The chat line
+  for MSFT only points to the report; for JPM it gives the reason.
+
+Not seen in a real brief: a name below the cutoff, a name one fiscal year past the table, a
+failed fetch, and the delivery through the bot (the run was the command line). The first try
+of this run wrote no brief for an unrelated reason, which `2026-10-10-sec-filing-index-403.md`
+records.
+
+Turning the flag on changes the `research` config block, so every cached brief key misses
+once more.

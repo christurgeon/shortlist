@@ -649,13 +649,13 @@ def test_the_model_never_sees_the_section():
     assert "durability" not in " ".join(inspect.signature(assess_mod._build_user_prompt).parameters)
 
 
-def test_the_shipped_config_has_the_section_off_and_the_studys_sector_mask():
+def test_the_shipped_config_has_the_section_on_and_the_studys_sector_mask():
     import hashlib
 
     root = Path(__file__).resolve().parents[2]
     config = load_config(str(root / "config.yaml"))
     assert config["research"]["durability"] == {
-        "enabled": False, "max_table_gap_years": 1, "cache_dir": ".cache/durability-live", "deadline_s": 15}
+        "enabled": True, "max_table_gap_years": 1, "cache_dir": ".cache/durability-live", "deadline_s": 15}
     # The live sector mask must be the one the study's gates ran on.
     gates = json.loads((root / "docs/audits/raw-2026-10-04-durability/gates.json").read_text())
     now = hashlib.sha256(json.dumps(config["sectors"]["buckets"], sort_keys=True).encode()).hexdigest()

@@ -127,7 +127,7 @@ score-vs-filing reconciliation.
 
 ### The ROIC-persistence section — computed, not written by the model
 
-Off by default (`research.durability.enabled`). When on, every brief carries one more section,
+On since 2026-10-10 (`research.durability.enabled`). Every brief carries one more section,
 **"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. It is the only
 part of a brief the model did not write, and the model never sees it.
 
