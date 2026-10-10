@@ -1,11 +1,9 @@
 # Data harness (`shortlist.data`)
 
-The collector/extractor layer: given one or more tickers, every source fetches
-everything it can, the collector merges it into a single **assessment-ready
-snapshot**, and the raw payloads are retained as a point-in-time record.
-
-This is the foundation the scorer, the predictor, and any Claude feature-step
-sit on top of — it deliberately knows nothing about scoring or predictions.
+The collector layer: given tickers, every source fetches what it can, the collector merges it
+into one **assessment-ready snapshot**, and the raw payloads are kept as a point-in-time
+record. It deliberately knows nothing about scoring. Backtesting and point-in-time capture
+live in `docs/BACKTEST.md`.
 
 ## Architecture
 
@@ -47,19 +45,17 @@ flowchart LR
     EF --> HS3
 ```
 
-`bridge.py:snapshot_to_metrics` converts a harness `TickerSnapshot` into the `StockMetrics`
-that `scoring.py` consumes, so names are ranked off the richer, audited data — including the
-keyless, gating-immune **Yahoo** momentum source and **FINRA** short interest. The harness
-recovers `value`, `growth` and the `risk` axis from free EDGAR + Yahoo data when FMP gates a
-symbol (which it does for most non-mega-caps on the free tier).
+`bridge.py:snapshot_to_metrics` converts a `TickerSnapshot` into the `StockMetrics` that
+`scoring.py` consumes. The keyless sources (Yahoo, FINRA, EDGAR) let `value`, `growth` and
+`risk` be recovered when FMP gates a symbol, which it does for most non-mega-caps on the free
+tier.
 
-The only other `StockMetrics`-producing paths are the point-in-time **XBRL backtest source**
-and the offline `MockProvider` test fixture (`--demo` itself uses the harness `mock` Source).
-`providers/_form4.py` and `providers/_edgar_facts.py` are dependency-free leaves imported by the
-harness `EdgarSource` **only**. The backtest does **not** share them — it has its own extractor,
-`providers/_xbrl_facts.py`. The leaf the two paths genuinely share is `providers/_gaap_tags.py`
-(GAAP tag sets). Fixing one extractor does not fix the other; see `CLAUDE.md` → "Shared
-extraction leaves are edited once".
+The only other `StockMetrics`-producing paths are the point-in-time XBRL backtest source and
+the offline `MockProvider` fixture (`--demo` uses the harness `mock` Source).
+`providers/_form4.py` and `providers/_edgar_facts.py` are imported by the harness
+`EdgarSource` only; the backtest has its own extractor, `providers/_xbrl_facts.py`. The leaf
+both share is `providers/_gaap_tags.py`. Fixing one extractor does not fix the other; see
+`CLAUDE.md` → "Shared extraction leaves are edited once".
 
 ## Run
 
@@ -69,19 +65,14 @@ uv run shortlist-harness --tickers GEV,LMT,SCHW --sources mock --out snapshots
 
 # Live (keys from the environment or a .env file):
 uv run shortlist-harness --tickers GEV,LMT --sources fmp,finnhub --out snapshots --print
-# equivalently: uv run python -m shortlist.data.cli --tickers GEV,LMT --out snapshots
 ```
 
-**Caching.** FMP and Finnhub responses are cached on disk (`.cache/http.sqlite`,
-gitignored) **by default**, so a warm re-run of the same tickers within TTL makes
-zero upstream calls — the fix for the free-tier daily-quota ceiling. `--no-cache`
-disables it for a run; `--refresh-cache` bypasses cached responses and repopulates.
-Yahoo and FINRA keep their own per-day / per-settlement caches; EDGAR (free, uncapped)
-is uncached. TTLs are per data half-life (`config.yaml: cache.ttl`); full design in
-`docs/DATA_SOURCES.md` §6.
+**Caching.** FMP and Finnhub responses are cached on disk (`.cache/http.sqlite`) by default,
+so a warm re-run within TTL makes no upstream calls. `--no-cache` disables it for a run;
+`--refresh-cache` repopulates. Yahoo and FINRA keep their own caches; EDGAR is uncached.
+TTLs are in `config.yaml: cache.ttl`; design in `docs/DATA_SOURCES.md` §6.
 
-Output per ticker is a coverage line — the harness's honest answer to "do we
-have what we need?":
+Output per ticker is a coverage line:
 
 ```
 GEV    coverage=  96% [ok] sources=mock -> snapshots/GEV/2026-05-31.json
@@ -90,432 +81,118 @@ SCHW   coverage=  82% [ok] sources=mock  missing: fundamentals.roic, fundamental
 
 ## What a snapshot contains
 
-A `TickerSnapshot` (see `models.py`) with six **key objects** — `profile`, `fundamentals`,
-`statements` (5y), `analyst`, `insider`, `price` — which are the only sections `coverage()`
-counts, plus seven **auxiliary sections** that are deliberately excluded from coverage because
-they are sparse by nature (`_AUX_DEFAULTS`): `short_interest` (FINRA), `events` (the EDGAR
-filing stream), `social` (WSB), `gov_contracts`, `lobbying`, `news` and `earnings` (both
-Finnhub). A name with no 13D in the window must not read as thin data.
+A `TickerSnapshot` (`data/models.py`) has six **key objects** (`profile`, `fundamentals`,
+`statements`, `analyst`, `insider`, `price`), the only sections `coverage()` counts, and
+**auxiliary sections** excluded from coverage because they are sparse by nature
+(`_AUX_DEFAULTS`): `short_interest`, `events`, `social`, `gov_contracts`, `lobbying`, `news`
+and `earnings`. A name with no 13D in the window must not read as thin data.
 
-Plus, on every snapshot:
-
-- `raw`: every source's verbatim payloads, kept for audit and point-in-time replay
-- `provenance`: which source supplied each object
-- `errors`: per-section failures (one bad endpoint never kills the run)
-- `coverage()` / `missing()`: completeness over the key objects, so thin data is visible
-  not silent
+Every snapshot also carries `raw` (verbatim source payloads, for audit and replay),
+`provenance` (which source supplied each object) and `errors` (per-section failures; one bad
+endpoint never kills the run).
 
 ## How sources combine (`merge_snapshots`)
 
-Each `Source` owns both fetching raw and normalizing its own payloads, then the
-collector merges by priority (`yahoo > edgar > fmp > finnhub > mock`). Flat objects
-(`profile`, `fundamentals`, `analyst`, `price`) merge **field-by-field** — a gap
-in the primary source is filled from the next. **Yahoo leads** so its keyless,
-auditable price/momentum (200dma, 6m rel-strength vs SPY, realized vol, max
-drawdown — all computed by us, day-cached under `.cache/yahoo/`) wins the `price`
-merge and survives FMP's per-symbol gating; FMP backfills any price field Yahoo
-lacks. `statements` takes the best single
-source (you don't interleave fiscal years). `insider` has a **bespoke merger**:
-the coupled transaction facts (`net_value_6m`, `buy_count`, `sell_count`,
-`recent`) come wholesale from the highest-priority source that has trades — so the
-dollar figure and the counts always describe the *same* trades — while
-`sentiment_mspr` (Finnhub's MSPR, which no transaction source supplies) is filled
-independently. EDGAR's authoritative flow and Finnhub's sentiment thus compose.
-Async fan-out (`asyncio.gather`) runs tickers and sources concurrently.
+Each `Source` fetches and normalizes its own payloads; the collector merges by priority
+(`yahoo > edgar > fmp > finnhub > mock`). Flat objects (`profile`, `fundamentals`, `analyst`,
+`price`) merge **field by field**, so a gap in the primary source is filled from the next.
+Yahoo leads so its keyless price/momentum wins the `price` merge and survives FMP gating.
+`statements` takes the best single source (fiscal years are never interleaved). `insider` has
+a bespoke merger: the coupled transaction facts (`net_value_6m`, `buy_count`, `sell_count`,
+`recent`) come wholesale from the highest-priority source with trades, so the dollar figure
+and counts describe the same trades, while `sentiment_mspr` is filled independently. Tickers
+and sources run concurrently (`asyncio.gather`). Authority: `data/models.py`.
 
-## EDGAR source — insider trades, 10-K financials, filing events
+## EDGAR source
 
-`EdgarSource` supplies three independent sections:
+`EdgarSource` supplies three independent, failure-isolated sections (a missing XBRL filing,
+e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without affecting the rest):
 
-1. **Form 4 insider trades** — aggregated buy/sell flow via the `providers/_form4.py` leaf module.
-2. **10-K financial statements** — revenue, net income, operating cash flow, free cash flow, diluted EPS, and (`docs/ASSESSMENT_GAPS.md` §2.7) **balance-sheet debt/cash + leverage inputs** — total debt (long-term + current portion + short-term), cash & equivalents, operating income, D&A (from the cash-flow statement), and interest expense — for the latest ~3 fiscal years (absolute USD), sourced from the company's most recent annual filing via `get_financials()`. The bridge derives `ebitda` (operating income + D&A), `net_debt_to_ebitda`, and an `interest_coverage` fallback (FMP keeps priority where present). These drive the net-debt/EBITDA `over_leveraged` gate, so the EDGAR backfill matters most for the FMP-402-gated large-caps that gate targets. **edgartools caveat:** these read edgartools' normalized `standard_concept` buckets (e.g. cash = `CashAndMarketableSecurities`, D&A = cash-flow `DepreciationExpense`), NOT raw us-gaap tags, and balance-sheet columns are **instant dates** (no `(FY)` suffix) — validated against a live AAPL filing in `tests/test_edgar_leverage_live.py`.
-3. **Filing-stream events** — the `events` auxiliary section (`build_events_section`), built
-   from ONE submissions-index read: 8-K presence, activist `SC 13D`, passive `SC 13G`, planned
-   insider sale (Form 144), plus the distress / dilution / accounting-integrity forms
-   (`late_filing`, `shelf_offering`, `sec_comment_letter`, and the 8-K item codes `restatement_8k`
-   4.02 / `auditor_change` 4.01 / `listing_deficiency` 3.01). Every one of these rides the **same**
-   index the first four already read, so widening the form list from 8 to 18 cost **zero**
-   additional requests (measured 2026-08-23 over 228 names). They surface as **advisory flags
-   only** — declared in `scoring.py:_FILING_STREAM_FLAGS`, never touching `passed`/`composite`.
-   The section also carries `last_report_filed`, the latest **exact-form** 10-Q/10-K filed date,
-   which is the bridge's SUE decay anchor (an amendment must never freshen it). Window and form
-   list: `config.yaml: edgar_events` (`lookback_days` 90, `index_limit` 120 — the slice is taken
-   newest-first *before* the lookback filter, so a high-frequency 144/13G filer can otherwise
-   crowd a rare event out).
+1. **Form 4 insider trades**, aggregated by `providers/_form4.py`.
+2. **10-K financial statements** via `get_financials()`: revenue, net income, operating cash
+   flow, FCF, diluted EPS, and the leverage inputs (total debt, cash, operating income, D&A,
+   interest expense). The bridge derives `ebitda`, `net_debt_to_ebitda` and an
+   `interest_coverage` fallback (FMP keeps priority). These feed the `over_leveraged` gate,
+   so the backfill matters most for FMP-gated large caps. edgartools exposes normalized
+   `standard_concept` buckets, not raw us-gaap tags, and balance-sheet columns are instant
+   dates; `tests/test_edgar_leverage_live.py` pins both.
+3. **Filing-stream events** (`build_events_section`), built from one submissions-index read:
+   8-K, `SC 13D`, `SC 13G`, Form 144 and the distress/dilution/accounting-integrity forms.
+   They surface as advisory flags only (`scoring.py:_FILING_STREAM_FLAGS`). The section also
+   carries `last_report_filed`, the latest exact-form 10-Q/10-K date and the bridge's SUE decay
+   anchor (an amendment must never freshen it). Window and form list: `config.yaml:
+   edgar_events`.
 
-All three sections are failure-isolated: a missing XBRL filing (Form 20-F foreign issuers, recent spin-offs) degrades the statements to `None` gracefully without affecting insider or event data or crashing the run.
+The source runs the synchronous edgartools work in a worker thread behind a shared semaphore
+(`_EDGAR_MAX_CONCURRENCY`, default 3), because SEC fair-access is ~10 req/s per IP and the
+per-ticker semaphore alone cannot hold a universe run under it. It needs the `[edgar]` extra
+and `SEC_IDENTITY`; without either the source is skipped, not fatal.
 
-The source runs the synchronous `edgartools` work in a worker thread
-(`asyncio.to_thread`) and funnels all EDGAR fetches through a shared semaphore
-(`_EDGAR_MAX_CONCURRENCY`, default 3). SEC enforces ~10 req/s fair-access per IP
-and each ticker pulls many filings, so the collector's per-ticker
-semaphore is *not* enough — the EDGAR gate is what keeps a universe run under the
-limit. The `get_financials()` call roughly doubles per-ticker EDGAR SEC requests
-vs. Form 4 alone; a full-universe run still needs the caching layer. Requires the
-`[edgar]` extra and `SEC_IDENTITY`; absent either, the source is skipped (not fatal).
+### Bridge derivations when FMP is absent
 
-### Bridge derivations from EDGAR + Yahoo (value legs when FMP is absent)
-
-When FMP has gated a symbol (`402`), `bridge.py:snapshot_to_metrics` derives two value-axis legs from free sources:
-
-- **`fcf_yield`** = latest-annual FCF (EDGAR 10-K) ÷ market cap (backfilled from Finnhub or Yahoo when FMP is absent).
-- **`pe_vs_history`** = current P/E vs. own trailing median, using EDGAR annual diluted EPS + Yahoo historical closes. `YahooSource` now fetches 5 years of monthly-sampled dated closes; the bridge matches each fiscal-year-end to the nearest available close to reconstruct annual P/E.
-
-**Limitations of the EDGAR+Yahoo value derivation:**
-
-- History is ~3 fiscal years (10-K depth), not 5 — the trailing P/E median window is shorter than FMP's.
-- Closes are monthly-sampled, not exact fiscal-year-end prices — P/E reconstruction is approximate.
-- `pe_ttm` uses the latest annual EPS as a TTM proxy, not true trailing-twelve-months earnings.
-- Symbols with no XBRL financials (Form 20-F foreign issuers, recent spin-offs) degrade both derived legs to `None` gracefully.
-- PEG and analyst-target upside still require FMP — they are not recoverable from free sources.
+When FMP has gated a symbol (402), `bridge.py` derives two value legs from free sources:
+`fcf_yield` (latest-annual EDGAR FCF over market cap) and `pe_vs_history` (annual EDGAR EPS
+against Yahoo's monthly-sampled historical closes). Both are approximate: history is ~3
+fiscal years rather than 5, closes are not exact fiscal-year-end prices, and `pe_ttm` uses the
+latest annual EPS as a TTM proxy. Both degrade to `None` without XBRL financials. PEG and
+analyst-target upside still require FMP.
 
 ## Scoring a snapshot — the bridge
 
-`data/bridge.py:snapshot_to_metrics()` converts a `TickerSnapshot` into the flat
-`StockMetrics` that `scoring.score()` consumes:
+`data/bridge.py:snapshot_to_metrics()` flattens a `TickerSnapshot` into the `StockMetrics`
+that `scoring.score()` consumes (`uv run shortlist --tickers GEV,AXON`). It derives fields the
+snapshot does not store: `gross_margin_stability`, `fcf_positive`, and the growth legs
+(`revenue_cagr`, `fcf_cagr`, `eps_cagr` as a net-income proxy, `revenue_growth_persistence`),
+via the shared `shortlist.stats` helpers. It also surfaces Yahoo's `realized_vol` and
+`max_drawdown` for the risk sub-score (displayed, composite weight 0.0; `docs/SCORING.md` →
+The seven axes). From FMP annual history it maps `pe_median_5y` and `roic_5y_avg`.
+`eps_revision` has no source and maps to `None`, so the scorer redistributes its weight. Cards
+carry a `coverage` diagnostic built by `data/coverage_adapt.py` from provenance and errors.
 
-```bash
-uv run shortlist --tickers GEV,AXON
-```
+**Sector detection.** The SIC comes only from EDGAR: `EdgarSource` emits a partial
+`Profile(sic=…)` that survives FMP/Finnhub gating, the bridge copies it to `m.sic`, and
+`score()` reads `m.sic`, never the free-text `Profile.sector`. This costs one extra SEC
+request per ticker. See `docs/SCORING.md` → Sector-aware abstention.
 
-The bridge **derives** several fields the snapshot doesn't store directly, all
-from the 5y `Statements` via the shared `shortlist.stats` helpers (also used by the
-XBRL backtest): `gross_margin_stability`, `fcf_positive` (most-recent free cash flow),
-and the **growth** legs `revenue_cagr` / `fcf_cagr` / `eps_cagr` (net-income proxy)
-/ `revenue_growth_persistence`. It surfaces Yahoo's `realized_vol` and
-`max_drawdown`, which feed the **risk** sub-score — displayed on every card but
-weighted 0.0 in the composite since 2026-09-25 (sector-neutral, excluded from
-`confidence`/`scored`; see `docs/SCORING.md` → The seven axes).
+## Auxiliary sources
 
-`FMPSource` fetches annual `ratios` and `key-metrics` history, so the bridge
-maps `pe_median_5y` (`value` runs on the full 4 legs, via the shared
-`shortlist.stats.median_pe` helper) and `roic_5y_avg` (moat uses the 5y ROIC
-average instead of falling back to TTM `roic`, via `shortlist.stats.avg_roic`).
-The one **accepted coverage gap** is `eps_revision` (Alpha Vantage, out of scope) —
-it maps to `None` and the scorer redistributes weight. Cards carry a `coverage`
-diagnostic built by `data/coverage_adapt.py` from the snapshot's provenance/errors;
-the snapshot's own `coverage()`/`missing()` also remain available via
-`shortlist-harness`.
+- **FINRA short interest** (keyless) fills `short_interest` from one bulk fetch per run,
+  cached by settlement date, so it adds no per-ticker load. The bridge derives
+  `short_pct_outstanding`, `days_to_cover`, `short_interest_rising` and
+  `short_data_age_days`; they feed only the `crowded_short` flag (`config.yaml:
+  flags.crowded_short`).
+- **Gov contracts** (USAspending) and **lobbying** (Senate LDA) are keyless, self-cached, and
+  match the company by name with a confidence floor, abstaining rather than mis-attributing
+  (`data/govcontract_match.py`, `data/entity_match.py`). Neither is scored: flat data and a
+  research context line only. See `docs/DATA_SOURCES.md` §C2 and `docs/RESEARCH.md`.
 
-**Sector-aware abstention.** The SIC that drives sector detection comes **only**
-from EDGAR: `EdgarSource` emits a partial `Profile(sic=…)` (merged field-by-field,
-so SIC survives even when FMP/Finnhub gate the profile) and the bridge copies it to
-`m.sic`. `score()` reads `m.sic` (never the free-text `Profile.sector`). The harness
-pays one extra lightweight SEC request per ticker for the SIC lookup (`EdgarSource`
-has no reusable `Company` handle), bounded by the EDGAR concurrency semaphore. See
-`docs/SCORING.md` → Sector-aware abstention.
-
-## Short interest and soft flags
-
-`FinraSource` (keyless) leads no merge but fills the `ShortInterest` snapshot
-section — current/previous short shares, days-to-cover, settlement date, split/
-revision flags. It does **one bulk fetch per run** (the latest consolidated cycle),
-caches it by settlement date, and indexes every symbol in memory; per-ticker
-lookups are local. It therefore adds **no per-ticker request load** to a universe
-run. The bridge derives `short_pct_outstanding` (vs. derived shares outstanding,
-conservative vs. float), `days_to_cover`, `short_interest_rising`, and
-`short_data_age_days` onto `StockMetrics`.
-
-`GovContractsSource` (keyless) fills the `gov_contracts` aux section — trailing
-federal procurement-contract obligations from USAspending's
-`spending_by_transaction` endpoint. It does **one bulk SEC `company_tickers.json`
-name-map load per run** (month-cached) plus **one `spending_by_transaction` query
-per ticker**, resolving the recipient by name and confidence-filtering matches
-(`data/govcontract_match.py`; abstains rather than mis-attribute). Self-caches under
-`.cache/usaspending`. The bridge derives `gov_contract_ttm_usd`,
-`gov_contract_prior_ttm_usd`, `gov_contract_yoy_growth`, `gov_contract_to_revenue`,
-`gov_contract_award_count`, and `gov_contract_data_age_days` onto `StockMetrics`.
-**Not scored** — flat data + a research context line only (no sub-score, no flag);
-see `docs/DATA_SOURCES.md` §C2 and `docs/RESEARCH.md`.
-`LobbyingSource` (keyless) fills the `lobbying` aux section — trailing federal
-lobbying-disclosure spend from the official Senate LDA API (`lda.gov`). It resolves
-the client by name (SEC `company_tickers.json` + `data/entity_match.py`,
-confidence-filtered), sums `income`/`expenses` across the client's filings, and buckets
-by `dt_posted` into TTM / prior-TTM. Retry-After-aware (LDA is ~15 req/min) and
-self-cached per `(ticker, day)` under `.cache/lda`. The bridge derives `lobbying_ttm_usd`,
-`lobbying_prior_ttm_usd`, `lobbying_yoy_growth`, `lobbying_filing_count`,
-`lobbying_registrant_count`, and `lobbying_data_age_days` onto `StockMetrics`. **Not
-scored** — flat data + a research context line only; see `docs/DATA_SOURCES.md` §C2.
-
-**Soft `flags` vs. hard `gates`.** `gates` are hard filters that flip
-`ScoreCard.passed` to `False`. **`flags`** are *advisory* — they annotate a card
-but **never change `composite` or `passed`**. The full gate and flag list is
-`docs/SCORING.md` → Gates vs flags; what follows is only the flag this source feeds.
-The `crowded_short` flag fires only with `finra` present, when
-`short_pct_outstanding ≥ threshold AND days_to_cover ≥ threshold AND rising AND
-fresh` (thresholds in `config.yaml` → `flags.crowded_short`:
-`min_short_pct_outstanding`, `min_days_to_cover`, `require_rising`,
-`max_staleness_days`). It marks a name for a closer look — squeeze candidate or
-credible skeptic case — without altering the rank.
+`gates` are hard filters that flip `ScoreCard.passed`; `flags` are advisory and never change
+`composite` or `passed`. The full lists are in `docs/SCORING.md` → Gates vs flags.
 
 ## Macro overlay (`data/macro.py`)
 
-`fetch_macro(config)` builds a run-level `MacroContext` once per run (official FRED API +
-free `FRED_API_KEY`, day-cached under `.cache/fred/`, never-raises; returns `None` when
-unkeyed — the keyless `fredgraph.csv` host is IP-blocked on datacenter IPs). It is threaded
-into both
-`run_harness(..., macro=)` and `build_report(..., macro=)`:
-
-- **Report:** a `_MacroHeader` section renders the current regime (risk-on / risk-off /
-  neutral) at the top of every HTML/text report.
-- **Advisory flag:** `risk_off_regime` fires on names that are leveraged
-  (net-debt/EBITDA or D/E above thresholds, with the same `dte_artifact_ceiling` guard the
-  `over_leveraged` gate uses) or in a cyclical SIC bucket, but only when the macro regime
-  is risk-off. Advisory only — never touches `passed`/`composite`/`scored`. Config under
-  `flags.risk_off_regime` (thresholds) and `macro:` (series IDs, risk-on/risk-off
-  thresholds). `score(m, config, macro=None)` is byte-identical when `macro=None`.
-- **`--demo`** skips the fetch entirely (offline). The flag is **not** XBRL-backtest-
-  validatable (the backtest path passes no macro/SIC). Scored `regime_multiplier` gate
-  tilt is future work.
+`fetch_macro(config)` builds a run-level `MacroContext` once per run from the official FRED
+API (needs `FRED_API_KEY`; day-cached under `.cache/fred/`; never raises; returns `None` when
+unkeyed). It is threaded into `run_harness(..., macro=)` and `build_report(..., macro=)`.
+The report renders the regime (risk-on / risk-off / neutral) at the top, and the advisory
+`risk_off_regime` flag fires on leveraged or cyclical names only in a risk-off regime
+(`flags.risk_off_regime` and `macro:` in `config.yaml`). `--demo` skips the fetch, and the
+flag is not XBRL-backtest-validatable.
 
 ## Adding a source
 
-Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning
-verbatim `raw` plus a normalized `partial` `TickerSnapshot`, add the module under
-`data/sources/`, and register it in `_REGISTRY` (`data/sources/__init__.py`). Nine sources
-are wired: Yahoo, FMP, Finnhub, EDGAR, FINRA, WSB, gov contracts, lobbying, and Mock — the
-first eight form the default `harness_sources` chain.
+Subclass `Source`, implement `async def fetch(ticker) -> SourceResult` returning verbatim
+`raw` plus a normalized `partial` `TickerSnapshot`, add the module under `data/sources/`, and
+register it in `_REGISTRY` (`data/sources/__init__.py`), the authoritative list of wired
+sources.
 
-## Backtesting (`shortlist.backtest`, CLI `shortlist-backtest`)
+## Known limitations
 
-The scorer's weights and bands are validated against forward returns here
-(closes `docs/ASSESSMENT_GAPS.md` §2.1). The backtest harness is **signal-agnostic**: the unit
-of currency is an `Observation(as_of, ticker, {signal: 0–100 sub-score})`, and
-every signal value is a sub-score produced by the **real** scoring functions —
-not a reimplementation — so a future point-in-time fundamentals source slots in
-without engine changes.
-
-```bash
-uv run shortlist-backtest --universe largecap --horizons 1,3,6,12   # rich table
-uv run shortlist-backtest --universe smallmid --horizons 3,6 --json # the second universe
-uv run shortlist-backtest --tickers AAPL,MSFT,LMT --json            # ad-hoc, JSON
-```
-
-**Two bundled universes, and a claim needs both.** `largecap` (~80 names) and `smallmid`
-(~198) are separate files under `backtest/`; `--tickers` is an ad-hoc CSV alias for
-`--universe`. A single-universe `t≈2` is noise at this scale — cross-universe reproduction
-is the bar (`CLAUDE.md` → Design premise). Named universes are checked against SEC's current
-ticker map on load and **refuse to run** if symbols have been renamed or delisted, since a
-dead symbol contributes nothing while still counting toward breadth; `--allow-stale-universe`
-overrides.
-
-Grid and diagnostic flags: `--start` / `--end` bound the observation grid, `--step-months`
-overrides the default non-overlapping spacing (`0` = step equals the horizon), `--buckets`
-sets the quantile count (default 5), `--csv` writes per-signal rows, and `--residualize
-TARGET~CTRL1,CTRL2` reports TARGET's **partial** rank IC after removing linear exposure to
-the controls — the test for whether a candidate leg adds anything beyond legs already
-scored. `--residualize` picks its own grid step per horizon and so rejects an explicit
-`--step-months`.
-
-What it computes per signal × horizon:
-- **Rank IC** (Spearman) — two flavours: **time-series** (does a name's own
-  momentum predict its own forward return; the primary metric for small
-  watchlists) and **cross-sectional** (across the universe per date; gated until
-  ≥ ~30 names/date). Aggregated to mean / std / ICIR / **t-stat** / **hit-rate**.
-- **Quantile spread** — equal-weighted top-minus-bottom forward return + monotonicity.
-
-How it stays honest:
-- **No look-ahead.** Signals use only closes `≤ T`; forward returns use only data
-  `> T`. The price layer reuses the live Yahoo leg math on a series **truncated at
-  T** (`sources.snapshot_from_closes` → `bridge.snapshot_to_metrics` →
-  `scoring.momentum_score`).
-- **Non-overlapping** observation grid (step = the horizon) so the t-stat is valid
-  without Newey-West.
-- **Excess-over-SPY** returns by default (the momentum signal is itself
-  benchmark-relative); `--return-mode raw` for absolute.
-- **Survivorship caveat** printed every run: the bundled `largecap` universe is
-  currently-listed names, so spreads are an upper bound — read results as
-  *relative signal validation*, not tradeable PnL. Below the trust floor (~30
-  names/date, ~24 periods) results are labelled **EXPLORATORY**.
-
-**Three sources, and what each can validate.** `--source momentum` (the default) is
-price-only and keyless. `--source xbrl` reconstructs the **fundamental** axes point-in-time
-from SEC companyfacts and needs no accumulated history — it is what has actually measured
-(and mostly killed) the candidate legs, and it drives `--fit`. `--source snapshot`
-(`SnapshotSignalSource`) replays captured daily snapshots and is the only path to the axes
-neither of the others can reach — SUE above all — so it stays **guarded** until
-`shortlist-accumulate` clears both trust floors. Yahoo full daily history is fetched via
-`period1=0` epoch params — **never `range=max`**, which silently degrades to quarterly bars.
-
-### XBRL source: fundamental-axis IC without waiting (`--source xbrl`)
-
-`XbrlSignalSource` (`backtest/signals.py`) reconstructs the **quality / moat /
-growth / value** sub-scores point-in-time from SEC `companyfacts`, bypassing the
-24-date snapshot accumulation clock entirely. It reads only filings with
-`filed ≤ as_of` (restatement-aware), resolves concept aliases by priority (not
-merge), and feeds the extracted metrics through the real `scoring.*_score`
-functions — the same path as a live screen. The extractor is `providers/_xbrl_facts.py`
-(pure, stateless leaf) + `backtest/xbrl.py` (keyless companyfacts fetch, disk-cached
-under `.cache/sec_xbrl`).
-
-**Requirements:** set `SEC_IDENTITY` to a contact email in `.env` (SEC fair-access
-`User-Agent`); no API key is needed otherwise.
-
-**Memory-bounded:** companyfacts are loaded **lazily, one ticker at a time** from the
-disk cache (`XbrlSignalSource`'s `fact_loader` + a small LRU), and the engine iterates
-**ticker-major** so each ticker's facts load once. Peak RAM is therefore O(LRU × one
-companyfacts) instead of O(universe × companyfacts) — a full-universe XBRL backtest runs
-in ~155 MB on the 1.9 GB VPS (a 12-name run measured). The CLI's `_load_companyfacts`
-just *warms* the disk cache (one fetch per ticker, not retained). Results are identical
-to the old eager path; `quantile_spread` tie-breaks on the forward return so the bucket
-spread is independent of row emission order.
-
-**IFRS 20-F foreign issuers** (facts filed under `ifrs-full` rather than `us-gaap`)
-are **skipped** — their concept names don't map to the extractor's alias tables, so
-they return `None` cleanly rather than producing garbled scores.
-
-**Value coverage:** 2 of 4 value legs are reconstructable from XBRL (`fcf_yield`,
-`pe_vs_history`). `peg` and `upside_to_target` require live FMP data and are
-**not** available in the XBRL path. The `insider` axis is not reconstructable from
-XBRL and is absent from this source.
-
-**Standalone (non-production) axes.** Beyond the four production sub-scores, the
-source also emits diagnostic axes so their rank IC is measurable before they
-graduate to the live composite: `net_debt_to_ebitda` (the leverage input behind the
-`over_leveraged` gate), `share_count` (dilution), `piotroski` (fundamental quality),
-and the investment & earnings-quality pair `asset_growth` (Cooper-Gulen-Schill 2008)
-and `accruals` (Sloan 1996) — both **negative** predictors the score helpers invert,
-paired with `accruals~piotroski` (Piotroski's CFO>NI overlap) and `asset_growth~growth`
-collinearity diagnostics — and `shareholder_yield` (Boudoukh et al. 2007 / Faber, a
-**positive** total-payout predictor scored straight), paired with
-`shareholder_yield~value_fcf_yield` (payout vs cash generated) and
-`shareholder_yield~share_count` (the buyback leg is the dollar-twin of dilution).
-Their scorers (`scoring.py:share_count_score`/`piotroski_score`/`asset_growth_score`/
-`accruals_score`/`shareholder_yield_score`) are backtest-only — not production sub-scores.
-The `asset_growth`/`accruals` pair has an opt-in `quality.earnings_quality` production leg and
-`shareholder_yield` an opt-in `value.shareholder_yield` leg. See `docs/SCORING.md` → Optional
-legs for their live status.
-
-> **These are settled, not open questions.** `share_count`, `asset_growth`,
-> `shareholder_yield` and `piotroski` have all **failed the cross-sectional bar**, and
-> `accruals` was killed on evidence and re-measured on both universes
-> (`docs/audits/2026-07-12-accruals-leg-disable.md`,
-> `docs/audits/2026-08-18-net-debt-to-ebitda-remeasure.md`). Every one is OFF by default and
-> should stay OFF. Read `docs/audits/README.md` before re-opening any of them — the axes
-> remain wired so a *future* measurement is cheap, not because the verdicts are provisional.
-
-**SUE is the exception — it is NOT an XBRL/live-price axis.** The standardized-earnings-surprise
-leg (`momentum.sue`, PREDICTIVE_SIGNALS §1) needs Finnhub earnings, which are absent from both
-the price-only momentum source (`snapshot_from_closes`) and SEC companyfacts. So `scoring.sue_score`
-+ the `sue~momentum` collinearity pair ride ONLY the **guarded snapshot-replay** path
-(`SnapshotSignalSource` emits a standalone `sue` axis) and **no-op until daily accumulation
-captures the earnings fields** — no live-price SUE axis is fabricated. `momentum.sue` is OFF
-by default; see `docs/SCORING.md` → Optional legs and `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §1
-(incl. the announcement-date approximation, which the EDGAR `last_report_filed` anchor refines).
-
-**Residual momentum (§2) IS a live-price axis** (unlike SUE), and it is the one leg that
-**passed**. The `MomentumSignalSource` date-INNER-JOINS the stock + SPY series
-(`stats.join_on_dates`) on the dated seam (`snapshot_from_closes_dated`, `PriceHistory.through`)
-and emits a `residual_momentum` axis (the 12-1 momentum of point-in-time CAPM residuals,
-vol-scaled) alongside the production `momentum` sub-score — with
-`scoring.residual_momentum_score` + the `residual_momentum~momentum` collinearity pair. It does
-correlate with raw momentum; the measured result was that it **dominates** on rank IC (XS
-t≈2.6), so it graduated: `config.yaml: momentum.residual.enabled` ships **`true`** and the leg
-fires on live screens, folded into the `momentum` sub-score. The scalar seam is still
-byte-identical when the leg is disabled (the dated path only ADDS it). See `docs/SCORING.md` →
-Optional legs and `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §2.
-
-```bash
-uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
-```
-
-On a largecap universe, 3m/6m horizons (≥32 periods) clear the engine's trust gates
-of ≥24 periods and ≥30 names/date; 12m is flagged **EXPLORATORY** at 16 periods.
-All results are early, survivorship-biased directional evidence — treat them as
-signal diagnostics, not fitted predictions.
-
-### Fitting fundamental weights (`--fit`)
-
-`--fit` (with `--source xbrl`) wires the built-in walk-forward fitter
-(`backtest/fit.py`) to the XBRL source: it fits the **fundamental** sub-weights
-(quality/moat/growth/value) by coordinate ascent on in-sample composite IC, shrinks
-50 % toward the `config.yaml` prior, and scores each fold out-of-sample. It emits a
-**proposal**, never a config write.
-
-```bash
-uv run shortlist-backtest --source xbrl --fit --fit-horizon 6 --universe largecap
-uv run shortlist-backtest --source xbrl --fit --fit-horizon 3 --universe largecap --json
-```
-
-- **Scope is the 4 fundamental axes only** (momentum/insider/risk aren't in XBRL). The
-  fit speaks to the **within-block ratios**; the fundamental block's *total share*
-  stays an unfitted prior. The `config-mapped` column rescales the fitted ratios into
-  the block's current share.
-- **Co-emission:** only (date, ticker) rows where **all** fitted axes are present are
-  used, so every composite the fitter scores is an apples-to-apples blend.
-- **Endorsement gate → PROPOSE or NO-CHANGE.** A config change is endorsed only if, on
-  the per-fold **paired** (shrunk-fit vs prior) OOS difference: ≥36 periods, ≥5 OOS
-  folds, mean edge ≥ +0.02, ≥4/5 folds positive, and t-stat ≥ 2. These are deliberately
-  hard to clear on survivorship-biased data — **NO-CHANGE is the expected default**.
-- `--fit-horizon` is required (fitted ratios are horizon-conditional); `--n-folds`
-  (default 6), `--shrink` (default 0.5), and `--fit-axes` tune the run.
-
-The bundled-largecap result (2026-06) is **NO-CHANGE** at both 3m and 6m (6m is below
-the period floor; 3m clears it but the paired OOS edge is only +0.005 vs the +0.02 bar,
-positive in just 2/5 folds).
-
-### Feeding the snapshot path: accumulation (`shortlist-accumulate`)
-
-The snapshot-replay/weight-fitting paths above stay guarded until the store holds
-≥ 24 organically-captured daily snapshots. `shortlist-accumulate` builds that
-history — an **idempotent, per-ticker-isolated, point-in-time** daily capture over
-`collect` + `store.save` (now an atomic write):
-
-```bash
-uv run shortlist-accumulate run     --root snapshots            # capture today (idempotent)
-uv run shortlist-accumulate status  --root snapshots            # both floors + SUE breadth + store size
-```
-
-- **Point-in-time integrity:** captures **only the current UTC day** (`as_of` =
-  utcnow); a snapshot older than the run day is rejected — **no backfill**, because
-  backfilled/restated data would reintroduce look-ahead into the backtest.
-- **Idempotent + frugal:** an already-captured ticker is skipped *before* any API
-  call. Errors are isolated per ticker and routed through `redact_secrets`.
-- **Gzipped store:** snapshots are written as compressed `<day>.json.gz`
-  (`store.py:save`, atomic temp-file + `os.replace`, ~8.5:1 measured); legacy
-  uncompressed `<day>.json` files from before the migration are still readable
-  (a `.json`/`.json.gz` same-day twin resolves to the `.gz`), just never rewritten.
-- **Thin snapshots are saved by default, not skipped.** `--min-coverage` is now an
-  explicit opt-in save-gate (**default 0.0** = save everything actually fetched);
-  only a *coverage < min-coverage* snapshot is dropped, and a total-outage snapshot
-  (nothing fetched from any source) is always skipped regardless. A FMP-quota-gated
-  symbol still saves its keyless sections (Yahoo price/momentum/risk, EDGAR
-  financials/insider, Finnhub earnings) as a **THIN** snapshot — those keyless
-  fields are exactly what the SUE / snapshot-replay axes need, so thin is useful
-  signal, not noise to gate away. Raise `--min-coverage` to restore the old
-  gate-out-partial behavior.
-- **Breadth vs. the free tier:** the snapshot-replay path needs **≥ 30 names/date**
-  to clear the trust floor, so the bundled watchlist holds **42** sector-spanning
-  large-caps. But `--max-tickers` **defaults to 15** (≈195 < FMP's 250/day) and
-  captures `tickers[:max_tickers]` — so a default run truncates to 15 and stays
-  *below* the floor. To reach breadth, run `--max-tickers 42` (the `deploy/` sample
-  does): FMP's free tier serves ~19-20 symbols/day (a quota, not per-symbol gating),
-  so the rest land at 27-47% keyless-only coverage and save as THIN. That breadth is
-  a function of the FMP quota, not the watchlist — a paid FMP Starter tier removes
-  the gating entirely.
-- **`status` reports both trust-floor dimensions**, not just one: distinct capture
-  dates (≥ 24 needed) **and** dates meeting the 30-name breadth floor, plus today's
-  earnings-bearing (SUE) breadth and the on-disk store size — READY requires both
-  floors to clear, not just the date count.
-- **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`;
-  enabling a daily timer is an explicit opt-in (`deploy/README.md`).
-
-## Known limitations (next hardening pass)
-
-- Dataclasses, not pydantic — bad payloads normalize to `None` rather than failing loud.
-- **Free-tier daily quota, not per-call backoff, is the scale ceiling.** Caching
-  (`cache.py`, on by default) and FMP's `Retry-After`-aware `429` backoff now exist,
-  so warm re-runs and transient throttling are handled — but FMP's 250/day free
-  limit still caps a cold full-universe run (~19 tickers/day on the harness path).
-  Paid FMP Starter or a warm cache is the fix.
-- **FMP's free plan gates many symbols** (e.g. GEV) behind premium with a `402`
-  "Special Endpoint" on a per-symbol basis — coverage correctly drops to "thin"
-  for those names. Major large-caps (AAPL/MSFT/LMT) work on the free tier.
-  `fcf_yield` and `pe_vs_history` are partially recoverable from free EDGAR + Yahoo
-  data (see bridge derivations above); PEG and analyst-target upside still require FMP.
-- **Sector miscalibration, not blank fields, is the residual gap for banks/REITs.**
-  Equity-centric legs that are structurally undefined for a sector are now SIC-detected
-  and explicitly **abstained** (not silently averaged) — see `docs/SCORING.md` →
-  Sector-aware abstention. What remains deferred is sector-specific
-  *recalibration* of the surviving legs (`net_margin` is defined but miscalibrated).
+- Dataclasses, not pydantic: bad payloads normalize to `None` rather than failing loud.
+- The free-tier FMP daily quota, not per-call backoff, is the scale ceiling. A paid tier or a
+  warm cache is the fix (`docs/DATA_SOURCES.md`).
+- FMP's free plan gates many symbols per-symbol with a 402, so coverage correctly drops to
+  "thin" for those names.
+- Residual sector miscalibration (e.g. `net_margin` for banks) is tracked in
+  `docs/SCORING.md` → Sector-aware abstention and `docs/ASSESSMENT_GAPS.md`.
 - Mock data is illustrative, not verified.
