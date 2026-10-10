@@ -6,7 +6,8 @@ docstring or `docs/` page can be reviewed in the same diff as the change it gove
 is why the gotchas that used to be inlined here are pointers now.
 
 The same split applies inside a module: a comment carries constraints and traps, git
-carries what changed and why. The existing comment density is historical, not a target.
+carries what changed and why. The existing comment density is historical, not a target —
+see **Comments** below.
 
 **Before changing a feature, read its authority file.** If this file and an authority file
 disagree, the authority file wins and this one is stale — fix it.
@@ -109,6 +110,36 @@ carries the register of closed verdicts — cite it for *why*, never as a descri
 how the code behaves. `docs/PLAN_*.md`, `docs/POSITION_MONITOR.md` and `docs/STATEMENTS_MERGE.md`
 are **design-time**: they record intent at the time of writing and their file/line references
 are not maintained. Read the code for behaviour; read these for the reasoning behind it.
+
+## Comments
+
+Applies to code comments, docstrings and `config.yaml` comments alike. Default to none.
+Write one only when deleting it would let a future reader make a mistake the code cannot
+warn them about: a non-obvious constraint, an invariant, a trap, a unit or sign convention,
+or *why* a surprising choice was made. A reader can already see what the code does.
+
+Keep a comment short (one to three lines) and make it true of the code as it stands. It
+must not rot:
+
+- **No history or narrative.** Not "previously…", "now uses…", "added for…", "fixed in…",
+  review or PR stories, or dates. That belongs in the commit message or `docs/audits/`.
+- **No measurements or point-in-time facts.** No "measured 2026-08-14 over 35 large caps",
+  universe sizes, test counts, hit rates or IC values. Link the audit under `docs/audits/`
+  instead of restating its numbers.
+- **No references that can break.** No line numbers and no `docs/superpowers/` paths
+  (gitignored, never durable). Cite a doc or symbol by name only when it is the authority
+  for the constraint, and prefer a `docs/` section over a restated paragraph.
+- **No restating.** Don't repeat the signature, the config key, or the same caveat from a
+  neighbouring comment (e.g. a per-field "UNFITTED prior"); say it once at the block or
+  in the doc that owns it.
+- **Docstrings** state the contract (inputs, outputs, `None` semantics, side effects) in
+  a sentence or two. Design rationale goes in the `docs/` page, not the docstring.
+- **Edit, don't append.** When changing code, update or delete the comments it touches
+  instead of layering a new paragraph on top. A stale comment is worse than none.
+
+Drive-by comment trimming is welcome only in code you are already changing; don't open a
+file solely to reformat its comments. Behaviour-preserving, comment-only PRs are fine on
+their own.
 
 ## Rules that span files
 
