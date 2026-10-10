@@ -26,7 +26,7 @@ the scoring roadmap.
 ---
 
 # Comment trimming in source files (2026-10-10)
-`CLAUDE.md` → Comments sets the policy; `config.yaml` is already trimmed. Densest remaining files: `src/shortlist/models.py` (55%), `data/models.py`, `scoring.py`, `providers/_edgar_facts.py`, `research/filings.py`, `stats.py`, `research/notes.py`. Targets: dated measurements, "previously/now" narrative, `docs/superpowers/` references (18 remain), repeated "UNFITTED prior" notes.
+`CLAUDE.md` → Comments sets the policy; `config.yaml`, `models.py` and `scoring.py` are already trimmed. Densest remaining files: `data/models.py`, `providers/_edgar_facts.py`, `research/filings.py`, `stats.py`, `research/notes.py`. Targets: dated measurements, "previously/now" narrative, `docs/superpowers/` references (18 remain), repeated "UNFITTED prior" notes.
 **Status:** Open. Comment-only and behaviour-preserving, so land one or two files per PR with the full suite as the check.
 
 # 2. `/deep` as market research — external-review triage (2026-08-11)
