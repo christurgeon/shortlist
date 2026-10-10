@@ -16,8 +16,9 @@ THE DIGESTS OF `equivalence.json` ARE EXACT ONLY WHERE THEY WERE WRITTEN (macOS,
 digested value, `share_stability`, is a `math.log`, and the C library's `log` is not the same
 on every platform: under glibc 10 of its 2,906 cohort values differ from Apple's by one unit
 in the last place (no rank differs, and no other field). `portable_digests` hashes that one
-value to 12 significant digits and everything else exactly as `digests` does;
+value to 9 significant digits and everything else exactly as `digests` does;
 `equivalence-portable.json` holds them, and the test compares them on every platform.
+`--write-portable` writes that file only from rows whose exact digests are the committed ones.
 
 NOT A STUDY STEP. No beta is computed and no gate is read.
 
@@ -52,9 +53,12 @@ TABLE_YEAR = 2025
 _ROW_FIELDS = ("end", "revenue", "op_income", "equity", "debt", "assets", "gross_profit")
 # The predictors computed through the C math library, and the digits of them that
 # `portable_digests` hashes. The measured difference between two libraries is one unit in the
-# last place, the 16th or 17th significant digit.
+# last place, the 16th or 17th significant digit. WHY 9 AND NOT MORE: the digest must not
+# depend on which way one value rounds. At 12 digits one cohort value is a single unit in the
+# last place from a value that prints differently, and the digest was the same under two
+# libraries by luck. At 9 the nearest of the 3,222 values is 261 units away (10: 14; 11: 5).
 LIBM_PREDICTORS = ("share_stability",)
-PORTABLE_DIGITS = 12
+PORTABLE_DIGITS = 9
 
 
 def _sha256(path: Path) -> str:
@@ -104,18 +108,29 @@ def _year_rows(firms) -> _Digest:
     return d
 
 
-def _preds(preds: dict, portable: bool) -> list:
-    if not portable:
+def portable(value: float) -> str:
+    return f"{value:.{PORTABLE_DIGITS}g}"
+
+
+def _preds(preds: dict, as_portable: bool) -> list:
+    if not as_portable:
         return sorted(preds.items())
-    return sorted((k, f"{v:.{PORTABLE_DIGITS}g}" if k in LIBM_PREDICTORS and v is not None else v)
+    return sorted((k, portable(v) if k in LIBM_PREDICTORS and v is not None else v)
                   for k, v in preds.items())
 
 
-def _cohort_rows(firms, portable: bool = False) -> _Digest:
+def libm_values(firms) -> list:
+    """Every value the portable digests round: the cohort rows' and the table inputs'."""
+    rows = [r.preds for year in START_YEARS for r in ds.build_cohort(firms, year)]
+    rows += list(table_inputs(firms)["members"].values())
+    return [p[k] for p in rows for k in LIBM_PREDICTORS if p[k] is not None]
+
+
+def _cohort_rows(firms, as_portable: bool = False) -> _Digest:
     d = _Digest()
     for year in START_YEARS:
         for r in ds.build_cohort(firms, year):
-            d.add(r.cik, r.year, r.sic2, r.sic3, r.roic, r.revenue, _preds(r.preds, portable),
+            d.add(r.cik, r.year, r.sic2, r.sic3, r.roic, r.revenue, _preds(r.preds, as_portable),
                   r.state, r.held, r.rank_t3, r.rev_ratio, r.compounded, r.c0, r.c2,
                   sorted(r.p.items()))
     return d
@@ -134,13 +149,13 @@ def table_inputs(firms) -> dict:
     return {"hist": hist, "floors": floors, "members": members}
 
 
-def _table_digest(firms, portable: bool = False) -> _Digest:
+def _table_digest(firms, as_portable: bool = False) -> _Digest:
     t = table_inputs(firms)
     d = _Digest()
     for y in sorted(t["hist"]):
         d.add("hist", y, t["floors"][y], t["hist"][y])
     for cik in sorted(t["members"]):
-        d.add("member", cik, _preds(t["members"][cik], portable))
+        d.add("member", cik, _preds(t["members"][cik], as_portable))
     return d
 
 
@@ -157,7 +172,7 @@ def digests(firms) -> dict:
 def portable_digests(firms) -> dict:
     """The two digests that reach a `LIBM_PREDICTORS` value, in a form that is the same on
     every platform. `year_rows` and `universe_sizes` need none: they hold no such value."""
-    co, tb = _cohort_rows(firms, portable=True), _table_digest(firms, portable=True)
+    co, tb = _cohort_rows(firms, as_portable=True), _table_digest(firms, as_portable=True)
     return {
         "cohort_rows": {"sha256": co.hexdigest(), "n": co.n},
         "table_inputs": {"sha256": tb.hexdigest(), "n": tb.n},
@@ -185,8 +200,12 @@ def main() -> None:
     firms = load_firms()
     out["n_firms"] = len(firms)
     if "--write-portable" in sys.argv[1:]:
-        # No commit is named: these are a function of the rows `equivalence.json` digests, and
-        # the test holds both files against the same rows where the exact digests apply.
+        # No commit is named. What ties this file to the code before the refactor is the check
+        # below: it is written only from rows whose exact digests are the committed ones.
+        committed, now = json.loads(OUT.read_text()), digests(firms)
+        if not exact_platform() or any(now[k] != committed[k] for k in now):
+            raise SystemExit("the exact digests are not those of equivalence.json, or this is "
+                             "not the platform that wrote it. Nothing is written.")
         del out["code_commit"]
         out.update(portable_digests(firms), written_on=platform.platform())
         PORTABLE_OUT.write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")

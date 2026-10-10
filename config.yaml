@@ -558,13 +558,13 @@ research:
                                # docs/audits/2026-10-04-moat-durability-verdict.md.
     enabled: false             # one sec.gov request per brief (day-cached, compacted).
     max_table_gap_years: 1     # abstain when the name's fiscal year is further than this past
-                               # the table's reference year (fiscal 2025). Do not raise it to
-                               # keep an old table alive: a refresh on new SEC data is not
-                               # built yet (docs/RESEARCH.md).
+                               # the table's reference year (fiscal 2025); 0 = that year only.
+                               # Do not raise it to keep an old table alive: a refresh on new
+                               # SEC data is not built yet (docs/RESEARCH.md).
     cache_dir: .cache/durability-live
-    deadline_s: 15             # wall-clock bound on EACH request; at most two per brief. The
+    deadline_s: 15             # wall-clock bound on the request; at most one per brief. The
                                # research phase has about 100 s of slack against
-                               # research_phase_budget_s.
+                               # research_phase_budget_s, so a value above 45 is read as 45.
   insider_detail:              # recent Form-4 trades as a brief context line
     enabled: true
     max_items: 6               # cap recent trades listed (newest-first)

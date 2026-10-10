@@ -5,6 +5,7 @@ recompute, on the CURRENT code and the committed data file, the digests that
 About 20 s: the firms are built once for the module."""
 import importlib.util
 import json
+import math
 from datetime import date
 from pathlib import Path
 
@@ -63,6 +64,8 @@ def test_the_refactor_moved_no_row_of_the_study(probe, firms):
     libm = () if probe.exact_platform() else ("cohort_rows", "table_inputs")
     for key in ("year_rows", "cohort_rows", "table_inputs", "universe_sizes"):
         if key not in libm:
+            # If ONLY the portable comparison below passes on macOS arm64, suspect the system's
+            # `log` before the code: a new C library gives exactly that.
             assert now[key] == committed[key], key
     portable = json.loads((RAW / "equivalence-portable.json").read_text())
     assert portable["n_firms"] == len(firms)
@@ -75,17 +78,55 @@ def test_the_refactor_moved_no_row_of_the_study(probe, firms):
 
 def test_the_portable_digests_leave_out_only_the_last_digits_of_a_log(probe):
     # Every other value is hashed exactly as in the exact digests, and a `share_stability` that
-    # moved in its 12th digit is still a different digest.
+    # moved in its 9th digit is still a different digest.
     preds = {"investment": -0.123456789012345678, "share_stability": -0.5923998159926442, "track": None}
-    assert probe._preds(preds, portable=False) == sorted(preds.items())
-    assert probe._preds(preds, portable=True) == [
-        ("investment", -0.123456789012345678), ("share_stability", "-0.592399815993"), ("track", None)]
+    assert probe._preds(preds, False) == sorted(preds.items())
+    assert probe._preds(preds, True) == [
+        ("investment", -0.123456789012345678), ("share_stability", "-0.592399816"), ("track", None)]
     one_ulp = dict(preds, share_stability=-0.5923998159926444)           # glibc's value
-    assert probe._preds(one_ulp, portable=True) == probe._preds(preds, portable=True)
-    moved = dict(preds, share_stability=-0.5923998159936442)
-    assert probe._preds(moved, portable=True) != probe._preds(preds, portable=True)
-    assert probe._preds({"share_stability": None}, portable=True) == [("share_stability", None)]
-    assert probe.LIBM_PREDICTORS == ("share_stability",)
+    assert probe._preds(one_ulp, True) == probe._preds(preds, True)
+    moved = dict(preds, share_stability=-0.5923998169926442)
+    assert probe._preds(moved, True) != probe._preds(preds, True)
+    assert probe._preds({"share_stability": None}, True) == [("share_stability", None)]
+    assert (probe.LIBM_PREDICTORS, probe.PORTABLE_DIGITS) == (("share_stability",), 9)
+
+
+def test_no_value_of_the_portable_digests_is_near_a_rounding_boundary(probe, firms):
+    # Two C libraries differ by a unit in the last place. The portable digest must not depend
+    # on which way a value rounds: at 12 digits one cohort value was a single unit from a value
+    # that prints differently, and the digest held under two libraries by luck.
+    values = probe.libm_values(firms)
+    assert len(values) == 2906 + 316 and len({probe.portable(v) for v in values}) == len(set(values))
+    for v in values:
+        lo = hi = v
+        for _ in range(64):
+            lo, hi = math.nextafter(lo, -math.inf), math.nextafter(hi, math.inf)
+        assert probe.portable(lo) == probe.portable(v) == probe.portable(hi), v
+
+
+def test_the_portable_file_is_written_only_from_the_committed_rows(probe, firms, monkeypatch, tmp_path):
+    # It names no commit. This check is what ties it to the rows of equivalence.json.
+    out = tmp_path / "equivalence-portable.json"
+    monkeypatch.setattr(probe, "PORTABLE_OUT", out)
+    monkeypatch.setattr(probe, "load_firms", lambda: firms)
+    monkeypatch.setattr(probe, "_git", lambda *a: "0" * 40)
+    monkeypatch.setattr(probe.sys, "argv", ["probe", "--write-portable"])
+    monkeypatch.setattr(probe, "exact_platform", lambda: False)
+    with pytest.raises(SystemExit):
+        probe.main()
+    monkeypatch.setattr(probe, "exact_platform", lambda: True)
+    committed = json.loads((RAW / "equivalence.json").read_text())
+    exact = {k: committed[k] for k in ("year_rows", "cohort_rows", "table_inputs", "universe_sizes")}
+    monkeypatch.setattr(probe, "digests", lambda f: {**exact, "cohort_rows": {"n": 3771, "sha256": "0"}})
+    with pytest.raises(SystemExit):
+        probe.main()
+    assert not out.exists()
+    # The exact digests are stubbed with the committed ones so that this runs on any platform.
+    monkeypatch.setattr(probe, "digests", lambda f: exact)
+    probe.main()
+    written, kept = (json.loads(f.read_text()) for f in (out, RAW / "equivalence-portable.json"))
+    assert written.pop("written_on") and kept.pop("written_on")
+    assert written == kept
 
 
 def test_the_reproduction_gate_population_did_not_move(records):
