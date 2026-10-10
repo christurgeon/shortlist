@@ -16,9 +16,8 @@ from .filings import no_10k_reason as _no_10k_reason
 __all__ = ["enrich", "ResearchResult", "is_available"]
 
 # Bounds concurrent `claude -p` subprocess + SEC-fetch calls regardless of how high
-# `top_n`/`research.research_top_n` is configured. research_top_n and the bot's
-# max_deep both default to 3, so this ceiling only matters for an unusually large
-# manual --research N.
+# `top_n` is set. The bot's max_deep defaults to 3, so this ceiling only matters
+# for an unusually large manual --research N.
 _MAX_ENRICH_WORKERS = 5
 
 
