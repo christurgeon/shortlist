@@ -341,6 +341,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-10 | `2026-10-10-sec-filing-index-403.md` — sec.gov denies the short filing-index URL, so every research brief was skipped as "no 10-K"; edgartools 5.33.0 -> 5.61.1 | evidence |
 | 2026-10-08 | `2026-10-08-moat-durability-phase1.md` — the ROIC-persistence section of the `/deep` brief: what was built, the evidence that the shared code moved no study number, why fiscal 2025 is the reference year, and what a prompt integration must measure first | design + evidence |
 | 2026-10-07 | `2026-10-07-durability-decomposition-prereg.md` — the two durability passes: did profit hold, and are they one finding? Result in the verdict's Addendum 2 | pre-registration |
 | 2026-10-04 | `2026-10-04-moat-durability-verdict.md` — is the persistence of a top-quintile ROIC predictable? Two of eleven tests passed (run 2026-10-07) | verdict |
