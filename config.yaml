@@ -1,18 +1,18 @@
 # Each threshold is [low, high]: the metric is mapped linearly to 0..100 over
-# this range and clamped. Tune to taste. Returns/margins are FRACTIONS (0.20=20%).
-# A [high, low] pair is INVERTED — less is better.
+# this range and clamped. Returns/margins are FRACTIONS (0.20=20%). A [high, low]
+# pair is INVERTED — less is better.
 #
-# TREAT EVERY BAND HERE AS AN UNFITTED PRIOR. None was fitted; backtest a leg's
-# standalone rank IC before trusting it. Legs marked "backtest axis only" have no
-# production reader — they exist to be measured (docs/SCORING.md).
+# Every band and number in this file is an UNFITTED prior unless a comment says
+# otherwise; backtest a leg's standalone rank IC before trusting it. Legs marked
+# "backtest axis only" have no production reader (docs/SCORING.md).
 
 thresholds:
   # Quality
   roe:                 [0.10, 0.35]
   net_margin:          [0.00, 0.30]
   interest_coverage:   [2.0, 15.0]
-  debt_to_equity:      [3.0, 0.0]      # inverted: less leverage scores higher
-  net_debt_to_ebitda:  [6.0, 0.0]      # backtest axis ONLY (inverted: less leverage -> higher)
+  debt_to_equity:      [3.0, 0.0]      # inverted
+  net_debt_to_ebitda:  [6.0, 0.0]      # backtest axis only; inverted
 
   # Moat proxies
   gross_margin:            [0.20, 0.70]
@@ -29,438 +29,310 @@ thresholds:
   price_vs_200dma:     [-0.10, 0.30]
   rel_strength_6m:     [-0.15, 0.25]
   eps_revision:        [-0.05, 0.10]
-  # Decayed, dispersion-standardized earnings surprise (last_surprise_% / own-σ).
-  # PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989. Feeds the backtest sue axis + the
-  # opt-in momentum.sue leg below.
-  sue:                 [-2.0, 2.0]   # -2σ (big miss) -> 0 ; +2σ (big beat) -> 100
-  # 12-1 momentum of CAPM (vs SPY) residuals, standardized by residual vol.
-  # PREDICTIVE_SIGNALS §2; Blitz-Huij-Martens 2011. Feeds the backtest axis
-  # (LIVE-price) + the momentum.residual leg below. Check collinearity vs raw momentum.
-  residual_momentum:   [-1.0, 1.0]   # vol-scaled iMOM -1 -> 0 ; +1 -> 100
-  # Price-refinement MEASUREMENT axes (PREDICTIVE_SIGNALS §2) — backtest axis only.
-  pct_to_52w_high:     [0.70, 1.00]  # 70% of 52wk-high -> 0 ; at the high -> 100 (George-Hwang)
-  max_daily_return:    [0.15, 0.02]  # INVERTED: 15% lottery spike -> 0 ; calm 2% -> 100 (Bali MAX)
-  vol_scaled_momentum: [0.0, 2.0]    # risk-adjusted 12-1 momentum 0 -> 0 ; 2.0 -> 100 (Barroso-Santa-Clara)
+  sue:                 [-2.0, 2.0]   # decayed surprise / own sigma; feeds momentum.sue
+  residual_momentum:   [-1.0, 1.0]   # CAPM-residual 12-1 momentum / residual vol; feeds momentum.residual
+  # Measurement axes, backtest only.
+  pct_to_52w_high:     [0.70, 1.00]
+  max_daily_return:    [0.15, 0.02]  # inverted
+  vol_scaled_momentum: [0.0, 2.0]
 
   # Value
   upside_to_target:    [0.00, 0.40]
   fcf_yield:           [0.02, 0.08]
-  # EV/EBIT earnings yield (EBIT/EV; higher = cheaper) — backtest axis only.
-  ebit_ev_yield: [0.04, 0.12]        # ~4% -> 0 ; ~12%+ -> 100 (Greenblatt-cheap)
+  ebit_ev_yield:       [0.04, 0.12]    # backtest axis only
   pe_vs_history:       [-0.20, 0.30]   # positive = cheaper than own 5y median
-  peg:                 [3.0, 0.5]      # inverted: lower PEG scores higher (growth at a discount)
+  peg:                 [3.0, 0.5]      # inverted
 
-  # Fundamental-quality (Piotroski-inspired fraction won/legs -> 0..100). Backtest
-  # axis + the source of the value_trap suppress/confirm fraction.
+  # Fraction of Piotroski-inspired tests won. Backtest axis; also drives the
+  # value_trap suppress/confirm refinement.
   piotroski_f:         [0.34, 1.00]
 
   # Insider
   insider_sentiment:   [-0.30, 0.30]
   insider_net_ratio:   [-0.0005, 0.0005]   # net insider $ / market cap
 
-  # Insider conviction — inert unless the insider.conviction block below is present.
-  insider_cluster:        [1, 4]        # # distinct qualifying buyers -> 0..100
-  insider_role_buy_ratio: [0.0, 0.001]  # role-weighted buy $ / market cap -> 0..100
+  # Inert unless the insider.conviction block below is present.
+  insider_cluster:        [1, 4]        # distinct qualifying buyers
+  insider_role_buy_ratio: [0.0, 0.001]  # role-weighted buy $ / market cap
 
   # Risk (safer -> higher score)
   realized_vol:   [0.45, 0.15]    # annualized stdev of daily returns
   max_drawdown:   [-0.50, -0.10]  # trailing ~1y peak-to-trough (negative)
 
-  # Dilution / share-count trend. Feeds the opt-in quality.dilution leg AND the
-  # dilution advisory flag.
-  share_count_cagr: [0.04, -0.04]   # +4%/yr dilution -> 0 ; -4%/yr buyback -> 100
+  # Feeds the opt-in quality.dilution leg and the dilution flag.
+  share_count_cagr: [0.04, -0.04]   # +dilution -> 0 ; -buyback -> 100
 
-  # Investment & earnings quality (PREDICTIVE_SIGNALS §3). Backtest axes + the opt-in
-  # quality.earnings_quality legs below.
-  asset_growth: [0.30, -0.10]   # +30%/yr asset growth -> 0 ; -10% (shrinking) -> 100
-  accruals:     [0.15, -0.15]   # high accruals -> 0 ; strongly cash-backed -> 100
+  # Backtest axes + the opt-in quality.earnings_quality legs.
+  asset_growth: [0.30, -0.10]
+  accruals:     [0.15, -0.15]
 
-  # Total shareholder yield (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber):
-  # (dividends + net buybacks + net debt reduction) / market_cap. Backtest axis + the
-  # opt-in value.shareholder_yield leg below. Check collinearity vs fcf_yield.
-  shareholder_yield: [-0.02, 0.10]   # -2%/yr (net issuer) -> 0 ; +10%/yr payout -> 100
+  # Backtest axis + the opt-in value.shareholder_yield leg.
+  shareholder_yield: [-0.02, 0.10]
 
-# A defensible prior, not a fitted result (docs/ASSESSMENT_GAPS.md §2.1). Only ratios
-# matter: the composite is a weighted average over the components present.
+# Only ratios matter: the composite is a weighted average over the components present.
 weights:
   quality:      0.18
   moat:         0.18
-  growth:       0.135  # fundamental compounding (revenue/FCF/EPS CAGR + persistence)
-  value:        0.22   # value-tilt: independent leg
-  momentum:     0.08   # independent leg; value pulls ~3x momentum
+  growth:       0.135
+  value:        0.22
+  momentum:     0.08
   insider:      0.135
-  # 0.0, NOT deleted: the risk sub-score is still computed and displayed (report, CSV,
-  # /deep), it just carries no composite weight. Its standalone XS rank IC was NEGATIVE
-  # on both committed universes at every horizon; deleting the key would also hide it.
+  # 0.0, NOT deleted: the risk sub-score is still computed and displayed; it just
+  # carries no composite weight. Deleting the key would also hide it.
   # docs/audits/2026-09-25-risk-tilt-disable.md
   risk:         0.0
 
 gates:
-  # An INVESTABILITY MANDATE, not an alpha claim — no backtest says $300M outperforms
-  # $2B. The prior $2B floor was mismatched to the funnel feeding it: activism and
-  # insider buying structurally happen at small caps, so it deleted the distribution
-  # rather than trimming a tail. This gate is NOT a liquidity proxy — cap does not tell
-  # you whether a $200M name trades $600k/day or $30k/day; separate cap and dollar-volume
-  # floors handle that. Full floor-sensitivity curve and the counts behind the change:
-  # docs/audits/2026-08-07-investability-floor.md (2026-08-07).
+  # An investability mandate, not an alpha claim, and not a liquidity proxy: cap says
+  # nothing about dollar volume. docs/audits/2026-08-07-investability-floor.md
   min_market_cap:          3.0e+8
   max_debt_to_equity:      5.0
-  min_insider_sentiment:  -0.60   # trip "heavy_insider_selling" below this
-  # Leverage gate (ASSESSMENT_GAPS §2.7). Net-debt/EBITDA primary; artifact-guarded,
-  # coverage-corroborated D/E fallback when EBITDA is unavailable. Remove the whole
-  # block for the byte-identical pre-feature gate (raw D/E > max). Unfitted priors.
+  min_insider_sentiment:  -0.60   # trips "heavy_insider_selling" below this
+  # Net-debt/EBITDA primary; D/E fallback when EBITDA is unavailable or untrustworthy.
+  # Removing the block restores the plain raw-D/E gate.
   leverage:
     enabled: true
-    max_net_debt_to_ebitda:         4.0   # >4x net leverage -> over-levered
-    min_ebitda_margin:              0.03  # below this margin EBITDA is too small to trust -> fall back
+    max_net_debt_to_ebitda:         4.0
+    min_ebitda_margin:              0.03  # below this EBITDA is too small to trust -> fall back to D/E
     dte_artifact_ceiling:           20.0  # D/E above this is an equity-distortion artifact -> abstain
-    min_interest_coverage_for_gate: 2.0   # fallback trips only when EBIT covers interest < this
-  # Stage-aware FCF gate (§2.7). Shipped ON. A negative-FCF name is excused when its
-  # growth is strong AND sustained. Remove the block for the pre-feature hard gate.
+    min_interest_coverage_for_gate: 2.0   # fallback trips only when EBIT covers interest by less than this
+  # A negative-FCF name is excused when growth is strong AND sustained. Removing the
+  # block restores the hard gate.
   fcf:
     enabled: true
     excuse_min_revenue_cagr:  0.15
     excuse_min_persistence:   0.70
 
-# Sector applicability (SIC -> bucket). v1 MASKS structurally-undefined legs/gates
-# for spread/deposit/property businesses; it does NOT recalibrate surviving bands
-# (deferred mode-2 work). `buckets` is an ORDERED LIST: the first bucket whose
-# inclusive SIC range contains the code wins. Detection is EDGAR-sourced;
-# unknown -> no masking (a bit-identical no-op).
+# Sector applicability (SIC -> bucket). Masks legs/gates that are structurally
+# undefined for spread/deposit/property businesses; surviving bands are not
+# recalibrated. `buckets` is ORDERED: the first bucket whose inclusive SIC range
+# contains the code wins. Unknown SIC -> no masking.
 sectors:
   buckets:
     - name: reit
       sic_ranges: [[6798, 6798]]
     - name: insurer
-      sic_ranges: [[6300, 6399], [6411, 6411]]   # carriers (life/health/P&C/title/surety) + agents
-    - name: financials                            # depository banks, nondepository credit, broker-dealers, holdings
+      sic_ranges: [[6300, 6399], [6411, 6411]]
+    - name: financials
       sic_ranges: [[6020, 6099], [6120, 6179], [6199, 6199], [6211, 6211], [6712, 6712]]
-  # Legs undefined / non-representative for the bucketed institutions. Masking is
-  # PRODUCTION-ONLY — every backtest axis stays unmasked (sic=None) for raw-IC
-  # comparability. Deliberate exclusions:
-  #   net_margin              defined, only miscalibrated -> deferred, NOT masked.
-  #   exchanges (6231), advisers (6282), funds (672x), SPACs (6770), real-estate
-  #                           operators (65xx) are NOT bucketed -> unknown -> unmasked.
-  # Deliberate inclusions:
-  #   asset_growth, accruals  lumpy AUM/loan books, externally-financed asset growth.
-  #   shareholder_yield       bank capital returns ride regulatory (CCAR/SCB) cycles,
-  #                           and loan-book debt flows distort the net-debt leg.
+  # Masking is production-only: backtest axes stay unmasked for raw-IC comparability.
+  # net_margin is deliberately NOT masked (defined, only miscalibrated). Exchanges,
+  # advisers, funds, SPACs and real-estate operators are not bucketed.
   masked_legs: [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals, shareholder_yield]
   masked_gates: [negative_fcf, over_leveraged]
 
 validity:
-  # Bucket-gated: floors apply ONLY to known buckets; 'unknown' stays bit-identical
-  # to pre-change behavior (any present leg scores; composite is always 'scored').
-  min_valid_leg_fraction: 0.5   # known-bucket sub-score needs >= half its APPLICABLE legs present
-  unknown_min_present_legs: 1   # unknown: any present leg scores (no-op back-compat)
-  min_scored_weight:      0.25  # known-bucket composite 'scored' iff present/applicable component weight >= this.
-                                # Lowered 0.34->0.25 for the value/momentum split: a gated financials name with
-                                # only momentum+insider present sits at 0.287 and must still rank (spec 2026-06-02).
-  min_composite_components: 1   # ALL buckets, including 'unknown'. A composite must rest on at least this many
-                                # real sub-scores. `risk` does not count. While risk carried weight, a card with
-                                # every component null posted a composite from risk alone (BRVE, 2026-08-10:
-                                # composite 100.0, ranked #1, because it reports no debt). At weights.risk 0.0
-                                # that card posts 0.0; the floor is what keeps it unscored either way.
-                                # Deliberately a COUNT, not a weight: a momentum-only name sits at confidence
-                                # ~0.08 and is pinned as scored, so no weight threshold separates the two
-                                # safely. Remove the key for the exact pre-2026-08-11 behaviour.
+  # Floors apply only to known buckets; 'unknown' scores on any present leg.
+  min_valid_leg_fraction: 0.5   # a known-bucket sub-score needs this share of its applicable legs
+  unknown_min_present_legs: 1
+  min_scored_weight:      0.25  # known-bucket composite is 'scored' iff present/applicable weight >= this
+  # All buckets. A composite must rest on at least this many real sub-scores (`risk`
+  # does not count), so a card with every component null stays unscored. A COUNT, not
+  # a weight: a momentum-only name has low confidence yet must still score, so no
+  # weight threshold separates the two. Removing the key disables the floor.
+  min_composite_components: 1
 
-# Soft, NON-disqualifying advisories, parallel to `gates`. EVERY flag below is
-# advisory only: none may touch passed / composite / scored. Every number here is an
-# UNFITTED prior. crowded_short fires only with the `finra` source present.
+# Advisory only: no flag may touch passed / composite / scored.
 flags:
-  crowded_short:
+  crowded_short:                      # needs the `finra` source
     min_short_pct_outstanding: 0.10   # of shares OUTSTANDING — under-states float
-    min_days_to_cover: 5.0            # >5 elevated, >10 extreme
-    require_rising: true              # the change (vs prior cycle), not the static level, is the signal
-    max_staleness_days: 35            # ignore a cycle older than ~2 missed publications (stale-cache guard)
-  # Insider conviction advisories. Inert unless the insider.conviction block is
-  # enabled (the fields stay None otherwise).
+    min_days_to_cover: 5.0
+    require_rising: true              # the change vs the prior cycle is the signal
+    max_staleness_days: 35            # stale-cache guard
+  # Inert unless insider.conviction is enabled.
   insider_cluster_buy: { min_distinct: 3 }
   planned_sale:        { min_value: 1 }
-  cash_burn:           { enabled: true }   # advisory whenever FCF is negative (presence-based)
-  # Persistent net share issuance (ASSESSMENT_GAPS §2.5). Fires off share_count_cagr
-  # (diluted weighted-avg share count).
-  dilution:            { min_share_cagr: 0.03 }   # >= +3%/yr diluted-share growth
-  # A name that looks cheap (high value sub-score) while its quality OR growth is weak.
-  # Level-based proxy — no deterioration trend is available without snapshot history.
+  cash_burn:           { enabled: true }   # fires whenever FCF is negative
+  dilution:            { min_share_cagr: 0.03 }   # diluted-share growth per year
+  # Looks cheap while quality OR growth is weak. Level-based: no trend without history.
   value_trap:
     min_value_score:   60
     max_quality_score: 40
     max_growth_score:  40
-    # OPTIONAL fundamental-quality refinement. ABSENT by default -> value_trap is
-    # byte-identical to the pre-feature scorer. Uncomment to let the Piotroski-inspired
-    # score suppress the flag on cheap-but-improving names and confirm it on
-    # cheap-but-deteriorating ones.
+    # Optional Piotroski refinement; absent by default.
     # piotroski:
-    #   suppress_at: 0.83   # cheap + fraction >= this (>=5/6) -> NOT a trap. High on purpose:
-    #                       # requires the F4-F6 trend legs, not just the correlated F1-F3
-    #                       # going-concern block (audit Sev2). Suppression removes a risk flag.
-    #   confirm_at:  0.40   # cheap + fraction <= this (<=2/6) -> trap even if quality/growth ok
-    #   min_legs:    4      # abstain when fewer than this many of the 6 tests evaluable
-  # Social-media hype (WSB via ApeWisdom; harness engine + `wsb` source). Fires on
-  # rising mention velocity above an absolute floor. Live WSB top-name volume was
-  # ~50-100 mentions on 2026-06-07 — retune by regime.
-  social_hype:
-    min_mentions: 50            # absolute floor (ignore low-chatter names)
-    min_mention_delta_pct: 0.5  # +50% mentions vs 24h ago (velocity); skipped when no 24h baseline
-    require_rising: true        # the change, not the static level, is the signal
-    max_staleness_days: 2       # ignore data older than ~2 days (stale-cache guard)
-  # Elevated AND rising mainstream news flow (Finnhub company-news).
-  news_spike:
-    min_count_7d: 10           # absolute floor: >=10 articles in the last 7d
-    require_rising: true       # last-7d count > the prior 7d (the change is the signal)
-    max_staleness_days: 3      # ignore if the newest article is older than ~3 days
-  # "Lazy Prices" (Cohen-Malloy-Nguyen 2020): a big YoY change in 10-K/10-Q risk-factor
-  # + MD&A language predicts negative returns. Fires when point-in-time cosine
-  # similarity vs the prior same-type filing is BELOW max_similarity.
-  #
-  # DISABLED 2026-08-20 — it has NEVER been able to fire, for two independent reasons:
-  # no producer writes StockMetrics.filing_text_similarity (research runs after
-  # check_flags), AND the metric barely discriminates (textsim.py keeps stopwords, so
-  # unrelated firms score 0.72-0.90 against same-firm YoY ~0.997 — a 0.02 margin that
-  # only SHORT text crosses, i.e. an extraction bug, not a rewrite). Fixing either
-  # alone is not enough. Kept, not deleted, so the threshold and the kill-reason stay
-  # together. Evidence: TODO.md §2a, docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4,
-  # docs/audits/2026-08-21-inventory-context-line.md. Guarded by
-  # tests/test_flag_producers.py.
+    #   suppress_at: 0.83   # cheap + fraction >= this -> NOT a trap. Kept high on purpose:
+    #                       # suppression removes a risk flag, so it needs the F4-F6 trend legs.
+    #   confirm_at:  0.40   # cheap + fraction <= this -> trap even if quality/growth are ok
+    #   min_legs:    4      # abstain when fewer of the 6 tests are evaluable
+  social_hype:                  # WSB via ApeWisdom
+    min_mentions: 50            # retune by regime
+    min_mention_delta_pct: 0.5  # skipped when there is no 24h baseline
+    require_rising: true
+    max_staleness_days: 2
+  news_spike:                   # Finnhub company-news
+    min_count_7d: 10
+    require_rising: true        # last-7d count must exceed the prior 7d
+    max_staleness_days: 3
+  # DISABLED: it has never been able to fire. No producer writes
+  # StockMetrics.filing_text_similarity (research runs after check_flags), and the
+  # metric barely discriminates (textsim.py keeps stopwords). Both must be fixed to
+  # re-enable. Kept so the threshold and the kill reason stay together.
+  # TODO.md §2a, docs/audits/2026-08-21-inventory-context-line.md,
+  # tests/test_flag_producers.py
   filing_text_change:
-    enabled: false             # both defects must be fixed to re-enable
-    max_similarity: 0.7        # similarity < 0.7 (>~30% rewritten) -> flag
-  # In a risk-off regime, flag leveraged names. cyclical_buckets ships EMPTY because
-  # sectors.buckets defines only reit/insurer/financials — a cyclical name resolves to
-  # "unknown" and would never match. Populate once cyclical SIC buckets exist.
+    enabled: false
+    max_similarity: 0.7        # similarity below this -> flag
+  # cyclical_buckets ships EMPTY: sectors.buckets defines no cyclical bucket, so a
+  # cyclical name resolves to "unknown" and would never match.
   risk_off_regime:
     max_net_debt_ebitda: 3.0
     max_debt_to_equity: 1.5
     cyclical_buckets: []
 
 fmp:
-  # The /stable/ insider-trading endpoint is paid (402 on free plans) and EDGAR is
-  # the free, authoritative insider source — so leave this off to avoid burning a
-  # guaranteed-to-fail request per ticker against the daily quota. Flip to true only
-  # on a paid FMP tier where the endpoint actually returns data.
+  # The insider endpoint is paid (402 on free plans) and EDGAR is the free source.
+  # Enable only on a paid tier.
   fetch_insider: false
-  # Retries on a 429 (per-minute throttle) before giving up; backoff honors any
-  # Retry-After header. Daily-quota 429s won't clear, so this is deliberately small.
+  # Retries on a per-minute 429; daily-quota 429s won't clear, so keep this small.
   max_retries: 2
 
 # ---------------------------------------------------------------------------
 # OPT-IN SCORING LEGS
 #
-# Every block in this section is a scoring leg that is OFF unless written here.
-# Three rules cover all of them, so they are not repeated per block:
-#   1. Commented out (or `enabled: false`) => the scorer is BYTE-IDENTICAL to its
-#      pre-feature behaviour. The underlying signal is still surfaced and still
-#      backtest-measured either way; only the SCORING changes.
-#   2. Every number is an UNFITTED prior. Backtest the leg's standalone rank IC —
-#      and its collinearity with the legs it sits beside — before enabling it.
+# Each block below is a scoring leg that is OFF unless written here.
+#   1. Commented out (or `enabled: false`) => the scorer behaves exactly as without the
+#      feature. The signal is still surfaced and backtest-measured; only SCORING changes.
+#   2. Backtest the leg's standalone rank IC, and its collinearity with neighbouring
+#      legs, before enabling it.
 #   3. ONE top-level key per name. Two `value:` blocks are valid YAML that silently
-#      keeps only the last. To enable two `value` knobs, write ONE `value:` key with
-#      two children. Same for `quality:` and `momentum:`.
+#      keeps only the last; write one `value:` key with two children. Same for
+#      `quality:` and `momentum:`.
 # ---------------------------------------------------------------------------
 
-# Insider CONVICTION enrichment (ASSESSMENT_GAPS §2.6). Adds cluster-buy and
-# role-weighted-buy legs to insider_score, and feeds the insider_* advisory flags.
+# Insider conviction: cluster-buy and role-weighted-buy legs, and the insider_* flags.
 # insider:
 #   conviction:
 #     enabled: true
 #     min_cluster_buy_value: 25000      # per-buyer $ floor to count toward a cluster
-#     planned_sell_discount: 0.5        # forgive 50% of detected-10b5-1 sell drag
+#     planned_sell_discount: 0.5        # forgive this share of detected-10b5-1 sell drag
 #     role_weights:
 #       c_suite:  1.5
 #       officer:  1.2
 #       director: 1.0
 #       ten_pct:  0.5
-#       unknown:  1.0                   # missing role == neutral (load-bearing for back-compat)
+#       unknown:  1.0                   # missing role == neutral
 
-# Earnings-quality / dilution SCORING (ASSESSMENT_GAPS §2.5). Quality gains an inverted
-# share_count_cagr leg (serial diluters score below buyback compounders) and the growth
-# eps_cagr leg switches from the net-income proxy to genuine diluted-EPS CAGR.
-# CAVEAT (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): pre-deploy accumulation
-# snapshots lack `diluted_shares` for 8 large caps (CMCSA CVX GOOGL HON LMT MO MRK PG)
-# later recovered by the companyconcept fallback. Date-gate or exclude them before
-# fitting against accumulated history, or the mid-panel field-presence break biases the
-# walk-forward fit.
+# Dilution scoring: an inverted share_count_cagr quality leg, and growth eps_cagr
+# switches from the net-income proxy to diluted-EPS CAGR.
+# CAVEAT: accumulated snapshots from before the companyconcept fallback lack
+# `diluted_shares` for some large caps (docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Exclude them
+# before fitting on accumulated history.
 # quality:
 #   dilution:
 #     enabled: true
 
-# Investment & earnings-quality SCORING (PREDICTIVE_SIGNALS §3). BOTH legs measured and
-# BOTH off. accruals (Sloan 1996) was enabled 2026-06-21 on a single ad-hoc universe whose
-# composition and results doc were gitignored and no longer exist; re-measured 2026-07-12
-# on the committed universes it never clears t~2 anywhere, and was flat-to-negative in the
-# small/mid caps where it still moved live scores. asset_growth (Cooper-Gulen-Schill 2008)
-# has no cross-sectional edge either. Evidence:
-# docs/audits/2026-07-12-accruals-leg-disable.md. Both stay measured in the backtest, just
-# not scored. Per-leg keys default True when absent.
+# Both legs are measured and OFF; they stay backtested. Per-leg keys default True when
+# absent. docs/audits/2026-07-12-accruals-leg-disable.md
 quality:
   earnings_quality:
     enabled: true
-    asset_growth: false   # XS-IC -0.006, t=-0.3
-    accruals: false       # sub-significant on largecap, flat combined (2026-07-12)
+    asset_growth: false
+    accruals: false
 
-# Sell-side-target VALUE leg (`upside_to_target`) — the one OPT-OUT knob in this file, so
-# rule 1 above runs backwards here: it ships ON and leaving this commented KEEPS it on.
-# It exists to be TOGGLED FOR A MEASUREMENT. Brav & Lehavy find the target LEVEL negatively
-# related to realised returns while the REVISION predicts (PREDICTIVE_SIGNALS §Quick wins
-# #1), but that is untested point-in-time on this data and CLAUDE.md's bar forbids flipping
-# a shipped default on an argument. Set false to run the counterfactual; value then rests on
-# fcf_yield / pe_vs_history / peg and redistributes the weight.
+# The one OPT-OUT knob: rule 1 runs backwards here. It ships ON and leaving this
+# commented KEEPS it on. Set `enabled: false` only to run a counterfactual; value then
+# rests on fcf_yield / pe_vs_history / peg and the weight redistributes.
 # `thresholds.upside_to_target` stays required either way.
 # value:
 #   upside_to_target:
 #     enabled: false
 
-# Total-shareholder-yield SCORING (PREDICTIVE_SIGNALS §5; Boudoukh et al. 2007 / Faber).
-# Value gains one STRAIGHT leg — (dividends + net buybacks + net debt reduction) /
-# market_cap: names returning more cash to owners score higher. The net-debt leg is signed,
-# so a net debt ISSUER scores below 0% yield. Check collinearity vs fcf_yield / share_count.
+# Total shareholder yield: one straight value leg, so a net debt ISSUER scores below 0%.
 # value:
 #   shareholder_yield:
 #     enabled: true
 
-# SUE / post-earnings-announcement-drift SCORING (PREDICTIVE_SIGNALS §1; Bernard-Thomas
-# 1989, Novy-Marx 2015). Momentum gains one STRAIGHT leg — the decayed,
-# dispersion-standardized last surprise: a fresh beat tilts momentum up, a fresh miss down.
-# MANDATORY σ-GUARD: the leg ABSTAINS below min_quarters usable surprises or below
-# sigma_floor dispersion (the all-equal case has σ≈0 — never divide to inf/NaN). It decays
-# linearly over decay_trading_days since the LAST ANNOUNCED report, keyed off
-# earnings_days_since_last_report and NEVER days-to-next (that report is unannounced, so
-# using it is look-ahead).
+# Post-earnings drift: one straight momentum leg from the decayed, standardized last
+# surprise. It ABSTAINS below min_quarters usable surprises or below sigma_floor
+# dispersion (sigma~0 would divide to inf/NaN). Decay runs from the last ANNOUNCED
+# report (earnings_days_since_last_report), never days-to-next, which would be look-ahead.
 # momentum:
 #   sue:
 #     enabled: true
-#     decay_trading_days: 60     # post-announcement drift window (Bernard-Thomas ~60d)
-#     sigma_floor: 1.0           # min surprise dispersion (pct points) below which SUE abstains
-#     min_quarters: 3            # min usable past surprises required to standardize
+#     decay_trading_days: 60
+#     sigma_floor: 1.0           # surprise dispersion, percentage points
+#     min_quarters: 3
 
-# Residual (idiosyncratic) MOMENTUM SCORING (PREDICTIVE_SIGNALS §2; Blitz-Huij-Martens
-# 2011). ON — the exception to rule 2, and the only new signal the LIVE-price backtest
-# validated: 1-month XS rank-IC +0.023, t=2.6, while RAW momentum is anti-predictive there
-# (TS-IC -0.03, t=-3.9). HONEST CAVEAT: SHORT-HORIZON. Its edge decays past ~3 months, so it
-# is a de-betaed near-term tilt, not a long-hold thesis. Fires on live screens
-# (m.residual_momentum comes from the date-aligned stock+SPY Yahoo series); ABSTAINS —
-# never divides by 0 — on a thin, flat or date-less price window.
+# Residual momentum is ON (the exception to rule 2): short-horizon (past ~3 months the
+# edge decays), so a de-betaed near-term tilt, not a long-hold thesis. Abstains on a
+# thin, flat or date-less price window.
 momentum:
   residual:
     enabled: true
 
-# Default source chain for the harness (yahoo first => wins the price merge). Used
-# whenever `--provider` is omitted; passing `--provider` overrides this list, so omit
-# it to keep yahoo/finra.
+# Default source chain for the harness; yahoo first wins the price merge. Passing
+# `--provider` overrides this list entirely, so omit it to keep yahoo/finra.
 harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, gov_contracts, lobbying]
 
-# Persistent HTTP-response cache for the FMP/Finnhub sources. On by default so
-# repeated ad-hoc runs stop burning the free-tier daily quota. Disable per-run with
-# --no-cache; force-repopulate with --refresh-cache. See docs/DATA_SOURCES.md §6.
+# HTTP-response cache for the FMP/Finnhub sources. Disable per run with --no-cache;
+# force-repopulate with --refresh-cache. docs/DATA_SOURCES.md §6.
 cache:
   enabled: true
   path: .cache/http.sqlite
-  # ttl: {<bucket>: <seconds>} overrides cache.py:_DEFAULT_TTLS per data half-life
-  # (quote 6h, fundamentals/analyst 1d, statements/profile 7d, default 1d). Omitted
-  # here so those defaults stay the single source — add only buckets you retune.
+  # ttl: {<bucket>: <seconds>} overrides cache.py:_DEFAULT_TTLS. Omitted so the
+  # defaults stay the single source; add only buckets you retune.
 
 # Qualitative research layer (shortlist --research N). Uses the `claude` CLI.
 #
-# TWO RULES COVER EVERY SUB-BLOCK BELOW, so they are not repeated per block:
-#   1. Each sub-block's `enabled: false` (or deleting the block) is a byte-identical
-#      no-op — the line is simply omitted.
-#   2. These are PROMPT-ONLY context lines: never a sub-score, gate or flag. Research
-#      runs after score(), so nothing here can reach the composite.
-#   The exceptions are called out where they occur: `eightk`, `tenq_risk_update` and
-#   `notes` feed real FILING TEXT, so they enter the quote-grounding haystack — each as
-#   its own labelled segment (docs/RESEARCH.md → Quote verification).
+# Two rules cover every sub-block:
+#   1. `enabled: false` (or deleting the block) omits its line from the prompt.
+#   2. These are PROMPT-ONLY context lines, never a sub-score, gate or flag: research
+#      runs after score(). `eightk`, `tenq_risk_update` and `notes` carry real FILING
+#      TEXT, so each enters the quote-grounding haystack as its own labelled segment
+#      (docs/RESEARCH.md → Quote verification).
 research:
-  model: claude-sonnet-5-5       # pinned to a family, not the cross-version "sonnet" alias —
-                               # so it tracks the family's latest snapshot, not a frozen build.
-                               # Reproducibility is anchored by the wide cache key
-                               # (research/cachekey.py), not the model string.
-                               # Set 2026-08-05 as a JUDGMENT CALL, not a measurement. Two
-                               # live consequences: Sonnet 5 tokenizes ~30% heavier than the
-                               # prior generation (per-brief cost rises at an unchanged sticker
-                               # price, never measured on a real ~127K-char prompt), and
-                               # SYSTEM_PROMPT was tuned against the prior generation — Sonnet 5
-                               # follows it more literally, so watch for over-applied
-                               # length/scope directives.
-  timeout_s: 900               # NVDA ~246s, CVX ~400s on the VPS; a HEAVY filer (WDC, 178K-char
-                               # prompt) measured ~490s and intermittently blew the old 600s
-                               # ceiling -> "research unavailable". Keep max_attempts x
+  model: claude-sonnet-5-5     # a judgment call, not a measurement. SYSTEM_PROMPT was tuned
+                               # on an earlier generation; watch for over-applied length/scope
+                               # directives. Reproducibility rests on the cache key
+                               # (research/cachekey.py), not this string.
+  timeout_s: 900               # heavy filers need several minutes. Keep max_attempts x
                                # timeout_s below bot.research_phase_budget_s.
-  max_attempts: 3              # total assess() tries. A single claude call still intermittently
-                               # exceeds timeout_s; that failure is transient, so retry rather
-                               # than drop the brief.
-  fallback_model: claude-opus-5   # --fallback-model on the claude CLI; without it an overloaded
-                               # primary fails all max_attempts identically and the brief is
-                               # dropped. MUST DIFFER from `model` to do anything. Opus 5 fires
-                               # only when Sonnet 5 is unavailable (rare) — a costlier brief
-                               # beats no brief. The brief is labelled with the model that
-                               # actually ran (claude_cli._answering_model), so the corpus stays
-                               # auditable. Remove the key for the pre-feature argv.
-  output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, where <key> is
-                               # the wide cache key (accession-p<fingerprint>-c<digest>-<day>),
-                               # not the bare filing accession — see research/cachekey.py.
+  max_attempts: 3              # total assess() tries; a claude call can transiently time out
+  fallback_model: claude-opus-5   # --fallback-model on the claude CLI; MUST DIFFER from `model`
+                               # to do anything. The brief is labelled with the model that
+                               # actually ran (claude_cli._answering_model). Remove the key
+                               # to omit the flag.
+  output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, keyed by the
+                               # wide cache key (research/cachekey.py), not the accession
   cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
-    max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay.
-                               # 0 also freezes the macro line: only `macro.regime` is
-                               # hashed in context_digest, but _macro_line (assess.py:
-                               # 265-282) prints five rate levels (10y, 10y-2y, HY OAS,
-                               # VIX, fed funds) that can all move while regime does not.
-    price_band_pct: 0.03       # regenerate when price/market cap moves ~3%. 0 means
-                               # price/market_cap DROP OUT of the digest entirely (band<=0
-                               # short-circuits _band() to None) — i.e. price never busts
-                               # the key on its own, NOT "bust on any move".
+    max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay. 0
+                               # also freezes the macro line: only `macro.regime` is hashed,
+                               # but the line prints rate levels that can move without it.
+    price_band_pct: 0.03       # regenerate when price/market cap moves this much. 0 drops
+                               # price/market_cap from the digest entirely (price never
+                               # busts the key), NOT "bust on any move".
   max_risks: 12
   max_red_flags: 12
-  max_conflicts: 6             # cap on reconciliation entries (truncation budget)
-  max_moat_sources: 6          # cap on moat.sources — quoted claims, so uncapped growth
-  max_management_findings: 6   # eats OUTPUT tokens, and assess.py returns None (drops the
-                               # brief, unretried) on stop_reason == max_tokens
-  max_falsifiers: 6            # cap on thesis.what_would_change_my_mind
-  max_added_risks: 8           # cap on the YoY newly-disclosed-risks list (§3.4)
+  max_conflicts: 6
+  max_moat_sources: 6          # quoted claims, so uncapped growth eats OUTPUT tokens; assess.py
+  max_management_findings: 6   # drops the brief, unretried, on stop_reason == max_tokens
+  max_falsifiers: 6
+  max_added_risks: 8
   risk_diff:                   # YoY Item-1A risk-factor diff (research/riskdiff.py)
-    similarity_threshold: 0.5  # normalized block-prefix SequenceMatcher ratio; below => "added"
-    max_blocks: 4              # cap added risk blocks fed to the model
-    max_chars: 12000           # total char cap on the added-risk text
-  max_chars:                   # cap 10-K narrative sections fed to the model (chars).
-    business: 50000            # generous context now that timeout_s has headroom. MD&A kept
-    mda: 60000                 # largest (highest-signal). risk_factors is boilerplate, ordered
-    risk_factors: 50000        # worst-first, so a prefix slice keeps the material risks.
-    tenq_mda: 40000            # cap the latest 10-Q MD&A prompt section (§3.1). NOTE this cap
-                               # is load-bearing beyond prompt size: JPM's Part I Item 2
-                               # extraction measured 601,221 chars (a whole-document
-                               # over-capture) on 2026-08-14, so the section fed to the model is
-                               # its first 40K. See TODO.md §2a.
-  tenq_risk_update:            # 10-Q Part II Item 1A — the quarter's risk-factor CHANGES,
-                               # diffed against the 10-K Item 1A (research/filings.py:
-                               # _tenq_added_risks). Filing text, so it enters the grounding
-                               # haystack as its own labelled segment. NOT a scored signal.
+    similarity_threshold: 0.5  # below => block counts as "added"
+    max_blocks: 4
+    max_chars: 12000
+  max_chars:                   # per-section caps on 10-K text fed to the model
+    business: 50000
+    mda: 60000
+    risk_factors: 50000        # boilerplate ordered worst-first, so a prefix keeps the material risks
+    tenq_mda: 40000            # also load-bearing against whole-document over-capture in the
+                               # 10-Q MD&A extraction. TODO.md §2a
+  tenq_risk_update:            # 10-Q Part II Item 1A changes, diffed against the 10-K Item 1A
+    enabled: true              # (research/filings.py:_tenq_added_risks)
+    max_blocks: 4
+    max_chars: 4000            # a cap on the diff, not the raw Item 1A, which can be far larger
+  notes:                       # debt & liquidity statement notes (research/notes.py): the
+                               # maturity-ladder input for the refinancing-coverage arithmetic.
+                               # docs/audits/2026-08-20-debt-liquidity-notes-design.md
     enabled: true
-    max_blocks: 4              # diff blocks kept, worst-first (riskdiff semantics)
-    max_chars: 4000            # measured ceiling across 10 large caps was 2,949 chars (NVDA)
-                               # AFTER the diff; the RAW section runs to 84,281 (GILD), which
-                               # is precisely why this is a diff and not the raw Item 1A.
-  notes:                       # debt & liquidity STATEMENT NOTES (research/notes.py) — the
-                               # maturity-ladder input SYSTEM_PROMPT's refinancing-coverage
-                               # arithmetic needs and had no producer for (the 2026-08-19 live
-                               # run computed nothing in 0 of 3 briefs). Filing text, so it
-                               # enters the grounding haystack as its own labelled segment.
-                               # NOT a scored signal — research runs after score().
-                               # Evidence: docs/audits/2026-08-20-debt-liquidity-notes-design.md
-    enabled: true
-    max_notes_per_form: 2      # NKE files SHORT-TERM BORROWINGS + LONG-TERM DEBT, Realty
-                               # Income files Credit Facilities + Notes Payable; both are
-                               # relevant, so two is the measured norm, not a hedge.
-    max_chars_per_note: 16000  # NOT 10000. The 12-month ladder sits within the first 10,000
-                               # chars in 8 of 9 over-cap notes — the exception is DUK at
-                               # 13,022, so a 10,000 cap would silently drop the ladder for a
-                               # whole sector of heavy borrowers while appearing to work.
-    max_chars_10k: 16000       # PER-FORM budgets, deliberately not one shared pool: a shared
-    max_chars_10q: 8000        # pool lets a heavy borrower's annual notes crowd out the
-                               # FRESHER quarterly note, and freshness is the reason the 10-Q
-                               # is in scope at all. Worst case adds 24K chars to a prompt
-                               # already running 127-178K; the median name adds ~6K.
-  screening_call:              # buy/hold/avoid capstone on the research brief (spec 2026-06-07)
+    max_notes_per_form: 2      # a borrower can file several relevant notes
+    max_chars_per_note: 16000  # not lower: the ladder can sit past 10,000 chars, and a tighter
+                               # cap would silently drop it for heavy borrowers
+    max_chars_10k: 16000       # per-form budgets, not a shared pool, so annual notes cannot
+    max_chars_10q: 8000        # crowd out the fresher quarterly note
+  screening_call:              # buy/hold/avoid capstone on the research brief
     enabled: true
     labels:
       STRONG_BUY: "Strong Buy"
@@ -478,196 +350,156 @@ research:
       medium_below: 0.70       # confidence below this -> at most MEDIUM
     high_conviction:
       contra_flags: [value_trap]  # flags that block HIGH on a bullish call
-  reverse_dcf:                 # price-implied FCF growth line in the brief (research-only;
-                               # NOT a scored signal — see docs/.../2026-06-13-reverse-dcf-*).
+  reverse_dcf:                 # price-implied FCF growth line
     enabled: true
-    discount_rate: 0.10        # cost-of-equity prior (long-run equity return); the only model knob
+    discount_rate: 0.10        # cost-of-equity prior; the only model knob
     base_years: 3              # FCF normalization window (median of positive years)
-    run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base (run-rate caveat)
+    run_rate_flag_ratio: 1.5   # flag the line when latest FCF > this x base
     display_floor: -0.50       # clamp display; below => "distressed/special-situation"
 
-  inventory:                   # inventory BALANCE + days-inventory-outstanding trend.
-                               # It deliberately does NOT compute "FCF excluding the
-                               # inventory build" — a single-line adjustment is not a
-                               # neutral decomposition, and on HDSN it reverses the sign
-                               # of the conclusion (docs/PLAN_INVENTORY_DECOMPOSITION.md
-                               # §0.2, §1). The DIO leg needs gross_profit, which EDGAR
-                               # does not supply (year-joined from FMP), so it abstains on
-                               # an FMP-gated/429 run and only the balance trend renders.
+  inventory:                   # inventory balance + days-inventory-outstanding trend. Does NOT
+                               # compute "FCF excluding the inventory build": that adjustment
+                               # is not neutral (docs/PLAN_INVENTORY_DECOMPOSITION.md §0.2, §1).
+                               # The DIO leg needs gross_profit (year-joined from FMP), so it
+                               # abstains when FMP is gated and only the balance trend renders.
     enabled: true
 
   gov_contracts:               # USAspending gov-contracts context line
     enabled: true
-    min_confidence: 0.80       # render floor: omit the line below this recipient-match confidence
+    min_confidence: 0.80       # omit the line below this recipient-match confidence
 
   lobbying:                    # federal lobbying-spend context line
     enabled: true
-    min_confidence: 0.85       # render floor: omit the line below this client-match confidence
+    min_confidence: 0.85       # omit the line below this client-match confidence
 
   earnings:                    # earnings-surprise history + next-report line
     enabled: true
 
-  analyst_revision:            # change in sell-side rating counts. Brav & Lehavy: the LEVEL
-                               # of optimism is negatively related to realised returns and
-                               # already reaches the scorer via `upside_to_target`; the
-                               # REVISION is the predictive half. DELTAS ONLY, never a prior
-                               # level — `analyst` merges across sources, so a level here
-                               # could come from a different vendor's panel than the delta.
+  analyst_revision:            # change in sell-side rating counts. DELTAS ONLY, never a prior
+                               # level: `analyst` merges across sources, so a level could come
+                               # from a different vendor's panel than the delta.
     enabled: true
 
   options:                     # options-surface context line. NOT on /screen and NOT in
-                               # harness_sources — /screen would spend the per-IP budget on
-                               # data no screen renders. Feed, guards and every constant:
+                               # harness_sources: /screen would spend the per-IP budget on data
+                               # no screen renders. Feed, guards and constants:
                                # docs/audits/2026-08-24-options-surface-design.md
     enabled: true
     timeout: 20                # seconds; a slow chain must never stall a brief
     delta_tolerance: 0.10      # reject a strike whose ACHIEVED delta is this far from target.
-                               # Deliberately NOT a minimum contract count — a count passes
-                               # the thin chains that produce the worst skews (RES: 77 vol
-                               # points off a -0.888 put vs a 0.869 call).
+                               # Not a minimum contract count: that passes thin chains, which
+                               # produce the worst skews.
     max_atm_spread_pct: 40     # reject the STRADDLE above this bid-ask % of mid. Gates the
-                               # implied move alone — the one item priced off a premium mid;
-                               # skew compares volatilities and survives a wide spread.
-    # The next three bracket the expiry around the print. The vendor's earnings calendar
-    # REVISES still-future dates (14 times / 42 tickers in ~2 months, max 8d), so an expiry
-    # chosen without a buffer can end up BEFORE the print — pricing no event while the line
-    # claims it prices one. Silent wrong answer; abstaining is better. Revisions stop ~12d
-    # out, hence the firm-within window.
+                               # implied move only; skew compares volatilities and survives
+                               # a wide spread.
+    # The next three bracket the expiry around the print. The vendor revises still-future
+    # earnings dates, so an expiry chosen without a buffer can land BEFORE the print and
+    # price no event while the line claims it does. Abstaining is better. Revisions stop
+    # shortly before the print, hence the firm-within window.
     earnings_date_uncertainty_days: 8  # expiry must sit >= this far AFTER the predicted date
-    max_earnings_expiry_gap_days: 14   # ...and no further, or it prices weeks of extra drift.
-                               # The ladder is weekly then jumps to monthlies, so a print
-                               # >~6 weeks out usually has no expiry that brackets it and the
-                               # clause abstains. Correct: that weekly is not listed yet.
+    max_earnings_expiry_gap_days: 14   # ...and no further, or it prices extra drift. A print
+                               # far out usually has no bracketing expiry and the clause abstains.
     earnings_date_firm_within_days: 7  # inside this, take the date at face value, no buffer
-    earnings_lookback_quarters: 6      # realized post-announcement moves shown beside the
-                               # implied one (8-K Item 2.02 dates). An implied move with
-                               # nothing to compare against is an uninterpretable number.
-    max_stale_days: 5          # abstain when the QUOTE time (not the file timestamp) is
-                               # older than this — holiday gaps, or a frozen upstream file.
+    earnings_lookback_quarters: 6      # realized post-announcement moves shown beside the implied one
+    max_stale_days: 5          # abstain when the QUOTE time (not the file timestamp) is older
     require_in_thesis: true    # attach OPTIONS_SYSTEM_ADDENDUM, which REQUIRES the brief to
-                               # account for the line in `thesis`. A clause with no named
-                               # destination field is ignored: a controlled 3-arm A/B measured
-                               # 0 of 3 briefs using the line without it, 3 of 3 with it.
-                               # DO NOT SOFTEN the addendum's "REQUIRED, no exceptions"
-                               # wording without re-running that A/B.
+                               # account for the line in `thesis`; a clause with no named
+                               # destination field is ignored. Do not soften the addendum's
+                               # wording without re-running the A/B in
                                # docs/audits/2026-08-25-options-line-destination-verdict.md
 
-  durability:                  # "ROIC persistence" section of the brief (research/durability.py).
-                               # A MEASURED historical frequency on SEC facts, DISPLAY ONLY:
-                               # never scored and never shown to the model. Verdict:
-                               # docs/audits/2026-10-04-moat-durability-verdict.md.
-    enabled: true              # at most one sec.gov request per brief (day-cached, compacted).
-                               # On since 2026-10-10, after one real brief on a top-fifth name
-                               # and one on a bank
-                               # (docs/audits/2026-10-08-moat-durability-phase1.md → Turned on).
-    max_table_gap_years: 1     # abstain when the name's fiscal year is further than this past
-                               # the table's reference year (fiscal 2025); 0 = that year only.
-                               # Do not raise it to keep an old table alive: a refresh on new
-                               # SEC data is not built yet (docs/RESEARCH.md).
+  durability:                  # "ROIC persistence" section (research/durability.py): a measured
+                               # historical frequency on SEC facts, DISPLAY ONLY, never scored
+                               # and never shown to the model.
+                               # docs/audits/2026-10-04-moat-durability-verdict.md
+    enabled: true              # at most one sec.gov request per brief (day-cached)
+    max_table_gap_years: 1     # abstain when the fiscal year is further than this past the
+                               # table's reference year; 0 = that year only. Don't raise it to
+                               # keep an old table alive (docs/RESEARCH.md).
     cache_dir: .cache/durability-live
-    deadline_s: 15             # wall-clock bound on the request; at most one per brief. The
-                               # research phase has about 100 s of slack against
-                               # research_phase_budget_s, so a value above 45 is read as 45.
+    deadline_s: 15             # wall-clock bound on the request; values above 45 are read as 45
+                               # to fit the research phase budget
   insider_detail:              # recent Form-4 trades as a brief context line
     enabled: true
-    max_items: 6               # cap recent trades listed (newest-first)
+    max_items: 6               # newest-first
 
-  macro:                       # run-level macro backdrop line. The MacroContext is already
-                               # fetched per run; this only threads it into the brief, which
-                               # otherwise reasons about discount rates and leverage with no
-                               # rate/credit context. Fixed template, not free text: the bar
-                               # is "changes how THIS company's numbers read", not
-                               # market-timing prose.
+  macro:                       # run-level macro backdrop line from the already-fetched
+                               # MacroContext. Fixed template, not free text.
     enabled: true
 
-  eightk:                      # recent 8-K SUBSTANCE (research/eightk.py). EXCEPTION to rule 2:
-                               # this IS filing text and enters the grounding haystack as its own
-                               # labelled segment, so a verified quote is attributed to the 8-K,
-                               # not the 10-K. Design + 60-filing evidence for every constant
-                               # below: docs/audits/2026-08-13-eightk-text-in-deep-design.md
+  eightk:                      # recent 8-K substance (research/eightk.py). EXCEPTION to rule 2:
+                               # filing text, entering the grounding haystack as its own labelled
+                               # segment so a verified quote is attributed to the 8-K, not the
+                               # 10-K. docs/audits/2026-08-13-eightk-text-in-deep-design.md
     enabled: true
-    lookback_days: 120         # window on the DEDICATED form="8-K" index — NOT m.filing_events,
-                               # whose 40-row mixed index collapsed to 26 days on JPM and dropped
-                               # its Item 2.02 earnings release entirely
+    lookback_days: 120         # on the dedicated form="8-K" index, NOT m.filing_events, whose
+                               # mixed index can age out an Item 2.02 release
     max_filings: 3
-    max_chars_total: 10000     # normalized chars, POST whitespace-collapse. ~8% longer prompts;
-                               # a 30K variant was ~25% and pushed a heavy filer toward timeout_s.
-    max_chars_per_filing: 6000 # binds on most earnings releases BY DESIGN (EX-99 runs to ~48K):
-                               # the goal is what is NEW, not the whole release.
+    max_chars_total: 10000     # normalized chars, after whitespace-collapse; higher values
+                               # push heavy filers toward timeout_s
+    max_chars_per_filing: 6000 # binds on most earnings releases BY DESIGN: the goal is what is NEW
     guidance_window_chars: 1500  # spliced around a late outlook/guidance hit the prefix would
-                               # lose (JPM, CVX place "Outlook" after the financial tables). The
-                               # one heuristic here, fitted to n=2, and a TRADE: the window
-                               # displaces prefix chars inside the same cap. Set 0 to drop it.
-    items: ["4.02", "2.02", "2.01", "1.01", "5.02"]   # priority order, best-first. 4.02 outranks
-                               # 2.02 because a non-reliance restatement unconditionally stops a
-                               # thesis. An 8-K with none of these keeps today's bare form label.
+                               # lose. A heuristic and a trade: it displaces prefix chars inside
+                               # the same cap. 0 drops it.
+    items: ["4.02", "2.02", "2.01", "1.01", "5.02"]   # priority order, best-first; 4.02 (non-reliance
+                               # restatement) outranks the rest. An 8-K with none keeps its bare form label.
 
-  proxy:                       # DEF 14A compensation & governance line. Structured XBRL
-                               # (pay-vs-performance, ownership, pay slice), fetched per
-                               # deep-dive — NOT on every screen's snapshot.
+  proxy:                       # DEF 14A compensation & governance line from structured XBRL,
+                               # fetched per deep-dive, not per screen
     enabled: true
-    max_holders: 3             # cap on 5%+ beneficial holders named (largest-first)
-    control_pct: 30.0          # a holder >= this % triggers the concentrated-control note (percent units)
-# Government contracts (harness GovContractsSource, USAspending). Keyless aux source;
-# flat data + a research context line only — no sub-score, no flag.
+    max_holders: 3             # 5%+ beneficial holders named, largest-first
+    control_pct: 30.0          # a holder >= this (percent units) triggers the concentrated-control note
+
+# Government contracts (GovContractsSource, USAspending). Keyless; data + research
+# context line only, no sub-score or flag.
 gov_contracts:
   trailing_months: 24
-  match_min_confidence: 0.80   # validated against the labeled set (tests/test_govcontract_match.py)
+  match_min_confidence: 0.80   # validated against tests/test_govcontract_match.py
   max_pages: 5                 # page cap on spending_by_transaction (sorted by amount desc)
   cache_dir: .cache/usaspending
   timeout: 20
 
-# Federal lobbying (harness LobbyingSource, Senate LDA). Keyless aux source; flat data
-# + a research context line only — no sub-score, no flag.
+# Federal lobbying (LobbyingSource, Senate LDA). Keyless; data + research context line
+# only, no sub-score or flag.
 lobbying:
-  base_url: https://lda.gov/api/v1   # lda.senate.gov retired after 2026-06-30
+  base_url: https://lda.gov/api/v1
   trailing_months: 24
   match_min_confidence: 0.85   # client.name vs SEC registrant title
-  max_pages_per_year: 4        # page cap per calendar year (25 filings/page)
+  max_pages_per_year: 4        # 25 filings per page
   cache_dir: .cache/lda
   timeout: 20
 
-# EDGAR filing-stream events (harness EdgarSource). Advisory flags only.
+# EDGAR filing-stream events (EdgarSource). Advisory flags only.
 edgar_events:
   lookback_days: 90
-  # 120, NOT 40. The slice is taken newest-first BEFORE the lookback filter, so a
-  # high-frequency filer's routine 144/13G stream can crowd a rare event out of the
-  # window entirely. Measured 2026-08-23 over 228 names, 90d: median 6, p95 18,
-  # p99 33 matched filings — so 40 was already binding for 1 name (BLK, 271) BEFORE
-  # this change, and the wider form list moves p99 only 29 -> 33. A BLK-class filer
-  # still truncates; 120 buys ~3.6x headroom over p99 at zero request cost (the slice
-  # is in-memory). Raising it only changes behaviour for names above the old 40.
+  # The slice is taken newest-first BEFORE the lookback filter, so a high-frequency
+  # filer's routine 144/13G stream can crowd a rare event out of the window. The slice
+  # is in-memory, so raising this costs no requests; the very heaviest filers still truncate.
   index_limit: 120
-  # /A amendments are auto-included by edgartools; SCHEDULE 13D/13G spellings are
-  # listed explicitly because the fetch filter is exact-match (see spec section 3.1).
-  # 10-Q/10-K feed only the SUE decay anchor (events.last_report_filed) — they never
-  # join the advisory `recent` list, and their /A amendments are dropped in the builder.
+  # /A amendments are auto-included by edgartools. SCHEDULE 13D/13G spellings are listed
+  # explicitly because the fetch filter is exact-match. 10-Q/10-K feed only the SUE decay
+  # anchor (events.last_report_filed); they never join the advisory `recent` list.
   forms: ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G", "10-Q", "10-K",
-          # Distress / dilution / accounting-integrity forms. These ride the SAME
-          # submissions index as the rest, so they cost NO extra request (measured
-          # 2026-08-23: widening 8 forms -> 18 made 0 additional HTTP calls). The
-          # fetch filter is exact-match, so every spelling is listed in full.
-          # Form 25 / 25-NSE are deliberately ABSENT — 17 of 228 names filed one in a
-          # year, essentially all for a matured note or warrant rather than the
-          # issuer. See data/sources/edgar.py.
+          # Distress / dilution / accounting-integrity forms. They ride the same
+          # submissions index, so they cost no extra request. Form 25 / 25-NSE are
+          # deliberately absent: nearly always a matured note or warrant, not the issuer.
+          # See data/sources/edgar.py.
           "NT 10-K", "NT 10-Q", "S-3", "S-3ASR", "424B5", "UPLOAD", "CORRESP"]
 
-# Telegram bot (shortlist-bot): /screen, /deep, and the position store.
+# Telegram bot (shortlist-bot).
 bot:
   poll_timeout_s: 25        # getUpdates long-poll seconds
-  max_screen: 10            # max tickers accepted by one /screen
-  max_deep: 3               # max tickers accepted by one /deep (each is a Claude call)
+  max_screen: 10            # max tickers per /screen
+  max_deep: 3               # max tickers per /deep (each is a Claude call)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
   research_top_n: 3             # names sent to the research layer per /deep
   research_phase_budget_s: 2800 # wall-clock ceiling for the whole research phase
 
 ranking:
   thin_below: 0.40  # mark a card "thin" when confidence < this. Omit/null to disable.
-                    # Lowered 0.5->0.40 alongside the value/momentum split (spec 2026-06-02).
 
-# Run-level macro/credit-regime overlay via the official FRED API (needs a free
-# FRED_API_KEY — the keyless fredgraph.csv host is IP-blocked on datacenter IPs).
-# Display + advisory only — never affects composite/gates/ranking. See data/macro.py.
+# Run-level macro/credit-regime overlay via FRED (needs a free FRED_API_KEY; the keyless
+# host is IP-blocked on datacenter IPs). Display + advisory only. See data/macro.py.
 macro:
   enabled: true
   series:
@@ -677,9 +509,9 @@ macro:
     vix: VIXCLS
     fedfunds: FEDFUNDS      # fed funds (%)
   risk_off: { hy_oas: 5.0, t10y2y: 0.0, vix: 25.0 }   # any one trips risk-off
-  risk_on:  { hy_oas: 3.5, vix: 18.0 }                # unfitted priors
+  risk_on:  { hy_oas: 3.5, vix: 18.0 }
 
-# --- portfolio-awareness (bot /portfolio) ---
+# Portfolio awareness (bot /portfolio).
 portfolio:
   store: positions.json    # bot-owned source of truth (gitignored); atomic writes
   decisions: decisions.jsonl   # append-only decision ledger (gitignored)
