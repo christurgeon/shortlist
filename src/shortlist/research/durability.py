@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 import sys
@@ -69,6 +70,9 @@ HEADING = "ROIC persistence (computed from SEC data — not LLM-generated, not f
 FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 DEFAULT_CACHE_DIR = ".cache/durability-live"
 DEFAULT_DEADLINE_S = 15.0
+# The research phase has about 100 s of slack against `research_phase_budget_s`. A configured
+# deadline above this would let one optional section spend it.
+MAX_DEADLINE_S = 45.0
 # The largest company-facts bodies are tens of megabytes. Past this, the body is not one.
 MAX_BYTES = 64 * 1024 * 1024
 CACHE_KEEP_DAYS = 7
@@ -258,8 +262,8 @@ def not_shown(reason: str, detail: Optional[dict] = None) -> str:
     """The section body for a name the study does not cover, or whose data could not be used."""
     d = dict(detail or {})
     if "roic" in d and "floor" in d:
-        # Never "ROIC 15.5% is below 15.5%": a second decimal when the first cannot tell them apart.
-        places = 1 if _pct(d["roic"], 1) != _pct(d["floor"], 1) else 2
+        # Never "ROIC 15.5% is below 15.5%": as many decimals as it takes to tell them apart.
+        places = next((n for n in range(1, 9) if _pct(d["roic"], n) != _pct(d["floor"], n)), 9)
         d["roic"], d["floor"] = _pct(d["roic"], places), _pct(d["floor"], places)
     tail = _DATA_LIMIT if reason in _DATA_REASONS else _SCOPE
     return f"Not shown: {_REASONS[reason].format(**d)}. {tail}"
@@ -323,8 +327,8 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
 
     AN ABANDONED THREAD IS NOT STOPPED. It holds one socket until the server ends the response
     or one of its own read timeouts fires, and `stop` is seen only between two body chunks. A
-    brief makes at most two requests (the lag re-read), so the section costs at most twice
-    `deadline_s`."""
+    brief makes at most one request, so the section costs at most `deadline_s`, plus the wait
+    for a slot of the shared throttle, which is taken before the deadline starts."""
     sec_throttle()("durability")                # the one process-wide sec.gov budget
     box: dict = {}
     stop = threading.Event()
@@ -355,7 +359,9 @@ def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
     NOTHING IS CACHED HERE. The caller writes the record only after `profile` has read it: a
     body can pass the checks below and still hold a row that makes `annual_series` raise, and
     cached, it would fail every later brief of the day without a new request."""
-    path = _cache_path(Path(cfg.get("cache_dir") or DEFAULT_CACHE_DIR), cik, today)
+    cache_dir = cfg.get("cache_dir")
+    path = _cache_path(Path(cache_dir if isinstance(cache_dir, str) and cache_dir
+                            else DEFAULT_CACHE_DIR), cik, today)
     if use_cache:
         try:
             return json.loads(path.read_text()), None
@@ -364,8 +370,8 @@ def fetch_compacted(cik: int, cfg: dict, *, today: date, use_cache: bool = True,
     identity = os.environ.get("SEC_IDENTITY")
     if not identity:
         raise RuntimeError("SEC_IDENTITY is not set")
-    body = json.loads(_download(cik, identity, _number(cfg, "deadline_s", DEFAULT_DEADLINE_S),
-                                transport))
+    deadline_s = _number(cfg, "deadline_s", DEFAULT_DEADLINE_S, most=MAX_DEADLINE_S)
+    body = json.loads(_download(cik, identity, deadline_s, transport))
     # An SEC block page is not JSON; an error object has no `facts`; another company's body
     # would be a wrong section with nothing to show for it.
     if (not isinstance(body, dict) or not isinstance(body.get("facts"), dict)
@@ -379,18 +385,32 @@ def _cik(ticker: str) -> int:
     to a fee-filing shell (data/sources/edgar.py)."""
     from edgar import Company  # lazy: optional [edgar] extra
 
-    from .filings import require_identity
+    # edgartools' `set_identity` closes the HTTP client that every edgartools caller in the
+    # process shares. This runs after a model call, while another brief's thread may still be
+    # fetching its filing, so the identity is set only when it is not set already (the filing
+    # fetch of this same brief has set it).
+    if not os.environ.get("EDGAR_IDENTITY"):
+        from .filings import require_identity
 
-    require_identity()
+        require_identity()
     return int(Company(ticker).cik)
 
 
-def _number(cfg: dict, key: str, default: float) -> float:
-    """A positive number from the config, or the default: a null or mistyped knob must not turn
-    every section into "SEC data could not be read"."""
+def _number(cfg: dict, key: str, default: float, *, zero_ok: bool = False,
+            most: Optional[float] = None) -> float:
+    """A positive, finite number from the config (zero too with `zero_ok`), at most `most`, or
+    the default: a null, mistyped or absurd knob must not turn every section into "SEC data
+    could not be read"."""
     value = cfg.get(key)
-    ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
-    return float(value) if ok else float(default)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return float(default)
+    try:
+        number = float(value)
+    except OverflowError:               # an integer too large for a float
+        return float(default)
+    if not math.isfinite(number) or number < 0 or (number == 0 and not zero_ok):
+        return float(default)
+    return number if most is None else min(number, most)
 
 
 def _lags(bundle, period_end: Optional[str]) -> bool:
@@ -405,14 +425,14 @@ def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, s
     cfg = (config.get("research") or {}).get("durability")
     cfg = cfg if isinstance(cfg, dict) else {}
     table = load_table()
-    if table is None:
-        return not_shown(UNAVAILABLE), UNAVAILABLE
+    if table is None:                           # `fetch_section` prints the line: not silent
+        raise RuntimeError("the reference table is missing or is not this schema")
     sic = getattr(getattr(card, "metrics", None), "sic", None)
     reason = sector_reason(sic, config)
     if reason:                                  # no request for a bank
         return not_shown(reason), reason
     cik = _cik(card.ticker)
-    max_gap = int(_number(cfg, "max_table_gap_years", 1))
+    max_gap = int(_number(cfg, "max_table_gap_years", 1, zero_ok=True))    # 0: the table's year only
 
     def read(use_cache: bool):
         compacted, fresh = fetch_compacted(cik, cfg, today=today, use_cache=use_cache,
@@ -420,13 +440,16 @@ def _section(card, bundle, config: dict, today: date, transport) -> tuple[str, s
         result = profile(compacted, today, table, sic=sic, config=config, max_gap=max_gap)
         if fresh is not None:                   # only a record that `profile` could read
             _write_cache(fresh, compacted, today)
-        return result
+        return result, fresh is None
 
-    prof, status, detail = read(True)
-    if _lags(bundle, prof.period_end if prof else detail.get("period_end")):
-        prof, status, detail = read(False)
-        if _lags(bundle, prof.period_end if prof else detail.get("period_end")):
-            return not_shown(FACTS_LAG_FILING), FACTS_LAG_FILING
+    def lags() -> bool:
+        return _lags(bundle, prof.period_end if prof else detail.get("period_end"))
+
+    (prof, status, detail), from_cache = read(True)
+    if from_cache and lags():                   # the day cache may be older than the 10-K
+        (prof, status, detail), _ = read(False)
+    if lags():                                  # a download made now is not made again
+        return not_shown(FACTS_LAG_FILING), FACTS_LAG_FILING
     if prof is None:
         return not_shown(status, detail), status
     return brief_section(prof, table), SHOWN

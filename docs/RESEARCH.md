@@ -169,8 +169,9 @@ part of a brief the model did not write, and the model never sees it.
   (`docs/audits/2026-10-08-moat-durability-phase1.md` → The reference year).
 - **Failure.** `fetch_section` never raises. A bad response, malformed facts or a missing
   table give "Not shown: SEC data could not be read" and one redacted stderr line. The request
-  runs in a daemon thread and the caller waits `deadline_s` for it: an httpx timeout is per
-  phase and per read, and is not a deadline. A brief is cached for the day with the section it
+  runs in a daemon thread and the caller waits `deadline_s` for it (at most 45 s, whatever the
+  config says): an httpx timeout is per phase and per read, and is not a deadline. A brief makes
+  at most one request. A brief is cached for the day with the section it
   was written with, so a section that failed stays until the day bucket turns or `--refresh`.
 
 ## Quote verification

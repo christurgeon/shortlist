@@ -105,27 +105,36 @@ platform and not the refactor:
 - The Linux digests are the same on the code before the refactor and on the code after it
   (`ea71bd33…0215abfdb` and `edac5f13…`). Linux alone shows that the refactor moved no row.
 
-So the probe has a second form, `portable_digests`. It hashes `share_stability` to 12
+So the probe has a second form, `portable_digests`. It hashes `share_stability` to 9
 significant digits and every other value exactly as before:
 
 | what | rows | SHA-256 |
 |---|---|---|
-| every cohort row, `share_stability` to 12 digits | 3,771 | `2169a437…107fcd74` |
-| the table inputs at fiscal 2025, the same | 361 | `c3e73e2c…9ecfcb38` |
+| every cohort row, `share_stability` to 9 digits | 3,771 | `6d1f327c…5b3d4690` |
+| the table inputs at fiscal 2025, the same | 361 | `46fb9e51…7724bed3` |
 
-`raw-2026-10-04-durability/equivalence-portable.json` holds them. **It was written after the
-refactor**, on macOS, and names no commit. Two things tie it to the code before the refactor.
-It is a function of the rows the exact digests cover, and on macOS arm64 the test holds both
-files against the same rows in one run. And the new probe text, copied into the tree of `main`
-as it was before Phase 1, gives these two values on macOS and on Linux (glibc 2.36, arm64).
-The test compares the portable digests on every platform, and the exact ones on macOS arm64
-only. `equivalence.json` is not changed.
+**Why 9 digits.** The first version of this fix used 12, and a reviewer found that one cohort
+value is then a single unit in the last place from a value that prints differently: the
+digest was the same under two C libraries by luck. Measured over all 3,222 values (2,906
+cohort, 316 table), the nearest value to such a boundary is 1 unit away at 12 digits, 5 at 11,
+14 at 10 and 261 at 9. A test holds a margin of 64 units at the digit count in use.
 
-What the portable form gives up: a change confined to the 13th and later digits of
-`share_stability`, off macOS arm64. Three deliberate changes to that line (a reordered
-division, `log2`, a value moved by one part in 10⁹) each turned the portable comparison red on
-Linux. The Linux runs and these three changes were made on scratch copies, in a container:
-a record of the diagnosis, not reproducible evidence. A third C library was not tried.
+`raw-2026-10-04-durability/equivalence-portable.json` holds the two digests. **It was written
+after the refactor**, on macOS, and names no commit. Three things tie it to the code before the
+refactor. The probe writes it only when the exact digests of the same rows, in the same run,
+are those of `equivalence.json` (a test holds that refusal). On macOS arm64 the test holds
+both files against the same rows in one run. And the new probe text, copied into the tree of
+`main` as it was before Phase 1, gives these two values on macOS and on Linux (glibc 2.36,
+arm64). The test compares the portable digests on every platform, and the exact ones on macOS
+arm64 only. `equivalence.json` is not changed.
+
+**What the portable form gives up, off macOS arm64:** a change to `share_stability` that moves
+no value in its first 9 digits and no rank. Four deliberate changes to that line were run on
+Linux. `log2`, a value moved by one part in 10⁹ and one moved by one part in 10⁷ each turned
+the portable comparison red. **A reordered division did not**: it moves only the last digits.
+On macOS arm64 the exact digests catch it. The Linux runs and these changes were made on
+scratch copies, in a container: a record of the diagnosis, not reproducible evidence. A third
+C library was not tried.
 
 What the digests do not reach, and what covers it:
 
@@ -220,7 +229,8 @@ cohort. (An earlier fix on this branch did show it; the final review caught that
 
 ## What the section can and cannot fail
 
-- One request to `data.sec.gov` per brief, through the process-wide throttle, under a size cap.
+- At most one request to `data.sec.gov` per brief, through the process-wide throttle, under a
+  size cap. (A day-cache hit makes none; a cache hit that lags the brief's 10-K makes one.)
   The body is checked (a dict, the right CIK) before it is used, and the compacted record is
   cached for the day only after the profile has read it.
 - **The deadline is a thread join, because an httpx timeout is not a deadline.** It applies per
@@ -229,7 +239,9 @@ cohort. (An earlier fix on this branch did show it; the final review caught that
   HEADERS ran for 79 s, stopped only by the header size limit. (A one-off measurement on the
   reviewer's scratch scripts; the test that holds the behaviour is
   `test_the_deadline_bounds_the_whole_request_whatever_the_server_does`.) The request now runs
-  in a daemon thread and the caller waits `deadline_s` (15 s) for it. An abandoned thread is not
+  in a daemon thread and the caller waits `deadline_s` (15 s; a configured value above 45 s is
+  read as 45 s) for it. The wait for a slot of the shared throttle comes before the deadline
+  and is not inside it. An abandoned thread is not
   stopped; it ends when the server ends the response or a read times out. Past
   `research_phase_budget_s` every brief of a run is lost, which is why an optional section
   must not be able to wait.
@@ -285,6 +297,30 @@ cohort. (An earlier fix on this branch did show it; the final review caught that
   the section read as "two passed, then were checked" when the pass rule includes the later
   cohorts and a third test cleared the first cohorts and failed there; a below-cutoff sentence
   could print the same number twice.
+- **After the pull request was opened** (three fresh reviewers on a frozen copy of the branch,
+  one lens each). None found a reason not to merge, or not to turn the flag on. All of what
+  they found is fixed in "fix(durability): three reviews after the pull request":
+  - *The fixes of the whole-branch review* (Sonnet). The thirteen reasons, the year boundaries
+    from two years before the table to two years past it, and `floor_2024_own` were right.
+    Three defects in what that commit added: `max_table_gap_years: 0` was read as 1; the
+    below-cutoff sentence could still print one number twice (a ROIC within 0.008 points under
+    the cutoff); an infinite or huge `deadline_s` made `thread.join` raise, so every section
+    read "could not be read".
+  - *The portable digests* (Sonnet). The diagnosis and every checkable claim held, and the
+    test does not pass vacuously off macOS. It found the 12-digit boundary value above and
+    that `--write-portable` had no guard.
+  - *The path with the flag on* (Opus): isolation, the deadline, "the model never sees it",
+    both caches, the Telegram rendering, configuration, packaging. No input lost a brief. It
+    found that the CIK lookup called edgartools' `set_identity` after every model call, which
+    closes the HTTP client all edgartools callers in the process share (now called only when
+    no identity is set); that a cold-cache brief whose facts lag its 10-K downloaded the same
+    body twice (now once: at most one request per brief); that a missing reference table
+    printed nothing, against `docs/RESEARCH.md` (now one stderr line); and that a `cache_dir`
+    that is not a string cost the section (now the default directory).
+  - Not changed, and why. `enabled: "false"`, a quoted string, turns the section ON: every
+    `enabled` knob under `research` is read by truthiness, and this one follows them. The
+    wheel build was not run. The effect of `set_identity` on a request in flight was shown as
+    a mechanism (the shared client reads closed from another thread), not on a real request.
 
 ## For a Phase 2 that gives the line to the model
 
@@ -320,7 +356,7 @@ Not built. If it is ever proposed, these are the findings to start from.
   ("SEC data could not be read", "does not yet include the latest 10-K") stays in that brief
   until the day bucket turns or the brief is refreshed, as for the proxy and options lines.
 - A stalled download is abandoned after `deadline_s`, not stopped: its thread holds one socket
-  until the server ends the response or a read times out. A brief makes at most two requests.
+  until the server ends the response or a read times out. A brief makes at most one request.
 - The thirds are positions across all top-fifth firms; the effects are within a sector. One
   sector can sit mostly in one third.
 - Before the year end plus 120 days the profile reads what is on file today, which is less

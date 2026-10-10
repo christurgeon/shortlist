@@ -3,6 +3,7 @@ can never cost a brief."""
 import inspect
 import itertools
 import json
+import sys
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -204,6 +205,13 @@ def test_every_reason_has_one_sentence_and_no_other():
     # Never "15.5% is below 15.5%": a second decimal when one cannot tell the two apart.
     close = rd.not_shown(dp.NOT_TOP_FIFTH, {**detail, "roic": 0.15512, "floor": 0.15533})
     assert "ROIC 15.51% for the year ended" in close and "is below 15.53%, the top-fifth cutoff" in close
+    # ... and a third or a fourth when two cannot: the table's own cutoff is 15.5325%.
+    closer = rd.not_shown(dp.NOT_TOP_FIFTH, {**detail, "roic": 0.15531, "floor": 0.155325})
+    assert "ROIC 15.531% for the year ended" in closer and "is below 15.532%, the top-fifth cutoff" in closer
+    for roic in (0.1553, 0.15526, 0.1553249, 0.155324999):
+        text = rd.not_shown(dp.NOT_TOP_FIFTH, {**detail, "roic": roic, "floor": 0.155325})
+        shown, cutoff = text.split("ROIC ")[1].split("%")[0], text.split("is below ")[1].split("%")[0]
+        assert float(shown) < float(cutoff), text
     assert ("its latest year on file ended 2025-12-31, which is before the year the reference table is "
             "built for (fiscal 2025); the section needs its newer 10-K") in rd.not_shown(dp.BEFORE_REFERENCE, detail)
     assert len(dp.NOT_SHOWN) == 13
@@ -354,10 +362,41 @@ def test_an_orphan_temp_file_from_a_dead_process_is_pruned_with_the_old_days(env
 
 @pytest.mark.parametrize("knobs", [{"max_table_gap_years": None, "deadline_s": None},
                                    {"max_table_gap_years": "one", "deadline_s": "soon"},
-                                   {"max_table_gap_years": True, "deadline_s": -5}])
+                                   {"max_table_gap_years": True, "deadline_s": -5},
+                                   {"max_table_gap_years": float("inf"), "deadline_s": float("inf")},
+                                   {"max_table_gap_years": float("nan"), "deadline_s": 1e12},
+                                   {"max_table_gap_years": 10 ** 400, "deadline_s": 10 ** 400}])
 def test_a_null_or_mistyped_knob_falls_back_to_its_default(env, knobs):
     env.config["research"]["durability"].update(knobs)
     assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+
+
+def test_a_deadline_cannot_be_configured_past_the_slack_of_the_research_phase():
+    # `thread.join(inf)` raises, and a deadline of ten minutes is the budget of the whole phase.
+    assert rd._number({"deadline_s": 600}, "deadline_s", 15.0, most=rd.MAX_DEADLINE_S) == 45.0
+    assert rd._number({"deadline_s": 20}, "deadline_s", 15.0, most=rd.MAX_DEADLINE_S) == 20.0
+    assert rd._number({"deadline_s": 0}, "deadline_s", 15.0, most=rd.MAX_DEADLINE_S) == 15.0
+
+
+def test_a_table_gap_of_zero_is_a_setting_and_not_a_mistake(env):
+    # Zero means "the table's own year only". Read as the default, a company one fiscal year
+    # past the table would be ranked against it with nothing to say the knob was ignored.
+    today = date(2027, 2, 20)
+    body = _body({y + 1: v for y, v in FOUR_YEARS.items()})
+    bundle = _bundle(filed="2027-02-20")
+    assert _fetch(env, _Net(_json(body)), bundle=bundle, today=today)[1] == dp.SHOWN
+    for zero in (0, 0.0):
+        env.config["research"]["durability"]["max_table_gap_years"] = zero
+        assert _fetch(env, _Net(_json(body)), bundle=bundle,
+                      today=today + timedelta(days=1))[1] == dp.REFERENCE_OUT_OF_DATE
+
+
+@pytest.mark.parametrize("cache_dir", [123, ["a"], "", None])
+def test_a_cache_directory_that_is_not_a_path_is_the_default_one(env, cache_dir, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)                     # the default is relative to the working directory
+    env.config["research"]["durability"]["cache_dir"] = cache_dir
+    assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
+    assert [p.name for p in (tmp_path / rd.DEFAULT_CACHE_DIR).iterdir()] == ["CIK0000001234-2026-03-15.json"]
 
 
 def test_a_filing_date_that_is_not_a_date_is_not_a_lag(env):
@@ -393,6 +432,21 @@ def test_a_wrong_type_inside_the_section_config_falls_back_to_the_defaults(env, 
     env.config["research"]["durability"] = True
     assert _fetch(env, _Net(_json(_body(FOUR_YEARS))))[1] == dp.SHOWN
     assert [p.name for p in env.cache.iterdir()] == ["CIK0000001234-2026-03-15.json"]
+
+
+def test_the_cik_lookup_does_not_reset_an_identity_that_is_set(monkeypatch):
+    # edgartools' set_identity closes the HTTP client all its callers share. The section runs
+    # after a model call, while another brief's thread may be fetching its filing.
+    from shortlist.research import filings
+
+    calls = []
+    monkeypatch.setitem(sys.modules, "edgar",
+                        SimpleNamespace(Company=lambda ticker: SimpleNamespace(cik="1234")))
+    monkeypatch.setattr(filings, "require_identity", lambda: calls.append("set_identity"))
+    monkeypatch.setenv("EDGAR_IDENTITY", "tester@example.com")
+    assert rd._cik("TEST") == 1234 and calls == []
+    monkeypatch.delenv("EDGAR_IDENTITY")
+    assert rd._cik("TEST") == 1234 and calls == ["set_identity"]
 
 
 def test_without_an_identity_no_request_is_made(env, monkeypatch):
@@ -459,10 +513,12 @@ def test_a_bank_gets_its_reason_without_a_request(env, monkeypatch):
     assert net.requests == []
 
 
-def test_no_table_is_unavailable_without_a_request(env, monkeypatch):
+def test_no_table_is_unavailable_without_a_request(env, monkeypatch, capsys):
     monkeypatch.setattr(rd, "load_table", lambda: None)
     net = _Net(_json(_body(FOUR_YEARS)))
     assert _fetch(env, net)[1] == dp.UNAVAILABLE and net.requests == []
+    # Not silent: in a build without the table EVERY brief reads "could not be read".
+    assert "ROIC-persistence section failed for TEST: RuntimeError: the reference table" in capsys.readouterr().err
 
 
 def test_a_company_the_study_does_not_cover_gets_its_reason(env):
@@ -492,7 +548,22 @@ def test_facts_that_still_lag_the_10k_are_not_shown(env):
     net = _Net(_json(_body(FOUR_YEARS)))                        # the API has not caught up
     assert _fetch(env, net, bundle=_bundle(filed="2027-02-20"), today=today) == (
         rd.not_shown(dp.FACTS_LAG_FILING), dp.FACTS_LAG_FILING)
-    assert len(net.requests) == 2                               # once, then once past the cache
+    assert len(net.requests) == 1                   # a download made now is not made again
+    assert _fetch(env, net, bundle=_bundle(filed="2027-02-20"), today=today)[1] == dp.FACTS_LAG_FILING
+    assert len(net.requests) == 2                   # from the day cache, then once past it
+
+
+def test_a_brief_makes_at_most_one_request(env):
+    # The deadline bounds one request, so the section's worst case is one deadline.
+    today = date(2027, 2, 20)
+    net = _Net(_json(_body(FOUR_YEARS)))
+    for _ in range(3):                              # cold, then twice on a cache that lags
+        before = len(net.requests)
+        _fetch(env, net, bundle=_bundle(filed="2027-02-20"), today=today)
+        assert len(net.requests) - before == 1
+    before = len(net.requests)
+    _fetch(env, net, bundle=_bundle(filed="2026-02-19"), today=today)       # no lag: the cache serves
+    assert len(net.requests) == before
 
 
 def test_a_10k_filed_within_the_normal_window_is_not_a_lag(env):
