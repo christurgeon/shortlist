@@ -10,7 +10,7 @@ Two jobs, and they are different:
 commit the evidence.* A note here is **evidence as of its date** — cite it for *why* a
 decision went the way it did, never as a description of how the code behaves today. For
 current behaviour read `docs/SCORING.md`, `docs/RESEARCH.md`, `docs/TELEGRAM.md`,
-`docs/EDGAR_CLIENTS.md`, `HARNESS.md` or the code.
+`docs/EDGAR_CLIENTS.md`, `HARNESS.md`, `docs/BACKTEST.md` or the code.
 
 A verdict here **outranks a story built from the data**. The 2026-07-26 postmortem retracted
 four conclusions because a pre-registered floor everyone assumed was wrong turned out to be

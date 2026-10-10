@@ -111,7 +111,7 @@ One async `httpx` fetching layer feeds one scorer. Because the keyless Yahoo and
 sources lead the merge, `value`, `growth`, `momentum` and `risk` still resolve when FMP
 gates a symbol — which it does for most non-mega-caps on the free tier.
 
-→ **[HARNESS.md](HARNESS.md)** for the data layer, snapshot format and backtesting.
+→ **[HARNESS.md](HARNESS.md)** for the data layer and snapshot format, and **[docs/BACKTEST.md](docs/BACKTEST.md)** for backtesting.
 
 ## Commands
 
@@ -167,7 +167,8 @@ package:
 
 | Doc | What's in it |
 |---|---|
-| [HARNESS.md](HARNESS.md) | The async data layer, snapshot format, backtesting |
+| [HARNESS.md](HARNESS.md) | The async data layer and snapshot format |
+| [docs/BACKTEST.md](docs/BACKTEST.md) | Backtesting, weight fitting, point-in-time accumulation |
 | [docs/SCORING.md](docs/SCORING.md) | Seven axes, weights, gates vs flags, sector abstention |
 | [docs/TELEGRAM.md](docs/TELEGRAM.md) | Bot setup, commands, portfolio tracking |
 | [docs/RESEARCH.md](docs/RESEARCH.md) | The Claude 10-K brief layer (`--research N`) |

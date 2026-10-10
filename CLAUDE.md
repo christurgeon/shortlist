@@ -79,8 +79,8 @@ Everything else orchestrates that pipeline; none of it adds scoring logic:
 |---|---|---|
 | Screener CLI | `shortlist` | `README.md` |
 | Raw snapshots | `shortlist-harness` | `HARNESS.md` |
-| Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `HARNESS.md` → Backtesting, `docs/ASSESSMENT_GAPS.md` |
-| Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `HARNESS.md` → Feeding the snapshot path |
+| Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md`, `docs/ASSESSMENT_GAPS.md` |
+| Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `docs/BACKTEST.md` → Feeding the snapshot path |
 | Telegram bot — `/screen`, `/deep`, position monitor | `shortlist-bot` | `docs/TELEGRAM.md` (`docs/POSITION_MONITOR.md` is design-time) |
 
 Run **one** bot instance — two concurrent `getUpdates` pollers 409.
@@ -104,7 +104,7 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 | Why a past decision went the way it did | `docs/audits/YYYY-MM-DD-*.md` |
 
 **Three doc classes, and only one describes today.** `docs/SCORING.md`, `docs/RESEARCH.md`,
-`docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md` and `README.md` track current
+`docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md`, `docs/BACKTEST.md` and `README.md` track current
 behaviour. `docs/audits/` is **dated evidence**, indexed by `docs/audits/README.md`, which also
 carries the register of closed verdicts — cite it for *why*, never as a description of
 how the code behaves. `docs/PLAN_*.md`, `docs/POSITION_MONITOR.md` and `docs/STATEMENTS_MERGE.md`

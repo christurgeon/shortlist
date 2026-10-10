@@ -51,7 +51,7 @@ touches.
 
 > **Status:** the backtest harness is implemented — `src/shortlist/backtest/`
 > (`shortlist-backtest` CLI), walkthrough in
-> `HARNESS.md` → "Backtesting". It reports **rank IC** (time-series and
+> `docs/BACKTEST.md`. It reports **rank IC** (time-series and
 > cross-sectional, with mean/std/ICIR/**t-stat**/hit-rate) and **quantile
 > forward-return spreads** per signal × horizon, with no look-ahead (closes
 > truncated at *T*, returns only `> T`), non-overlapping per-horizon grids,
@@ -87,7 +87,7 @@ touches.
 > multi-axis history accumulates (XBRL reaches only 4 of 7 axes; momentum/insider/risk
 > need the snapshot path). The **accumulation mechanism now exists** —
 > `shortlist-accumulate` (idempotent, point-in-time, free-tier-aware; walkthrough in
-> `HARNESS.md` → "Feeding the snapshot path") — but its
+> `docs/BACKTEST.md` → "Feeding the snapshot path") — but its
 > daily schedule is **dormant/opt-in** (`deploy/`), so the 24-date clock starts only
 > when an operator enables it (or runs it manually). The EDGAR XBRL source below is
 > the other path to that history. The plug sketch below is retained as rationale.
