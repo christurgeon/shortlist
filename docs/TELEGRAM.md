@@ -84,7 +84,6 @@ N and tells you which tickers were not run — never a silent drop.
 |---|---|---|
 | `bot.max_screen` | 10 | Tickers accepted by one `/screen` |
 | `bot.max_deep` | 3 | Tickers accepted by one `/deep` (each is a Claude call) |
-| `bot.research_top_n` | 3 | Names sent to the research layer per `/deep` |
 | `bot.research_phase_budget_s` | 2800 | Wall-clock ceiling for the whole research phase |
 | `bot.poll_timeout_s` | 25 | `getUpdates` long-poll seconds |
 

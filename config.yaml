@@ -492,7 +492,6 @@ bot:
   max_screen: 10            # max tickers per /screen
   max_deep: 3               # max tickers per /deep (each is a Claude call)
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
-  research_top_n: 3             # names sent to the research layer per /deep
   research_phase_budget_s: 2800 # wall-clock ceiling for the whole research phase
 
 ranking:
