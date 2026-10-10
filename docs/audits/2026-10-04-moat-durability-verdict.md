@@ -556,3 +556,13 @@ evidence for each:
   covered;
 - it adds three guards the study did not need (an unknown SIC, a fiscal-year change, facts that
   lag the filing), none of which changes a firm of the reference cohort.
+
+## Addendum 4 — the section is on (2026-10-10)
+
+Appended. Nothing above is edited. No result changes.
+
+Addendum 3 says the section "is off". It was turned on on 2026-10-10
+(`research.durability.enabled: true`), after one real brief on a top-fifth name (shown) and
+one on a bank (not shown: the sector is outside the study), each read in the markdown brief
+and in the Telegram HTML report. It is still a display section only, and the model still never
+sees it. The record is `2026-10-08-moat-durability-phase1.md` → "Turned on".
