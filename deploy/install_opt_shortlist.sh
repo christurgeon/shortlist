@@ -173,7 +173,7 @@ WorkingDirectory=$DEST
 Environment=HOME=$RUN_HOME
 Environment=PATH=$DEST/.venv/bin:$RUN_HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
 Nice=10
-ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources fmp,finnhub,edgar
+ExecStart=$DEST/.venv/bin/shortlist-accumulate run --root $ACCUM_ROOT --max-tickers 42 --sources yahoo,fmp,finnhub,edgar
 OnFailure=shortlist-alert-failure@%n.service
 # 1800s is ample: cold DERA index build measured 26.9s, warm read 0.5s.
 TimeoutStartSec=1800

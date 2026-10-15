@@ -196,14 +196,11 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         #    _merge_insider wholesale (fmp precedes edgar) and discarded EDGAR's real
         #    aggregate. Such a batch now abstains, and EDGAR wins.
         #
-        # SCOPE — do not over-read this. It does NOT stop FMP outranking EDGAR when FMP
-        # can value only a little: 1 priced $1 buy + 59 unpriced sales still emits
-        # net_value_6m == +1.0 and still wins the merge over EDGAR's −$4M. That figure is
-        # now at least HONEST (it describes exactly one valued trade, with sell_count 0
-        # rather than 59) instead of incoherent, and the scored net is unchanged either
-        # way — but "should fmp outrank edgar for the insider txn group at all?" is a
-        # separate, already-logged design question (TODO.md 2026-08-04), deliberately not
-        # smuggled in here as a coverage heuristic.
+        # SCOPE — do not over-read this. 1 priced $1 buy + 59 unpriced sales still emits
+        # net_value_6m == +1.0: HONEST (it describes exactly one valued trade, with
+        # sell_count 0 rather than 59), not representative. EDGAR outranks FMP in the
+        # merge (`collector.DEFAULT_PRIORITY`), so this figure is used only when EDGAR
+        # has no trades.
         #
         # `> 0` (not `is not None`) is load-bearing: tx_value is shares*price with no
         # sign handling, so a negative share count would otherwise net WITH the buy/sell
