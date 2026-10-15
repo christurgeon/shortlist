@@ -259,7 +259,7 @@ class EdgarSource(Source):
             shares = None
         ef = extract_financials(
             fin.income_statement().to_dataframe(),
-            fin.cashflow_statement().to_dataframe(),
+            fin.cash_flow_statement().to_dataframe(),
             fin.balance_sheet().to_dataframe(),
             shares_diluted=shares,
         )

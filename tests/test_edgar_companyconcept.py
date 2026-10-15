@@ -231,7 +231,7 @@ class _FakeFinancials:
     def income_statement(self):
         return _FakeStatement(self._inc)
 
-    def cashflow_statement(self):
+    def cash_flow_statement(self):
         return _FakeStatement(self._cf)
 
     def balance_sheet(self):
