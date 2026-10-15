@@ -187,7 +187,8 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   of 6. A correct low-value entry beats the silent failure it replaced, so this is an accepted
   tradeoff rather than an unexamined one. **A selective clause is not needed (2026-10-15):** on
   three cash-rich briefs (GOOGL, META, MSFT) the coverage row took one slot and
-  `reconciliation` stayed at 4 of 6, so no slot was displaced.
+  `reconciliation` stayed at 4 of 6, so no slot was displaced. Softening the clause risks
+  reverting the leveraged 3/3; any change must re-measure both populations.
   **D6 quote reuse holds at ~1 per 3 briefs and was
   deliberately left alone** — do not add a third prompt clause for it without new evidence; the remaining rate
   is an order of magnitude below the pre-change 62/35 and another clause would have confounded
@@ -304,6 +305,12 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 - **The DEF 14A pay-vs-performance XBRL path is a NO-GO** (live-verified): SEC's XBRL APIs serve
   only `dei`/`us-gaap`, the `ecd` PvP tags are absent from companyfacts, and a
   `companyconcept/.../ecd/...` probe 404s. Snapshot replay is the only remaining route.
+- **`business_model_summary` carries no figures — 2026-10-15.** It is the one narrative
+  field without a grounding standard, so the prompt forbids figures there and sends them to
+  fields that carry evidence, as `management_capital_allocation` was re-scoped. In the 8
+  briefs on disk about 35% of its figures appeared nowhere else in the brief; on live
+  GOOGL/META/MSFT briefs after the change it carried none. Template:
+  `2026-08-17-moat-management-evidence-design.md`.
 - **`moat` keeps its 0.18 weight — measured 2026-10-15, pre-registered.** Its XS IC is
   negative on both universes but never past t −0.70 at h ≤ 6, and dropping it moves the
   composite's paired IC by ≤ 0.007 (t ≤ 0.61). `2026-10-15-moat-weight.md`.
@@ -312,8 +319,9 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   (1) **no producer** — `check_flags` runs inside `score()`, before the research layer that
   computes the similarity, so the flag can never fire (pinned by the strict xfail in
   `tests/test_flag_producers.py`); (2) **the metric does not discriminate** — `textsim.py`
-  keeps stopwords, so unrelated 10-Ks score 0.72–0.90 against same-firm YoY ~0.997, and a
-  truncated extraction crosses `max_similarity` before a real rewrite does. A single-firm
+  keeps stopwords, so unrelated 10-Ks score 0.72–0.90 against same-firm YoY ~0.997. No
+  realistic same-firm rewrite reaches `max_similarity: 0.7` (even a de-SPAC scores ~0.90),
+  and a truncated extraction crosses it before a real rewrite does. A single-firm
   absolute cosine is uninterpretable: Cohen-Malloy-Nguyen sort on the cross-sectional RANK.
   A revival needs a collection-time producer, IDF weighting, a reference distribution and the
   10-Q risk-factor cap in `_tenq_risk_factors`. It also cannot validate on snapshot replay:

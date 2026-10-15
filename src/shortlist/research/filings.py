@@ -126,8 +126,8 @@ def _tenq_mda(tenq: Any, ticker: str = "") -> str:
 
 def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
     """10-Q risk factors are Part II Item 1A — NOT a `risk_factors` attribute (that
-    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names). Mirrors `_tenq_mda`'s extraction pattern: same getter, same
-    never-raises contract, "" on any failure or missing section. Used only by
+    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names).
+    Mirrors `_tenq_mda`'s extraction pattern: same getter, same never-raises contract, "" on any failure or missing section. Used only by
     `filing_text_change`'s 10-Q arm (`_filing_sections`).
 
     RETURNS THE RAW SECTION, AND THAT IS A KNOWN WEAKNESS OF THE METRIC — do not read
