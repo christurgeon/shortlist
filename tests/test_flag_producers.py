@@ -2,7 +2,7 @@
 
 WHY: `filing_text_change` shipped wired end-to-end through scoring, config, the
 glossary and the bot theme with NOTHING ever setting `filing_text_similarity`
-(TODO.md §2a). The flag could never fire. This guard makes the next one visible
+(`docs/audits/README.md` → Lazy Prices). The flag could never fire. This guard makes the next one visible
 at CI time rather than in a code review two months later.
 """
 import ast
@@ -67,8 +67,8 @@ def test_ast_producer_detection_sees_the_repo_dominant_style():
     strict=True,
     reason="filing_text_change has no producer on the screen path: the similarity is "
            "computed in the research layer, which runs AFTER check_flags "
-           "(scoring.py:809 inside score(), vs screen.py:188 then :193). Tracked in "
-           "TODO.md §2a. When a collection-time producer ships, this test XPASSes and "
+           "(scoring.py:809 inside score(), vs screen.py:188 then :193). Recorded in "
+           "docs/audits/README.md -> Lazy Prices. When a collection-time producer ships, this test XPASSes and "
            "strict=True turns that into a failure — but an XPASS does NOT mean the "
            "flag is live. As of 2026-08-20 it also needs (a) config.yaml's "
            "`enabled: false` flipped back and (b) a metric that discriminates: "
@@ -81,4 +81,4 @@ def test_declared_flag_inputs_have_a_writer():
     for flag, field in FLAG_INPUTS.items():
         assert _producers(field), (
             f"flag {flag!r} reads {field!r}, but nothing in src/ ever assigns it — "
-            "the flag can never fire (TODO.md §2a)")
+            "the flag can never fire")

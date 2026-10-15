@@ -185,7 +185,9 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   quote-verified field. **Known side effect, accepted:** the clause now fires *universally* —
   the AAPL control computed 12x coverage nobody needed and pushed `reconciliation` to its cap
   of 6. A correct low-value entry beats the silent failure it replaced, so this is an accepted
-  tradeoff rather than an unexamined one; the open refinement is tracked at `TODO.md` §2a.
+  tradeoff rather than an unexamined one. **A selective clause is not needed (2026-10-15):** on
+  three cash-rich briefs (GOOGL, META, MSFT) the coverage row took one slot and
+  `reconciliation` stayed at 4 of 6, so no slot was displaced.
   **D6 quote reuse holds at ~1 per 3 briefs and was
   deliberately left alone** — do not add a third prompt clause for it without new evidence; the remaining rate
   is an order of magnitude below the pre-change 62/35 and another clause would have confounded
@@ -302,10 +304,28 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 - **The DEF 14A pay-vs-performance XBRL path is a NO-GO** (live-verified): SEC's XBRL APIs serve
   only `dei`/`us-gaap`, the `ecd` PvP tags are absent from companyfacts, and a
   `companyconcept/.../ecd/...` probe 404s. Snapshot replay is the only remaining route.
+- **`moat` keeps its 0.18 weight — measured 2026-10-15, pre-registered.** Its XS IC is
+  negative on both universes but never past t −0.70 at h ≤ 6, and dropping it moves the
+  composite's paired IC by ≤ 0.007 (t ≤ 0.61). `2026-10-15-moat-weight.md`.
+- **Lazy Prices (`filing_text_change`) is RETIRED, and reviving it is not planned.** The
+  `/deep` section is gone and the flag ships `enabled: false`. Two defects, both fatal:
+  (1) **no producer** — `check_flags` runs inside `score()`, before the research layer that
+  computes the similarity, so the flag can never fire (pinned by the strict xfail in
+  `tests/test_flag_producers.py`); (2) **the metric does not discriminate** — `textsim.py`
+  keeps stopwords, so unrelated 10-Ks score 0.72–0.90 against same-firm YoY ~0.997, and a
+  truncated extraction crosses `max_similarity` before a real rewrite does. A single-firm
+  absolute cosine is uninterpretable: Cohen-Malloy-Nguyen sort on the cross-sectional RANK.
+  A revival needs a collection-time producer, IDF weighting, a reference distribution and the
+  10-Q risk-factor cap in `_tenq_risk_factors`. It also cannot validate on snapshot replay:
+  the store holds no filing text. `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.4.
+- **EDGAR outranks FMP in every section merge, insider included.** Merge priority is
+  `collector.DEFAULT_PRIORITY`; the order of `harness_sources` / `--sources` does not set it.
+  A paid FMP tier therefore cannot override EDGAR's insider transactions.
 
 ## Argued by an external review, recorded but NOT endorsed
 
-The 2026-08-11 review of `/deep` (see §2 of `TODO.md` for the open half). These four were
+The 2026-08-11 review of `/deep` (its open half, the peer bundle, is in
+`docs/ASSESSMENT_GAPS.md` §2.3). These four were
 positions this repo considered and declined at the time; each conflicted with a committed rule or
 restated something already recorded. One has since been settled by measurement.
 
@@ -341,6 +361,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-15 | `2026-10-15-moat-weight.md` — does `moat` earn its 0.18 composite weight? A pre-registered `no_moat` variant on both universes; kept | pre-registration + verdict |
 | 2026-10-10 | `2026-10-10-sec-filing-index-403.md` — sec.gov denies the short filing-index URL, so every research brief was skipped as "no 10-K"; edgartools 5.33.0 -> 5.61.1 | evidence |
 | 2026-10-08 | `2026-10-08-moat-durability-phase1.md` — the ROIC-persistence section of the `/deep` brief: what was built, the evidence that the shared code moved no study number, why fiscal 2025 is the reference year, and what a prompt integration must measure first | design + evidence |
 | 2026-10-07 | `2026-10-07-durability-decomposition-prereg.md` — the two durability passes: did profit hold, and are they one finding? Result in the verdict's Addendum 2 | pre-registration |
