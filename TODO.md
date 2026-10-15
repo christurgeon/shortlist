@@ -113,14 +113,6 @@ it outranks §3's alpha questions.
     MD&A heading is fitted to n=1 and would inject wrong text into the grounding haystack.
     Needs a wider probe first. Same class of fault as INTC's Part II Item 1 returning 71,869
     chars of Note 14.
-- **8-K Item 4.02 (non-reliance/restatement) is unexercised by real data.** None appeared in
-  the 60-filing probe, so `research/eightk.py`'s highest-priority branch is pinned by a
-  constructed fixture only. Do not describe it as verified; the first real restatement is its
-  first real test. **Why the probe found none (measured 2026-08-23): the base rate is 0.4% of
-  names per YEAR** — 1 of 228 across both committed universes, so no probe of that size was
-  ever going to hit one. A real specimen now exists to build the fixture from: **GRBK**, whose
-  clean FY2025 10-K was followed by an adverse 10-K/A (`0001628280-26-033478`). Same filer also
-  trips the new `restatement_8k` flag. `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`.
 - **`business_model_summary` is still bare prose** — the last narrative section with no
   grounding standard, deliberately left out of the 2026-08-17 moat/management evidence cut
   (`docs/audits/2026-08-17-moat-management-evidence-design.md`, which is also the template

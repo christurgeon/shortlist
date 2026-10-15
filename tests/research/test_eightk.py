@@ -2,10 +2,10 @@
 
 Every fixture below is a MEASURED filing shape from the 60-filing probe recorded in
 docs/audits/2026-08-13-eightk-text-in-deep-design.md §2.4 — not an invented shape.
-The one exception is Item 4.02, which did not appear in the sample at all (§5); it is
-tested against a constructed fixture and is explicitly NOT claimed as verified.
+Item 4.02 did not appear in that sample (§5); its fixture is a later real filing (GRBK).
 """
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -270,16 +270,25 @@ def test_an_all_empty_filing_is_dropped_rather_than_emitted_blank():
     assert fetch_eightks("X", None, company_factory=_company([f]), today=TODAY) == []
 
 
-def test_item_4_02_is_selected_first_from_a_constructed_fixture():
-    """§5: NO Item 4.02 appeared in the 60-filing sample, so the top of the priority
-    table is exercised by construction only. Its first real restatement is its first
-    real test — this is NOT evidence the rule works on live 4.02 shapes."""
-    rows = [_Filing("2026-08-01", items="2.02", exhibits=[_Att("EX-99.1", "Q2 results.")]),
-            _Filing("2026-05-01", items="4.02", body="Non-reliance on previously issued "
-                                                     "financial statements.")]
-    out = fetch_eightks("X", None, company_factory=_company(rows),
-                        today=TODAY)
-    assert out[0].label == "8-K 2026-05-01 (Item 4.02, body)"
+_GRBK_402 = (Path(__file__).resolve().parents[1] / "fixtures" / "eightk"
+             / "grbk_0001628280-26-028345.txt").read_text()
+
+
+def test_a_real_item_4_02_is_selected_first_and_read_whole():
+    """GRBK 2026-04-29, verbatim `Filing.text()`: items "4.02" alone, no EX-99, and the
+    only attachment is the primary document typed "8-K"."""
+    rows = [_Filing("2026-05-07", items="2.02,9.01",
+                    exhibits=[_Att("EX-99.1", "First quarter results. " * 400)]),
+            _Filing("2026-04-29", items="4.02", body=_GRBK_402,
+                    exhibits=[_Att("8-K", _GRBK_402)], accession="0001628280-26-028345")]
+    out = fetch_eightks("GRBK", None, company_factory=_company(rows), today=date(2026, 5, 15))
+    assert out[0].label == "8-K 2026-04-29 (Item 4.02, body)"
+    assert out[0].items == "4.02"
+    text = out[0].text
+    assert text.startswith("Item 4.02 Non-Reliance on Previously Issued Financial Statements")
+    assert "SECURITIES AND EXCHANGE COMMISSION" not in text
+    assert "would need to be restated" in text
+    assert text.endswith("Date: April 29, 2026")
 
 
 # ---------------------------------------------------------------------------

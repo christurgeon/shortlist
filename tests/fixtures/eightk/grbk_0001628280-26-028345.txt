@@ -1,0 +1,74 @@
+UNITED STATES SECURITIES AND EXCHANGE COMMISSION
+
+Washington, D.C. 20549
+
+___________________
+
+FORM 8-K
+
+___________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): April 29, 2026
+
+  Green Brick Partners, Inc.
+
+(Exact name of registrant as specified in its charter)
+
+  Delaware                                                                                   001-33530                                                 20-5952523
+  (State or other jurisdiction of incorporation)                                             (Commission File Number)                                  (IRS Employer Identification Number)
+  5501 Headquarters Drive                                           Ste 300W
+  Plano                                                             TX            75024      (469)                                                     573-6755
+  (Address of principal executive offices, including Zip Code)                               (Registrant’s telephone number, including area code)
+
+(Former name or former address, if changed since last report) Not Applicable
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions:
+
+☐ Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐ Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐ Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))
+
+☐ Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of each class                                                                                                                                         Trading Symbol(s)      Name of each exchange on which registered
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Common Stock, par value $0.01 per share                                                                                                                     GRBK                   The New York Stock Exchange
+                                                                                                                                                                                     NYSE Texas
+  Depositary Shares (each representing a 1/1000th interest in a share of 5.75% Series A Cumulative Perpetual Preferred Stock, par value $0.01 per share)      GRBK PRA               The New York Stock Exchange
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company ☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Item 4.02 Non-Reliance on Previously Issued Financial Statements or a Related Audit Report or Completed Interim Review.
+
+On April 27, 2026, the Audit Committee (the “Committee”) of the Board of Directors of Green Brick Partners, Inc. (the “Company”), concluded that residential units revenue in prior periods had been incorrectly reported on a gross basis and excluded closing cost incentives offered to homebuyers, including interest-rate buy-downs, which had previously been included in cost of residential units. The Committee concluded that these closing cost incentives should have been reflected as a reduction in revenue. As a result, the Committee concluded that its previously issued audited consolidated statements of income for the years ended December 31, 2023, 2024 and 2025 included in its Annual Report on Form 10-K for the year ended December 31, 2025 and the unaudited condensed consolidated statements of income for the quarters ended March 31, 2025, June 30, 2025 and September 30, 2025 would need to be restated.
+
+Upon review of the underlying contractual arrangements and evaluation under ASC 606, Revenue from Contracts with Customers, management concluded that the incentives should be accounted for as consideration payable to a customer as a reduction of the transaction price and, therefore, a reduction in revenue. As a result, the Company will reduce residential units revenue, with a corresponding impact on total revenues, for the closing costs incentives, including interest-rate buydowns, that were paid on behalf of the homebuyer. In addition, the Company will reduce cost of residential units, with a corresponding impact on total cost of revenues, by this same amount of closing cost incentives.
+
+The reclassification will result in an increase in gross margin, while certain operating metrics such as average sales price and SG&A leverage are expected to decrease as a result of the reclassification. The reclassification of closing cost incentives will have no impact on gross profit, net income, earnings per share, cash flow, balance sheet, or stockholders’ equity.
+
+The Company will restate its audited consolidated financial statements for the fiscal years ended December 31, 2025, 2024 and 2023 which will be filed with a Form 10-K/A. The 10-K/A will also include restated unaudited interim condensed consolidated financial statements for the quarters ended March 31, 2025, June 30, 2025 and September 30, 2025, which will be presented with their comparative periods in a separate footnote.
+
+The Committee has discussed the matters disclosed in this Current Report on Form 8-K with RSM US LLP, the Company’s independent registered public accounting firm.
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+  GREEN BRICK PARTNERS, INC.
+  By:                             /s/ Jeffery D. Cox
+  Name:                           Jeffery D. Cox
+  Title:                          Chief Financial Officer
+
+Date: April 29, 2026
