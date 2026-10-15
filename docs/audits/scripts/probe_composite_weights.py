@@ -47,12 +47,14 @@ VARIANTS = {
     "equal": {"quality": 1, "moat": 1, "growth": 1, "value": 1, "momentum": 1, "risk": 1},  # 1/N benchmark
     "lit": {"quality": .10, "moat": .15, "growth": .15, "value": .25, "momentum": .15, "risk": .05},
     "fund": {"quality": .18, "moat": .18, "growth": .135, "value": .22},
+    # Pre-registered 2026-10-15: docs/audits/2026-10-15-moat-weight.md
+    "no_moat": {"quality": .18, "growth": .135, "value": .22, "momentum": .08},
 }
 # Pre-registered second round: the momentum axis rebuilt from the residual leg alone.
 RESID_VARIANTS = {"cur_r": "cur", "no_risk_r": "no_risk"}
 PAIRS = [("comp_no_risk", "comp_cur"), ("comp_cur_r", "comp_cur"),
          ("comp_no_risk_r", "comp_no_risk"), ("comp_fund", "comp_no_risk"),
-         ("momentum_r", "momentum")]
+         ("momentum_r", "momentum"), ("comp_no_moat", "comp_no_risk")]
 AXES = ("quality", "moat", "growth", "value", "momentum", "risk")
 HORIZONS = (1, 3, 6, 12)
 
