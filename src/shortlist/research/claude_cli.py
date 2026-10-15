@@ -87,24 +87,38 @@ def run(prompt: str, system: str, model: str, timeout_s: float,
         _kill_group()
         raise
 
-    if proc.returncode != 0:
-        return CliResult(error=redact_secrets(
-            f"claude exited {proc.returncode}: {(stderr or '')[:500]}"), transient=True)
     try:
         envelope = json.loads(stdout)
     except json.JSONDecodeError:
+        envelope = None
+    if not isinstance(envelope, dict):
+        envelope = None
+    if proc.returncode != 0:
+        # The CLI reports its own failures (e.g. an expired login) in the stdout envelope
+        # and leaves stderr empty.
+        detail = (envelope or {}).get("result") or stderr or ""
+        return CliResult(error=redact_secrets(f"claude exited {proc.returncode}: {str(detail)[:500]}"),
+                         transient=not _is_auth_failure(detail))
+    if envelope is None:
         return CliResult(error=redact_secrets(
             f"non-JSON envelope from claude: {(stdout or '')[:300]}"), transient=True)
     if envelope.get("is_error"):
         detail = envelope.get("result") or envelope.get("subtype") or "unknown"
         return CliResult(error=redact_secrets(f"claude error: {detail}"),
-                         stop_reason=envelope.get("stop_reason"), transient=True)
+                         stop_reason=envelope.get("stop_reason"),
+                         transient=not _is_auth_failure(detail))
     return CliResult(
         text=envelope.get("result", ""),
         cost_usd=envelope.get("total_cost_usd"),
         stop_reason=envelope.get("stop_reason"),
         model=_answering_model(envelope, model),
     )
+
+
+def _is_auth_failure(detail) -> bool:
+    """A failed login does not recover on retry; it needs `claude` then `/login` as the
+    bot's user."""
+    return str(detail).startswith("Failed to authenticate")
 
 
 def _answering_model(envelope: dict, requested: str) -> str:
