@@ -135,8 +135,7 @@ def test_partial_pricing_does_not_let_one_priced_row_vouch_for_the_rest():
     # value was deliberately excluded from net_value_6m, and `recent` (which feeds the
     # research.insider_detail line) carried nine value=0 rows. Unvalued rows are now
     # dropped, so the record describes exactly the trades it valued.
-    # NOTE the scored net is +1.0 either way, and FMP still wins the merge here — that
-    # is the separate fmp-vs-edgar priority question (TODO.md), not this test's subject.
+    # NOTE the scored net is +1.0 either way.
     raw = {"insider": [_tx(5, "P-Purchase", 1, 1.0)]
                       + [_tx(6, "S-Sale", 1000, None) for _ in range(59)]}
     ins = _normalize_fmp("TEST", raw).insider

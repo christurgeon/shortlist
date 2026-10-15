@@ -261,7 +261,8 @@ momentum:
   residual:
     enabled: true
 
-# Default source chain for the harness; yahoo first wins the price merge. Passing
+# Default source chain for the harness. List order does NOT set merge priority —
+# `collector.DEFAULT_PRIORITY` does (yahoo, then edgar above fmp). Passing
 # `--provider` overrides this list entirely, so omit it to keep yahoo/finra.
 harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, gov_contracts, lobbying]
 

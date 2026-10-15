@@ -87,16 +87,6 @@ it outranks §3's alpha questions.
   (HDSN, FISV; on LULU every such row is a segment breakdown, dimension=True), and
   supplying gross_profit from EDGAR would change a SCORED input (gross_margin) and its
   merge precedence. Needs its own design + evidence, not a drive-by.
-- **`negative_fcf` inventory-build excusal arm — NOT built, measurement stated.** The gate is
-  already stage-aware (it excuses fast growers); an inventory-build arm would be the same
-  shape. Testable question: among negative-FCF names whose burn is fully explained by an
-  inventory build, is forward realized FCF distinguishable from other negative-FCF names?
-  Until that is measured the gate stands. NOTE the measurement must use a FULL
-  working-capital cut, not inventory alone: for HDSN FY24->FY25, FCF ex-inventory
-  "improves" +26.3M -> +32.7M while FCF ex-(inventory+AR+AP) DECLINES +26.7M -> +16.3M.
-  Stripping the inventory outflow while keeping a +20.2M payables inflow manufactures
-  the improvement. An advisory flag keyed on the inventory-only cut was specified and
-  then CUT for exactly this reason. See `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.2, §1.1.
 - **`_tenq_mda` silently abstains on one filer in 35 (found 2026-08-14, pre-existing).**
   Both symptoms are edgartools item-boundary detection, not our call. Measured over 35 large
   caps (2026-08-14), and **both are now logged to stderr** by `_tenq_mda`
@@ -179,10 +169,6 @@ into this session without becoming a post-hoc variant search. Evidence of the sh
 `--source snapshot` is un-gated and smoke-tested. What survives is the part that constrains
 *future* runs:
 
-- **Horizon maturity.** Signals come from the store, forward returns from Yahoo `hists`, so
-  the store's span bounds the *observation grid*, not the horizon. Only **h=1** has matured
-  windows from the earliest captures; **h=3 needs ~late September 2026**. A 3-month replay
-  before then is not a thin result, it is an empty one.
 - **The 0% suppression result is large-cap-only.** 1642/1642 stored snapshots emit
   `composite` — but the store is 42 large caps, the population where confidence is highest.
   **Re-measure before trusting composite replay IC if accumulation widens to small/mid**,
@@ -198,22 +184,6 @@ because only 10 tickers had been captured that early (42 by 2026-08-08).
   deliberately kept out of the snapshot (`EdgarSource` fetches Form 4 + financials +
   filing-index only). Measuring it needs a collector change to compute EDGAR text similarity
   into the snapshot. Separate feature, not a waiting game.
-- **`pe_vs_history` cannot validate on this path either, for the same reason (2026-08-21).**
-  `monthly_closes` is EMPTY on **all 2,146** stored snapshots: the deployed timer runs
-  `--sources fmp,finnhub,edgar` (and the CLI default is narrower still, `fmp,finnhub`), so
-  Yahoo — the only source that populates it — never runs in accumulate. `pe_median_5y` is
-  derived in the bridge from those closes, so a scored `value` leg is structurally absent from
-  every replay. Adding `yahoo` to the chain is the obvious fix and is NOT free: it is a
-  per-ticker quota and runtime cost on a timer already over-subscribed (§4), and it changes the
-  deployed unit.
-  **Second field, same root cause (2026-08-24):** `Price.realized_vol` is likewise absent on
-  **0 of 42** latest stored snapshots, and it is live on the `/deep` path (AAPL 0.2504) — so
-  the gap is the accumulate chain, not the field. That makes the `/deep` options line's
-  implied-vs-realized comparison unreplayable from the store too
-  (`docs/audits/2026-08-24-options-surface-design.md` §6.1). Two affected consumers now argue
-  for the same one-line timer change, without changing its cost.
-  **Status:** measured, not actioned — the fix is a deployed-timer change whose cost sits
-  inside the §4 quota decision, so it should be taken with that decision rather than before it.
 
 ---
 
@@ -228,30 +198,9 @@ snapshots; FMP wins only 672 of them). This is the **sole** driver of the EDGAR-
 and no EDGAR-side change can close more than 12% of that
 (`docs/audits/2026-08-21-operating-income-edgar-gap.md`). EDGAR supplies ~100% of production
 statements. Options: drop `--max-tickers` to ~18; remove `fmp` from the accumulate chain
-(it contributes nothing today); or paid **Starter** (~$14–20/mo).
+(the store then loses `gross_profit`, which only FMP supplies); or paid **Starter**
+(~$14–20/mo).
 
 The free window is **not calendar-UTC-day aligned** (measured 2026-07-31: still "Limit Reach"
 42 min after UTC midnight, drained by our own 21:30 accumulate timer). Retry probes in the
 **mid-day UTC window**.
-
-Unblocks on this:
-- **The live statements-merge before/after was never run.** The plan required a
-  `shortlist --json` run on a real FMP-covered ticker showing `share_count_cagr`/`asset_growth`/
-  `accruals` populated where the old merge returns null; both runs 429'd. The mechanism is
-  covered by unit RED evidence plus a store-based offline re-merge on 17 real FMP-won snapshots
-  (join key agrees on real data, including non-calendar fiscal years) — but the FMP-wins branch
-  under a **live fetch** is still unexercised. Treat "recovered fields still null on a non-402
-  name" as a bug against the fiscal-year join key, not a config problem.
-- The momentum Stage 0 prize-bound re-run (~1,000 FMP calls) — its decision rule and the
-  recorded 0.947 tau now live in `backtest/prize_bound.py`'s docstring.
-
-## Should `fmp` outrank `edgar` for the insider transaction group? (design decision)
-
-`config.yaml`'s `harness_sources` orders `fmp` before `edgar`, and `_merge_insider` takes the
-coupled transaction facts **wholesale** from the first source with a present field — yet
-`data/sources/fmp.py` and `config.yaml:256` both record EDGAR as the free authoritative source
-for insider data (FMP's insider endpoint is paid, 402 on free). So enabling a paid
-FMP Starter tier would silently override EDGAR's insider numbers. A priority/intent question,
-deliberately left out of the FMP-insider classification fix; it becomes live the day the quota
-decision above goes the paid way.
-
