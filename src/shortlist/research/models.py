@@ -54,7 +54,7 @@ def default_valid_signals() -> set[str]:
 
 # The JSON shape the model is instructed to emit (meta fields are added by us).
 SCHEMA_HINT = """{
-  "business_model_summary": "string",
+  "business_model_summary": "string (how the company makes money, in words — do NOT state figures here)",
   "moat": {"summary": "string", "sources": [{"claim": "string", "evidence": "verbatim quote, or \\"\\" if this is your inference rather than something the filing states"}], "trajectory": "widening|stable|eroding"},
   "risks": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "red_flags": [{"claim": "string", "evidence": "verbatim quote from the filing"}],

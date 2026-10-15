@@ -384,8 +384,7 @@ def test_similarity_enabled_defaults_on_and_honours_false():
 
 
 def test_tenq_risk_factors_uses_part_ii_item_1a():
-    """TenQ has no `risk_factors` attribute (verified live, 10/10 names, TODO.md
-    §2a) — its risk factors live at Part II Item 1A, the same item _tenq_added_risks
+    """TenQ has no `risk_factors` attribute (verified live, 10/10 names) — its risk factors live at Part II Item 1A, the same item _tenq_added_risks
     already reads for the /deep diff."""
     from shortlist.research.filings import _tenq_risk_factors
 

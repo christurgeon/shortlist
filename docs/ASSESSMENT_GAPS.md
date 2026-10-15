@@ -203,6 +203,11 @@ financials, but it's general). Hand-tuned absolute bands are also brittle.
   within sector (or the run universe) instead of mapping to a fixed band. Highest
   quality-per-effort fix; structurally subsumes the financials problem. Needs a universe run
   (caching + paid tier, `DATA_SOURCES.md`) to have enough peers to rank against.
+- **The same data serves `/deep`:** a peer bundle (5–10 SIC/NAICS + size matched names;
+  growth, margins, ROIC, share-count growth, valuation, relative performance) was the
+  2026-08-11 external review's top request. Display it in `/deep` first; feed the score only
+  with cross-universe evidence. The keyless route is SEC `companyfacts`/`frames`, which
+  `--source xbrl` already reads; the FMP route costs N peers × the per-ticker budget.
 - **Concrete follow-up — momentum bands (from the §2.1 backtest result, ★ actionable):**
   the first backtest found momentum's **cross-sectional IC insignificant** and its
   **short-horizon time-series IC negative** across a large-cap universe (§2.1). The

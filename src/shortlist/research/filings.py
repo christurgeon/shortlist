@@ -126,8 +126,7 @@ def _tenq_mda(tenq: Any, ticker: str = "") -> str:
 
 def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
     """10-Q risk factors are Part II Item 1A — NOT a `risk_factors` attribute (that
-    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names,
-    TODO.md §2a). Mirrors `_tenq_mda`'s extraction pattern: same getter, same
+    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names). Mirrors `_tenq_mda`'s extraction pattern: same getter, same
     never-raises contract, "" on any failure or missing section. Used only by
     `filing_text_change`'s 10-Q arm (`_filing_sections`).
 
@@ -142,7 +141,7 @@ def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
     wholesale-MD&A-rewrite signal `combined_similarity`'s docstring says the weighting
     exists to protect. Blast radius today is nil — `filing_text_change` has no
     production caller — but ANY producer wired to it must fix this first (route through
-    `riskdiff.added_risk_blocks`, or cap), not inherit it. `TODO.md` §2a."""
+    `riskdiff.added_risk_blocks`, or cap), not inherit it."""
     try:
         getter = getattr(tenq, "get_item_with_part", None)
         value = getter("Part II", "Item 1A", markdown=True) if getter is not None else None
@@ -211,7 +210,7 @@ def _fiscal_year(filing: Any) -> Optional[int]:
 def _similarity_enabled(config: Optional[dict]) -> bool:
     """Lazy-Prices similarity ships ON. Note this is the one research key whose
     ABSENT block is not a no-op — a producer nobody switches on is exactly how
-    this signal sat dead with a fully-built consumer (see TODO.md §2a)."""
+    this signal sat dead with a fully-built consumer (`docs/audits/README.md` → Lazy Prices)."""
     block = ((config or {}).get("research") or {}).get("text_similarity") or {}
     return bool(block.get("enabled", True))
 

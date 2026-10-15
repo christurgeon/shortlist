@@ -8,6 +8,8 @@
 
 thresholds:
   # Quality
+  # roe saturates on buyback-heavy names (shrunken equity), so it partly measures capital
+  # structure. Rank IC cannot judge a band change: survivorship bias works against quality.
   roe:                 [0.10, 0.35]
   net_margin:          [0.00, 0.30]
   interest_coverage:   [2.0, 15.0]
@@ -168,7 +170,7 @@ flags:
   # StockMetrics.filing_text_similarity (research runs after check_flags), and the
   # metric barely discriminates (textsim.py keeps stopwords). Both must be fixed to
   # re-enable. Kept so the threshold and the kill reason stay together.
-  # TODO.md §2a, docs/audits/2026-08-21-inventory-context-line.md,
+  # docs/audits/README.md -> Lazy Prices, docs/audits/2026-08-21-inventory-context-line.md,
   # tests/test_flag_producers.py
   filing_text_change:
     enabled: false
@@ -319,7 +321,7 @@ research:
     mda: 60000
     risk_factors: 50000        # boilerplate ordered worst-first, so a prefix keeps the material risks
     tenq_mda: 40000            # also load-bearing against whole-document over-capture in the
-                               # 10-Q MD&A extraction. TODO.md §2a
+                               # 10-Q MD&A extraction (research/filings.py:_tenq_mda)
   tenq_risk_update:            # 10-Q Part II Item 1A changes, diffed against the 10-K Item 1A
     enabled: true              # (research/filings.py:_tenq_added_risks)
     max_blocks: 4

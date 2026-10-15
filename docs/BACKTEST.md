@@ -153,5 +153,10 @@ uv run shortlist-accumulate status  --root snapshots   # both floors + SUE bread
   A paid FMP tier removes that limit (`docs/DATA_SOURCES.md`).
 - **`status` reports both floors:** distinct capture dates (≥ 24) and dates meeting the
   30-name breadth floor, plus SUE breadth and store size. READY needs both.
+- **Replay suppression is measured on large caps only.** Every stored large-cap snapshot
+  emits a `composite`. If accumulation widens to small/mid, re-check how often
+  `validity.min_scored_weight` and `validity.min_composite_components` suppress it before
+  trusting composite replay IC. Low breadth on an early grid date is a capture-history
+  artifact, not suppression.
 - **Scheduling is OFF by default.** A disabled systemd sample lives in `deploy/`; enabling it
   is an explicit opt-in (`deploy/README.md`).

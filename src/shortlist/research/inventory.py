@@ -37,8 +37,7 @@ Fixing it means extracting cost of revenue from EDGAR, which is NOT free: the na
 source is `us-gaap_GrossProfit` (LULU has it non-dimensional; HDSN and FISV report only
 `CostOfGoodsAndServicesSold`, and on LULU every such row is a segment breakdown with
 dimension=True). Supplying gross_profit from EDGAR would change a SCORED input
-(gross_margin) and its merge precedence, so it is deliberately out of scope here and
-logged to TODO.md instead.
+(gross_margin) and its merge precedence, so it is deliberately out of scope here.
 """
 from __future__ import annotations
 

@@ -12,8 +12,8 @@ Feed, guards and every constant below: docs/audits/2026-08-24-options-surface-de
 
 A SINGLE FIRM'S NUMBER IS UNINTERPRETABLE, SO EVERY ITEM CARRIES A REFERENCE
 ---------------------------------------------------------------------------
-This is the trap that killed the Lazy-Prices cosine (TODO.md §2a: "a single-firm
-absolute cosine is uninterpretable regardless"). A skew of -4.2 vol points and an
+This is the trap that killed the Lazy-Prices cosine (`docs/audits/README.md` → Lazy
+Prices: "a single-firm absolute cosine is uninterpretable"). A skew of -4.2 vol points and an
 implied/realized ratio of 1.75 mean nothing on their own, so the line always prints the
 measured large-cap cross-section beside them, with its `n` and its date. Both references
 are REGIME-DEPENDENT single-day cross-sections — re-measure with
