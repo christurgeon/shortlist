@@ -17,7 +17,7 @@ def test_aapl_leverage_fields_populate():
     fin = Company("AAPL").get_financials()
     ef = extract_financials(
         fin.income_statement().to_dataframe(),
-        fin.cashflow_statement().to_dataframe(),
+        fin.cash_flow_statement().to_dataframe(),
         fin.balance_sheet().to_dataframe(),
         shares_diluted=None,
     )

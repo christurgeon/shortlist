@@ -16,7 +16,7 @@ class _FakeFinancials:
         self._inc, self._cf = inc, cf
         self._bal = bal if bal is not None else pd.DataFrame()
     def income_statement(self): return _FakeStatement(self._inc)
-    def cashflow_statement(self): return _FakeStatement(self._cf)
+    def cash_flow_statement(self): return _FakeStatement(self._cf)
     def balance_sheet(self): return _FakeStatement(self._bal)
     def get_shares_outstanding_diluted(self): return 15_004_697_000.0
 
