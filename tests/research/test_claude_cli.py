@@ -182,6 +182,33 @@ def test_run_nonzero_exit_redacts_stderr(monkeypatch):
     assert "sk-ant-abc123" not in res.error   # redaction verified
 
 
+# Verbatim from claude 2.1.300 with an expired login: exit 1, empty stderr.
+_AUTH_FAILED = json.dumps({
+    "type": "result", "subtype": "success", "is_error": True, "total_cost_usd": 0,
+    "api_error_status": None,
+    "result": "Failed to authenticate: OAuth session expired and could not be refreshed"})
+
+
+def test_nonzero_exit_reports_the_envelope_reason_when_stderr_is_empty(monkeypatch):
+    _patch_popen(monkeypatch, _FakePopen(stdout=_AUTH_FAILED, returncode=1))
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.error == ("claude exited 1: Failed to authenticate: OAuth session expired "
+                         "and could not be refreshed")
+
+
+def test_an_expired_login_is_not_retried(monkeypatch):
+    _patch_popen(monkeypatch, _FakePopen(stdout=_AUTH_FAILED, returncode=1))
+    assert claude_cli.run(prompt="p", system="s", model="m", timeout_s=5).transient is False
+    _patch_popen(monkeypatch, _FakePopen(stdout=_AUTH_FAILED, returncode=0))
+    assert claude_cli.run(prompt="p", system="s", model="m", timeout_s=5).transient is False
+
+
+def test_nonzero_exit_with_non_json_stdout_falls_back_to_stderr(monkeypatch):
+    _patch_popen(monkeypatch, _FakePopen(stdout="[1, 2]", returncode=2, stderr="boom"))
+    res = claude_cli.run(prompt="p", system="s", model="m", timeout_s=5)
+    assert res.error == "claude exited 2: boom" and res.transient is True
+
+
 def test_is_available(monkeypatch):
     monkeypatch.setattr(claude_cli.shutil, "which", lambda _: "/usr/bin/claude")
     assert claude_cli.is_available() is True
