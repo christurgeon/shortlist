@@ -129,6 +129,16 @@ Cost is the blocker, not design: N peers × the per-ticker call budget against a
 cap (§4). The keyless route is SEC `companyfacts`/`frames`, which is also what `--source xbrl`
 already reads.
 
+## 2d. ROIC-persistence section — the two open halves
+
+- **A reference-table refresh builder, due before fiscal-2027 10-Ks (about September 2027).**
+  After that every name abstains as `reference_out_of_date`. Do not run `probe_durability.py
+  fetch` to make one, and do not raise `max_table_gap_years`: `docs/RESEARCH.md` → The ROIC-persistence
+  section, and `docs/audits/2026-10-08-moat-durability-phase1.md` → The reference year.
+- **Phase 2, the line to the model**, needs its own design and plan:
+  `docs/audits/2026-10-08-moat-durability-phase1.md` → For a Phase 2 that gives the line to
+  the model.
+
 ---
 
 # 3. Measurement (backtest + snapshot replay)
