@@ -61,14 +61,14 @@ _CONFIDENCE_STEP = 0.05
 # becomes a haystack segment. All three were missing until the discovery test below
 # found them (`test_every_context_line_module_is_hashed`), which is why that test
 # enforces the rule by scanning rather than by one hand-written assert per module.
-# `durability` renders the ROIC-persistence section. It is brief content and not prompt
-# content, but the rule is the same: its wording must not change under a cached brief. Its
-# renderer is not named `context_line`, so the discovery test does not find it; a test of its
-# own does (`test_the_persistence_section_is_in_the_fingerprint`).
+# `durability` and `news` render brief sections the model never sees. They are brief content,
+# not prompt content, but the rule is the same: their wording must not change under a cached
+# brief. Neither renderer is named `context_line`, so the discovery test does not find them;
+# tests of their own do.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
                    "analyst_revision", "options", "earnings_moves", "controls",
-                   "filings", "textsim", "eightk", "notes", "durability")
+                   "filings", "textsim", "eightk", "notes", "durability", "news")
 
 # Excluded from the config hash: output_root is a filesystem path, not prompt
 # content; cache's own values already move the key mechanically.

@@ -99,6 +99,13 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
             from . import durability
             assessment.durability_line, assessment.durability_status = durability.fetch_section(
                 card, bundle, config)
+        ncfg = (config.get("research") or {}).get("news")
+        if isinstance(ncfg, dict) and ncfg.get("enabled", False):
+            from . import news
+            s = news.fetch_section(card, config)
+            (assessment.news_items, assessment.news_status, assessment.news_as_of,
+             assessment.news_from, assessment.news_truncated) = (
+                s.items, s.status, s.as_of, s.covers_from, s.truncated)
         bp = report.write(assessment, root, config)
     except Exception as e:  # assess/render/write errors
         return ResearchResult(card.ticker, skipped=f"research error: {redact_secrets(e)}")
