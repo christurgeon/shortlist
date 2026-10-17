@@ -79,6 +79,17 @@ def test_priority_ordering_beats_recency_and_recency_breaks_ties():
     assert [f.filing_date for f, _, _ in picked] == ["2026-05-01", "2026-07-30", "2026-06-01"]
 
 
+def test_a_cyber_incident_outranks_the_routine_items_under_the_filing_cap():
+    """BSX 2026-09-08: an Item 1.05 alongside a 2.02 and two 5.02s. Ranked last, the
+    three-filing cap would drop it; ranked under 4.02 only, it leads."""
+    rows = [_Filing("2026-10-07", items="5.02,8.01,9.01", body="officer"),
+            _Filing("2026-09-23", items="5.02", body="officer"),
+            _Filing("2026-09-08", items="1.05", body="cyber incident"),
+            _Filing("2026-07-29", items="2.02,9.01", body="q2")]
+    picked = select(rows, CFG, today=date(2026, 10, 17))
+    assert [f.filing_date for f, _, _ in picked] == ["2026-09-08", "2026-07-29", "2026-10-07"]
+
+
 def test_selection_drops_amendments_non_priority_items_and_stale_filings():
     rows = [
         _Filing("2026-08-01", items="2.02", form="8-K/A", body="amendment"),

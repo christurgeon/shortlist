@@ -452,8 +452,10 @@ research:
     guidance_window_chars: 1500  # spliced around a late outlook/guidance hit the prefix would
                                # lose. A heuristic and a trade: it displaces prefix chars inside
                                # the same cap. 0 drops it.
-    items: ["4.02", "2.02", "2.01", "1.01", "5.02"]   # priority order, best-first; 4.02 (non-reliance
-                               # restatement) outranks the rest. An 8-K with none keeps its bare form label.
+    items: ["4.02", "1.05", "2.02", "2.01", "1.01", "5.02"]   # priority order, best-first. 4.02
+                               # (non-reliance restatement) and 1.05 (material cyber incident) outrank
+                               # the rest, so the max_filings cap cannot drop them behind routine
+                               # releases. An 8-K with none keeps its bare form label.
 
   proxy:                       # DEF 14A compensation & governance line from structured XBRL,
                                # fetched per deep-dive, not per screen

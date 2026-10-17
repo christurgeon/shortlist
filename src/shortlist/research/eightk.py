@@ -38,7 +38,7 @@ _DEFAULTS = {
     "max_chars_total": 10000,
     "max_chars_per_filing": 6000,
     "guidance_window_chars": 1500,
-    "items": ["4.02", "2.02", "2.01", "1.01", "5.02"],
+    "items": ["4.02", "1.05", "2.02", "2.01", "1.01", "5.02"],
 }
 
 # Marks the gap the guidance splice jumps. Safe by construction: a quote spanning
