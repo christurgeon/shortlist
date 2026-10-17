@@ -27,6 +27,22 @@ the scoring roadmap.
 
 # 2. `/deep`
 
+## 2e. Recent-news section — filter gaps and 8-K coverage (2026-10-17)
+
+- **Common-word company names.** The name alias is case-insensitive, so Target, Block, Gap or
+  Snap match ordinary words ("Raises Price Target on Nvidia" is kept as Target news). A
+  candidate rule: a single dictionary-word core counts only with a suffix or the ticker.
+- **Event terms that match inside other words** (`trial` in "Industrial", `appoint` in
+  "Disappointing"). Word-anchoring failed its pre-set bar by one item:
+  `docs/audits/2026-10-16-deep-news-leads-design.md` §4.2 → Known gaps.
+- **8-K coverage seen in the news design.** `research.eightk.items` does not select Item 1.05
+  (cyber incidents); an Item 2.02 8-K can reach the bundle as its cover body with the EX-99.1
+  numbers missing (CALM, 2026-09-30).
+
+**Status:** the two filter gaps wait on the design §8 usefulness review (8 distinct tickers with
+the section); judge them there on real briefs, then re-measure on all 24 names before changing
+the filter. The 8-K items are independent and can be taken any time.
+
 ## 2d. ROIC-persistence section — reference-table refresh
 
 - **A reference-table refresh builder, due before fiscal-2027 10-Ks (about September 2027).**
