@@ -69,11 +69,12 @@ segment, and a marker mixed into it would be non-filing text a model could quote
 Design + 20-filing evidence: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`.
 
 The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
-guidance, a non-reliance restatement, a completed acquisition, an officer departure. Selected by
-item priority (`4.02 > 2.02 > 2.01 > 1.01 > 5.02`), capped at 10K normalized chars, and — unlike
-everything in the next list — **quotable filing text that enters the haystack**, as its own
-labelled segment. Measured on NKE it surfaced a chief accounting officer's resignation and a
-one-time benefit behind a 407% net-income jump, neither present in the 10-K.
+guidance, a non-reliance restatement, a material cyber incident, a completed acquisition, an
+officer departure. Selected by item priority (`4.02 > 1.05 > 2.02 > 2.01 > 1.01 > 5.02`),
+capped at 10K normalized chars, and — unlike everything in the next list — **quotable filing
+text that enters the haystack**, as its own labelled segment. Measured on NKE it surfaced a
+chief accounting officer's resignation and a one-time benefit behind a 407% net-income jump,
+neither present in the 10-K.
 Design + evidence: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`.
 
 An **adverse internal-control conclusion** is included when the 10-K carries one
