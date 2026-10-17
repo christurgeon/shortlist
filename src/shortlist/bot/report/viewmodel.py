@@ -82,6 +82,16 @@ class ReconciliationVM:
 
 
 @dataclass
+class NewsVM:
+    date: str = ""
+    source: str = ""
+    headline: str = ""
+    summary: str = ""
+    url: str = ""
+    reports: int = 1
+
+
+@dataclass
 class AssessmentVM:
     business_model: str = ""
     takeaway: str = ""                    # one-line TL;DR (synthesis / thesis.takeaway)
@@ -105,6 +115,13 @@ class AssessmentVM:
     # "" on a brief written with the section off, and on every brief from before it existed.
     roic_persistence: str = ""
     roic_persistence_shown: bool = False
+    # The "Recent news" section as research/news.py recorded it; status "" on a brief written
+    # with the section off and on every brief from before it existed.
+    news: list[NewsVM] = field(default_factory=list)
+    news_status: str = ""
+    news_as_of: str = ""
+    news_from: str = ""
+    news_truncated: bool = False
     call_stance: str = ""
     call_label: str = ""
     call_conviction: str = ""
@@ -183,6 +200,23 @@ def _reconciliation(raw) -> list[ReconciliationVM]:
     return out
 
 
+def _news(raw) -> list[NewsVM]:
+    from ...research.news import safe_url
+    out = []
+    for e in (raw or []):
+        if not isinstance(e, dict):
+            continue
+        try:
+            reports = max(1, int(e.get("reports") or 1))
+        except (TypeError, ValueError):
+            reports = 1
+        out.append(NewsVM(date=str(e.get("date") or ""), source=str(e.get("source") or ""),
+                          headline=str(e.get("headline") or ""),
+                          summary=str(e.get("summary") or ""), url=safe_url(e.get("url")),
+                          reports=reports))
+    return out
+
+
 def _assessment_vm(rec: dict) -> AssessmentVM:
     from ...research.models import stance_label
     th = rec.get("thesis") or {}
@@ -220,6 +254,11 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         stub_sections=[str(x) for x in (rec.get("stub_sections") or [])],
         roic_persistence=str(rec.get("durability_line") or ""),
         roic_persistence_shown=rec.get("durability_status") == "shown",
+        news=_news(rec.get("news_items")),
+        news_status=str(rec.get("news_status") or ""),
+        news_as_of=str(rec.get("news_as_of") or ""),
+        news_from=str(rec.get("news_from") or ""),
+        news_truncated=bool(rec.get("news_truncated")),
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",
