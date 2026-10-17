@@ -119,10 +119,10 @@ def test_malformed_rows_are_skipped_not_fatal():
 # ---- third-party text is made safe once, when the item is built ----
 
 def test_text_is_normalized_stripped_of_control_characters_and_capped():
-    head = "Acme‮ sued​ by\nDOJ " + "x" * 300
+    head = "Acme\u202e sued\u200b by\nDOJ " + "x" * 300
     (item,) = news.select([_art(head, summary="ｓｕｍｍａｒｙ\x07 " + "y" * 400,
                                 url="javascript:alert(1)")], "ACME", "Acme Inc.", 10)
-    assert "‮" not in item.headline and "​" not in item.headline and "\n" not in item.headline
+    assert "\u202e" not in item.headline and "\u200b" not in item.headline and "\n" not in item.headline
     assert item.headline.startswith("Acme sued by DOJ") and len(item.headline) <= 160
     assert item.summary.startswith("summary ") and len(item.summary) <= 220
     assert item.url == ""
@@ -163,3 +163,21 @@ def test_a_summary_cannot_start_a_list_and_tildes_are_escaped():
 def test_a_url_with_a_format_character_is_dropped():
     assert news.safe_url("https://a.test/\u202eexe.fdp") == ""
     assert news.safe_url("https://a.test/ok") == "https://a.test/ok"
+
+
+def test_feed_html_entities_are_decoded_once_and_still_sanitized():
+    (item,) = news.select([_art("Acme sued by FTC &amp; DOJ over Acme&#39;s billing&#8238;",
+                                summary="Today&#39;s filing &lt;b&gt;", source="Yahoo&amp;Co")],
+                          "ACME", "Acme Inc.", 10)
+    assert item.headline == "Acme sued by FTC & DOJ over Acme's billing"
+    assert item.summary == "Today's filing <b>"
+    assert item.source == "Yahoo&Co"
+
+
+def test_items_are_shown_newest_first_by_the_date_they_print():
+    # The recall cluster starts first (day 0) but its last report (day 3) is the newest.
+    arts = [_art("Acme Recall Of Widget Catheters Widens", day=0),
+            _art("Acme sued by DOJ over pricing", day=2),
+            _art("Acme Widget Catheters Recall Classified Class I", day=3)]
+    items = news.select(arts, "ACME", "Acme Inc.", 10)
+    assert [(i.date, i.reports) for i in items] == [("2026-10-03", 1), ("2026-10-01", 2)]
