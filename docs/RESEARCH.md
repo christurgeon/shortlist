@@ -128,8 +128,8 @@ score-vs-filing reconciliation.
 ### The ROIC-persistence section — computed, not written by the model
 
 On since 2026-10-10 (`research.durability.enabled`). Every brief carries one more section,
-**"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. It is the only
-part of a brief the model did not write, and the model never sees it.
+**"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. The model did
+not write it and never sees it (the recent-news section below is the other such section).
 
 - **What it is.** A pre-registered study measured, among firms with a ROIC in the top fifth,
   which ones still had it three years later
@@ -173,6 +173,36 @@ part of a brief the model did not write, and the model never sees it.
   config says): an httpx timeout is per phase and per read, and is not a deadline. A brief makes
   at most one request. A brief is cached for the day with the section it
   was written with, so a section that failed stays until the day bucket turns or `--refresh`.
+
+### The recent-news section — third-party headlines, not seen by the model
+
+`research.news.enabled`. Every brief carries a section **"Recent news — third-party, not
+verified"**: up to `max_items` event clusters from Finnhub `company-news` over
+`lookback_days`, each with its first-report date (UTC), outlet, report count, linked headline
+and a short summary. The free feed returns only its newest ~250 articles, which for a
+high-volume name is a few days, not the whole window; the section then prints the span it
+really covers. Design, evidence and the gate for any model use:
+`docs/audits/2026-10-16-deep-news-leads-design.md`.
+
+- **Why.** The bundle's freshest text is the 10-Q and up to three 8-Ks of five item types.
+  Most company events of the last month — litigation, regulators, recalls, trial readouts,
+  deals below 8-K materiality, analyst rating changes — are in none of them.
+- **What it is not.** Not filing text, not verified, not a score, gate or flag. The outlet is
+  often a syndicator, so the section says provenance is weak; the report count ranks, it does
+  not vouch.
+- **The filter** (`research/news.py:select`, deterministic): the headline must name the
+  company (a ticker of three characters or fewer only in a form like `(ON)`); opinion sources,
+  listicles, roundups and price-target notes are dropped; an opinion-shaped headline survives
+  only if it names a strong event; articles about one event become one item, shown under its
+  strongest headline; a quiet name shows fewer items, never filler.
+- **Where it is computed.** `_enrich_card`, **after** `assess()` returns, like the
+  ROIC-persistence section. The prompts are byte-identical with the flag on or off, and news
+  text is never a grounding segment. Feeding it to the model is gated on the design's
+  pre-registration (§9) and is not built.
+- **Failure.** One Finnhub request per brief, key in a header, no retry, under a wall-clock
+  deadline (`timeout`, at most 45 s) enforced by a daemon thread. Any failure prints
+  "unavailable", never an empty section, so an outage cannot read as "no news". A cached
+  brief keeps the news as of its own generation and prints that time.
 
 ## Quote verification
 
