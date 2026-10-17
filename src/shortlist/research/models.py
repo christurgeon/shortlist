@@ -243,6 +243,17 @@ class FilingBundle:
 
 
 @dataclass
+class NewsItem:
+    """One event cluster from the company-news feed, already sanitized (research/news.py)."""
+    date: str                  # first report in the cluster, UTC YYYY-MM-DD
+    source: str
+    headline: str
+    summary: str = ""
+    url: str = ""              # http(s) only, else ""
+    reports: int = 1           # articles in the cluster
+
+
+@dataclass
 class Finding:
     claim: str
     evidence: str
@@ -363,6 +374,13 @@ class QualitativeAssessment:
     # grounding segment. Both stay "" unless `research.durability.enabled`.
     durability_line: str = ""
     durability_status: str = ""
+    # The "Recent news" section (research/news.py), fetched AFTER assess() returns: the model
+    # never sees it. Status "" means the section was off.
+    news_items: list[NewsItem] = field(default_factory=list)
+    news_status: str = ""
+    news_as_of: str = ""
+    news_from: str = ""             # first date the items can come from
+    news_truncated: bool = False    # the feed's article cap cut the window short
     screening_call: Optional[ScreeningCall] = None
 
     @property
