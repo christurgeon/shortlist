@@ -69,7 +69,10 @@ def test_unavailable_and_none_render_their_own_sentences():
 def test_the_chat_text_lists_items_at_full_detail_only():
     a = AssessmentVM(news=[NewsVM(**_ITEM)], news_status="shown", call_stance="HOLD",
                      call_label="Hold", call_conviction="LOW")
-    assert "   📰 2026-10-15 · Acme <sued> by FTC (3 reports)" in _text(a)
+    lines = _text(a)
+    i = lines.index(f"   📰 {news.HEADING}:")
+    assert lines[i + 1] == "      2026-10-15 · Acme <sued> by FTC (3 reports)"
+    assert not any(news.HEADING in ln for ln in _text(AssessmentVM(news_status="none")))
     assert not any("📰" in ln for ln in _Research().render_text(_vm(a), Detail.GLANCE))
     assert _text(AssessmentVM(news_status="unavailable"))[-1] == \
         "   📰 News: the feed was unavailable for this brief."
