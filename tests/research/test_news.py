@@ -161,5 +161,5 @@ def test_a_summary_cannot_start_a_list_and_tildes_are_escaped():
 
 
 def test_a_url_with_a_format_character_is_dropped():
-    assert news.safe_url("https://a.test/‮exe.fdp") == ""
+    assert news.safe_url("https://a.test/\u202eexe.fdp") == ""
     assert news.safe_url("https://a.test/ok") == "https://a.test/ok"
