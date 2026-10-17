@@ -398,7 +398,10 @@ def _news_text(a) -> list[str]:
     from ...research import news
     if a.news_status == news.UNAVAILABLE:
         return ["   📰 News: the feed was unavailable for this brief."]
-    return [f"   📰 {it.date} · {it.headline} ({news.reports_label(it.reports)})" for it in a.news]
+    if not a.news:
+        return []
+    return [f"   📰 {news.HEADING}:"] + [
+        f"      {it.date} · {it.headline} ({news.reports_label(it.reports)})" for it in a.news]
 
 
 def _findings_block(h, label: str, items, cls: str = "") -> str:

@@ -77,7 +77,7 @@ reason (`docs/RESEARCH.md` → the ROIC-persistence section).
 
 With `research.news.enabled`, the HTML attachment carries the **Recent news** section: linked
 third-party headlines the model never saw, labelled as not verified. The chat text lists them
-at `Detail.FULL` only, and says so when the feed was unavailable
+under the same heading at `Detail.FULL` only, and says so when the feed was unavailable
 (`docs/RESEARCH.md` → the recent-news section).
 
 ### Request caps
