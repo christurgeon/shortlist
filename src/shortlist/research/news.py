@@ -106,6 +106,11 @@ def clean(text: Any, limit: int) -> str:
     return s if len(s) <= limit else s[: limit - 1].rstrip() + "…"
 
 
+def _feed_text(value: Any, limit: int) -> str:
+    """A feed field with its HTML entities decoded once (Finnhub sends "AT&amp;T"), then `clean`ed."""
+    return clean(html.unescape("" if value is None else str(value)), limit)
+
+
 def safe_url(url: Any) -> str:
     """`url` if it is an http(s) URL with no whitespace or control/format characters, else ""."""
     u = str(url or "").strip()
@@ -170,17 +175,17 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
     clusters: list[dict] = []
     rows = [a for a in articles if isinstance(a, dict) and isinstance(a.get("datetime"), (int, float))]
     for a in sorted(rows, key=lambda a: a["datetime"]):
-        h = clean(a.get("headline"), 1000)
+        h = _feed_text(a.get("headline"), 1000)
         if not h or not any(p.search(h) for p in pats):
             continue
         g = grade(h)
         if (a.get("source") in _OPINION_SOURCES or _DROP.search(h) or _ROUNDUP.search(h)
                 or (_SOFT.search(h) and g == 0)):
             continue
-        summary = clean(a.get("summary"), 1000)
+        summary = _feed_text(a.get("summary"), 1000)
         keys = _keys(h + " " + summary[:160], alias_words)
         member = {"ts": a["datetime"], "grade": g, "headline": h, "summary": summary,
-                  "url": a.get("url"), "source": clean(a.get("source"), 40)}
+                  "url": a.get("url"), "source": _feed_text(a.get("source"), 40)}
         for c in clusters:
             if (abs(member["ts"] - c["last_ts"]) <= _CLUSTER_SECONDS
                     and len(keys & c["seed"]) >= _MIN_SHARED_KEYS):
@@ -201,9 +206,8 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
     shown = sorted(eligible[:max(0, max_items)], key=lambda cf: cf[0]["first_ts"], reverse=True)
     return [NewsItem(
         date=datetime.fromtimestamp(c["first_ts"], tz=timezone.utc).date().isoformat(),
-        source=clean(html.unescape(face["source"]), 40),
-        headline=clean(html.unescape(face["headline"]), _HEADLINE_MAX),
-        summary=clean(html.unescape(face["summary"]), _SUMMARY_MAX), url=safe_url(face["url"]),
+        source=face["source"], headline=clean(face["headline"], _HEADLINE_MAX),
+        summary=clean(face["summary"], _SUMMARY_MAX), url=safe_url(face["url"]),
         reports=len(c["members"])) for c, face in shown]
 
 
