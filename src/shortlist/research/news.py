@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
+from ..data.sources.finnhub import _NEWS_TRUNCATE_AT as TRUNCATE_AT
 from .models import NewsItem
 
 URL = "https://finnhub.io/api/v1/company-news"
@@ -32,9 +33,6 @@ SHOWN, NONE, UNAVAILABLE = "shown", "none", "unavailable"
 _DEFAULTS = {"enabled": False, "lookback_days": 30, "max_items": 10, "timeout": 10}
 # The same research-phase budget as research/durability.py:_download, for the same reason.
 MAX_DEADLINE_S = 45.0
-# Finnhub's free company-news returns only its newest ~250 articles; a list this long is capped
-# (the data/sources/finnhub.py rule).
-TRUNCATE_AT = 240
 _HEADLINE_MAX = 160
 _SUMMARY_MAX = 220
 _CLUSTER_SECONDS = 4 * 86400
