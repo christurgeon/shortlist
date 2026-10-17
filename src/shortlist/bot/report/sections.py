@@ -373,6 +373,34 @@ def _persistence_text(a) -> str:
     return "   📏 ROIC persistence: " + reason[0].lower() + reason[1:]
 
 
+def _news_html(h, a) -> str:
+    """The "Recent news" section. Every value is escaped; the link is only ever an http(s) URL
+    (the viewmodel drops anything else)."""
+    from ...research import news
+    parts = [h.tag("b", news.HEADING),
+             h.tag("p", news.note(a.news_as_of, a.news_from, a.news_truncated), _class="muted")]
+    if a.news_status == news.UNAVAILABLE:
+        parts.append(h.tag("p", news.UNAVAILABLE_TEXT))
+    elif not a.news:
+        parts.append(h.tag("p", news.NONE_TEXT))
+    else:
+        lis = ""
+        for it in a.news:
+            head = h.tag("a", it.headline, href=it.url) if it.url else h.esc(it.headline)
+            meta = h.esc(f"{it.date} · {it.source} · {news.reports_label(it.reports)} — ")
+            summary = h.tag("div", it.summary, _class="muted") if it.summary else ""
+            lis += h.raw("li", meta + head + summary)
+        parts.append(h.raw("ul", lis))
+    return h.raw("div", "".join(parts), _class="block")
+
+
+def _news_text(a) -> list[str]:
+    from ...research import news
+    if a.news_status == news.UNAVAILABLE:
+        return ["   📰 News: the feed was unavailable for this brief."]
+    return [f"   📰 {it.date} · {it.headline} ({news.reports_label(it.reports)})" for it in a.news]
+
+
 def _findings_block(h, label: str, items, cls: str = "") -> str:
     lis = "".join(h.raw("li", h.esc(f.claim) +
                         _evidence_html(h, f.status, f.evidence, f.source))
@@ -418,6 +446,8 @@ class _Research:
                                    h.raw("ul", lis), _class="block"))
             if a.roic_persistence:
                 parts.append(_persistence_html(h, a.roic_persistence))
+            if a.news_status:
+                parts.append(_news_html(h, a))
             for label, items, cls in [("Red flags", a.red_flags, "flag"),
                                       ("Risks", a.risks, ""),
                                       ("Newly disclosed risks", a.added_risks, "")]:
@@ -463,6 +493,8 @@ class _Research:
                     out += _evidence_text(c.status, c.filing_says, c.source)
                 if a.roic_persistence:
                     out.append(_persistence_text(a))
+                if a.news_status:
+                    out += _news_text(a)
                 for f in a.red_flags:
                     out.append(f"   🚩 {f.claim}")
                     out += _evidence_text(f.status, f.evidence, f.source)
