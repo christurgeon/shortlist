@@ -70,10 +70,15 @@ inferences destroys exactly that signal.
 
 With `research.durability.enabled`, the HTML attachment also carries the **ROIC persistence**
 section, word for word as `research/durability.py` wrote it. It is computed from SEC data and
-is the one part of the research block the model did not write. The chat text carries one line.
+the model did not write it. The chat text carries one line.
 For a section that is shown it only points to the report, and never gives a shortened reading:
 the caveats are part of what the measurement licenses. For one that is not shown it gives the
 reason (`docs/RESEARCH.md` → the ROIC-persistence section).
+
+With `research.news.enabled`, the HTML attachment carries the **Recent news** section: linked
+third-party headlines the model never saw, labelled as not verified. The chat text lists them
+at `Detail.FULL` only, and says so when the feed was unavailable
+(`docs/RESEARCH.md` → the recent-news section).
 
 ### Request caps
 

@@ -369,6 +369,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-16 | `2026-10-16-deep-news-leads-design.md` — recent news in `/deep`: feeds compared, a filter measured against blind labels on 24 names, and a display-only section; feeding news to the model is gated on a pre-registration | design + evidence |
 | 2026-10-15 | `2026-10-15-moat-weight.md` — does `moat` earn its 0.18 composite weight? A pre-registered `no_moat` variant on both universes; kept | pre-registration + verdict |
 | 2026-10-10 | `2026-10-10-sec-filing-index-403.md` — sec.gov denies the short filing-index URL, so every research brief was skipped as "no 10-K"; edgartools 5.33.0 -> 5.61.1 | evidence |
 | 2026-10-08 | `2026-10-08-moat-durability-phase1.md` — the ROIC-persistence section of the `/deep` brief: what was built, the evidence that the shared code moved no study number, why fiscal 2025 is the reference year, and what a prompt integration must measure first | design + evidence |
