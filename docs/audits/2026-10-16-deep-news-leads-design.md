@@ -103,6 +103,8 @@ a URL or an error string.
 | **v5 frozen (K=12)** | **held-out 2** | **77% (63/82)** | **19/21** | **67%** |
 | **v5 frozen (K=10, shipped)** | **held-out 2** | **77% (57/74)** | **19/21** | — |
 | v5 frozen, all 24 names, **K=10** | all | 75% (135/181) | **43/47 (91%)** | — |
+| v6 = v5 + entity decoding (shipped), all 24 names, K=10 | all | 75% (135/181) | 43/47 | — |
+| v6 + word anchors (not adopted), all 24 names, K=10 | all | 74% (134/181) | 43/47 | — |
 
 **v5 rules** (each traced to a tuning failure or a review finding):
 
@@ -140,6 +142,19 @@ recall over all 24 names is within one event of K=15 (K=8: 42/47; 10: 43/47; 12 
 - **Wrong subject.** About 5–8% of kept items are about another company that names this one
   ("Ford Has Lost 30%: JPMorgan Sees…"). A headline-position rule would drop real events
   (GEV's largest deal names GE Vernova at word 9). Accepted.
+- **Entity-encoded text** (found by a code review after Phase 1 was built). Finnhub sends
+  HTML entities ("AT&amp;T"), so v5 never matched an encoded headline for a name containing
+  "&". v6 decodes headlines and summaries before matching. On all 24 names it changes no item
+  and no score (one AAPL article moves between two clusters). Shipped.
+- **Event terms inside other words** (same review). `trial` matches "Industrial", `appoint`
+  "Disappointing", `fine` "Redefines", `charged` "Supercharged"; also contract, patent, plant.
+  Word-anchoring them was scored against a bar fixed before the run: precision at least v5's
+  75% and high-tier recall at least 43/47. It reached 74% (134/181) and 43/47, with or without
+  entity decoding, so it is not adopted: the slots it freed went to other non-events. Left
+  for the §8 review (`TODO.md` §2e).
+- **Common-word company names** (same review). The name alias is case-insensitive, so Target,
+  Block, Gap or Snap match ordinary words ("Raises Price Target on Nvidia"). None of the 24
+  names has such a core, so it is unmeasured (`TODO.md` §2e).
 - **Brand ≠ legal name.** "onsemi" headlines do not match "ON Semiconductor". No alias table
   (YAGNI); the `(ON)` context form catches some.
 - **Medium-tier recall is ~50–67% by design**, because rule 2 drops price-target notes.
@@ -330,6 +345,8 @@ built**, the verdict is recorded under `docs/audits/`, and Phase 1 stands alone.
 
 - `docs/audits/scripts/probe_news_sources.py` — §4.1 (one-off; not for repeated use)
 - `docs/audits/scripts/news_filter_v4.py`, `news_filter_v5.py` — the frozen filters
+- `docs/audits/scripts/news_filter_v6.py` (shipped), `news_filter_v6_anchors.py` (not adopted),
+  `probe_news_eval_k10.py` — §4.2 Known gaps
 - `docs/audits/scripts/probe_news_filter_eval.py`, `probe_news_ksweep.py` — §4.2
 - `docs/audits/scripts/probe_news_dump_for_labels.py` — the labellers' inputs
 - `docs/audits/scripts/probe_news_8k_index.py`, `probe_news_novelty.py` — §4.3
