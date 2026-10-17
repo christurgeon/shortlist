@@ -1,8 +1,9 @@
 # Recent news in `/deep` — design + evidence (2026-10-16)
 
-**Status: design, not implemented.** Reviewed by three adversarial reviewers (§11) and revised.
-Phase 1 is planned for implementation. Phase 2 is gated on the pre-registration in §9 and has
-no implementation plan until that passes.
+**Status: Phase 1 implemented** (the display-only section; commit "feat(research): add the
+recent-news filter and fetch for /deep" and the three after it). Reviewed by three adversarial
+reviewers (§11) and revised. Phase 2 is gated on the pre-registration in §9 and has no
+implementation plan until that passes.
 
 ## Decision
 
