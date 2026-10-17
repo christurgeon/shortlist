@@ -1,0 +1,184 @@
+{
+ "ticker": "UBER",
+ "events": [
+  {
+   "label": "Agreement to acquire ezCater for $2.3B",
+   "tier": "high",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-10-06",
+   "ids": [
+    "142697244",
+    "142697245",
+    "142726771",
+    "142665706",
+    "142665707",
+    "142665708",
+    "142665710",
+    "142665711",
+    "142665712",
+    "142663203",
+    "142663204",
+    "142694522",
+    "142665713",
+    "142664081",
+    "142791266",
+    "142766349",
+    "142729935",
+    "142823772",
+    "142720132",
+    "142680522"
+   ]
+  },
+  {
+   "label": "Delivery Hero takeover offer (~$15B), board recommends acceptance",
+   "tier": "high",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-09-02",
+   "ids": [
+    "142466303",
+    "142315293",
+    "142233402",
+    "142374456",
+    "142726771"
+   ]
+  },
+  {
+   "label": "Head of autonomous unit Maredia to depart",
+   "tier": "medium",
+   "category": "executive or board changes",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142851079",
+    "142849135"
+   ]
+  },
+  {
+   "label": "Third bellwether sexual assault suit settled",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-10-07",
+   "ids": [
+    "142697243"
+   ]
+  },
+  {
+   "label": "Confidential settlement of 2020 sexual assault federal suit",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142920497"
+   ]
+  },
+  {
+   "label": "Uber One class action over enrollment",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-10-12",
+   "ids": [
+    "142819164"
+   ]
+  },
+  {
+   "label": "$40M wrongful death award",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-09-18",
+   "ids": [
+    "142246225",
+    "142238018"
+   ]
+  },
+  {
+   "label": "Costco delivery expansion to 47 states",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-09-17",
+   "ids": [
+    "142524142",
+    "142430617",
+    "142259522",
+    "142259555",
+    "142232894",
+    "142232901",
+    "142231619",
+    "142452019"
+   ]
+  },
+  {
+   "label": "Spain first national robotaxi permit, WeRide Madrid",
+   "tier": "medium",
+   "category": "government or policy actions aimed specifically at the company",
+   "first_date": "2026-09-17",
+   "ids": [
+    "142387639",
+    "142233403"
+   ]
+  },
+  {
+   "label": "Pony.ai robotaxi testing in London",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-10-08",
+   "ids": [
+    "142727486"
+   ]
+  },
+  {
+   "label": "Sold Aurora shares, stake reduced to 9.2%",
+   "tier": "medium",
+   "category": "activist or major-holder moves",
+   "first_date": "2026-09-17",
+   "ids": [
+    "142256592"
+   ]
+  },
+  {
+   "label": "CEO bought $10M of stock",
+   "tier": "medium",
+   "category": "activist or major-holder moves",
+   "first_date": "2026-09-24",
+   "ids": [
+    "142383695",
+    "142361925"
+   ]
+  },
+  {
+   "label": "Grab: board seat surrendered, stake 13.5%",
+   "tier": "medium",
+   "category": "activist or major-holder moves",
+   "first_date": "2026-09-23",
+   "ids": [
+    "142357141"
+   ]
+  },
+  {
+   "label": "Rivian 50,000 vehicle robotaxi deal",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-10-01",
+   "ids": [
+    "142528730"
+   ]
+  },
+  {
+   "label": "$10B investment in autonomous vehicles",
+   "tier": "medium",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-09-22",
+   "ids": [
+    "142339875"
+   ]
+  },
+  {
+   "label": "Wells Fargo raises PT to $92",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-05",
+   "ids": [
+    "142636413",
+    "142664083"
+   ]
+  }
+ ]
+}

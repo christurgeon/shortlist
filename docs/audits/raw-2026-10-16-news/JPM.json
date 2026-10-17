@@ -1,0 +1,181 @@
+{
+ "ticker": "JPM",
+ "events": [
+  {
+   "label": "Q3 2026 results miss estimates; 2027 NII outlook raised",
+   "tier": "high",
+   "category": "reported results or guidance changes",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142949110",
+    "142949740",
+    "142922271",
+    "142910888",
+    "142885159",
+    "142882631",
+    "142917506",
+    "142884619",
+    "142882015",
+    "142875617",
+    "142887026",
+    "142870821",
+    "142867336",
+    "142860918",
+    "142853426",
+    "142852431",
+    "142852428",
+    "142852429",
+    "142852224",
+    "142848669",
+    "142848671",
+    "142848526",
+    "142848666",
+    "142848672",
+    "142848673",
+    "142848674",
+    "142846265",
+    "142846052",
+    "142847431",
+    "142847422",
+    "142847432",
+    "142847434",
+    "142850127",
+    "142850128",
+    "142850130",
+    "142848008",
+    "142850133",
+    "142850134",
+    "142850135",
+    "142850136",
+    "142850137",
+    "142848668",
+    "142884631",
+    "142851159",
+    "142851151",
+    "142851128",
+    "142847427",
+    "142852038",
+    "142854413",
+    "142920359"
+   ]
+  },
+  {
+   "label": "Buybacks reduced in Q3 in favor of organic growth",
+   "tier": "medium",
+   "category": "capital actions (buyback, dividend change, debt or equity offering)",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142851157",
+    "142847426",
+    "142949108"
+   ]
+  },
+  {
+   "label": "OCC accuses nine banks including JPM of debanking",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142915706"
+   ]
+  },
+  {
+   "label": "Trump debanking suit: JPM seeks dismissal",
+   "tier": "medium",
+   "category": "legal / regulatory",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142920360"
+   ]
+  },
+  {
+   "label": "Rob Sweeney named global chair of investment banking",
+   "tier": "medium",
+   "category": "executive or board changes",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142851154"
+   ]
+  },
+  {
+   "label": "JPM blocks outside AI agents from accounts",
+   "tier": "medium",
+   "category": "operational incidents (outage, breach, strike, plant event)",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142922273",
+    "142922274",
+    "142888367",
+    "142917502",
+    "142886095",
+    "142852430"
+   ]
+  },
+  {
+   "label": "$5B Volta AI leveraged loan sale",
+   "tier": "medium",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-10-13",
+   "ids": [
+    "142927175",
+    "142851029",
+    "142839968"
+   ]
+  },
+  {
+   "label": "Chicago Chase Tower renovation cost above $800M",
+   "tier": "medium",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142949054",
+    "142922229"
+   ]
+  },
+  {
+   "label": "Citi lowers PT to $350, Neutral",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142946630"
+   ]
+  },
+  {
+   "label": "Truist raises PT to $361, Hold",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142917503"
+   ]
+  },
+  {
+   "label": "Barclays raises PT to $425, Overweight",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142884616"
+   ]
+  },
+  {
+   "label": "Morgan Stanley raises PT to $377, Equal-Weight",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142884622"
+   ]
+  },
+  {
+   "label": "Baird raises PT to $312, Neutral",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142884623"
+   ]
+  }
+ ]
+}
