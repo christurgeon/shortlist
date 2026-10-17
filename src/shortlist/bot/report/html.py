@@ -190,6 +190,7 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
 .block li::before{content:""; position:absolute; left:3px; top:11px; width:5px; height:5px;
   border-radius:50%; background:var(--text-3)}
 .block.flag li::before{background:var(--flag)}
+.block.news a{text-decoration:underline; text-underline-offset:2px}
 .bull{color:var(--bull)} .bear{color:var(--bear)} .flag{color:var(--flag)}
 .muted{color:var(--text-3); font-size:12.5px}
 /* evidence: the quote is one click away, so the default view stays as terse as the

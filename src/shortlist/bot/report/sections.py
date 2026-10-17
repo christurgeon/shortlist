@@ -391,7 +391,7 @@ def _news_html(h, a) -> str:
             summary = h.tag("div", it.summary, _class="muted") if it.summary else ""
             lis += h.raw("li", meta + head + summary)
         parts.append(h.raw("ul", lis))
-    return h.raw("div", "".join(parts), _class="block")
+    return h.raw("div", "".join(parts), _class="block news")
 
 
 def _news_text(a) -> list[str]:

@@ -61,6 +61,13 @@ def test_the_html_section_is_escaped_and_linked():
     assert news.HEADING not in _html(AssessmentVM())
 
 
+def test_news_headlines_are_underlined_so_they_read_as_links():
+    from shortlist.bot.report.html import _CSS
+    html = _html(AssessmentVM(news=[NewsVM(**_ITEM)], news_status="shown"))
+    assert 'class="block news"' in html
+    assert ".block.news a{text-decoration:underline" in _CSS
+
+
 def test_unavailable_and_none_render_their_own_sentences():
     assert news.UNAVAILABLE_TEXT in _html(AssessmentVM(news_status="unavailable", news_as_of="t"))
     assert news.NONE_TEXT in _html(AssessmentVM(news_status="none", news_as_of="t"))
