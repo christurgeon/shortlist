@@ -7,6 +7,7 @@ docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
 """
 from __future__ import annotations
 
+import html
 import os
 import re
 import threading
@@ -197,11 +198,12 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
             eligible.append((c, face))
     eligible.sort(key=lambda cf: (min(len(cf[0]["members"]), _REPORTS_CAP), cf[0]["last_ts"]),
                   reverse=True)
-    shown = sorted(eligible[:max(0, max_items)], key=lambda cf: cf[0]["last_ts"], reverse=True)
+    shown = sorted(eligible[:max(0, max_items)], key=lambda cf: cf[0]["first_ts"], reverse=True)
     return [NewsItem(
         date=datetime.fromtimestamp(c["first_ts"], tz=timezone.utc).date().isoformat(),
-        source=face["source"], headline=clean(face["headline"], _HEADLINE_MAX),
-        summary=clean(face["summary"], _SUMMARY_MAX), url=safe_url(face["url"]),
+        source=clean(html.unescape(face["source"]), 40),
+        headline=clean(html.unescape(face["headline"]), _HEADLINE_MAX),
+        summary=clean(html.unescape(face["summary"]), _SUMMARY_MAX), url=safe_url(face["url"]),
         reports=len(c["members"])) for c, face in shown]
 
 
