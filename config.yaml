@@ -422,6 +422,14 @@ research:
     cache_dir: .cache/durability-live
     deadline_s: 15             # wall-clock bound on the request; values above 45 are read as 45
                                # to fit the research phase budget
+  news:                        # "Recent news" section (research/news.py): filtered Finnhub
+                               # company-news headlines, DISPLAY ONLY, fetched after the model
+                               # call; never scored and never shown to the model.
+                               # docs/audits/2026-10-16-deep-news-leads-design.md
+    enabled: true              # one Finnhub call per brief; a failure prints "unavailable"
+    lookback_days: 30
+    max_items: 10              # keeps the most-reported event clusters; shown newest first
+    timeout: 10                # wall-clock seconds for the request; values above 45 read as 45
   insider_detail:              # recent Form-4 trades as a brief context line
     enabled: true
     max_items: 6               # newest-first
