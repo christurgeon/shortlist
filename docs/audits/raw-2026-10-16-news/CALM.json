@@ -1,0 +1,78 @@
+{
+ "ticker": "CALM",
+ "events": [
+  {
+   "label": "Q1 FY2027 results: net loss, sales down 41.5%, miss",
+   "tier": "high",
+   "category": "reported results or guidance changes",
+   "first_date": "2026-09-30",
+   "ids": [
+    "142597160",
+    "142578302",
+    "142572652",
+    "142566763",
+    "142566765",
+    "142597163",
+    "142566766",
+    "142589454",
+    "142529614",
+    "142523987",
+    "142529616",
+    "142529617",
+    "142521018",
+    "142522646",
+    "142529619",
+    "142559149",
+    "142521521",
+    "142518479",
+    "142512958",
+    "142513163",
+    "142559150",
+    "142529622",
+    "142513159",
+    "142516934",
+    "142518121",
+    "142518124"
+   ]
+  },
+  {
+   "label": "Cal-Maine will not pay a variable cash dividend for the quarter",
+   "tier": "high",
+   "category": "capital actions",
+   "first_date": "2026-09-30",
+   "ids": [
+    "142597160",
+    "142521018",
+    "142513159"
+   ]
+  },
+  {
+   "label": "Stephens lowers PT to $70 (Equal-Weight)",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-01",
+   "ids": [
+    "142559148",
+    "142589454"
+   ]
+  },
+  {
+   "label": "BMO lowers PT to $75 (Market Perform)",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-09-24",
+   "ids": [
+    "142423471"
+   ]
+  },
+  {
+   "label": "Stephens lowers PT to $80 (Equal-Weight)",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-09-22",
+   "ids": [
+    "142361171"
+   ]
+  }
+ ]
+}

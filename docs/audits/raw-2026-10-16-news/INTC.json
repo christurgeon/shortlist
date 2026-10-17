@@ -1,0 +1,58 @@
+{
+ "ticker": "INTC",
+ "events": [
+  {
+   "label": "Explosion at Intel facility in Israel",
+   "tier": "high",
+   "category": "operational incidents (outage, breach, strike, plant event, production halt)",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142887379"
+   ]
+  },
+  {
+   "label": "Terafab: Intel CEO says work continues; Musk says TSMC may only sublicense",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-10-08",
+   "ids": [
+    "142736455",
+    "142825323",
+    "142808514",
+    "142730977"
+   ]
+  },
+  {
+   "label": "Intel launches GPU D-series and Xeon rack designs for agentic AI",
+   "tier": "medium",
+   "category": "product or clinical-trial results",
+   "first_date": "2026-10-12",
+   "ids": [
+    "142823589",
+    "142823679",
+    "142849662",
+    "142851139",
+    "142862082"
+   ]
+  },
+  {
+   "label": "Intel and Applied Materials deepen AI partnership",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-10-11",
+   "ids": [
+    "142805761"
+   ]
+  },
+  {
+   "label": "Supreme Court weighs Intel 401(k) fiduciary case",
+   "tier": "medium",
+   "category": "legal / regulatory (lawsuits by or against the company, probes, fines, regulator actions, recalls, approvals or rejections)",
+   "first_date": "2026-10-10",
+   "ids": [
+    "142896531",
+    "142793314"
+   ]
+  }
+ ]
+}

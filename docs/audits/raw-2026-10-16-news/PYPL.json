@@ -1,0 +1,82 @@
+{
+ "ticker": "PYPL",
+ "events": [
+  {
+   "label": "Stripe/Advent reported $60.50 offer withdrawn without deal",
+   "tier": "high",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-09-18",
+   "ids": [
+    "142951537",
+    "142681765",
+    "142426101",
+    "142524207",
+    "142257619"
+   ]
+  },
+  {
+   "label": "Fresh takeover rumors (unverified) after Stripe walked away",
+   "tier": "medium",
+   "category": "M&A, divestitures, spin-offs, major investments",
+   "first_date": "2026-09-25",
+   "ids": [
+    "142426966",
+    "142431415",
+    "142424937",
+    "142437450",
+    "142524207"
+   ]
+  },
+  {
+   "label": "PayPal partners with Meta Muse AI agent for checkout",
+   "tier": "high",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-09-22",
+   "ids": [
+    "142364326",
+    "142363090",
+    "142358727",
+    "142342986",
+    "142341035",
+    "142341011",
+    "142341163",
+    "142359648",
+    "142359650",
+    "142391555",
+    "142377962",
+    "142366608",
+    "142437450",
+    "142470378"
+   ]
+  },
+  {
+   "label": "Glance agentic commerce integration with PayPal",
+   "tier": "medium",
+   "category": "major contracts, partnerships, customer wins or losses",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142922432",
+    "142919494",
+    "142947593"
+   ]
+  },
+  {
+   "label": "David Einhorn's Greenlight builds new PayPal position",
+   "tier": "medium",
+   "category": "activist or major-holder moves",
+   "first_date": "2026-10-15",
+   "ids": [
+    "142921536"
+   ]
+  },
+  {
+   "label": "Barclays lowers PT to $56 (Equal-Weight)",
+   "tier": "medium",
+   "category": "analyst rating changes",
+   "first_date": "2026-10-09",
+   "ids": [
+    "142791472"
+   ]
+  }
+ ]
+}

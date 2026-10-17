@@ -1,0 +1,53 @@
+{
+ "ticker": "HIMS",
+ "events": [
+  {
+   "label": "FTC complaint over data sharing and billing; securities class actions",
+   "tier": "high",
+   "category": "legal / regulatory",
+   "first_date": "2026-09-16",
+   "ids": [
+    "142438834",
+    "142425728",
+    "142174660"
+   ]
+  },
+  {
+   "label": "Administration reviewing plan to allow compounding of peptides",
+   "tier": "medium",
+   "category": "government or policy actions aimed specifically at the company",
+   "first_date": "2026-10-16",
+   "ids": [
+    "142927829"
+   ]
+  },
+  {
+   "label": "Jon Franklin named Chief Accounting Officer",
+   "tier": "medium",
+   "category": "executive or board changes",
+   "first_date": "2026-10-07",
+   "ids": [
+    "142700686"
+   ]
+  },
+  {
+   "label": "Hers launched in UK and Australia",
+   "tier": "medium",
+   "category": "product or clinical-trial results",
+   "first_date": "2026-10-14",
+   "ids": [
+    "142950292",
+    "142885681"
+   ]
+  },
+  {
+   "label": "AI-native weight loss care platform unveiled",
+   "tier": "medium",
+   "category": "product or clinical-trial results",
+   "first_date": "2026-09-26",
+   "ids": [
+    "142440804"
+   ]
+  }
+ ]
+}
