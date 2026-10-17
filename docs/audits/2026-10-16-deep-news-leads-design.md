@@ -1,7 +1,7 @@
 # Recent news in `/deep` — design + evidence (2026-10-16)
 
-**Status: Phase 1 implemented** (the display-only section; commit "feat(research): add the
-recent-news filter and fetch for /deep" and the three after it). Reviewed by three adversarial
+**Status: Phase 1 implemented** (the display-only section; behaviour: `docs/RESEARCH.md` → the
+recent-news section). Reviewed by three adversarial
 reviewers (§11) and revised. Phase 2 is gated on the pre-registration in §9 and has no
 implementation plan until that passes.
 
