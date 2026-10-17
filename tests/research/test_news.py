@@ -181,3 +181,8 @@ def test_items_are_shown_newest_first_by_the_date_they_print():
             _art("Acme Widget Catheters Recall Classified Class I", day=3)]
     items = news.select(arts, "ACME", "Acme Inc.", 10)
     assert [(i.date, i.reports) for i in items] == [("2026-10-03", 1), ("2026-10-01", 2)]
+
+
+def test_an_entity_encoded_company_name_still_matches():
+    (item,) = news.select([_art("AT&amp;T to acquire Lumen fiber unit")], "T", "AT&T Inc.", 10)
+    assert item.headline == "AT&T to acquire Lumen fiber unit"
