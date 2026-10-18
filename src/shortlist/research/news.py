@@ -8,10 +8,12 @@ docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
 from __future__ import annotations
 
 import html
+import math
 import os
 import re
 import threading
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
@@ -38,6 +40,8 @@ _SUMMARY_MAX = 220
 _CLUSTER_SECONDS = 4 * 86400
 _MIN_SHARED_KEYS = 2
 _REPORTS_CAP = 5            # ranking only: past this, more syndication is not more corroboration
+_MERGE_COS = 0.20
+_DEAL_SECONDS = 7 * 86400   # a deal story (chatter, report, denial) outlasts the 4-day window
 
 _SUFFIX = re.compile(r"[,.]?\s+(inc|incorporated|corp|corporation|co|company|holdings?|group|"
                      r"ltd|plc|n\.?v|s\.?a|class [a-c])\.?$", re.I)
@@ -90,6 +94,30 @@ _STRONG = re.compile(
 # Real only in a factual headline: valuation pieces use these words constantly.
 _WEAK = re.compile(r"results|earnings|revenue|\bloss\b|guidance|outlook|forecast|\bbeats?\b|"
                    r"\bmiss(es)?\b|backlog|launch|debut|plant", re.I)
+# The merge pass (see `_merge`). A company has a results or a layoff event at most once per
+# window, so two such clusters are one story without a shared key.
+_ONCE = (re.compile(r"\bq[1-4]\b|quarter|results|earnings|\beps\b", re.I),
+         re.compile(r"layoffs?|\blay(s|ing)? off\b|job cuts|\bcuts? .{0,20}\bjobs\b|workforce", re.I))
+_DEAL = re.compile(r"acqui|merger|takeover|buyout|\bbids?\b|tie-?up|megadeal|\bbuy\b", re.I)
+# A development that changes the story is never folded into the report it follows. Past tense
+# "completed"/"closed" is left out: it matched "deal being completed".
+_REVERSAL = re.compile(r"\b(den(y|ies|ied)|rules? out|ruled out|walks? away|withdr[ae]w\w*|"
+                       r"abandon\w*|terminat\w*|calls? off|scrap\w*|rejects?|rejected|"
+                       r"completes|closes|blocks?|blocked)\b", re.I)
+_TF_STOP = frozenset({
+    "a", "about", "above", "after", "again", "against", "all", "also", "am", "an", "and", "any",
+    "are", "as", "at", "be", "because", "been", "before", "being", "below", "between", "both",
+    "but", "by", "can", "could", "did", "do", "does", "doing", "down", "during", "each", "few",
+    "for", "from", "further", "had", "has", "have", "having", "he", "her", "here", "hers", "him",
+    "his", "how", "i", "if", "in", "into", "is", "it", "its", "itself", "just", "more", "most",
+    "my", "no", "nor", "not", "now", "of", "off", "on", "once", "only", "or", "other", "our",
+    "out", "over", "own", "same", "she", "should", "so", "some", "such", "than", "that", "the",
+    "their", "them", "then", "there", "these", "they", "this", "those", "through", "to", "too",
+    "under", "until", "up", "very", "was", "we", "were", "what", "when", "where", "which",
+    "while", "who", "whom", "why", "will", "with", "would", "you", "your", "says", "said", "new",
+    "stock", "stocks", "shares", "share", "inc", "corp", "company", "report", "reports",
+    "reported", "according", "week", "today", "year", "years", "first", "one", "two", "three",
+    "per", "million", "billion", "percent", "amid", "may", "likely"})
 _CAP_ITEM = r"[A-Z][\w.&'’-]*(?:\s+[A-Z][\w.&'’-]*){0,2}"
 # Three or more short capitalized list items: a multi-company roundup. Title Case prose with
 # commas has longer items and does not match.
@@ -179,13 +207,73 @@ def grade(headline: str) -> int:
     return 1 if (not _SOFT.search(headline) and _WEAK.search(headline)) else 0
 
 
+def _vectors(members: list[dict], alias_words: set[str]) -> list[dict[str, float]]:
+    """L2-normed TF-IDF of headline + summary start; idf counts this company's own articles."""
+    docs = [Counter(w for w in re.findall(r"[a-z0-9$%][a-z0-9$%.'-]*[a-z0-9%]",
+                                          (m["headline"] + " " + m["summary"][:300]).lower())
+                    if w not in _TF_STOP and w not in alias_words and len(w) >= 3)
+            for m in members]
+    df = Counter(w for d in docs for w in d)
+    out = []
+    for d in docs:
+        v = {w: (1 + math.log(c)) * math.log((1 + len(docs)) / (1 + df[w])) for w, c in d.items()}
+        norm = math.sqrt(sum(x * x for x in v.values())) or 1.0
+        out.append({w: x / norm for w, x in v.items()})
+    return out
+
+
+def _cos(a: dict[str, float], b: dict[str, float]) -> float:
+    if len(a) > len(b):
+        a, b = b, a
+    return sum(x * b.get(w, 0.0) for w, x in a.items())
+
+
+def _merge(clusters: list[dict], vecs: dict[int, dict[str, float]]) -> list[list[dict]]:
+    """One pass over the seed clusters, oldest first: a cluster joins the earliest cluster that has
+    not itself joined another, when both are or neither is a reversal and they are within the
+    window with similar wording or the same once-per-window event, or both name a deal, share a
+    key and are within `_DEAL_SECONDS`. Every test reads the clusters' ORIGINAL wording and keys,
+    so reach is one hop and a story cannot snowball."""
+    info = []
+    for c in clusters:
+        acc: Counter = Counter()
+        for m in c["members"]:
+            acc.update(vecs[id(m)])
+        norm = math.sqrt(sum(x * x for x in acc.values())) or 1.0
+        h = max(c["members"], key=lambda m: (m["grade"], -m["ts"]))
+        info.append({"cent": {w: x / norm for w, x in acc.items()}, "first": c["first_ts"],
+                     "once": {i for i, p in enumerate(_ONCE) if p.search(h["headline"])},
+                     "deal": bool(_DEAL.search(h["headline"])),
+                     "keys": h["keys"] | c["members"][0]["keys"],
+                     "rev": bool(_REVERSAL.search(h["headline"]))})
+    order = sorted(range(len(clusters)), key=lambda i: info[i]["first"])
+    target: dict[int, int] = {}
+    for pos, j in enumerate(order):
+        b = info[j]
+        for i in order[:pos]:
+            a = info[i]
+            if i in target or a["rev"] != b["rev"]:
+                continue
+            dt = abs(b["first"] - a["first"])
+            if ((dt <= _CLUSTER_SECONDS and (_cos(a["cent"], b["cent"]) >= _MERGE_COS
+                                             or a["once"] & b["once"]))
+                    or (a["deal"] and b["deal"] and a["keys"] & b["keys"] and dt <= _DEAL_SECONDS)):
+                target[j] = i
+                break
+    groups: dict[int, list[dict]] = {}
+    for j, c in enumerate(clusters):
+        groups.setdefault(target.get(j, j), []).extend(c["members"])
+    return list(groups.values())
+
+
 def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> list[NewsItem]:
     """At most `max_items` event clusters about this company, newest first. Pure."""
     pats = aliases(ticker, name)
     alias_words = {w.lower() for w in re.findall(r"[A-Za-z][\w&'-]*", name or "")} | {ticker.lower()}
     clusters: list[dict] = []
     rows = [a for a in articles if isinstance(a, dict) and isinstance(a.get("datetime"), (int, float))]
-    for a in sorted(rows, key=lambda a: a["datetime"]):
+    members: list[dict] = []
+    for a in sorted(rows, key=lambda a: (a["datetime"], str(a.get("id")))):
         h = _feed_text(a.get("headline"), 1000)
         if not h or not any(p.search(h) for p in pats):
             continue
@@ -196,7 +284,8 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
         summary = _feed_text(a.get("summary"), 1000)
         keys = _keys(h + " " + summary[:160], alias_words)
         member = {"ts": a["datetime"], "grade": g, "headline": h, "summary": summary,
-                  "url": a.get("url"), "source": _feed_text(a.get("source"), 40)}
+                  "url": a.get("url"), "source": _feed_text(a.get("source"), 40), "keys": keys}
+        members.append(member)
         for c in clusters:
             if (abs(member["ts"] - c["last_ts"]) <= _CLUSTER_SECONDS
                     and len(keys & c["seed"]) >= _MIN_SHARED_KEYS):
@@ -206,11 +295,14 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
         else:
             clusters.append({"seed": keys, "first_ts": member["ts"], "last_ts": member["ts"],
                              "members": [member]})
+    vecs = {id(m): v for m, v in zip(members, _vectors(members, alias_words), strict=True)}
     eligible = []
-    for c in clusters:
+    for group in _merge(clusters, vecs):
         # The face is the strongest member, so a fluff headline never fronts a real event.
-        face = max(c["members"], key=lambda m: (m["grade"], -m["ts"]))
+        face = max(group, key=lambda m: (m["grade"], -m["ts"]))
         if face["grade"]:
+            c = {"members": group, "first_ts": min(m["ts"] for m in group),
+                 "last_ts": max(m["ts"] for m in group)}
             eligible.append((c, face))
     # A named event outranks any amount of syndication of a weak one.
     eligible.sort(key=lambda cf: (cf[1]["grade"], min(len(cf[0]["members"]), _REPORTS_CAP),

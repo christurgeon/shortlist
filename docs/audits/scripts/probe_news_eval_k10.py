@@ -35,7 +35,7 @@ def norm(h):
     return news.clean(html.unescape(h), news._HEADLINE_MAX)
 
 
-kept = hit = hi = hih = 0
+kept = hit = hi = hih = shown_ev = dups = 0
 mismatch = []
 for raw, lab, names in SETS:
     for t, n in names.items():
@@ -51,12 +51,19 @@ for raw, lab, names in SETS:
         kids = [{str(i) for i in c["ids"]} for c in ks]
         kept += len(ks)
         hit += sum(1 for k in kids if any(k & e for e in eids))
+        # Precision counts a second item about an event as a hit; these two do not.
+        seen = set()
+        for k in kids:
+            touched = {j for j, e in enumerate(eids) if k & e}
+            dups += bool(touched) and touched <= seen
+            seen |= touched
+        shown_ev += len(seen)
         for e, s in zip(ev, eids):
             if e["tier"] == "high":
                 hi += 1
                 hih += any(k & s for k in kids)
 print(f"{sys.argv[1].rsplit('/', 1)[-1]} K={K}: precision {hit}/{kept} ({hit / kept:.0%}) "
-      f"high_recall {hih}/{hi}")
+      f"high_recall {hih}/{hi} distinct_events {shown_ev} duplicate_items {dups}")
 print("production == filter:", "yes" if not mismatch else "NO")
 for t, only_f, only_p in mismatch:
     print(f"  {t}: only in filter {only_f}\n       only in production {only_p}")

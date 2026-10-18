@@ -219,3 +219,78 @@ def test_a_strong_event_outranks_a_more_syndicated_weak_one():
 def test_a_dividend_action_is_an_event():
     head = "Acme Raises Quarterly Dividend by 8%"
     assert _heads(news.select([_art(head)], "ACME", "Acme Inc.", 10)) == [head]
+
+
+# ---- one item per event: the merge pass after the seed clustering ----
+_OTHER = [_art("Acme sued by DOJ over pricing", day=1, summary="antitrust complaint filed"),
+          _art("Acme wins Navy contract", day=2, summary="ship maintenance award"),
+          _art("Acme opens new plant in Ohio", day=3, summary="factory capacity jobs")]
+
+
+def _reports(items, needle):
+    return [i.reports for i in items if needle in i.headline]
+
+
+def test_differently_worded_coverage_of_one_event_is_one_item():
+    arts = _OTHER + [
+        _art("Acme recalls widget catheters", day=0, summary="widget catheter recall over tip failures"),
+        _art("Acme slides as widget catheter recall widens", day=1, summary="the widget catheter recall widens"),
+        _art("Acme expands catheter recall", day=2, summary="more widget catheters recalled")]
+    items = news.select(arts, "ACME", "Acme Inc.", 10)
+    assert len([i for i in items if "atheter" in i.headline]) == 1
+    assert sum(_reports(items, "atheter")) == 3
+
+
+def test_one_quarter_is_one_item_and_separate_months_stay_separate():
+    q3 = [_art("Acme reports third quarter results", day=0),
+          _art("Acme beats estimates as quarter revenue rises", day=1),
+          _art("Acme Q3 earnings top views", day=1),
+          _art("Acme lifts guidance after strong quarter", day=2)]
+    assert len(news.select(_OTHER + q3, "ACME", "Acme Inc.", 10)) == len(_OTHER) + 1
+    months = [_art("Acme reports August results", day=0), _art("Acme reports September results", day=26)]
+    assert len(news.select(months, "ACME", "Acme Inc.", 10)) == 2
+
+
+def test_a_deal_story_merges_across_a_week_only_with_a_shared_counterparty():
+    talks = _art("Beta in merger talks with Acme", day=0, summary="talks at an early stage")
+    later = [_art("Beta explored takeover of Acme", day=5, summary="a possible megadeal")]
+    assert len(news.select([talks] + later, "ACME", "Acme Inc.", 10)) == 1
+    other = [_art("Gamma explored takeover of Acme", day=5, summary="a possible megadeal")]
+    assert len(news.select([talks] + other, "ACME", "Acme Inc.", 10)) == 2
+    late = [_art("Beta explored takeover of Acme", day=8, summary="a possible megadeal")]
+    assert len(news.select([talks] + late, "ACME", "Acme Inc.", 10)) == 2
+
+
+def test_a_denial_is_never_folded_into_the_report_it_answers():
+    arts = [_art("Beta explored takeover of Acme", day=0, summary="beta weighed a bid for acme"),
+            _art("Beta denies plan to buy Acme after takeover report", day=1, summary="beta weighed no bid for acme")]
+    assert len(news.select(arts, "ACME", "Acme Inc.", 10)) == 2
+
+
+def test_a_merge_never_chains_so_a_story_cannot_snowball():
+    arts = _OTHER + [_art("Acme sued over alpha pumps", day=0, summary="alpha pumps bravo valves"),
+                     _art("Acme recall covers bravo valves", day=1, summary="bravo valves charlie hoses"),
+                     _art("Acme wins charlie hose contract", day=2, summary="charlie hoses delta seals")]
+    items = news.select(arts, "ACME", "Acme Inc.", 10)
+    assert _reports(items, "alpha") + _reports(items, "bravo") == [2]
+    assert _reports(items, "charlie") == [1]
+
+
+def test_two_trial_readouts_in_one_week_stay_two_items():
+    arts = _OTHER + [
+        _art("Acme drug zeta meets primary endpoint in phase 3 psoriasis trial", day=0,
+             summary="zeta cleared skin in most patients"),
+        _art("Acme phase 3 lymphoma trial of eta succeeds", day=2,
+             summary="eta extended survival in first-line lymphoma")]
+    assert len(news.select(arts, "ACME", "Acme Inc.", 10)) == len(_OTHER) + 2
+
+
+def test_the_section_does_not_depend_on_feed_order():
+    import random
+    arts = _OTHER + [_art("Acme recalls widget catheters", day=0, summary="widget catheter recall"),
+                     _art("Acme widget catheter recall widens", day=0, summary="widget catheter recall")]
+    want = news.select(arts, "ACME", "Acme Inc.", 10)
+    for seed in range(5):
+        shuffled = arts[:]
+        random.Random(seed).shuffle(shuffled)
+        assert news.select(shuffled, "ACME", "Acme Inc.", 10) == want

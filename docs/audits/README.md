@@ -370,6 +370,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
+| 2026-10-18 | `2026-10-18-news-event-dedupe.md` — one item per event in the `/deep` news section: lexical clustering, event-type merges, local embeddings and LLM grouping measured against event labels; a deterministic merge pass ships, the LLM does not | verdict |
 | 2026-10-18 | `2026-10-18-deep-news-usefulness-review.md` — the §8 review of the `/deep` news section: a blind 3-rater panel; useful on 4 of 8 names but 20 of 56 items wanted, so the kill rule fires; kept on by maintainer override while the filter is fixed | verdict |
 | 2026-10-16 | `2026-10-16-deep-news-leads-design.md` — recent news in `/deep`: feeds compared, a filter measured against blind labels on 24 names, and a display-only section; feeding news to the model is gated on a pre-registration | design + evidence |
 | 2026-10-15 | `2026-10-15-moat-weight.md` — does `moat` earn its 0.18 composite weight? A pre-registered `no_moat` variant on both universes; kept | pre-registration + verdict |
