@@ -1,7 +1,9 @@
 # Recent news in `/deep` — design + evidence (2026-10-16)
 
 **Status: Phase 1 implemented** (the display-only section; behaviour: `docs/RESEARCH.md` → the
-recent-news section). Reviewed by three adversarial
+recent-news section). The §8 review ran on 2026-10-18: the kill rule fired on precision and
+the maintainer kept the section on while the filter is fixed
+(`2026-10-18-deep-news-usefulness-review.md`). Reviewed by three adversarial
 reviewers (§11) and revised. Phase 2 is gated on the pre-registration in §9 and has no
 implementation plan until that passes.
 
