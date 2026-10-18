@@ -27,20 +27,19 @@ the scoring roadmap.
 
 # 2. `/deep`
 
-## 2e. Recent-news section — the filter's acceptance test (2026-10-18)
+## 2e. Recent-news section — one item per event (2026-10-18)
 
-- **Acceptance panel.** The §8 review fired the kill rule on precision and the maintainer kept
-  the section on while the filter was fixed (`docs/audits/2026-10-18-deep-news-usefulness-review.md`).
-  Filter v7 shipped. Run the same panel protocol on 8 tickers in no earlier set — chosen before
-  their news was seen: XOM, ABBV, PGR, NFLX, CMG, ISRG, DUOL, IPAR. If the kill rule fires again,
-  set `research.news.enabled: false`.
-- **Common-word company names** (Target, Block, Gap, Snap). The TGT probe on 2026-10-17 showed
-  no stray "price target" items, because Finnhub tags articles by ticker before the filter runs.
-  Act only if the acceptance panel shows it.
+- **Duplicate coverage of one event.** The acceptance panel found the section useful on 7 of 8
+  names, but differently worded headlines about one event show as separate items (CMG: 10 slots,
+  one story). Fix the clustering so one event is one item, without merging distinct events;
+  `docs/audits/2026-10-18-deep-news-usefulness-review.md` → Acceptance run.
+- **Passing mentions.** Articles about other companies that name this one in passing
+  ("Paramount-Warner merger closes: why Disney and Netflix are better stocks").
 - **Event terms that match inside other words** (`trial` in "Industrial"). Word-anchoring failed
   its pre-set bar by one item (`docs/audits/2026-10-16-deep-news-leads-design.md` §4.2).
 
-**Status:** waiting on 8 live `/deep` briefs for the acceptance tickers.
+**Status:** a dedupe design is being prototyped and measured against the 24-name event labels;
+any change keeps high-tier recall at 43 of 47 or better.
 
 ## 2d. ROIC-persistence section — reference-table refresh
 

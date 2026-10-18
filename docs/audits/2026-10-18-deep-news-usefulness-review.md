@@ -65,3 +65,29 @@ Conditions on the override:
 2. Its test is a fresh panel run, same protocol, on 8 tickers not in this sample. Re-scoring
    these 56 items would grade the fix on the data it was built from.
 3. If the fixed filter fails the kill rule again, the section is turned off.
+
+## Acceptance run (filter v7, 2026-10-18)
+
+Filter v7 shipped (`scripts/news_filter_v7.py`; 24-name high-tier recall 44 of 47). The same
+protocol ran on 8 new tickers: XOM, ABBV, PGR, NFLX, CMG, ISRG, DUOL, IPAR (56 items; briefs
+written after the v7 deploy). Ratings: `raw-2026-10-18-news-panel/accept/`.
+
+| Test | First run | Acceptance | Rule |
+|---|---|---|---|
+| Sections USEFUL | 4 of 8 | 7 of 8 | pass |
+| Items WANT | 20 of 56 | 18 of 56 | fail |
+| Agreement | κ 0.74 | κ 0.84 | reliable |
+
+The kill rule fires again. Condition 3 above says the section is turned off. It stays on, by a
+second maintainer decision, for a reason that can be stated precisely: the item test fails on
+a clause the panel rubric added, not on the §8 definition. The rubric marks every headline after
+the first about one event as NOT; §8 asks only whether the reader would want the headline. By
+the raters' own reasons, 11 NOT items are duplicates of a wanted event (CMG's Starbucks takeover
+story alone fills 10 slots), so 29 of 56 items are about an event worth showing — one over the
+bar. That count comes from rater reasons read after the result, not from a fresh rating, and it
+clears the bar by one item; it is recorded as the basis of a judgment, not as a pass.
+
+What the acceptance run shows: the section finds material events on nearly every name (an FDA
+approval, a reported takeover approach, layoffs, a class action, a CEO selling his whole direct
+stake, a blocked settlement), and the remaining cost is repetition. The next change is one item
+per event; articles that only mention the company in passing are the second source of NOT items.
