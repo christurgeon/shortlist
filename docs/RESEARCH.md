@@ -189,13 +189,14 @@ really covers. Design, evidence and the gate for any model use:
   Most company events of the last month — litigation, regulators, recalls, trial readouts,
   deals below 8-K materiality, analyst rating changes — are in none of them.
 - **What it is not.** Not filing text, not verified, not a score, gate or flag. The outlet is
-  often a syndicator, so the section says provenance is weak; the report count ranks, it does
-  not vouch.
+  often a syndicator, so the section says provenance is weak. A named event ranks first, then
+  the report count; the count ranks, it does not vouch.
 - **The filter** (`research/news.py:select`, deterministic): the headline must name the
   company (a ticker of three characters or fewer only in a form like `(ON)`); opinion sources,
-  listicles, roundups and price-target notes are dropped; an opinion-shaped headline survives
-  only if it names a strong event; articles about one event become one item, shown under its
-  strongest headline; a quiet name shows fewer items, never filler.
+  listicles, roundups, previews, call notices, transcripts, Zacks-rank and price-target notes and
+  dividend columns are dropped, while a broker rating change is kept; an opinion-shaped headline
+  survives only if it names a strong event; articles about one event become one item, shown
+  under its strongest headline; a quiet name shows fewer items, never filler.
 - **Where it is computed.** `_enrich_card`, **after** `assess()` returns, like the
   ROIC-persistence section. The prompts are byte-identical with the flag on or off, and news
   text is never a grounding segment. Feeding it to the model is gated on the design's

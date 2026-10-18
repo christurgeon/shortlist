@@ -45,8 +45,8 @@ _GENERIC = frozenset({"the", "first", "general", "american", "united", "national
                       "international", "global", "new", "bank"})
 # Contributor opinion and screen output by construction, bullish and bearish alike.
 _OPINION_SOURCES = frozenset({"SeekingAlpha", "ChartMill"})
-# Never an event. Price-target notes are dropped because the analyst_revision line already
-# carries rating changes.
+# Never an event: listicles, previews, call notices, transcripts, Zacks-rank and price-target
+# notes, dividend columns. A broker rating change is kept: the measured labels count it as an event.
 _DROP = re.compile(
     r"^prediction:|\btop \d+\b|\b\d+ (stocks|reasons|things)\b|\bstocks to (watch|buy)\b|"
     r"facts to (know|note)|trending stock|what you need to know|important facts|analyst blog|"
@@ -54,7 +54,17 @@ _DROP = re.compile(
     r"\boptions activity\b|\b(technical|chart) (analysis|setup)\b|\bwall street (wrap|breakfast)\b|"
     r"\bmarket (wrap|movers)\b|shares are (falling|soaring|rising|trading)|"
     r"\b(maintains|reiterates)\b.*\bprice target\b|"
-    r"\b(dips?|advances|outperforms|underperforms|registers)\b.*\b(broader )?market\b", re.I)
+    r"\b(dips?|advances|outperforms|underperforms|registers)\b.*\b(broader )?market\b|"
+    r"what to expect|\bahead of (its |the )?(q[1-4] |quarterly )?(earnings|results|report)\b|"
+    r"\bheads? into earnings\b|"
+    r"\b(announces|to host|will host|schedules)\b.{0,40}\b(conference|earnings) call\b|"
+    r"\b(will|to) (announce|report|release)\b.{0,60}\bresults\b|"
+    r"\breports? earnings (tomorrow|today|this week|next week)\b|\btranscript\b|\bzacks rank\b|"
+    r"\bupgraded to (strong )?buy: here|\bprice target (hikes?|raises?|boosts?|bumps?)\b|"
+    r"\b(slew|series|round) of price target|\bdividend (king|royalty|aristocrat)|\bcramer\b|"
+    r"\bstill a buy\b|\bwhat investors need to know\b|\bwhat you should know\b|"
+    r"\bcould go by 20\d\d\b|"
+    r"\btraders see\b.{0,40}\bmov|\bimplied move\b", re.I)
 # Opinion, valuation and recap shapes: dropped unless the headline names a strong event.
 _SOFT = re.compile(
     r"\?\s*$|^(should|could|can|is|are|will|does|do|what|why|how)\b|\bvs\.?\b|\bversus\b|"
@@ -66,8 +76,11 @@ _STRONG = re.compile(
     r"antitrust|regulator|\b(ftc|doj|sec|cma|fda|epa|faa|nhtsa|nrc|occ)\b|fine[ds]?\b|penalt|"
     r"recall|approv|rejects?|permit|guilty|indict|charged|"
     r"\b(ceo|cfo|coo|chief|chair(man)?|president)\b|resign|appoint|steps? down|ousted|"
-    r"acqui|merger|takeover|\bbid\b|divest|spin-?off|buyback|repurchase|dividend|offering|"
+    r"acqui|merger|takeover|\bbid\b|divest|spin-?off|buyback|repurchase|offering|"
     r"convertible|downgrade|upgrade|"
+    # A dividend action is an event; "dividend stock" columns are not.
+    r"\b(raises?|hikes?|cuts?|suspends?|declares?|boosts?|increases?|slashes?|eliminates?|"
+    r"reinstates?)\b.{0,30}\bdividend|\bdividend (raise|hike|cut|increase|suspension)|"
     r"\bcuts?\b.*\bto (hold|sell|neutral|underweight|underperform|market perform)|initiat|"
     r"\bstake\b|activist|contract|agreement|\bdeal\b|partnership|\border(s)?\b|award|"
     r"layoff|job cuts|restructur|strike|outage|breach|cyber|tariff|\bban\b|export|smuggl|"
@@ -199,8 +212,9 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
         face = max(c["members"], key=lambda m: (m["grade"], -m["ts"]))
         if face["grade"]:
             eligible.append((c, face))
-    eligible.sort(key=lambda cf: (min(len(cf[0]["members"]), _REPORTS_CAP), cf[0]["last_ts"]),
-                  reverse=True)
+    # A named event outranks any amount of syndication of a weak one.
+    eligible.sort(key=lambda cf: (cf[1]["grade"], min(len(cf[0]["members"]), _REPORTS_CAP),
+                                  cf[0]["last_ts"]), reverse=True)
     shown = sorted(eligible[:max(0, max_items)], key=lambda cf: cf[0]["first_ts"], reverse=True)
     return [NewsItem(
         date=datetime.fromtimestamp(c["first_ts"], tz=timezone.utc).date().isoformat(),
