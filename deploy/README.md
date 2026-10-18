@@ -209,6 +209,10 @@ sudo SHORTLIST_ACCUMULATE=1 bash deploy/install_opt_shortlist.sh
 sudo systemctl start shortlist-accumulate.service   # optional: seed day 1 now
 ```
 
+The opt-in is needed once. While the timer is enabled, every later deploy rewrites the
+unit (keeping its `--root`), so a plain deploy picks up changed flags. To stop it:
+`sudo systemctl disable --now shortlist-accumulate.timer`.
+
 ~48 MB memory footprint — fine on a 1.9 GB box.
 
 **Manual (user unit) alternative**, no root:

@@ -155,8 +155,14 @@ systemctl daemon-reload
 
 # --- OPTIONAL: daily snapshot accumulation (OFF by default) -------------------
 # Enable with SHORTLIST_ACCUMULATE=1. See README.md for the breadth/free-tier caveat.
-if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]]; then
-  ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-$DEST/state/snapshots}"
+# The opt-in is sticky: while the timer is enabled, every deploy rewrites the unit and keeps
+# its --root, so a plain deploy cannot leave the timer running stale flags.
+ACCUM_SVC="$UNIT_DIR/shortlist-accumulate.service"
+if [[ "${SHORTLIST_ACCUMULATE:-0}" == "1" ]] \
+   || systemctl is-enabled --quiet shortlist-accumulate.timer 2>/dev/null; then
+  PREV_ROOT=""
+  [[ -f "$ACCUM_SVC" ]] && PREV_ROOT="$(sed -n 's/.* --root \([^ ]*\).*/\1/p' "$ACCUM_SVC" | head -1)"
+  ACCUM_ROOT="${SHORTLIST_ACCUMULATE_ROOT:-${PREV_ROOT:-$DEST/state/snapshots}}"
   STAGE="5b/6 install the accumulate timer"
   echo "==> 5b/6  (opt-in) Install + enable the daily accumulate timer (21:30 UTC) -> $ACCUM_ROOT"
   cat > "$UNIT_DIR/shortlist-accumulate.service" <<UNIT

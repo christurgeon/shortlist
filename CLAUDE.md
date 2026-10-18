@@ -179,9 +179,10 @@ repo changes nothing in production until deployed.
 cd /opt/shortlist && sudo git pull && sudo bash deploy/install_opt_shortlist.sh
 ```
 
-Idempotent; handles sync, `uv sync`, units, `daemon-reload` and the bot restart. Always
-verify afterwards — `git -C /opt/shortlist log --oneline -1` plus a grep for a symbol you
-just added.
+Idempotent; handles sync, `uv sync`, units, `daemon-reload` and the bot restart. The
+accumulate timer is opt-in once (`SHORTLIST_ACCUMULATE=1`); after that, every deploy
+refreshes its unit. Always verify afterwards — `git -C /opt/shortlist log --oneline -1`
+plus a grep for a symbol you just added.
 
 Failure modes, in-place-run semantics, inline unit generation and rollback:
 **`deploy/README.md`**. `tests/test_deploy_units.py` pins the installer's behaviour.
@@ -194,7 +195,8 @@ Keys load from the environment or the root `.env` (gitignored; see `.env.example
 ## Scale
 
 Free tiers fit a watchlist, not a universe: ~13 FMP calls/ticker against 250/day.
-`shortlist-accumulate` caps at 15 tickers/day, the bot caps `/screen` at 10. A daily S&P 500
+`shortlist-accumulate` defaults to 15 tickers/day (the installed timer runs the 42-name
+watchlist and lets FMP gate the overflow); the bot caps `/screen` at 10. A daily S&P 500
 run needs FMP Starter or a warm cache (`cache.py`). FMP free-plan quirks — `/stable/` only,
 per-symbol gating, paid insider endpoint — are documented in `data/sources/fmp.py`.
 
