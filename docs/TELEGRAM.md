@@ -47,6 +47,20 @@ TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
 
 Malformed tickers are dropped **before any API spend**, with a note naming what was ignored.
 
+### How the HTML report is laid out
+
+The report puts each screening call on the first screen, in a **Calls** strip: stance and
+conviction, the name's composite, the reason, and the gate-override marker when a gate lowered
+the model's stance. The composite ranks names for a deep dive; the call is the brief's own
+view, and each research card says so under its pill.
+
+Each research card keeps the decision open: the call, the takeaway, bull and bear, red flags,
+the first four risks, what would change the model's mind, and recent news. Supporting detail
+folds behind a tap and is never dropped: further risks, the reconciliation against the score,
+the moat, the business model, capital allocation and ROIC persistence. The flag and gate
+glossary folds under the flag chips, and empty fundamentals cells are listed on one "No data"
+line instead of shown as blank cells.
+
 ### What `/deep` evidence looks like here
 
 The HTML attachment carries the brief's grounding layer; the PNG deliberately does not, and
@@ -69,8 +83,8 @@ means the model quoted something absent from the filing, and pooling it with dec
 inferences destroys exactly that signal.
 
 With `research.durability.enabled`, the HTML attachment also carries the **ROIC persistence**
-section, word for word as `research/durability.py` wrote it. It is computed from SEC data and
-the model did not write it. The chat text carries one line.
+section, folded under its heading and word for word as `research/durability.py` wrote it. It
+is computed from SEC data and the model did not write it. The chat text carries one line.
 For a section that is shown it only points to the report, and never gives a shortened reading:
 the caveats are part of what the measurement licenses. For one that is not shown it gives the
 reason (`docs/RESEARCH.md` → the ROIC-persistence section).

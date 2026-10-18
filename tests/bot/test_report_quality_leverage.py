@@ -59,10 +59,10 @@ def test_html_renders_leverage_and_conditional_piotroski():
     assert "Net debt/EBITDA" in body and ">2.5<" in body
     assert "Piotroski" in body and ">5/6<" in body
 
-    # Piotroski is conditional; leverage row always present (shows "·" when absent)
+    # Piotroski is conditional; an absent leverage value is named on the "No data" line
     bare = render_html_body(_vm([_leader("FIN", MetricsVM(pe_ttm=12.0))]))
     assert "Piotroski" not in bare
-    assert "Net debt/EBITDA" in bare           # uniform row, value "·"
+    assert "No data:" in bare and "Net debt/EBITDA" in bare
 
 
 def test_text_full_renders_both():

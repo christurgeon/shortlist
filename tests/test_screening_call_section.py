@@ -23,7 +23,10 @@ def test_html_has_pill_and_disclaimer():
     html = _Research().render_html(_vm(), HtmlBuilder())
     assert "Buy" in html
     assert "not advice" in html
-    assert "margins compress" in html
+    # The watch text is the first "change my mind" item (or the bear case), shown open in the
+    # card, so the HTML pill does not repeat it. The chat line keeps it.
+    assert "margins compress" not in html
+    assert "Composite 70 ranks names for a deep dive" in html
 
 
 def test_text_has_emoji_call_line():

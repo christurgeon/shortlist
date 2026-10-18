@@ -121,7 +121,9 @@ class _Leaderboard:
                               _class="flags-row"))
         if not rows:
             return ""
-        return h.raw("div", "".join(rows), _class="flags-strip")
+        g = _Glossary()
+        gloss = _fold(h, g.title, g.render_html(vm, h)) if g.applies(vm) else ""
+        return h.raw("div", "".join(rows), _class="flags-strip") + gloss
 
     def render_text(self, vm, detail):
         # The leaderboard is deliberately full at both detail levels — the ranked
@@ -228,11 +230,18 @@ class _Fundamentals:
             # Sign-color only metrics where +/- genuinely means better/worse. `neutral`
             # opt-out keeps always-positive magnitudes (e.g. volatility) from reading
             # as "good" just because they carry a + sign.
-            cells = [self._metric(h, label, _fmt(getattr(ld.metrics, attr), **opt),
-                                  bool(opt.get("pct") or opt.get("money"))
-                                  and not opt.get("neutral"),
-                                  raw=getattr(ld.metrics, attr))
-                     for label, attr, opt in _FUND_ROWS]
+            # A blank cell still says "no data", so its label moves to one line below the
+            # grid instead of disappearing.
+            cells, missing = [], []
+            for label, attr, opt in _FUND_ROWS:
+                value = _fmt(getattr(ld.metrics, attr), **opt)
+                if value == "·":
+                    missing.append(label)
+                    continue
+                cells.append(self._metric(h, label, value,
+                                          bool(opt.get("pct") or opt.get("money"))
+                                          and not opt.get("neutral"),
+                                          raw=getattr(ld.metrics, attr)))
             analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
                         f"{ld.metrics.rating_sell or 0}S")
             cells.append(self._metric(h, "Analysts", analysts, False))
@@ -251,9 +260,11 @@ class _Fundamentals:
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
+            gaps = h.tag("p", "No data: " + ", ".join(missing), _class="muted") if missing else ""
             cards.append(h.raw("div",
                                h.raw("h2", heading) +
-                               h.raw("div", "".join(cells), _class="metrics"), _class="card"))
+                               h.raw("div", "".join(cells), _class="metrics") + gaps,
+                               _class="card"))
         return "".join(cards)
 
     def render_text(self, vm, detail):
@@ -326,22 +337,28 @@ def _evidence_text(status: str, quote: str, source: str) -> list[str]:
     return out
 
 
-def _call_html(h, a) -> list[str]:
-    """The screening-call pill and its two footnotes. Empty when the brief carried no
-    call — a pre-screening-call brief renders exactly as it did before."""
-    if not a.call_stance:
-        return []
+def _pill(h, a) -> str:
     col = stance_to_rgb(a.call_stance)
     pill = (f'<span class="pill" style="background:{rgb_hex(col)};'
             f'color:{rgb_hex(text_on(col))}">'
             f'{h.esc(a.call_label)} · {h.esc(a.call_conviction.title())}</span>')
-    line = pill + ' <span class="muted">screen only — not advice</span>'
     if a.call_model_stance:
         # A gate override is not the model's own view; say so by the pill.
-        line += ' <span class="muted">· gate override</span>'
-    if a.call_watch:
-        line += ' <span class="muted">· but watch: ' + h.esc(a.call_watch) + "</span>"
+        pill += ' <span class="muted">· gate override</span>'
+    return pill
+
+
+def _call_html(h, a, composite: "float | None" = None) -> list[str]:
+    """The screening-call pill and its footnotes. Empty when the brief carried no call — a
+    pre-screening-call brief renders exactly as it did before. The HTML drops the chat's
+    "but watch" clause: it is the first "What would change my mind" item, shown open below."""
+    if not a.call_stance:
+        return []
+    line = _pill(h, a) + ' <span class="muted">screen only — not advice</span>'
     out = [h.raw("p", line, _class="call")]
+    if composite is not None:
+        out.append(h.tag("p", f"Composite {composite:.0f} ranks names for a deep dive; the call "
+                         "above is the brief's own view.", _class="muted"))
     if a.call_rationale:
         out.append(h.raw("p", "<b>Why:</b> " + h.esc(a.call_rationale)))
     if a.call_decided_without:
@@ -357,8 +374,8 @@ def _persistence_html(h, body: str) -> str:
     lines = body.split("\n")
     intro = [ln for ln in lines if not ln.startswith("- ")]
     bullets = "".join(h.tag("li", ln[2:]) for ln in lines if ln.startswith("- "))
-    return h.raw("div", h.tag("b", HEADING) + "".join(h.tag("p", ln) for ln in intro)
-                 + (h.raw("ul", bullets) if bullets else ""), _class="block")
+    return _fold(h, HEADING, "".join(h.tag("p", ln) for ln in intro)
+                 + (h.raw("ul", bullets) if bullets else ""))
 
 
 def _persistence_text(a) -> str:
@@ -388,7 +405,9 @@ def _news_html(h, a) -> str:
         for it in a.news:
             head = h.tag("a", it.headline, href=it.url) if it.url else h.esc(it.headline)
             meta = h.esc(f"{it.date} · {it.source} · {news.reports_label(it.reports)} — ")
-            summary = h.tag("div", it.summary, _class="muted") if it.summary else ""
+            summary = (h.raw("details", h.tag("summary", "summary") +
+                             h.tag("div", it.summary, _class="muted"), _class="more")
+                       if it.summary else "")
             lis += h.raw("li", meta + head + summary)
         parts.append(h.raw("ul", lis))
     return h.raw("div", "".join(parts), _class="block news")
@@ -404,12 +423,54 @@ def _news_text(a) -> list[str]:
         f"      {it.date} · {it.headline} ({news.reports_label(it.reports)})" for it in a.news]
 
 
-def _findings_block(h, label: str, items, cls: str = "") -> str:
-    lis = "".join(h.raw("li", h.esc(f.claim) +
-                        _evidence_html(h, f.status, f.evidence, f.source))
-                  for f in items)
-    return h.raw("div", h.tag("b", label) + h.raw("ul", lis),
-                 _class=f"block {cls}".strip())
+def _findings_list(h, items) -> str:
+    return h.raw("ul", "".join(h.raw("li", h.esc(f.claim) +
+                                     _evidence_html(h, f.status, f.evidence, f.source))
+                               for f in items))
+
+
+def _findings_block(h, label: str, items, cls: str = "", open_n: "int | None" = None) -> str:
+    """A labelled claim list. With `open_n`, items past the first `open_n` sit in a fold."""
+    shown, rest = (items, []) if open_n is None else (items[:open_n], items[open_n:])
+    body = _findings_list(h, shown)
+    if rest:
+        body += _fold(h, f"{len(rest)} more", _findings_list(h, rest))
+    return h.raw("div", h.tag("b", label) + body, _class=f"block {cls}".strip())
+
+
+def _fold(h, summary: str, body: str) -> str:
+    """Supporting detail behind a native <details>: one tap away, never removed."""
+    return h.raw("details", h.tag("summary", summary) + body, _class="block fold")
+
+
+# Risks the card shows before folding the rest; briefs list them roughly worst-first.
+_OPEN_RISKS = 4
+
+
+# ---- calls strip: every screening call on the first screen ----
+class _Calls:
+    """HTML only: the chat message already leads with the calls (bot `_call_summary`)."""
+    id, title = "calls", "Calls"
+
+    def applies(self, vm):
+        return any(ld.assessment and ld.assessment.call_stance for ld in vm.leaders)
+
+    def render_html(self, vm, h):
+        rows = []
+        for ld in vm.leaders:
+            a = ld.assessment
+            if not (a and a.call_stance):
+                continue
+            head = (h.raw("span", h.esc(ld.ticker), _class="tk") + _pill(h, a) +
+                    h.tag("span", f"comp {ld.composite:.0f}", _class="muted"))
+            why = h.tag("div", a.call_rationale, _class="why") if a.call_rationale else ""
+            rows.append(h.raw("div", h.raw("div", head, _class="call") + why, _class="call-row"))
+        note = h.tag("p", "Comp ranks names for a deep dive; each call is the brief's own view. "
+                     "Screen only — not advice.", _class="muted")
+        return h.raw("div", "".join(rows) + note, _class="calls")
+
+    def render_text(self, vm, detail):
+        return []
 
 
 # ---- Claude research (owns ALL qualitative content) ----
@@ -426,44 +487,43 @@ class _Research:
                 continue
             heading = h.raw("span", h.esc(ld.ticker), _class="tk") + " analysis"
             parts = [h.raw("h2", heading)]
-            parts += _call_html(h, a)
+            parts += _call_html(h, a, ld.composite)
             if a.takeaway:
                 parts.append(h.tag("p", a.takeaway, _class="takeaway"))
-            if a.business_model:
-                parts.append(h.tag("p", a.business_model))
-            if a.moat:
-                parts.append(h.raw("p", "<b>Moat:</b> " + h.esc(a.moat)))
             if a.bull_case:
                 parts.append(h.raw("div", "<b>Bull:</b> " + h.esc(a.bull_case),
                                    _class="callout bull"))
             if a.bear_case:
                 parts.append(h.raw("div", "<b>Bear:</b> " + h.esc(a.bear_case),
                                    _class="callout bear"))
-            if a.moat_sources:
-                parts.append(_findings_block(h, "Sources of advantage", a.moat_sources))
-            if a.reconciliation:
-                lis = "".join(h.raw("li", h.esc(f"{c.signal}: {c.tension}") +
-                                    _evidence_html(h, c.status, c.filing_says, c.source))
-                              for c in a.reconciliation)
-                parts.append(h.raw("div", h.tag("b", "Reconciliation vs. score") +
-                                   h.raw("ul", lis), _class="block"))
-            if a.roic_persistence:
-                parts.append(_persistence_html(h, a.roic_persistence))
-            if a.news_status:
-                parts.append(_news_html(h, a))
-            for label, items, cls in [("Red flags", a.red_flags, "flag"),
-                                      ("Risks", a.risks, ""),
-                                      ("Newly disclosed risks", a.added_risks, "")]:
+            for label, items, cls, open_n in [("Red flags", a.red_flags, "flag", None),
+                                              ("Risks", a.risks, "", _OPEN_RISKS),
+                                              ("Newly disclosed risks", a.added_risks, "", None)]:
                 if items:
-                    parts.append(_findings_block(h, label, items, cls))
+                    parts.append(_findings_block(h, label, items, cls, open_n))
             if a.change_my_mind:
                 lis = "".join(h.tag("li", x) for x in a.change_my_mind)
                 parts.append(h.raw("div", h.tag("b", "What would change my mind") +
                                    h.raw("ul", lis), _class="block"))
-            if a.capital_allocation:
-                parts.append(h.raw("p", "<b>Capital allocation:</b> " + h.esc(a.capital_allocation)))
-            if a.management_findings:
-                parts.append(_findings_block(h, "Management findings", a.management_findings))
+            if a.news_status:
+                parts.append(_news_html(h, a))
+            if a.reconciliation:
+                lis = "".join(h.raw("li", h.esc(f"{c.signal}: {c.tension}") +
+                                    _evidence_html(h, c.status, c.filing_says, c.source))
+                              for c in a.reconciliation)
+                parts.append(_fold(h, "Reconciliation vs. score", h.raw("ul", lis)))
+            if a.moat or a.moat_sources:
+                parts.append(_fold(h, "Moat", (h.tag("p", a.moat) if a.moat else "") +
+                                   (_findings_list(h, a.moat_sources) if a.moat_sources else "")))
+            if a.business_model:
+                parts.append(_fold(h, "Business model", h.tag("p", a.business_model)))
+            if a.capital_allocation or a.management_findings:
+                body = h.tag("p", a.capital_allocation) if a.capital_allocation else ""
+                if a.management_findings:
+                    body += _findings_block(h, "Management findings", a.management_findings)
+                parts.append(_fold(h, "Capital allocation", body))
+            if a.roic_persistence:
+                parts.append(_persistence_html(h, a.roic_persistence))
             footer = _evidence_counts(a)
             if footer:
                 parts.append(h.tag("p", footer, _class="muted"))
@@ -669,6 +729,11 @@ class _Glossary:
         gates, flags = _present_codes(vm)
         return bool(gates or flags)
 
+    def html_applies(self, vm):
+        """In HTML the glossary folds under the leaderboard's flag chips; it stands alone only
+        on a report without a leaderboard (a holdings-only report)."""
+        return self.applies(vm) and not vm.leaders
+
     @staticmethod
     def _items_html(h, codes, cls):
         out = []
@@ -739,7 +804,7 @@ class _DeepBlock:
         return out
 
 
-SECTIONS: list[Section] = [_MacroHeader(), _Leaderboard(), _Fundamentals(), _Research(),
+SECTIONS: list[Section] = [_MacroHeader(), _Calls(), _Leaderboard(), _Fundamentals(), _Research(),
                            _DeepBlock(), _Portfolio(), _Glossary(), _Footer()]
 
 
@@ -747,7 +812,7 @@ def render_html_body(vm: ReportVM) -> str:
     h = HtmlBuilder()
     out = []
     for s in SECTIONS:
-        if s.applies(vm):
+        if getattr(s, "html_applies", s.applies)(vm):
             label = h.raw("div", h.esc(s.title), _class="sec-label")
             out.append(h.raw("section", label + s.render_html(vm, h), _class="sec"))
     return "".join(out)
