@@ -81,3 +81,23 @@ def test_the_stylesheet_carries_no_control_characters():
     # reaches the browser as a control character, which rendered "“” Evidence" as "C D".
     from shortlist.bot.report.html import _CSS
     assert not [c for c in _CSS if ord(c) < 32 and c not in "\n\t"]
+
+
+def test_the_glossary_survives_when_only_a_holding_is_flagged():
+    from types import SimpleNamespace
+    holding = SimpleNamespace(card=SimpleNamespace(gates=[], flags=["value_trap"]))
+    vm = _vm(_leader("AAPL", 80))
+    vm.portfolio = SimpleNamespace(positions=[holding])
+    html = render_html_body(vm)
+    assert "Flags &amp; gates in this report" in html and "quality or growth is weak" in html
+
+
+def test_a_fold_summary_counts_the_evidence_marks_it_hides():
+    from shortlist.bot.report.viewmodel import ReconciliationVM
+    a = _call(reconciliation=[ReconciliationVM(signal="value", tension="t", status="unverified"),
+                              ReconciliationVM(signal="quality", tension="q", status="verified")],
+              management_findings=[FindingVM(claim="no debt", status="inference")],
+              capital_allocation="Buybacks.")
+    folds = _folds(render_html_body(_vm(_leader("DECK", 79, a))))
+    assert "Reconciliation vs. score · 1 unverified" in folds
+    assert "Capital allocation · 1 no filing quote" in folds

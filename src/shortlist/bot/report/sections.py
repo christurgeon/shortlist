@@ -119,11 +119,10 @@ class _Leaderboard:
             rows.append(h.raw("div",
                               h.raw("span", h.esc(ld.ticker), _class="fs-tik") + chips,
                               _class="flags-row"))
-        if not rows:
-            return ""
         g = _Glossary()
         gloss = _fold(h, g.title, g.render_html(vm, h)) if g.applies(vm) else ""
-        return h.raw("div", "".join(rows), _class="flags-strip") + gloss
+        strip = h.raw("div", "".join(rows), _class="flags-strip") if rows else ""
+        return strip + gloss
 
     def render_text(self, vm, detail):
         # The leaderboard is deliberately full at both detail levels — the ranked
@@ -434,13 +433,17 @@ def _findings_block(h, label: str, items, cls: str = "", open_n: "int | None" = 
     shown, rest = (items, []) if open_n is None else (items[:open_n], items[open_n:])
     body = _findings_list(h, shown)
     if rest:
-        body += _fold(h, f"{len(rest)} more", _findings_list(h, rest))
+        body += _fold(h, f"{len(rest)} more", _findings_list(h, rest),
+                      [f.status for f in rest])
     return h.raw("div", h.tag("b", label) + body, _class=f"block {cls}".strip())
 
 
-def _fold(h, summary: str, body: str) -> str:
-    """Supporting detail behind a native <details>: one tap away, never removed."""
-    return h.raw("details", h.tag("summary", summary) + body, _class="block fold")
+def _fold(h, summary: str, body: str, statuses=()) -> str:
+    """Supporting detail behind a native <details>: one tap away, never removed. An evidence
+    mark inside must not hide behind the fold, so the summary counts each kind."""
+    marks = [f"{n} {_MARKS[k]}" for k in _MARKS if (n := list(statuses).count(k))]
+    text = " · ".join([summary, *marks])
+    return h.raw("details", h.tag("summary", text) + body, _class="block fold")
 
 
 # Risks the card shows before folding the rest; briefs list them roughly worst-first.
@@ -511,17 +514,20 @@ class _Research:
                 lis = "".join(h.raw("li", h.esc(f"{c.signal}: {c.tension}") +
                                     _evidence_html(h, c.status, c.filing_says, c.source))
                               for c in a.reconciliation)
-                parts.append(_fold(h, "Reconciliation vs. score", h.raw("ul", lis)))
+                parts.append(_fold(h, "Reconciliation vs. score", h.raw("ul", lis),
+                                   [c.status for c in a.reconciliation]))
             if a.moat or a.moat_sources:
                 parts.append(_fold(h, "Moat", (h.tag("p", a.moat) if a.moat else "") +
-                                   (_findings_list(h, a.moat_sources) if a.moat_sources else "")))
+                                   (_findings_list(h, a.moat_sources) if a.moat_sources else ""),
+                                   [f.status for f in a.moat_sources]))
             if a.business_model:
                 parts.append(_fold(h, "Business model", h.tag("p", a.business_model)))
             if a.capital_allocation or a.management_findings:
                 body = h.tag("p", a.capital_allocation) if a.capital_allocation else ""
                 if a.management_findings:
                     body += _findings_block(h, "Management findings", a.management_findings)
-                parts.append(_fold(h, "Capital allocation", body))
+                parts.append(_fold(h, "Capital allocation", body,
+                                   [f.status for f in a.management_findings]))
             if a.roic_persistence:
                 parts.append(_persistence_html(h, a.roic_persistence))
             footer = _evidence_counts(a)
