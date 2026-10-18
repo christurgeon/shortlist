@@ -142,6 +142,64 @@ def test_successful_run_prints_no_failure_banner(tmp_path: Path) -> None:
     assert "DEPLOY FAILED" not in err
 
 
+def _accumulate_block() -> str:
+    text = INSTALLER.read_text()
+    start = text.index("ACCUM_SVC=")
+    return text[start : text.index('STAGE="6/6', start)]
+
+
+def _run_accumulate(
+    tmp_path: Path, *, enabled: bool, prior_unit: str | None = None, opt_in: bool = False
+) -> Path | None:
+    """Run the installer's accumulate block against a stub systemctl that reports the timer
+    as `enabled`; return the written service unit, or None if none was written."""
+    bin_dir, unit_dir = tmp_path / "bin", tmp_path / "units"
+    bin_dir.mkdir()
+    unit_dir.mkdir()
+    stub = bin_dir / "systemctl"
+    stub.write_text(f'#!/bin/bash\n[[ "$1" == is-enabled ]] && exit {0 if enabled else 1}\nexit 0\n')
+    stub.chmod(0o755)
+    svc = unit_dir / "shortlist-accumulate.service"
+    if prior_unit is not None:
+        svc.write_text(prior_unit)
+    script = tmp_path / "accum.sh"
+    script.write_text(
+        "set -euo pipefail\nDEST=/opt/shortlist\nRUN_USER=u\nRUN_GROUP=g\nRUN_HOME=/h\n"
+        f"UNIT_DIR={unit_dir}\n" + _accumulate_block()
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SHORTLIST_ACCUMULATE")}
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    if opt_in:
+        env["SHORTLIST_ACCUMULATE"] = "1"
+    proc = subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env)
+    assert proc.returncode == 0, proc.stderr
+    return svc if svc.exists() else None
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_accumulate_stays_off_on_a_fresh_install(tmp_path: Path) -> None:
+    """Off by default: each run spends FMP calls the bot shares."""
+    assert _run_accumulate(tmp_path, enabled=False) is None
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_opt_in_writes_the_unit_at_the_default_root(tmp_path: Path) -> None:
+    svc = _run_accumulate(tmp_path, enabled=False, opt_in=True)
+    assert svc is not None
+    assert "--root /opt/shortlist/state/snapshots " in svc.read_text()
+
+
+@pytest.mark.skipif(not shutil.which("bash"), reason="needs bash")
+def test_plain_deploy_refreshes_an_enabled_unit_and_keeps_its_root(tmp_path: Path) -> None:
+    """A deploy without SHORTLIST_ACCUMULATE=1 must not leave the timer on stale flags."""
+    old = "ExecStart=/x/shortlist-accumulate run --root /data/snaps --sources fmp\n"
+    svc = _run_accumulate(tmp_path, enabled=True, prior_unit=old)
+    assert svc is not None
+    body = svc.read_text()
+    assert "--sources yahoo,fmp,finnhub,edgar" in body
+    assert "--root /data/snaps " in body
+
+
 def test_installer_generates_the_alert_template() -> None:
     body = _heredoc("shortlist-alert-failure@.service")
     # %i carries the failing unit name; the script is the deployed copy, not the source tree.

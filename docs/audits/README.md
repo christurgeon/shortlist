@@ -100,7 +100,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   accept "this quarterly report" gains **0 tickers and 0 filings** — the `_AS_OF` branch
   already rescues every case, despite 2,955 10-Qs using that phrasing in 2026. Do not
   widen it on phrase counts. Reopening needs a measured lead-time case, not a higher base
-  rate. The `ScoreCard`-flag half of `TODO.md` §5 is untouched and still open.
+  rate. The `ScoreCard`-flag half was measured separately: see the NO-GO entry above.
   `2026-09-07-tenq-controls-base-rate.md`.
 - **`/deep` filing selection must exclude 10-K/A amendments (2026-09-06)** — `.latest(1)` off
   `get_filings(form="10-K")` returns amendments too, and most are Part III patches with no
@@ -345,7 +345,8 @@ restated something already recorded. One has since been settled by measurement.
   negatively related to realised returns; the *revision* predicts). The mechanical obstacle is
   GONE as of 2026-08-18 — the leg is the scorer's one **opt-OUT** block
   (`scoring.py:_upside_to_target_on`), so the counterfactual can be run from config. The
-  measurement itself is still open and lives in `TODO.md` §3.
+  measurement itself is still open and not scheduled: nobody has scored the leg-off
+  universe against forward returns point-in-time, and the default stays on until someone does.
 - **"Label the composite heuristic until a survivorship-free, delisting-adjusted, walk-forward,
   multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
   verbatim. No action; do not open a work item that restates it.
