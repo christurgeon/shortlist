@@ -191,6 +191,24 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
   border-radius:50%; background:var(--text-3)}
 .block.flag li::before{background:var(--flag)}
 .block.news a{text-decoration:underline; text-underline-offset:2px}
+details.more>summary{font:500 11.5px/1.4 var(--body); color:var(--text-3); cursor:pointer}
+/* folds: supporting detail one tap away */
+details.fold{border-top:1px solid var(--line-soft); padding-top:8px}
+details.fold>summary{cursor:pointer; list-style:none; font:600 13.5px/1.4 var(--body);
+  color:var(--text-2)}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"▸  "; color:var(--accent)}
+details.fold[open]>summary::before{content:"▾  "}
+details.fold[open]>summary{margin-bottom:6px}
+.block details.fold{border-top:0; padding-top:2px}
+
+/* ---- calls strip ---- */
+.calls{display:flex; flex-direction:column; gap:9px}
+.call-row{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:11px 13px}
+.call-row .call{margin:0 0 6px}
+.call-row .tk{font:700 15px/1 var(--disp); color:var(--accent); min-width:48px}
+.call-row .why{color:var(--text-2); font-size:13.5px; line-height:1.45}
 .bull{color:var(--bull)} .bear{color:var(--bear)} .flag{color:var(--flag)}
 .muted{color:var(--text-3); font-size:12.5px}
 /* evidence: the quote is one click away, so the default view stays as terse as the
@@ -202,7 +220,7 @@ details.ev{margin:3px 0 2px}
 details.ev summary{font:500 11px/1.4 var(--mono); color:var(--text-3); cursor:pointer;
                    letter-spacing:.06em; list-style:none}
 details.ev summary::-webkit-details-marker{display:none}
-details.ev summary::before{content:"\201C\201D  "; font:600 12px var(--mono)}
+details.ev summary::before{content:"“”  "; font:600 12px var(--mono)}
 details.ev blockquote{margin:4px 0 0; padding:6px 10px; border-left:2px solid var(--line);
                       color:var(--text-2); font-size:12.5px; font-style:italic}
 details.ev .src{display:block; margin-top:3px; font:500 10.5px var(--mono);
