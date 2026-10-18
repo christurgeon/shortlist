@@ -32,11 +32,13 @@ class _Att:
 
 
 class _Filing:
-    def __init__(self, filed, items="", body="", exhibits=(), form="8-K", accession="acc"):
+    def __init__(self, filed, items="", body="", exhibits=(), form="8-K", accession="acc",
+                 attachments=None):
         self.form = form
         self.filing_date = filed
         self.items = items
         self.exhibits = list(exhibits)
+        self.attachments = list(exhibits if attachments is None else attachments)
         self.accession_no = accession
         self._body = body
 
@@ -365,3 +367,14 @@ def test_allocation_never_exceeds_either_cap():
 
 def test_allocation_of_nothing_is_empty():
     assert eightk._allocate([], total=10000, per_filing=6000) == []
+
+
+def test_ex99_after_xbrl_files_is_found_when_exhibits_drops_it():
+    """CALM 2026-09-30: edgartools' `exhibits` omits every attachment sequenced after
+    an EX-101 XBRL file, so the EX-99.1 is only reachable through `attachments`."""
+    f = _Filing("2026-09-30", items="2.02,9.01", body="Cover body only.",
+                exhibits=[_Att("8-K", "Cover body only.")],
+                attachments=[_Att("8-K", "Cover body only."), _Att("EX-101.SCH", "<xsd/>"),
+                             _Att("EX-99.1", "Net sales were $922 million."),
+                             _Att("GRAPHIC", "")])
+    assert eightk._exhibit_text(f) == ("EX-99.1", "Net sales were $922 million.")

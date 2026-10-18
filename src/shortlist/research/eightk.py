@@ -99,9 +99,12 @@ def _exhibit_text(filing: Any) -> tuple[str, str]:
     NON-EMPTY text, or ("", ""). Value-aware because empty exhibits exist — JPM
     2026-06-25 files an EX-99.1 of length 0 (F3), the same lesson `_edgar_facts.py`
     already encodes. Each attachment is failure-isolated: edgartools parses
-    lazily, so one unreadable exhibit must not blank the others."""
+    lazily, so one unreadable exhibit must not blank the others.
+
+    Reads `attachments`, not `exhibits`: edgartools' `exhibits` drops every document
+    sequenced after an XBRL file (CALM files EX-101 before its EX-99.1)."""
     candidates = []
-    for att in (getattr(filing, "exhibits", None) or []):
+    for att in (getattr(filing, "attachments", None) or []):
         dtype = str(getattr(att, "document_type", "") or "")
         if not dtype.upper().startswith("EX-99"):
             continue
