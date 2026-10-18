@@ -186,3 +186,36 @@ def test_items_are_shown_newest_first_by_the_date_they_print():
 def test_an_entity_encoded_company_name_still_matches():
     (item,) = news.select([_art("AT&amp;T to acquire Lumen fiber unit")], "T", "AT&T Inc.", 10)
     assert item.headline == "AT&T to acquire Lumen fiber unit"
+
+
+@pytest.mark.parametrize("headline", [
+    "Acme Reports Earnings Tomorrow: What To Expect",
+    "Acme Stock Heads into Earnings with Cloud Growth in Focus",
+    "Acme Announces Conference Call to Review Third Quarter Results",
+    "Acme Will Announce Third Quarter 2026 Earnings Results on November 4",
+    "Transcript: Acme Q3 2026 Earnings Conference Call",
+    "Acme (ACME) Upgraded to Strong Buy: Here's Why",
+    "Acme Gets Slew Of Price Target Hikes Ahead Of Earnings",
+    "Acme Just Raised Its Outlook. Here's Why the Dividend King Is Still a Buy.",
+    "Better Dividend Stock for Retirees: Beta vs. Acme",
+    "Here's How Much Traders See Acme Stock Moving After Earnings",
+])
+def test_previews_notices_transcripts_and_columns_are_not_events(headline):
+    assert news.select([_art(headline)], "ACME", "Acme Inc.", 10) == []
+
+
+def test_a_broker_rating_change_stays_an_event():
+    head = "Leerink Partners Downgrades Acme to Market Perform, Lowers Price Target to $59"
+    assert _heads(news.select([_art(head)], "ACME", "Acme Inc.", 10)) == [head]
+
+
+def test_a_strong_event_outranks_a_more_syndicated_weak_one():
+    arts = [_art("Acme Reports Third Quarter Results", day=1, id_=500 + k) for k in range(5)]
+    arts.append(_art("Acme sued by DOJ over pricing", day=2))
+    items = news.select(arts, "ACME", "Acme Inc.", 1)
+    assert _heads(items) == ["Acme sued by DOJ over pricing"]
+
+
+def test_a_dividend_action_is_an_event():
+    head = "Acme Raises Quarterly Dividend by 8%"
+    assert _heads(news.select([_art(head)], "ACME", "Acme Inc.", 10)) == [head]
