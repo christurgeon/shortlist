@@ -27,18 +27,20 @@ the scoring roadmap.
 
 # 2. `/deep`
 
-## 2e. Recent-news section — filter gaps (2026-10-17)
+## 2e. Recent-news section — the filter's acceptance test (2026-10-18)
 
-- **Common-word company names.** The name alias is case-insensitive, so Target, Block, Gap or
-  Snap match ordinary words ("Raises Price Target on Nvidia" is kept as Target news). A
-  candidate rule: a single dictionary-word core counts only with a suffix or the ticker.
-- **Event terms that match inside other words** (`trial` in "Industrial", `appoint` in
-  "Disappointing"). Word-anchoring failed its pre-set bar by one item:
-  `docs/audits/2026-10-16-deep-news-leads-design.md` §4.2 → Known gaps.
+- **Acceptance panel.** The §8 review fired the kill rule on precision and the maintainer kept
+  the section on while the filter was fixed (`docs/audits/2026-10-18-deep-news-usefulness-review.md`).
+  Filter v7 shipped. Run the same panel protocol on 8 tickers in no earlier set — chosen before
+  their news was seen: XOM, ABBV, PGR, NFLX, CMG, ISRG, DUOL, IPAR. If the kill rule fires again,
+  set `research.news.enabled: false`.
+- **Common-word company names** (Target, Block, Gap, Snap). The TGT probe on 2026-10-17 showed
+  no stray "price target" items, because Finnhub tags articles by ticker before the filter runs.
+  Act only if the acceptance panel shows it.
+- **Event terms that match inside other words** (`trial` in "Industrial"). Word-anchoring failed
+  its pre-set bar by one item (`docs/audits/2026-10-16-deep-news-leads-design.md` §4.2).
 
-**Status:** the two filter gaps wait on the design §8 usefulness review (8 distinct tickers with
-the section); judge them there on real briefs, then re-measure on all 24 names before changing
-the filter.
+**Status:** waiting on 8 live `/deep` briefs for the acceptance tickers.
 
 ## 2d. ROIC-persistence section — reference-table refresh
 
