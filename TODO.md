@@ -27,19 +27,18 @@ the scoring roadmap.
 
 # 2. `/deep`
 
-## 2e. Recent-news section — one item per event (2026-10-18)
+## 2e. Recent-news section — remaining filter gaps (2026-10-18)
 
-- **Duplicate coverage of one event.** The acceptance panel found the section useful on 7 of 8
-  names, but differently worded headlines about one event show as separate items (CMG: 10 slots,
-  one story). Fix the clustering so one event is one item, without merging distinct events;
-  `docs/audits/2026-10-18-deep-news-usefulness-review.md` → Acceptance run.
 - **Passing mentions.** Articles about other companies that name this one in passing
-  ("Paramount-Warner merger closes: why Disney and Netflix are better stocks").
+  ("Paramount-Warner merger closes: why Disney and Netflix are better stocks"). Every flag tried
+  also dropped a real high-tier event (`docs/audits/2026-10-18-news-event-dedupe.md`).
+- **Long multi-angle stories.** The merge pass halves duplicates but a story told over more than a
+  week, or in opinion pieces without a deal word, still repeats (CMG: 8 items, 5 duplicates).
 - **Event terms that match inside other words** (`trial` in "Industrial"). Word-anchoring failed
   its pre-set bar by one item (`docs/audits/2026-10-16-deep-news-leads-design.md` §4.2).
 
-**Status:** a dedupe design is being prototyped and measured against the 24-name event labels;
-any change keeps high-tier recall at 43 of 47 or better.
+**Status:** no work scheduled. Re-run the panel protocol on 8 new tickers if the section's
+duplicates or noise become a complaint again.
 
 ## 2d. ROIC-persistence section — reference-table refresh
 

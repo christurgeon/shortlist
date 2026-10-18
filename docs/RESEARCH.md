@@ -196,7 +196,9 @@ really covers. Design, evidence and the gate for any model use:
   listicles, roundups, previews, call notices, transcripts, Zacks-rank and price-target notes and
   dividend columns are dropped, while a broker rating change is kept; an opinion-shaped headline
   survives only if it names a strong event; articles about one event become one item, shown
-  under its strongest headline; a quiet name shows fewer items, never filler.
+  under its strongest headline: first by shared words, then by one merge pass on similar wording,
+  a shared results or layoff event, or a deal with the same counterparty, which never folds a
+  denial into the report it answers; a quiet name shows fewer items, never filler.
 - **Where it is computed.** `_enrich_card`, **after** `assess()` returns, like the
   ROIC-persistence section. The prompts are byte-identical with the flag on or off, and news
   text is never a grounding segment. Feeding it to the model is gated on the design's
