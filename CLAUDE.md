@@ -25,8 +25,9 @@ This is a **triage funnel for a human deep dive, NOT a return-predicting alpha m
 - We validate on ~80–238 free-tier, survivorship-biased, currently-listed names, not
   CRSP/Compustat. At that scale most factor legs are indistinguishable from noise — a
   single-universe `t≈2` is usually noise (buyback, leverage tilt and accruals all failed to
-  replicate). **Stop adding scoring legs hoping one crosses `t=2`.** New legs are gated hard
-  on reproducible cross-universe rank IC.
+  replicate). **New scoring legs and gates need reproducible cross-universe rank IC.**
+  Advisory flags and `/deep` display lines need no edge; they need to help a human judge
+  the name.
 - The real edge is in **event-driven discovery** (13D/13F/insider/buyback/8-K originators),
   not the composite. Improve what *feeds* the funnel.
 - **Measure first, kill on evidence, commit the evidence.** Every enabled signal that moves
