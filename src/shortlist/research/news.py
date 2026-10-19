@@ -40,7 +40,7 @@ _SUMMARY_MAX = 220
 _CLUSTER_SECONDS = 4 * 86400
 _MIN_SHARED_KEYS = 2
 _REPORTS_CAP = 5            # ranking only: past this, more syndication is not more corroboration
-_MERGE_COS = 0.20
+_MERGE_COS = 0.20          # lower merges distinct events: docs/audits/2026-10-18-news-event-dedupe.md
 _DEAL_SECONDS = 7 * 86400   # a deal story (chatter, report, denial) outlasts the 4-day window
 
 _SUFFIX = re.compile(r"[,.]?\s+(inc|incorporated|corp|corporation|co|company|holdings?|group|"
@@ -95,29 +95,41 @@ _STRONG = re.compile(
 _WEAK = re.compile(r"results|earnings|revenue|\bloss\b|guidance|outlook|forecast|\bbeats?\b|"
                    r"\bmiss(es)?\b|backlog|launch|debut|plant", re.I)
 # The merge pass (see `_merge`). A company has a results or a layoff event at most once per
-# window, so two such clusters are one story without a shared key.
-_ONCE = (re.compile(r"\bq[1-4]\b|quarter|results|earnings|\beps\b", re.I),
-         re.compile(r"layoffs?|\blay(s|ing)? off\b|job cuts|\bcuts? .{0,20}\bjobs\b|workforce", re.I))
-_DEAL = re.compile(r"acqui|merger|takeover|buyout|\bbids?\b|tie-?up|megadeal|\bbuy\b", re.I)
-# A development that changes the story is never folded into the report it follows. Past tense
-# "completed"/"closed" is left out: it matched "deal being completed".
+# window, so two such clusters are one story without a shared key. Trial data and dividends
+# are excluded from "results": they ride along with earnings but are events of their own.
+_ONCE = (re.compile(r"^(?!.*\b(trial|study|phase|data|dividend)\b)"
+                    r".*(\bq[1-4]\b|quarter|results|earnings|\beps\b)", re.I),
+         re.compile(r"layoffs?|\blay(s|ing)? off\b|job cuts|\bcuts? .{0,20}\bjobs\b|"
+                    r"\b(cut|cuts|cutting|reduc\w*|trim\w*|shrink\w*) .{0,20}workforce", re.I))
+# "to buy" only after a deal verb: "upgrades Acme to Buy" is a rating, not a deal.
+_DEAL = re.compile(r"acqui|merger|takeover|buyout|\bbids?\b|tie-?up|megadeal|\bbuys\b|"
+                   r"\b(plans?|agrees?|agreed|offers?|offered|seeks?|wants?|eyes|eyeing|"
+                   r"considers?|considering|explores?|explored|exploring|weighs?|weighing|"
+                   r"talks) to buy\b", re.I)
+# Words that are capitalized in a headline but never name a deal's counterparty.
+_GENERIC_KEYS = frozenset({
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday", "january",
+    "february", "march", "april", "june", "july", "august", "september", "october", "november",
+    "december", "nasdaq", "nyse", "reuters", "bloomberg", "takeover", "acquisition", "merger",
+    "deal", "bid", "rumors", "even", "buyout", "offer"})
+# A development that changes the story stays its own item. Past-tense "completed"/"closed"
+# would match "deal being completed".
 _REVERSAL = re.compile(r"\b(den(y|ies|ied)|rules? out|ruled out|walks? away|withdr[ae]w\w*|"
                        r"abandon\w*|terminat\w*|calls? off|scrap\w*|rejects?|rejected|"
                        r"completes|closes|blocks?|blocked)\b", re.I)
 _TF_STOP = frozenset({
-    "a", "about", "above", "after", "again", "against", "all", "also", "am", "an", "and", "any",
-    "are", "as", "at", "be", "because", "been", "before", "being", "below", "between", "both",
-    "but", "by", "can", "could", "did", "do", "does", "doing", "down", "during", "each", "few",
-    "for", "from", "further", "had", "has", "have", "having", "he", "her", "here", "hers", "him",
-    "his", "how", "i", "if", "in", "into", "is", "it", "its", "itself", "just", "more", "most",
-    "my", "no", "nor", "not", "now", "of", "off", "on", "once", "only", "or", "other", "our",
-    "out", "over", "own", "same", "she", "should", "so", "some", "such", "than", "that", "the",
-    "their", "them", "then", "there", "these", "they", "this", "those", "through", "to", "too",
-    "under", "until", "up", "very", "was", "we", "were", "what", "when", "where", "which",
-    "while", "who", "whom", "why", "will", "with", "would", "you", "your", "says", "said", "new",
-    "stock", "stocks", "shares", "share", "inc", "corp", "company", "report", "reports",
-    "reported", "according", "week", "today", "year", "years", "first", "one", "two", "three",
-    "per", "million", "billion", "percent", "amid", "may", "likely"})
+    "about", "above", "after", "again", "against", "all", "also", "and", "any", "are", "because",
+    "been", "before", "being", "below", "between", "both", "but", "can", "could", "did", "does",
+    "doing", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have",
+    "having", "her", "here", "hers", "him", "his", "how", "into", "its", "itself", "just", "more",
+    "most", "nor", "not", "now", "off", "once", "only", "other", "our", "out", "over", "own",
+    "same", "she", "should", "some", "such", "than", "that", "the", "their", "them", "then",
+    "there", "these", "they", "this", "those", "through", "too", "under", "until", "very", "was",
+    "were", "what", "when", "where", "which", "while", "who", "whom", "why", "will", "with",
+    "would", "you", "your", "says", "said", "new", "stock", "stocks", "shares", "share", "inc",
+    "corp", "company", "report", "reports", "reported", "according", "week", "today", "year",
+    "years", "first", "one", "two", "three", "per", "million", "billion", "percent", "amid",
+    "may", "likely"})
 _CAP_ITEM = r"[A-Z][\w.&'’-]*(?:\s+[A-Z][\w.&'’-]*){0,2}"
 # Three or more short capitalized list items: a multi-company roundup. Title Case prose with
 # commas has longer items and does not match.
@@ -228,23 +240,21 @@ def _cos(a: dict[str, float], b: dict[str, float]) -> float:
     return sum(x * b.get(w, 0.0) for w, x in a.items())
 
 
-def _merge(clusters: list[dict], vecs: dict[int, dict[str, float]]) -> list[list[dict]]:
-    """One pass over the seed clusters, oldest first: a cluster joins the earliest cluster that has
-    not itself joined another, when both are or neither is a reversal and they are within the
-    window with similar wording or the same once-per-window event, or both name a deal, share a
-    key and are within `_DEAL_SECONDS`. Every test reads the clusters' ORIGINAL wording and keys,
-    so reach is one hop and a story cannot snowball."""
+def _merge(clusters: list[dict]) -> list[list[dict]]:
+    """The seed clusters regrouped so one event is one group; every member is kept exactly once.
+    A merge compares the clusters' original wording and keys and never targets a cluster that
+    joined another, so a story cannot snowball. Rules: docs/RESEARCH.md → the recent-news section."""
     info = []
     for c in clusters:
         acc: Counter = Counter()
         for m in c["members"]:
-            acc.update(vecs[id(m)])
+            acc.update(m["vec"])
         norm = math.sqrt(sum(x * x for x in acc.values())) or 1.0
         h = max(c["members"], key=lambda m: (m["grade"], -m["ts"]))
         info.append({"cent": {w: x / norm for w, x in acc.items()}, "first": c["first_ts"],
                      "once": {i for i, p in enumerate(_ONCE) if p.search(h["headline"])},
                      "deal": bool(_DEAL.search(h["headline"])),
-                     "keys": h["keys"] | c["members"][0]["keys"],
+                     "keys": (h["keys"] | c["members"][0]["keys"]) - _GENERIC_KEYS,
                      "rev": bool(_REVERSAL.search(h["headline"]))})
     order = sorted(range(len(clusters)), key=lambda i: info[i]["first"])
     target: dict[int, int] = {}
@@ -295,9 +305,10 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
         else:
             clusters.append({"seed": keys, "first_ts": member["ts"], "last_ts": member["ts"],
                              "members": [member]})
-    vecs = {id(m): v for m, v in zip(members, _vectors(members, alias_words), strict=True)}
+    for m, v in zip(members, _vectors(members, alias_words), strict=True):
+        m["vec"] = v
     eligible = []
-    for group in _merge(clusters, vecs):
+    for group in _merge(clusters):
         # The face is the strongest member, so a fluff headline never fronts a real event.
         face = max(group, key=lambda m: (m["grade"], -m["ts"]))
         if face["grade"]:
