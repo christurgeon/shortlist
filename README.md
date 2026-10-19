@@ -9,7 +9,7 @@ the mechanical half of stock research — so your deep dive is spent on fewer, b
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
+[![CI](https://github.com/christurgeon/shortlist/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/christurgeon/shortlist/actions/workflows/ci.yml)
 [![Built with uv](https://img.shields.io/badge/built%20with-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
 
 </div>
