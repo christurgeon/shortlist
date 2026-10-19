@@ -5,7 +5,7 @@ description = "Moat + momentum/value + insider stock screener feeding the invest
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Chris Turgeon" }]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
     "httpx>=0.27",
@@ -28,7 +28,7 @@ markers = ["live: hits real external APIs; skipped unless -m live"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py310"
+target-version = "py311"
 src = ["src", "tests"]
 extend-exclude = [
     ".claude",             # transient git worktrees, not part of this project
