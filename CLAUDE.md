@@ -28,8 +28,11 @@ This is a **triage funnel for a human deep dive, NOT a return-predicting alpha m
   replicate). **New scoring legs and gates need reproducible cross-universe rank IC.**
   Advisory flags and `/deep` display lines need no edge; they need to help a human judge
   the name.
-- The real edge is in **event-driven discovery** (13D/13F/insider/buyback/8-K originators),
-  not the composite. Improve what *feeds* the funnel.
+- **Discovery is the user's own research** (`/prospect`, then `/screen` and `/deep`). The
+  automated event-driven originators (13D/13F/insider/buyback/8-K) are retired: every one
+  that was measured failed (`docs/audits/2026-08-11-scout-retirement.md`). Do not rebuild
+  one without new evidence. Work that makes a supplied name easier to judge outranks work
+  on forward returns.
 - **Measure first, kill on evidence, commit the evidence.** Every enabled signal that moves
   live scores needs a reproducible verdict under the tracked `docs/audits/` tree — **not**
   the gitignored `docs/superpowers/specs/` (two enablement artifacts already evaporated
@@ -82,7 +85,7 @@ Everything else orchestrates that pipeline; none of it adds scoring logic:
 | Raw snapshots | `shortlist-harness` | `HARNESS.md` |
 | Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md`, `docs/ASSESSMENT_GAPS.md` |
 | Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `docs/BACKTEST.md` → Feeding the snapshot path |
-| Telegram bot — `/screen`, `/deep`, position monitor | `shortlist-bot` | `docs/TELEGRAM.md` (`docs/design/POSITION_MONITOR.md` is design-time) |
+| Telegram bot — `/screen`, `/deep`, portfolio | `shortlist-bot` | `docs/TELEGRAM.md` (held-name alerting does not exist; `docs/design/POSITION_MONITOR.md` is design-time) |
 
 Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 
