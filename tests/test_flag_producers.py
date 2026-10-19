@@ -76,7 +76,7 @@ def test_ast_producer_detection_sees_the_repo_dominant_style():
            "against same-firm YoY ~0.997, and a realistic same-firm rewrite cannot "
            "reach max_similarity. Fixing the producer alone gives an untrustworthy "
            "signal, not a working one. "
-           "docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4.")
+           "docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4.")
 def test_declared_flag_inputs_have_a_writer():
     for flag, field in FLAG_INPUTS.items():
         assert _producers(field), (

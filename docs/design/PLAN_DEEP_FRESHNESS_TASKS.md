@@ -17,7 +17,7 @@ line and a rendered brief line.
 
 **Tech Stack:** Python 3.13, stdlib only (`hashlib`, `inspect`, `math`, `datetime`), pytest, uv.
 
-**Design spec:** `docs/PLAN_DEEP_FRESHNESS.md` — read it first. It records the verified
+**Design spec:** `docs/design/PLAN_DEEP_FRESHNESS.md` — read it first. It records the verified
 facts (with file:line) that this plan assumes.
 
 ## Global Constraints
@@ -688,7 +688,7 @@ carried the macro line.) Thread `macro` into `_run_research_phase`/`_run_enrich`
 Add to `config.yaml`, inside the `research:` block next to `output_root`:
 
 ```yaml
-  cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
+  cache:                       # brief staleness (docs/design/PLAN_DEEP_FRESHNESS.md §4)
     max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay
     price_band_pct: 0.03       # regenerate when price/market cap moves ~3%
 ```
@@ -1167,8 +1167,8 @@ concludes the cache is accession-keyed and reasons from it.
 - `src/shortlist/research/models.py:88-91` (`FilingBundle`: "`cache_key` keys the brief on
   disk" — it is now the *filing* half of the key) and `:193` ("composite filing key").
 - Check, and correct if stale: `docs/ASSESSMENT_GAPS.md:378,435,461`,
-  `docs/PLAN_EDGAR_DILUTED_SHARES.md:125` ("existing briefs will NOT regenerate" — they will),
-  `docs/PLAN_EDGAR_ROOT_CAUSE_B.md:145`.
+  `docs/design/PLAN_EDGAR_DILUTED_SHARES.md:125` ("existing briefs will NOT regenerate" — they will),
+  `docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md:145`.
 
 - [ ] **Step 4: Full verification**
 

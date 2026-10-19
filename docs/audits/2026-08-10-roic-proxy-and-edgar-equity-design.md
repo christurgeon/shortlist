@@ -96,7 +96,7 @@ wrong**: line 63 is `total_debt`, and `EdgarFinancials` has **no `total_equity` 
 field is `Statements.total_equity` (`data/models.py:74`) — a different class in a different
 module. The draft conflated them.
 
-What is actually true, per `docs/STATEMENTS_MERGE.md:22/39/167` and the comment at
+What is actually true, per `docs/design/STATEMENTS_MERGE.md:22/39/167` and the comment at
 `data/sources/edgar.py:239`: EDGAR deliberately does **not** extract equity, and **the merge
 layer backfills it from FMP by fiscal year**. That design is sound on its own terms. It fails
 here for a reason it did not anticipate: **on the FMP-gated path there is no FMP payload to
@@ -205,7 +205,7 @@ means correcting them — leaving them stale is how the next reader inherits a f
 
 - `data/sources/edgar.py:239` — the comment *"gross_profit/total_equity aren't in
   EdgarFinancials"* becomes half wrong (`gross_profit` still is not).
-- `docs/STATEMENTS_MERGE.md:22/39/167` — the merge table and the FMP-backfill narrative.
+- `docs/design/STATEMENTS_MERGE.md:22/39/167` — the merge table and the FMP-backfill narrative.
   EDGAR outranks FMP, so post-change EDGAR **supplies** equity rather than receiving it for the
   EDGAR-spine snapshots. §3.3's parent-only priority is what keeps that a like-for-like swap
   rather than a redefinition.

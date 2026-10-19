@@ -2,7 +2,7 @@
 
 Pure + dependency-light (stdlib + Holding), the portfolio.py / _form4.py leaf pattern.
 The ONLY writer of positions.json is the bot; the daily run reads it but never writes it
-(see docs/POSITION_MONITOR.md §3.1). Writes are atomic.
+(see docs/design/POSITION_MONITOR.md §3.1). Writes are atomic.
 """
 from __future__ import annotations
 

@@ -325,7 +325,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   absolute cosine is uninterpretable: Cohen-Malloy-Nguyen sort on the cross-sectional RANK.
   A revival needs a collection-time producer, IDF weighting, a reference distribution and the
   10-Q risk-factor cap in `_tenq_risk_factors`. It also cannot validate on snapshot replay:
-  the store holds no filing text. `docs/PLAN_INVENTORY_DECOMPOSITION.md` §0.4.
+  the store holds no filing text. `docs/design/PLAN_INVENTORY_DECOMPOSITION.md` §0.4.
 - **EDGAR outranks FMP in every section merge, insider included.** Merge priority is
   `collector.DEFAULT_PRIORITY`; the order of `harness_sources` / `--sources` does not set it.
   A paid FMP tier therefore cannot override EDGAR's insider transactions.

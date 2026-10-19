@@ -28,7 +28,7 @@ def test_edgar_families_come_from_the_shared_leaf():
 
 
 def test_diluted_shares_tag_single_sourced_everywhere(monkeypatch):
-    """PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 5: the bare
+    """docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 5: the bare
     WeightedAverageNumberOfDilutedSharesOutstanding tag used to be typed three
     times independently (_edgar_facts, _xbrl_facts, and the companyconcept
     fallback's request URL in data/sources/edgar.py) -- exactly the drift this

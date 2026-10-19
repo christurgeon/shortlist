@@ -156,7 +156,7 @@ long-polls `getUpdates` — no inbound port needed).
 
 No position-monitor digest or held-name 8-K alerting — removed with the scout (`de3c9f8`);
 it needed a nightly scheduler that no longer exists. History:
-[`../docs/POSITION_MONITOR.md`](../docs/POSITION_MONITOR.md).
+[`../docs/design/POSITION_MONITOR.md`](../docs/design/POSITION_MONITOR.md).
 
 **Guardrails:**
 

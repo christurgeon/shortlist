@@ -1,4 +1,4 @@
-"""The /deep inventory context line (docs/PLAN_INVENTORY_DECOMPOSITION.md §1).
+"""The /deep inventory context line (docs/design/PLAN_INVENTORY_DECOMPOSITION.md §1).
 
 Reports the inventory LEVEL and days-inventory-outstanding trend. Prompt-only, never
 scored, never flagged, and never in the grounding haystack.

@@ -1,7 +1,7 @@
 # 2026-08-21 — inventory context line, pre-clamp stance, Lazy-Prices retirement
 
 Dated evidence for the three changes merged as `bac69aa`. Cite this for *why*; read the
-code for behaviour. Design: `docs/PLAN_INVENTORY_DECOMPOSITION.md`.
+code for behaviour. Design: `docs/design/PLAN_INVENTORY_DECOMPOSITION.md`.
 
 Trigger: a `/deep LULU` + `/deep HDSN` run on 2026-08-20, and an external second opinion
 arguing HDSN's negative FCF was a working-capital artifact rather than deterioration.

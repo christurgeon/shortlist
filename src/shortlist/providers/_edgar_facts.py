@@ -61,7 +61,7 @@ class EdgarFinancials:
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     total_debt: list[float] = field(default_factory=list)
-    # NEW 2026-08-10. EDGAR previously supplied no equity at all — STATEMENTS_MERGE.md routes
+    # NEW 2026-08-10. EDGAR previously supplied no equity at all — docs/design/STATEMENTS_MERGE.md routes
     # it in from FMP by fiscal year, a backfill that cannot fire on the FMP-GATED path, which
     # is exactly where a computed ROIC is needed.
     total_equity: list[float] = field(default_factory=list)
@@ -353,7 +353,7 @@ def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
 # PARENT-ONLY FIRST, deliberately: FMP supplies `totalStockholdersEquity` (parent-only) and
 # EDGAR outranks FMP in `_merge_statements`, so preferring the NCI-inclusive tag would make one
 # field mean two things depending on which source won, and would pre-empt the documented FMP
-# backfill (docs/STATEMENTS_MERGE.md) on snapshots that already carry FMP equity. The
+# backfill (docs/design/STATEMENTS_MERGE.md) on snapshots that already carry FMP equity. The
 # NCI-inclusive tag is the fallback, which is what lets UNH resolve at all.
 #
 # NOT a sum (unlike total_debt's `_sum_concepts`): a filer reporting both variants would be
@@ -494,7 +494,7 @@ def extract_financials(
 # share-count tag at all (CMCSA CVX GOOGL HON LMT MO MRK PG — XOM genuinely has
 # none since 2013). Fallback ONLY, fired from EdgarSource only when the
 # statement-level extraction above already returned []. See
-# docs/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.
+# docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.
 
 # Measured across all 8 issuers' 10-K rows (2026-08-02): observed durations are exactly
 # {364, 365}. The 350-380 band also admits 52-week (363) and 53-week (370) filers, so a
@@ -507,7 +507,7 @@ def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> 
     re-indexed onto `fiscal_period_end`. Fallback ONLY — the statement view is
     authoritative when it has the row.
 
-    Guards, each from a live-probed failure mode (docs/PLAN_EDGAR_ROOT_CAUSE_B.md):
+    Guards, each from a live-probed failure mode (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md):
       - ANNUAL only: a 10-K payload also carries quarterly durations, so a fact is
         used only when end-start is ~1 year.
       - RESTATEMENTS: the same `end` recurs across filings with different values;

@@ -1,5 +1,5 @@
 """Inventory BALANCE extraction on the harness path
-(docs/PLAN_INVENTORY_DECOMPOSITION.md §1.4).
+(docs/design/PLAN_INVENTORY_DECOMPOSITION.md §1.4).
 
 Balance-sheet INSTANT columns (no " (FY)" suffix), matched on the raw `concept`
 column. Only the balance is extracted — the cash-flow companion

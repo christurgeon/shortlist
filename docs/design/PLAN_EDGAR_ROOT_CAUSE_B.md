@@ -77,7 +77,7 @@ basic count** — it is a different measure, and conflating them silently corrup
 `share_count_cagr`. XOM stays uncovered; that is the correct outcome.
 
 **Cost — this is the finding that reverses the plan's original deferral.**
-`docs/PLAN_EDGAR_DILUTED_SHARES.md` deferred route 1 partly on cost ("a per-ticker fetch
+`docs/design/PLAN_EDGAR_DILUTED_SHARES.md` deferred route 1 partly on cost ("a per-ticker fetch
 (~2.5 MB/CIK cached), which the harness deliberately avoids on the hot path"). That was
 measured against the wrong endpoint. Measured:
 
@@ -188,7 +188,7 @@ def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> 
     re-indexed onto `fiscal_period_end`. Fallback ONLY — the statement view is
     authoritative when it has the row.
 
-    Guards, each from a live-probed failure mode (docs/PLAN_EDGAR_ROOT_CAUSE_B.md):
+    Guards, each from a live-probed failure mode (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md):
       - ANNUAL only: a 10-K payload also carries quarterly durations, so a fact is
         used only when end-start is ~1 year.
       - RESTATEMENTS: the same `end` recurs across filings with different values;

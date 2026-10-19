@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11+, stdlib only (`dataclasses`), pytest, uv. No new dependencies.
 
-**Design spec:** `docs/STATEMENTS_MERGE.md` (committed `d5366e6`). Read it before starting.
+**Design spec:** `docs/design/STATEMENTS_MERGE.md` (committed `d5366e6`). Read it before starting.
 
 ## Global Constraints
 
@@ -489,7 +489,7 @@ with:
 
 ```python
         # gross_profit/total_equity aren't in EdgarFinancials; _merge_statements
-        # year-joins them back in from FMP when available (docs/STATEMENTS_MERGE.md).
+        # year-joins them back in from FMP when available (docs/design/STATEMENTS_MERGE.md).
 ```
 
 - [ ] **Step 7: Lint and commit**
@@ -616,7 +616,7 @@ Abstains rather than guesses: no/duplicate `fiscal_years` on the spine disables 
 a donor with the same problem is skipped without vetoing later donors. Before this
 existed, FMP won `statements` wholesale for every non-402 name and **every EDGAR-only
 field was discarded** — which made the ON-by-default `dilution` flag structurally
-incapable of firing on exactly the best-covered names. Design: `docs/STATEMENTS_MERGE.md`.
+incapable of firing on exactly the best-covered names. Design: `docs/design/STATEMENTS_MERGE.md`.
 ```
 
 - [ ] **Step 5: Close the TODO item**
@@ -633,8 +633,8 @@ with:
 1. ~~**FMP-won statements silently drop every EDGAR-only field**~~ — **FIXED 2026-07-30.**
    Resolved by option (b): a bespoke `_merge_statements` (`data/models.py`) year-joins the
    EDGAR-only fields onto the FMP-won spine instead of discarding them. Design +
-   verified consequence chain: `docs/STATEMENTS_MERGE.md`; plan:
-   `docs/PLAN_STATEMENTS_MERGE.md`. The `dilution` flag can now fire on FMP-covered names.
+   verified consequence chain: `docs/design/STATEMENTS_MERGE.md`; plan:
+   `docs/design/PLAN_STATEMENTS_MERGE.md`. The `dilution` flag can now fire on FMP-covered names.
    **Residual:** already-persisted accumulation snapshots stay degraded — there is no
    retroactive repair, so the store is complete only from the deploy date forward.
    Original text: `statements` is a
@@ -657,5 +657,5 @@ git commit -m "test(merge): pin the dilution flag regression; document the state
 
 - `uv run ruff check src tests` clean, `uv run pytest -q` green.
 - A real `--json` run on a non-402 name shows `share_count_cagr`/`asset_growth`/`accruals` populated where `main` returns null — or an explicit statement of which credential was missing and what therefore went unverified.
-- `docs/STATEMENTS_MERGE.md`, `CLAUDE.md` and `TODO.md` agree with the code.
+- `docs/design/STATEMENTS_MERGE.md`, `CLAUDE.md` and `TODO.md` agree with the code.
 - **Not done here:** deployment. `/opt/shortlist` keeps running the old code until `git pull` + `sudo bash deploy/install_opt_shortlist.sh`; the accumulate timer only starts capturing the recovered fields after that.

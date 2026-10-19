@@ -123,7 +123,7 @@ Additional surfaces, all previously unnamed:
 - **`value_trap` flag** (`scoring.py:800`) keys off the `value` sub-score, so a `pe_vs_history`
   change can flip it — a second-order flag effect.
 - **Research briefs are no longer accession-only cached** (`research/cachekey.py`, shipped
-  under `docs/PLAN_DEEP_FRESHNESS.md`): the on-disk key also folds in a context digest of the
+  under `docs/design/PLAN_DEEP_FRESHNESS.md`): the on-disk key also folds in a context digest of the
   QUANT CONTEXT block. `eps_cagr_ps` itself is not part of that digest (it isn't rendered to
   the prompt at all — `assess.py:441` prints only `eps_cagr`, the net-income-based figure the
   digest hashes by name at `cachekey.py:196`), but the raw `diluted_eps`/`diluted_shares`
