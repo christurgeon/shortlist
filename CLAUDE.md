@@ -154,8 +154,10 @@ their own.
 
 These are the constraints no single module can enforce — the reason to keep them here.
 
-- **Shared extraction leaves are edited once.** `providers/_form4.py` (Form 4 aggregation)
-  and `providers/_gaap_tags.py` (GAAP tag sets) have multiple importers. But
+- **Shared extraction leaves are edited once.** `providers/_gaap_tags.py` (GAAP tag sets)
+  is imported by both statement extractors and the harness. `providers/_form4.py` (Form 4
+  aggregation) is imported only by `EdgarSource`; the backtest's insider axis replays
+  captured snapshots instead. But
   `providers/_edgar_facts.py` and `providers/_xbrl_facts.py` are **separate** extractors —
   the harness uses the former, the backtest the latter. Changing one does not change the
   other; decide deliberately which needs the fix. One production path reads the backtest's
