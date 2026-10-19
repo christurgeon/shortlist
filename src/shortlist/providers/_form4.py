@@ -4,13 +4,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Iterable, Optional
 
-# Shared SEC Form 4 aggregation, used by the async harness source
-# (data/sources/edgar.py's EdgarSource) and the XBRL backtest. (The legacy synchronous
-# screener and providers/edgar.py that this once also served were retired.) Kept as a
-# dependency-free leaf module: it imports nothing from `edgar`/`edgartools` (it
-# operates on already-fetched objects) and nothing from the data layer (it returns
-# a neutral intermediate, not the data layer's InsiderTxn), so neither layer takes
-# a dependency on the other.
+# SEC Form 4 aggregation for EdgarSource. A dependency-free leaf: it imports nothing
+# from `edgar`/edgartools (it duck-types already-fetched objects) and nothing from the
+# data layer (it returns a neutral intermediate, not InsiderTxn).
 
 
 def classify_code(code: str) -> str:
@@ -192,11 +188,23 @@ def _form_role(form4: Any) -> Optional[str]:
         return None
 
 
+def _issuer_cik(form4: Any) -> Optional[int]:
+    """The filing's issuer CIK as an int, or None when absent or unparseable."""
+    try:
+        return int(str(form4.issuer.cik).strip())
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def aggregate_form4(filings: Iterable[Any], cutoff: date,
-                    conviction: Optional[dict] = None) -> Form4Summary:
-    """Aggregate Form 4 filings (newest-first) until one predates `cutoff`. A filing
-    that fails to parse is skipped. When `conviction` is supplied, role + 10b5-1
-    extraction feed the v2 aggregates; when None, behavior is identical to before."""
+                    conviction: Optional[dict] = None, *,
+                    issuer_cik: int | str) -> Form4Summary:
+    """Aggregate Form 4 filings (newest-first) until one predates `cutoff`. Only
+    filings whose issuer CIK equals `issuer_cik` count: a company's own filing list
+    also holds Form 4s it filed as reporting owner of another issuer. A filing that
+    fails to parse or has no readable issuer CIK is skipped. When `conviction` is
+    supplied, role + 10b5-1 extraction feed the v2 aggregates."""
+    want = int(issuer_cik)
     rows: list[tuple] = []
     for filing in filings:
         if filing.filing_date < cutoff:
@@ -204,6 +212,8 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
         try:
             form4 = filing.obj()
         except Exception:
+            continue
+        if _issuer_cik(form4) != want:
             continue
         rows.extend(_frame_rows(
             getattr(form4, "market_trades", None),

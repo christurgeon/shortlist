@@ -30,7 +30,8 @@ _edgar_gate: dict = {}
 
 # Max recent Form 4 filings fetched per ticker for insider aggregation. A
 # high-velocity insider universe could exceed this within the lookback window,
-# truncating net_value_6m / buy_count / sell_count (acceptable for typical tickers).
+# truncating net_value_6m / buy_count / sell_count. Filings where the company is
+# itself a reporting owner of another issuer also consume slots, then get dropped.
 _FORM4_FETCH_LIMIT = 40
 
 
@@ -194,8 +195,10 @@ class EdgarSource(Source):
         res = SourceResult(source=self.name)
         cutoff = date.today() - timedelta(days=self.lookback_days)
         try:
+            company = Company(ticker)
             summary = aggregate_form4(
-                Company(ticker).get_filings(form="4").latest(_FORM4_FETCH_LIMIT), cutoff, self._conviction)
+                company.get_filings(form="4").latest(_FORM4_FETCH_LIMIT), cutoff, self._conviction,
+                issuer_cik=company.cik)
         except Exception as e:
             res.errors.append(f"edgar: {redact_secrets(e)}")
             res.partial = TickerSnapshot(ticker=ticker)

@@ -237,7 +237,7 @@ def test_prompt_fingerprint_covers_more_than_assess():
 
 def test_insider_buy_vs_sell_changes_key():
     """A CEO buy replaced by a CEO sell of the SAME magnitude must NOT read as
-    identical: `value` is an unsigned magnitude (providers/_form4.py:113-114),
+    identical: `value` is an unsigned magnitude (`summarize` in providers/_form4.py),
     direction lives in `kind`, and the old net-sum hash could not see a flip."""
     buy = [{"date": "2026-08-01", "name": "A", "role": "CEO", "kind": "buy",
             "value": 2_000_000.0}]

@@ -107,7 +107,8 @@ and sources run concurrently (`asyncio.gather`). Authority: `data/models.py`.
 `EdgarSource` supplies three independent, failure-isolated sections (a missing XBRL filing,
 e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without affecting the rest):
 
-1. **Form 4 insider trades**, aggregated by `providers/_form4.py`.
+1. **Form 4 insider trades**, aggregated by `providers/_form4.py`; Form 4s where the company
+   is the reporting owner of another issuer's stock are excluded.
 2. **10-K financial statements** via `get_financials()`: revenue, net income, operating cash
    flow, FCF, diluted EPS, and the leverage inputs (total debt, cash, operating income, D&A,
    interest expense). The bridge derives `ebitda`, `net_debt_to_ebitda` and an

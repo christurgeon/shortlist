@@ -279,7 +279,7 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
                         for e in events if isinstance(e, dict)))
 
     # Per-trade (date, kind, value bucket), NOT a gross sum: `value` is an
-    # UNSIGNED magnitude (providers/_form4.py:113-114 — direction lives in
+    # UNSIGNED magnitude (`summarize` in providers/_form4.py — direction lives in
     # `kind`), so summing it loses a buy<->sell flip at identical count and
     # identical gross dollars. Sorted so trade ORDER (irrelevant to the prompt,
     # which is already date-ordered upstream) cannot itself move the key.

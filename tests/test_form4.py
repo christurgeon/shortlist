@@ -3,6 +3,8 @@ from __future__ import annotations
 import collections
 from datetime import date
 
+import pytest
+
 from shortlist.providers._form4 import (
     _frame_rows, aggregate_form4, summarize, classify_role, is_10b5_1,
 )
@@ -108,12 +110,25 @@ class _FakeOwners:
         self.owners = owners
 
 
+_OWN_CIK = 1067983
+
+
+class _FakeIssuer:
+    def __init__(self, cik):
+        self.cik = cik
+
+
+_OWN_ISSUER = _FakeIssuer("0001067983")
+
+
 class _FakeForm4:
-    def __init__(self, frame, insider_name, owners=None, footnotes=""):
+    def __init__(self, frame, insider_name, owners=None, footnotes="",
+                 issuer=_OWN_ISSUER):
         self.market_trades = frame
         self.insider_name = insider_name
         self.reporting_owners = _FakeOwners(owners) if owners is not None else None
         self._footnotes = footnotes
+        self.issuer = issuer
 
     def _resolve_footnotes(self, ids):
         return self._footnotes
@@ -136,7 +151,7 @@ def test_aggregate_extracts_role_from_reporting_owner():
     f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
         _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "Alice",
         owners=[_FakeOwner(officer_title="Chief Executive Officer")]))
-    s = aggregate_form4([f], cutoff, conviction=_CONV)
+    s = aggregate_form4([f], cutoff, conviction=_CONV, issuer_cik=_OWN_CIK)
     assert s.txns[0].role == "Chief Executive Officer"
     assert s.role_weighted_buy_value == 1500.0   # 1.5 * 1000
 
@@ -145,7 +160,7 @@ def test_aggregate_handles_missing_reporting_owners():
     cutoff = date(2026, 1, 1)
     f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
         _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "Anon", owners=None))
-    s = aggregate_form4([f], cutoff)   # no crash; role None
+    s = aggregate_form4([f], cutoff, issuer_cik=_OWN_CIK)   # no crash; role None
     assert s.buy_count == 1 and s.txns[0].role is None
 
 
@@ -155,7 +170,7 @@ def test_aggregate_stops_at_cutoff():
                          _FakeForm4(_FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "A"))
     stale = _FakeFiling(date(2025, 6, 1),
                         _FakeForm4(_FakeFrame([_row(999, 99.0, "P", "2025-06-01")]), "B"))
-    s = aggregate_form4([recent, stale], cutoff)
+    s = aggregate_form4([recent, stale], cutoff, issuer_cik=_OWN_CIK)
     assert s.buy_count == 1 and s.net_value == 1000.0
 
 
@@ -164,8 +179,49 @@ def test_aggregate_skips_unparseable_filings():
     good = _FakeFiling(date(2026, 5, 2),
                        _FakeForm4(_FakeFrame([_row(50, 20.0, "S", "2026-05-02")]), "A"))
     bad = _FakeFiling(date(2026, 5, 1), raises=True)
-    s = aggregate_form4([good, bad], cutoff)
+    s = aggregate_form4([good, bad], cutoff, issuer_cik=_OWN_CIK)
     assert s.sell_count == 1 and s.net_value == -1000.0
+
+
+def test_aggregate_excludes_filings_for_another_issuer():
+    """A company's own Form 4 list also holds filings it made as reporting owner of
+    another issuer's stock; those trades are not insider flow in the company."""
+    cutoff = date(2026, 1, 1)
+    own = _FakeFiling(date(2026, 5, 2), _FakeForm4(
+        _FakeFrame([_row(100, 10.0, "P", "2026-05-02")]), "Alice",
+        owners=[_FakeOwner(officer_title="CEO")]))
+    other = _FakeFiling(date(2026, 5, 1), _FakeForm4(
+        _FakeFrame([_row(1000, 50.0, "P", "2026-05-01")]), "HOLDCO INC",
+        owners=[_FakeOwner(is_ten_pct_owner=True)], issuer=_FakeIssuer("0000000002")))
+    s = aggregate_form4([own, other], cutoff, conviction=_CONV, issuer_cik=_OWN_CIK)
+    assert s.buy_count == 1 and s.net_value == 1000.0
+    assert [t.name for t in s.txns] == ["Alice"]
+    assert s.role_weighted_buy_value == 1500.0
+
+
+def test_aggregate_matches_issuer_cik_regardless_of_padding_or_type():
+    cutoff = date(2026, 1, 1)
+    for filing_cik in ("0001067983", "1067983", 1067983):
+        for want in (1067983, "0001067983"):
+            f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
+                _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "A",
+                issuer=_FakeIssuer(filing_cik)))
+            s = aggregate_form4([f], cutoff, issuer_cik=want)
+            assert s.buy_count == 1, (filing_cik, want)
+
+
+def test_aggregate_skips_filing_with_unreadable_issuer_cik():
+    cutoff = date(2026, 1, 1)
+    for issuer in (None, _FakeIssuer(""), _FakeIssuer(None), _FakeIssuer("n/a")):
+        f = _FakeFiling(date(2026, 5, 1), _FakeForm4(
+            _FakeFrame([_row(100, 10.0, "P", "2026-05-01")]), "A", issuer=issuer))
+        s = aggregate_form4([f], cutoff, issuer_cik=_OWN_CIK)
+        assert not s.found and s.net_value == 0.0, issuer
+
+
+def test_aggregate_requires_issuer_cik():
+    with pytest.raises(TypeError):
+        aggregate_form4([], date(2026, 1, 1))
 
 
 # --- classify_role + is_10b5_1 leaf helpers ---------------------------------
