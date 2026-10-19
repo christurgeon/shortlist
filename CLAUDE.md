@@ -81,7 +81,7 @@ Everything else orchestrates that pipeline; none of it adds scoring logic:
 | Raw snapshots | `shortlist-harness` | `HARNESS.md` |
 | Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md`, `docs/ASSESSMENT_GAPS.md` |
 | Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `docs/BACKTEST.md` → Feeding the snapshot path |
-| Telegram bot — `/screen`, `/deep`, position monitor | `shortlist-bot` | `docs/TELEGRAM.md` (`docs/POSITION_MONITOR.md` is design-time) |
+| Telegram bot — `/screen`, `/deep`, position monitor | `shortlist-bot` | `docs/TELEGRAM.md` (`docs/design/POSITION_MONITOR.md` is design-time) |
 
 Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 
@@ -91,7 +91,7 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 |---|---|
 | Scoring, gates, flags, sector abstention, optional legs | `docs/SCORING.md` |
 | A `config.yaml` knob | the comment above it — every non-obvious default carries its rationale inline |
-| Source merge semantics, year-joined backfill | `data/models.py`, then `docs/STATEMENTS_MERGE.md` (design) |
+| Source merge semantics, year-joined backfill | `data/models.py`, then `docs/design/STATEMENTS_MERGE.md` (design) |
 | The bridge / derived metrics (ROIC, value legs) | `data/bridge.py` docstrings + inline comments |
 | EDGAR statement extraction | `providers/_edgar_facts.py` docstring |
 | The `shortlist/edgar/` client library | `edgar/__init__.py`, `docs/EDGAR_CLIENTS.md` |
@@ -107,9 +107,8 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 `docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md`, `docs/BACKTEST.md` and `README.md` track current
 behaviour. `docs/audits/` is **dated evidence**, indexed by `docs/audits/README.md`, which also
 carries the register of closed verdicts — cite it for *why*, never as a description of
-how the code behaves. `docs/PLAN_*.md`, `docs/POSITION_MONITOR.md` and `docs/STATEMENTS_MERGE.md`
-are **design-time**: they record intent at the time of writing and their file/line references
-are not maintained. Read the code for behaviour; read these for the reasoning behind it.
+how the code behaves. `docs/design/` is **design-time**: they record intent at the time of
+writing and their file/line references are not maintained. Read the code for behaviour; read these for the reasoning behind it.
 
 ## Comments
 

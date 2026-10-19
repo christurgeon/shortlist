@@ -106,7 +106,7 @@ class SnapshotSignalSource:
     daily captures (never backfilled/restated data). Produces nothing until the
     store has history; the CLI guards activation (see fit/cli).
 
-    CAVEAT (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): from the
+    CAVEAT (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): from the
     fix/edgar-companyconcept-fallback deploy date, `store.py` snapshots for
     CMCSA/CVX/GOOGL/HON/LMT/MO/MRK/PG carry a populated `diluted_shares`;
     snapshots before it carry `[]` -- a mid-panel field-presence break

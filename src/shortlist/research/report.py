@@ -166,7 +166,7 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     # retains stopwords, so on a full-length risk+MD&A section the cosine compresses
     # near the top of its range and every real YoY pair rounded to "0% rewritten"
     # (measured 2026-08-20: LULU 0.9966, HDSN 0.9972).
-    # docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
+    # docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
     lines += ["", "## Moat",
               f"- **Trajectory:** {a.moat.trajectory or 'n/a'}",
               f"- {a.moat.summary}"]

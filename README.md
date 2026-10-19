@@ -180,9 +180,9 @@ package:
 <details>
 <summary><b>Implementation internals</b></summary>
 
-- [docs/STATEMENTS_MERGE.md](docs/STATEMENTS_MERGE.md) — fiscal-year join rules for merged financials
+- [docs/design/STATEMENTS_MERGE.md](docs/design/STATEMENTS_MERGE.md) — fiscal-year join rules for merged financials
 - [docs/EDGAR_CLIENTS.md](docs/EDGAR_CLIENTS.md) — the SEC/EDGAR client library and its landmines
-- [docs/POSITION_MONITOR.md](docs/POSITION_MONITOR.md) — position-monitor design (alerting not armed)
+- [docs/design/POSITION_MONITOR.md](docs/design/POSITION_MONITOR.md) — position-monitor design (alerting not armed)
 - [docs/audits/](docs/audits/) — dated verdicts for every signal measured, shipped or killed
 - [CLAUDE.md](CLAUDE.md) — working notes for Claude Code in this repo
 

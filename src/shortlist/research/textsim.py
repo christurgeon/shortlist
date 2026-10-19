@@ -34,7 +34,7 @@ scores ~0.90-0.92.
 A single-firm absolute cosine is also not what Cohen-Malloy-Nguyen use — they sort on
 the CROSS-SECTIONAL RANK of similarity, so interpreting one number without a peer
 distribution has no basis either way. Fixing this needs IDF or stopword weighting AND
-a reference distribution. docs/PLAN_INVENTORY_DECOMPOSITION.md §0.4."""
+a reference distribution. docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4."""
 from __future__ import annotations
 
 import math

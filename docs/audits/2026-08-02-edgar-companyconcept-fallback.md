@@ -4,7 +4,7 @@
 aggregator, Task 2 `e04a554` wiring) — recovers `diluted_shares` for 8 of the 9 "root cause B"
 issuers left by `#156` (`docs/audits/2026-07-31-edgar-concept-match.md`) by falling back to
 SEC's single-tag `companyconcept` API when the 10-K statement view has no share-count row at
-any label. Design: `docs/PLAN_EDGAR_ROOT_CAUSE_B.md`.
+any label. Design: `docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md`.
 
 **Verdict: GO.** All five go/no-go clauses pass. XOM stays `[]`; every other ticker is
 byte-identical. Production coverage moves **33/42 → 41/42** on `diluted_shares`.
@@ -111,7 +111,7 @@ tickers = sorted({os.path.basename(os.path.dirname(p))
                   for p in glob.glob("/opt/shortlist/state/snapshots/*/*.json.gz")})
 ```
 
-→ 42 tickers, matching `docs/PLAN_EDGAR_ROOT_CAUSE_B.md`'s own evidence table.
+→ 42 tickers, matching `docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md`'s own evidence table.
 
 - **After:** run on `fix/edgar-companyconcept-fallback` @ `e04a554` (this checkout).
 - **Before:** the same script run in a temporary worktree at `dccecab` (the signed-off-plan

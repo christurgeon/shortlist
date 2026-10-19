@@ -233,7 +233,7 @@ class EdgarSource(Source):
         absolute USD (no scaling). Mostly pure given `fin`, but ALSO fires the
         companyconcept diluted-share fallback (a network seam) when the statement
         view has no share-count row at all -- root cause B
-        (docs/PLAN_EDGAR_ROOT_CAUSE_B.md). `errors` is optional (callers that don't
+        (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). `errors` is optional (callers that don't
         pass one get the pre-existing silent-degrade behavior); `_fetch_sync` passes
         `res.errors` so a systemic fallback failure (SEC renames the tag, blocks the
         UA, changes the URL) is diagnosable instead of degrading forever with no
@@ -267,7 +267,7 @@ class EdgarSource(Source):
             # Own try/except: never let a RECOVERY path reduce coverage. If this
             # raises, `res.partial.statements` in `_fetch_sync` would otherwise
             # never be assigned and the ticker loses ALL statements, not just
-            # diluted_shares (C1, docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort,
+            # diluted_shares (C1, docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort,
             # but -- unlike a bare `contextlib.suppress` -- record what happened.
             try:
                 ef.diluted_shares = diluted_shares_from_concept(
@@ -303,7 +303,7 @@ class EdgarSource(Source):
                 debt_issuance=ef.debt_issuance,
             )
         # `gross_profit` isn't in EdgarFinancials; _merge_statements year-joins it back in from
-        # FMP when available (docs/STATEMENTS_MERGE.md). `total_equity` USED to be in the same
+        # FMP when available (docs/design/STATEMENTS_MERGE.md). `total_equity` USED to be in the same
         # boat — it is now extracted directly (2026-08-10), because that FMP backfill cannot
         # fire on the FMP-gated path, which is exactly where bridge.py needs invested capital
         # for a computed ROIC. Parent-only concept first, so the value means the same thing

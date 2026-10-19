@@ -218,7 +218,7 @@ fmp:
 # Dilution scoring: an inverted share_count_cagr quality leg, and growth eps_cagr
 # switches from the net-income proxy to diluted-EPS CAGR.
 # CAVEAT: accumulated snapshots from before the companyconcept fallback lack
-# `diluted_shares` for some large caps (docs/PLAN_EDGAR_ROOT_CAUSE_B.md). Exclude them
+# `diluted_shares` for some large caps (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). Exclude them
 # before fitting on accumulated history.
 # quality:
 #   dilution:
@@ -298,7 +298,7 @@ research:
                                # to omit the flag.
   output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, keyed by the
                                # wide cache key (research/cachekey.py), not the accession
-  cache:                       # brief staleness (docs/PLAN_DEEP_FRESHNESS.md §4)
+  cache:                       # brief staleness (docs/design/PLAN_DEEP_FRESHNESS.md §4)
     max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay. 0
                                # also freezes the macro line: only `macro.regime` is hashed,
                                # but the line prints rate levels that can move without it.
@@ -362,7 +362,7 @@ research:
 
   inventory:                   # inventory balance + days-inventory-outstanding trend. Does NOT
                                # compute "FCF excluding the inventory build": that adjustment
-                               # is not neutral (docs/PLAN_INVENTORY_DECOMPOSITION.md §0.2, §1).
+                               # is not neutral (docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.2, §1).
                                # The DIO leg needs gross_profit (year-joined from FMP), so it
                                # abstains when FMP is gated and only the balance trend renders.
     enabled: true

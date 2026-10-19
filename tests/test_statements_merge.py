@@ -281,7 +281,7 @@ def test_measurement_inputs_reach_the_metrics():
 
 def test_pe_vs_history_reactivates_on_an_fmp_covered_name():
     # A SECOND live scoring-surface change, found during the final whole-branch review,
-    # not anticipated by the original design (docs/STATEMENTS_MERGE.md §4): recovering
+    # not anticipated by the original design (docs/design/STATEMENTS_MERGE.md §4): recovering
     # diluted_eps + fiscal_period_end also re-activates a dormant EDGAR PE fallback at
     # bridge.py:241/243. Scenario: FMP's income statement wins the statements spine but
     # its own ratios-ttm call failed (fundamentals stays None, so m.pe_ttm/pe_median_5y

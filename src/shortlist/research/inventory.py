@@ -9,7 +9,7 @@ WHY THIS REPORTS A LEVEL AND NOT A CASH-FLOW BRIDGE
 ---------------------------------------------------
 An earlier design computed "FCF excluding the inventory build" and flagged names where
 the build fully explained a negative FCF. That was cut. Measured on HDSN FY2024->FY2025
-(docs/PLAN_INVENTORY_DECOMPOSITION.md §0.2):
+(docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.2):
 
     FCF ex-inventory only      +26.26M -> +32.70M   (+24%, "improved")
     FCF ex-(inventory+AR+AP)   +26.66M -> +16.30M   (-39%, declined)

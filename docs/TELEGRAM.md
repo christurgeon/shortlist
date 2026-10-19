@@ -136,7 +136,7 @@ with an explicit "alerts incomplete" warning naming the un-screened tickers.
 > alerting needed a nightly scheduler to be an alert at all and its only producer
 > (`scout/daily.py`) went with the scout. Re-adding it is an open decision that requires a
 > scheduler, not a config flag. The original design — which describes a feature that is no
-> longer built — is kept for reference in [`POSITION_MONITOR.md`](POSITION_MONITOR.md).
+> longer built — is kept for reference in [`POSITION_MONITOR.md`](design/POSITION_MONITOR.md).
 
 ## Research kill-switch
 

@@ -1,6 +1,6 @@
 """Task 1: pure companyconcept aggregator (`diluted_shares_from_concept`).
 Task 2: the mockable network seam + fallback wiring on EdgarSource, isolated
-from the rest of Statements construction (docs/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
+from the rest of Statements construction (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
 from __future__ import annotations
 
 import pandas as pd
@@ -157,7 +157,7 @@ def test_units_shares_wrong_type_abstains():
 
 
 def test_units_shares_non_iterable_abstains():
-    """Demonstrated bug (docs/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 3): unlike a
+    """Demonstrated bug (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 3): unlike a
     string (iterable, caught per-row by the malformed-row guard), a non-iterable
     `units.shares` (e.g. a bare int) used to blow past the docstring's "Never
     raises" claim with a TypeError on `for r in rows`. Must abstain, not raise."""
