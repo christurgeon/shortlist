@@ -1,5 +1,10 @@
 # Predictive-Signal Research: 5 Free-Data Additions to shortlist
 
+> **Background document — not kept in step with the code.** This is a research proposal as it was
+> written, with later status notes. For current behaviour read [`SCORING.md`](SCORING.md) and
+> [`BACKTEST.md`](BACKTEST.md); for settled verdicts read [`audits/README.md`](audits/README.md).
+> Section numbers are stable because code cites them.
+
 **Status:** research / proposal only — *no code in this PR.* Each idea below is a
 candidate to **spec + implement later**, and every one is designed to first ride
 as a **measurement-only axis** in the existing `--source xbrl` / snapshot-replay

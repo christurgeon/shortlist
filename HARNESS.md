@@ -40,13 +40,13 @@ flowchart LR
     end
 
     F4["_form4.py<br/>Form 4 aggregation"]
-    EF["_edgar_facts.py<br/>10-K financials + events"]
+    EF["_edgar_facts.py<br/>10-K financials"]
     F4 --> HS3
     EF --> HS3
 ```
 
 `bridge.py:snapshot_to_metrics` converts a `TickerSnapshot` into the `StockMetrics` that
-`scoring.py` consumes. The keyless sources (Yahoo, FINRA, EDGAR) let `value`, `growth` and
+`scoring.py` consumes. The keyless Yahoo and EDGAR sources let `value`, `growth` and
 `risk` be recovered when FMP gates a symbol, which it does for most non-mega-caps on the free
 tier.
 
@@ -54,8 +54,7 @@ The only other `StockMetrics`-producing paths are the point-in-time XBRL backtes
 the offline `MockProvider` fixture (`--demo` uses the harness `mock` Source).
 `providers/_form4.py` and `providers/_edgar_facts.py` are imported by the harness
 `EdgarSource` only; the backtest has its own extractor, `providers/_xbrl_facts.py`. The leaf
-both share is `providers/_gaap_tags.py`. Fixing one extractor does not fix the other; see
-`CLAUDE.md` → "Shared extraction leaves are edited once".
+both share is `providers/_gaap_tags.py`. Fixing one extractor does not fix the other.
 
 ## Run
 

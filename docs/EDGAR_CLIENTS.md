@@ -1,154 +1,96 @@
-# EDGAR clients — implementation notes
+# EDGAR clients (`shortlist/edgar/`)
 
-"Verified facts, do not fix back" detail for the SEC-EDGAR clients under `shortlist/edgar/`.
-This file is the landmine list; the package docstring (`edgar/__init__.py`) is the summary.
+A small library of SEC EDGAR clients: 13F holdings, Form 4 insider trades, Schedule 13D
+filings and 8-K items. The package docstring (`edgar/__init__.py`) is the summary; this file
+lists the verified facts about SEC data that a future change must not "fix" back.
 
-Most of these signals' original design docs live under `docs/superpowers/specs/`, which is
-**gitignored** (`.gitignore:37`) — not tracked, not guaranteed to survive a fresh clone. This
-file is the committed backstop for the facts that used to live only there or in `CLAUDE.md`.
-
-## What each module is
-
-These are **importable clients with no production caller** — nothing on the `/screen` or
-`/deep` path imports them. They exist so the data is reachable by hand during research.
+**No production path calls these clients.** `/screen` and `/deep` do not import them. They
+exist so the data is reachable by hand during research, and `backtest/edgar_history.py` uses
+`stake_pct.py`. The harness `EdgarSource` is separate (see `HARNESS.md` → EDGAR source).
 
 | Module | What |
 |---|---|
-| `thirteenf.py` | 13F infotable parse, position aggregation, new-position and material-add diffs |
-| `insider.py` + `dera.py` | Form 4 parse; DERA owner index for officer/director roles |
-| `index.py` | shared EDGAR daily-index client (13D initial + `/A` amendment streams) |
-| `eightk.py` | 8-K item matching over normalized EFTS rows |
-| `quality.py` | filing classifiers — SPAC/shell, initial-13D, affiliate, marquee activist |
-| `calendar.py` | filing-date calendars |
+| `thirteenf.py` | 13F information-table parse, position aggregation, new-position and material-add diffs |
+| `insider.py` + `dera.py` | Form 4 parse; DERA owner index for officer and director roles |
+| `index.py` | EDGAR daily-index client (Form 4, initial 13D and `/A` amendment streams) |
+| `eightk.py` | 8-K item matching over EFTS rows |
+| `quality.py` | Filing classifiers: SPAC/shell, initial 13D, affiliate, known activist |
+| `calendar.py` | Filing-date calendars |
 | `cusip_map.py`, `cik_tickers.py`, `symbology.py` | CUSIP→ticker and CIK→ticker resolution |
-| `stake_pct.py` | 13D/A cover-page percent-of-class extraction (used by `backtest/edgar_history.py`) |
-| `sec_throttle.py` | the one process-wide sec.gov rate budget (below) |
-| `models.py` | shared dataclasses |
-| `_ticker_rules.py` | shared leaf: 5th-letter junk-suffix rule + 8-K item normalization |
+| `stake_pct.py` | 13D/A cover-page percent-of-class extraction |
+| `sec_throttle.py` | The one process-wide sec.gov rate budget |
+| `models.py`, `_ticker_rules.py` | Shared dataclasses; ticker-suffix and 8-K item normalization |
 
-**The deal you take by keeping these uncalled.** CI pins their *parse shapes*; it does **not**
-catch SEC or edgartools changing shape upstream, because the live fetch tests are
-`pytest.mark.live` + `skipif(not SEC_IDENTITY)` and skip by default. Run
-`SEC_IDENTITY=... uv run pytest -m live` before trusting a client after a long gap —
-`edgartools` `standard_concept` drift has broken extraction once already
-([`audits/2026-07-31`](audits/2026-07-31-edgar-concept-match.md)).
+**CI checks parse shapes, not SEC.** The live fetch tests are marked `live` and skip by
+default, so CI does not notice when SEC or edgartools changes a response shape. Run
+`SEC_IDENTITY=you@example.com uv run pytest -m live` before you trust a client after a long gap.
 
 ## The shared sec.gov throttle (`edgar/sec_throttle.py`)
 
-Process-wide ~6 req/s min-interval budget (`sec_throttle()`, `DEFAULT_MIN_INTERVAL_S =
-0.167` — SEC fair access is ~10 req/s; this IP sits at 60% of it because of a recent 429
-history). Routed through it: `edgar_index` (Form 4, 13D), `thirteenf`, `cusip_map`,
-`cik_tickers`, `dera`. **Not** routed through it: the harness `EdgarSource` (own async
-semaphore, `_EDGAR_MAX_CONCURRENCY`) and `data/efts.py` (own throttle, different host —
-`efts.sec.gov`). Each call passes a consumer label (`throttle("edgar_form4")`); unlabelled
-calls are still counted as `unattributed` so nothing vanishes from the budget.
-`RunManifest.sec_requests` records per-run totals — that's what would settle whether one
-consumer is starving the others, if it's ever needed again.
+One process-wide minimum-interval budget (`DEFAULT_MIN_INTERVAL_S`), set below SEC's ~10
+requests/second fair-access limit. Every sec.gov client here passes a consumer label
+(`throttle("edgar_form4")`); unlabelled calls count as `unattributed`.
 
-**Never give a signal its own `SecThrottle`.** A per-signal throttle can't bound the
-*process's* request rate. On 2026-08-04 the Form 4 sweep ran unthrottled, 429'd SEC for the
-rest of the run, and the 13D originator / DERA quarterly index / `company_tickers.json` all
-failed behind it — zero candidates that night (`docs/audits/2026-08-05-discovery-funnel-audit.md`
-§4). `SecThrottle` used to live in `thirteenf.py`, which still re-exports it for back-compat.
+- **Never give a client its own throttle.** A per-client throttle cannot bound the process's
+  total rate. One unthrottled sweep once drew 429s from SEC and failed every other client
+  in the run (`docs/audits/2026-08-05-discovery-funnel-audit.md` §4).
+- **Concurrency buys nothing.** One serial worker already exceeds the rate limit, so the
+  limit, not I/O wait, is the whole constraint.
+- **Not routed through it:** the harness `EdgarSource` (its own semaphore) and `data/efts.py`
+  (its own throttle; a different host, `efts.sec.gov`).
 
-**Don't reach for concurrency here.** `full_text_submission()` latency is ~17 ms, so one
-serial worker already sustains ~57 req/s — the rate limit, not I/O wait, is the entire
-constraint, so a thread pool buys nothing. Two volume "optimisations" were tried and were
-**both wrong**: (1) filtering the daily index on whether its `cik` resolves to a ticker
-deletes ~80% of real large-cap emissions — the index row's CIK is the *filer* (often a
-person, the reporting owner), and the ticker only exists on the document's
-`<issuerTradingSymbol>`; (2) `[:max_filings]` truncates a **structured, not random** prefix
-of the day's filings, so any future time-budget cutoff must shuffle or relevance-sort first
-or it introduces selection bias. Full detail: `docs/audits/2026-08-05-discovery-funnel-audit.md` §10.
+`cik_tickers.load_raw_company_tickers` retries transient failures, then falls back to a
+cached ticker map up to 7 days old. The built map is memoised per day
+(`reset_resolver_cache()` clears it).
 
-`cik_tickers.load_raw_company_tickers` retries (3 attempts, linear backoff), then falls back
-to the newest cached index within 7 days rather than abstaining; the built index is memoised
-per `(identity, cache_dir, day)` so all five resolver call sites in a run share one map
-(`reset_resolver_cache()` drops it). Before this, one transient 429 returned `{}` and bailed
-13D / 13D-A / 8-K / buyback / 13F-symbology for the whole session.
+## Daily index and Schedule 13D (`edgar/index.py`)
 
-## Activist 13D discovery (`edgar/index.py`)
+- The modern form label is **`SCHEDULE 13D`**; the legacy `SC 13D` is still accepted.
+- `get_filings` returns **every row twice**. Deduplicate by accession before any header fetch.
+- The **subject company is the target**. The filer is the activist, so the filer's ticker is
+  the wrong one.
+- In a Form 4 index row the CIK is often the *reporting owner*, a person. The issuer's ticker
+  is only in the document's `<issuerTradingSymbol>`, so do not filter rows on whether the CIK
+  resolves to a ticker.
+- `max_filings` truncates a **structured, not random** prefix of the day's filings. Shuffle
+  or sort before any cutoff, or the sample is biased.
+- The daily index is not published until about 02:00 UTC, so fetchers walk back to the last
+  published day.
+- `company_tickers.json` lists the **common stock first** for each CIK. Resolution takes the
+  first entry; a plain suffix rule would bind some issuers to a preferred or foreign sibling.
 
-Scans the SEC daily index for fresh **initial SCHEDULE 13D** filings (`/A` amendments
-excluded — that's the escalation signal below).
+## 8-K items via EFTS (`edgar/eightk.py`, `data/efts.py`)
 
-**Verified facts (live-checked 2026-06-28):**
-- The modern form label is **`SCHEDULE 13D`**, not `SC 13D` (legacy, ~1/day — both accepted).
-- Initial volume runs ~4–12/day.
-- `get_filings` returns **every row twice** — dedup by accession before any header fetch.
-- The **subject company is the target**
-  (`filing.header.subject_companies[0]…cik/.name`); the *filer* is the activist, so the
-  filer's ticker would be wrong.
-- `company_tickers.json` lists the **common stock first** per CIK, so CIK→ticker resolution
-  is first-occurrence-authoritative, with a sibling-relative-only unit/warrant/preferred
-  backstop — a blunt suffix rule mis-binds ~54 liquid issuers to `*F`/preferred siblings
-  (e.g. EQNR→STOHF).
+The daily index has no item codes; EFTS full-text search returns them inline.
 
-Math/ingestion: `edgar/cik_tickers.py` (resolver), `edgar/quality.py` (`is_initial_13d` /
-SPAC-shell + affiliate-overlap drops / marquee alias boost), `edgar/index.py`
-(`activist_stakes_from_records` aggregator + `fetch_recent_activist_records`, with the same
-"index not published till ~02:00 UTC → walk back" fallback as the Form 4 path). Tune
+- EFTS needs **browser-like `User-Agent` and `Accept` headers**.
+- Intermittent 500s are normal: retry 5xx only, never 4xx, with capped backoff.
+- **EFTS lags.** Today's date returns `total: 0`, so callers walk back and treat a day as
+  final only after the lag.
+- `forms=8-K` **also returns `8-K/A` rows.** Drop `file_type != "8-K"` wherever an amendment
+  would double-count.
+- Pagination stops at **`from + size ≤ 10,000`**. Split any range near that total by date.
+- Resolve CIK→ticker only through `cik_tickers` (live) or `symbology` (point-in-time), never
+  from `display_names`.
 
-## 8-K item extraction (`edgar/eightk.py`)
-
-Discovers 8-Ks whose items contain a configured AND-set (default **1.01∧3.03**) via
-**EFTS** (`data/efts.py`, shared leaf — the daily index carries no item codes, EFTS returns
-them inline).
-
-**EFTS gotchas (live-probed 2026-07-07, twice):**
-- Needs **browser-ish UA + Accept headers** — bot-shaped requests are rejected (keep
-  `Accept-Encoding` httpx-decodable).
-- Intermittent 500s are normal → bounded retry-on-5xx **only** (never retry 4xx), backoff
-  capped at 8s, ≤3 req/s throttle.
-- **EFTS lags**: today's date returns `total: 0`, so the walk-back window and the day-cache
-  finality rule (`day <= fetched_on − EFTS_LAG_DAYS`) are load-bearing.
-- `forms=8-K` filters `root_forms` and **returns `8-K/A` rows too** — the `file_type !=
-  "8-K"` drop is mandatory everywhere an amendment would otherwise double-fire the
-  originator, re-trigger the veto, or double-count backfill events.
-- ES pagination window is **`from+size ≤ 10k`** — any range whose `total ≥ 9,900` splits
-  recursively at the date midpoint (earnings-heavy months approach the cap).
-
-`.cache/efts/<day>.json` always stores the complete unfiltered day. **No `display_names`
-ticker fallback anywhere** — CIK→ticker only via `cik_tickers` (live) / `Symbology` (PiT
-backfill).
-
-**Negative items**: {1.03, 2.04, 2.05,
-2.06, 3.01, 4.02, 5.01} are reliably negative over the funnel's 30–90d horizon; a fresh
-match drops the candidate loudly between prefilter and select (`funnel.apply_veto`) before
-it burns a deep-screen slot. Every match also logs to the firehose as its own signal
-(`edgar:8k_negative`, accession-deduped) with its own pre-registered cohort. Two knobs are
-**live-only** (the backfill cohort measures neither): `daily_cap` (default 6/day) and a
-populated `deny_list` — keep `deny_list` empty and `daily_cap` generous unless re-measuring.
+`NEGATIVE_ITEMS` (`1.03, 2.04, 2.05, 2.06, 3.01, 4.02, 5.01`) and `DEFAULT_ITEM_SETS` in
+`eightk.py` are the item sets the clients match.
 
 ## 13F holdings (`edgar/thirteenf.py`)
 
-Clones **new positions** in a curated set of marquee funds' latest **13F-HR** (`/A`
-amendments excluded — a restatement diff would double-fire). Per fund CIK: pick the latest
-exact `13F-HR`, diff its holdings against the immediately-prior one, surface each new CUSIP
-whose within-book weight clears `min_position_pct` (0.005). Clone return is measured from
-the **filing date** (the disclosure lag priced into the literature — this isn't
-front-running).
+Diffs a fund's latest exact `13F-HR` against the one before it (`/A` amendments excluded).
 
-**Verified facts (live-checked 2026-07-09):**
-- A single holding can legitimately span **multiple `<infoTable>` rows** (sole/shared/none
-  voting split, combined-manager filings) — aggregate by CUSIP, sum `value`.
-- Drop rows with a `putCall` (options) and `sshPrnamtType != "SH"` (PRN convertible debt).
-- The information table is the filing directory's `.xml` that is **neither
-  `primary_doc.xml` nor `xslForm13F...`** — an `index.json` fetch is required to find it.
-- **Material adds are detected on share count (`sshPrnamt`), never `value`** — `value` is
-  quarter-end market value, so a price rise alone would read as conviction.
-- The 7 seed CIKs are live-verified *active* filers — stale /ADV shells (e.g. Baupost
-  1054420, Appaloosa 1006438) are the trap; the config comment names them.
+- One holding can span **several `<infoTable>` rows** (voting-authority splits). Aggregate by
+  CUSIP and sum `value`.
+- Drop rows with a `putCall` (options) and rows where `sshPrnamtType != "SH"` (convertible debt).
+- The information table is the filing's `.xml` that is **neither `primary_doc.xml` nor
+  `xslForm13F…`**; an `index.json` fetch is needed to find it.
+- **Detect adds on share count (`sshPrnamt`), never `value`.** `value` is quarter-end market
+  value, so a price rise alone would look like buying.
+- Use only active filers' CIKs. Old adviser shells still exist on EDGAR and return stale data.
+- A caller must mark a filing processed even when its diff is empty, or it re-downloads both
+  tables every day.
 
-**CUSIP→ticker resolver** (`edgar/cusip_map.py`, layered, abstains rather than guesses): (1)
-SEC fails-to-deliver files (`cnsfails{YYYYMM}{a|b}.zip`), 2 most recent, cached forever by
-filename, most-recent-settlement wins on symbol churn; (2) exact-normalized-issuer-name
-match against `company_tickers.json` titles; (3) `None`.
-
-**Seen-accession semantics**: a caller tracking a fund's latest
-13F-HR is marked processed even on a zero-new-positions diff, else an empty-diff fund
-re-downloads both infotables daily forever — so the state exposes `processed_accessions`,
-not emissions. `max_filings_per_day` (default 3) caps processing (13F is quarterly-bursty).
-**Known limit:** the CUSIP resolver yields a ticker but no CIK, so 13F emissions carry
-`cik=None` — no CIK-based delisting classification, and a backfill cohort is deferred (a PiT
-CUSIP→symbology replay would leak post-event symbols). 
+**CUSIP→ticker** (`edgar/cusip_map.py`) abstains rather than guesses: (1) SEC
+fails-to-deliver files, newest settlement wins; (2) exact normalized issuer-name match against
+`company_tickers.json`; (3) `None`. It yields a ticker but no CIK.

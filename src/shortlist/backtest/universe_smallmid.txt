@@ -2,8 +2,7 @@
 # Purpose: the `largecap` list is the WRONG universe for small-cap fundamental
 # anomalies (Piotroski F, accruals, asset growth, dilution) — those signals are
 # documented to live in small/mid-cap, higher-book-to-market names, so a near-zero
-# IC on mega-caps is uninformative about the signal's merit (see
-# docs/superpowers/specs/2026-06-03-xbrl-piotroski-results.md, caveat #1).
+# IC on mega-caps is uninformative about the signal's merit.
 # This basket gives the `--source xbrl` path a properly-powered cross-section.
 #
 # These are CURRENTLY-LISTED constituents and are therefore SURVIVORSHIP-BIASED

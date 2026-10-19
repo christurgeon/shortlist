@@ -26,17 +26,21 @@ Trigger phrases: "run the screener", "analyze [tickers]", "screen X,Y,Z", `/run`
 
 ## Step 2 — Environment check
 
-Check which API keys are set:
+Check which API keys are set, in the shell or the repo-root `.env`, without printing their
+values:
 
 ```bash
-echo "FMP=$FMP_API_KEY" && echo "FINNHUB=$FINNHUB_API_KEY" && echo "EDGAR=$SEC_IDENTITY"
+for k in FMP_API_KEY FINNHUB_API_KEY SEC_IDENTITY FRED_API_KEY; do
+  if [ -n "${!k}" ] || grep -qE "^(export )?$k=[^[:space:]#]" .env 2>/dev/null; then
+    echo "$k: set"; else echo "$k: missing"; fi
+done
 ```
 
 | Variable | Source | Impact if missing |
 |---|---|---|
 | `FMP_API_KEY` | fmp | Primary fundamentals lost; the run may return thin or empty results |
-| `FINNHUB_API_KEY` | finnhub | Insider sentiment (MSPR) + analyst revisions unavailable |
-| `SEC_IDENTITY` | edgar | EDGAR source skipped at runtime; insider sub-score goes `null` silently |
+| `FINNHUB_API_KEY` | finnhub | Insider sentiment (MSPR), analyst ratings and news unavailable |
+| `SEC_IDENTITY` | edgar | EDGAR source skipped: no 10-K financials, Form 4 trades, filing events or sector |
 
 If **all keys are absent**, offer demo mode rather than running live.  
 Sources with missing keys are skipped gracefully — no crash — but their sub-scores will be `null`.
@@ -49,8 +53,7 @@ Sources with missing keys are skipped gracefully — no crash — but their sub-
 ```bash
 uv run shortlist --tickers <TICKERS> --json
 ```
-Runs the async harness (sources `yahoo, fmp, finnhub, edgar, finra, wsb` from
-`config.yaml: harness_sources`). It recovers `value`, `growth`, and the `risk`
+Runs the async harness over the sources in `config.yaml: harness_sources`. It recovers `value`, `growth`, and the `risk`
 axis from free EDGAR + Yahoo data when FMP gates a symbol. **Do not pass `--provider`**
 — it overrides `harness_sources` and would drop the keyless `yahoo` (momentum/risk)
 and `finra` (short interest) sources.
@@ -91,7 +94,7 @@ coverage{} (when a provider had trouble), research_path (if --research used)
 ```
 
 `risk` is the 7th sub-score (realized volatility + max drawdown, inverted so
-safer scores higher). It feeds the composite as a tilt but is deliberately
+safer scores higher). It is displayed but carries weight `0.0`, and is
 **excluded from `confidence`/`scored`**. `scored` (above the validity floor),
 `confidence` (present-applicable weight ÷ applicable weight), and `sic_bucket`
 report sector-aware abstention — `passed` is `not gates and scored`, so a
@@ -123,10 +126,10 @@ Translate each triggered gate to plain English, referencing actual thresholds fr
 |---|---|
 | `negative_fcf` | Negative free cash flow |
 | `below_min_mktcap` | Market cap below the configured minimum (`gates.min_market_cap` in config.yaml) |
-| `over_leveraged` | Debt/equity above the configured maximum (`gates.max_debt_to_equity`) |
+| `over_leveraged` | Net debt/EBITDA above `gates.leverage.max_net_debt_to_ebitda`, or a guarded debt/equity fallback |
 | `heavy_insider_selling` | Insider sentiment (MSPR) below the configured floor (`gates.min_insider_sentiment`) |
 
-Gates flag a ticker for scrutiny — they don't exclude it from ranking.
+A gated ticker still ranks by composite, but `passed` is false and `--research` skips it.
 
 ### Standouts
 1–2 sentences on the top name with specific score reasoning.
@@ -134,7 +137,7 @@ Gates flag a ticker for scrutiny — they don't exclude it from ranking.
 ### Coverage gaps
 If a ticker had `402` responses from FMP, note it — that symbol is gated on the free plan and data will be thin.
 
-**FMP `402`s = symbol gating, not a bug.** When you see `402` warnings on stderr for a symbol (and `coverage.providers.fmp == "gated_402"`), don't hunt for a code fault. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. When a symbol gates: `fcf_yield` and `pe_vs_history` are rebuilt from free EDGAR 10-K financials + Yahoo closes, and `growth`/`risk` come from EDGAR/Yahoo too — so a gated symbol usually still scores `value`, `growth`, and `risk`. Only `upside_to_target` and PEG stay `null` (both FMP-only). This is the normal, expected output for a gated small/mid-cap — narrate it as recovered coverage, not a gap. (If `growth` is also `null`, the symbol likely has no XBRL 10-K financials — e.g. a recent IPO or Form 20-F filer — so that leg abstained and its weight redistributed; `confidence` drops below 1.0.) FMP's paid Starter tier (~$14–20/mo) lifts the gating entirely.
+**FMP `402`s = symbol gating, not a bug.** When you see `402` warnings on stderr for a symbol (and `coverage.providers.fmp == "gated_402"`), don't hunt for a code fault. Confirm it's per-symbol gating (the symbol 402s while AAPL/MSFT/LMT return data on the same key) rather than an exhausted quota. When a symbol gates: `fcf_yield` and `pe_vs_history` are rebuilt from free EDGAR 10-K financials + Yahoo closes, and `growth`/`risk` come from EDGAR/Yahoo too — so a gated symbol usually still scores `value`, `growth`, and `risk`. Only `upside_to_target` and PEG stay `null` (both FMP-only). This is the normal, expected output for a gated small/mid-cap — narrate it as recovered coverage, not a gap. (If `growth` is also `null`, the symbol likely has no XBRL 10-K financials — e.g. a recent IPO or Form 20-F filer — so that leg abstained and its weight redistributed; `confidence` drops below 1.0.) A paid FMP plan lifts the gating.
 
 `market_cap` and the `insider` sub-score still populate because Finnhub backfills the market cap — so a non-null `insider` alongside `fmp: gated_402` is the signature of FMP gating, not missing data.
 
@@ -143,7 +146,7 @@ The screener now emits this machine-readably: each affected card carries a `cove
 **`429 Too Many Requests` is NOT gating — it's a quota/rate limit, diagnosed and fixed differently.** A `429` collapses to coverage status `"error"` (not `gated_402`), with the generic note "fmp: supplied no usable data for this symbol" — so you can only distinguish it from a true fault by **reading the stderr warning**, which names the HTTP code (`429 Client Error: Too Many Requests`). Detection: several symbols in one run come back with `fmp: "error"` + null `value`/`growth` while stderr shows `429`s. There are two flavors, and they have different fixes — tell them apart by **re-running just the affected tickers as a tiny (1–2 symbol) batch**:
 
 - **Per-minute burst throttle** (free tier is ~5 calls/min; the screener spends a few calls per ticker, so a 5-ticker basket can trip it even though earlier symbols in the same run returned `200`). The small re-run *succeeds*. Fix: just space the work out — re-run in smaller batches or wait ~60s.
-- **Daily quota exhaustion** (free tier is 250 calls/day). The small re-run **still `429`s immediately on the first, cheapest `/stable/quote` call**. A short wait does nothing — the allowance is spent until the daily reset. Fix: wait for the next-day reset, or FMP's paid Starter tier (~$14–20/mo) which raises the ceiling.
+- **Daily quota exhaustion** (free tier is 250 calls/day). The small re-run **still `429`s immediately on the first, cheapest `/stable/quote` call**. A short wait does nothing — the allowance is spent until the daily reset. Fix: wait for the next-day reset, or a paid FMP plan, which raises the ceiling.
 
 Either way the data is missing because of throttling, **not** per-symbol gating, so the `402` "needs Starter to ever work" framing does not apply — the symbol itself is fine. **Telltale contrast in one run:** AXON `gated_402` (structural — that symbol needs Starter) vs. KO/NVDA `error`+`429` (quota — every symbol comes back once quota resets). If a same-minute tiny re-run still `429`s on the bare quote endpoint, say plainly the daily FMP quota is exhausted, not that there's a bug.
 
@@ -151,23 +154,16 @@ Either way the data is missing because of throttling, **not** per-symbol gating,
 
 ## Score reference
 
-| Sub-score | Default weight | Driven by |
-|---|---|---|
-| Quality | 18% | ROE, net margin, interest coverage, leverage (inverted) |
-| Moat | 18% | Gross margin level + 5-year stability + persistent ROIC |
-| Growth | 13.5% | Revenue / FCF / EPS CAGR + revenue-growth persistence |
-| Value | 22% | upside to analyst target + FCF yield + P/E vs own 5y median + PEG |
-| Momentum | 8% | price vs 200DMA + 6m relative strength + EPS revision |
-| Insider | 13.5% | Net Form-4 flow (6m) + MSPR sentiment (−1..1) |
-| Risk | 0% | Realized volatility + max drawdown (both inverted — safer scores higher); displayed, not weighted |
-
-`value` and `momentum` are weighted **independently** (value-tilt: ~3:1); the `opportunity` column is `max(momentum, value)`, retained for display only and **not** fed into the composite. `value` = upside to analyst target + FCF yield + P/E vs own 5y median + PEG. The **`risk`** axis (inverted vol/drawdown) is shown for context but ships at weight `0.0` — it measured anti-predictive on both backtest universes, so do not narrate a high risk score as a reason to buy. All scores are 0–100. **These are the defaults — always read the actual weights and gate thresholds from `config.yaml` before narrating; do not hardcode them.**
+What each sub-score is built from: `docs/SCORING.md` → The seven axes. Weights and thresholds:
+`config.yaml`. Read both before narrating; do not quote numbers from memory. `risk` ships at
+weight `0.0` because it measured anti-predictive, so never present a high risk score as a
+reason to buy.
 
 ---
 
 ## Edge cases
 
-- `SEC_IDENTITY` unset → `edgar` skipped; insider sub-score is `null`. Mention this.
+- `SEC_IDENTITY` unset → `edgar` skipped; growth, sector handling and the Form 4 part of `insider` lose their data. Mention this.
 - `--research` requested but `claude` CLI not on PATH → screener warns on stderr and continues without briefs.
 - `--research` skips gated tickers regardless of their rank.
 - Banks/insurers (e.g. SCHW) will have blank moat/quality proxies by design — note it.
