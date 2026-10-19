@@ -294,3 +294,23 @@ def test_the_section_does_not_depend_on_feed_order():
         shuffled = arts[:]
         random.Random(seed).shuffle(shuffled)
         assert news.select(shuffled, "ACME", "Acme Inc.", 10) == want
+
+
+@pytest.mark.parametrize("pair", [
+    ("Acme Q3 earnings: CEO flags cost cuts", "Acme reports positive phase 3 trial results"),
+    ("Acme Q3 results top estimates", "Acme raises quarterly dividend by 7%"),
+    ("Acme announces layoffs across its chip unit", "Acme expands Ohio workforce at new plant"),
+])
+def test_an_event_that_rides_along_with_results_or_layoffs_keeps_its_own_item(pair):
+    arts = _OTHER + [_art(pair[0], day=0, summary="first story"),
+                     _art(pair[1], day=1, summary="second story")]
+    assert len(news.select(arts, "ACME", "Acme Inc.", 10)) == len(_OTHER) + 2
+
+
+def test_a_deal_merge_needs_a_real_counterparty_not_a_weekday_or_a_rating():
+    weekday = [_art("Acme to acquire Beta's delivery unit", day=0, summary="On Monday, the deal"),
+               _art("Acme bids for Gamma stake", day=6, summary="On Monday, a bid")]
+    assert len(news.select(weekday, "ACME", "Acme Inc.", 10)) == 2
+    rating = [_art("Goldman Sachs upgrades Acme to Buy", day=0, summary="rating change"),
+              _art("Acme to acquire Delta from Goldman Sachs fund", day=5, summary="a purchase")]
+    assert len(news.select(rating, "ACME", "Acme Inc.", 10)) == 2
