@@ -35,9 +35,29 @@ def _heredoc(unit_name: str) -> str:
     return m.group(1)
 
 
+def _unit_sections(body: str) -> dict[str, list[str]]:
+    """Map each [Section] header in a unit body to its directive lines."""
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for ln in body.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("[") and s.endswith("]"):
+            current = s[1:-1]
+            sections.setdefault(current, [])
+        elif current is not None:
+            sections[current].append(s)
+    return sections
+
+
 def test_the_scheduled_route_wires_the_failure_alert() -> None:
-    """A crash on the timer must page, not sit silently in the journal."""
-    assert ONFAILURE in _heredoc("shortlist-accumulate.service")
+    """A crash on the timer must page, not sit silently in the journal.
+
+    systemd honours OnFailure= only in [Unit]; elsewhere it is ignored with a journal warning.
+    """
+    sections = _unit_sections(_heredoc("shortlist-accumulate.service"))
+    assert ONFAILURE in sections.get("Unit", [])
 
 
 
