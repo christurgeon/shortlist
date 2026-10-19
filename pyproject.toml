@@ -1,10 +1,25 @@
 [project]
 name = "shortlist"
 version = "0.1.0"
-description = "Moat + momentum/value + insider stock screener feeding the investment-research skill"
+description = "Stock screener that ranks a ticker list on quality, moat, growth, value, momentum and insider activity from SEC EDGAR, Yahoo Finance, FMP and Finnhub"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Chris Turgeon" }]
+keywords = [
+    "stock-screener", "stocks", "investing", "value-investing", "fundamental-analysis",
+    "quantitative-finance", "factor-investing", "sec-edgar", "xbrl", "backtesting",
+    "telegram-bot", "claude",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 requires-python = ">=3.11"
 dependencies = [
     "requests>=2.31",
@@ -13,6 +28,11 @@ dependencies = [
     "rich>=13.0",
     "python-dotenv>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/christurgeon/shortlist"
+Documentation = "https://github.com/christurgeon/shortlist#readme"
+Issues = "https://github.com/christurgeon/shortlist/issues"
 
 [project.optional-dependencies]
 edgar = ["edgartools>=5.61"]

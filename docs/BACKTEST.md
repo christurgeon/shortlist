@@ -14,9 +14,9 @@ uv run shortlist-backtest --tickers AAPL,MSFT,LMT --json            # ad-hoc, JS
 ```
 
 **Two bundled universes, and a claim needs both.** `largecap` (~80 names) and `smallmid`
-(~198) are separate files under `backtest/`; `--tickers` is an ad-hoc CSV alias for
-`--universe`. A single-universe `t≈2` is noise at this scale — cross-universe reproduction
-is the bar (`CLAUDE.md` → Design premise). Named universes are checked against SEC's current
+(~150) are separate files under `backtest/`; `--tickers` is an ad-hoc CSV alias for
+`--universe`. A single-universe `t≈2` is noise at this scale, so a result must reproduce on
+both universes. Named universes are checked against SEC's current
 ticker map on load and **refuse to run** if symbols have been renamed or delisted, since a
 dead symbol contributes nothing while still counting toward breadth; `--allow-stale-universe`
 overrides.
@@ -45,7 +45,7 @@ How it stays honest:
   without Newey-West.
 - **Excess-over-SPY** returns by default (the momentum signal is itself
   benchmark-relative); `--return-mode raw` for absolute.
-- **Survivorship caveat** printed every run: the bundled `largecap` universe is
+- **Survivorship caveat** printed every run: both bundled universes are
   currently-listed names, so spreads are an upper bound — read results as
   *relative signal validation*, not tradeable PnL. Below the trust floor (~30
   names/date, ~24 periods) results are labelled **EXPLORATORY**.

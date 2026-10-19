@@ -13,8 +13,11 @@ uv run shortlist-bot           # starts the long-poll loop (Ctrl-C to stop)
 
 ## Setup
 
-Both variables live in the repo-root `.env` (copy from `.env.example`) — never in
-`config.yaml`, per the secrets house rule. The bot picks them up on restart.
+Install the extras first: `uv sync --extra bot --extra edgar` (`bot` renders the PNG
+dashboard; `edgar` is needed for `/deep`).
+
+Both variables live in the repo-root `.env` (copy from `.env.example`), never in
+`config.yaml`. The bot picks them up on restart.
 
 ```bash
 TELEGRAM_BOT_TOKEN=123456789:AAE...   # from @BotFather: /newbot → HTTP API token
@@ -76,9 +79,7 @@ must keep saying the same thing:
 | `no filing quote` | a mark on the item | the model declared its own inference. Legal in *sources of advantage* and *management findings* only |
 | unknown | nothing | the brief predates verification, so nothing was ever checked — not a failure |
 
-Only the middle two are marked: measured over the 17-brief corpus on 2026-08-22, 11.4% of
-items (59 of 519) carry a mark, so marking every item would cost the distinction its meaning.
-The two footer counts come straight from the record and are never merged — an unverified claim
+Only the middle two are marked, so a mark stays rare enough to mean something. The two footer counts come straight from the record and are never merged — an unverified claim
 means the model quoted something absent from the filing, and pooling it with declared
 inferences destroys exactly that signal.
 
@@ -131,12 +132,9 @@ brokerage sync and no cost basis**.
 A portfolio larger than `portfolio.max_holdings` (default **50**) is screened up to the cap
 with an explicit "alerts incomplete" warning naming the un-screened tickers.
 
-> **Held-name 8-K alerting does not exist.** It was **removed**, not disabled: `de3c9f8`
-> deleted `bot/monitor.py` and the whole `portfolio.monitor` config block, because the
-> alerting needed a nightly scheduler to be an alert at all and its only producer
-> (`scout/daily.py`) went with the scout. Re-adding it is an open decision that requires a
-> scheduler, not a config flag. The original design — which describes a feature that is no
-> longer built — is kept for reference in [`POSITION_MONITOR.md`](design/POSITION_MONITOR.md).
+> **Held-name alerting does not exist.** Nothing watches your holdings between `/portfolio`
+> runs: an alert needs a scheduler, and none is built. The design is kept in
+> [`POSITION_MONITOR.md`](design/POSITION_MONITOR.md) but describes a feature that is not built.
 
 ## Research kill-switch
 

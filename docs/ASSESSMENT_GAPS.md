@@ -1,5 +1,10 @@
 # Assessment gaps & scoring roadmap
 
+> **Background document — not kept in step with the code.** This is the scoring roadmap as it was
+> written, with later status notes. For current behaviour read [`SCORING.md`](SCORING.md) and
+> [`BACKTEST.md`](BACKTEST.md); for settled verdicts read [`audits/README.md`](audits/README.md).
+> Section numbers are stable because code cites them.
+
 **Audience:** whoever improves *how we score*, not *what we pull*.
 **Companion doc:** [`DATA_SOURCES.md`](DATA_SOURCES.md) covers **data** gaps (new feeds,
 earnings-quality composites, macro, short interest). This doc covers **methodology**

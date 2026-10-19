@@ -102,9 +102,10 @@ Set in the repo-root `.env` (gitignored):
 |----------|---------|----------|
 | `TELEGRAM_BOT_TOKEN` | Bot auth | Yes |
 | `TELEGRAM_CHAT_ID` | Allowlisted chat/channel ID | Yes |
-| `FMP_API_KEY` | Deep-screen fundamentals | Yes (free tier OK, ~19 tickers/day) |
-| `FINNHUB_API_KEY` | Fundamentals fallback + news | Yes (free tier OK) |
+| `FMP_API_KEY` | Ratios, analyst targets, PEG | Recommended (free tier: ~19 tickers/day) |
+| `FINNHUB_API_KEY` | Insider sentiment, analyst ratings, news | Recommended (free tier OK) |
 | `SEC_IDENTITY` | SEC EDGAR fair-access header (e.g. `you@email.com`) | Recommended |
+| `FRED_API_KEY` | Macro regime overlay | Optional |
 
 A missing key degrades gracefully — the affected source is skipped and the gap shows up
 in the report's coverage section.
@@ -142,27 +143,13 @@ Only `shortlist-accumulate.service` carries this today.
 `shortlist-bot` is an always-on Telegram bot (`Type=simple`, `Restart=on-failure`,
 long-polls `getUpdates` — no inbound port needed).
 
-| Command | What it does |
-|---------|--------------|
-| `/screen NVDA, LMT, MSFT` | Fast scores + gates; PNG dashboard + HTML deep-dive |
-| `/deep TSLA` | Same, plus the Claude 10-K research brief (slower) |
-| `/explain 13d` | Plain-English definition of a term, gate, or flag |
-| `/add NVDA 12` | Track a holding (`positions.json`; shares optional; bulk `/add NVDA, MSFT`) |
-| `/thesis NVDA <why>` | Record why you hold a tracked name |
-| `/hold NVDA <note>` | Log that you saw an alert and chose to keep the position |
-| `/remove NVDA <reason>` | Stop tracking (non-destructive; alias `/sold`) |
-| `/portfolio` | Re-screen tracked holdings; adds exposure/concentration/deterioration. Cap: `config.yaml: portfolio.max_holdings` |
-| `/help` | Lists commands |
-
-No position-monitor digest or held-name 8-K alerting — removed with the scout (`de3c9f8`);
-it needed a nightly scheduler that no longer exists. History:
-[`../docs/design/POSITION_MONITOR.md`](../docs/design/POSITION_MONITOR.md).
+Commands, request caps and holdings: [`../docs/TELEGRAM.md`](../docs/TELEGRAM.md).
 
 **Guardrails:**
 
 - **Chat allowlist** — only `TELEGRAM_CHAT_ID` gets replies; other chats are silently ignored.
-- **Soft per-request caps** — `bot.max_screen`/`bot.max_deep` in `config.yaml`; over-cap
-  requests get a friendly rejection, not silent quota burn.
+- **Soft per-request caps** — `bot.max_screen`/`bot.max_deep` in `config.yaml`; over the
+  cap, the bot runs the first N and names the tickers it did not run.
 - **No hard FMP quota guard** — the HTTP cache makes warm re-screens free within TTL; cold
   requests degrade honestly via the coverage layer.
 
@@ -200,7 +187,7 @@ timer install runs `--max-tickers 42` (the full bundled watchlist); the library 
 15 stays under that floor for ad-hoc runs. FMP's free tier (250 calls/day, ~13/ticker) 429s
 past ~19 names — the overflow still saves on keyless coverage (Yahoo/EDGAR/Finnhub/FINRA),
 so only the FMP-only value legs (PEG, analyst upside) go thin; momentum/SUE/fundamentals
-are keyless anyway. Paid FMP Starter (~$14–20/mo) lifts the gating.
+are keyless anyway. A paid FMP plan lifts the gating.
 
 **Enable the timer** (system unit, 21:30 UTC, real paths filled in):
 
@@ -213,8 +200,6 @@ sudo systemctl start shortlist-accumulate.service   # optional: seed day 1 now
 The opt-in is needed once. While the timer is enabled, every later deploy rewrites the
 unit (keeping its `--root`), so a plain deploy picks up changed flags. To stop it:
 `sudo systemctl disable --now shortlist-accumulate.timer`.
-
-~48 MB memory footprint — fine on a 1.9 GB box.
 
 **Manual (user unit) alternative**, no root:
 

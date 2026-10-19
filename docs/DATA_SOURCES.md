@@ -1,5 +1,11 @@
 # Data sources for stock assessment — current state and a roadmap
 
+> **Background document — not kept in step with the code.** This is the data-source survey
+> and roadmap as it was written, with later status notes. For what the code pulls today, read
+> the source table in [`README.md`](../README.md#run-it-on-real-tickers), [`HARNESS.md`](../HARNESS.md)
+> and the `_REGISTRY` in `data/sources/__init__.py`. Section numbers are stable because code
+> cites them.
+
 > **Companion doc:** [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) covers the **methodology**
 > gaps — the scoring model (incl. the growth sub-score spec), its validation/backtest, and
 > the Claude qualitative layer. This doc is about the **data feeds** that back them.
@@ -14,33 +20,27 @@ how to pull it, and where it plugs into the existing two-layer architecture
 (`StockMetrics` + `scoring.py`, or `TickerSnapshot` + `merge_snapshots`, or a new
 run-level macro overlay).
 
-Every keyless source below was **actually pulled** into `scratch/` by
-`scratch/pull_samples.py` — the numbers quoted are from that live run (AAPL, 2026-05-31),
-so the pull code is verified, not hypothetical. Re-run it with `python3 scratch/pull_samples.py`.
+Every keyless source below was **actually pulled** in a live run (AAPL, 2026-05-31) by a
+local `scratch/` script that is not in the repository; the numbers quoted come from that run.
 
 ---
 
 ## 1. What we pull today
 
-| Source | Tier | Layer | Supplies |
-|---|---|---|---|
-| **FMP** `/stable/` | free (250 calls/day, ~20 tickers/day) | both | profile, quote, TTM ratios, key-metrics, 5y statements, price-target + grades consensus, insider, price-change |
-| **Finnhub** | free (60/min) | both | profile, metrics, **insider sentiment (MSPR)**, recommendation trend, quote |
-| **SEC EDGAR** (Form 4 + 10-K + events) | free (≤10 req/s) | both | authoritative insider transaction flow; 10-K XBRL financials (revenue/FCF/EPS); **filing-stream events: 8-K material events, SC 13D/13G activist/passive stakes, Form 144 planned insider sales** (harness only) |
-| **Yahoo Finance** chart | free, keyless | harness | price history → 200dma, 6m rel-strength vs SPY, realized vol, max drawdown (computed by us, day-cached) |
-| **Mock** | offline | harness | demo fixtures |
-| **FRED** | free key (`FRED_API_KEY`) | harness (run-level) | macro regime: HY OAS, 2s10s curve, VIX, 10y, FFR → `MacroContext` → `risk_off_regime` flag |
-| Quiver | scaffolded, not wired | screener | congress/gov-contracts |
+| Source | Key | Supplies |
+|---|---|---|
+| **Yahoo Finance** chart | none | Price history → 200dma, 6m strength vs SPY, volatility, drawdown, residual momentum |
+| **SEC EDGAR** | `SEC_IDENTITY` | 10-K XBRL statements, Form 4 insider trades, filing-stream events, SIC sector |
+| **FMP** `/stable/` | free tier (250 calls/day) | Profile, TTM ratios, key metrics, 5y history, price target, grades |
+| **Finnhub** | free tier | Insider sentiment (MSPR), recommendation trend, company news, earnings |
+| **FINRA** short interest | none | Short interest → `crowded_short` flag |
+| **WSB** (ApeWisdom) | none | Mention counts → `social_hype` flag |
+| **USAspending**, **Senate LDA** | none | Government contracts and lobbying (context only, not scored) |
+| **FRED** | `FRED_API_KEY` | Run-level macro regime → `risk_off_regime` flag |
+| **Mock** | none | `--demo` fixtures |
 
-A `snapshot_to_metrics` **bridge** (`data/bridge.py`) feeds the harness
-`TickerSnapshot` into the scorer, exposed via `shortlist` (walkthrough in
-`HARNESS.md`).
-
-Scored signals today: **quality** (ROE, net margin, interest coverage, D/E),
-**moat** (gross margin, margin stability, ROIC), **growth** (revenue/FCF/EPS CAGR +
-YoY persistence), **momentum** (price vs 200dma, 6m rel strength, EPS revision),
-**value** (upside-to-target, FCF yield, PE vs own history, PEG), **insider**
-(sentiment + net-flow/mktcap).
+The authoritative list is `_REGISTRY` in `data/sources/__init__.py`. What each input scores:
+[`SCORING.md`](SCORING.md).
 
 ## 2. Gaps a professional would flag
 
