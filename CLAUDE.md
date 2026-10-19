@@ -107,8 +107,9 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 `docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md`, `docs/BACKTEST.md` and `README.md` track current
 behaviour. `docs/audits/` is **dated evidence**, indexed by `docs/audits/README.md`, which also
 carries the register of closed verdicts — cite it for *why*, never as a description of
-how the code behaves. `docs/design/` is **design-time**: they record intent at the time of
-writing and their file/line references are not maintained. Read the code for behaviour; read these for the reasoning behind it.
+how the code behaves. The docs in `docs/design/` are **design-time**: they record intent at the
+time of writing and their file/line references are not maintained. Read the code for behaviour;
+read these for the reasoning behind it.
 
 ## Comments
 
