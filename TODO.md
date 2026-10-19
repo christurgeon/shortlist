@@ -98,18 +98,6 @@ periods, far below the 24-period floor.
 
 # 4. Data layer
 
-## EDGAR filings the company made about another issuer (2026-10-19)
-
-- **Filing-event flags.** `build_events_section` counts Schedule 13D/13G and Form 144 that the
-  company filed as holder of another issuer's stock, so it sets false `activist_13d`,
-  `passive_13g` or `planned_insider_sale_144` on holding companies and banks. The fix needs one
-  header request per filing to read the subject company.
-- **Form 4 window truncation.** `_FORM4_FETCH_LIMIT` applies before the issuer filter, so
-  other-issuer filings use up slots. For some names the 40 filings end before the 6-month
-  cutoff, and `net_value_6m` and the counts are understated.
-
-Evidence and affected names: `docs/audits/2026-10-19-form4-other-issuer.md`.
-
 ## FMP quota is over-subscribed — a config-or-money decision, not a build
 
 Accumulate (42 tickers) alone runs ~550 calls/day against a 250/day free limit, which is why

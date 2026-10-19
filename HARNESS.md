@@ -108,7 +108,10 @@ and sources run concurrently (`asyncio.gather`). Authority: `data/models.py`.
 e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without affecting the rest):
 
 1. **Form 4 insider trades**, aggregated by `providers/_form4.py`; Form 4s where the company
-   is the reporting owner of another issuer's stock are excluded.
+   is the reporting owner of another issuer's stock are excluded. Only Form 4s filed within
+   the lookback window are read, newest first, up to a hard cap (`_FORM4_FETCH_LIMIT`). A
+   ticker that hits the cap gets `raw["form4_truncated"] = True`; its `net_value_6m` and
+   counts then cover only the newest filings. It is not an error and does not change coverage.
 2. **10-K financial statements** via `get_financials()`: revenue, net income, operating cash
    flow, FCF, diluted EPS, and the leverage inputs (total debt, cash, operating income, D&A,
    interest expense). The bridge derives `ebitda`, `net_debt_to_ebitda` and an
@@ -118,8 +121,9 @@ e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without aff
    dates; `tests/test_edgar_leverage_live.py` pins both.
 3. **Filing-stream events** (`build_events_section`), built from one submissions-index read:
    8-K, `SC 13D`, `SC 13G`, Form 144 and the distress/dilution/accounting-integrity forms.
-   They surface as advisory flags only (`scoring.py:_FILING_STREAM_FLAGS`). The section also
-   carries `last_report_filed`, the latest exact-form 10-Q/10-K date and the bridge's SUE decay
+   13D/13G and Form 144 that the company filed as holder or seller of another issuer's stock
+   are excluded (their submissions-index row has no file number). They surface as advisory
+   flags only (`scoring.py:_FILING_STREAM_FLAGS`). The section also carries `last_report_filed`, the latest exact-form 10-Q/10-K date and the bridge's SUE decay
    anchor (an amendment must never freshen it). Window and form list: `config.yaml:
    edgar_events`.
 
