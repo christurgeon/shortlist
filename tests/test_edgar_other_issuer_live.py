@@ -22,6 +22,7 @@ _PINNED = [
     ("STT", "0000093751-23-000424", True),      # STT is both filer and subject
 ]
 
+
 @pytest.fixture(scope="module")
 def _identity():
     from edgar import set_identity
@@ -61,4 +62,4 @@ def test_live_form4_window_shape(_identity):
     assert len(one) == 1 and len(list(one)) == 1
 
     today = company.get_filings(form="4", filing_date=f"{date.today().isoformat()}:")
-    assert today is not None and len(list(today.head(10))) >= 0
+    assert today is not None

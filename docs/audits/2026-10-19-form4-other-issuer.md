@@ -97,8 +97,9 @@ missed filings held no own open-market trades. BRK-B, GS, XOM, JNJ and GE are un
 
 Side effect: `latest(40)` returned `None` for a company with no Form 4 on file and a bare
 filing for exactly one, and `aggregate_form4` then raised. ASML (and other foreign private
-issuers) had EDGAR coverage `error` with `'NoneType' object is not iterable`; it is now a clean
-empty insider result with EDGAR coverage `ok`.
+issuers) got the insider error `'NoneType' object is not iterable`; it is now a clean empty
+insider result. ASML's EDGAR coverage moves to `ok`. A name with another EDGAR error, such as
+NVO's `edgar-diluted-shares-concept` 404, stays `error`.
 
 Cost: a first parse makes 2 requests (the filing `.txt`, disk-cached, and the reporting
 owner's submissions JSON, not cached between parses); a re-parse makes 1. At the cap that is
