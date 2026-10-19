@@ -129,6 +129,7 @@ installer installs `shortlist-alert-failure@.service` unconditionally; wire any 
 with:
 
 ```ini
+[Unit]
 OnFailure=shortlist-alert-failure@%n.service
 ```
 
