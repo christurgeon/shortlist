@@ -25,6 +25,23 @@ the scoring roadmap.
 
 ---
 
+# 5. Discoverability (2026-10-19)
+
+- **Publish to PyPI** so `uvx shortlist --demo` works without a clone. The name `shortlist`
+  returned 404 on PyPI on 2026-10-19; check again before you claim it. `pyproject.toml` already
+  has the metadata. Still needed: a trusted-publishing workflow and a README install line.
+  `config.yaml` is read from the repo root (`screen.py --config` default), so an installed
+  wheel needs a packaged default config first.
+- **Add a screenshot** of the Telegram PNG dashboard to the README, and set it as the GitHub
+  social preview image (Settings → Social preview; there is no API for it).
+- **Submit to awesome-quant** (`wilsonfreitas/awesome-quant`, Python → fundamental analysis).
+  Do this after the PyPI release so the entry can show an install command.
+
+**Status:** not started. Each step publishes something outside the repo, so each needs the
+owner to approve it.
+
+---
+
 # 2. `/deep`
 
 ## 2e. Recent-news section — remaining filter gaps (2026-10-18)
@@ -80,6 +97,18 @@ periods, far below the 24-period floor.
 ---
 
 # 4. Data layer
+
+## EDGAR filings the company made about another issuer (2026-10-19)
+
+- **Filing-event flags.** `build_events_section` counts Schedule 13D/13G and Form 144 that the
+  company filed as holder of another issuer's stock, so it sets false `activist_13d`,
+  `passive_13g` or `planned_insider_sale_144` on holding companies and banks. The fix needs one
+  header request per filing to read the subject company.
+- **Form 4 window truncation.** `_FORM4_FETCH_LIMIT` applies before the issuer filter, so
+  other-issuer filings use up slots. For some names the 40 filings end before the 6-month
+  cutoff, and `net_value_6m` and the counts are understated.
+
+Evidence and affected names: `docs/audits/2026-10-19-form4-other-issuer.md`.
 
 ## FMP quota is over-subscribed — a config-or-money decision, not a build
 
