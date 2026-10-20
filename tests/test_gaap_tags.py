@@ -51,6 +51,8 @@ def test_diluted_shares_tag_single_sourced_everywhere(monkeypatch):
             self.cik = 1
 
     class _FakeResponse:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 

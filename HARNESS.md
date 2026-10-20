@@ -105,7 +105,7 @@ and sources run concurrently (`asyncio.gather`). Authority: `data/models.py`.
 ## EDGAR source
 
 `EdgarSource` supplies three independent, failure-isolated sections (a missing XBRL filing,
-e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without affecting the rest):
+e.g. a recent spin-off, degrades statements to `None` without affecting the rest):
 
 1. **Form 4 insider trades**, aggregated by `providers/_form4.py`; Form 4s where the company
    is the reporting owner of another issuer's stock are excluded. Only Form 4s filed within
@@ -113,13 +113,17 @@ e.g. a 20-F issuer or recent spin-off, degrades statements to `None` without aff
    ticker that hits the cap and has trades gets `raw["form4_truncated"] = True`; its
    `net_value_6m` and counts then cover only the newest filings. It is not an error and does
    not change coverage.
-2. **10-K financial statements** via `get_financials()`: revenue, net income, operating cash
+2. **Annual financial statements** via `get_financials()`: revenue, net income, operating cash
    flow, FCF, diluted EPS, and the leverage inputs (total debt, cash, operating income, D&A,
    interest expense). The bridge derives `ebitda`, `net_debt_to_ebitda` and an
    `interest_coverage` fallback (FMP keeps priority). These feed the `over_leveraged` gate,
    so the backfill matters most for FMP-gated large caps. edgartools exposes normalized
    `standard_concept` buckets, not raw us-gaap tags, and balance-sheet columns are instant
-   dates; `tests/test_edgar_leverage_live.py` pins both.
+   dates; `tests/test_edgar_leverage_live.py` pins both. When the statement view has no
+   diluted share-count row, a 10-K filer's count comes from SEC's single-tag
+   `companyconcept` API. The fallback reads only 10-K rows, so it never fills a 20-F or
+   40-F filer's count. A 404 is treated as "tag not reported" while a known reporter's
+   concept still resolves. Any other failure is recorded as `edgar-diluted-shares-concept`.
 3. **Filing-stream events** (`build_events_section`), built from one submissions-index read:
    8-K, `SC 13D`, `SC 13G`, Form 144 and the distress/dilution/accounting-integrity forms.
    13D/13G and Form 144 that the company filed as holder or seller of another issuer's stock

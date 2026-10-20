@@ -38,3 +38,49 @@ def test_clean_run_all_ok():
     outcomes, contributed = snapshot_to_coverage_inputs(snap, ["yahoo", "edgar", "fmp", "finnhub"])
     assert set(outcomes.values()) == {"ok"}
     assert {"fmp", "yahoo", "edgar"} <= contributed
+
+
+def test_cik_digits_in_an_edgar_url_are_not_a_status():
+    snap = TickerSnapshot(ticker="MT", errors=[
+        "edgar-diluted-shares-concept: Client error '404 Not Found' for url "
+        "'https://data.sec.gov/api/xbrl/companyconcept/CIK0001243429/us-gaap/X.json'",
+    ])
+    assert snapshot_to_coverage_inputs(snap, ["edgar"])[0]["edgar"] == "error"
+    snap = TickerSnapshot(ticker="CDW", errors=[
+        "edgar-events: Server error '503 Service Unavailable' for url "
+        "'https://www.sec.gov/Archives/edgar/data/1402057/000140205726000012/index.json'",
+    ])
+    assert snapshot_to_coverage_inputs(snap, ["edgar"])[0]["edgar"] == "error"
+
+
+def test_real_httpx_402_and_429_errors_map_to_their_status():
+    import httpx
+
+    def _httpx_error(code: int) -> str:
+        url = "https://financialmodelingprep.com/stable/profile?symbol=GEV&apikey=REDACTED"
+        try:
+            httpx.Response(code, request=httpx.Request("GET", url)).raise_for_status()
+        except httpx.HTTPStatusError as e:
+            return str(e)
+        raise AssertionError("raise_for_status did not raise")
+
+    snap = TickerSnapshot(ticker="GEV", errors=[
+        f"fmp.profile: {_httpx_error(402)}", f"finnhub.metrics: {_httpx_error(429)}"])
+    outcomes, _ = snapshot_to_coverage_inputs(snap, ["fmp", "finnhub"])
+    assert outcomes == {"fmp": "gated_402", "finnhub": "rate_limited_429"}
+
+
+def test_reference_concept_result_sets_the_edgar_outcome():
+    """A 429 on the reference request means SEC is throttling this host, so the 404
+    is undecided: rate_limited_429. Any other reference failure is an error."""
+    url = "https://data.sec.gov/api/xbrl/companyconcept/CIK0001067983/us-gaap/X.json"
+
+    def _outcome(problem: str) -> str:
+        snap = TickerSnapshot(ticker="BRK-B", errors=[
+            f"edgar-diluted-shares-concept: 404 for {url}; reference concept "
+            f"CIK0000320193 -> {problem}"])
+        return snapshot_to_coverage_inputs(snap, ["edgar"])[0]["edgar"]
+
+    assert _outcome("429") == "rate_limited_429"
+    assert _outcome("404") == "error"
+    assert _outcome("ReadTimeout") == "error"

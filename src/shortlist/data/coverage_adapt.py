@@ -6,11 +6,14 @@ per-source diagnostic the screener path produces.
 records failures as strings in snapshot.errors, prefixed "<source>: ..." (plain colon
 form), "<source>-<phase>: ..." (e.g. "edgar-financials: ..."), or
 "<source>.<section>: ..." (e.g. "fmp.profile: ...", "finnhub.metrics: ...").
-A 402 substring -> gated_402; a 429 substring -> rate_limited_429; any other error ->
+A standalone 402 token -> gated_402; a standalone 429 token -> rate_limited_429 (digits
+inside a longer number, such as an embedded CIK, do not count); any other error ->
 "error"; absence -> "ok".
 `contributed`: sources that supplied >=1 field, from snapshot.provenance (populated
 by merge_snapshots)."""
 from __future__ import annotations
+
+import re
 
 from .models import TickerSnapshot
 
@@ -35,9 +38,9 @@ def snapshot_to_coverage_inputs(snap: TickerSnapshot, sources: list[str]) -> tup
     outcomes: dict[str, str] = {}
     for s in sources:
         errs = err_by_source.get(s, [])
-        if any("402" in e for e in errs):
+        if any(re.search(r"\b402\b", e) for e in errs):
             outcomes[s] = "gated_402"
-        elif any("429" in e for e in errs):
+        elif any(re.search(r"\b429\b", e) for e in errs):
             outcomes[s] = "rate_limited_429"
         elif errs:
             outcomes[s] = "error"

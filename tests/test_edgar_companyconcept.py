@@ -4,6 +4,7 @@ from the rest of Statements construction (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from shortlist.data.sources import EdgarSource
 from shortlist.providers._edgar_facts import diluted_shares_from_concept
@@ -438,8 +439,11 @@ def test_seam_resolves_cik_off_the_company_object(monkeypatch):
     monkeypatch.setattr("edgar.Company", _FakeCompany)
 
     captured = {}
+    gets = []
 
     class _FakeResponse:
+        status_code = 200
+
         def raise_for_status(self):
             pass
 
@@ -447,6 +451,7 @@ def test_seam_resolves_cik_off_the_company_object(monkeypatch):
             return {"cik": 34088, "tag": "WeightedAverageNumberOfDilutedSharesOutstanding"}
 
     def _fake_get(url, **kw):
+        gets.append(url)
         captured["url"] = url
         captured["headers"] = kw.get("headers")
         captured["timeout"] = kw.get("timeout")
@@ -466,6 +471,7 @@ def test_seam_resolves_cik_off_the_company_object(monkeypatch):
     assert captured["timeout"] is not None            # I1: an explicit bound is required
     assert captured["headers"]["User-Agent"] == "test test@example.com"
     assert out == {"cik": 34088, "tag": "WeightedAverageNumberOfDilutedSharesOutstanding"}
+    assert len(gets) == 1                              # a success never asks the reference
 
 
 def test_seam_never_raises_on_company_resolution_failure(monkeypatch):
@@ -529,12 +535,8 @@ def test_seam_http_failure_appends_a_diagnostic_when_errors_list_supplied(monkey
 
 
 def test_seam_http_status_error_via_raise_for_status_returns_empty(monkeypatch):
-    """Fix-wave item 6: live-verified, a missing companyconcept tag returns a
-    real 404 with an XML body, so `raise_for_status()` fires BEFORE `.json()`
-    is ever called. No prior test exercised a response object whose own
-    `raise_for_status` actually raises (the other never-raises test raises
-    from `httpx.get` itself, and `test_seam_resolves_cik_off_the_company_object`'s
-    fake `raise_for_status` is a no-op)."""
+    """A non-404 status error is raised by `raise_for_status()` before `.json()` is
+    read, and is recorded."""
     import httpx
 
     class _FakeCompany:
@@ -543,14 +545,13 @@ def test_seam_http_status_error_via_raise_for_status_returns_empty(monkeypatch):
 
     monkeypatch.setattr("edgar.Company", _FakeCompany)
 
-    class _FakeErrorResponse:
-        def raise_for_status(self):
-            raise httpx.HTTPStatusError("404 Not Found", request=None, response=self)
-
-        def json(self):
+    class _NoJsonResponse(httpx.Response):
+        def json(self, **kw):
             raise AssertionError(".json() must not be reached past raise_for_status()")
 
-    monkeypatch.setattr("httpx.get", lambda url, **kw: _FakeErrorResponse())
+    monkeypatch.setattr(
+        "httpx.get",
+        lambda url, **kw: _NoJsonResponse(503, request=httpx.Request("GET", url)))
 
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"
@@ -559,4 +560,191 @@ def test_seam_http_status_error_via_raise_for_status_returns_empty(monkeypatch):
     errors: list[str] = []
     assert src._fetch_diluted_shares_concept("XOM", errors) == {}
     assert len(errors) == 1
-    assert "404" in errors[0]
+    assert "503" in errors[0]
+
+
+# =============================================================================
+# A companyconcept 404 is "tag not reported" only while the reference filer's
+# concept resolves; SEC returns the same 404 for an unknown filer, tag or path.
+# =============================================================================
+
+_REF_CIK = "CIK0000320193"
+_TAG = "WeightedAverageNumberOfDilutedSharesOutstanding"
+_CIKS = {"BRK-B": 1067983, "NVO": 353278, "HON": 773840}
+_NO_SUCH_KEY = b"<?xml version='1.0' encoding='UTF-8'?><Error><Code>NoSuchKey</Code></Error>"
+
+
+def _response(status: int, url: str, *, body=None, content: bytes = _NO_SUCH_KEY):
+    import httpx
+    req = httpx.Request("GET", url)
+    if body is not None:
+        return httpx.Response(status, request=req, json=body)
+    return httpx.Response(status, request=req, content=content)
+
+
+def _ok(url):
+    return _response(200, url, body={"tag": _TAG, "units": {"shares": []}})
+
+
+def _not_found(url):
+    return _response(404, url)
+
+
+def _status(code):
+    return lambda url: _response(code, url, content=b"")
+
+
+def _wrong_tag(url):
+    return _response(200, url, body={"tag": "SomeOtherTag", "units": {}})
+
+
+def _not_json(url):
+    return _response(200, url, content=b"<html>maintenance</html>")
+
+
+def _timeout(url):
+    import httpx
+    raise httpx.ReadTimeout("timed out", request=httpx.Request("GET", url))
+
+
+class _SecRouter:
+    """Fake `httpx.get`: routes the reference filer's URL and every other URL to
+    their own handlers. A list of handlers is consumed one per request."""
+
+    def __init__(self, target, reference):
+        self.target, self.reference = target, reference
+        self.urls: list[str] = []
+
+    def __call__(self, url, **kw):
+        self.urls.append(url)
+        handler = self.reference if _REF_CIK in url else self.target
+        if isinstance(handler, list):
+            handler = handler.pop(0)
+        return handler(url)
+
+    @property
+    def reference_requests(self) -> int:
+        return sum(_REF_CIK in u for u in self.urls)
+
+
+def _seam_source(monkeypatch, router):
+    class _FakeCompany:
+        def __init__(self, ticker):
+            self.cik = _CIKS[ticker]
+
+    monkeypatch.setattr("edgar.Company", _FakeCompany)
+    monkeypatch.setattr("httpx.get", router)
+    src = EdgarSource.__new__(EdgarSource)
+    src.name = "edgar"
+    src.identity = "test test@example.com"
+    return src
+
+
+def test_seam_404_is_absence_when_reference_concept_resolves(monkeypatch):
+    router = _SecRouter(target=_not_found, reference=_ok)
+    src = _seam_source(monkeypatch, router)
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("BRK-B", errors) == {}
+    assert errors == []
+    assert router.reference_requests == 1
+
+
+def test_seam_404_is_recorded_when_reference_concept_also_404s(monkeypatch):
+    src = _seam_source(monkeypatch, _SecRouter(target=_not_found, reference=_not_found))
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("BRK-B", errors) == {}
+    assert len(errors) == 1
+    assert errors[0].startswith("edgar-diluted-shares-concept:")
+    assert "CIK0001067983" in errors[0]
+    assert f"reference concept {_REF_CIK} -> 404" in errors[0]
+
+
+def test_reference_probe_runs_at_most_once_per_instance(monkeypatch):
+    router = _SecRouter(target=_not_found, reference=_ok)
+    src = _seam_source(monkeypatch, router)
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("BRK-B", errors) == {}
+    assert src._fetch_diluted_shares_concept("NVO", errors) == {}
+    assert errors == []
+    assert router.reference_requests == 1
+
+
+@pytest.mark.parametrize("reference, named", [
+    (_not_found, "-> 404"),
+    (_wrong_tag, "SomeOtherTag"),
+    (_not_json, "unreadable body"),
+])
+def test_decisive_reference_failure_is_recorded_and_memoised(monkeypatch, reference, named):
+    router = _SecRouter(target=_not_found, reference=reference)
+    src = _seam_source(monkeypatch, router)
+
+    errors: list[str] = []
+    src._fetch_diluted_shares_concept("BRK-B", errors)
+    src._fetch_diluted_shares_concept("NVO", errors)
+    assert len(errors) == 2
+    assert all(named in e for e in errors)
+    assert router.reference_requests == 1
+
+
+@pytest.mark.parametrize("reference, named", [
+    (_timeout, "ReadTimeout"),
+    (_status(429), "-> 429"),
+    (_status(503), "-> 503"),
+])
+def test_transient_reference_failure_is_recorded_and_asked_again(monkeypatch, reference, named):
+    router = _SecRouter(target=_not_found, reference=reference)
+    src = _seam_source(monkeypatch, router)
+
+    errors: list[str] = []
+    src._fetch_diluted_shares_concept("BRK-B", errors)
+    src._fetch_diluted_shares_concept("NVO", errors)
+    assert len(errors) == 2
+    assert all(named in e for e in errors)
+    assert router.reference_requests == 2
+
+
+def test_transient_reference_failure_does_not_stick_once_reference_recovers(monkeypatch):
+    router = _SecRouter(target=_not_found, reference=[_status(503), _ok, _ok])
+    src = _seam_source(monkeypatch, router)
+
+    first: list[str] = []
+    second: list[str] = []
+    third: list[str] = []
+    src._fetch_diluted_shares_concept("BRK-B", first)
+    src._fetch_diluted_shares_concept("NVO", second)
+    src._fetch_diluted_shares_concept("BRK-B", third)
+    assert len(first) == 1 and "-> 503" in first[0]
+    assert second == [] and third == []
+    assert router.reference_requests == 2
+
+
+@pytest.mark.parametrize("code", [403, 429, 500, 503])
+def test_non_404_failures_are_recorded_without_probing_the_reference(monkeypatch, code):
+    router = _SecRouter(target=_status(code), reference=_ok)
+    src = _seam_source(monkeypatch, router)
+
+    errors: list[str] = []
+    assert src._fetch_diluted_shares_concept("HON", errors) == {}
+    assert len(errors) == 1
+    assert str(code) in errors[0]
+    assert router.reference_requests == 0
+
+
+def test_absent_tag_leaves_edgar_coverage_ok(monkeypatch):
+    from shortlist.data.coverage_adapt import snapshot_to_coverage_inputs
+    from shortlist.data.models import TickerSnapshot
+
+    src = _seam_source(monkeypatch, _SecRouter(target=_not_found, reference=_ok))
+
+    errors: list[str] = []
+    snap = src._build_financials_snapshot("BRK-B", _FakeFinancials(_income_no_share_row()), errors)
+
+    assert snap.statements.diluted_shares == []
+    assert snap.statements.revenue == [100.0, 90.0, 80.0]
+    assert snap.statements.diluted_eps == [1.5, 1.4, 1.3]
+    assert errors == []
+    merged = TickerSnapshot(ticker="BRK-B", errors=errors, provenance={"statements": ["edgar"]})
+    assert snapshot_to_coverage_inputs(merged, ["edgar"])[0]["edgar"] == "ok"
