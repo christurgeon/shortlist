@@ -112,6 +112,7 @@ def test_fetch_insider_skips_form4_amendments(monkeypatch):
     assert res.partial.insider.sell_count == 1
     assert len(res.raw["form4_trades"]) == 1
 
+
 class _CountingFiling:
     def __init__(self, inner, counter):
         self._inner, self._counter = inner, counter

@@ -106,7 +106,9 @@ def test_frame_rows_detects_10b5_1_via_resolver():
 # --- aggregate_form4 (filing loop, cutoff, parse-failure tolerance) -------
 
 class _FakeOwner:
-    def __init__(self, officer_title=None, is_director=False, is_officer=False, is_ten_pct_owner=False):
+    def __init__(self, officer_title=None, is_director=False, is_officer=False, is_ten_pct_owner=False,
+                 cik=None):
+        self.cik = cik
         self.officer_title = officer_title
         self.is_director = is_director
         self.is_officer = is_officer
@@ -232,14 +234,17 @@ def test_aggregate_skips_an_amendment_without_parsing_it():
     s = aggregate_form4([amendment, kept], cutoff, issuer_cik=_OWN_CIK)
     assert s.buy_count == 1 and s.net_value == 50.0
 
-def _filed(day, rows, name, **kw):
-    return _FakeFiling(date(2024, 5, day), _FakeForm4(_FakeFrame(rows), name, **kw))
+
+def _filed(day, rows, name, ciks=(), **kw):
+    owners = [_FakeOwner(cik=c) for c in ciks] or None
+    return _FakeFiling(date(2024, 5, day), _FakeForm4(_FakeFrame(rows), name, owners=owners, **kw))
 
 
 def test_aggregate_counts_once_a_trade_that_joint_reporters_file_separately():
     sale = [_trade(3540250, 64.5545, "S", "2024-05-17", 230029024.0)]
-    filings = [_filed(21, sale, "Jim C Walton"), _filed(21, sale, "Alice L Walton"),
-               _filed(21, sale, "Robson S Walton")]
+    filings = [_filed(21, sale, "Jim C Walton", ciks=["0001"]),
+               _filed(21, sale, "Alice L Walton", ciks=["0002"]),
+               _filed(21, sale, "Robson S Walton", ciks=["0003"])]
     s = aggregate_form4(filings, date(2024, 1, 1), issuer_cik=_OWN_CIK)
     assert s.sell_count == 1
     assert s.net_value == pytest.approx(-3540250 * 64.5545)
@@ -249,7 +254,7 @@ def test_aggregate_counts_once_a_trade_that_joint_reporters_file_separately():
 def test_aggregate_counts_once_the_rows_of_a_form_filed_twice():
     rows = [_trade(100, 10.0, "S", "2024-05-01", 900.0, nature=None, direct="D"),
             _trade(200, 11.0, "S", "2024-05-02", 700.0, nature=None, direct="D")]
-    s = aggregate_form4([_filed(3, rows, "Hoag"), _filed(3, rows, "Hoag")],
+    s = aggregate_form4([_filed(3, rows, "Hoag", ciks=["0007"]), _filed(3, rows, "Hoag", ciks=["7"])],
                         date(2024, 1, 1), issuer_cik=_OWN_CIK)
     assert s.sell_count == 2 and s.net_value == -(1000.0 + 2200.0)
 
@@ -257,9 +262,34 @@ def test_aggregate_counts_once_the_rows_of_a_form_filed_twice():
 def test_aggregate_treats_a_nan_nature_of_ownership_as_absent():
     nan = float("nan")
     row = [_trade(100, 10.0, "S", "2024-05-01", 900.0, nature=nan, direct="D")]
-    s = aggregate_form4([_filed(3, row, "Hoag"), _filed(2, row, "Hoag")],
+    s = aggregate_form4([_filed(3, row, "Hoag", ciks=["7"]), _filed(2, row, "Hoag", ciks=["7"])],
                         date(2024, 1, 1), issuer_cik=_OWN_CIK)
     assert s.sell_count == 1
+
+
+_TKO_BUY = [_trade(12531, 79.8, "P", "2023-09-14", 12531.0, nature=None, direct="D")]
+
+
+def test_aggregate_keeps_identical_direct_buys_by_different_insiders():
+    filings = [_filed(4, _TKO_BUY, "Ariel Emanuel", ciks=["0001320234"]),
+               _filed(4, _TKO_BUY, "Mark S Shapiro", ciks=["0001345978"])]
+    s = aggregate_form4(filings, date(2024, 1, 1), issuer_cik=_OWN_CIK)
+    assert s.buy_count == 2
+    assert [t.name for t in s.txns] == ["Ariel Emanuel", "Mark S Shapiro"]
+
+
+def test_aggregate_merges_identical_direct_rows_when_a_reporting_owner_is_shared():
+    filings = [_filed(4, _TKO_BUY, "Joint", ciks=["0001320234", "0001345978"]),
+               _filed(4, _TKO_BUY, "Shapiro", ciks=["0001345978"])]
+    s = aggregate_form4(filings, date(2024, 1, 1), issuer_cik=_OWN_CIK)
+    assert s.buy_count == 1
+
+
+def test_aggregate_never_merges_a_direct_row_from_a_filing_without_owners():
+    for first, second in ((["0001"], ()), ((), ["0001"]), ((), ())):
+        filings = [_filed(4, _TKO_BUY, "A", ciks=first), _filed(4, _TKO_BUY, "B", ciks=second)]
+        s = aggregate_form4(filings, date(2024, 1, 1), issuer_cik=_OWN_CIK)
+        assert s.buy_count == 2, (first, second)
 
 
 def test_aggregate_never_merges_rows_within_one_filing():
@@ -289,6 +319,7 @@ def test_aggregate_keeps_an_own_trade_identical_to_an_other_issuer_row():
     s = aggregate_form4([other, amendment, _filed(2, row, "A")],
                         date(2024, 1, 1), issuer_cik=_OWN_CIK)
     assert s.sell_count == 1 and [t.name for t in s.txns] == ["A"]
+
 
 def test_aggregate_matches_issuer_cik_regardless_of_padding_or_type():
     cutoff = date(2026, 1, 1)
