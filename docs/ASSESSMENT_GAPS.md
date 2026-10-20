@@ -545,9 +545,9 @@ composite entirely). Assume yours will too. Before writing any code you MUST:
    signal clear a rank-IC bar (§2.1), or is it un-backtestable framing that belongs in the
    research layer only? Does it re-derive something we already have (collinearity — the
    EV/EBIT and reverse-DCF traps)? What decision does it actually change?
-2. **Run the full pipeline:** `superpowers:brainstorming` → spec in
-   `docs/superpowers/specs/` → **three-agent review** (implementation fact-checker /
-   signal-value PM skeptic / red-team, as in the EV/EBIT §11 and reverse-DCF §12) →
+2. **Run the full pipeline:** `superpowers:brainstorming` → spec committed under
+   `docs/audits/` (tracked) → **three-agent review** (implementation fact-checker /
+   signal-value PM skeptic / red-team) →
    `superpowers:writing-plans` → TDD. The one-liner is a starting hypothesis, not a design.
 3. **Check the cross-reference first** — most of these already have a real home below or in
    `DATA_SOURCES.md`; the breadcrumb just points there so the prior thinking isn't redone.

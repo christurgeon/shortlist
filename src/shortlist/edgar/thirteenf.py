@@ -16,8 +16,7 @@ from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottl
 SIGNAL = "edgar:13f_new_position"
 SIGNAL_MATERIAL_ADD = "edgar:13f_material_add"
 
-# Emission strength = within-book conviction, capped at 1.0
-# (docs/superpowers/specs/2026-07-09-thirteenf-buyback-originators-design.md §1 step 8):
+# Emission strength = within-book conviction, capped at 1.0:
 # a 5%-of-book new position is a full-conviction bet. Below the 13D/Form-4 marquee tier
 # only via the smaller default weight the signal ships at (the information is up to 45
 # days stale).

@@ -4,7 +4,6 @@ Single-stage Gordon inversion: g = R - F0/P, where F0 is a normalized base FCF
 (median of the last K positive years) and P is market cap. A reframing of FCF
 yield into growth-space so the brief can diff price-implied growth against
 realized revenue/FCF CAGR. NOT a scored signal; never feeds the composite or rank.
-Spec: docs/superpowers/specs/2026-06-13-reverse-dcf-implied-growth-design.md.
 """
 from __future__ import annotations
 

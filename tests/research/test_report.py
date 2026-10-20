@@ -160,7 +160,7 @@ def test_brief_omits_the_similarity_line_when_none():
 
 
 def test_findings_source_suffix_only_appears_for_a_non_10k_document():
-    """spec §3.5: the reader is told when a quote came from something OTHER than the
+    """The reader is told when a quote came from something OTHER than the
     10-K they already assume — and the brief stays byte-identical when it did not."""
     a = _assessment()
     plain = report.to_markdown(a)

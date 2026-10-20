@@ -1,5 +1,4 @@
-"""Tests for `--residualize TARGET~CTRL1,CTRL2` (design spec
-2026-07-05-leverage-residualized-ic-design.md, §Implementation 3).
+"""Tests for `--residualize TARGET~CTRL1,CTRL2`.
 
 Two layers:
   - parser/argv-level validation (bad spec strings, the --step-months combo

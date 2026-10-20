@@ -93,10 +93,8 @@ def cdx_snapshots(*, cache_dir: str, client: Optional[httpx.Client] = None,
         client = client or httpx.Client(timeout=60.0, headers={"User-Agent": "shortlist symbology"})
         try:
             _throttle()
-            # limit far above the real count (~660 snapshots, measured — see
-            # docs/superpowers/specs/2026-07-01-signal-validation-harness-backfill-design.md
-            # §17) so a single call is complete;
-            # M3 truncation guard: warn if we ever hit the cap (would mean silent pagination).
+            # Limit far above the real snapshot count so a single call is complete.
+            # Truncation guard: warn if we ever hit the cap (would mean silent pagination).
             _CAP = 100000
             resp = client.get(_CDX_URL, params={"url": "sec.gov/files/company_tickers.json",
                                                 "output": "json", "limit": str(_CAP)},

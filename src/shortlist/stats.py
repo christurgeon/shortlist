@@ -183,8 +183,7 @@ def net_debt_from(total_debt: Optional[float],
                   cash: Optional[float]) -> Optional[float]:
     """Net debt = total_debt - cash (signed; net cash -> negative). Returns None
     only when BOTH inputs are missing — a market-cap-only enterprise value would
-    silently ignore leverage, so we abstain rather than guess
-    (docs/superpowers/specs/2026-06-13-absolute-valuation-leg-ev-ebit-design.md O1).
+    silently ignore leverage, so we abstain rather than guess.
     A single missing side is treated as zero (conservative)."""
     if total_debt is None and cash is None:
         return None

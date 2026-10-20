@@ -113,8 +113,7 @@ def _signal_report(signal: str, horizon: int,
     single horizon into a SignalReport: per-date (xs) and per-name (ts) Spearman
     IC, pooled quantile spread, and trust/suppression notes. Extracted verbatim
     from run_backtest's inline loop body (golden-pinned by test_backtest_golden.py
-    ahead of this extraction — see design spec 2026-07-05-leverage-residualized-ic,
-    review finding I8); behavior is byte-identical."""
+    ahead of this extraction); behavior is byte-identical."""
     by_date: dict[date, list[tuple[float, float]]] = defaultdict(list)
     by_name: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for t, tk, sv, fr in rows:
