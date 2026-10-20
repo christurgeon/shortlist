@@ -351,7 +351,7 @@ class EdgarSource(Source):
     def _concept_reference_problem(self) -> str:
         """'' when the reference filer's concept resolves with its tag echoed, else
         what the reference returned. A decisive answer (200 with the tag, a 404, a
-        wrong tag, a non-JSON body) is memoised per instance; a transient one
+        wrong tag, an unreadable body) is memoised per instance; a transient one
         (network error or any other status) is not, so the next 404 asks again."""
         if self._concept_reference_verdict is not None:
             return self._concept_reference_verdict
@@ -369,7 +369,7 @@ class EdgarSource(Source):
             try:
                 tag = r.json().get("tag")
             except Exception:
-                verdict = "200 with a non-JSON body"
+                verdict = "200 with an unreadable body"
             else:
                 verdict = "" if tag == DILUTED_SHARES_TAG else f"200 with tag {str(tag)[:80]!r}"
         self._concept_reference_verdict = verdict

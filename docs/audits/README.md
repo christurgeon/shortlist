@@ -370,7 +370,7 @@ marked *verdict* closes a question.
 
 | Date | Note | Kind |
 |---|---|---|
-| 2026-10-20 | `2026-10-20-edgar-concept-404.md` — a filer without the diluted-shares tag (BRK-B, 20-F/40-F filers) showed as an EDGAR fetch error; SEC's 404 cannot tell absence from a broken URL, so a reference filer decides. Also: coverage matched 402/429 inside CIKs | evidence |
+| 2026-10-20 | `2026-10-20-edgar-concept-404.md` — a filer without the diluted-shares tag (BRK-B and several 20-F/40-F filers) showed as an EDGAR fetch error; SEC's 404 cannot tell absence from a broken URL, so a reference filer decides. Also: coverage matched 402/429 inside CIKs | evidence |
 | 2026-10-19 | `2026-10-19-form4-other-issuer.md` — EDGAR insider flow counted Form 4s the company filed as owner of another issuer (BRK-B, XOM, BAC, GS, GOOGL); filtered by issuer CIK. The 40-filing window truncation and the same contamination in the filing-events section were both closed the same day: filing-event flags by submissions-index file number, Form 4 read over the full window (cap 200) | evidence |
 | 2026-10-18 | `2026-10-18-news-event-dedupe.md` — one item per event in the `/deep` news section: lexical clustering, event-type merges, local embeddings and LLM grouping measured against event labels; a deterministic merge pass ships, the LLM does not | verdict |
 | 2026-10-18 | `2026-10-18-deep-news-usefulness-review.md` — the §8 review of the `/deep` news section: a blind 3-rater panel; useful on 4 of 8 names but 20 of 56 items wanted, so the kill rule fires; kept on by maintainer override while the filter is fixed | verdict |

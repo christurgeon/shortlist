@@ -68,3 +68,19 @@ def test_real_httpx_402_and_429_errors_map_to_their_status():
         f"fmp.profile: {_httpx_error(402)}", f"finnhub.metrics: {_httpx_error(429)}"])
     outcomes, _ = snapshot_to_coverage_inputs(snap, ["fmp", "finnhub"])
     assert outcomes == {"fmp": "gated_402", "finnhub": "rate_limited_429"}
+
+
+def test_reference_concept_result_sets_the_edgar_outcome():
+    """A 429 on the reference request means SEC is throttling this host, so the 404
+    is undecided: rate_limited_429. Any other reference failure is an error."""
+    url = "https://data.sec.gov/api/xbrl/companyconcept/CIK0001067983/us-gaap/X.json"
+
+    def _outcome(problem: str) -> str:
+        snap = TickerSnapshot(ticker="BRK-B", errors=[
+            f"edgar-diluted-shares-concept: 404 for {url}; reference concept "
+            f"CIK0000320193 -> {problem}"])
+        return snapshot_to_coverage_inputs(snap, ["edgar"])[0]["edgar"]
+
+    assert _outcome("429") == "rate_limited_429"
+    assert _outcome("404") == "error"
+    assert _outcome("ReadTimeout") == "error"

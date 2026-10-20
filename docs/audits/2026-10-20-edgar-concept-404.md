@@ -16,7 +16,8 @@ stderr line said `edgar fetch error`, `/screen` showed "supplied no usable data"
 ## Why the 404 alone cannot decide
 
 Live, with the repo's User-Agent. Every 404 is `application/xml` with the same S3
-`NoSuchKey` body; only the echoed key differs.
+`NoSuchKey` body; only the echoed key and request IDs differ, plus an extra `cache-control`
+header on the wrong-path case, which is not a usable signal.
 
 | Request | Status |
 |---|---|
@@ -31,7 +32,7 @@ Treating every 404 as absence would hide a changed URL forever, because CI does 
 live tests. A reference request detects the change on the first 404 of each run.
 
 A decisive reference answer is memoised per `EdgarSource` instance: 200 with the tag, or a
-404, a wrong tag or a non-JSON body. A transient one (timeout, 429, 5xx) is not, so the next
+404, a wrong tag or an unreadable body. A transient one (timeout, 429, 5xx) is not, so the next
 404 asks again.
 
 ## Before / after

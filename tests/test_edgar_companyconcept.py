@@ -570,7 +570,7 @@ def test_seam_http_status_error_via_raise_for_status_returns_empty(monkeypatch):
 
 _REF_CIK = "CIK0000320193"
 _TAG = "WeightedAverageNumberOfDilutedSharesOutstanding"
-_CIKS = {"BRK-B": 1067983, "NVO": 353278, "HON": 773840, "MT": 1243429}
+_CIKS = {"BRK-B": 1067983, "NVO": 353278, "HON": 773840}
 _NO_SUCH_KEY = b"<?xml version='1.0' encoding='UTF-8'?><Error><Code>NoSuchKey</Code></Error>"
 
 
@@ -675,7 +675,7 @@ def test_reference_probe_runs_at_most_once_per_instance(monkeypatch):
 @pytest.mark.parametrize("reference, named", [
     (_not_found, "-> 404"),
     (_wrong_tag, "SomeOtherTag"),
-    (_not_json, "non-JSON"),
+    (_not_json, "unreadable body"),
 ])
 def test_decisive_reference_failure_is_recorded_and_memoised(monkeypatch, reference, named):
     router = _SecRouter(target=_not_found, reference=reference)
