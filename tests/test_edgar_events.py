@@ -155,11 +155,12 @@ from shortlist.data.sources import EdgarSource
 
 class _FakeFiling:
     """edgartools EntityFiling-like (has .form, so the normalizer treats it as single)."""
-    def __init__(self, form, d):
+    def __init__(self, form, d, file_number="001-00001"):
         self.form = form
         self.filing_date = d           # a datetime.date (has .isoformat)
         self.accession_no = "acc"
         self.url = "https://sec.gov/x"
+        self.file_number = file_number
 
 
 class _StubEdgar(EdgarSource):
@@ -215,6 +216,77 @@ def test_fetch_filings_index_normalizes_none_single_collection():
     src._raw = [_FakeFiling("8-K", _date(2026, 5, 30)),      # collection -> full list
                 _FakeFiling("144", _date(2026, 5, 1))]
     assert [r["form"] for r in src._fetch_filings_index("AAPL")] == ["8-K", "144"]
+
+
+def test_ownership_reports_without_file_number_are_filed_about_another_issuer():
+    from shortlist.data.sources.edgar import is_filed_about_another_issuer
+    ownership = ("SCHEDULE 13G/A", "SC 13D", "SCHEDULE 13D/A", "144")
+    for form in ownership:
+        for blank in ("", None, "  "):
+            assert is_filed_about_another_issuer(form, blank), (form, blank)
+        for number in ("005-55113", "001-03215"):
+            assert not is_filed_about_another_issuer(form, number), (form, number)
+    for form in ("8-K", "CORRESP", "UPLOAD", "S-3", "424B5", "NT 10-K"):
+        assert not is_filed_about_another_issuer(form, ""), form
+
+
+def test_fetch_filings_index_drops_filings_made_about_another_issuer():
+    d = _date(2026, 5, 30)
+    src = _StubEdgar(raw=[
+        _FakeFiling("SCHEDULE 13G/A", d, file_number=""),
+        _FakeFiling("SCHEDULE 13D/A", d, file_number=None),
+        _FakeFiling("144", d, file_number=""),
+        _FakeFiling("SCHEDULE 13G", d, file_number="005-1"),
+        _FakeFiling("8-K", d),
+        _FakeFiling("CORRESP", d, file_number=""),
+    ])
+    assert [r["form"] for r in src._fetch_filings_index("AAPL")] == [
+        "SCHEDULE 13G", "8-K", "CORRESP"]
+
+
+def test_other_issuer_filings_do_not_use_up_the_index_limit():
+    d = _date(2026, 5, 30)
+    src = _StubEdgar(raw=[
+        _FakeFiling("SCHEDULE 13G", d, file_number=""),
+        _FakeFiling("SCHEDULE 13G", d, file_number=""),
+        _FakeFiling("8-K", d),
+        _FakeFiling("144", d, file_number="001-1"),
+    ])
+    src._index_limit = 2
+    assert [r["form"] for r in src._fetch_filings_index("AAPL")] == ["8-K", "144"]
+
+
+def test_other_issuer_13d_does_not_set_activist_flag():
+    src = _StubEdgar(raw=[
+        _FakeFiling("SCHEDULE 13D/A", _date.today(), file_number=""),
+        _FakeFiling("8-K", _date.today()),
+    ])
+    ev = src._build_events_from_records(src._fetch_filings_index("AAPL"))
+    assert ev.activist_13d is False
+    assert ev.recent_8k is True
+    assert [e.form for e in ev.recent] == ["8-K"]
+
+
+def test_edgartools_still_exposes_the_file_number_the_rule_reads():
+    """The other-issuer rule reads `EntityFiling.file_number`. If edgartools renamed
+    the column, every 13D/13G/144 row would look blank and every such flag would drop."""
+    import pyarrow as pa
+    from edgar.entity.filings import COMPANY_FILINGS_SCHEMA, EntityFilings
+
+    from shortlist.data.sources.edgar import is_filed_about_another_issuer
+
+    assert "fileNumber" in COMPANY_FILINGS_SCHEMA.names
+    cols = {name: [None, None] for name in COMPANY_FILINGS_SCHEMA.names}
+    cols.update(accession_number=["0000000000-26-000001", "0000000000-26-000002"],
+                filing_date=[_date(2026, 8, 1), _date(2026, 7, 1)],
+                form=["SCHEDULE 13G", "SCHEDULE 13G"],
+                fileNumber=["005-55113", ""])
+    filings = EntityFilings(pa.Table.from_pydict(cols, schema=COMPANY_FILINGS_SCHEMA),
+                            cik=1, company_name="X")
+    own, other = list(filings)
+    assert own.file_number == "005-55113"
+    assert not is_filed_about_another_issuer(own.form, own.file_number)
+    assert is_filed_about_another_issuer(other.form, other.file_number)
 
 
 from shortlist.data.sources import build_sources

@@ -28,11 +28,9 @@ from .base import Source
 _EDGAR_MAX_CONCURRENCY = 3
 _edgar_gate: dict = {}
 
-# Max recent Form 4 filings fetched per ticker for insider aggregation. A
-# high-velocity insider universe could exceed this within the lookback window,
-# truncating net_value_6m / buy_count / sell_count. Filings where the company is
-# itself a reporting owner of another issuer also consume slots, then get dropped.
-_FORM4_FETCH_LIMIT = 40
+# Hard cap on in-window Form 4s parsed per ticker; every parse costs SEC requests.
+# Past it, only the newest filings count and net_value_6m / counts are understated.
+_FORM4_FETCH_LIMIT = 200
 
 
 def _is_company_not_found(err: Any) -> bool:
@@ -94,6 +92,18 @@ def classify_event_form(form: str) -> Optional[str]:
         if f.startswith(prefix):
             return attr
     return None
+
+
+# A 13D/13G or Form 144 is also listed on the filer's own submissions index, but only the
+# subject company's row carries a file number; a blank one means the company filed it
+# about another issuer, or it cannot be attributed. Company-filed forms such as CORRESP
+# are blank too, so do not extend this beyond the three ownership reports.
+_SUBJECT_FILED_ATTRS = frozenset({"activist_13d", "passive_13g", "planned_insider_sale_144"})
+
+
+def is_filed_about_another_issuer(form: str, file_number: Any) -> bool:
+    return (classify_event_form(form) in _SUBJECT_FILED_ATTRS
+            and not str(file_number or "").strip())
 
 
 def classify_event_items(items: Any) -> list[str]:
@@ -196,9 +206,13 @@ class EdgarSource(Source):
         cutoff = date.today() - timedelta(days=self.lookback_days)
         try:
             company = Company(ticker)
-            summary = aggregate_form4(
-                company.get_filings(form="4").latest(_FORM4_FETCH_LIMIT), cutoff, self._conviction,
-                issuer_cik=company.cik)
+            # head, not latest: latest returns a bare filing for one row and None for none.
+            in_window = company.get_filings(
+                form="4", filing_date=f"{cutoff.isoformat()}:",
+                sort_by=[("filing_date", "descending")])
+            truncated = len(in_window) > _FORM4_FETCH_LIMIT
+            summary = aggregate_form4(in_window.head(_FORM4_FETCH_LIMIT), cutoff,
+                                      self._conviction, issuer_cik=company.cik)
         except Exception as e:
             res.errors.append(f"edgar: {redact_secrets(e)}")
             res.partial = TickerSnapshot(ticker=ticker)
@@ -206,6 +220,8 @@ class EdgarSource(Source):
 
         if summary.found:
             res.raw = {"form4_trades": [dataclasses.asdict(t) for t in summary.txns]}
+            if truncated:
+                res.raw["form4_truncated"] = True
             ins = Insider(
                 net_value_6m=summary.net_value,
                 buy_count=summary.buy_count,
@@ -366,13 +382,20 @@ class EdgarSource(Source):
 
     def _fetch_filings_index(self, ticker: str) -> list[dict]:
         """Normalize the edgartools result (None | single EntityFiling | collection)
-        into a plain list of {form, filed, accession, url, items} dicts."""
+        into at most `index_limit` {form, filed, accession, url, items} dicts,
+        newest-first. 13D/13G/144 filings the company made about another issuer are
+        excluded and do not use up the limit."""
         res = self._raw_filings(ticker)
         if res is None:
             return []
         items = res if hasattr(res, "__iter__") and not hasattr(res, "form") else [res]
         out: list[dict] = []
-        for f in list(items)[: self._index_limit]:
+        for f in items:
+            if len(out) >= self._index_limit:
+                break
+            if is_filed_about_another_issuer(getattr(f, "form", ""),
+                                             getattr(f, "file_number", None)):
+                continue
             fd = getattr(f, "filing_date", None)
             out.append({
                 "form": getattr(f, "form", "") or "",

@@ -486,7 +486,8 @@ lobbying:
 edgar_events:
   lookback_days: 90
   # The slice is taken newest-first BEFORE the lookback filter, so a high-frequency
-  # filer's routine 144/13G stream can crowd a rare event out of the window. The slice
+  # filer's routine 144/13G stream can crowd a rare event out of the window. Only filings
+  # about the company count: 13D/13G/144 it filed on another issuer use no slot. The slice
   # is in-memory, so raising this costs no requests; the very heaviest filers still truncate.
   index_limit: 120
   # /A amendments are auto-included by edgartools. SCHEDULE 13D/13G spellings are listed
