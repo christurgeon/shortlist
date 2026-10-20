@@ -130,10 +130,48 @@ def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4
     return s
 
 
+_TRADE_KEY_FIELDS = ("Security", "Date", "Code", "Shares", "Price",
+                     "DirectIndirect", "NatureOfOwnership", "Remaining")
+
+
+def _missing(v: Any) -> bool:
+    """True for None and NaN-like values (NaN != NaN; pandas NA raises on bool)."""
+    if v is None:
+        return True
+    try:
+        return bool(v != v)
+    except (TypeError, ValueError):
+        return True
+
+
+def _trade_key(r: Any) -> Optional[tuple]:
+    """Identity of a `market_trades` row across filings, or None when the row has no
+    shares-owned-after value (`Remaining`) or an unhashable field; None never matches."""
+    if _missing(getattr(r, "Remaining", None)):
+        return None
+    # A direct holding carries a NaN NatureOfOwnership; left as NaN it would never match.
+    key = tuple(None if _missing(v := getattr(r, f, None)) else v for f in _TRADE_KEY_FIELDS)
+    try:
+        hash(key)
+    except TypeError:
+        return None
+    return key
+
+
+def _trade_keys(market_trades: Any) -> set[tuple]:
+    if market_trades is None or getattr(market_trades, "empty", True):
+        return set()
+    keys = {_trade_key(r) for r in market_trades.itertuples(index=False)}
+    keys.discard(None)
+    return keys
+
+
 def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
-                resolve_footnotes: Any = None) -> list[tuple]:
+                resolve_footnotes: Any = None,
+                exclude: frozenset | set = frozenset()) -> list[tuple]:
     """Pull (shares, price, code, date, name, role, planned) tuples from an edgartools
-    `market_trades` DataFrame (cols: Shares, Price, Code, Date, footnotes, ...).
+    `market_trades` DataFrame (cols: Shares, Price, Code, Date, footnotes, ...),
+    dropping rows whose `_trade_key` is in `exclude`.
     `planned` is the 10b5-1 footnote heuristic, resolved via `resolve_footnotes` (the
     duck-typed form4._resolve_footnotes; None in tests/absence -> planned False).
     Guards the DataFrame truth-value trap (`if df:` raises)."""
@@ -141,6 +179,8 @@ def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
         return []
     rows = []
     for r in market_trades.itertuples(index=False):
+        if exclude and _trade_key(r) in exclude:
+            continue
         planned = False
         if resolve_footnotes is not None:
             ids = getattr(r, "footnotes", None)
@@ -203,10 +243,15 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
     filings whose issuer CIK equals `issuer_cik` count: a company's own filing list
     also holds Form 4s it filed as reporting owner of another issuer. Form 4/A
     amendments are skipped unparsed, so a trade reported only in an amendment is not
-    counted. A filing that fails to parse or has no readable issuer CIK is skipped.
-    When `conviction` is supplied, role + 10b5-1 extraction feed the v2 aggregates."""
+    counted. A row identical (`_trade_key`) to one in a newer counted filing is dropped;
+    rows within one filing are never merged. A filing that fails to parse or has no
+    readable issuer CIK is skipped. When `conviction` is supplied, role + 10b5-1
+    extraction feed the v2 aggregates."""
     want = int(issuer_cik)
     rows: list[tuple] = []
+    # Joint reporters (e.g. co-trustees) each file the same trade, and a form is
+    # sometimes filed twice.
+    seen: set[tuple] = set()
     for filing in filings:
         if filing.filing_date < cutoff:
             break
@@ -220,10 +265,13 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
             continue
         if _issuer_cik(form4) != want:
             continue
+        trades = getattr(form4, "market_trades", None)
         rows.extend(_frame_rows(
-            getattr(form4, "market_trades", None),
+            trades,
             getattr(form4, "insider_name", None),
             _form_role(form4),
             getattr(form4, "_resolve_footnotes", None),
+            exclude=seen,
         ))
+        seen |= _trade_keys(trades)
     return summarize(rows, conviction)

@@ -109,7 +109,9 @@ e.g. a recent spin-off, degrades statements to `None` without affecting the rest
 
 1. **Form 4 insider trades**, aggregated by `providers/_form4.py`; Form 4s where the company
    is the reporting owner of another issuer's stock are excluded. Form 4/A amendments are
-   skipped, so a trade reported only in an amendment is not counted. Only Form 4s filed within
+   skipped, so a trade reported only in an amendment is not counted. A trade that several
+   filings report identically (a re-filed form, or joint reporters filing separately) counts
+   once. Only Form 4s filed within
    the lookback window are read, newest first, up to a hard cap (`_FORM4_FETCH_LIMIT`). A
    ticker that hits the cap and has trades gets `raw["form4_truncated"] = True`; its
    `net_value_6m` and counts then cover only the newest filings. It is not an error and does
