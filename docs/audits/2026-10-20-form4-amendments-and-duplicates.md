@@ -122,8 +122,9 @@ this only with evidence that the correction cases matter more than the deletions
 - Across all originals in the window, 83 P/S rows have no shares-owned-after value. The key
   can never match them.
 
-Cross-filing matches on the full-row key, by row type: indirect with disjoint owner sets, 3,781
-rows; direct with overlapping owner sets, 921; direct with disjoint owner sets, about 324.
+Cross-filing matches on the full-row key, by row type (5,489 rows): indirect with disjoint
+owner sets, 3,779; indirect with overlapping owner sets, 465; direct with overlapping owner
+sets, 921; direct with disjoint owner sets, 324.
 
 **Direct rows merge only when the filings share a reporting owner.** Different insiders can
 make the identical direct trade. Direct rows with disjoint owners that match the key: 153 P rows
@@ -157,8 +158,9 @@ between filings with a common reporting owner.
   match. A direct duplicate filed by a different owner set (or by a filing whose owners cannot
   be read) is not merged. These fail toward counting.
 - Two different people's **indirect** holdings still merge when the nature of ownership, the
-  trade and the holding after it are all identical. That is the remaining over-merge risk; no
-  such case was found among the examples checked.
+  trade and the holding after it are all identical. That is the remaining over-merge risk.
+  It is most likely among indirect rows with disjoint owners that are first purchases (49
+  rows market-wide); only 2 of those were inspected, and neither was a distinct trade.
 - The kept copy is the first in list order (newest filing date). Joint reporters usually file
   the same day, so the surviving name and role are those of an arbitrary co-reporter. With
   `insider.conviction` on, joint reporters count as one buyer and the role weight uses that

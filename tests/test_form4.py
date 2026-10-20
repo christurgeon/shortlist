@@ -267,7 +267,7 @@ def test_aggregate_treats_a_nan_nature_of_ownership_as_absent():
     assert s.sell_count == 1
 
 
-_TKO_BUY = [_trade(12531, 79.8, "P", "2023-09-14", 12531.0, nature=None, direct="D")]
+_TKO_BUY = [_trade(12531, 79.8, "P", "2023-11-14", 12531.0, nature=None, direct="D")]
 
 
 def test_aggregate_keeps_identical_direct_buys_by_different_insiders():
@@ -290,6 +290,13 @@ def test_aggregate_never_merges_a_direct_row_from_a_filing_without_owners():
         filings = [_filed(4, _TKO_BUY, "A", ciks=first), _filed(4, _TKO_BUY, "B", ciks=second)]
         s = aggregate_form4(filings, date(2024, 1, 1), issuer_cik=_OWN_CIK)
         assert s.buy_count == 2, (first, second)
+
+
+def test_aggregate_merges_an_indirect_row_from_filings_without_owners():
+    sale = [_trade(3540250, 64.5545, "S", "2024-05-17", 230029024.0)]
+    s = aggregate_form4([_filed(21, sale, "A"), _filed(21, sale, "B")], date(2024, 1, 1),
+                        issuer_cik=_OWN_CIK)
+    assert s.sell_count == 1
 
 
 def test_aggregate_never_merges_rows_within_one_filing():

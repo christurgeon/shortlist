@@ -112,8 +112,8 @@ e.g. a recent spin-off, degrades statements to `None` without affecting the rest
    skipped, so a trade reported only in an amendment is not counted. An identical row in
    several filings counts once when it is an indirect holding (joint reporters filing
    separately) or the filings share a reporting owner (a re-filed form); identical direct
-   trades by different insiders all count. Only Form 4s filed within
-   the lookback window are read, newest first, up to a hard cap (`_FORM4_FETCH_LIMIT`). A
+   trades by different insiders all count. Only Form 4s filed within the lookback window
+   are read, newest first, up to a hard cap (`_FORM4_FETCH_LIMIT`). A
    ticker that hits the cap and has trades gets `raw["form4_truncated"] = True`; its
    `net_value_6m` and counts then cover only the newest filings. It is not an error and does
    not change coverage.
