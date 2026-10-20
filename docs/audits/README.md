@@ -414,5 +414,6 @@ marked *verdict* closes a question.
 | 2026-07-12 | `2026-07-12-accruals-leg-disable.md` | verdict |
 | 2026-07-11 | `2026-07-11-buyback-backfill-kill.md` | verdict |
 | 2026-07-08 | `2026-07-08-eightk-composition-audit.md` | evidence |
+| 2026-06-14 | `2026-06-14-momentum-prize-bound.md` — Stage 0 momentum prize bound: marginal PROCEED on a 28-name subset, not final, plus the rule for the full-basket re-run; `mom_6m` redundant with `rel_strength_6m` | evidence |
 
 `scripts/` holds the reproduction probes; `raw-*/` holds captured payloads.

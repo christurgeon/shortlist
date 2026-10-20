@@ -1,6 +1,5 @@
-"""Pure per-date partial residualization for the residualized-IC measurement
-(docs/superpowers/specs/2026-07-05-leverage-residualized-ic-design.md, Method
-items 2/3). Regresses a target signal on one or more control signals,
+"""Pure per-date partial residualization for `shortlist-backtest --residualize`
+(docs/BACKTEST.md). Regresses a target signal on one or more control signals,
 date by date, and keeps the residual — the part of the target NOT explained by
 the controls — so a downstream IC computation can ask whether the target is
 predictive INCREMENTAL to the controls, not merely correlated with them.

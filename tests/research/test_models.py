@@ -253,7 +253,7 @@ def test_assessment_added_risks_tolerates_malformed_items():
 
 
 def test_segments_label_each_document_and_haystack_is_their_join():
-    """spec §3.4: haystack() becomes the join of segments(), so every existing
+    """haystack() is the join of segments(), so every existing
     caller is unchanged and adding a segment cannot change what verifies."""
     from shortlist.research.models import EightKText, FilingBundle, FilingText
     tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")

@@ -249,7 +249,7 @@ def test_snapshot_source_emits_sue_axis_when_earnings_accumulated(tmp_path):
     assert "sue" in obs.signals and obs.signals["sue"] > 50.0   # a fresh beat tilts up
 
 
-# --- XBRL source: EV/EBIT + per-leg value attribution axes (spec §11) ---------
+# --- XBRL source: EV/EBIT + per-leg value attribution axes ------------------
 
 _XBRL_THRESH = yaml.safe_load(
     (Path(__file__).parents[1] / "config.yaml").read_text()

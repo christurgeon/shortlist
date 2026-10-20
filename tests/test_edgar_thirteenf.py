@@ -142,7 +142,7 @@ def test_new_position_diff_weight_and_strength_math():
     assert [d["cusip"] for d in out] == ["NEWCUS"]  # only the genuinely-new CUSIP
     d = out[0]
     assert abs(d["weight"] - 0.05) < 1e-9           # 50 / 1000
-    # design §1.8: strength = min(1.0, weight / full_strength_pct); weight==full_strength -> 1.0
+    # strength = min(1.0, weight / full_strength_pct); weight==full_strength -> 1.0
     assert abs(d["strength"] - 1.0) < 1e-9
 
 

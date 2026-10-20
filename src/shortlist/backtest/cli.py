@@ -32,8 +32,7 @@ from .signals import MomentumSignalSource, SnapshotSignalSource, XbrlSignalSourc
 from .universe import is_named_universe, load_universe, stale_tickers
 from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfacts_cache
 
-_RESIDUALIZE_MIN_NAMES = 10   # hardcoded per docs/superpowers/specs/2026-07-05-
-                              # leverage-residualized-ic-design.md, Implementation item 3 -- no flag
+_RESIDUALIZE_MIN_NAMES = 10   # deliberately fixed, not a CLI flag
 
 # Minimum store-wide captured days before --source snapshot will run. Carried over
 # unchanged from the stub gate this replaces -- the bar was never the disputed part,
@@ -104,8 +103,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                     help="grid spacing; 0 = non-overlapping (= max horizon)")
     ap.add_argument("--residualize", dest="residualize",
                     help="TARGET~CTRL1,CTRL2 -- measure TARGET's partial rank IC after "
-                         "removing linear exposure to CTRL1,CTRL2 (design spec "
-                         "2026-07-05-leverage-residualized-ic). Incompatible with an "
+                         "removing linear exposure to CTRL1,CTRL2 "
+                         "(docs/BACKTEST.md). Incompatible with an "
                          "explicit --step-months override (the residual grid must track "
                          "each horizon's own non-overlapping step).")
     ap.add_argument("--start", help="grid start YYYY-MM-DD (default ~ earliest usable)")
@@ -318,11 +317,9 @@ def _parse_residualize(spec: str) -> tuple[str, list[str]]:
 
 def _raw_target_intersection(observations, target, controls) -> dict[date, dict[str, float]]:
     """Raw `target` values restricted to the SAME co-presence set `residual_rows`
-    uses (target AND every control present) — the paired `_rawx` baseline
-    (docs/superpowers/specs/2026-07-05-leverage-residualized-ic-design.md,
-    review B2). Independent of `residual_rows`' regression floor/singular skips,
-    which only gate the residual computation, not this raw baseline (Method
-    item 3 of the same doc)."""
+    uses (target AND every control present) — the paired `_rawx` baseline.
+    Independent of `residual_rows`' regression floor/singular skips, which only
+    gate the residual computation, not this raw baseline."""
     out: dict = defaultdict(dict)
     for obs in observations:
         sigs = obs.signals
@@ -336,8 +333,7 @@ def _raw_target_intersection(observations, target, controls) -> dict[date, dict[
 
 def _overlap_fraction(observations, target, raw_intersection) -> Optional[float]:
     """Co-present names / names-with-target-present, averaged over dates where the
-    target is present at all (docs/superpowers/specs/2026-07-05-leverage-
-    residualized-ic-design.md, Implementation item 3)."""
+    target is present at all."""
     target_present: dict = defaultdict(int)
     for obs in observations:
         if obs.signals.get(target) is not None:
@@ -354,8 +350,7 @@ def _grid_join(grid, rows_by_date, hists, spy, horizon, return_mode) -> list[tup
     """Join a `{date: {ticker: value}}` map to a horizon's OWN step=h grid dates +
     forward returns, via the same `fwd_return` the engine uses — the per-horizon
     join that keeps each horizon's aggregation confined to its own non-overlapping
-    grid (docs/superpowers/specs/2026-07-05-leverage-residualized-ic-design.md,
-    review B1: never the finer union grid)."""
+    grid, never the finer union grid."""
     out = []
     for t in grid:
         vals = rows_by_date.get(t)
@@ -390,9 +385,8 @@ def _per_date_ic(rows) -> dict[date, float]:
 def run_residualize(src, hists, spy, *, start: date, end: date, horizons: list[int],
                     target: str, controls: list[str], return_mode: str = "excess",
                     n_buckets: int = 5) -> tuple[list, dict]:
-    """Compute the residualized-IC measurement (design spec 2026-07-05-leverage-
-    residualized-ic, §Implementation 3): residuals computed ONCE from a union-grid
-    observation pass, then per horizon joined to THAT horizon's own step=h grid +
+    """Compute the residualized-IC measurement: residuals computed ONCE from a
+    union-grid observation pass, then per horizon joined to THAT horizon's own step=h grid +
     forward returns and emitted as three extra SignalReports (`<target>_resid`
     rank/primary, `<target>_resid_level` secondary, `<target>_rawx` the paired raw
     baseline). Returns `(extra_reports, residualized_json)` — callers append

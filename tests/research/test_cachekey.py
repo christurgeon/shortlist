@@ -82,7 +82,7 @@ def test_new_filing_event_changes_key():
 
 
 def test_a_same_day_8k_amendment_does_not_collide_with_its_original():
-    """spec §3.7: (form, items, filed) are identical for an 8-K/A filed the same day
+    """(form, items, filed) are identical for an 8-K/A filed the same day
     as the report it amends, so the accession has to be in the per-event tuple."""
     orig = [{"form": "8-K", "filed": "2026-08-11", "items": "2.02", "accession": "a1"}]
     amend = [{"form": "8-K", "filed": "2026-08-11", "items": "2.02", "accession": "a2"}]

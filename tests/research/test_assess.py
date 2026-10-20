@@ -701,7 +701,7 @@ def test_similarity_line_absent_when_none():
 
 
 def test_prompt_is_byte_identical_when_similarity_is_none():
-    """spec §7: disabled / uncomputable similarity must not perturb the prompt."""
+    """Disabled / uncomputable similarity must not perturb the prompt."""
     from shortlist.research.assess import _build_user_prompt, _similarity_line
     from shortlist.research.models import FilingBundle, FilingText
     tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")

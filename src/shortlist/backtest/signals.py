@@ -135,10 +135,9 @@ class SnapshotSignalSource:
         # Composite only for cards production would rank with confidence: `scored`
         # alone is toothless here (always True for the unknown bucket, and thin
         # accumulated snapshots usually lack a SIC), so pair it with the validity
-        # floor. Sub-axes stay per-axis None-safe below. Residual
-        # (docs/superpowers/specs/2026-07-07-accumulation-breadth-fix-design.md):
-        # a Finnhub-only name can read confidence ~0.32 and still pass a 0.25
-        # floor — a measurement-policy line to revisit WITH data, not here.
+        # floor. Sub-axes stay per-axis None-safe below. Known gap: a Finnhub-only
+        # name can still clear the shipped `validity.min_scored_weight` — a
+        # measurement-policy line to revisit WITH data, not here.
         sig: dict[str, float] = {}
         floor = scoring._validity(self.config or {})["min_scored_weight"]
         if card.scored and (card.confidence or 0.0) >= floor:

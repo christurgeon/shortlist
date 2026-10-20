@@ -1,8 +1,7 @@
-"""Golden numeric pin for run_backtest's per-signal aggregation (design spec
-2026-07-05-leverage-residualized-ic-design.md, review finding I8): a fixed,
+"""Golden numeric pin for run_backtest's per-signal aggregation: a fixed,
 by-hand-derivable planted dataset run through the REAL run_backtest, asserting
 EXACT float outputs. This test must pass BEFORE the engine.py aggregation block
-(~125-161) is extracted into `_signal_report` and again AFTER, unchanged — it is
+is extracted into `_signal_report` and again AFTER, unchanged — it is
 the thing that proves the extraction is byte-identical, since it predates it.
 
 --- Planted universe -------------------------------------------------------
