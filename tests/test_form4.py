@@ -135,10 +135,11 @@ class _FakeForm4:
 
 
 class _FakeFiling:
-    def __init__(self, filing_date, form4=None, raises=False):
+    def __init__(self, filing_date, form4=None, raises=False, form="4"):
         self.filing_date = filing_date
         self._form4 = form4
         self._raises = raises
+        self.form = form
 
     def obj(self):
         if self._raises:
@@ -198,6 +199,30 @@ def test_aggregate_excludes_filings_for_another_issuer():
     assert [t.name for t in s.txns] == ["Alice"]
     assert s.role_weighted_buy_value == 1500.0
 
+
+def test_aggregate_skips_an_amendment_that_restates_its_original():
+    cutoff = date(2026, 1, 1)
+    original = _FakeFiling(date(2026, 8, 24), _FakeForm4(
+        _FakeFrame([_row(3053, 143.79, "S", "2026-08-19")]), "Aguilar"))
+    amendment = _FakeFiling(date(2026, 8, 27), _FakeForm4(
+        _FakeFrame([_row(3053, 143.79, "S", "2026-08-20")]), "Aguilar"), form="4/A")
+    s = aggregate_form4([amendment, original], cutoff, issuer_cik=_OWN_CIK)
+    assert s.sell_count == 1
+    assert s.net_value == pytest.approx(-3053 * 143.79)
+
+
+class _UnparseableAmendment(_FakeFiling):
+    def obj(self):
+        pytest.fail("a Form 4/A was parsed")
+
+
+def test_aggregate_skips_an_amendment_without_parsing_it():
+    cutoff = date(2026, 1, 1)
+    amendment = _UnparseableAmendment(date(2026, 4, 22), form="4/A")
+    kept = _FakeFiling(date(2026, 4, 21), _FakeForm4(
+        _FakeFrame([_row(10, 5.0, "P", "2026-04-21")]), "Hill"))
+    s = aggregate_form4([amendment, kept], cutoff, issuer_cik=_OWN_CIK)
+    assert s.buy_count == 1 and s.net_value == 50.0
 
 def test_aggregate_matches_issuer_cik_regardless_of_padding_or_type():
     cutoff = date(2026, 1, 1)

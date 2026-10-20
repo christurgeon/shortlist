@@ -201,14 +201,19 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
                     issuer_cik: int | str) -> Form4Summary:
     """Aggregate Form 4 filings (newest-first) until one predates `cutoff`. Only
     filings whose issuer CIK equals `issuer_cik` count: a company's own filing list
-    also holds Form 4s it filed as reporting owner of another issuer. A filing that
-    fails to parse or has no readable issuer CIK is skipped. When `conviction` is
-    supplied, role + 10b5-1 extraction feed the v2 aggregates."""
+    also holds Form 4s it filed as reporting owner of another issuer. Form 4/A
+    amendments are skipped unparsed, so a trade reported only in an amendment is not
+    counted. A filing that fails to parse or has no readable issuer CIK is skipped.
+    When `conviction` is supplied, role + 10b5-1 extraction feed the v2 aggregates."""
     want = int(issuer_cik)
     rows: list[tuple] = []
     for filing in filings:
         if filing.filing_date < cutoff:
             break
+        # Most amendments restate or correct trades their original already reports.
+        # docs/audits/2026-10-20-form4-amendments-and-duplicates.md
+        if str(getattr(filing, "form", "4")).upper().endswith("/A"):
+            continue
         try:
             form4 = filing.obj()
         except Exception:
