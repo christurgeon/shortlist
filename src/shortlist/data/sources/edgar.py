@@ -32,6 +32,16 @@ _edgar_gate: dict = {}
 # Past it, only the newest filings count and net_value_6m / counts are understated.
 _FORM4_FETCH_LIMIT = 200
 
+# Must be a filer whose companyconcept for DILUTED_SHARES_TAG exists. SEC answers every
+# miss (unknown filer, tag or path) with the same 404, so a 404 counts as "tag not
+# reported" only while this filer's concept resolves.
+_CONCEPT_REFERENCE_CIK = 320193
+
+
+def _concept_url(cik: int) -> str:
+    return (f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
+            f"/us-gaap/{DILUTED_SHARES_TAG}.json")
+
 
 def _is_company_not_found(err: Any) -> bool:
     """True when `err` (an exception OR an already-formatted error string) is
@@ -52,7 +62,7 @@ def _edgar_semaphore() -> asyncio.Semaphore:
 
 # form prefix (upper) -> Events boolean attribute. Prefix match absorbs /A amendments;
 # both the "SC 13x" and SEC's "SCHEDULE 13x" spellings are handled (exact-match fetch
-# can return either; see spec §3.1).
+# can return either).
 _EVENT_FORM_PREFIXES = (
     ("SC 13D", "activist_13d"), ("SCHEDULE 13D", "activist_13d"),
     ("SC 13G", "passive_13g"), ("SCHEDULE 13G", "passive_13g"),
@@ -123,7 +133,7 @@ def build_events_section(records: list[dict], lookback_days: int,
                          today: date) -> Optional[Events]:
     """Pure: filter records to the lookback window, classify, and build an Events.
     Returns None when there is nothing at all — NEVER an all-falsy Events
-    (load-bearing for the merge's _has_data check; spec §4). Separately from the
+    (load-bearing for the merge's _has_data check). Separately from the
     advisory flags, the latest exact-form 10-Q/10-K filed date is carried as
     `last_report_filed` (the bridge's SUE decay anchor) — exact forms only, since
     a 10-Q/A can land months after the print and would wrongly freshen the anchor."""
@@ -171,6 +181,8 @@ class EdgarSource(Source):
     isolated — they never drop a successfully fetched insider result."""
 
     name = "edgar"
+    # Memoised `_concept_reference_problem` answer; None means not yet decided.
+    _concept_reference_verdict: Optional[str] = None
 
     def __init__(self, identity: Optional[str] = None, lookback_days: int = 183,
                  config: Optional[dict] = None):
@@ -248,23 +260,20 @@ class EdgarSource(Source):
     def _build_financials_snapshot(
         self, ticker: str, fin: Any, errors: Optional[list[str]] = None,
     ) -> TickerSnapshot:
-        """Map an edgartools Financials onto a Statements-only snapshot. Values are
-        absolute USD (no scaling). Mostly pure given `fin`, but ALSO fires the
-        companyconcept diluted-share fallback (a network seam) when the statement
-        view has no share-count row at all -- root cause B
-        (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). `errors` is optional (callers that don't
-        pass one get the pre-existing silent-degrade behavior); `_fetch_sync` passes
-        `res.errors` so a systemic fallback failure (SEC renames the tag, blocks the
-        UA, changes the URL) is diagnosable instead of degrading forever with no
-        trace, matching the `_fetch_sic` pattern below."""
+        """Map an edgartools Financials onto a Statements-only snapshot. No scaling is
+        applied. Mostly pure given `fin`, but ALSO fires the companyconcept
+        diluted-share fallback (a network seam) when the statement view has no
+        share-count row at all -- root cause B (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
+        When `errors` is given, a fallback failure (SEC blocks the UA or changes the
+        URL) is appended to it; a filer that does not report the tag appends nothing."""
         from ...providers._edgar_facts import diluted_shares_from_concept, extract_financials
         try:
             # UNITS HAZARD, not fixed here: edgartools returns this scalar in whatever
             # scale the filer's income statement uses. MCD's is ~716.4 -- MILLIONS, not
-            # absolute shares (TODO.md §4). Filer-presentation scaling is NOT unique to
+            # absolute shares. Filer-presentation scaling is NOT unique to
             # this scalar: MCD's per-row `ef.diluted_shares` series is the same
             # convention ([716.4, 721.9, 732.3] -- do not mistake that list for this
-            # scalar; docs/audits/2026-07-31-edgar-concept-match.md:313).
+            # scalar; docs/audits/2026-07-31-edgar-concept-match.md).
             # It reaches exactly one consumer: extract_financials' computed-EPS fallback
             # (`ni / shares_diluted`), which fires only when no as-reported EPS row was
             # matched -- so a millions-scaled value there yields an EPS 1e6x too small
@@ -339,20 +348,46 @@ class EdgarSource(Source):
         from ...sectors import extract_sic
         return extract_sic(Company(ticker))
 
+    def _concept_reference_problem(self) -> str:
+        """'' when the reference filer's concept resolves with its tag echoed, else
+        what the reference returned. A decisive answer (200 with the tag, a 404, a
+        wrong tag, a non-JSON body) is memoised per instance; a transient one
+        (network error or any other status) is not, so the next 404 asks again."""
+        if self._concept_reference_verdict is not None:
+            return self._concept_reference_verdict
+        import httpx
+        try:
+            r = httpx.get(_concept_url(_CONCEPT_REFERENCE_CIK),
+                          headers={"User-Agent": self.identity}, timeout=10.0)
+        except Exception as e:
+            return type(e).__name__
+        if r.status_code == 404:
+            verdict = "404"
+        elif r.status_code != 200:
+            return str(r.status_code)
+        else:
+            try:
+                tag = r.json().get("tag")
+            except Exception:
+                verdict = "200 with a non-JSON body"
+            else:
+                verdict = "" if tag == DILUTED_SHARES_TAG else f"200 with tag {str(tag)[:80]!r}"
+        self._concept_reference_verdict = verdict
+        return verdict
+
     def _fetch_diluted_shares_concept(
         self, ticker: str, errors: Optional[list[str]] = None,
     ) -> dict:
         """Network seam (mockable): SEC companyconcept for the weighted-average
-        diluted share count. ~35 KB (vs ~4 MB for companyfacts — measured), fired
-        only when the statement view lacks the row. Never RAISES -- {} on any
-        error -- but, when `errors` is given, records a diagnostic first (the
-        `_fetch_sic` pattern: non-fatal failure isolation must still be visible
-        in `res.errors`, not degrade silently forever).
+        diluted share count, fired only when the statement view lacks the row.
+        Never raises; returns {} on any failure. A 404 means the filer does not
+        report the tag when the reference concept resolves, and is not recorded.
+        Any other failure is appended to `errors` when given, so a systemic break
+        (blocked UA, changed URL) stays visible.
 
-        Resolves the CIK off a fresh edgartools `Company(ticker)` (mirroring
-        `_fetch_sic` above), NOT the raw `company_tickers.json` first-occurrence
-        map -- that map sends XOM to a 1,061-byte fee-filing shell (CIK 2115436);
-        `Company("XOM").cik` correctly resolves the operating company (34088)."""
+        Resolves the CIK off a fresh edgartools `Company(ticker)`, NOT the raw
+        `company_tickers.json` first-occurrence map, which sends XOM to a
+        fee-filing shell CIK."""
         import httpx
         from edgar import Company
 
@@ -362,12 +397,16 @@ class EdgarSource(Source):
             if errors is not None:
                 errors.append(f"edgar-diluted-shares-concept: {redact_secrets(e)}")
             return {}
-        url = (
-            f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
-            f"/us-gaap/{DILUTED_SHARES_TAG}.json"
-        )
+        url = _concept_url(cik)
         try:
             r = httpx.get(url, headers={"User-Agent": self.identity}, timeout=10.0)
+            if r.status_code == 404:
+                problem = self._concept_reference_problem()
+                if not problem:
+                    return {}
+                raise RuntimeError(
+                    f"404 for {url}; reference concept "
+                    f"CIK{_CONCEPT_REFERENCE_CIK:010d} -> {problem}")
             r.raise_for_status()
             return r.json()
         except Exception as e:
