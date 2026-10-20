@@ -133,7 +133,7 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
                            throttle_s: float = 0.2, max_records: Optional[int] = None,
                            _get_filings=None, _stake_fn=None) -> Optional[list[dict]]:
     """Both initial SCHEDULE 13D and SCHEDULE 13D/A amendment records filed in [start, end]
-    (the escalation-pack backfill walker) -- initials seed the pair baseline a
+    (a backfill walker) -- initials seed the pair baseline a
     future assembler would diff amendments against. That assembler was never built (no
     production or test code in this repo pairs initial + amendment records today), so this
     walker is currently an orphaned building block -- kept for the backfill it was
