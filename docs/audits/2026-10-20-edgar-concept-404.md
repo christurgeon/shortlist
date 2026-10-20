@@ -42,13 +42,20 @@ A decisive reference answer is memoised per `EdgarSource` instance: 200 with the
 |---|---|---|
 | BRK-B, NVO, TSM, SAP, RY | `error` (concept 404) | `ok`, no errors, `diluted_shares` still empty |
 | HON, GOOGL | `ok`, `diluted_shares` from the fallback | unchanged |
-| MT (seam only) | `rate_limited_429` | `ok`, no errors |
+| MT (seam only) | `rate_limited_429` (see below) | `ok`, no errors |
 
 Simulated breaks, no repo edit:
 
 - URL path changed to `/companyconcepts/`: BRK-B, HON and MT all `error`, message ends
   `reference concept CIK0000320193 -> 404`.
 - Reference request times out: BRK-B and MT `error` with `-> ReadTimeout`; HON (200) `ok`.
+
+## Related: 402/429 matched inside a CIK
+
+`coverage_adapt` matched `402`/`429` as bare substrings of the whole error string. EDGAR
+errors embed 10-digit CIKs, so MT's concept 404 (`CIK0001243429`) mapped to
+`rate_limited_429`. It now matches a standalone token. The real httpx 402/429 messages
+still map to `gated_402`/`rate_limited_429`.
 
 ## Not covered
 
