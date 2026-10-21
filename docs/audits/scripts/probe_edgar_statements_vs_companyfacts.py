@@ -8,6 +8,10 @@ Prints per-field status counts for the newest fiscal year (OCF, revenue, net inc
 the FCF sign against companyfacts OCF - capex), every non-ok row, and then every year of
 OCF / revenue / net income that is more than 2% off. companyfacts is read through the
 backtest's month-keyed cache (`.cache/sec_xbrl`), fetched serially on a miss.
+
+The references read the same raw tags the extractor prefers (OCF continuing operations
+first, revenue `Revenues` first), so "ok" confirms row selection and scale, not the choice
+of concept: a wrong `Revenues` row, or a bucket fallback, is not detected.
 """
 from __future__ import annotations
 
@@ -27,8 +31,8 @@ from shortlist.env import load_env
 CACHE = ".cache/sec_xbrl"
 TOL = 0.02
 CONCEPTS = {
-    "operating_cash_flow": ["NetCashProvidedByUsedInOperatingActivities",
-                            "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
+    "operating_cash_flow": ["NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+                            "NetCashProvidedByUsedInOperatingActivities"],
     "revenue": ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax",
                 "RevenueFromContractWithCustomerIncludingAssessedTax", "SalesRevenueNet",
                 "RevenuesNetOfInterestExpense"],
