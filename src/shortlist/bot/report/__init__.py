@@ -33,9 +33,9 @@ def _render_png(vm):
 
 
 def build_report(cards, session, *, assessments: dict[str, dict], macro=None,
-                 portfolio=None, notes=None) -> ReportArtifacts:
+                 portfolio=None, notes=None, reverse_dcf_cfg=None) -> ReportArtifacts:
     vm = build_view_model(cards, session, assessments=assessments, macro=macro,
-                          portfolio=portfolio, notes=notes)
+                          portfolio=portfolio, notes=notes, reverse_dcf_cfg=reverse_dcf_cfg)
     png = _render_png(vm)
     b64 = base64.b64encode(png).decode() if png else None
     title = f"Shortlist — {vm.session.isoformat()}"

@@ -62,7 +62,10 @@ the first four risks, what would change the model's mind, and recent news. Suppo
 folds behind a tap and is never dropped: further risks, the reconciliation against the score,
 the moat, the business model, capital allocation and ROIC persistence. The flag and gate
 glossary folds under the flag chips, and empty fundamentals cells are listed on one "No data"
-line instead of shown as blank cells.
+line instead of shown as blank cells. The fundamentals card adds an **Implied growth** cell when
+`research.reverse_dcf` is on, the latest FCF is positive and the sector does not mask FCF: the
+price-implied perpetual FCF growth beside the revenue CAGR, with its discount-rate prior and a
+marker when the latest FCF runs well above the base (`research/reverse_dcf.py`).
 
 ### What `/deep` evidence looks like here
 

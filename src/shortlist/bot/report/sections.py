@@ -203,13 +203,39 @@ def _earnings_text(mvm: MetricsVM) -> "str | None":
     return " · ".join(parts)
 
 
+def _signed_pct(x: float) -> str:
+    """Whole-percent with a sign, but a value that rounds to zero reads '0%'."""
+    r = round(x * 100)
+    return f"{r:+d}%" if r else "0%"
+
+
+def _implied_growth_text(mvm: MetricsVM) -> "str | None":
+    """Price-implied perpetual FCF growth beside realized revenue CAGR, or None when
+    reverse_dcf abstains — e.g. '+9%/yr perpetual FCF vs +6% rev CAGR · 10% disc'.
+    The discount rate is a config prior, so it always travels with the number."""
+    ig = getattr(mvm, "implied_growth", None)
+    if ig is None:
+        return None
+    disc = f"{ig.disc * 100:.0f}% disc"
+    if ig.distressed:
+        return f"distressed (below {ig.floor * 100:.0f}%/yr) · {disc}"
+    txt = f"{_signed_pct(ig.rate)}/yr perpetual FCF"
+    cagr = getattr(mvm, "revenue_cagr", None)
+    if cagr is not None:
+        txt += f" vs {_signed_pct(cagr)} rev CAGR"
+    txt += f" · {disc}"
+    if ig.run_rate_understated:
+        txt += " · latest FCF above base"
+    return txt
+
+
 class _Fundamentals:
     id, title = "fundamentals", "Fundamentals"
 
     def applies(self, vm): return bool(vm.leaders)
 
     @staticmethod
-    def _metric(h, label, value, signed, raw=None):
+    def _metric(h, label, value, signed, raw=None, wide=False):
         cls = "v"
         if value == "·":
             cls = "v na"
@@ -221,7 +247,8 @@ class _Fundamentals:
             s = raw if raw is not None else (-1.0 if value[:1] == "-" else 1.0)
             cls = "v neg" if s < 0 else "v pos"
         return h.raw("div", h.tag("span", label, _class="k") +
-                     h.raw("span", h.esc(value), _class=cls), _class="metric")
+                     h.raw("span", h.esc(value), _class=cls),
+                     _class="metric wide" if wide else "metric")
 
     def render_html(self, vm, h):
         cards = []
@@ -256,6 +283,9 @@ class _Fundamentals:
             ern = _earnings_text(ld.metrics)    # conditional (None without earnings history)
             if ern:
                 cells.append(self._metric(h, "Earnings", ern, False))
+            ig = _implied_growth_text(ld.metrics)
+            if ig:
+                cells.append(self._metric(h, "Implied growth", ig, False, wide=True))
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
@@ -286,6 +316,9 @@ class _Fundamentals:
             ern = _earnings_text(ld.metrics)
             if ern:
                 out.append(f"   Earnings: {ern}")
+            ig = _implied_growth_text(ld.metrics)
+            if ig:
+                out.append(f"   Implied growth: {ig}")
         return out
 
 

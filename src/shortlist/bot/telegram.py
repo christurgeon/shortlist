@@ -226,8 +226,11 @@ class TelegramBot:
     def _report_fn(self):
         if self._report:
             return self._report
+        from functools import partial
+
         from .report import build_report
-        return build_report
+        rdcfg = (self.config.get("research") or {}).get("reverse_dcf")
+        return partial(build_report, reverse_dcf_cfg=rdcfg)
 
     def _deliver_fn(self):
         if self._deliver:
