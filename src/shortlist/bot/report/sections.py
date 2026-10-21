@@ -203,6 +203,23 @@ def _earnings_text(mvm: MetricsVM) -> "str | None":
     return " · ".join(parts)
 
 
+def _implied_growth_text(mvm: MetricsVM) -> "str | None":
+    """Price-implied perpetual FCF growth beside realized revenue CAGR, or None when
+    reverse_dcf abstains — e.g. '+9%/yr vs +6% rev CAGR · 10% disc'. The discount rate
+    is a config prior, so it always travels with the number."""
+    ig = getattr(mvm, "implied_growth", None)
+    if ig is None:
+        return None
+    disc = f"{ig.disc * 100:.0f}% disc"
+    if ig.distressed:
+        return f"distressed (below {ig.floor * 100:.0f}%/yr) · {disc}"
+    txt = f"{ig.rate * 100:+.0f}%/yr"
+    cagr = getattr(mvm, "revenue_cagr", None)
+    if cagr is not None:
+        txt += f" vs {cagr * 100:+.0f}% rev CAGR"
+    return f"{txt} · {disc}"
+
+
 class _Fundamentals:
     id, title = "fundamentals", "Fundamentals"
 
@@ -256,6 +273,9 @@ class _Fundamentals:
             ern = _earnings_text(ld.metrics)    # conditional (None without earnings history)
             if ern:
                 cells.append(self._metric(h, "Earnings", ern, False))
+            ig = _implied_growth_text(ld.metrics)
+            if ig:
+                cells.append(self._metric(h, "Implied growth", ig, False))
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
@@ -286,6 +306,9 @@ class _Fundamentals:
             ern = _earnings_text(ld.metrics)
             if ern:
                 out.append(f"   Earnings: {ern}")
+            ig = _implied_growth_text(ld.metrics)
+            if ig:
+                out.append(f"   Implied growth: {ig}")
         return out
 
 

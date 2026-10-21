@@ -3,10 +3,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
+from typing import TYPE_CHECKING
 
 from shortlist.models import ScoreCard, rank_key
 
 from .theme import SUBS
+
+if TYPE_CHECKING:
+    from shortlist.research.reverse_dcf import ImpliedGrowth
 
 
 @dataclass
@@ -51,6 +55,7 @@ class MetricsVM:
     earnings_quarters: int | None = None
     earnings_avg_surprise_pct: float | None = None
     earnings_days_to_next: int | None = None
+    implied_growth: "ImpliedGrowth | None" = None
 
 
 @dataclass
@@ -287,7 +292,17 @@ def call_one_liner(rec: dict) -> str | None:
     return line
 
 
-def _metrics_vm(m) -> MetricsVM:
+def _implied_growth(m, reverse_dcf_cfg) -> "ImpliedGrowth | None":
+    """The /deep prompt's reverse-DCF result, from the same FCF column and config."""
+    if not reverse_dcf_cfg:
+        return None
+    from ...research import reverse_dcf
+    from ...research.assess import _fcf_col
+    return reverse_dcf.implied_growth(_fcf_col(getattr(m, "financial_series", None)),
+                                      getattr(m, "market_cap", None), reverse_dcf_cfg)
+
+
+def _metrics_vm(m, reverse_dcf_cfg: dict | None = None) -> MetricsVM:
     if m is None:
         return MetricsVM()
     return MetricsVM(
@@ -309,10 +324,12 @@ def _metrics_vm(m) -> MetricsVM:
         short_interest_rising=m.short_interest_rising,
         earnings_beats=m.earnings_beats, earnings_quarters=m.earnings_quarters,
         earnings_avg_surprise_pct=m.earnings_avg_surprise_pct,
-        earnings_days_to_next=m.earnings_days_to_next)
+        earnings_days_to_next=m.earnings_days_to_next,
+        implied_growth=_implied_growth(m, reverse_dcf_cfg))
 
 
-def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
+def _leader_vm(c: ScoreCard, assessments: dict[str, dict],
+               reverse_dcf_cfg: dict | None = None) -> LeaderVM:
     subs = {s: getattr(c, s, None) for s in SUBS}
     masked = {a["field"] for a in getattr(c, "abstentions", [])
               if isinstance(a, dict) and a.get("scope") == "subscore"
@@ -326,14 +343,15 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict]) -> LeaderVM:
         gates=list(c.gates), flags=list(getattr(c, "flags", [])),
         confidence=getattr(c, "confidence", None), thin=getattr(c, "thin", False),
         scored=getattr(c, "scored", True), coverage_note=note,
-        metrics=_metrics_vm(c.metrics),
+        metrics=_metrics_vm(c.metrics, reverse_dcf_cfg),
         assessment=_assessment_vm(rec) if rec else None)
 
 
 def build_view_model(cards, session: date, *, assessments: dict[str, dict],
-                     macro=None, portfolio=None, notes=None) -> ReportVM:
+                     macro=None, portfolio=None, notes=None,
+                     reverse_dcf_cfg: dict | None = None) -> ReportVM:
     ordered = sorted(cards, key=rank_key, reverse=True)
-    leaders = [_leader_vm(c, assessments) for c in ordered]
+    leaders = [_leader_vm(c, assessments, reverse_dcf_cfg) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
     # in conviction (rank_key) order. Suppressed for /portfolio reports — suggesting you
     # /deep names you already hold is noise (the section is for discovery/screen digests).

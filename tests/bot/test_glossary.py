@@ -89,3 +89,12 @@ def test_analyst_revision_documented():
     assert e is not None
     assert lookup("rating revision") is e
     assert "level" in e.text.lower()
+
+
+def test_implied_growth_documented():
+    """The report's Implied growth cell needs a term a reader can /explain, and the
+    entry must name the discount rate as an assumption, not a fact."""
+    e = lookup("implied growth")
+    assert e is not None
+    assert lookup("reverse dcf") is e
+    assert "discount rate" in e.text.lower() and "assum" in e.text.lower()

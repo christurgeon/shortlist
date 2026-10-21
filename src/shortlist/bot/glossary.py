@@ -357,6 +357,15 @@ GLOSSARY: list[Entry] = [
           "cheapness leg: high yield is cheap IF the FCF is durable; a "
           "fading business can sport a high yield on its way down. "
           "Undefined for financials (masked)."),
+    Entry("implied growth", "Finance concepts",
+          ("reverse dcf", "price implied growth"),
+          "The perpetual free-cash-flow growth today's price already assumes: "
+          "a one-stage reverse DCF, solved as discount rate minus normalized "
+          "FCF ÷ market cap. Above the realized growth beside it, the price "
+          "needs acceleration; below it, the price expects a fade. The "
+          "discount rate is an assumption shown with the number, and a rate "
+          "too low to mean much reads 'distressed'. Here: research-only "
+          "context, never scored."),
     Entry("PEG", "Finance concepts", ("peg ratio",),
           "P/E ratio ÷ expected earnings growth: what you pay per unit of "
           "growth. Below ~1 is the classic 'growth at a reasonable price' "

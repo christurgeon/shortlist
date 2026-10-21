@@ -82,7 +82,8 @@ Evidence: `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`.
 Several **prompt-only context lines** ride along. These are deliberately kept out of the
 quote-verification haystack, so a computed value can never pass itself off as a filing fact:
 
-- A reverse-DCF "price-implied FCF growth" reframing (`research/reverse_dcf.py`)
+- A reverse-DCF "price-implied FCF growth" reframing (`research/reverse_dcf.py`). The reader
+  also sees it, as the report's **Implied growth** cell, computed from the same FCF series and config.
 - Recent SEC filings and recent insider Form-4 trades
 - DEF 14A pay and governance fields (`research/proxy.py`)
 - Government contract awards, federal lobbying, earnings execution history, macro regime
