@@ -4,7 +4,7 @@ import shortlist.bot.report as R
 from shortlist.bot.report import build_report
 from shortlist.bot.report.sections import (
     Detail, _implied_growth_text, render_html_body, render_text)
-from shortlist.bot.report.viewmodel import LeaderVM, ReportVM, _metrics_vm
+from shortlist.bot.report.viewmodel import LeaderVM, ReportVM, _metrics_vm, build_view_model
 from shortlist.models import ScoreCard, StockMetrics
 from shortlist.research.assess import _quant_context
 
@@ -105,3 +105,30 @@ def test_bot_default_report_fn_uses_research_reverse_dcf_config(monkeypatch):
     card = _card(_metrics([10e9, 9e9, 8e9], revenue_cagr=0.06))
     art = bot._report_fn()([card], date(2026, 6, 4), assessments={})
     assert "Implied growth: +9%/yr" in art.text
+
+
+def _scored(sic):
+    from pathlib import Path
+
+    import yaml
+
+    from shortlist.scoring import score
+    cfg = yaml.safe_load((Path(__file__).parents[2] / "config.yaml").read_text())
+    m = _metrics([10e9, 9e9, 8e9], revenue_cagr=0.06)
+    m.sic = sic
+    return score(m, cfg), cfg["research"]["reverse_dcf"]
+
+
+def test_cell_abstains_when_the_scorer_masks_fcf_for_the_sector():
+    card, rdcfg = _scored("6021")   # national commercial bank
+    assert card.sic_bucket != "unknown"
+    assert any(a["field"] == "fcf_yield" for a in card.abstentions)
+    vm = build_view_model([card], date(2026, 6, 4), assessments={}, reverse_dcf_cfg=rdcfg)
+    assert _implied_growth_text(vm.leaders[0].metrics) is None
+
+
+def test_cell_still_shown_for_an_unknown_bucket():
+    card, rdcfg = _scored(None)
+    assert card.sic_bucket == "unknown"
+    vm = build_view_model([card], date(2026, 6, 4), assessments={}, reverse_dcf_cfg=rdcfg)
+    assert _implied_growth_text(vm.leaders[0].metrics).startswith("+9%/yr")

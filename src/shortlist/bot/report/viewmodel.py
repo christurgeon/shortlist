@@ -334,7 +334,10 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict],
     masked = {a["field"] for a in getattr(c, "abstentions", [])
               if isinstance(a, dict) and a.get("scope") == "subscore"
               and a.get("reason") == "inapplicable"}
-    note = c.coverage.note if (c.coverage is not None and c.coverage.note) else None
+    if any(isinstance(a, dict) and a.get("field") == "fcf_yield" and a.get("scope") == "leg"
+           and a.get("reason") == "inapplicable" for a in getattr(c, "abstentions", [])):
+        reverse_dcf_cfg = None   # the sector mask rules FCF structurally undefined
+    note =c.coverage.note if (c.coverage is not None and c.coverage.note) else None
     rec = assessments.get(c.ticker)
     return LeaderVM(
         ticker=c.ticker,

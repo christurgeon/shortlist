@@ -63,8 +63,9 @@ folds behind a tap and is never dropped: further risks, the reconciliation again
 the moat, the business model, capital allocation and ROIC persistence. The flag and gate
 glossary folds under the flag chips, and empty fundamentals cells are listed on one "No data"
 line instead of shown as blank cells. The fundamentals card adds an **Implied growth** cell when
-`research.reverse_dcf` is on and the name has positive FCF: the price-implied perpetual FCF
-growth beside the revenue CAGR, with its discount-rate prior (`research/reverse_dcf.py`).
+`research.reverse_dcf` is on, the name has positive FCF and its sector does not mask FCF: the
+price-implied perpetual FCF growth beside the revenue CAGR, with its discount-rate prior
+(`research/reverse_dcf.py`).
 
 ### What `/deep` evidence looks like here
 
