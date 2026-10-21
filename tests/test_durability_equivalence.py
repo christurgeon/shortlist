@@ -2,7 +2,7 @@
 recompute, on the CURRENT code and the committed data file, the digests that
 `docs/audits/scripts/probe_durability_equivalence.py` wrote BEFORE the refactor.
 
-About 20 s: the firms are built once for the module."""
+The firms are built once for the module."""
 import importlib.util
 import json
 import math

@@ -20,14 +20,16 @@ from typing import Iterable, Optional
 from ..durability import (
     HISTORY,
     YearRow,
-    fiscal_ends,
+    _fiscal_ends,
+    _panel_rows,
+    _study_rows,
+    as_of_for,
     history_predictors,
     in_universe,
     investment,
     panel_rows,
     pct_rank,
     quintile_floor,
-    snapshot,
 )
 from ._ols import ols
 
@@ -57,14 +59,11 @@ class Firm:
 
 def build_firm(cik: str, sic: Optional[str], masked: bool, facts: dict,
                years: Iterable[int]) -> Optional[Firm]:
-    ends = fiscal_ends(facts)
+    rows = _study_rows(facts)
+    ends = _fiscal_ends(rows)
     if not ends:
         return None
-    snaps = {}
-    for y in years:
-        s = snapshot(facts, y)
-        if s is not None:
-            snaps[y] = s
+    snaps = {y: _panel_rows(rows, as_of_for(ends[y])) for y in years if y in ends}
     return Firm(cik=cik, sic=sic, masked=masked, snaps=snaps, last_bucket=max(ends))
 
 
