@@ -87,13 +87,20 @@ class EdgarFinancials:
 
 
 def _matching_columns(df: pd.DataFrame, pattern: re.Pattern) -> list[tuple[str, str]]:
-    """[(iso_date, column_name)] for columns whose name matches `pattern`, newest-first."""
+    """[(iso_date, column_name)] for columns whose name matches `pattern`, newest-first.
+
+    Trailing (oldest) columns with no value in any row are dropped: kept, one would empty
+    every all-or-nothing `_series` on the statement. An empty newest or middle column is
+    kept, so series abstain instead of shifting index 0 or skipping a year."""
     cols = []
     for c in df.columns:
         m = pattern.match(str(c))
         if m:
             cols.append((m.group(1), c))
-    return sorted(cols, key=lambda t: t[0], reverse=True)
+    cols.sort(key=lambda t: t[0], reverse=True)
+    while cols and not df[cols[-1][1]].notna().to_numpy().any():
+        cols.pop()
+    return cols
 
 
 def _fy_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -160,12 +167,11 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
 
 
 def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
-    """Net-income row, robust to edgartools' `standard_concept` drift. edgartools 5.33
-    RENAMED the net-income bucket from "NetIncomeLoss" to "NetIncome" (verified live on
-    AAPL/MSFT/LMT), while the raw `concept` column stays the stable "us-gaap_NetIncomeLoss".
-    Prefer the stable raw concept (same pattern as _concept_family_latest's financing rows),
-    then fall back to either standard_concept spelling so older edgartools shapes and the
-    leverage-test fixtures (standard_concept only, no `concept` column) still resolve."""
+    """Net-income row, in preference order: raw `us-gaap_NetIncomeLoss` (stable where the
+    bucket name drifts across edgartools releases); the "NetIncome" or "NetIncomeLoss"
+    bucket (older shapes and fixtures without a `concept` column); then, for filers that
+    tag no `NetIncomeLoss`, the parent's share available to common holders, and last
+    `ProfitLoss`, which includes any noncontrolling interest."""
     if "concept" in df.columns:
         hit = df[df["concept"].astype(str) == "us-gaap_NetIncomeLoss"]
         if not hit.empty:
@@ -174,7 +180,9 @@ def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
         row = _row_by_standard_concept(df, sc)
         if row is not None:
             return row
-    return None
+    rows = _rows_by_concept(df, ("us-gaap_NetIncomeLossAvailableToCommonStockholdersBasic",
+                                 "us-gaap_ProfitLoss"))
+    return rows[0] if rows else None
 
 
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
@@ -330,6 +338,29 @@ def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Ser
     return out
 
 
+# Totals that edgartools' bucket misses: it also tags reconciling lines and components
+# with the same standard_concept, sometimes shallower than the total, or leaves the
+# total unbucketed. Raw tags in priority order.
+_OCF_TOTAL = "us-gaap_NetCashProvidedByUsedInOperatingActivities"
+# Continuing operations first: capex is continuing-only, so FCF must be too. Accruals
+# keeps the total because net income includes discontinued operations.
+_OPERATING_CASH_FLOW_CONCEPTS = (
+    "us-gaap_NetCashProvidedByUsedInOperatingActivitiesContinuingOperations", _OCF_TOTAL)
+_REVENUE_CONCEPTS = ("us-gaap_Revenues", "us-gaap_RevenuesNetOfInterestExpense")
+
+
+def _row_by_concept_or_bucket(df: pd.DataFrame, concepts: tuple[str, ...], bucket: str,
+                              fy_cols: list[tuple[str, str]]) -> Optional[pd.Series]:
+    """First non-dimensional raw-concept row with a complete series. None when a raw row
+    exists but none is complete. The `standard_concept` bucket row only when the filer
+    tags none of `concepts`: its min-level pick is the path that reads the wrong line."""
+    rows = _rows_by_concept(df, concepts)
+    for row in rows:
+        if _series(row, fy_cols):
+            return row
+    return None if rows else _row_by_standard_concept(df, bucket)
+
+
 def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
                                 label_picker: Callable[[pd.DataFrame], Optional[pd.Series]],
                                 fy_cols: list[tuple[str, str]]) -> list[float]:
@@ -407,12 +438,15 @@ def extract_financials(
     inc_fy = _fy_columns(income_df)
     fin = EdgarFinancials(fiscal_period_end=[d for d, _ in (inc_fy or cf_fy)])
 
-    fin.operating_cash_flow = _series(_row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), cf_fy)
+    ocf_row = _row_by_concept_or_bucket(
+        cashflow_df, _OPERATING_CASH_FLOW_CONCEPTS, "NetCashFromOperatingActivities", cf_fy)
+    fin.operating_cash_flow = _series(ocf_row, cf_fy)
     capex = _series(_row_by_standard_concept(cashflow_df, "CapitalExpenses"), cf_fy)
     if fin.operating_cash_flow and capex and len(fin.operating_cash_flow) == len(capex):
         fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex, strict=True)]
 
-    fin.revenue = _series(_row_by_standard_concept(income_df, "Revenue"), inc_fy)
+    fin.revenue = _series(
+        _row_by_concept_or_bucket(income_df, _REVENUE_CONCEPTS, "Revenue", inc_fy), inc_fy)
     fin.net_income = _series(_row_net_income(income_df), inc_fy)
 
     eps = _series_by_concept_or_label(income_df, _DILUTED_EPS_CONCEPTS, _row_diluted_eps, inc_fy)
@@ -473,8 +507,8 @@ def extract_financials(
     # flip — distinct from the capex-style negation align_fcf applies).
     assets_by_end = _end_map(_row_by_standard_concept(balance_df, "Assets"), bal_inst)
     ni_by_end = _end_map(_row_net_income(income_df), inc_fy)
-    cfo_by_end = _end_map(
-        _row_by_standard_concept(cashflow_df, "NetCashFromOperatingActivities"), cf_fy)
+    cfo_by_end = _end_map(_row_by_concept_or_bucket(
+        cashflow_df, (_OCF_TOTAL,), "NetCashFromOperatingActivities", cf_fy), cf_fy)
     fin.total_assets = [assets_by_end[e] for e in sorted(assets_by_end, reverse=True)]
     fin.asset_growth = asset_growth(assets_by_end)
     fin.accruals = accruals(ni_by_end, cfo_by_end, assets_by_end)
