@@ -154,9 +154,7 @@ def test_no_financials_at_all_returns_empty_dataclass():
 def test_series_with_pd_na_returns_empty():
     # nullable-int dtype cells (pd.NA) must degrade to [], not raise TypeError.
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r",
-                        "2025-09-27 (FY)": pd.NA, "2024-09-28 (FY)": 100.0},
-                       {"standard_concept": "GrossProfit", "label": "g",
-                        "2025-09-27 (FY)": 50.0, "2024-09-28 (FY)": 40.0}])
+                        "2025-09-27 (FY)": pd.NA, "2024-09-28 (FY)": 100.0}])
     fin = extract_financials(df, df, pd.DataFrame(), shares_diluted=None)
     assert fin.revenue == []
 
@@ -396,7 +394,7 @@ def test_operating_cf_ignores_dimensional_rows_of_the_raw_concept():
 
 def test_operating_cf_without_the_raw_subtotal_falls_back_to_the_bucket():
     cf = pd.DataFrame([
-        _cf_row("us-gaap_NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+        _cf_row("abc_NetCashFromOperations",
                 "NetCashFromOperatingActivities", 2, 200_000_000.0, 180_000_000.0, _WC),
     ])
     fin = extract_financials(_ipar_income_df(), cf, pd.DataFrame(), shares_diluted=None)
@@ -494,7 +492,7 @@ def test_revenue_without_a_raw_total_falls_back_to_the_bucket():
 
 
 def test_net_income_falls_back_to_profit_loss_when_net_income_loss_is_untagged():
-    """BSX/CAT/V present `ProfitLoss` as the bottom line and tag no `NetIncomeLoss`."""
+    """V presents `ProfitLoss` as the bottom line and tags no `NetIncomeLoss`."""
     income = pd.DataFrame([
         _inc_row("us-gaap_Revenues", "Revenue", 1, 72_000.0, 61_000.0),
         _inc_row("us-gaap_ProfitLoss", float("nan"), 4, 8_884.0, 10_792.0, dimension=True),
@@ -527,3 +525,78 @@ def test_all_empty_middle_column_is_kept_so_no_year_is_skipped():
     fin = extract_financials(income, _ipar_cashflow_df(), pd.DataFrame(), shares_diluted=None)
     assert "2023-12-31" in fin.fiscal_period_end
     assert fin.revenue == []
+
+
+# --- review follow-ups: continuing-ops OCF, abstain on an incomplete raw total ------------
+
+def _cf_with_discontinued_ops():
+    """MIDD/AMD/HON shape: a continuing-operations subtotal and a total including the
+    divested business. Capex is continuing-only."""
+    return pd.DataFrame([
+        _cf_row("us-gaap_NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+                "NetCashFromOperatingActivities", 3, 564_584_000.0, 614_520_000.0, _WC),
+        _cf_row("us-gaap_NetCashProvidedByUsedInOperatingActivities",
+                "NetCashFromOperatingActivities", 3, 630_197_000.0, 686_816_000.0, _WC),
+        _cf_row("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "CapitalExpenses", 3,
+                -70_729_000.0, -36_690_000.0,
+                "us-gaap_NetCashProvidedByUsedInInvestingActivitiesAbstract"),
+    ])
+
+
+def test_operating_cf_prefers_continuing_operations_so_fcf_matches_continuing_capex():
+    fin = extract_financials(_ipar_income_df(), _cf_with_discontinued_ops(), pd.DataFrame(),
+                             shares_diluted=None)
+    assert fin.operating_cash_flow == [564_584_000.0, 614_520_000.0]
+    assert fin.free_cash_flow == [pytest.approx(493_855_000.0), pytest.approx(577_830_000.0)]
+
+
+def test_accruals_keeps_total_operating_cf_because_net_income_includes_discontinued_ops():
+    balance = pd.DataFrame([
+        {"concept": "us-gaap_Assets", "label": "Total assets", "standard_concept": "Assets",
+         "level": 1, "abstract": False,
+         "2025-12-31": 1_600_000_000.0, "2024-12-31": 1_400_000_000.0},
+    ])
+    fin = extract_financials(_ipar_income_df(), _cf_with_discontinued_ops(), balance,
+                             shares_diluted=None)
+    assert fin.accruals == pytest.approx((168_387_000.0 - 630_197_000.0) / 1_500_000_000.0)
+
+
+def test_operating_cf_incomplete_continuing_row_falls_through_to_the_total():
+    cf = _cf_with_discontinued_ops()
+    cf.loc[0, "2024-12-31 (FY)"] = float("nan")
+    fin = extract_financials(_ipar_income_df(), cf, pd.DataFrame(), shares_diluted=None)
+    assert fin.operating_cash_flow == [630_197_000.0, 686_816_000.0]
+
+
+def test_operating_cf_abstains_when_the_raw_total_is_incomplete():
+    """The bucket's min-level pick is the known-bad path (IPAR's lease line), so a tagged
+    but incomplete total abstains rather than falling back to it."""
+    cf = _ipar_cashflow_df()
+    cf.loc[cf["concept"] == "us-gaap_NetCashProvidedByUsedInOperatingActivities",
+           "2024-12-31 (FY)"] = float("nan")
+    fin = extract_financials(_ipar_income_df(), cf, pd.DataFrame(), shares_diluted=None)
+    assert fin.operating_cash_flow == []
+    assert fin.free_cash_flow == []
+
+
+def test_revenue_abstains_when_the_raw_total_is_incomplete():
+    income = pd.DataFrame([
+        _inc_row("us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "Revenue", 3,
+                 91_418.0, 86_266.0),
+        _inc_row("us-gaap_Revenues", "Revenue", 5, 447_567.0, float("nan")),
+    ])
+    fin = extract_financials(income, _ipar_cashflow_df(), pd.DataFrame(), shares_diluted=None)
+    assert fin.revenue == []
+
+
+def test_net_income_prefers_available_to_common_over_profit_loss():
+    """BSX/CAT tag no `NetIncomeLoss` but do tag the parent's share; `ProfitLoss` would add
+    the noncontrolling interest."""
+    income = pd.DataFrame([
+        _inc_row("us-gaap_Revenues", "Revenue", 1, 20_074.0, 16_747.0),
+        _inc_row("us-gaap_ProfitLoss", "ProfitLoss", 2, 2_892.0, 1_592.0),
+        _inc_row("us-gaap_NetIncomeLossAvailableToCommonStockholdersBasic",
+                 "NetIncomeToCommonShareholders", 1, 2_898.0, 1_570.0),
+    ])
+    fin = extract_financials(income, _ipar_cashflow_df(), pd.DataFrame(), shares_diluted=None)
+    assert fin.net_income == [2_898.0, 1_570.0]
