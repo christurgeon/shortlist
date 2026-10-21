@@ -115,11 +115,15 @@ class LobbyingSource(Source):
         end = today.isoformat()
         cached = self._read_cache(ticker, end)
         if cached is not None:
-            if cached.get("matched"):
-                snap.lobbying = Lobbying(**cached["lb"])
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "cached": True}
-            return res
+            # A corrupt/stale payload degrades to a cache miss; the live path overwrites it.
+            try:
+                if cached.get("matched"):
+                    snap.lobbying = Lobbying(**cached["lb"])
+                res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
+                           "cached": True}
+                return res
+            except Exception:
+                snap.lobbying = None
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         window_start = today - timedelta(days=int(self._months * 30.44))
         years = list(range(window_start.year, today.year + 1))
