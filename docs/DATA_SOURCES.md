@@ -133,7 +133,6 @@ not a new sub-score or hard gate.
   real-time price of corporate distress; the 2s10s curve is the canonical recession lead.
   This is *not* per-stock — it's a run-level overlay that should **tilt or gate the whole
   shortlist**: widen gates / down-weight leveraged & cyclical names when spreads blow out.
-  This is exactly what the scaffolded `FredProvider` docstring already anticipates.
 - **Access:** the keyless CSV graph host (`fred.stlouisfed.org/graph/fredgraph.csv`) is
   **IP-blocked on datacenter ranges** (it times out from the deploy VPS, same as Yahoo), so
   the overlay uses the **official FRED API** (`api.stlouisfed.org/fred/series/observations`)
