@@ -3,6 +3,7 @@ import tempfile
 from datetime import date, timedelta
 
 import httpx
+import pytest
 from shortlist.data.sources import LobbyingSource
 
 
@@ -145,4 +146,24 @@ def test_same_day_rerun_uses_cache():
     second = _run(src.fetch("LMT")).partial.lobbying
     assert calls["n"] == after_first       # warm re-run: zero upstream calls
     assert second.ttm_spend == first.ttm_spend == 30000.0
+    _run(src.aclose())
+
+
+@pytest.mark.parametrize("bad", [{"matched": True, "lb": {"no_such_field": 1}},
+                                 {"matched": True}])
+def test_corrupt_versioned_cache_never_raises_and_refetches(bad):
+    from shortlist.data.diskcache import write_json_cache
+    end = date.today().isoformat()
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return _year_handler(req)
+    src = _source_with(handler)
+    write_json_cache(src._cache_path("LMT", end), {"v": src._CACHE_V, **bad})
+    res = _run(src.fetch("LMT"))          # must not raise
+    assert not res.errors
+    assert res.partial.lobbying.ttm_spend == 30000.0
+    assert calls["n"] > 0                 # live path ran: corrupt cache was a miss
+    assert src._read_cache("LMT", end)["lb"]["ttm_spend"] == 30000.0
     _run(src.aclose())

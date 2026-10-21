@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
 from ...env import redact_secrets
-from ..models import SourceResult, TickerSnapshot
-from ._common import _load_ticker_name_index, _read_versioned_cache, _write_versioned_cache
-from .base import Source
+from ..models import SourceResult
+from ._common import _NameIndexedSource
 
 
-class GovContractsSource(Source):
+class GovContractsSource(_NameIndexedSource):
     """Keyless USAspending federal procurement-contract obligations.
 
     Resolves ticker->name via SEC company_tickers.json (bulk-loaded once, month-
@@ -30,83 +28,40 @@ class GovContractsSource(Source):
     DATA_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"
     _CONTRACT_CODES = ["A", "B", "C", "D"]
     _TTM_DAYS = 365            # TTM vs prior-TTM split boundary
+    _CACHE_PREFIX = "contracts"
+    _CACHE_V = 1   # bump if the cached GovContracts shape changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/usaspending",
                  config: Optional[dict] = None):
         import httpx  # lazy: only needed for live runs
         cfg = (config or {}).get("gov_contracts", {}) if config else {}
-        self._client = httpx.AsyncClient(
-            timeout=float(cfg.get("timeout", timeout)),
-            headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"})
-        self._cache_dir = Path(cfg.get("cache_dir", cache_dir))
+        super().__init__(
+            httpx.AsyncClient(
+                timeout=float(cfg.get("timeout", timeout)),
+                headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"}),
+            Path(cfg.get("cache_dir", cache_dir)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.80))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages", 5))
-        self._name_index: Optional[dict] = None
-        self._load_error: Optional[str] = None
-        self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
-
-    async def _load_names(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return
-        async with self._load_lock:
-            await self._load_names_locked()
-
-    async def _load_names_locked(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return   # another task won the race while we waited on the lock
-        self._name_index, self._load_error = await _load_ticker_name_index(
-            self._client, str(self._cache_dir))
 
     def _filters(self, name: str, start: str, end: str) -> dict:
         return {"recipient_search_text": [name],
                 "award_type_codes": self._CONTRACT_CODES,
                 "time_period": [{"start_date": start, "end_date": end}]}
 
-    def _cache_path(self, ticker: str, day: str) -> Path:
-        return self._cache_dir / f"contracts-{ticker.upper()}-{day}.json"
-
-    _CACHE_V = 1   # bump if the cached GovContracts shape changes
-
-    def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        return _read_versioned_cache(self._cache_path(ticker, day), self._CACHE_V)
-
-    def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
-
     async def fetch(self, ticker: str) -> SourceResult:
         from ..govcontract_match import match_confidence
         from ..models import GovContracts
-        res = SourceResult(source=self.name)
-        snap = TickerSnapshot(ticker=ticker)
-        res.partial = snap
-        await self._load_names()
-        if self._load_error:
-            res.errors.append(f"gov_contracts: {self._load_error}")
-            return res
-        name = (self._name_index or {}).get(ticker.upper())
-        if not name:
-            res.raw = {"resolved_name": None}
+        res, snap, name = await self._begin(ticker)
+        if name is None:
             return res
         today = date.today()
         end = today.isoformat()
-        # Warm per-ticker cache (Yahoo/FINRA precedent): a same-day re-run of the
-        # basket makes zero USAspending calls.
-        cached = self._read_cache(ticker, end)
+        cached, snap.gov_contracts = self._cached_model(ticker, end, GovContracts, "gc")
         if cached is not None:
-            # Guarded rebuild: a corrupt/stale payload must never raise out of
-            # fetch() — it degrades to a cache miss and the live path below runs.
-            try:
-                if cached.get("matched"):
-                    snap.gov_contracts = GovContracts(**cached["gc"])
-                res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                           "total_txns": cached.get("total_txns"), "cached": True}
-                return res
-            except Exception:
-                snap.gov_contracts = None
+            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
+                       "total_txns": cached.get("total_txns"), "cached": True}
+            return res
         start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         try:
@@ -170,5 +125,5 @@ class GovContractsSource(Source):
                                             "gc": dataclasses.asdict(gc)})
             res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
         except Exception as e:
-            res.errors.append(f"gov_contracts: {redact_secrets(e)}")
+            res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res

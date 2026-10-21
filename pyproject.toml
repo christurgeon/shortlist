@@ -72,17 +72,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.mccabe]
-# A ratchet, not an aspiration. 20 is the tightest ceiling the tree passes with
-# only THREE exemptions, and they carry a per-function `# noqa: C901` at the def
-# rather than a per-file ignore, so the rest of those files stays covered:
-#   bridge.snapshot_to_metrics (47) — order-dependent pipeline; PR #145 measured
-#     the split and deliberately declined it (TODO.md §6).
-#   backtest/cli.py:main (36)       — argparse surface, flat dispatch.
-#   research/assess.py:_quant_context (21) — one optional prompt line per branch.
-# Pinning at 47 instead would have been no guardrail at all: it would let every
-# OTHER function grow to 47 unnoticed, which is the failure this rule exists to
-# catch. Raise this number only with a reason; adding a fourth noqa is the
-# cheaper answer, and a fifth is the signal that something needs splitting.
+# A ratchet: never raise it without a reason. A function that must exceed it
+# carries `# noqa: C901` and its reason at the def, never a per-file ignore, so
+# the rest of that file stays covered.
 max-complexity = 20
 
 [tool.ruff.lint.per-file-ignores]
