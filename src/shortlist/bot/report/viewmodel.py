@@ -120,6 +120,10 @@ class AssessmentVM:
     # "" on a brief written with the section off, and on every brief from before it existed.
     roic_persistence: str = ""
     roic_persistence_shown: bool = False
+    # The computed "Capital allocation" section, as research/capital_allocation.py wrote it;
+    # "" on every brief from before it existed. Not the model's `capital_allocation` prose.
+    capital_allocation_computed: str = ""
+    capital_allocation_computed_shown: bool = False
     # The "Recent news" section as research/news.py recorded it; status "" on a brief written
     # with the section off and on every brief from before it existed.
     news: list[NewsVM] = field(default_factory=list)
@@ -259,6 +263,8 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         stub_sections=[str(x) for x in (rec.get("stub_sections") or [])],
         roic_persistence=str(rec.get("durability_line") or ""),
         roic_persistence_shown=rec.get("durability_status") == "shown",
+        capital_allocation_computed=str(rec.get("capital_allocation_line") or ""),
+        capital_allocation_computed_shown=rec.get("capital_allocation_status") == "shown",
         news=_news(rec.get("news_items")),
         news_status=str(rec.get("news_status") or ""),
         news_as_of=str(rec.get("news_as_of") or ""),

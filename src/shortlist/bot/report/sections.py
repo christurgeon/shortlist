@@ -399,15 +399,27 @@ def _call_html(h, a, composite: "float | None" = None) -> list[str]:
     return out
 
 
-def _persistence_html(h, body: str) -> str:
-    """The "ROIC persistence" section, word for word as research/durability.py wrote it: the
-    caveats are part of what the measurement licenses, so nothing here shortens them."""
-    from ...research.durability import HEADING
+def _computed_html(h, heading: str, body: str) -> str:
+    """A computed section, folded and word for word as its research module wrote it: plain
+    lines, "- " bullets after the intro. Nothing here shortens the caveats."""
     lines = body.split("\n")
     intro = [ln for ln in lines if not ln.startswith("- ")]
     bullets = "".join(h.tag("li", ln[2:]) for ln in lines if ln.startswith("- "))
-    return _fold(h, HEADING, "".join(h.tag("p", ln) for ln in intro)
+    return _fold(h, heading, "".join(h.tag("p", ln) for ln in intro)
                  + (h.raw("ul", bullets) if bullets else ""))
+
+
+def _persistence_html(h, body: str) -> str:
+    from ...research.durability import HEADING
+    return _computed_html(h, HEADING, body)
+
+
+def _capital_allocation_text(a) -> str:
+    """One line for the chat message; the numbers and their basis are in the report."""
+    if a.capital_allocation_computed_shown:
+        return "   💵 Capital allocation (computed, not LLM-generated): details are in the report"
+    reason = a.capital_allocation_computed
+    return "   💵 Capital allocation: " + reason[0].lower() + reason[1:]
 
 
 def _persistence_text(a) -> str:
@@ -561,6 +573,9 @@ class _Research:
                     body += _findings_block(h, "Management findings", a.management_findings)
                 parts.append(_fold(h, "Capital allocation", body,
                                    [f.status for f in a.management_findings]))
+            if a.capital_allocation_computed:
+                from ...research.capital_allocation import HEADING as CA_HEADING
+                parts.append(_computed_html(h, CA_HEADING, a.capital_allocation_computed))
             if a.roic_persistence:
                 parts.append(_persistence_html(h, a.roic_persistence))
             footer = _evidence_counts(a)
@@ -595,6 +610,8 @@ class _Research:
                     out += _evidence_text(c.status, c.filing_says, c.source)
                 if a.roic_persistence:
                     out.append(_persistence_text(a))
+                if a.capital_allocation_computed:
+                    out.append(_capital_allocation_text(a))
                 if a.news_status:
                     out += _news_text(a)
                 for f in a.red_flags:

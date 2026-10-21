@@ -16,7 +16,7 @@ from shortlist import durability_profile as dp
 from shortlist import research
 from shortlist.config import load_config
 from shortlist.research import assess as assess_mod
-from shortlist.research import cachekey, report
+from shortlist.research import cachekey, capital_allocation, report
 from shortlist.research import durability as rd
 from shortlist.research.models import FilingBundle, FilingText, Moat, QualitativeAssessment, Thesis
 
@@ -615,7 +615,9 @@ def test_the_section_is_off_unless_enabled(tmp_path, monkeypatch):
     assert "ROIC persistence" not in brief
     record = json.loads(Path(result.brief_path).with_suffix(".json").read_text())
     assert (record["durability_line"], record["durability_status"]) == ("", "")
-    assert brief == report.to_markdown(_assessment())      # byte-identical to a brief without it
+    no_data = (capital_allocation.NOT_SHOWN_NO_DATA, capital_allocation.NOT_SHOWN)
+    # byte-identical to a brief without it
+    assert brief == report.to_markdown(_assessment(), capital_allocation=no_data)
 
 
 def test_the_section_is_computed_after_the_model_call_and_printed(tmp_path, monkeypatch):

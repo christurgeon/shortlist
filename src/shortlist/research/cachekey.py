@@ -64,7 +64,7 @@ _CONFIDENCE_STEP = 0.05
 # `durability` and `news` render brief sections the model never sees. They are brief content,
 # not prompt content, but the rule is the same: their wording must not change under a cached
 # brief. Neither renderer is named `context_line`, so the discovery test does not find them;
-# tests of their own do.
+# tests of their own do. `capital_allocation` is deliberately absent; see its module docstring.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
                    "analyst_revision", "options", "earnings_moves", "controls",

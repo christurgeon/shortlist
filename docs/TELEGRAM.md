@@ -93,6 +93,10 @@ For a section that is shown it only points to the report, and never gives a shor
 the caveats are part of what the measurement licenses. For one that is not shown it gives the
 reason (`docs/RESEARCH.md` → the ROIC-persistence section).
 
+The HTML attachment also folds the computed **Capital allocation** section, and the chat text
+carries one line that points to it or gives the reason it is not shown (`docs/RESEARCH.md` →
+the capital-allocation section).
+
 With `research.news.enabled`, the HTML attachment carries the **Recent news** section: linked
 third-party headlines the model never saw, labelled as not verified. The chat text lists them
 under the same heading at `Detail.FULL` only, and says so when the feed was unavailable
