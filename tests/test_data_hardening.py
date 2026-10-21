@@ -128,7 +128,6 @@ def test_govcontracts_name_index_loads_once_under_concurrency(monkeypatch, tmp_p
     assert all(r.partial.gov_contracts is None for r in results)
 
 
-
 @pytest.mark.parametrize("cls,section", [(GovContractsSource, "gov_contracts"),
                                          (LobbyingSource, "lobbying")])
 def test_name_index_load_error_is_reported_per_source(monkeypatch, tmp_path, cls, section):
@@ -140,6 +139,7 @@ def test_name_index_load_error_is_reported_per_source(monkeypatch, tmp_path, cls
     res = asyncio.run(_gather_fetches(src, 1, ticker="LMT"))[0]
     assert res.errors == [f"{section}: sec down"]
     assert res.partial is not None and res.raw == {}
+
 
 # --- item 6: FINRA pagination is hard-capped ---------------------------------
 

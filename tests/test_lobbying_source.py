@@ -149,7 +149,6 @@ def test_same_day_rerun_uses_cache():
     _run(src.aclose())
 
 
-
 @pytest.mark.parametrize("bad", [{"matched": True, "lb": {"no_such_field": 1}},
                                  {"matched": True}])
 def test_corrupt_versioned_cache_never_raises_and_refetches(bad):

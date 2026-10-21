@@ -99,7 +99,7 @@ class _NameIndexedSource(Source):
     def _cached_model(self, ticker: str, day: str, model: type, key: str) -> tuple[Optional[dict], Any]:
         """``(payload, model(**payload[key]))`` from the day cache; the model is None
         for an unmatched payload. ``(None, None)`` on a miss, and a payload that
-        fails to rebuild is a miss so the live path runs and overwrites it."""
+        fails to rebuild is a miss: the live path runs and, on success, overwrites it."""
         cached = self._read_cache(ticker, day)
         if cached is None:
             return None, None

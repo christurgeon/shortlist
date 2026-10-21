@@ -144,5 +144,5 @@ class LobbyingSource(_NameIndexedSource):
             self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
             res.raw = {"resolved_name": name, "matched": True, "total_filings": total}
         except Exception as e:
-            res.errors.append(f"lobbying: {redact_secrets(e)}")
+            res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res

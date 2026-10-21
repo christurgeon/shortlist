@@ -125,5 +125,5 @@ class GovContractsSource(_NameIndexedSource):
                                             "gc": dataclasses.asdict(gc)})
             res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
         except Exception as e:
-            res.errors.append(f"gov_contracts: {redact_secrets(e)}")
+            res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res
