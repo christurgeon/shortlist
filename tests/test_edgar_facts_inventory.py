@@ -86,7 +86,8 @@ def test_partial_series_is_dropped_not_half_filled():
     that would silently shift the year alignment."""
     row = _inv_row([135.923e6, 96.247e6])
     row[INSTANT[1]] = None
-    assert _extract([row]).inventory == []
+    assets = _inv_row([900.0e6, 850.0e6], concept="us-gaap_Assets")
+    assert _extract([row, assets]).inventory == []
 
 
 def test_wrong_concept_is_not_picked_up():
