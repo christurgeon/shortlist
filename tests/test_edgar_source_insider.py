@@ -103,6 +103,16 @@ def test_fetch_insider_counts_beyond_forty_filings(monkeypatch):
     assert res.partial.insider.buy_count == 60
 
 
+def test_fetch_insider_skips_form4_amendments(monkeypatch):
+    amendment = _filing("0001067983", "S", 3053, 143.79, "Aguilar")
+    amendment.form = "4/A"
+    _install_company(monkeypatch, [amendment, _filing("0001067983", "S", 3053, 143.79, "Aguilar")])
+    res = _src()._fetch_insider("PG")
+    assert res.errors == []
+    assert res.partial.insider.sell_count == 1
+    assert len(res.raw["form4_trades"]) == 1
+
+
 class _CountingFiling:
     def __init__(self, inner, counter):
         self._inner, self._counter = inner, counter

@@ -130,17 +130,67 @@ def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4
     return s
 
 
+_TRADE_KEY_FIELDS = ("Security", "Date", "Code", "Shares", "Price",
+                     "DirectIndirect", "NatureOfOwnership", "Remaining")
+
+
+def _missing(v: Any) -> bool:
+    """True for None and NaN-like values (NaN != NaN; pandas NA raises on bool)."""
+    if v is None:
+        return True
+    try:
+        return bool(v != v)
+    except (TypeError, ValueError):
+        return True
+
+
+def _trade_key(r: Any) -> Optional[tuple]:
+    """Identity of a `market_trades` row across filings, or None when the row has no
+    shares-owned-after value (`Remaining`) or an unhashable field; None never matches."""
+    if _missing(getattr(r, "Remaining", None)):
+        return None
+    # A direct holding carries a NaN NatureOfOwnership; left as NaN it would never match.
+    key = tuple(None if _missing(v := getattr(r, f, None)) else v for f in _TRADE_KEY_FIELDS)
+    try:
+        hash(key)
+    except TypeError:
+        return None
+    return key
+
+
+def _already_reported(key: Optional[tuple], owners: set[int],
+                      seen: dict[tuple, set[int]]) -> bool:
+    """True when an earlier filing recorded `key` in `seen` (key -> reporting-owner CIKs)
+    and the row is indirect or that filing shares a reporting owner with `owners`."""
+    if key is None or key not in seen:
+        return False
+    # Two insiders can each buy the same direct lot from zero; only a shared holding
+    # (indirect) or a shared reporter makes identical rows one trade.
+    direct_indirect = key[_TRADE_KEY_FIELDS.index("DirectIndirect")]
+    return str(direct_indirect).strip().upper() == "I" or bool(seen[key] & owners)
+
+
 def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
-                resolve_footnotes: Any = None) -> list[tuple]:
+                resolve_footnotes: Any = None,
+                seen: Optional[dict[tuple, set[int]]] = None,
+                owners: frozenset | set = frozenset()) -> list[tuple]:
     """Pull (shares, price, code, date, name, role, planned) tuples from an edgartools
     `market_trades` DataFrame (cols: Shares, Price, Code, Date, footnotes, ...).
+    With `seen`, rows `_already_reported` are dropped, and after the frame every row's
+    key is recorded in `seen` under `owners`, so rows of one frame never drop each other.
     `planned` is the 10b5-1 footnote heuristic, resolved via `resolve_footnotes` (the
     duck-typed form4._resolve_footnotes; None in tests/absence -> planned False).
     Guards the DataFrame truth-value trap (`if df:` raises)."""
     if market_trades is None or getattr(market_trades, "empty", True):
         return []
     rows = []
+    keys = []
     for r in market_trades.itertuples(index=False):
+        if seen is not None:
+            key = _trade_key(r)
+            keys.append(key)
+            if _already_reported(key, owners, seen):
+                continue
         planned = False
         if resolve_footnotes is not None:
             ids = getattr(r, "footnotes", None)
@@ -156,6 +206,10 @@ def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
             getattr(r, "Date", None),
             name, role, planned,
         ))
+    if seen is not None:
+        for key in keys:
+            if key is not None:
+                seen.setdefault(key, set()).update(owners)
     return rows
 
 
@@ -188,6 +242,17 @@ def _form_role(form4: Any) -> Optional[str]:
         return None
 
 
+def _owner_ciks(form4: Any) -> set[int]:
+    """CIKs of the filing's reporting owners; unreadable ones are left out."""
+    ciks = set()
+    for owner in getattr(getattr(form4, "reporting_owners", None), "owners", None) or []:
+        try:
+            ciks.add(int(str(owner.cik).strip()))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return ciks
+
+
 def _issuer_cik(form4: Any) -> Optional[int]:
     """The filing's issuer CIK as an int, or None when absent or unparseable."""
     try:
@@ -201,14 +266,25 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
                     issuer_cik: int | str) -> Form4Summary:
     """Aggregate Form 4 filings (newest-first) until one predates `cutoff`. Only
     filings whose issuer CIK equals `issuer_cik` count: a company's own filing list
-    also holds Form 4s it filed as reporting owner of another issuer. A filing that
-    fails to parse or has no readable issuer CIK is skipped. When `conviction` is
-    supplied, role + 10b5-1 extraction feed the v2 aggregates."""
+    also holds Form 4s it filed as reporting owner of another issuer. Form 4/A
+    amendments are skipped unparsed, so a trade reported only in an amendment is not
+    counted. A row identical (`_trade_key`) to one in an earlier-listed counted filing is
+    dropped when it is indirect or the filings share a reporting owner; rows within one
+    filing are never merged. A filing that fails to parse or has no readable issuer CIK
+    is skipped. When `conviction` is supplied, role + 10b5-1
+    extraction feed the v2 aggregates."""
     want = int(issuer_cik)
     rows: list[tuple] = []
+    # Joint reporters (e.g. co-trustees) each file the same trade, and a form is
+    # sometimes filed twice.
+    seen: dict[tuple, set[int]] = {}
     for filing in filings:
         if filing.filing_date < cutoff:
             break
+        # Most amendments restate or correct trades their original already reports.
+        # docs/audits/2026-10-20-form4-amendments-and-duplicates.md
+        if str(getattr(filing, "form", "4")).upper().endswith("/A"):
+            continue
         try:
             form4 = filing.obj()
         except Exception:
@@ -220,5 +296,6 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
             getattr(form4, "insider_name", None),
             _form_role(form4),
             getattr(form4, "_resolve_footnotes", None),
+            seen=seen, owners=_owner_ciks(form4),
         ))
     return summarize(rows, conviction)
