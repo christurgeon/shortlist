@@ -4,6 +4,7 @@ import dataclasses
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 from .models import Finding, QualitativeAssessment, call_disclaimer, stance_label, stub_sections_note
 
@@ -128,7 +129,9 @@ def _call_md(a, config=None):
     return badge, block
 
 
-def to_markdown(a: QualitativeAssessment, config=None) -> str:
+def to_markdown(a: QualitativeAssessment, config=None,
+                capital_allocation: Optional[tuple[str, str]] = None) -> str:
+    """`capital_allocation` is research/capital_allocation.py's (body, status); None omits it."""
     t = a.thesis
     rendered = _call_md(a, config)
     call_badge, call_block = rendered if rendered is not None else ("", [])
@@ -176,6 +179,9 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
               "", "## Management & capital allocation", a.management_capital_allocation]
     if a.management_findings:
         lines += ["", *_findings_md(a.management_findings, "None identified.")]
+    if capital_allocation and capital_allocation[0]:
+        from .capital_allocation import HEADING as CA_HEADING
+        lines += ["", f"## {CA_HEADING}", capital_allocation[0]]
     lines += [
               "", "## Material risks", *_findings_md(a.risks, "None identified."),
               "", "## Red flags", *_findings_md(a.red_flags, "None identified."),
@@ -193,7 +199,8 @@ def to_markdown(a: QualitativeAssessment, config=None) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write(a: QualitativeAssessment, root, config=None) -> Path:
+def write(a: QualitativeAssessment, root, config=None,
+          capital_allocation: Optional[tuple[str, str]] = None) -> Path:
     """Write both the markdown brief and the JSON record; return the brief path.
     Keyed on a.cache_key (the wide key from research/cachekey.py:brief_key — quote
     that module for the current composition, not this line), falling back to
@@ -206,13 +213,15 @@ def write(a: QualitativeAssessment, root, config=None) -> Path:
     # the two writes must never strand a "cached" brief with no screening-call record.
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
+    record["capital_allocation_line"], record["capital_allocation_status"] = (
+        capital_allocation or ("", ""))
     record_path(a.ticker, key, root).write_text(
         json.dumps(record, indent=2, default=str), encoding="utf-8")
     # The marker itself must be atomic too: a truncated .md would read as
     # "cached" forever. PID-unique temp + os.replace (the store.py pattern).
     tmp = bp.with_name(f"{bp.name}.{os.getpid()}.tmp")
     try:
-        tmp.write_text(to_markdown(a, config), encoding="utf-8")
+        tmp.write_text(to_markdown(a, config, capital_allocation), encoding="utf-8")
         os.replace(tmp, bp)
     finally:
         tmp.unlink(missing_ok=True)

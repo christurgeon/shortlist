@@ -119,11 +119,11 @@ def _at(seq, i):
     return seq[i] if seq and i < len(seq) else None
 
 
-def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
-    """`{fiscal_year -> ROIC}` for years where operating income, total debt and total equity
-    ALL resolve and invested capital is positive.
+def _nopat_and_invested_capital(st, tax_rate: float) -> dict[int, tuple[float, float]]:
+    """`{fiscal_year -> (NOPAT, invested capital)}` for years where operating income, total
+    debt and total equity ALL resolve and invested capital is positive.
 
-    `ROIC = operating_income * (1 - tax_rate) / (total_debt + total_equity)`.
+    `NOPAT = operating_income * (1 - tax_rate)`; `invested capital = total_debt + total_equity`.
 
     **This indexes all three series by the POSITION of `fiscal_years[i]`, plus a skip for
     missing values — it is not true fiscal-year pairing, and does not claim to be.** `Statements`
@@ -138,7 +138,7 @@ def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
     `invested_capital <= 0` abstains rather than emitting a negative or explosive ratio: real
     MCD filings carry NEGATIVE total equity (buyback compounders), which
     `docs/ASSESSMENT_GAPS.md` flags for exactly this reason."""
-    out: dict[int, float] = {}
+    out: dict[int, tuple[float, float]] = {}
     for i, fy in enumerate(st.fiscal_years or []):
         if fy is None:
             continue
@@ -149,8 +149,14 @@ def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
         invested = td + te
         if invested <= 0:
             continue
-        out[int(fy)] = oi * (1.0 - tax_rate) / invested
+        out[int(fy)] = (oi * (1.0 - tax_rate), invested)
     return out
+
+
+def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
+    """`{fiscal_year -> ROIC}`, `ROIC = NOPAT / invested capital` on the basis and abstentions
+    of `_nopat_and_invested_capital`."""
+    return {fy: nopat / ic for fy, (nopat, ic) in _nopat_and_invested_capital(st, tax_rate).items()}
 
 
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; split measured and rejected (PR #145, docs/audits/README.md)
@@ -269,6 +275,12 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         series = _financial_series(st)
         if series:
             m.financial_series = series
+        nopat_ic = _nopat_and_invested_capital(st, ROIC_TAX_RATE)
+        if nopat_ic:
+            m.invested_capital_series = [
+                {"fiscal_year": fy, "nopat": nopat, "invested_capital": ic}
+                for fy, (nopat, ic) in sorted(nopat_ic.items(), reverse=True)]
+        m.dividends_paid, m.repurchases = st.dividends_paid, st.repurchases
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from shortlist import research
 from shortlist.config import load_config
 from shortlist.research import assess as assess_mod
-from shortlist.research import cachekey, news, report
+from shortlist.research import cachekey, capital_allocation, news, report
 from shortlist.research.models import FilingBundle, FilingText, Moat, QualitativeAssessment, Thesis
 
 _TS = int(datetime(2026, 10, 15, 12, tzinfo=timezone.utc).timestamp())
@@ -57,7 +57,8 @@ def test_the_section_is_off_unless_enabled_and_the_brief_is_then_unchanged(tmp_p
     result, calls = _enrich(tmp_path, monkeypatch, enabled=False)
     assert calls == ["assess"]
     brief = Path(result.brief_path).read_text()
-    assert brief == report.to_markdown(_assessment())
+    no_data = (capital_allocation.NOT_SHOWN_NO_DATA, capital_allocation.NOT_SHOWN)
+    assert brief == report.to_markdown(_assessment(), capital_allocation=no_data)
     record = json.loads(Path(result.brief_path).with_suffix(".json").read_text())
     assert (record["news_items"], record["news_status"], record["news_as_of"],
             record["news_from"], record["news_truncated"]) == ([], "", "", "", False)

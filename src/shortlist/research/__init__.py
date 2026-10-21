@@ -92,8 +92,9 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         # assess() sets the narrow bundle key (assess.py:659); the brief is written
         # under the wide key so the two never diverge on disk.
         assessment.cache_key = key
-        # AFTER the model call, on purpose: the ROIC-persistence and recent-news sections are
-        # display-only and must not reach the prompt. Neither fetch_section ever raises.
+        # AFTER the model call, on purpose: the ROIC-persistence, recent-news and
+        # capital-allocation sections are display-only and must not reach the prompt. None of
+        # them ever raises.
         dcfg = (config.get("research") or {}).get("durability")
         if isinstance(dcfg, dict) and dcfg.get("enabled", False):
             from . import durability
@@ -106,7 +107,9 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
             (assessment.news_items, assessment.news_status, assessment.news_as_of,
              assessment.news_from, assessment.news_truncated) = (
                 s.items, s.status, s.as_of, s.covers_from, s.truncated)
-        bp = report.write(assessment, root, config)
+        from . import capital_allocation
+        bp = report.write(assessment, root, config,
+                          capital_allocation=capital_allocation.section(card))
     except Exception as e:  # assess/render/write errors
         return ResearchResult(card.ticker, skipped=f"research error: {redact_secrets(e)}")
     return ResearchResult(

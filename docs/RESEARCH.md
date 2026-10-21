@@ -115,7 +115,8 @@ score-vs-filing reconciliation.
 
 On by default (`research.durability.enabled`). Every brief carries one more section,
 **"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. The model did
-not write it and never sees it (the recent-news section below is the other such section).
+not write it and never sees it (the capital-allocation and recent-news sections below are the
+others).
 
 - **What it is.** A pre-registered study measured, among firms with a ROIC in the top fifth,
   which ones still had it three years later
@@ -159,6 +160,34 @@ not write it and never sees it (the recent-news section below is the other such 
   config says): an httpx timeout is per phase and per read, and is not a deadline. A brief makes
   at most one request. A brief is cached for the day with the section it
   was written with, so a section that failed stays until the day bucket turns or `--refresh`.
+
+### The capital-allocation section — computed, not written by the model
+
+Always on. Every brief carries **"Capital allocation (computed from SEC data — not
+LLM-generated)"** under the model's "Management & capital allocation" prose, in the markdown
+brief and folded in the Telegram HTML report (`research/capital_allocation.py`).
+
+- **What it is.** Accounting data over the fiscal years on the card: operating cash flow,
+  capital spending (operating cash flow minus free cash flow) and free cash flow summed over the
+  newest run of consecutive years; the latest year's buybacks and dividends and their share of
+  that year's free cash flow; the change in diluted share count; ROIC per year; and incremental
+  ROIC (ΔNOPAT / Δinvested capital) with the reinvestment rate (Δinvested capital / NOPAT of
+  the years after the start). ROIC is the bridge's computed basis (`bridge.py:ROIC_TAX_RATE`,
+  debt plus equity), not a fundamentals-source figure.
+- **What it is not.** Not a score, gate or flag, and no claim about returns or quality.
+- **Abstention.** Each line abstains on its own and says why. Incremental ROIC and the
+  reinvestment rate need two consecutive years and abstain when invested capital fell or grew
+  by less than 5% of its starting level (`MIN_IC_GROWTH`); a ratio beyond ±100% prints as a
+  bound. The payout share abstains when free cash flow is not positive. A bank, insurer or REIT
+  (the card's sector mask on the ROIC or FCF-yield leg) gets "Not shown: not meaningful for
+  this sector"; a name where nothing resolves gets one "Not shown" sentence.
+- **Only the latest year of buybacks and dividends.** The harness extractor
+  (`providers/_edgar_facts.py`) keeps one fiscal year of the financing tags, so the section
+  cannot sum them over the window. A per-year series is an extraction change.
+- **Where it is computed.** `_enrich_card`, after `assess()` returns, from data already on the
+  card; no request. It is stored with the brief (`capital_allocation_line` in the JSON record).
+  The module is not in `cachekey._PROMPT_MODULES`, so the prompt fingerprint does not cover it:
+  a wording change reaches new briefs when the day bucket turns.
 
 ### The recent-news section — third-party headlines, not seen by the model
 
