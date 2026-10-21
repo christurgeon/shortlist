@@ -124,7 +124,9 @@ e.g. a recent spin-off, degrades statements to `None` without affecting the rest
    `concept` and a normalized `standard_concept` bucket per row, and balance-sheet columns
    are instant dates; `tests/test_edgar_leverage_live.py` pins both. The bucket also lands on
    reconciling and component lines, so revenue, net income and operating cash flow read the
-   raw total tag first and fall back to the bucket. When the statement view has no
+   raw total tag first and fall back to the bucket. Before bumping edgartools, run
+   `SEC_IDENTITY=you@example.com uv run pytest -m live tests/test_edgar_statements_live.py`;
+   it must pass. When the statement view has no
    diluted share-count row, a 10-K filer's count comes from SEC's single-tag
    `companyconcept` API. The fallback reads only 10-K rows, so it never fills a 20-F or
    40-F filer's count. A 404 is treated as "tag not reported" while a known reporter's
