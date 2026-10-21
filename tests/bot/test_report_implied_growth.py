@@ -40,11 +40,11 @@ def _vm(mvm):
 def test_cell_compares_implied_growth_with_revenue_cagr():
     # base = median(10, 9, 8)B = 9B; g = 10% - 9B/1000B = 9.1%
     assert _text(_metrics([10e9, 9e9, 8e9], revenue_cagr=0.06)) == \
-        "+9%/yr vs +6% rev CAGR · 10% disc"
+        "+9%/yr perpetual FCF vs +6% rev CAGR · 10% disc"
 
 
 def test_cell_omits_comparison_without_revenue_cagr():
-    assert _text(_metrics([10e9, 9e9, 8e9])) == "+9%/yr · 10% disc"
+    assert _text(_metrics([10e9, 9e9, 8e9])) == "+9%/yr perpetual FCF · 10% disc"
 
 
 def test_cell_shows_a_label_not_a_rate_when_distressed():
@@ -76,9 +76,9 @@ def test_cell_rate_matches_the_prompt_line():
 def test_html_and_text_render_the_conditional_cell():
     mvm = _metrics_vm(_metrics([10e9, 9e9, 8e9], revenue_cagr=0.06), reverse_dcf_cfg=_CFG)
     body = render_html_body(_vm(mvm))
-    assert "Implied growth" in body and "+9%/yr vs +6% rev CAGR · 10% disc" in body
+    assert "Implied growth" in body and "+9%/yr perpetual FCF vs +6% rev CAGR · 10% disc" in body
     txt = render_text(_vm(mvm), Detail.FULL)
-    assert "Implied growth: +9%/yr vs +6% rev CAGR · 10% disc" in txt
+    assert "Implied growth: +9%/yr perpetual FCF vs +6% rev CAGR · 10% disc" in txt
 
     bare = _metrics_vm(_metrics([10e9, 9e9, 8e9]))
     assert "Implied growth" not in render_html_body(_vm(bare))
@@ -132,3 +132,31 @@ def test_cell_still_shown_for_an_unknown_bucket():
     assert card.sic_bucket == "unknown"
     vm = build_view_model([card], date(2026, 6, 4), assessments={}, reverse_dcf_cfg=rdcfg)
     assert _implied_growth_text(vm.leaders[0].metrics).startswith("+9%/yr")
+
+
+def test_cell_abstains_when_the_latest_fcf_is_not_positive():
+    # base = the old +2B year would read as a healthy +8%/yr; current burn must not
+    assert _text(_metrics([-5e9, -3e9, 2e9], revenue_cagr=0.06)) is None
+    assert _text(_metrics([0.0, 9e9, 8e9])) is None
+    assert _text(_metrics([None, 10e9, 9e9, 8e9])).startswith("+9%/yr")
+
+
+def test_cell_marks_a_latest_fcf_above_the_base():
+    # base = median(30, 10, 8)B = 10B; latest 30B > 1.5x base
+    assert _text(_metrics([30e9, 10e9, 8e9], revenue_cagr=0.25)) == \
+        "+9%/yr perpetual FCF vs +25% rev CAGR · 10% disc · latest FCF above base"
+
+
+def test_cell_renders_zero_without_a_sign():
+    # g = 10% - 100B/1000B = 0; a flat CAGR also reads 0%
+    assert _text(_metrics([100e9], revenue_cagr=0.0)) == \
+        "0%/yr perpetual FCF vs 0% rev CAGR · 10% disc"
+    assert _text(_metrics([100.4e9], revenue_cagr=-0.004)) == \
+        "0%/yr perpetual FCF vs 0% rev CAGR · 10% disc"
+
+
+def test_html_cell_spans_the_full_metric_row():
+    mvm = _metrics_vm(_metrics([30e9, 10e9, 8e9], revenue_cagr=0.25), reverse_dcf_cfg=_CFG)
+    body = render_html_body(_vm(mvm))
+    assert '<div class="metric wide"><span class="k">Implied growth</span>' in body
+    assert body.count("metric wide") == 1

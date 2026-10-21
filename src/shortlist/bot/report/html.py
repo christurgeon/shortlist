@@ -171,6 +171,7 @@ table.board{border-collapse:separate; border-spacing:0; width:100%; min-width:ma
 .metric .v{font:600 12.5px/1 var(--mono); color:var(--text)}
 .metric .v.pos{color:var(--bull)} .metric .v.neg{color:var(--bear)}
 .metric .v.na{color:var(--text-3)}
+.metric.wide{grid-column:1/-1} .metric.wide .v{line-height:1.35; text-align:right}
 
 /* ---- research prose ---- */
 .call{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:2px 0 12px}

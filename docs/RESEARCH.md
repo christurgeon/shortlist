@@ -83,7 +83,8 @@ Several **prompt-only context lines** ride along. These are deliberately kept ou
 quote-verification haystack, so a computed value can never pass itself off as a filing fact:
 
 - A reverse-DCF "price-implied FCF growth" reframing (`research/reverse_dcf.py`). The reader
-  also sees it, as the report's **Implied growth** cell, computed from the same FCF series and config.
+  also sees it, as the report's **Implied growth** cell, computed from the same FCF series and
+  config; the cell is hidden for sector-masked names and current FCF burn, the prompt keeps it.
 - Recent SEC filings and recent insider Form-4 trades
 - DEF 14A pay and governance fields (`research/proxy.py`)
 - Government contract awards, federal lobbying, earnings execution history, macro regime

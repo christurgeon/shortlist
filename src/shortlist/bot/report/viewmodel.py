@@ -293,13 +293,18 @@ def call_one_liner(rec: dict) -> str | None:
 
 
 def _implied_growth(m, reverse_dcf_cfg) -> "ImpliedGrowth | None":
-    """The /deep prompt's reverse-DCF result, from the same FCF column and config."""
+    """The /deep prompt's reverse-DCF result, from the same FCF column and config; None
+    also when the latest finite FCF is not positive."""
     if not reverse_dcf_cfg:
         return None
     from ...research import reverse_dcf
     from ...research.assess import _fcf_col
-    return reverse_dcf.implied_growth(_fcf_col(getattr(m, "financial_series", None)),
-                                      getattr(m, "market_cap", None), reverse_dcf_cfg)
+    ig = reverse_dcf.implied_growth(_fcf_col(getattr(m, "financial_series", None)),
+                                    getattr(m, "market_cap", None), reverse_dcf_cfg)
+    # A positive base from an older year must not read as healthy while the name burns cash.
+    if ig is None or ig.latest_fcf is None or ig.latest_fcf <= 0:
+        return None
+    return ig
 
 
 def _metrics_vm(m, reverse_dcf_cfg: dict | None = None) -> MetricsVM:
@@ -337,7 +342,7 @@ def _leader_vm(c: ScoreCard, assessments: dict[str, dict],
     if any(isinstance(a, dict) and a.get("field") == "fcf_yield" and a.get("scope") == "leg"
            and a.get("reason") == "inapplicable" for a in getattr(c, "abstentions", [])):
         reverse_dcf_cfg = None   # the sector mask rules FCF structurally undefined
-    note =c.coverage.note if (c.coverage is not None and c.coverage.note) else None
+    note = c.coverage.note if (c.coverage is not None and c.coverage.note) else None
     rec = assessments.get(c.ticker)
     return LeaderVM(
         ticker=c.ticker,
