@@ -130,10 +130,9 @@ def _nopat_and_invested_capital(st, tax_rate: float) -> dict[int, tuple[float, f
     carries one year spine: the balance-sheet series have no year labels of their own
     (`edgar.py` derives `fiscal_years` from the INCOME statement's period ends, and the
     balance sheet's instant dates are discarded by `_series`). Genuine per-series labels would
-    be a change to `Statements`. Positional is correct on today's data — 0 interior gaps across
-    all 1684 stored snapshots, and the measured `fy=3 / oi=3 / debt=2` shape is a clean
-    newest-first prefix — and the None-skip makes it degrade safely rather than pairing a year
-    against a neighbour's value.
+    be a change to `Statements`. Positional is correct while the series are newest-first
+    prefixes of one spine (a shorter balance-sheet series simply ends early), and the None-skip
+    makes it degrade safely rather than pairing a year against a neighbour's value.
 
     `invested_capital <= 0` abstains rather than emitting a negative or explosive ratio: real
     MCD filings carry NEGATIVE total equity (buyback compounders), which
@@ -277,8 +276,10 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
             m.financial_series = series
         nopat_ic = _nopat_and_invested_capital(st, ROIC_TAX_RATE)
         if nopat_ic:
+            ends = dict(zip(st.fiscal_years or [], st.fiscal_period_end or [], strict=False))
             m.invested_capital_series = [
-                {"fiscal_year": fy, "nopat": nopat, "invested_capital": ic}
+                {"fiscal_year": fy, "period_end": ends.get(fy), "nopat": nopat,
+                 "invested_capital": ic}
                 for fy, (nopat, ic) in sorted(nopat_ic.items(), reverse=True)]
         m.dividends_paid, m.repurchases = st.dividends_paid, st.repurchases
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None

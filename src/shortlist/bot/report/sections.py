@@ -417,8 +417,7 @@ def _persistence_html(h, body: str) -> str:
 def _capital_allocation_text(a) -> str:
     """One line for the chat message; the numbers and their basis are in the report."""
     if a.capital_allocation_computed_shown:
-        return ("   💵 Capital allocation (computed from SEC data): cash flow, payouts, share "
-                "count and ROIC are in the report")
+        return "   💵 Capital allocation (computed, not LLM-generated): details are in the report"
     reason = a.capital_allocation_computed
     return "   💵 Capital allocation: " + reason[0].lower() + reason[1:]
 

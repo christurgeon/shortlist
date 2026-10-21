@@ -123,7 +123,7 @@ class StockMetrics:
     # context only; never read by the scorer.
     financial_series: Optional[list[dict]] = None
     # /deep capital-allocation section only; never read by the scorer or the prompt.
-    # {fiscal_year, nopat, invested_capital}, newest-first, on the computed-ROIC basis.
+    # {fiscal_year, period_end, nopat, invested_capital}, newest-first, on the computed-ROIC basis.
     invested_capital_series: Optional[list[dict]] = None
     # Latest fiscal year's cash-flow outflows, signed as filed (outflows usually negative).
     dividends_paid: Optional[float] = None

@@ -6,6 +6,7 @@ from shortlist.data.models import Statements, TickerSnapshot
 def _st(**over) -> Statements:
     base = dict(
         fiscal_years=[2025, 2024, 2023],
+        fiscal_period_end=["2025-12-31", "2024-12-31", "2023-12-31"],
         operating_income=[200.0, 150.0, 120.0],
         total_debt=[100.0, 100.0, 100.0],
         total_equity=[500.0, 400.0, 300.0],
@@ -18,9 +19,12 @@ def _st(**over) -> Statements:
 def test_invested_capital_series_is_newest_first_on_the_roic_basis():
     m = snapshot_to_metrics(TickerSnapshot(ticker="X", statements=_st()))
     assert m.invested_capital_series == [
-        {"fiscal_year": 2025, "nopat": 200.0 * (1 - ROIC_TAX_RATE), "invested_capital": 600.0},
-        {"fiscal_year": 2024, "nopat": 150.0 * (1 - ROIC_TAX_RATE), "invested_capital": 500.0},
-        {"fiscal_year": 2023, "nopat": 120.0 * (1 - ROIC_TAX_RATE), "invested_capital": 400.0},
+        {"fiscal_year": 2025, "period_end": "2025-12-31", "nopat": 200.0 * (1 - ROIC_TAX_RATE),
+         "invested_capital": 600.0},
+        {"fiscal_year": 2024, "period_end": "2024-12-31", "nopat": 150.0 * (1 - ROIC_TAX_RATE),
+         "invested_capital": 500.0},
+        {"fiscal_year": 2023, "period_end": "2023-12-31", "nopat": 120.0 * (1 - ROIC_TAX_RATE),
+         "invested_capital": 400.0},
     ]
 
 

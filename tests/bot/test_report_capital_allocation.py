@@ -55,8 +55,8 @@ def test_the_chat_message_points_to_the_report():
 
     (line,) = lines(AssessmentVM(capital_allocation_computed=_BODY,
                                  capital_allocation_computed_shown=True))
-    assert line == ("   💵 Capital allocation (computed from SEC data): cash flow, payouts, "
-                    "share count and ROIC are in the report")
+    assert line == ("   💵 Capital allocation (computed, not LLM-generated): details are in the "
+                    "report")
     assert "12.5%" not in line
     (line,) = lines(AssessmentVM(capital_allocation_computed=NOT_SHOWN_SECTOR))
     assert line == "   💵 Capital allocation: not shown: not meaningful for this sector."

@@ -163,31 +163,37 @@ others).
 
 ### The capital-allocation section — computed, not written by the model
 
-Always on. Every brief carries **"Capital allocation (computed from SEC data — not
+Always on. Every brief carries **"Capital allocation (computed from filed statements — not
 LLM-generated)"** under the model's "Management & capital allocation" prose, in the markdown
 brief and folded in the Telegram HTML report (`research/capital_allocation.py`).
 
 - **What it is.** Accounting data over the fiscal years on the card: operating cash flow,
   capital spending (operating cash flow minus free cash flow) and free cash flow summed over the
   newest run of consecutive years; the latest year's buybacks and dividends and their share of
-  that year's free cash flow; the change in diluted share count; ROIC per year; and incremental
-  ROIC (ΔNOPAT / Δinvested capital) with the reinvestment rate (Δinvested capital / NOPAT of
-  the years after the start). ROIC is the bridge's computed basis (`bridge.py:ROIC_TAX_RATE`,
-  debt plus equity), not a fundamentals-source figure.
+  that year's free cash flow; the change in diluted share count; ROIC per year; and the return
+  on added capital (ΔNOPAT / Δinvested capital) with added capital / NOPAT of the years after
+  the start. ROIC is the bridge's computed basis (`bridge.py:ROIC_TAX_RATE`, debt plus equity),
+  not a fundamentals-source figure. Invested capital includes cash held and acquired goodwill,
+  so a change in it is not only investment, and the section says so.
 - **What it is not.** Not a score, gate or flag, and no claim about returns or quality.
-- **Abstention.** Each line abstains on its own and says why. Incremental ROIC and the
-  reinvestment rate need two consecutive years and abstain when invested capital fell or grew
-  by less than 5% of its starting level (`MIN_IC_GROWTH`); a ratio beyond ±100% prints as a
-  bound. The payout share abstains when free cash flow is not positive. A bank, insurer or REIT
-  (the card's sector mask on the ROIC or FCF-yield leg) gets "Not shown: not meaningful for
-  this sector"; a name where nothing resolves gets one "Not shown" sentence.
+- **Abstention.** Each line abstains on its own and says why. The added-capital lines need two
+  consecutive years and abstain when invested capital fell or grew by less than 5% of its
+  starting level (`MIN_IC_GROWTH`); a ratio beyond ±100% prints as a bound. The payout share
+  abstains when free cash flow is missing or not positive, and reads "at least" when one of the
+  two legs is not on file. A name where nothing resolves gets one "Not shown" sentence.
+- **Banks, insurers and REITs** (the card's sector mask on the ROIC or FCF-yield leg) keep only
+  the buybacks, dividends and share-count lines; the rest is "not meaningful for this sector".
+- **Labels.** A December year end reads "FY2025"; any other is named by its period end ("year
+  ended Feb 2026"), because filers label those years inconsistently.
 - **Only the latest year of buybacks and dividends.** The harness extractor
   (`providers/_edgar_facts.py`) keeps one fiscal year of the financing tags, so the section
   cannot sum them over the window. A per-year series is an extraction change.
+- **Provenance.** The card does not record whether EDGAR or FMP supplied the statements, so the
+  wording says "filed statements" and "not on file".
 - **Where it is computed.** `_enrich_card`, after `assess()` returns, from data already on the
   card; no request. It is stored with the brief (`capital_allocation_line` in the JSON record).
-  The module is not in `cachekey._PROMPT_MODULES`, so the prompt fingerprint does not cover it:
-  a wording change reaches new briefs when the day bucket turns.
+  The module is not in `cachekey._PROMPT_MODULES`, so a wording change never invalidates a
+  cached brief; it reaches only briefs written after it.
 
 ### The recent-news section — third-party headlines, not seen by the model
 
