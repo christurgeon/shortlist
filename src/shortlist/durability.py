@@ -217,11 +217,16 @@ def _panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
 def snapshot(facts: dict, bucket: int) -> Optional[dict[int, YearRow]]:
     """The firm's panel as of (its `bucket` fiscal year end + 120 days), or None when the firm
     has no fiscal year end in that bucket."""
+    return snapshots(facts, [bucket])[1].get(bucket)
+
+
+def snapshots(facts: dict, buckets: Iterable[int],
+              ) -> tuple[dict[int, str], dict[int, dict[int, YearRow]]]:
+    """(`fiscal_ends(facts)`, {bucket -> `snapshot(facts, bucket)`}) for each of `buckets`
+    with a fiscal year end, filtering the facts once rather than once per bucket."""
     facts = _study_rows(facts)
-    end = _fiscal_ends(facts).get(bucket)
-    if end is None:
-        return None
-    return _panel_rows(facts, as_of_for(end))
+    ends = _fiscal_ends(facts)
+    return ends, {b: _panel_rows(facts, as_of_for(ends[b])) for b in buckets if b in ends}
 
 
 # ---------------------------------------------------------------- the universe and the predictors

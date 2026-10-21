@@ -4,9 +4,18 @@ fixture idiom."""
 import json
 from datetime import date
 
+import pytest
+
+from shortlist.data import efts as efts_mod
 from shortlist.data.efts import (EFTS_LAG_DAYS, fetch_eightk_day,
                                  fetch_eightk_range, fetch_eightk_window,
                                  normalize_hit)
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_backoff(monkeypatch):
+    monkeypatch.setattr(efts_mod, "_RETRY_BASE_S", 0.0)
+    monkeypatch.setattr(efts_mod, "_RETRY_MAX_S", 0.0)
 
 
 def _hit(adsh, cik="0000320193", items=("1.01", "9.01"), file_date="2026-06-03",
@@ -82,12 +91,9 @@ def test_range_gives_up_after_bounded_retries():
     assert len(get.calls) == 3          # max_retries=2 -> exactly 3 attempts, never more
 
 
-def test_range_default_retry_budget_rides_out_a_500_burst(monkeypatch):
+def test_range_default_retry_budget_rides_out_a_500_burst():
     """The default budget must survive an EFTS 500 burst longer than the old ~3s window
     (live-diagnosed 2026-07-08: bursty 500s killed 40+-page crawls at max_retries=2)."""
-    from shortlist.data import efts as efts_mod
-    monkeypatch.setattr(efts_mod, "_RETRY_BASE_S", 0.0)   # don't really sleep ~23s
-    monkeypatch.setattr(efts_mod, "_RETRY_MAX_S", 0.0)
     get = _ScriptedGet([(500, None)] * 5 + [(200, _payload([_hit("a-1")]))])
     rows = fetch_eightk_range(date(2026, 6, 3), date(2026, 6, 3),
                               identity="t@example.com", throttle_s=0, _get=get)

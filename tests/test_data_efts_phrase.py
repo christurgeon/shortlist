@@ -6,9 +6,18 @@ from datetime import date
 
 from pathlib import Path
 
+import pytest
+
+from shortlist.data import efts as efts_mod
 from shortlist.data.efts import (BUYBACK_CACHE_DIR, _phrase_q, _phrase_subdir,
                                  fetch_eightk_range, fetch_eightk_window, fetch_phrase_day,
                                  fetch_phrase_window)
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_backoff(monkeypatch):
+    monkeypatch.setattr(efts_mod, "_RETRY_BASE_S", 0.0)
+    monkeypatch.setattr(efts_mod, "_RETRY_MAX_S", 0.0)
 
 
 def _hit(adsh, cik="0000320193", items=("8.01",), file_date="2026-06-03",

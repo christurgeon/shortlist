@@ -1,7 +1,15 @@
 import json
 
+import pytest
+
+from shortlist.edgar import cik_tickers
 from shortlist.edgar.cik_tickers import (build_cik_to_ticker, load_cik_to_ticker,
                                          reset_resolver_cache, resolve_ticker)
+
+
+@pytest.fixture(autouse=True)
+def _no_sec_throttle(monkeypatch):
+    monkeypatch.setattr(cik_tickers, "sec_throttle", lambda: lambda consumer=None: None)
 
 
 def _raw(rows):
