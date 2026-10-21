@@ -15,6 +15,7 @@ from shortlist.data.models import Statements, TickerSnapshot
 from shortlist.data.sources import (
     FinraSource,
     GovContractsSource,
+    LobbyingSource,
     MockSource,
     Source,
     WsbSource,
@@ -126,6 +127,19 @@ def test_govcontracts_name_index_loads_once_under_concurrency(monkeypatch, tmp_p
     assert calls["n"] == 1
     assert all(r.partial.gov_contracts is None for r in results)
 
+
+
+@pytest.mark.parametrize("cls,section", [(GovContractsSource, "gov_contracts"),
+                                         (LobbyingSource, "lobbying")])
+def test_name_index_load_error_is_reported_per_source(monkeypatch, tmp_path, cls, section):
+    async def boom(client, cache_dir, month):
+        raise RuntimeError("sec down")
+
+    monkeypatch.setattr("shortlist.backtest.xbrl.fetch_company_tickers_raw", boom)
+    src = cls(config={section: {"cache_dir": str(tmp_path)}})
+    res = asyncio.run(_gather_fetches(src, 1, ticker="LMT"))[0]
+    assert res.errors == [f"{section}: sec down"]
+    assert res.partial is not None and res.raw == {}
 
 # --- item 6: FINRA pagination is hard-capped ---------------------------------
 

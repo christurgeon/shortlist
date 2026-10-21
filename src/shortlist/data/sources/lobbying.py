@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
 from ...env import redact_secrets
-from ..models import SourceResult, TickerSnapshot
-from ._common import _load_ticker_name_index, _read_versioned_cache, _write_versioned_cache
-from .base import Source, _retry_after_backoff
+from ..models import SourceResult
+from ._common import _NameIndexedSource
+from .base import _retry_after_backoff
 
 
-class LobbyingSource(Source):
+class LobbyingSource(_NameIndexedSource):
     """Keyless Senate LDA federal lobbying-disclosure spend.
 
     Resolves ticker->name via SEC company_tickers.json (bulk-loaded once, month-
@@ -26,17 +25,20 @@ class LobbyingSource(Source):
 
     name = "lobbying"
     _TTM_DAYS = 365
+    _CACHE_PREFIX = "lobby"
+    _CACHE_V = 1   # bump if the cached Lobbying shape changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/lda",
                  config: Optional[dict] = None):
         import httpx  # lazy: only needed for live runs
         cfg = (config or {}).get("lobbying", {}) if config else {}
         self._base = str(cfg.get("base_url", "https://lda.gov/api/v1")).rstrip("/")
-        self._client = httpx.AsyncClient(
-            timeout=float(cfg.get("timeout", timeout)),
-            headers={"Accept": "application/json",
-                     "User-Agent": "shortlist lobbying (contact in SEC_IDENTITY)"})
-        self._cache_dir = Path(cfg.get("cache_dir", cache_dir))
+        super().__init__(
+            httpx.AsyncClient(
+                timeout=float(cfg.get("timeout", timeout)),
+                headers={"Accept": "application/json",
+                         "User-Agent": "shortlist lobbying (contact in SEC_IDENTITY)"}),
+            Path(cfg.get("cache_dir", cache_dir)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.85))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages_per_year", 4))
@@ -44,12 +46,6 @@ class LobbyingSource(Source):
         # Retry-After-aware backoff (the FMP pattern) so coverage degrades to "slow",
         # not "missing". 402 gating and other 4xx are NOT retried.
         self._max_retries = int(cfg.get("max_retries", 2))
-        self._name_index: Optional[dict] = None
-        self._load_error: Optional[str] = None
-        self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
-
-    async def aclose(self) -> None:
-        await self._client.aclose()
 
     async def _get_json(self, path: str, params: dict) -> Any:
         for attempt in range(self._max_retries + 1):
@@ -58,29 +54,6 @@ class LobbyingSource(Source):
                 continue
             r.raise_for_status()
             return r.json()
-
-    async def _load_names(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return
-        async with self._load_lock:
-            await self._load_names_locked()
-
-    async def _load_names_locked(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return   # another task won the race while we waited on the lock
-        self._name_index, self._load_error = await _load_ticker_name_index(
-            self._client, str(self._cache_dir))
-
-    def _cache_path(self, ticker: str, day: str) -> Path:
-        return self._cache_dir / f"lobby-{ticker.upper()}-{day}.json"
-
-    def _read_cache(self, ticker: str, day: str) -> Optional[dict]:
-        return _read_versioned_cache(self._cache_path(ticker, day), self._CACHE_V)
-
-    def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
-        _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
-
-    _CACHE_V = 1   # bump if the cached Lobbying shape changes
 
     @staticmethod
     def _spend(row: dict) -> Optional[float]:
@@ -100,30 +73,16 @@ class LobbyingSource(Source):
     async def fetch(self, ticker: str) -> SourceResult:
         from ..entity_match import match_confidence
         from ..models import Lobbying
-        res = SourceResult(source=self.name)
-        snap = TickerSnapshot(ticker=ticker)
-        res.partial = snap
-        await self._load_names()
-        if self._load_error:
-            res.errors.append(f"lobbying: {self._load_error}")
-            return res
-        name = (self._name_index or {}).get(ticker.upper())
-        if not name:
-            res.raw = {"resolved_name": None}
+        res, snap, name = await self._begin(ticker)
+        if name is None:
             return res
         today = date.today()
         end = today.isoformat()
-        cached = self._read_cache(ticker, end)
+        cached, snap.lobbying = self._cached_model(ticker, end, Lobbying, "lb")
         if cached is not None:
-            # A corrupt/stale payload degrades to a cache miss; the live path overwrites it.
-            try:
-                if cached.get("matched"):
-                    snap.lobbying = Lobbying(**cached["lb"])
-                res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                           "cached": True}
-                return res
-            except Exception:
-                snap.lobbying = None
+            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
+                       "cached": True}
+            return res
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         window_start = today - timedelta(days=int(self._months * 30.44))
         years = list(range(window_start.year, today.year + 1))
