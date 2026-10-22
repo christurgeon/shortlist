@@ -1,5 +1,5 @@
 from datetime import date
-from shortlist.bot.telegram import TelegramBot, Command
+from shortlist.bot.telegram import Command, TelegramBot, parse_command
 
 
 class FakeNotifier:
@@ -398,3 +398,52 @@ def test_explain_unknown_term_suggests():
 def test_help_mentions_explain():
     from shortlist.bot.telegram import _HELP
     assert "/explain" in _HELP
+
+
+def _capturing_bot(cfg, calls):
+    def screen_fn(tickers, sources, config, macro=None):
+        calls.append(list(sources))
+        return [FakeCard(t) for t in tickers]
+    def research_fn(cards, config, scout_cfg, *, require_passed, top_n, macro=None):
+        return ({}, {}, [], None, {})
+    def report_fn(cards, session, *, assessments, macro=None, portfolio=None, notes=None):
+        return type("A", (), {"png": None, "html": "", "text": ""})()
+    return TelegramBot(FakeNotifier(), cfg, screen_fn=screen_fn, research_fn=research_fn,
+                       report_fn=report_fn, deliver_fn=lambda notifier, **kw: None)
+
+
+def test_deep_screens_with_harness_sources_and_screen_keeps_the_bot_list():
+    calls = []
+    cfg = {"harness_sources": ["mock", "lobbying"],
+           "bot": {"max_screen": 2, "max_deep": 1, "deep_screen_sources": ["mock"]}}
+    bot = _capturing_bot(cfg, calls)
+    bot._handle(Command("deep", ("TSLA",), "/deep tsla"))
+    bot._handle(Command("screen", ("TSLA",), "/screen tsla"))
+    assert calls == [["mock", "lobbying"], ["mock"]]
+
+
+def test_deep_falls_back_to_the_screen_list_without_harness_sources():
+    calls = []
+    bot = _capturing_bot({"bot": {"max_deep": 1, "deep_screen_sources": ["mock"]}}, calls)
+    bot._handle(Command("deep", ("TSLA",), "/deep tsla"))
+    assert calls == [["mock"]]
+
+
+def test_real_config_deep_reads_harness_sources_screen_and_add_do_not(tmp_path, monkeypatch):
+    """/deep must fetch every source its brief's context lines read, which is the
+    harness chain `shortlist --research` uses; /screen and /add render none of the
+    extra lines and keep the bot list."""
+    from shortlist.config import load_config
+    cfg = load_config("config.yaml")
+    cfg["portfolio"] = {**cfg.get("portfolio", {}), "store": str(tmp_path / "p.json"),
+                        "decisions": str(tmp_path / "d.jsonl")}
+    monkeypatch.setattr(TelegramBot, "_fetch_macro", staticmethod(lambda config: None))
+    calls = []
+    bot = _capturing_bot(cfg, calls)
+    bot._handle(Command("deep", ("LMT",), "/deep lmt"))
+    bot._handle(Command("screen", ("LMT",), "/screen lmt"))
+    bot._handle(parse_command("/add LMT"))
+    assert calls[0] == cfg["harness_sources"]
+    assert calls[1] == cfg["bot"]["deep_screen_sources"]
+    assert calls[2] == bot._free_sources()
+    assert set(calls[0]) > set(calls[1])
