@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from ...env import redact_secrets
 from ..diskcache import read_json_cache, write_json_cache
+from ..entity_match import strip_sec_qualifiers
 from ..models import SourceResult, TickerSnapshot
 from .base import Source
 
@@ -80,9 +81,11 @@ class _NameIndexedSource(Source):
         _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
 
     async def _begin(self, ticker: str) -> tuple[SourceResult, TickerSnapshot, Optional[str]]:
-        """A fresh result whose partial is the returned snapshot, plus the ticker's
-        entity name. The name is None when the caller should return the result as is:
-        the index failed to load (error recorded) or the ticker is unknown."""
+        """A fresh result whose partial is the returned snapshot, plus the entity name
+        to query and match on: the SEC title without its trailing qualifiers.
+        ``res.raw["resolved_name"]`` keeps the SEC title. The name is None when the
+        caller should return the result as is: the index failed to load (error
+        recorded) or the ticker is unknown."""
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
@@ -90,11 +93,11 @@ class _NameIndexedSource(Source):
         if self._load_error:
             res.errors.append(f"{self.name}: {self._load_error}")
             return res, snap, None
-        name = (self._name_index or {}).get(ticker.upper())
-        if not name:
-            res.raw = {"resolved_name": None}
+        title = (self._name_index or {}).get(ticker.upper())
+        res.raw = {"resolved_name": title or None}
+        if not title:
             return res, snap, None
-        return res, snap, name
+        return res, snap, strip_sec_qualifiers(title) or title
 
     def _cached_model(self, ticker: str, day: str, model: type, key: str) -> tuple[Optional[dict], Any]:
         """``(payload, model(**payload[key]))`` from the day cache; the model is None

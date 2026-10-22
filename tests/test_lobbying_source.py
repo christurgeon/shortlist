@@ -167,3 +167,26 @@ def test_corrupt_versioned_cache_never_raises_and_refetches(bad):
     assert calls["n"] > 0                 # live path ran: corrupt cache was a miss
     assert src._read_cache("LMT", end)["lb"]["ttm_spend"] == 30000.0
     _run(src.aclose())
+
+
+def test_queries_and_matches_on_the_title_without_sec_qualifiers():
+    seen = []
+
+    def handler(req):
+        seen.append(req.url.params.get("client_name"))
+        return httpx.Response(200, json={"count": 1, "next": None, "results": [
+            {"client": {"name": "NORTHROP GRUMMAN CORP"},
+             "registrant": {"name": "IN HOUSE"},
+             "income": None, "expenses": "1000.00", "dt_posted": _TTM + "T00:00:00-04:00"},
+        ]})
+    src = _source_with(handler, name_map={"NOC": "NORTHROP GRUMMAN CORP /DE/"})
+    res = _run(src.fetch("NOC"))
+    assert seen and set(seen) == {"NORTHROP GRUMMAN CORP"}
+    assert res.partial.lobbying.match_confidence == 1.0
+    assert res.raw["resolved_name"] == "NORTHROP GRUMMAN CORP /DE/"
+    _run(src.aclose())
+
+
+def test_cache_version_is_two():
+    # A same-day cached `matched: false` written before the qualifier strip must miss.
+    assert LobbyingSource._CACHE_V == 2

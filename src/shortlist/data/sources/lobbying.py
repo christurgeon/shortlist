@@ -26,7 +26,7 @@ class LobbyingSource(_NameIndexedSource):
     name = "lobbying"
     _TTM_DAYS = 365
     _CACHE_PREFIX = "lobby"
-    _CACHE_V = 1   # bump if the cached Lobbying shape changes
+    _CACHE_V = 2   # bump when what a cached Lobbying payload means changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/lda",
                  config: Optional[dict] = None):
@@ -80,8 +80,8 @@ class LobbyingSource(_NameIndexedSource):
         end = today.isoformat()
         cached, snap.lobbying = self._cached_model(ticker, end, Lobbying, "lb")
         if cached is not None:
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "cached": True}
+            res.raw.update({"matched": bool(cached.get("matched")),
+                            "cached": True})
             return res
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         window_start = today - timedelta(days=int(self._months * 30.44))
@@ -133,7 +133,7 @@ class LobbyingSource(_NameIndexedSource):
                     page += 1
             if best_client is None:
                 self._write_cache(ticker, end, {"matched": False})
-                res.raw = {"resolved_name": name, "matched": False, "total_filings": total}
+                res.raw.update({"matched": False, "total_filings": total})
                 return res
             lb = Lobbying(
                 as_of=end, latest_filing=latest, ttm_spend=ttm, prior_ttm_spend=prior,
@@ -142,7 +142,7 @@ class LobbyingSource(_NameIndexedSource):
                 truncated=truncated, total_filings=total)
             snap.lobbying = lb
             self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
-            res.raw = {"resolved_name": name, "matched": True, "total_filings": total}
+            res.raw.update({"matched": True, "total_filings": total})
         except Exception as e:
             res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res

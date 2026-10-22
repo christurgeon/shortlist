@@ -199,3 +199,29 @@ def test_same_day_rerun_uses_cache():
     assert calls["n"] == after_first       # zero new upstream calls on warm re-run
     assert second.ttm_obligated == first.ttm_obligated == 7e9
     _run(src.aclose())
+
+
+def test_queries_and_matches_on_the_title_without_sec_qualifiers():
+    import json as _json
+    seen = []
+
+    def handler(req):
+        body = _json.loads(req.content)
+        seen.append(body["filters"]["recipient_search_text"])
+        if req.url.path.endswith("count/"):
+            return httpx.Response(200, json={"results": {"contracts": 1}})
+        return httpx.Response(200, json={"results": [
+            {"Recipient Name": "NORTHROP GRUMMAN CORP",
+             "Action Date": "2025-12-01", "Transaction Amount": 1e9},
+        ], "page_metadata": {"hasNext": False}})
+    src = _source_with(handler, name_map={"NOC": "NORTHROP GRUMMAN CORP /DE/"})
+    res = _run(src.fetch("NOC"))
+    assert seen and all(s == ["NORTHROP GRUMMAN CORP"] for s in seen)
+    assert res.partial.gov_contracts.match_confidence == 1.0
+    assert res.raw["resolved_name"] == "NORTHROP GRUMMAN CORP /DE/"
+    _run(src.aclose())
+
+
+def test_cache_version_is_two():
+    # A same-day cached `matched: false` written before the qualifier strip must miss.
+    assert GovContractsSource._CACHE_V == 2

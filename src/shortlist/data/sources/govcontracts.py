@@ -29,7 +29,7 @@ class GovContractsSource(_NameIndexedSource):
     _CONTRACT_CODES = ["A", "B", "C", "D"]
     _TTM_DAYS = 365            # TTM vs prior-TTM split boundary
     _CACHE_PREFIX = "contracts"
-    _CACHE_V = 1   # bump if the cached GovContracts shape changes
+    _CACHE_V = 2   # bump when what a cached GovContracts payload means changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/usaspending",
                  config: Optional[dict] = None):
@@ -59,8 +59,8 @@ class GovContractsSource(_NameIndexedSource):
         end = today.isoformat()
         cached, snap.gov_contracts = self._cached_model(ticker, end, GovContracts, "gc")
         if cached is not None:
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "total_txns": cached.get("total_txns"), "cached": True}
+            res.raw.update({"matched": bool(cached.get("matched")),
+                            "total_txns": cached.get("total_txns"), "cached": True})
             return res
         start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
@@ -113,7 +113,7 @@ class GovContractsSource(_NameIndexedSource):
                 page += 1
             if primary_name is None:           # nothing cleared the match guard
                 self._write_cache(ticker, end, {"matched": False, "total_txns": total})
-                res.raw = {"resolved_name": name, "matched": False, "total_txns": total}
+                res.raw.update({"matched": False, "total_txns": total})
                 return res
             gc = GovContracts(
                 as_of=end, latest_action=latest_action, ttm_obligated=ttm,
@@ -123,7 +123,7 @@ class GovContractsSource(_NameIndexedSource):
             snap.gov_contracts = gc
             self._write_cache(ticker, end, {"matched": True, "total_txns": total,
                                             "gc": dataclasses.asdict(gc)})
-            res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
+            res.raw.update({"matched": True, "total_txns": total})
         except Exception as e:
             res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res
