@@ -15,6 +15,21 @@ _SUFFIXES = {"corp", "corporation", "inc", "incorporated", "llc", "lp", "co",
              "company", "holdings", "holding", "the", "ltd", "plc", "group"}
 
 
+# A trailing SEC state/form tag ("/DE/", "/NEW", "/ADR", "/Cayman Islands"). Two or
+# more letters only, so the "/S" of a Danish "A/S" survives.
+_SEC_QUALIFIER = re.compile(
+    r"\s*/\s*(?:[A-Za-z]{2,4}|Cayman(?: Islands)?|Marshall Islands|Delaware|Canada)?\s*/?\s*$")
+
+
+def strip_sec_qualifiers(title: str) -> str:
+    """The SEC registrant title without trailing state/form qualifiers, which
+    upstream name searches do not recognise. Unchanged when there are none."""
+    prev = None
+    while prev != title:
+        prev, title = title, _SEC_QUALIFIER.sub("", title)
+    return title
+
+
 def normalize_name(name: str) -> str:
     """Casefold, strip punctuation, drop corporate suffixes/noise words."""
     if not name:

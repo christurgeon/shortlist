@@ -26,7 +26,7 @@ _CONTRACT = {
     # base http helpers
     "_fetch_sections", "_retry_after_backoff",
     # registry
-    "build_sources",
+    "build_sources", "aux_only_sources",
     # finra aliases (imported by tests/test_short_interest.py)
     "_finra_latest_partition", "_finra_norm_symbol", "_finra_row_to_si",
     "_finra_index",

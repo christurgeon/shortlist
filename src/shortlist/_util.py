@@ -1,5 +1,6 @@
 """Tiny dependency-free helpers shared across both stacks (screener + harness)."""
 
+import math
 from typing import Any, Optional
 
 
@@ -14,7 +15,9 @@ def retry_after_seconds(header_value: Optional[str], fallback: float,
     """
     if header_value:
         try:
-            return min(float(header_value), cap)
+            v = float(header_value)
+            if math.isfinite(v):     # `nan` would pass min() and make sleep() never return
+                return min(v, cap)
         except (ValueError, TypeError):
             pass
         try:

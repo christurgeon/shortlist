@@ -199,3 +199,46 @@ def test_same_day_rerun_uses_cache():
     assert calls["n"] == after_first       # zero new upstream calls on warm re-run
     assert second.ttm_obligated == first.ttm_obligated == 7e9
     _run(src.aclose())
+
+
+def test_queries_and_matches_on_the_title_without_sec_qualifiers():
+    import json as _json
+    seen = []
+
+    def handler(req):
+        body = _json.loads(req.content)
+        seen.append(body["filters"]["recipient_search_text"])
+        if req.url.path.endswith("count/"):
+            return httpx.Response(200, json={"results": {"contracts": 1}})
+        return httpx.Response(200, json={"results": [
+            {"Recipient Name": "NORTHROP GRUMMAN CORP",
+             "Action Date": "2025-12-01", "Transaction Amount": 1e9},
+        ], "page_metadata": {"hasNext": False}})
+    src = _source_with(handler, name_map={"NOC": "NORTHROP GRUMMAN CORP /DE/"})
+    res = _run(src.fetch("NOC"))
+    assert seen and all(s == ["NORTHROP GRUMMAN CORP"] for s in seen)
+    assert res.partial.gov_contracts.match_confidence == 1.0
+    assert res.raw["resolved_name"] == "NORTHROP GRUMMAN CORP /DE/"
+    _run(src.aclose())
+
+
+def test_deadline_exceeded_is_an_error_not_a_raise_and_writes_no_cache():
+    from datetime import date
+    calls = {"n": 0}
+    fast = _lmt_handler(calls)
+
+    async def slow(req):
+        await asyncio.sleep(5)
+        return fast(req)
+    src = _source_with(slow, deadline_s=0.05)
+    res = _run(src.fetch("LMT"))
+    assert res.errors == ["gov_contracts: deadline exceeded"]
+    assert res.partial is not None and res.partial.gov_contracts is None
+    assert src._read_cache("LMT", date.today().isoformat()) is None
+    _run(src.aclose())
+
+
+def test_default_deadline_bounds_the_fetch():
+    src = GovContractsSource(config={"gov_contracts": {"cache_dir": tempfile.mkdtemp(prefix="gctest-")}})
+    assert src._deadline_s > 0
+    _run(src.aclose())

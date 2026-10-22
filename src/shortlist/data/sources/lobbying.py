@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+from ..._util import retry_after_seconds
 from ...env import redact_secrets
 from ..models import SourceResult
 from ._common import _NameIndexedSource
-from .base import _retry_after_backoff
+
+# LDA's keyless limit is per minute and its Retry-After can exceed the shared 30 s cap;
+# waiting less than it asks only spends the next attempt on another 429.
+_RETRY_AFTER_CAP_S = 65.0
+_MIN_429_WAIT_S = 1.0
+_DEADLINE_S = 180.0
 
 
 class LobbyingSource(_NameIndexedSource):
@@ -24,9 +31,11 @@ class LobbyingSource(_NameIndexedSource):
     config-driven."""
 
     name = "lobbying"
+    feeds_axes = False
+    no_data_is_normal = True
     _TTM_DAYS = 365
     _CACHE_PREFIX = "lobby"
-    _CACHE_V = 1   # bump if the cached Lobbying shape changes
+    _CACHE_V = 2   # bump when what a cached Lobbying payload means changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/lda",
                  config: Optional[dict] = None):
@@ -38,19 +47,33 @@ class LobbyingSource(_NameIndexedSource):
                 timeout=float(cfg.get("timeout", timeout)),
                 headers={"Accept": "application/json",
                          "User-Agent": "shortlist lobbying (contact in SEC_IDENTITY)"}),
-            Path(cfg.get("cache_dir", cache_dir)))
+            Path(cfg.get("cache_dir", cache_dir)),
+            float(cfg.get("deadline_s", _DEADLINE_S)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.85))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages_per_year", 4))
-        # Keyless LDA allows ~15 req/min; basket runs WILL hit 429. Retry it with
-        # Retry-After-aware backoff (the FMP pattern) so coverage degrades to "slow",
-        # not "missing". 402 gating and other 4xx are NOT retried.
-        self._max_retries = int(cfg.get("max_retries", 2))
+        self._max_retries = int(cfg.get("max_retries", 2))   # 5xx only
+        # One ticker at a time against LDA: concurrent tickers sharing one per-minute
+        # budget retry into the same window together and exhaust their attempts.
+        self._lda_gate = asyncio.Lock()
 
     async def _get_json(self, path: str, params: dict) -> Any:
-        for attempt in range(self._max_retries + 1):
+        """One LDA GET. A 429 waits its full Retry-After and retries until the fetch
+        deadline cancels it; a 5xx retries at most `max_retries` times; other 4xx raise."""
+        throttled = server_errors = 0
+        while True:
             r = await self._client.get(f"{self._base}/{path}", params=params)
-            if await _retry_after_backoff(r, attempt, self._max_retries):
+            if r.status_code == 429:
+                wait = retry_after_seconds(r.headers.get("Retry-After"),
+                                           min(2.0 ** min(throttled, 7), _RETRY_AFTER_CAP_S),
+                                           cap=_RETRY_AFTER_CAP_S)
+                await asyncio.sleep(max(wait, _MIN_429_WAIT_S))
+                throttled += 1
+                continue
+            if 500 <= r.status_code < 600 and server_errors < self._max_retries:
+                await asyncio.sleep(retry_after_seconds(r.headers.get("Retry-After"),
+                                                        2.0 ** server_errors))
+                server_errors += 1
                 continue
             r.raise_for_status()
             return r.json()
@@ -70,7 +93,7 @@ class LobbyingSource(_NameIndexedSource):
                     return None
         return None
 
-    async def fetch(self, ticker: str) -> SourceResult:
+    async def _fetch(self, ticker: str) -> SourceResult:
         from ..entity_match import match_confidence
         from ..models import Lobbying
         res, snap, name = await self._begin(ticker)
@@ -80,69 +103,70 @@ class LobbyingSource(_NameIndexedSource):
         end = today.isoformat()
         cached, snap.lobbying = self._cached_model(ticker, end, Lobbying, "lb")
         if cached is not None:
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "cached": True}
+            res.raw.update({"matched": bool(cached.get("matched")),
+                            "cached": True})
             return res
-        cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
-        window_start = today - timedelta(days=int(self._months * 30.44))
-        years = list(range(window_start.year, today.year + 1))
-        try:
-            ttm = prior = 0.0
-            ttm_n = 0
-            total = 0
-            registrants: set[str] = set()
-            best_client, best_conf = None, 0.0
-            latest = None
-            truncated = False
-            for yr in years:
-                page = 1
-                while page <= self._max_pages:
-                    payload = await self._get_json(
-                        "filings/",
-                        {"client_name": name, "filing_year": yr, "page": page}) or {}
-                    total += (payload.get("count") or 0) if page == 1 else 0
-                    rows = payload.get("results") or []
-                    for row in rows:
-                        client = (row.get("client") or {}).get("name") or ""
-                        conf = match_confidence(name, client)
-                        if conf < self._min_conf:
-                            continue
-                        spend = self._spend(row)
-                        posted = (row.get("dt_posted") or "")[:10]  # ISO date prefix
-                        if spend is None or not posted:
-                            continue
-                        if conf > best_conf:
-                            best_conf, best_client = conf, client
-                        if latest is None or posted > latest:
-                            latest = posted
-                        # Window by dt_posted (submission date): it lags the activity
-                        # quarter by up to a filing cycle, but it's the only monotone
-                        # timestamp — acceptable for a trend context line.
-                        if posted >= cutoff:
-                            ttm += spend
-                            ttm_n += 1
-                            reg = (row.get("registrant") or {}).get("name")
-                            if reg:
-                                registrants.add(reg)   # TTM-scoped: matches the surfaced count
-                        elif posted >= window_start.isoformat():
-                            prior += spend
-                    if not payload.get("next"):
-                        break
-                    if page == self._max_pages and payload.get("next"):
-                        truncated = True
-                    page += 1
-            if best_client is None:
-                self._write_cache(ticker, end, {"matched": False})
-                res.raw = {"resolved_name": name, "matched": False, "total_filings": total}
-                return res
-            lb = Lobbying(
-                as_of=end, latest_filing=latest, ttm_spend=ttm, prior_ttm_spend=prior,
-                filing_count_ttm=ttm_n, matched_client=best_client,
-                match_confidence=best_conf, registrant_count=len(registrants),
-                truncated=truncated, total_filings=total)
-            snap.lobbying = lb
-            self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
-            res.raw = {"resolved_name": name, "matched": True, "total_filings": total}
-        except Exception as e:
-            res.errors.append(f"{self.name}: {redact_secrets(e)}")
-        return res
+        async with self._lda_gate:
+            cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
+            window_start = today - timedelta(days=int(self._months * 30.44))
+            years = list(range(window_start.year, today.year + 1))
+            try:
+                ttm = prior = 0.0
+                ttm_n = 0
+                total = 0
+                registrants: set[str] = set()
+                best_client, best_conf = None, 0.0
+                latest = None
+                truncated = False
+                for yr in years:
+                    page = 1
+                    while page <= self._max_pages:
+                        payload = await self._get_json(
+                            "filings/",
+                            {"client_name": name, "filing_year": yr, "page": page}) or {}
+                        total += (payload.get("count") or 0) if page == 1 else 0
+                        rows = payload.get("results") or []
+                        for row in rows:
+                            client = (row.get("client") or {}).get("name") or ""
+                            conf = match_confidence(name, client)
+                            if conf < self._min_conf:
+                                continue
+                            spend = self._spend(row)
+                            posted = (row.get("dt_posted") or "")[:10]  # ISO date prefix
+                            if spend is None or not posted:
+                                continue
+                            if conf > best_conf:
+                                best_conf, best_client = conf, client
+                            if latest is None or posted > latest:
+                                latest = posted
+                            # Window by dt_posted (submission date): it lags the activity
+                            # quarter by up to a filing cycle, but it's the only monotone
+                            # timestamp — acceptable for a trend context line.
+                            if posted >= cutoff:
+                                ttm += spend
+                                ttm_n += 1
+                                reg = (row.get("registrant") or {}).get("name")
+                                if reg:
+                                    registrants.add(reg)   # TTM-scoped: matches the surfaced count
+                            elif posted >= window_start.isoformat():
+                                prior += spend
+                        if not payload.get("next"):
+                            break
+                        if page == self._max_pages and payload.get("next"):
+                            truncated = True
+                        page += 1
+                if best_client is None:
+                    self._write_cache(ticker, end, {"matched": False})
+                    res.raw.update({"matched": False, "total_filings": total})
+                    return res
+                lb = Lobbying(
+                    as_of=end, latest_filing=latest, ttm_spend=ttm, prior_ttm_spend=prior,
+                    filing_count_ttm=ttm_n, matched_client=best_client,
+                    match_confidence=best_conf, registrant_count=len(registrants),
+                    truncated=truncated, total_filings=total)
+                snap.lobbying = lb
+                self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
+                res.raw.update({"matched": True, "total_filings": total})
+            except Exception as e:
+                res.errors.append(f"{self.name}: {redact_secrets(e)}")
+            return res

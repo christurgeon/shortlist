@@ -19,11 +19,12 @@ def _short_reason(cov) -> str:
         return "FMP gated this symbol (402)"
     if p.get("fmp") == "rate_limited_429":
         return "FMP rate-limited this run (429)"
+    axisless = set(getattr(cov, "axisless", ()) or ())
     flagged = sorted(n for n, s in p.items()
-                     if s in ("gated_402", "rate_limited_429", "empty", "error"))
+                     if n not in axisless and s in ("gated_402", "rate_limited_429", "empty", "error"))
     if flagged:
         return f"{', '.join(flagged)} supplied no usable data"
-    return "reason unknown"   # defensive: a Coverage with no flagged provider is unreachable in prod
+    return "not available from any source"
 
 
 def _phrase(axes: list[str]) -> str:

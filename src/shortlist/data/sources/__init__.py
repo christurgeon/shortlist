@@ -65,6 +65,17 @@ _REGISTRY = {
 }
 
 
+def aux_only_sources(names: list[str]) -> frozenset[str]:
+    """The registered sources among `names` marked `no_data_is_normal`: coverage does not
+    call their no-data outcome a gap."""
+    return frozenset(n for n in names if n in _REGISTRY and _REGISTRY[n].no_data_is_normal)
+
+
+def axisless_sources(names: list[str]) -> frozenset[str]:
+    """The registered sources among `names` marked `feeds_axes = False`."""
+    return frozenset(n for n in names if n in _REGISTRY and not _REGISTRY[n].feeds_axes)
+
+
 def build_sources(names: list[str], config: Optional[dict] = None) -> list[Source]:
     out, skipped = [], []
     for n in names:

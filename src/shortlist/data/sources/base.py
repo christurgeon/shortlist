@@ -16,6 +16,12 @@ class Source(ABC):
     verbatim raw payloads (for point-in-time audit) and a normalized partial."""
 
     name: str = "base"
+    # False when the source fills only auxiliary sections: it cannot explain a missing
+    # sub-score, so the prompt's data-gaps line never names it.
+    feeds_axes: bool = True
+    # True when having nothing for a symbol is this source's usual outcome. Coverage then
+    # does not call it a gap, so such a source must also have `feeds_axes = False`.
+    no_data_is_normal: bool = False
 
     @abstractmethod
     async def fetch(self, ticker: str) -> SourceResult:
@@ -95,8 +101,7 @@ async def _fetch_sections(
 
 
 async def _retry_after_backoff(r: Any, attempt: int, max_retries: int) -> bool:
-    """Shared Retry-After-aware backoff decision for the keyed-HTTP retry loops
-    (`_KeyedHttpSource._get`, `LobbyingSource._get_json`): 429 and 5xx are
+    """Retry-After-aware backoff decision for `_KeyedHttpSource._get`: 429 and 5xx are
     retriable, 402 gating and other 4xx are NOT. Sleeps (Retry-After header, else
     exponential 2**attempt) and returns True when the caller should retry;
     returns False once not-retriable or attempts are exhausted, so the caller

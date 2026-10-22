@@ -7,7 +7,7 @@ from typing import Optional
 
 from ...env import redact_secrets
 from ..models import SourceResult
-from ._common import _NameIndexedSource
+from ._common import _DEFAULT_DEADLINE_S, _NameIndexedSource
 
 
 class GovContractsSource(_NameIndexedSource):
@@ -24,12 +24,14 @@ class GovContractsSource(_NameIndexedSource):
     un-window-scoped award totals — verified)."""
 
     name = "gov_contracts"
+    feeds_axes = False
+    no_data_is_normal = True
     COUNT_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction_count/"
     DATA_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"
     _CONTRACT_CODES = ["A", "B", "C", "D"]
     _TTM_DAYS = 365            # TTM vs prior-TTM split boundary
     _CACHE_PREFIX = "contracts"
-    _CACHE_V = 1   # bump if the cached GovContracts shape changes
+    _CACHE_V = 2   # bump when what a cached GovContracts payload means changes
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/usaspending",
                  config: Optional[dict] = None):
@@ -39,7 +41,8 @@ class GovContractsSource(_NameIndexedSource):
             httpx.AsyncClient(
                 timeout=float(cfg.get("timeout", timeout)),
                 headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"}),
-            Path(cfg.get("cache_dir", cache_dir)))
+            Path(cfg.get("cache_dir", cache_dir)),
+            float(cfg.get("deadline_s", _DEFAULT_DEADLINE_S)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.80))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages", 5))
@@ -49,7 +52,7 @@ class GovContractsSource(_NameIndexedSource):
                 "award_type_codes": self._CONTRACT_CODES,
                 "time_period": [{"start_date": start, "end_date": end}]}
 
-    async def fetch(self, ticker: str) -> SourceResult:
+    async def _fetch(self, ticker: str) -> SourceResult:
         from ..govcontract_match import match_confidence
         from ..models import GovContracts
         res, snap, name = await self._begin(ticker)
@@ -59,8 +62,8 @@ class GovContractsSource(_NameIndexedSource):
         end = today.isoformat()
         cached, snap.gov_contracts = self._cached_model(ticker, end, GovContracts, "gc")
         if cached is not None:
-            res.raw = {"resolved_name": name, "matched": bool(cached.get("matched")),
-                       "total_txns": cached.get("total_txns"), "cached": True}
+            res.raw.update({"matched": bool(cached.get("matched")),
+                            "total_txns": cached.get("total_txns"), "cached": True})
             return res
         start = (today - timedelta(days=int(self._months * 30.44))).isoformat()
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
@@ -113,7 +116,7 @@ class GovContractsSource(_NameIndexedSource):
                 page += 1
             if primary_name is None:           # nothing cleared the match guard
                 self._write_cache(ticker, end, {"matched": False, "total_txns": total})
-                res.raw = {"resolved_name": name, "matched": False, "total_txns": total}
+                res.raw.update({"matched": False, "total_txns": total})
                 return res
             gc = GovContracts(
                 as_of=end, latest_action=latest_action, ttm_obligated=ttm,
@@ -123,7 +126,7 @@ class GovContractsSource(_NameIndexedSource):
             snap.gov_contracts = gc
             self._write_cache(ticker, end, {"matched": True, "total_txns": total,
                                             "gc": dataclasses.asdict(gc)})
-            res.raw = {"resolved_name": name, "matched": True, "total_txns": total}
+            res.raw.update({"matched": True, "total_txns": total})
         except Exception as e:
             res.errors.append(f"{self.name}: {redact_secrets(e)}")
         return res

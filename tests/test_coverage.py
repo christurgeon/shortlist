@@ -190,3 +190,40 @@ def test_price_refinement_axes_excluded_from_coverage():
     withaxes = TickerSnapshot(ticker="AAA", price=_Price(
         pct_to_52w_high=0.9, max_daily_return=0.05, vol_scaled_momentum=1.2))
     assert withaxes.coverage() == bare.coverage()
+
+
+_DEEP_CHAIN = ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb", "gov_contracts", "lobbying"]
+_AUX = frozenset({"wsb", "gov_contracts", "lobbying"})
+
+
+def test_aux_only_source_with_nothing_to_report_is_not_empty():
+    # No WSB mention, no contract, no lobbying filing is a normal outcome for a source
+    # that only fills auxiliary sections, not a data gap.
+    outcomes = dict.fromkeys(_DEEP_CHAIN, "ok")
+    contributed = {"yahoo", "fmp", "finnhub", "edgar", "finra"}
+    assert build_coverage(outcomes, contributed, _card(), aux_only=_AUX) is None
+
+
+def test_aux_only_empty_drops_out_of_the_note_but_a_key_gap_stays():
+    outcomes = {**dict.fromkeys(_DEEP_CHAIN, "ok"), "edgar": "error"}
+    contributed = {"yahoo", "fmp", "finnhub", "finra"}
+    cov = build_coverage(outcomes, contributed, _card(), aux_only=_AUX)
+    assert cov.providers["wsb"] == "ok"
+    assert cov.note == "edgar: supplied no usable data for this symbol"
+
+
+def test_aux_only_error_and_429_stay_visible():
+    outcomes = {**dict.fromkeys(_DEEP_CHAIN, "ok"),
+                "lobbying": "rate_limited_429", "gov_contracts": "error"}
+    contributed = {"yahoo", "fmp", "finnhub", "edgar", "finra"}
+    cov = build_coverage(outcomes, contributed, _card(), aux_only=_AUX)
+    assert cov.providers["lobbying"] == "rate_limited_429"
+    assert cov.providers["gov_contracts"] == "error"
+    assert cov.note == "gov_contracts, lobbying: supplied no usable data for this symbol"
+
+
+def test_without_aux_only_every_ok_non_contributor_is_still_empty():
+    outcomes = dict.fromkeys(_DEEP_CHAIN, "ok")
+    contributed = {"yahoo", "fmp", "finnhub", "edgar", "finra"}
+    cov = build_coverage(outcomes, contributed, _card())
+    assert cov.note == "gov_contracts, lobbying, wsb: supplied no usable data for this symbol"

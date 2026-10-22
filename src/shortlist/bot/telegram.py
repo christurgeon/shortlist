@@ -203,6 +203,8 @@ class TelegramBot:
         self.max_deep = int(self.bot_cfg.get("max_deep", 3))
         self.sources = self.bot_cfg.get(
             "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar", "finra"])
+        from ..screen import research_chain
+        self.deep_sources = research_chain(config.get("harness_sources") or self.sources, config)
         pf_cfg = config.get("portfolio", {})
         self.store_path = pf_cfg.get("store", "positions.json")
         self.decisions_path = pf_cfg.get("decisions", "decisions.jsonl")
@@ -330,7 +332,7 @@ class TelegramBot:
         self.notifier.send_message(
             f"Researching {', '.join(kept)} — this can take several minutes…")
         macro = self._fetch_macro(self.config)
-        cards = self._screen_fn()(kept, self.sources, self.config, macro=macro)
+        cards = self._screen_fn()(kept, self.deep_sources, self.config, macro=macro)
         present, missing = self._partition_present(cards)
         if present:
             _briefs, assessments, researched, note, skipped = self._research_fn()(
