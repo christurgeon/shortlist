@@ -14,16 +14,18 @@ _AXIS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
 
 def _short_reason(cov) -> str:
+    from ..data.sources import aux_only_sources
     p = getattr(cov, "providers", None) or {}
     if p.get("fmp") == "gated_402":
         return "FMP gated this symbol (402)"
     if p.get("fmp") == "rate_limited_429":
         return "FMP rate-limited this run (429)"
+    aux = aux_only_sources(list(p))     # they feed no axis, so they never explain an axis gap
     flagged = sorted(n for n, s in p.items()
-                     if s in ("gated_402", "rate_limited_429", "empty", "error"))
+                     if n not in aux and s in ("gated_402", "rate_limited_429", "empty", "error"))
     if flagged:
         return f"{', '.join(flagged)} supplied no usable data"
-    return "reason unknown"   # defensive: a Coverage with no flagged provider is unreachable in prod
+    return "not available from any source"
 
 
 def _phrase(axes: list[str]) -> str:

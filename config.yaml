@@ -471,7 +471,8 @@ gov_contracts:
   max_pages: 5                 # page cap on spending_by_transaction (sorted by amount desc)
   cache_dir: .cache/usaspending
   timeout: 20
-  deadline_s: 90               # per-ticker ceiling on the whole fetch; on expiry the line abstains
+  deadline_s: 90               # ceiling on one ticker's whole fetch; on expiry the fetch records
+                               # an error (coverage shows it) and the context line abstains
 
 # Federal lobbying (LobbyingSource, Senate LDA). Keyless; data + research context line
 # only, no sub-score or flag.
@@ -482,8 +483,9 @@ lobbying:
   max_pages_per_year: 4        # 25 filings per page
   cache_dir: .cache/lda
   timeout: 20
-  deadline_s: 90               # per-ticker ceiling on the whole fetch, 429 Retry-After waits
-                               # included; on expiry the line abstains with an error
+  deadline_s: 180              # ceiling on one ticker's whole fetch, waits for LDA's per-minute
+                               # limit included; on expiry the fetch records an error (coverage
+                               # shows it) and the context line abstains
 
 # EDGAR filing-stream events (EdgarSource). Advisory flags only.
 edgar_events:

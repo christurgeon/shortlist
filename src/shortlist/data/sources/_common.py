@@ -1,30 +1,50 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import date
 from pathlib import Path
 from typing import Any, Optional
 
 from ...env import redact_secrets
 from ..diskcache import read_json_cache, write_json_cache
-from ..entity_match import strip_sec_qualifiers
+from ..entity_match import normalize_name, strip_sec_qualifiers
 from ..models import SourceResult, TickerSnapshot
 from .base import Source
 
 
-async def _load_ticker_name_index(client: Any, cache_dir: str) -> tuple[dict, Optional[str]]:
+async def _load_ticker_name_index(client: Any, cache_dir: str,
+                                  ) -> tuple[dict, frozenset[str], Optional[str]]:
     """Bulk-load SEC company_tickers.json into a ticker->name index, shared by
     GovContractsSource and LobbyingSource (both resolve ticker->entity name the
     same way via `backtest.xbrl`'s month-cached bulk fetch). Returns
-    `(index, error)`: error is None on success; on failure index is `{}` and
-    error is the redacted exception string."""
+    `(index, ambiguous, error)`: `ambiguous` is `_ambiguous_tickers(raw)`; error is
+    None on success; on failure index is `{}`, ambiguous is empty and error is the
+    redacted exception string."""
     try:
         from ...backtest import xbrl
         month = date.today().strftime("%Y-%m")
         raw = await xbrl.fetch_company_tickers_raw(client, cache_dir=cache_dir, month=month)
-        return xbrl.build_name_index(raw), None
+        return xbrl.build_name_index(raw), _ambiguous_tickers(raw), None
     except Exception as e:
-        return {}, redact_secrets(e)
+        return {}, frozenset(), redact_secrets(e)
+
+
+def _ambiguous_tickers(raw: dict) -> frozenset[str]:
+    """Tickers whose title, without SEC qualifiers, names more than one CIK (e.g.
+    `INDEPENDENT BANK CORP` and `INDEPENDENT BANK CORP /MI/`). A query by that name
+    cannot tell the companies apart, so the sources abstain rather than misattribute.
+    Share classes of one CIK are not ambiguous."""
+    ciks: dict[str, set] = defaultdict(set)
+    tickers: dict[str, set] = defaultdict(set)
+    for row in raw.values():
+        tk, title = str(row.get("ticker", "")).upper(), row.get("title")
+        if not tk or not title:
+            continue
+        key = normalize_name(strip_sec_qualifiers(str(title)))
+        ciks[key].add(row.get("cik_str"))
+        tickers[key].add(tk)
+    return frozenset(t for key, ts in tickers.items() if len(ciks[key]) > 1 for t in ts)
 
 
 def _read_versioned_cache(path: Path, version: int) -> Optional[dict]:
@@ -58,6 +78,7 @@ class _NameIndexedSource(Source):
         self._cache_dir = cache_dir
         self._deadline_s = deadline_s
         self._name_index: Optional[dict] = None
+        self._ambiguous: frozenset[str] = frozenset()
         self._load_error: Optional[str] = None
         self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
 
@@ -86,7 +107,7 @@ class _NameIndexedSource(Source):
     async def _load_names_locked(self) -> None:
         if self._name_index is not None or self._load_error is not None:
             return   # another task won the race while we waited on the lock
-        self._name_index, self._load_error = await _load_ticker_name_index(
+        self._name_index, self._ambiguous, self._load_error = await _load_ticker_name_index(
             self._client, str(self._cache_dir))
 
     def _cache_path(self, ticker: str, day: str) -> Path:
@@ -103,7 +124,7 @@ class _NameIndexedSource(Source):
         to query and match on: the SEC title without its trailing qualifiers.
         ``res.raw["resolved_name"]`` keeps the SEC title. The name is None when the
         caller should return the result as is: the index failed to load (error
-        recorded) or the ticker is unknown."""
+        recorded), the ticker is unknown, or its name is ambiguous (``raw`` says so)."""
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
@@ -114,6 +135,9 @@ class _NameIndexedSource(Source):
         title = (self._name_index or {}).get(ticker.upper())
         res.raw = {"resolved_name": title or None}
         if not title:
+            return res, snap, None
+        if ticker.upper() in self._ambiguous:
+            res.raw["ambiguous_name"] = True
             return res, snap, None
         return res, snap, strip_sec_qualifiers(title) or title
 

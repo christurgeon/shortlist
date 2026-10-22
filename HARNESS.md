@@ -182,6 +182,14 @@ request per ticker. See `docs/SCORING.md` → Sector-aware abstention.
   match the company by name with a confidence floor, abstaining rather than mis-attributing
   (`data/govcontract_match.py`, `data/entity_match.py`). Neither is scored: flat data and a
   research context line only. See `docs/DATA_SOURCES.md` §C2 and `docs/RESEARCH.md`.
+  - They query by the SEC title without its trailing qualifier (`/DE/`, `/NEW`, `/ADR`):
+    upstream search returns nothing for the qualified form. A name that, so stripped, belongs
+    to more than one CIK abstains (`raw["ambiguous_name"]`).
+  - One deadline bounds each ticker's whole fetch (`deadline_s`); on expiry it is an error,
+    never a raise. Lobbying fetches one ticker at a time and waits out LDA's full
+    Retry-After, because concurrent tickers share one per-minute budget.
+  - Both are `no_data_is_normal`: no contract or filing for a symbol is not a coverage gap,
+    and the prompt's data-gaps line never names them. Their errors still show.
 
 `gates` are hard filters that flip `ScoreCard.passed`; `flags` are advisory and never change
 `composite` or `passed`. The full lists are in `docs/SCORING.md` → Gates vs flags.

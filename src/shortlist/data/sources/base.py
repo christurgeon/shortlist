@@ -16,9 +16,9 @@ class Source(ABC):
     verbatim raw payloads (for point-in-time audit) and a normalized partial."""
 
     name: str = "base"
-    # TickerSnapshot sections this source writes; empty means undeclared. A source
-    # whose sections are all auxiliary is "aux-only" (see aux_only_sources).
-    snapshot_sections: tuple[str, ...] = ()
+    # True when having nothing for a symbol is this source's usual outcome. Coverage then
+    # does not call it a gap, so such a source must fill only auxiliary sections.
+    no_data_is_normal: bool = False
 
     @abstractmethod
     async def fetch(self, ticker: str) -> SourceResult:
@@ -99,7 +99,7 @@ async def _fetch_sections(
 
 async def _retry_after_backoff(r: Any, attempt: int, max_retries: int) -> bool:
     """Shared Retry-After-aware backoff decision for the keyed-HTTP retry loops
-    (`_KeyedHttpSource._get`, `LobbyingSource._get_json`): 429 and 5xx are
+    (`_KeyedHttpSource._get`): 429 and 5xx are
     retriable, 402 gating and other 4xx are NOT. Sleeps (Retry-After header, else
     exponential 2**attempt) and returns True when the caller should retry;
     returns False once not-retriable or attempts are exhausted, so the caller

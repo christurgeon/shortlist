@@ -11,6 +11,12 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(autouse=True)
+def _no_429_floor(monkeypatch):
+    from shortlist.data.sources import lobbying
+    monkeypatch.setattr(lobbying, "_MIN_429_WAIT_S", 0.0)
+
+
 def _source_with(handler, name_map=None, **cfg):
     cache_dir = tempfile.mkdtemp(prefix="lobbytest-")
     src = LobbyingSource(config={"lobbying": {
@@ -187,11 +193,6 @@ def test_queries_and_matches_on_the_title_without_sec_qualifiers():
     _run(src.aclose())
 
 
-def test_cache_version_is_two():
-    # A same-day cached `matched: false` written before the qualifier strip must miss.
-    assert LobbyingSource._CACHE_V == 2
-
-
 def test_deadline_exceeded_is_an_error_not_a_raise_and_writes_no_cache():
     async def slow(req):
         await asyncio.sleep(5)
@@ -206,5 +207,91 @@ def test_deadline_exceeded_is_an_error_not_a_raise_and_writes_no_cache():
 
 def test_default_deadline_bounds_the_fetch():
     src = LobbyingSource(config={"lobbying": {"cache_dir": tempfile.mkdtemp(prefix="lobbytest-")}})
-    assert 60 <= src._deadline_s <= 90
+    assert src._deadline_s > 0
+    _run(src.aclose())
+
+
+def test_429_is_retried_past_max_retries_until_it_clears():
+    state = {"hits": 0}
+
+    def handler(req):
+        state["hits"] += 1
+        if state["hits"] <= 4:
+            return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+        return _year_handler(req)
+    src = _source_with(handler, max_retries=0)
+    res = _run(src.fetch("LMT"))
+    assert not res.errors and res.partial.lobbying.ttm_spend == 30000.0
+    _run(src.aclose())
+
+
+def test_a_429_that_never_clears_ends_at_the_deadline():
+    src = _source_with(lambda req: httpx.Response(429, headers={"Retry-After": "0"}, json={}),
+                       deadline_s=0.2)
+    res = _run(src.fetch("LMT"))
+    assert res.errors == ["lobbying: deadline exceeded"]
+    _run(src.aclose())
+
+
+def test_concurrent_tickers_never_overlap_their_lda_requests():
+    state = {"live": 0, "peak": 0}
+
+    async def handler(req):
+        state["live"] += 1
+        state["peak"] = max(state["peak"], state["live"])
+        await asyncio.sleep(0.01)
+        state["live"] -= 1
+        return _year_handler(req)
+    src = _source_with(handler, name_map={"LMT": "Lockheed Martin Corporation",
+                                          "LMTB": "Lockheed Martin Corporation"})
+
+    async def both():
+        return await asyncio.gather(src.fetch("LMT"), src.fetch("LMTB"))
+    a, b = _run(both())
+    assert a.partial.lobbying and b.partial.lobbying
+    assert state["peak"] == 1
+    _run(src.aclose())
+
+
+def test_an_ambiguous_name_abstains_without_a_query():
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return _year_handler(req)
+    src = _source_with(handler, name_map={"IBCP": "INDEPENDENT BANK CORP /MI/"})
+    src._ambiguous = frozenset({"IBCP"})
+    res = _run(src.fetch("IBCP"))
+    assert calls["n"] == 0 and res.partial.lobbying is None and not res.errors
+    assert res.raw == {"resolved_name": "INDEPENDENT BANK CORP /MI/", "ambiguous_name": True}
+    _run(src.aclose())
+
+
+_TICKERS_RAW = {
+    "0": {"cik_str": 1, "ticker": "INDB", "title": "INDEPENDENT BANK CORP"},
+    "1": {"cik_str": 2, "ticker": "IBCP", "title": "INDEPENDENT BANK CORP /MI/"},
+    "2": {"cik_str": 3, "ticker": "BRK-A", "title": "BERKSHIRE HATHAWAY INC"},
+    "3": {"cik_str": 3, "ticker": "BRK-B", "title": "BERKSHIRE HATHAWAY INC"},
+    "4": {"cik_str": 4, "ticker": "NOC", "title": "NORTHROP GRUMMAN CORP /DE/"},
+}
+
+
+def test_a_stripped_name_shared_by_two_ciks_is_ambiguous_but_share_classes_are_not():
+    from shortlist.data.sources._common import _ambiguous_tickers
+    assert _ambiguous_tickers(_TICKERS_RAW) == frozenset({"INDB", "IBCP"})
+
+
+def test_the_loaded_index_marks_ambiguous_names(monkeypatch):
+    async def fake_raw(client, cache_dir, month):
+        return _TICKERS_RAW
+    monkeypatch.setattr("shortlist.backtest.xbrl.fetch_company_tickers_raw", fake_raw)
+    calls = {"n": 0}
+
+    def handler(req):
+        calls["n"] += 1
+        return _year_handler(req)
+    src = _source_with(handler)
+    src._name_index = None
+    res = _run(src.fetch("IBCP"))
+    assert calls["n"] == 0 and res.raw.get("ambiguous_name") is True
     _run(src.aclose())

@@ -66,13 +66,9 @@ _REGISTRY = {
 
 
 def aux_only_sources(names: list[str]) -> frozenset[str]:
-    """The registered sources among `names` that write only auxiliary (non-KEY_OBJECT)
-    snapshot sections. Coverage treats their no-data outcome as normal, not a gap."""
-    from ..models import _AUX_DEFAULTS
-    return frozenset(
-        n for n in names
-        if n in _REGISTRY and _REGISTRY[n].snapshot_sections
-        and set(_REGISTRY[n].snapshot_sections) <= set(_AUX_DEFAULTS))
+    """The registered sources among `names` marked `no_data_is_normal`. Coverage does not
+    call their no-data outcome a gap, and the prompt's gaps line never names them."""
+    return frozenset(n for n in names if n in _REGISTRY and _REGISTRY[n].no_data_is_normal)
 
 
 def build_sources(names: list[str], config: Optional[dict] = None) -> list[Source]:

@@ -45,15 +45,30 @@ def test_structural_na_is_not_a_gap():
     assert "roic" not in na[0]              # scope==leg excluded
 
 
-def test_gaps_line_does_not_blame_aux_only_sources():
+_CHAIN = ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb", "gov_contracts", "lobbying"]
+_AUX = frozenset({"wsb", "gov_contracts", "lobbying"})
+
+
+def _gap_card(outcomes, contributed):
     from shortlist.coverage import build_coverage
     from shortlist.models import ScoreCard, StockMetrics
-    chain = ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb", "gov_contracts", "lobbying"]
-    aux = frozenset({"finra", "wsb", "gov_contracts", "lobbying"})
     card = ScoreCard(ticker="T", composite=1.0, quality=50.0, moat=50.0, growth=50.0,
                      momentum=50.0, value=None, opportunity=None, insider=50.0,
                      metrics=StockMetrics(ticker="T"))
-    card.coverage = build_coverage({**dict.fromkeys(chain, "ok"), "edgar": "error"},
-                                   {"yahoo", "fmp", "finnhub", "finra"}, card, aux_only=aux)
+    card.coverage = build_coverage(outcomes, contributed, card, aux_only=_AUX)
+    return card
+
+
+def test_gaps_line_does_not_blame_aux_only_sources():
+    card = _gap_card({**dict.fromkeys(_CHAIN, "ok"), "edgar": "error", "lobbying": "error"},
+                     {"yahoo", "fmp", "finnhub", "finra"})
     dw, _ = coverage_caveats(card)
     assert dw == ["value axis — edgar supplied no usable data"]
+
+
+def test_gaps_line_when_only_an_aux_only_source_failed():
+    card = _gap_card({**dict.fromkeys(_CHAIN, "ok"), "lobbying": "rate_limited_429"},
+                     {"yahoo", "fmp", "finnhub", "edgar", "finra"})
+    assert card.coverage.note == "lobbying: supplied no usable data for this symbol"
+    dw, _ = coverage_caveats(card)
+    assert dw == ["value axis — not available from any source"]

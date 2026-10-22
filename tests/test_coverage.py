@@ -193,7 +193,7 @@ def test_price_refinement_axes_excluded_from_coverage():
 
 
 _DEEP_CHAIN = ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb", "gov_contracts", "lobbying"]
-_AUX = frozenset({"finra", "wsb", "gov_contracts", "lobbying"})
+_AUX = frozenset({"wsb", "gov_contracts", "lobbying"})
 
 
 def test_aux_only_source_with_nothing_to_report_is_not_empty():

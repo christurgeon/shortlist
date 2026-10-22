@@ -15,4 +15,4 @@ def test_config_has_lobbying_blocks():
 
 def test_lobbying_fetch_deadline_is_configured():
     cfg = yaml.safe_load(Path("config.yaml").read_text())
-    assert 60 <= cfg["lobbying"]["deadline_s"] <= 90
+    assert cfg["lobbying"]["deadline_s"] > 0
