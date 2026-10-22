@@ -2,6 +2,8 @@ from datetime import date
 
 from statistics import pstdev
 
+import pytest
+
 from shortlist import durability
 from shortlist.backtest import durability_data, durability_study
 from shortlist.durability import (
@@ -147,6 +149,53 @@ def test_two_year_ends_in_one_bucket_keep_the_later():
     for tag, fn in (("Revenues", _dur), ("OperatingIncomeLoss", _dur)):
         f["facts"]["us-gaap"][tag]["units"]["USD"].append(fn("2015-12-31", 7.0, "2016-02-20"))
     assert fiscal_ends(f)[2015] == "2015-12-31"
+
+
+def test_each_snapshot_is_the_panel_read_alone_at_its_as_of_date():
+    # Restatements, comparatives, a fiscal-year change, rows filed before their period ended, a
+    # 20-F row, and GrossProfit tagged only from FY2017 (COGS before it): nothing read for one
+    # bucket may leak into another.
+    g = {}
+    for y in range(2012, 2020):
+        end, filed = f"{y}-12-31", f"{y + 1}-02-20"
+        for tag, val in (("Revenues", 1000.0 + y), ("OperatingIncomeLoss", 100.0 + y),
+                         ("CostOfRevenue", 600.0 + y)):
+            g.setdefault(tag, []).append(_dur(end, val, filed))
+            g[tag].append(_dur(f"{y - 1}-12-31", val - 7, filed))
+        for tag, val in (("StockholdersEquity", 400.0 + y), ("Assets", 1000.0 + 2 * y),
+                         ("LongTermDebtNoncurrent", 50.0), ("DebtCurrent", 5.0 + y)):
+            g.setdefault(tag, []).append(_inst(end, val, filed))
+        if y >= 2017:
+            g.setdefault("GrossProfit", []).append(_dur(end, 300.0 + y, filed))
+        if y % 3 == 0:
+            g["OperatingIncomeLoss"].append(_dur(end, -1.0, f"{y + 2}-03-01"))
+            g["Revenues"].append(_dur(end, 9.0, f"{y + 1}-03-01", form="20-F"))
+            g["StockholdersEquity"].append(_inst(f"{y + 1}-12-31", 1.0, filed))
+    g["Revenues"].append(_dur("2019-06-30", 5.0, "2019-08-01"))
+    f = _facts(**g)
+    years = range(2008, 2022)
+    ends, snaps = durability.snapshots(f, years)
+    assert ends == fiscal_ends(f) and len(snaps) >= 8
+    for b, snap in snaps.items():
+        assert snap == panel_rows(f, as_of_for(ends[b])), b
+    assert all(r.gross_profit == 400.0 for b in range(2012, 2017) for r in snaps[b].values())
+    assert (snaps[2017][2017].gross_profit, snaps[2017][2016].gross_profit) == (2317.0, None)
+
+
+def test_an_unread_malformed_equity_row_raises_only_when_its_year_is_requested():
+    f = _firm()
+    f["facts"]["us-gaap"]["StockholdersEquity"]["units"]["USD"].append(
+        _inst("2014-12-31", "n/a", "2015-02-20"))
+    assert durability.snapshots(f, [2010, 2011]) == ({2015: "2015-12-31"}, {})
+    with pytest.raises(ValueError):
+        durability.snapshots(f, [2015])
+    # dei rows are not filtered by `_study_rows`, so a non-string `filed` there reaches the parse
+    f = _firm()
+    f["facts"]["dei"] = {"StockholdersEquity": f["facts"]["us-gaap"].pop("StockholdersEquity")}
+    f["facts"]["dei"]["StockholdersEquity"]["units"]["USD"][0]["filed"] = 20160220
+    assert durability.snapshots(f, [2010, 2011]) == ({2015: "2015-12-31"}, {})
+    with pytest.raises(TypeError):
+        durability.snapshots(f, [2015])
 
 
 def test_yearrow_properties_on_a_bare_row():

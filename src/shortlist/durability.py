@@ -32,8 +32,7 @@ from .providers._xbrl_facts import (
     GROSS_PROFIT,
     OP_INCOME,
     REVENUE,
-    _gross_profit,
-    annual_series,
+    AnnualFacts,
 )
 
 # A flat rate, so the ROIC ranking equals the pre-tax ranking: no tax-tag noise and no 2018
@@ -170,9 +169,8 @@ def count_filed_before_period_end(facts: dict) -> int:
                for r in rows if r.get("filed") and r.get("end") and r["filed"] < r["end"])
 
 
-def _fiscal_ends(facts: dict) -> dict[int, str]:
-    ends = set(annual_series(facts, OP_INCOME, _FAR_FUTURE)) | set(
-        annual_series(facts, REVENUE, _FAR_FUTURE))
+def _fiscal_ends(af: AnnualFacts) -> dict[int, str]:
+    ends = set(af.series(OP_INCOME, _FAR_FUTURE)) | set(af.series(REVENUE, _FAR_FUTURE))
     out: dict[int, str] = {}
     for e in sorted(ends):
         out[fy_bucket(e)] = e
@@ -183,7 +181,7 @@ def fiscal_ends(facts: dict) -> dict[int, str]:
     """{bucket -> fiscal year end} over EVERY filing, whenever filed. Used only to locate a
     firm's year ends (and so its as-of dates) — never to read a value. Two ends in one bucket
     (a fiscal-year change): the later end wins."""
-    return _fiscal_ends(_study_rows(facts))
+    return _fiscal_ends(AnnualFacts(_study_rows(facts)))
 
 
 def as_of_for(end_iso: str) -> date:
@@ -194,18 +192,18 @@ def panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
     """{bucket -> YearRow} from the facts filed on or before `as_of` (the existing
     point-in-time rule in `annual_series`). Every year a reader at `as_of` would have,
     comparatives included, and nothing filed later."""
-    return _panel_rows(_study_rows(facts), as_of)
+    return _panel_rows(AnnualFacts(_study_rows(facts)), as_of)
 
 
-def _panel_rows(facts: dict, as_of: date) -> dict[int, YearRow]:
-    rev = annual_series(facts, REVENUE, as_of)
-    oi = annual_series(facts, OP_INCOME, as_of)
-    eq = annual_series(facts, EQUITY, as_of, instant=True)
-    assets = annual_series(facts, ASSETS, as_of, instant=True)
-    noncur = annual_series(facts, LT_NONCURRENT, as_of, instant=True)
-    total = annual_series(facts, LT_TOTAL, as_of, instant=True)
-    cur = annual_series(facts, CUR_DEBT, as_of, instant=True)
-    gp = _gross_profit(facts, as_of)
+def _panel_rows(af: AnnualFacts, as_of: date) -> dict[int, YearRow]:
+    rev = af.series(REVENUE, as_of)
+    oi = af.series(OP_INCOME, as_of)
+    eq = af.series(EQUITY, as_of, instant=True)
+    assets = af.series(ASSETS, as_of, instant=True)
+    noncur = af.series(LT_NONCURRENT, as_of, instant=True)
+    total = af.series(LT_TOTAL, as_of, instant=True)
+    cur = af.series(CUR_DEBT, as_of, instant=True)
+    gp = af.gross_profit(as_of)
     out: dict[int, YearRow] = {}
     for e in sorted(set(rev) | set(oi)):
         out[fy_bucket(e)] = YearRow(
@@ -223,10 +221,10 @@ def snapshot(facts: dict, bucket: int) -> Optional[dict[int, YearRow]]:
 def snapshots(facts: dict, buckets: Iterable[int],
               ) -> tuple[dict[int, str], dict[int, dict[int, YearRow]]]:
     """(`fiscal_ends(facts)`, {bucket -> `snapshot(facts, bucket)`}) for each of `buckets`
-    with a fiscal year end, filtering the facts once rather than once per bucket."""
-    facts = _study_rows(facts)
-    ends = _fiscal_ends(facts)
-    return ends, {b: _panel_rows(facts, as_of_for(ends[b])) for b in buckets if b in ends}
+    with a fiscal year end, filtering and parsing the facts once rather than once per bucket."""
+    af = AnnualFacts(_study_rows(facts))
+    ends = _fiscal_ends(af)
+    return ends, {b: _panel_rows(af, as_of_for(ends[b])) for b in buckets if b in ends}
 
 
 # ---------------------------------------------------------------- the universe and the predictors
