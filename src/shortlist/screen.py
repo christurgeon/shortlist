@@ -23,13 +23,15 @@ def run_harness(tickers: list[str], source_names: list[str], config: dict,
     from .data.bridge import snapshot_to_metrics
     from .data.collector import collect
     from .data.coverage_adapt import snapshot_to_coverage_inputs
+    from .data.sources import aux_only_sources
 
     snapshots = collect(tickers, source_names, config=config)
+    aux_only = aux_only_sources(source_names)
     cards = []
     for s in snapshots:
         card = score(snapshot_to_metrics(s), config, macro)
         outcomes, contributed = snapshot_to_coverage_inputs(s, source_names)
-        card.coverage = build_coverage(outcomes, contributed, card)
+        card.coverage = build_coverage(outcomes, contributed, card, aux_only)
         cards.append(card)
     cards.sort(key=rank_key, reverse=True)
     return cards

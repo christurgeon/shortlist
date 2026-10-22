@@ -24,6 +24,7 @@ class LobbyingSource(_NameIndexedSource):
     config-driven."""
 
     name = "lobbying"
+    snapshot_sections = ("lobbying",)
     _TTM_DAYS = 365
     _CACHE_PREFIX = "lobby"
     _CACHE_V = 2   # bump when what a cached Lobbying payload means changes

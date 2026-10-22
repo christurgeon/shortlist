@@ -24,6 +24,7 @@ class GovContractsSource(_NameIndexedSource):
     un-window-scoped award totals — verified)."""
 
     name = "gov_contracts"
+    snapshot_sections = ("gov_contracts",)
     COUNT_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction_count/"
     DATA_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"
     _CONTRACT_CODES = ["A", "B", "C", "D"]

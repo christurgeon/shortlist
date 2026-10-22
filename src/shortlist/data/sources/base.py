@@ -16,6 +16,9 @@ class Source(ABC):
     verbatim raw payloads (for point-in-time audit) and a normalized partial."""
 
     name: str = "base"
+    # TickerSnapshot sections this source writes; empty means undeclared. A source
+    # whose sections are all auxiliary is "aux-only" (see aux_only_sources).
+    snapshot_sections: tuple[str, ...] = ()
 
     @abstractmethod
     async def fetch(self, ticker: str) -> SourceResult:

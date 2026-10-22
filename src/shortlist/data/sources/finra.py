@@ -19,6 +19,7 @@ class FinraSource(Source):
     by SETTLEMENT DATE so the cache survives the ~2 weeks until the next cycle."""
 
     name = "finra"
+    snapshot_sections = ("short_interest",)
     DATA = _finra.FINRA_DATA_URL
     PARTS = _finra.FINRA_PARTS_URL
     PAGE = _finra.FINRA_PAGE   # FINRA record-max-limit

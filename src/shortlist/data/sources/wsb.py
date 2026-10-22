@@ -14,6 +14,7 @@ class WsbSource(Source):
     No API key, no config — cache_dir is shared across consumers."""
 
     name = "wsb"
+    snapshot_sections = ("social",)
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/apewisdom"):
         self._timeout = timeout
