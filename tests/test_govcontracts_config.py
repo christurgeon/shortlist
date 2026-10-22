@@ -4,7 +4,9 @@ from pathlib import Path
 
 def test_config_has_gov_contracts_blocks():
     cfg = yaml.safe_load(Path("config.yaml").read_text())
-    assert "gov_contracts" in cfg["harness_sources"]
+    from shortlist.screen import research_chain
+    assert "gov_contracts" not in cfg["harness_sources"]
+    assert "gov_contracts" in research_chain(cfg["harness_sources"], cfg)
     g = cfg["gov_contracts"]
     assert 0 < g["match_min_confidence"] <= 1
     assert g["trailing_months"] == 24

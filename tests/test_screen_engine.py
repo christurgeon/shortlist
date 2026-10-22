@@ -168,3 +168,28 @@ def test_flags_cell_appends_thin():
     c = ScoreCard(ticker="T", composite=50.0, quality=None, moat=None, growth=None,
                   momentum=None, value=None, opportunity=None, insider=None, thin=True)
     assert "thin" in _flags_cell(c).split(",")
+
+
+def test_research_chain_adds_only_enabled_research_only_sources():
+    from shortlist.screen import research_chain
+    on = {"research": {"gov_contracts": {"enabled": True}, "lobbying": {"enabled": False}}}
+    assert research_chain(["yahoo"], on) == ["yahoo", "gov_contracts"]
+    assert research_chain(["yahoo", "gov_contracts"], on) == ["yahoo", "gov_contracts"]
+    assert research_chain(["yahoo"], {}) == ["yahoo"]
+
+
+def test_only_a_research_run_fetches_the_research_only_sources(monkeypatch):
+    import shortlist.data.macro as macro
+    import shortlist.screen as screen
+    seen = []
+    monkeypatch.setattr(screen, "run_harness",
+                        lambda tickers, sources, config, macro=None: seen.append(sources) or [])
+    monkeypatch.setattr(screen, "_run_research_phase", lambda *a, **k: {})
+    monkeypatch.setattr(macro, "fetch_macro", lambda config: None)
+    main(["--tickers", "LMT", "--json"])
+    main(["--tickers", "LMT", "--json", "--research", "1"])
+    main(["--tickers", "LMT", "--json", "--research", "1", "--provider", "yahoo"])
+    assert seen[0] == CONFIG["harness_sources"]
+    assert seen[1] == screen.research_chain(CONFIG["harness_sources"], CONFIG)
+    assert {"gov_contracts", "lobbying"} <= set(seen[1]) - set(seen[0])
+    assert seen[2] == ["yahoo"]

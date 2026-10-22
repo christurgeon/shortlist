@@ -90,3 +90,8 @@ def test_retry_after_seconds_http_date_does_not_raise():
 
 def test_retry_after_seconds_garbage_header_falls_back():
     assert retry_after_seconds("not-a-date-or-number", 3.0) == 3.0
+
+
+def test_retry_after_seconds_non_finite_header_falls_back():
+    assert retry_after_seconds("nan", 3.0) == 3.0
+    assert retry_after_seconds("inf", 3.0) == 3.0

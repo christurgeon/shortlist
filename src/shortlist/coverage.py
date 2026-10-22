@@ -35,7 +35,8 @@ _FMP_RATE_LIMIT_NOTE = (
 
 
 def build_coverage(outcomes: dict[str, str], contributed: set[str], card: ScoreCard,
-                   aux_only: frozenset[str] = frozenset()) -> Optional[Coverage]:
+                   aux_only: frozenset[str] = frozenset(),
+                   axisless: frozenset[str] = frozenset()) -> Optional[Coverage]:
     """Assemble a Coverage record, or None when every provider is "ok".
 
     `outcomes` maps provider/source name -> fetch status: "ok"/"gated_402"/
@@ -45,8 +46,9 @@ def build_coverage(outcomes: dict[str, str], contributed: set[str], card: ScoreC
     fetch returned at least one field — judged BEFORE merge, so a provider that
     fetched real data but lost every field to a higher-priority source still counts
     as contributing. An "ok" provider absent from `contributed` returned nothing
-    usable and is reclassified "empty" — except one in `aux_only`, which feeds no
-    axis and for which having nothing to report is normal; it stays "ok"."""
+    usable and is reclassified "empty" — except one in `aux_only`, for which having
+    nothing to report is normal; it stays "ok". `axisless` names the providers that
+    feed no sub-score; the record carries them so a gap is never blamed on one."""
     providers = dict(outcomes)
     for name, status in list(providers.items()):
         if status == "ok" and name not in contributed and name not in aux_only:
@@ -67,7 +69,8 @@ def build_coverage(outcomes: dict[str, str], contributed: set[str], card: ScoreC
         unavailable.append("upside_to_target")
 
     return Coverage(providers=providers, unavailable=unavailable,
-                    note=_build_note(providers))
+                    note=_build_note(providers),
+                    axisless=tuple(sorted(axisless & providers.keys())))
 
 
 def _build_note(providers: dict[str, str]) -> Optional[str]:

@@ -24,6 +24,7 @@ class GovContractsSource(_NameIndexedSource):
     un-window-scoped award totals — verified)."""
 
     name = "gov_contracts"
+    feeds_axes = False
     no_data_is_normal = True
     COUNT_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction_count/"
     DATA_URL = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"

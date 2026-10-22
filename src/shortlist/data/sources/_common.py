@@ -31,20 +31,26 @@ async def _load_ticker_name_index(client: Any, cache_dir: str,
 
 
 def _ambiguous_tickers(raw: dict) -> frozenset[str]:
-    """Tickers whose title, without SEC qualifiers, names more than one CIK (e.g.
-    `INDEPENDENT BANK CORP` and `INDEPENDENT BANK CORP /MI/`). A query by that name
-    cannot tell the companies apart, so the sources abstain rather than misattribute.
-    Share classes of one CIK are not ambiguous."""
+    """Tickers whose title, once stripped of SEC qualifiers, matches another CIK's title
+    (e.g. `INDEPENDENT BANK CORP` and `INDEPENDENT BANK CORP /MI/`): the strip made the
+    two indistinguishable, so the sources abstain rather than misattribute. A collision
+    between titles that carried no qualifier is left as it was. Share classes of one CIK
+    are not ambiguous."""
     ciks: dict[str, set] = defaultdict(set)
     tickers: dict[str, set] = defaultdict(set)
+    stripped: set[str] = set()
     for row in raw.values():
         tk, title = str(row.get("ticker", "")).upper(), row.get("title")
         if not tk or not title:
             continue
-        key = normalize_name(strip_sec_qualifiers(str(title)))
+        bare = strip_sec_qualifiers(str(title))
+        key = normalize_name(bare)
         ciks[key].add(row.get("cik_str"))
         tickers[key].add(tk)
-    return frozenset(t for key, ts in tickers.items() if len(ciks[key]) > 1 for t in ts)
+        if bare != str(title):
+            stripped.add(key)
+    return frozenset(t for key, ts in tickers.items()
+                     if len(ciks[key]) > 1 and key in stripped for t in ts)
 
 
 def _read_versioned_cache(path: Path, version: int) -> Optional[dict]:

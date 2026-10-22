@@ -414,12 +414,12 @@ def _capturing_bot(cfg, calls):
 
 def test_deep_screens_with_harness_sources_and_screen_keeps_the_bot_list():
     calls = []
-    cfg = {"harness_sources": ["mock", "lobbying"],
+    cfg = {"harness_sources": ["mock", "finra"], "research": {"lobbying": {"enabled": True}},
            "bot": {"max_screen": 2, "max_deep": 1, "deep_screen_sources": ["mock"]}}
     bot = _capturing_bot(cfg, calls)
     bot._handle(Command("deep", ("TSLA",), "/deep tsla"))
     bot._handle(Command("screen", ("TSLA",), "/screen tsla"))
-    assert calls == [["mock", "lobbying"], ["mock"]]
+    assert calls == [["mock", "finra", "lobbying"], ["mock"]]
 
 
 def test_deep_falls_back_to_the_screen_list_without_harness_sources():
@@ -431,8 +431,9 @@ def test_deep_falls_back_to_the_screen_list_without_harness_sources():
 
 def test_real_config_deep_reads_harness_sources_screen_and_add_do_not(tmp_path, monkeypatch):
     """/deep must fetch every source its brief's context lines read, which is the
-    harness chain `shortlist --research` uses; /screen and /add render none of the
-    extra lines and keep the bot list."""
+    chain `shortlist --research` uses; /screen and /add render none of the extra lines
+    and keep the bot list."""
+    from shortlist.screen import research_chain
     from shortlist.config import load_config
     cfg = load_config("config.yaml")
     cfg["portfolio"] = {**cfg.get("portfolio", {}), "store": str(tmp_path / "p.json"),
@@ -443,7 +444,8 @@ def test_real_config_deep_reads_harness_sources_screen_and_add_do_not(tmp_path, 
     bot._handle(Command("deep", ("LMT",), "/deep lmt"))
     bot._handle(Command("screen", ("LMT",), "/screen lmt"))
     bot._handle(parse_command("/add LMT"))
-    assert calls[0] == cfg["harness_sources"]
+    assert calls[0] == research_chain(cfg["harness_sources"], cfg)
+    assert {"gov_contracts", "lobbying"} <= set(calls[0])
     assert calls[1] == cfg["bot"]["deep_screen_sources"]
     assert calls[2] == bot._free_sources()
     assert set(calls[0]) > set(calls[1])

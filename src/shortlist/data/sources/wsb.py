@@ -14,6 +14,7 @@ class WsbSource(Source):
     No API key, no config — cache_dir is shared across consumers."""
 
     name = "wsb"
+    feeds_axes = False
     no_data_is_normal = True
 
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/apewisdom"):

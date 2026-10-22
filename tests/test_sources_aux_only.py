@@ -1,6 +1,7 @@
-"""A source marked `no_data_is_normal` must fill only auxiliary snapshot sections: coverage
-does not call its no-data outcome a gap, so a key section filled by it would hide a real
-gap. Each such source is driven through a matched fetch and its partial is checked."""
+"""A source marked `feeds_axes = False` must fill only auxiliary snapshot sections: the
+prompt's data-gaps line never names it, and coverage may not call its no-data outcome a gap,
+so a key section filled by it would hide a real gap. Each such source is driven through a
+matched fetch and its partial is checked."""
 import asyncio
 import json
 import tempfile
@@ -13,10 +14,12 @@ from shortlist.data import apewisdom
 from shortlist.data.models import _AUX_DEFAULTS, TickerSnapshot
 from shortlist.data.sources import (
     _REGISTRY,
+    FinraSource,
     GovContractsSource,
     LobbyingSource,
     WsbSource,
     aux_only_sources,
+    axisless_sources,
 )
 
 _SECTIONS = [f for f in TickerSnapshot.__dataclass_fields__
@@ -56,11 +59,31 @@ def _lobbying(monkeypatch):
     return src, "ACME"
 
 
-_MATCHED = {"wsb": _wsb, "gov_contracts": _gov_contracts, "lobbying": _lobbying}
+def _finra(monkeypatch):
+    src = FinraSource(cache_dir=tempfile.mkdtemp())
+
+    async def parts():
+        return {"availablePartitions": [{"partitions": [_RECENT]}]}
+
+    async def page(settlement, offset):
+        return [] if offset else [{"symbolCode": "ACME", "settlementDate": _RECENT,
+                                   "currentShortPositionQuantity": "1000",
+                                   "daysToCoverQuantity": "2.5"}]
+    monkeypatch.setattr(src, "_fetch_partitions", parts)
+    monkeypatch.setattr(src, "_fetch_page", page)
+    return src, "ACME"
 
 
-def test_every_no_data_is_normal_source_has_a_matched_fetch_below():
-    assert aux_only_sources(list(_REGISTRY)) == set(_MATCHED)
+_MATCHED = {"wsb": _wsb, "gov_contracts": _gov_contracts, "lobbying": _lobbying,
+            "finra": _finra}
+
+
+def test_every_axisless_source_has_a_matched_fetch_below():
+    assert axisless_sources(list(_REGISTRY)) == set(_MATCHED)
+
+
+def test_a_no_data_is_normal_source_feeds_no_axis():
+    assert aux_only_sources(list(_REGISTRY)) <= axisless_sources(list(_REGISTRY))
 
 
 @pytest.mark.parametrize("name", sorted(_MATCHED))

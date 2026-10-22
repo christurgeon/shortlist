@@ -266,7 +266,9 @@ momentum:
 # Default source chain for the harness. List order does NOT set merge priority —
 # `collector.DEFAULT_PRIORITY` does (yahoo, then edgar above fmp). Passing
 # `--provider` overrides this list entirely, so omit it to keep yahoo/finra.
-harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb, gov_contracts, lobbying]
+# gov_contracts and lobbying are not listed: `--research` and bot /deep add each one
+# whose `research:` context line is enabled (`screen.research_chain`).
+harness_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
 
 # HTTP-response cache for the FMP/Finnhub sources. Disable per run with --no-cache;
 # force-repopulate with --refresh-cache. docs/DATA_SOURCES.md §6.
@@ -511,7 +513,7 @@ bot:
   max_screen: 10            # max tickers per /screen
   max_deep: 3               # max tickers per /deep (each is a Claude call)
   # Chain for /screen, /portfolio and /add (/add drops fmp). Despite the name, /deep
-  # fetches harness_sources, so every research context line has its source.
+  # fetches the `shortlist --research` chain instead (`screen.research_chain`).
   deep_screen_sources: [yahoo, fmp, finnhub, edgar, finra, wsb]
   research_phase_budget_s: 2800 # wall-clock ceiling for the whole research phase
 

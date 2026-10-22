@@ -31,6 +31,7 @@ class LobbyingSource(_NameIndexedSource):
     config-driven."""
 
     name = "lobbying"
+    feeds_axes = False
     no_data_is_normal = True
     _TTM_DAYS = 365
     _CACHE_PREFIX = "lobby"
@@ -70,7 +71,8 @@ class LobbyingSource(_NameIndexedSource):
                 throttled += 1
                 continue
             if 500 <= r.status_code < 600 and server_errors < self._max_retries:
-                await asyncio.sleep(2.0 ** server_errors)
+                await asyncio.sleep(retry_after_seconds(r.headers.get("Retry-After"),
+                                                        2.0 ** server_errors))
                 server_errors += 1
                 continue
             r.raise_for_status()

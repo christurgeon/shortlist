@@ -208,6 +208,7 @@ class Coverage:
     providers: dict[str, str]
     unavailable: list[str]
     note: Optional[str] = None
+    axisless: tuple[str, ...] = ()    # providers that feed no sub-score; never explain a gap
 
 
 @dataclass

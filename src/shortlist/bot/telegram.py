@@ -203,7 +203,8 @@ class TelegramBot:
         self.max_deep = int(self.bot_cfg.get("max_deep", 3))
         self.sources = self.bot_cfg.get(
             "deep_screen_sources", ["yahoo", "fmp", "finnhub", "edgar", "finra"])
-        self.deep_sources = list(config.get("harness_sources") or self.sources)
+        from ..screen import research_chain
+        self.deep_sources = research_chain(config.get("harness_sources") or self.sources, config)
         pf_cfg = config.get("portfolio", {})
         self.store_path = pf_cfg.get("store", "positions.json")
         self.decisions_path = pf_cfg.get("decisions", "decisions.jsonl")

@@ -55,7 +55,8 @@ def _gap_card(outcomes, contributed):
     card = ScoreCard(ticker="T", composite=1.0, quality=50.0, moat=50.0, growth=50.0,
                      momentum=50.0, value=None, opportunity=None, insider=50.0,
                      metrics=StockMetrics(ticker="T"))
-    card.coverage = build_coverage(outcomes, contributed, card, aux_only=_AUX)
+    card.coverage = build_coverage(outcomes, contributed, card, aux_only=_AUX,
+                                   axisless=_AUX | {"finra"})
     return card
 
 
@@ -64,6 +65,13 @@ def test_gaps_line_does_not_blame_aux_only_sources():
                      {"yahoo", "fmp", "finnhub", "finra"})
     dw, _ = coverage_caveats(card)
     assert dw == ["value axis — edgar supplied no usable data"]
+
+
+def test_gaps_line_does_not_blame_finra_but_its_note_does():
+    card = _gap_card(dict.fromkeys(_CHAIN, "ok"), {"yahoo", "fmp", "finnhub", "edgar"})
+    assert card.coverage.note == "finra: supplied no usable data for this symbol"
+    dw, _ = coverage_caveats(card)
+    assert dw == ["value axis — not available from any source"]
 
 
 def test_gaps_line_when_only_an_aux_only_source_failed():

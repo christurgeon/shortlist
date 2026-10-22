@@ -273,10 +273,12 @@ _TICKERS_RAW = {
     "2": {"cik_str": 3, "ticker": "BRK-A", "title": "BERKSHIRE HATHAWAY INC"},
     "3": {"cik_str": 3, "ticker": "BRK-B", "title": "BERKSHIRE HATHAWAY INC"},
     "4": {"cik_str": 4, "ticker": "NOC", "title": "NORTHROP GRUMMAN CORP /DE/"},
+    "5": {"cik_str": 5, "ticker": "TGT", "title": "TARGET CORP"},
+    "6": {"cik_str": 6, "ticker": "CBDY", "title": "Target Group Inc."},
 }
 
 
-def test_a_stripped_name_shared_by_two_ciks_is_ambiguous_but_share_classes_are_not():
+def test_only_a_collision_the_strip_created_is_ambiguous():
     from shortlist.data.sources._common import _ambiguous_tickers
     assert _ambiguous_tickers(_TICKERS_RAW) == frozenset({"INDB", "IBCP"})
 

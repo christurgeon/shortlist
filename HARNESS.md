@@ -186,10 +186,15 @@ request per ticker. See `docs/SCORING.md` → Sector-aware abstention.
     upstream search returns nothing for the qualified form. A name that, so stripped, belongs
     to more than one CIK abstains (`raw["ambiguous_name"]`).
   - One deadline bounds each ticker's whole fetch (`deadline_s`); on expiry it is an error,
-    never a raise. Lobbying fetches one ticker at a time and waits out LDA's full
-    Retry-After, because concurrent tickers share one per-minute budget.
-  - Both are `no_data_is_normal`: no contract or filing for a symbol is not a coverage gap,
-    and the prompt's data-gaps line never names them. Their errors still show.
+    never a raise. Lobbying fetches one ticker at a time and waits out LDA's Retry-After
+    (up to 65 s), because concurrent tickers share one per-minute budget; a ticker's wait in
+    that queue counts against its deadline, so a large cold basket can lose its tail.
+  - Both are `no_data_is_normal`: no contract or filing for a symbol is not a coverage gap.
+    They, FINRA and WSB feed no sub-score (`feeds_axes = False`), so the prompt's data-gaps
+    line never names them; their errors still show in the coverage note.
+  - Only the research paths fetch them (`screen.research_chain`): `--research` and bot
+    `/deep` add each one whose research context line is enabled. A plain screen renders
+    neither.
 
 `gates` are hard filters that flip `ScoreCard.passed`; `flags` are advisory and never change
 `composite` or `passed`. The full lists are in `docs/SCORING.md` → Gates vs flags.

@@ -50,8 +50,8 @@ TELEGRAM_CHAT_ID=987654321            # your chat id (see below)
 
 Malformed tickers are dropped **before any API spend**, with a note naming what was ignored.
 
-`/deep` fetches the `harness_sources` chain that `shortlist --research` uses, so every research
-context line has its source. `/screen`, `/portfolio` and `/add` fetch `bot.deep_screen_sources`
+`/deep` fetches the chain `shortlist --research` uses: `harness_sources` plus each research-only
+source (gov contracts, lobbying) whose research context line is enabled. `/screen`, `/portfolio` and `/add` fetch `bot.deep_screen_sources`
 (`/add` without FMP).
 
 ### How the HTML report is laid out
