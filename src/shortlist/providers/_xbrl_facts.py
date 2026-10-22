@@ -55,7 +55,7 @@ def _d(iso: str) -> date:
     return date.fromisoformat(iso)
 
 
-_Parsed = list[list[tuple[str, date, date, object]]]   # per concept: (end_iso, filed, end, val)
+_Parsed = list[list[tuple[str, date, date, object]]]
 
 
 def _annual_rows(facts: dict, concepts: list[str], *, instant: bool,
@@ -135,7 +135,8 @@ class AnnualFacts:
 
     def series(self, concepts: list[str], as_of: date, *, instant: bool = False,
                units: tuple[str, ...] = ("USD",)) -> dict[str, float]:
-        key = (tuple(concepts), instant, tuple(units))
+        concepts, units = tuple(concepts), tuple(units)
+        key = (concepts, instant, units)
         parsed = self._parsed.get(key)
         if parsed is None:
             # On first read, never up front: a family that is never read (COGS when

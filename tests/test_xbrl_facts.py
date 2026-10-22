@@ -150,7 +150,7 @@ def test_gross_profit_reads_cogs_only_when_gross_profit_is_empty():
         extract_panel(facts, date(2023, 1, 1))
 
 
-# Origin/main's single-pass `annual_series`, frozen as the oracle for the fuzz below.
+# The single-pass form of `annual_series`, frozen as the oracle for the fuzz below.
 from datetime import timedelta
 import random
 
@@ -772,3 +772,14 @@ def test_panel_to_metrics_shareholder_yield_none_without_financing_or_mktcap():
                    dividends_paid={"2022-12-31": 50.0})
     assert panel_to_metrics(p2, ticker="X", sic=None, price=None,
                             price_at=lambda d: None).shareholder_yield is None
+
+
+def test_annual_facts_parses_a_one_shot_iterable_of_concepts_once():
+    from shortlist.providers._xbrl_facts import AnnualFacts, annual_series
+    facts = {"facts": {"us-gaap": {"Revenues": {"units": {"USD": [
+        {"form": "10-K", "filed": "2022-02-01", "start": "2021-01-01", "end": "2021-12-31",
+         "val": 5.0}]}}}}}
+    want = annual_series(facts, ["Revenues"], date(2023, 1, 1))
+    af = AnnualFacts(facts)
+    assert af.series(iter(["Revenues"]), date(2023, 1, 1)) == want == {"2021-12-31": 5.0}
+    assert af.series(["Revenues"], date(2023, 1, 1)) == want
