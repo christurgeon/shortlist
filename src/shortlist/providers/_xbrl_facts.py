@@ -55,19 +55,21 @@ def _d(iso: str) -> date:
     return date.fromisoformat(iso)
 
 
-def annual_series(facts: dict, concepts: list[str], as_of: date, *,
-                  instant: bool = False,
-                  units: tuple[str, ...] = ("USD",)) -> dict[str, float]:
-    """{fiscal_end_iso: value} via priority-with-fallback across `concepts`.
-    `instant=True` for balance-sheet concepts (no `start` to length-check)."""
+_Parsed = list[list[tuple[str, date, date, object]]]
+
+
+def _annual_rows(facts: dict, concepts: list[str], *, instant: bool,
+                 units: tuple[str, ...]) -> _Parsed:
+    """Per concept in priority order, its usable annual rows as (end_iso, filed, end, val)
+    in SEC array order. Independent of any as-of date; `val` is not converted."""
     gaap = facts.get("facts", {}).get("us-gaap", {})
     dei = facts.get("facts", {}).get("dei", {})
-    out: dict[str, float] = {}
-    for concept in concepts:                       # priority order
+    parsed = []
+    for concept in concepts:
         node = gaap[concept] if concept in gaap else dei.get(concept)
         if not node:
             continue
-        chosen: dict[str, tuple[date, float]] = {}  # end -> (filed, val) within THIS concept
+        rows = []
         for unit in units:
             for f in node.get("units", {}).get(unit, []):
                 form = f.get("form")
@@ -88,18 +90,73 @@ def annual_series(facts: dict, concepts: list[str], as_of: date, *,
                             continue
                 except ValueError:
                     continue   # malformed ISO date in this SEC fact -> skip the row
-                # point-in-time: exclude both future filings AND future periods. The
-                # latter guards against a malformed row whose period `end` post-dates
-                # as_of despite a past `filed` (real SEC data satisfies end <= filed).
-                if filed_d > as_of or end_d > as_of:
-                    continue
-                prev = chosen.get(end)
-                # strict `>`: a same-date tie keeps the first row seen (SEC array order)
-                if prev is None or filed_d > prev[0]:
-                    chosen[end] = (filed_d, float(val))
+                rows.append((end, filed_d, end_d, val))
+        parsed.append(rows)
+    return parsed
+
+
+def _select(parsed: _Parsed, as_of: date) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for rows in parsed:                            # priority order
+        chosen: dict[str, tuple[date, float]] = {}  # end -> (filed, val) within THIS concept
+        for end, filed_d, end_d, val in rows:
+            # point-in-time: exclude both future filings AND future periods. The
+            # latter guards against a malformed row whose period `end` post-dates
+            # as_of despite a past `filed` (real SEC data satisfies end <= filed).
+            if filed_d > as_of or end_d > as_of:
+                continue
+            prev = chosen.get(end)
+            # strict `>`: a same-date tie keeps the first row seen (SEC array order).
+            # float() here, not in the parse: an unparseable val raises only for a row
+            # that is picked at this as_of.
+            if prev is None or filed_d > prev[0]:
+                chosen[end] = (filed_d, float(val))
         for end, (_filed, val) in chosen.items():
             out.setdefault(end, val)   # first concept in priority order owns this end; later aliases skipped
     return out
+
+
+def annual_series(facts: dict, concepts: list[str], as_of: date, *,
+                  instant: bool = False,
+                  units: tuple[str, ...] = ("USD",)) -> dict[str, float]:
+    """{fiscal_end_iso: value} via priority-with-fallback across `concepts`.
+    `instant=True` for balance-sheet concepts (no `start` to length-check)."""
+    return _select(_annual_rows(facts, concepts, instant=instant, units=units), as_of)
+
+
+class AnnualFacts:
+    """`annual_series` and the gross-profit rule over one companyfacts dict, for any number
+    of as-of dates, parsing each concept family once. The facts must not change while the
+    object is in use."""
+
+    def __init__(self, facts: dict) -> None:
+        self._facts = facts
+        self._parsed: dict[tuple, _Parsed] = {}
+
+    def series(self, concepts: list[str], as_of: date, *, instant: bool = False,
+               units: tuple[str, ...] = ("USD",)) -> dict[str, float]:
+        concepts, units = tuple(concepts), tuple(units)
+        key = (concepts, instant, units)
+        parsed = self._parsed.get(key)
+        if parsed is None:
+            # On first read, never up front: a family that is never read (COGS when
+            # GrossProfit is tagged) must not raise on a malformed row.
+            parsed = self._parsed[key] = _annual_rows(self._facts, concepts, instant=instant,
+                                                      units=units)
+        return _select(parsed, as_of)
+
+    def gross_profit(self, as_of: date) -> dict:
+        """GrossProfit if tagged, else revenue - COGS aligned by fiscal end. Prefers a
+        single consistent definition: when GrossProfit is tagged we use it as-is and do
+        NOT backfill earlier untagged years from revenue-COGS — mixing the two
+        definitions across years would distort the margin-stability series (same
+        rationale as the revenue-alias priority in annual_series)."""
+        gp = self.series(GROSS_PROFIT, as_of)
+        if gp:
+            return gp
+        rev = self.series(REVENUE, as_of)
+        cogs = self.series(COGS, as_of)
+        return {e: rev[e] - cogs[e] for e in rev if e in cogs}
 
 
 # ---------------------------------------------------------------------------
@@ -230,44 +287,31 @@ class XbrlPanel:
     debt_issuance: dict[str, float] = field(default_factory=dict)
 
 
-def _gross_profit(facts: dict, as_of: date) -> dict:
-    """GrossProfit if tagged, else revenue - COGS aligned by fiscal end. Prefers a
-    single consistent definition: when GrossProfit is tagged we use it as-is and do
-    NOT backfill earlier untagged years from revenue-COGS — mixing the two
-    definitions across years would distort the margin-stability series (same
-    rationale as the revenue-alias priority in annual_series)."""
-    gp = annual_series(facts, GROSS_PROFIT, as_of)
-    if gp:
-        return gp
-    rev = annual_series(facts, REVENUE, as_of)
-    cogs = annual_series(facts, COGS, as_of)
-    return {e: rev[e] - cogs[e] for e in rev if e in cogs}
-
-
 def extract_panel(facts: dict, as_of: date) -> XbrlPanel:
-    ocf = annual_series(facts, OCF, as_of)
-    capex = annual_series(facts, CAPEX, as_of)
-    lt = annual_series(facts, LT_DEBT, as_of, instant=True)
-    cur = annual_series(facts, CUR_DEBT, as_of, instant=True)
-    shares = annual_series(facts, SHARES_OUT, as_of, instant=True, units=("shares",))
+    af = AnnualFacts(facts)
+    ocf = af.series(OCF, as_of)
+    capex = af.series(CAPEX, as_of)
+    lt = af.series(LT_DEBT, as_of, instant=True)
+    cur = af.series(CUR_DEBT, as_of, instant=True)
+    shares = af.series(SHARES_OUT, as_of, instant=True, units=("shares",))
     return XbrlPanel(
-        revenue=annual_series(facts, REVENUE, as_of),
-        net_income=annual_series(facts, NET_INCOME, as_of),
+        revenue=af.series(REVENUE, as_of),
+        net_income=af.series(NET_INCOME, as_of),
         fcf=align_fcf(ocf, capex),
         ocf=ocf,
-        diluted_eps=annual_series(facts, DILUTED_EPS, as_of, units=("USD/shares",)),
-        gross_profit=_gross_profit(facts, as_of),
-        total_equity=annual_series(facts, EQUITY, as_of, instant=True),
+        diluted_eps=af.series(DILUTED_EPS, as_of, units=("USD/shares",)),
+        gross_profit=af.gross_profit(as_of),
+        total_equity=af.series(EQUITY, as_of, instant=True),
         total_debt=sum_aligned(lt, cur),
-        operating_income=annual_series(facts, OP_INCOME, as_of),
-        interest_expense=annual_series(facts, INTEREST, as_of),
-        dep_amort=annual_series(facts, DEP_AMORT, as_of),
-        cash=annual_series(facts, CASH, as_of, instant=True),
-        pretax_income=annual_series(facts, PRETAX, as_of),
-        income_tax=annual_series(facts, INCOME_TAX, as_of),
+        operating_income=af.series(OP_INCOME, as_of),
+        interest_expense=af.series(INTEREST, as_of),
+        dep_amort=af.series(DEP_AMORT, as_of),
+        cash=af.series(CASH, as_of, instant=True),
+        pretax_income=af.series(PRETAX, as_of),
+        income_tax=af.series(INCOME_TAX, as_of),
         shares=latest(shares),
-        diluted_shares=annual_series(facts, WTD_DIL_SHARES, as_of, units=("shares",)),
-        assets=annual_series(facts, ASSETS, as_of, instant=True),
+        diluted_shares=af.series(WTD_DIL_SHARES, as_of, units=("shares",)),
+        assets=af.series(ASSETS, as_of, instant=True),
         dividends_paid=sum_family(facts, DIVIDENDS_PAID, as_of),
         repurchases=sum_family(facts, REPURCHASES, as_of),
         debt_repayments=sum_family(facts, DEBT_REPAYMENTS, as_of),
