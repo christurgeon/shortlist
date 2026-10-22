@@ -41,23 +41,41 @@ def _write_versioned_cache(path: Path, version: int, payload: dict) -> None:
     write_json_cache(path, {"v": version, **payload})
 
 
+_DEFAULT_DEADLINE_S = 90.0
+
+
 class _NameIndexedSource(Source):
     """Scaffolding for keyless sources that query by SEC entity name: the shared
-    ticker->name index and a version-gated per-ticker day cache. Subclasses set
-    ``_CACHE_PREFIX`` / ``_CACHE_V`` and implement ``fetch``."""
+    ticker->name index, a version-gated per-ticker day cache and one deadline over
+    the whole fetch. Subclasses set ``_CACHE_PREFIX`` / ``_CACHE_V`` and implement
+    ``_fetch``."""
 
     _CACHE_PREFIX: str
     _CACHE_V: int
 
-    def __init__(self, client: Any, cache_dir: Path):
+    def __init__(self, client: Any, cache_dir: Path, deadline_s: float = _DEFAULT_DEADLINE_S):
         self._client = client
         self._cache_dir = cache_dir
+        self._deadline_s = deadline_s
         self._name_index: Optional[dict] = None
         self._load_error: Optional[str] = None
         self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+    async def fetch(self, ticker: str) -> SourceResult:
+        """``_fetch`` under the deadline. On expiry: an empty partial, a
+        ``"<name>: deadline exceeded"`` error and no cache write. Never raises."""
+        try:
+            async with asyncio.timeout(self._deadline_s):
+                return await self._fetch(ticker)
+        except TimeoutError:
+            return SourceResult(source=self.name, partial=TickerSnapshot(ticker=ticker),
+                                errors=[f"{self.name}: deadline exceeded"])
+
+    async def _fetch(self, ticker: str) -> SourceResult:
+        raise NotImplementedError
 
     async def _load_names(self) -> None:
         if self._name_index is not None or self._load_error is not None:

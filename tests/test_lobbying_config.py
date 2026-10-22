@@ -11,3 +11,8 @@ def test_config_has_lobbying_blocks():
     assert g["trailing_months"] == 24
     assert g["max_pages_per_year"] >= 1
     assert cfg["research"]["lobbying"]["enabled"] is True
+
+
+def test_lobbying_fetch_deadline_is_configured():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert 60 <= cfg["lobbying"]["deadline_s"] <= 90

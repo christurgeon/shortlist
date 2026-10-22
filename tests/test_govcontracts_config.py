@@ -10,3 +10,8 @@ def test_config_has_gov_contracts_blocks():
     assert g["trailing_months"] == 24
     assert g["max_pages"] >= 1
     assert cfg["research"]["gov_contracts"]["enabled"] is True
+
+
+def test_gov_contracts_fetch_deadline_is_configured():
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    assert 60 <= cfg["gov_contracts"]["deadline_s"] <= 90

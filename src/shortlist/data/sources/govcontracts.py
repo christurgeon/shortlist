@@ -7,7 +7,7 @@ from typing import Optional
 
 from ...env import redact_secrets
 from ..models import SourceResult
-from ._common import _NameIndexedSource
+from ._common import _DEFAULT_DEADLINE_S, _NameIndexedSource
 
 
 class GovContractsSource(_NameIndexedSource):
@@ -39,7 +39,8 @@ class GovContractsSource(_NameIndexedSource):
             httpx.AsyncClient(
                 timeout=float(cfg.get("timeout", timeout)),
                 headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"}),
-            Path(cfg.get("cache_dir", cache_dir)))
+            Path(cfg.get("cache_dir", cache_dir)),
+            float(cfg.get("deadline_s", _DEFAULT_DEADLINE_S)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.80))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages", 5))
@@ -49,7 +50,7 @@ class GovContractsSource(_NameIndexedSource):
                 "award_type_codes": self._CONTRACT_CODES,
                 "time_period": [{"start_date": start, "end_date": end}]}
 
-    async def fetch(self, ticker: str) -> SourceResult:
+    async def _fetch(self, ticker: str) -> SourceResult:
         from ..govcontract_match import match_confidence
         from ..models import GovContracts
         res, snap, name = await self._begin(ticker)

@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from ...env import redact_secrets
 from ..models import SourceResult
-from ._common import _NameIndexedSource
+from ._common import _DEFAULT_DEADLINE_S, _NameIndexedSource
 from .base import _retry_after_backoff
 
 
@@ -38,7 +38,8 @@ class LobbyingSource(_NameIndexedSource):
                 timeout=float(cfg.get("timeout", timeout)),
                 headers={"Accept": "application/json",
                          "User-Agent": "shortlist lobbying (contact in SEC_IDENTITY)"}),
-            Path(cfg.get("cache_dir", cache_dir)))
+            Path(cfg.get("cache_dir", cache_dir)),
+            float(cfg.get("deadline_s", _DEFAULT_DEADLINE_S)))
         self._min_conf = float(cfg.get("match_min_confidence", 0.85))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages_per_year", 4))
@@ -70,7 +71,7 @@ class LobbyingSource(_NameIndexedSource):
                     return None
         return None
 
-    async def fetch(self, ticker: str) -> SourceResult:
+    async def _fetch(self, ticker: str) -> SourceResult:
         from ..entity_match import match_confidence
         from ..models import Lobbying
         res, snap, name = await self._begin(ticker)

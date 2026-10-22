@@ -225,3 +225,25 @@ def test_queries_and_matches_on_the_title_without_sec_qualifiers():
 def test_cache_version_is_two():
     # A same-day cached `matched: false` written before the qualifier strip must miss.
     assert GovContractsSource._CACHE_V == 2
+
+
+def test_deadline_exceeded_is_an_error_not_a_raise_and_writes_no_cache():
+    from datetime import date
+    calls = {"n": 0}
+    fast = _lmt_handler(calls)
+
+    async def slow(req):
+        await asyncio.sleep(5)
+        return fast(req)
+    src = _source_with(slow, deadline_s=0.05)
+    res = _run(src.fetch("LMT"))
+    assert res.errors == ["gov_contracts: deadline exceeded"]
+    assert res.partial is not None and res.partial.gov_contracts is None
+    assert src._read_cache("LMT", date.today().isoformat()) is None
+    _run(src.aclose())
+
+
+def test_default_deadline_bounds_the_fetch():
+    src = GovContractsSource(config={"gov_contracts": {"cache_dir": tempfile.mkdtemp(prefix="gctest-")}})
+    assert 60 <= src._deadline_s <= 90
+    _run(src.aclose())
