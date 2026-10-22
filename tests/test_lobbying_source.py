@@ -297,3 +297,22 @@ def test_the_loaded_index_marks_ambiguous_names(monkeypatch):
     res = _run(src.fetch("IBCP"))
     assert calls["n"] == 0 and res.raw.get("ambiguous_name") is True
     _run(src.aclose())
+
+
+def test_a_long_429_run_never_overflows_the_backoff(monkeypatch):
+    from shortlist.data.sources import lobbying
+
+    async def no_sleep(s):
+        return None
+    monkeypatch.setattr(lobbying.asyncio, "sleep", no_sleep)
+    state = {"hits": 0}
+
+    def handler(req):
+        state["hits"] += 1
+        if state["hits"] <= 1100:
+            return httpx.Response(429, json={})
+        return _year_handler(req)
+    src = _source_with(handler, deadline_s=60)
+    res = _run(src.fetch("LMT"))
+    assert not res.errors and res.partial.lobbying is not None
+    _run(src.aclose())

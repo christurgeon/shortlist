@@ -65,7 +65,7 @@ class LobbyingSource(_NameIndexedSource):
             r = await self._client.get(f"{self._base}/{path}", params=params)
             if r.status_code == 429:
                 wait = retry_after_seconds(r.headers.get("Retry-After"),
-                                           min(2.0 ** throttled, _RETRY_AFTER_CAP_S),
+                                           min(2.0 ** min(throttled, 7), _RETRY_AFTER_CAP_S),
                                            cap=_RETRY_AFTER_CAP_S)
                 await asyncio.sleep(max(wait, _MIN_429_WAIT_S))
                 throttled += 1
