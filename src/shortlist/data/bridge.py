@@ -158,7 +158,7 @@ def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
     return {fy: nopat / ic for fy, (nopat, ic) in _nopat_and_invested_capital(st, tax_rate).items()}
 
 
-def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; split measured and rejected (PR #145, docs/audits/README.md)
+def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; a split was measured and rejected (docs/audits/README.md)
     """Map a harness TickerSnapshot onto the flat StockMetrics that
     scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
     scorer's weight-redistribution handles them.
