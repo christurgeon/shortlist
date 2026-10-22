@@ -111,17 +111,19 @@ def test_the_portable_file_is_written_only_from_the_committed_rows(probe, firms,
     monkeypatch.setattr(probe, "load_firms", lambda: firms)
     monkeypatch.setattr(probe, "_git", lambda *a: "0" * 40)
     monkeypatch.setattr(probe.sys, "argv", ["probe", "--write-portable"])
+    # The exact digests are stubbed with the committed ones so that this runs on any platform,
+    # and so that only the platform guard can stop the first call.
+    committed = json.loads((RAW / "equivalence.json").read_text())
+    exact = {k: committed[k] for k in ("year_rows", "cohort_rows", "table_inputs", "universe_sizes")}
+    monkeypatch.setattr(probe, "digests", lambda f: exact)
     monkeypatch.setattr(probe, "exact_platform", lambda: False)
     with pytest.raises(SystemExit):
         probe.main()
     monkeypatch.setattr(probe, "exact_platform", lambda: True)
-    committed = json.loads((RAW / "equivalence.json").read_text())
-    exact = {k: committed[k] for k in ("year_rows", "cohort_rows", "table_inputs", "universe_sizes")}
     monkeypatch.setattr(probe, "digests", lambda f: {**exact, "cohort_rows": {"n": 3771, "sha256": "0"}})
     with pytest.raises(SystemExit):
         probe.main()
     assert not out.exists()
-    # The exact digests are stubbed with the committed ones so that this runs on any platform.
     monkeypatch.setattr(probe, "digests", lambda f: exact)
     probe.main()
     written, kept = (json.loads(f.read_text()) for f in (out, RAW / "equivalence-portable.json"))
