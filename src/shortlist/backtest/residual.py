@@ -4,13 +4,8 @@ date by date, and keeps the residual — the part of the target NOT explained by
 the controls — so a downstream IC computation can ask whether the target is
 predictive INCREMENTAL to the controls, not merely correlated with them.
 
-Rank convention: matches `metrics.py:spearman_ic`, which ranks via
-`metrics.rank` — 1-based, AVERAGE-tie handling (not ordinal/first-occurrence).
-`method="rank"` reuses that exact function so ties are broken identically to
-every other rank-IC computation in this codebase.
-
-Reuses `backtest/_ols.py:ols`/`_residuals` (stdlib Gaussian-elimination OLS,
-already used for FF3 alpha) rather than reimplementing a solver.
+Rank convention: `method="rank"` uses `metrics.rank` (1-based, average ties), the same
+function as `spearman_ic`. OLS comes from `_ols.py`.
 """
 from __future__ import annotations
 

@@ -166,12 +166,9 @@ flags:
     min_count_7d: 10
     require_rising: true        # last-7d count must exceed the prior 7d
     max_staleness_days: 3
-  # DISABLED: it has never been able to fire. No producer writes
-  # StockMetrics.filing_text_similarity (research runs after check_flags), and the
-  # metric barely discriminates (textsim.py keeps stopwords). Both must be fixed to
-  # re-enable. Kept so the threshold and the kill reason stay together.
-  # docs/audits/README.md -> Lazy Prices, docs/audits/2026-08-21-inventory-context-line.md,
-  # tests/test_flag_producers.py
+  # DISABLED: no producer writes StockMetrics.filing_text_similarity (research runs after
+  # check_flags), and the metric barely discriminates (textsim.py keeps stopwords). Fix
+  # both to re-enable. docs/audits/README.md -> Lazy Prices; tests/test_flag_producers.py
   filing_text_change:
     enabled: false
     max_similarity: 0.7        # similarity below this -> flag
@@ -287,17 +284,14 @@ cache:
 #      TEXT, so each enters the quote-grounding haystack as its own labelled segment
 #      (docs/RESEARCH.md → Quote verification).
 research:
-  model: claude-sonnet-5-5     # a judgment call, not a measurement. SYSTEM_PROMPT was tuned
-                               # on an earlier generation; watch for over-applied length/scope
-                               # directives. Reproducibility rests on the cache key
-                               # (research/cachekey.py), not this string.
+  model: claude-sonnet-5-5     # a judgment call, not a measurement. Reproducibility rests on
+                               # the cache key (research/cachekey.py), not this string.
   timeout_s: 900               # heavy filers need several minutes. Keep max_attempts x
                                # timeout_s below bot.research_phase_budget_s.
   max_attempts: 3              # total assess() tries; a claude call can transiently time out
   fallback_model: claude-opus-5   # --fallback-model on the claude CLI; MUST DIFFER from `model`
-                               # to do anything. The brief is labelled with the model that
-                               # actually ran (claude_cli._answering_model). Remove the key
-                               # to omit the flag.
+                               # to do anything. The brief names the model that actually ran.
+                               # Remove the key to omit the flag.
   output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, keyed by the
                                # wide cache key (research/cachekey.py), not the accession
   cache:                       # brief staleness (docs/design/PLAN_DEEP_FRESHNESS.md §4)
@@ -322,8 +316,8 @@ research:
     business: 50000
     mda: 60000
     risk_factors: 50000        # boilerplate ordered worst-first, so a prefix keeps the material risks
-    tenq_mda: 40000            # also load-bearing against whole-document over-capture in the
-                               # 10-Q MD&A extraction (research/filings.py:_tenq_mda)
+    tenq_mda: 40000            # also bounds whole-document over-capture in the 10-Q MD&A
+                               # extraction (research/filings.py:_tenq_mda)
   tenq_risk_update:            # 10-Q Part II Item 1A changes, diffed against the 10-K Item 1A
     enabled: true              # (research/filings.py:_tenq_added_risks)
     max_blocks: 4
@@ -333,8 +327,7 @@ research:
                                # docs/audits/2026-08-20-debt-liquidity-notes-design.md
     enabled: true
     max_notes_per_form: 2      # a borrower can file several relevant notes
-    max_chars_per_note: 16000  # not lower: the ladder can sit past 10,000 chars, and a tighter
-                               # cap would silently drop it for heavy borrowers
+    max_chars_per_note: 16000  # not lower: the ladder can sit past 10,000 chars
     max_chars_10k: 16000       # per-form budgets, not a shared pool, so annual notes cannot
     max_chars_10q: 8000        # crowd out the fresher quarterly note
   screening_call:              # buy/hold/avoid capstone on the research brief
@@ -397,10 +390,9 @@ research:
     max_atm_spread_pct: 40     # reject the STRADDLE above this bid-ask % of mid. Gates the
                                # implied move only; skew compares volatilities and survives
                                # a wide spread.
-    # The next three bracket the expiry around the print. The vendor revises still-future
-    # earnings dates, so an expiry chosen without a buffer can land BEFORE the print and
-    # price no event while the line claims it does. Abstaining is better. Revisions stop
-    # shortly before the print, hence the firm-within window.
+    # The next three bracket the expiry around the print. The vendor revises future
+    # earnings dates, so an unbuffered expiry can land BEFORE the print and price no event.
+    # Abstaining is better. Revisions stop shortly before the print (firm-within window).
     earnings_date_uncertainty_days: 8  # expiry must sit >= this far AFTER the predicted date
     max_earnings_expiry_gap_days: 14   # ...and no further, or it prices extra drift. A print
                                # far out usually has no bracketing expiry and the clause abstains.

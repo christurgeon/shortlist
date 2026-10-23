@@ -137,8 +137,7 @@ class AssessmentVM:
     call_rationale: str = ""
     call_watch: str = ""
     call_decided_without: list[str] = field(default_factory=list)
-    # The stance the gate replaced (None when nothing was clamped, and on briefs
-    # written before the field existed). See research/models.py:ScreeningCall.
+    # The stance the gate replaced; empty when nothing was clamped.
     call_model_stance: str = ""
 
 
@@ -367,14 +366,9 @@ def build_view_model(cards, session: date, *, assessments: dict[str, dict],
     ordered = sorted(cards, key=rank_key, reverse=True)
     leaders = [_leader_vm(c, assessments, reverse_dcf_cfg) for c in ordered]
     # /deep handoff: non-gated, scored leaders only (a gated/not-scored name can't pass),
-    # in conviction (rank_key) order. Suppressed for /portfolio reports — suggesting you
-    # /deep names you already hold is noise (the section is for discovery/screen digests).
-    #
-    # A name that ALREADY has an assessment in this very report is excluded, for the same
-    # reason. Without that, a `/deep LULU` report ended its own brief by telling you to run
-    # `/deep LULU` — the command that produced it. It also fixes `--research N`, which used
-    # to re-suggest the top N names it had just spent ~$0.60 and ~3 minutes each
-    # researching; now the handoff lists only the names still worth the spend.
+    # in conviction (rank_key) order. Suppressed for /portfolio reports (held names).
+    # Names that already have an assessment in this report are excluded too, so a brief
+    # never suggests the `/deep` run that produced it.
     deep_block = ([ld.ticker for ld in leaders
                    if not ld.gates and ld.scored and ld.ticker not in (assessments or {})]
                   if portfolio is None else [])

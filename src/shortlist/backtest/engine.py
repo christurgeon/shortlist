@@ -33,9 +33,8 @@ def _collect_rows(src: SignalSource, universe: list[str],
     name. A source may emit several signals per observation (e.g. the XBRL source
     emits quality/moat/growth/value); each becomes its own report."""
     rows: dict[str, list[tuple[date, str, float, float]]] = defaultdict(list)
-    # Ticker-major (NOT date-major): a ticker's companyfacts are date-independent, so this
-    # lets a lazy XBRL source load each ticker's facts once across all grid dates (bounded
-    # RAM). The emitted row set is identical — downstream IC/spread regroups by date/name.
+    # Ticker-major, not date-major: a lazy XBRL source then loads each ticker's
+    # date-independent facts once, which bounds RAM.
     for tk in universe:
         for t in grid:
             obs = src.observe(tk, t)
@@ -111,9 +110,7 @@ def _signal_report(signal: str, horizon: int,
                    xs_min_breadth: int, n_buckets: int) -> SignalReport:
     """Aggregate one signal's (date, ticker, value, forward_return) rows over a
     single horizon into a SignalReport: per-date (xs) and per-name (ts) Spearman
-    IC, pooled quantile spread, and trust/suppression notes. Extracted verbatim
-    from run_backtest's inline loop body (golden-pinned by test_backtest_golden.py
-    ahead of this extraction); behavior is byte-identical."""
+    IC, pooled quantile spread, and trust/suppression notes."""
     by_date: dict[date, list[tuple[float, float]]] = defaultdict(list)
     by_name: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for t, tk, sv, fr in rows:

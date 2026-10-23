@@ -1,8 +1,7 @@
 """Bulk SEC archives -> the small files the moat-durability study reads. Stdlib only.
 
-`companyfacts.zip` is 1.41 GB and `submissions.zip` 1.57 GB (2026-10-04). Both are read member
-by member and NEVER extracted: extracted they are well over 18 GB, and the machine that ran
-the study had 9.4 GB free."""
+`companyfacts.zip` and `submissions.zip` are read member by member and NEVER extracted:
+extracted they are many times larger than the disk allows on the VPS."""
 from __future__ import annotations
 
 import gzip

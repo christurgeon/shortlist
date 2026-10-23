@@ -152,11 +152,9 @@ def _predictors(f: Firm, year: int, hist: dict[int, list[float]],
     if (key in peers and peers[key][2] >= MIN_PEERS and base is not None
             and (base.revenue or 0) > 0 and (now.revenue or 0) > 0):
         tot_now, tot_base, _n = peers[key]
-        # The RELATIVE change in share (a log ratio), not the absolute one. An absolute change
-        # grows with the share itself: on synthetic firms whose growth does not depend on size
-        # its rank correlation with the firm's SIC-3 share is -0.82 to -0.88, against +0.05 to
-        # +0.09 for this form (docs/audits/scripts/probe_durability_share_form.py). The
-        # absolute form would have measured size inside the industry.
+        # The relative change in share (a log ratio), not the absolute one: an absolute
+        # change grows with the share itself and would measure size inside the industry
+        # (docs/audits/scripts/probe_durability_share_form.py).
         share_stability = -abs(math.log((now.revenue / tot_now) / (base.revenue / tot_base)))
 
     gross_margin = (now.gross_profit / now.revenue
@@ -350,11 +348,10 @@ def raw_tercile_spread(samp: list[tuple[Row, float]], pred: str) -> float:
 DISC_MIN, DISC_SE = 0.10, 2.0
 HOLD_MIN, HOLD_SE = 0.06, 1.64
 BOUND_MIN = 0.03
-# Rule 5 (amendment 2): at least this share of β must survive SIC-3 x start-year cells, in both
-# windows. SIC-2 cells let a predictor that is only a SUB-industry label through: on synthetic
-# rows it passed both windows in 89% of worlds, and in 0% to 2% with this rule. A fixed floor
-# on the SIC-3 β was measured and NOT adopted (it left 11.5% to 17.5%); β is per unit of
-# cohort-wide rank, so only a share of β is the same hurdle for every predictor.
+# Rule 5: at least this share of β must survive SIC-3 x start-year cells, in both windows.
+# SIC-2 cells let a predictor that is only a sub-industry label through. A fixed floor on the
+# SIC-3 β is not the same hurdle for every predictor, because β is per unit of cohort-wide
+# rank; a share of β is.
 SUB_SHARE = 0.5
 
 
@@ -436,9 +433,9 @@ def measure(rows: list[Row], pred: str, outcome: str, *, reps: int = BOOT_REPS,
 
 # ---------------------------------------------------------------- gates and descriptives
 
-# Universe size per year on SEC frames with the invested-capital floor, measured 2026-10-04.
-# frames returns RESTATED values on more forms than the study reads, so the reproduction gate
-# compares these with `comparison_count`, never with the study's own universe (amendment 3).
+# Reference universe size per year on SEC frames with the invested-capital floor. frames
+# returns RESTATED values on more forms than the study reads, so the reproduction gate
+# compares these with `comparison_count`, never with the study's own universe.
 FRAMES_UNIVERSE = {2011: 2114, 2012: 2102, 2013: 2052, 2014: 2066, 2015: 1995, 2016: 2161,
                    2017: 2254, 2018: 2214, 2019: 2190, 2020: 2207, 2021: 2359, 2022: 2309,
                    2023: 2245, 2024: 2179}

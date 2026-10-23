@@ -26,12 +26,8 @@ def build_fit_rows(src: SignalSource, universe: list[str],
                    step_months: Optional[int] = None) -> list[FitRow]:
     grid = observation_grid(start, end, step_months or horizon)
     rows: list[FitRow] = []
-    # Ticker-major (NOT date-major), matching engine.py:_collect_rows: a lazy XBRL
-    # source's small per-ticker LRU (XbrlSignalSource) loads each ticker's companyfacts
-    # once across all grid dates this way. Date-major would thrash that cache -- every
-    # ticker beyond the LRU size gets re-read from disk on every grid date. Aggregation
-    # below is order-independent (fit.py groups by period_id), so this is a pure
-    # perf/cache-locality change.
+    # Ticker-major, as in engine._collect_rows: date-major would thrash the lazy XBRL
+    # source's LRU. Aggregation below is order-independent.
     for tk in universe:
         hist = histories.get(tk)
         if hist is None:
