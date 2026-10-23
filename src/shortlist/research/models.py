@@ -23,7 +23,7 @@ def _sc_cfg(config: dict | None) -> dict:
 
 def stance_label(stance: str, config: dict | None = None) -> str:
     labels = _sc_cfg(config).get("labels") or {}
-    # a config label of "" is treated as absent (falls back to the default)
+    # An empty label falls back to the default.
     return labels.get(stance) or DEFAULT_STANCE_LABELS.get(stance, stance)
 
 
@@ -88,14 +88,10 @@ class FilingText:
                 if len(getattr(self, name)) < STUB_SECTION_CHARS]
 
 
-# A section under this length is a stub, and has_content() still passes it. Measured
-# 2026-10-02 over 327 exact-form 10-Ks: 11 had one. 8 were MD&A cross-references of
-# 242-396 chars pointing at a separate financial section or at EX-13 (JPM, XOM, CVX,
-# WFC); 2 were an empty Item 1 under a combined "Items 1 and 2" heading (SM, GTE); 1
-# was a smaller reporting company's "Not applicable" Item 1A (LEGH). Every other
-# section was >= 3,151 chars. Abstaining was rejected: in 10 of the 11 the text exists
-# and the rest of the brief is sound. A length floor cannot catch a span of the WRONG
-# text — PGR's 3,151-char "MD&A" is risk-factor prose.
+# A section under this length is a stub (an MD&A cross-reference, an empty Item 1, a
+# "Not applicable" Item 1A), and has_content() still passes it. The brief flags stubs
+# instead of abstaining, since the rest of the brief is usually sound. A length floor
+# cannot catch a span of the WRONG text.
 STUB_SECTION_CHARS = 2000
 
 _SECTION_LABELS = (("business", "Item 1 (Business)"),
@@ -114,11 +110,9 @@ def stub_sections_note(sections: list[str]) -> str:
 
 @dataclass
 class EightKText:
-    """One recent 8-K's extracted substance (research/eightk.py). Unlike the
-    proxy/reverse-DCF context lines this IS filing text, so it enters the grounding
-    haystack — but as its OWN segment, carrying `label` (e.g.
-    "8-K 2026-07-30 (Item 2.02, EX-99.1)") so a reader is told which document a
-    verified quote came from rather than assuming the 10-K."""
+    """One recent 8-K's extracted substance (research/eightk.py). Filing text, so it
+    enters the grounding haystack as its OWN segment. `label` (e.g. "8-K 2026-07-30
+    (Item 2.02, EX-99.1)") tells the reader which document a verified quote came from."""
     accession: str
     filed: str
     items: str
@@ -128,23 +122,15 @@ class EightKText:
 
 @dataclass
 class DebtNote:
-    """One debt & liquidity statement note (research/notes.py). Like EightKText
-    this IS filing text, so it enters the grounding haystack — as its OWN segment,
-    carrying `label` (e.g. "10-K note: LONG-TERM OBLIGATIONS") so a reader is told
-    which document a verified quote came from rather than assuming the 10-K.
+    """One debt & liquidity statement note (research/notes.py). Filing text, so it
+    enters the grounding haystack as its OWN segment. `label` (e.g. "10-K note:
+    LONG-TERM OBLIGATIONS") tells the reader which document a verified quote came from.
 
-    `text` is PURE FILING TEXT and nothing else may be mixed into it — it is a
-    haystack segment, so anything added becomes quotable and can pass
-    quote-verification as a filing fact. An earlier revision appended a
-    " […truncated…]" marker here; normalized it was 13 chars against
-    `assess._MIN_EVIDENCE_CHARS = 12`, so a model emitting the marker alone as its
-    evidence got `verified=True` against a real note.
-
-    `truncated` is therefore just a FLAG: `assess._build_user_prompt` renders it as a
-    "(TRUNCATED …)" suffix on the prompt section header, which is scaffolding outside
-    every segment. That is what lets the model distinguish a severed maturity ladder
-    from a complete one, which SYSTEM_PROMPT's "name the missing input rather than
-    estimating it" depends on."""
+    `text` is PURE FILING TEXT: anything mixed in becomes quotable and could pass
+    quote-verification as a filing fact. `truncated` is therefore only a FLAG;
+    `assess._build_user_prompt` renders it as a "(TRUNCATED …)" suffix on the prompt
+    header, outside every segment, so the model can tell a severed maturity ladder from a
+    complete one."""
     form: str                      # "10-K" | "10-Q"
     accession: str
     title: str                     # as filed, e.g. "Borrowings and Credit Agreements"
@@ -158,11 +144,9 @@ class ControlsFinding:
     """Management's own conclusion that internal controls were not effective as of
     the filing's period end (research/controls.py).
 
-    `quote` is PURE FILING TEXT and enters the grounding haystack as its own segment,
-    so — exactly as for DebtNote — nothing computed may be mixed into it. `basis` and
-    `as_of` ARE computed (which phrase matched, which date the sentence anchored to),
-    which is why they travel in the prompt-only `controls.context_line` instead: a
-    model that could quote a derived verdict would have it "verified" as a filing fact.
+    `quote` is PURE FILING TEXT and a grounding segment, so, as for DebtNote, nothing
+    computed may be mixed into it. `basis` and `as_of` are computed, so they travel in
+    the prompt-only `controls.context_line`.
     """
     form: str                      # "10-K"
     accession: str
@@ -174,13 +158,11 @@ class ControlsFinding:
 
 @dataclass
 class FilingBundle:
-    """The documents fed to one research brief. `tenk` is the current 10-K (the
-    primary, displayed filing). `tenq_mda` and `added_risks_text` are additive
-    context (may be ""). `cache_key` is the FILING half of the on-disk key — the
-    accessions, so a new 10-Q produces a fresh brief — not the whole key: the full
-    on-disk key also folds in a prompt/config fingerprint and a context digest
-    (`research/cachekey.py:brief_key`). The prior-year 10-K (the diff baseline) is
-    deliberately NOT part of `cache_key` and is never exposed here whole."""
+    """The documents fed to one research brief. `tenk` is the current, displayed 10-K.
+    `tenq_mda` and `added_risks_text` are additive context (may be ""). `cache_key` is
+    only the FILING half of the on-disk key (the accessions); the rest is in
+    `research/cachekey.py:brief_key`. The prior-year 10-K (diff baseline) is never
+    exposed here whole."""
     tenk: FilingText
     primary_accession: str
     cache_key: str
@@ -188,35 +170,25 @@ class FilingBundle:
     tenq_mda: str = ""
     added_risks_text: str = ""
     text_similarity: Optional[float] = None
-    # ^ Lazy-Prices YoY cosine (Item 1A + MD&A) vs the prior-year 10-K, computed in
-    # fetch_bundle from documents already fetched for the risk diff. PROMPT-ONLY:
-    # it is a computed number, not filing text, so it must never enter haystack()
-    # or a model could quote it through quote-verification as a filing fact.
+    # ^ YoY cosine vs the prior-year 10-K, computed in fetch_bundle. PROMPT-ONLY: a
+    # computed number must never enter haystack().
     eightks: list = field(default_factory=list)
-    # ^ list[EightKText] — recent 8-K substance (research/eightk.py). Empty unless
-    # `research.eightk` is enabled AND a qualifying filing exists, which is what
-    # keeps the prompt and the report byte-identical for every other name.
+    # ^ list[EightKText] (research/eightk.py). Empty keeps the prompt and report
+    # byte-identical.
     tenq_accession: str = ""
-    # ^ set whenever a 10-Q was LOCATED, independently of whether its MD&A parsed.
-    # `tenq_accession and not tenq_mda` is the "we found the filing but could not read
-    # Item 2" case (2.19% of 228 filings measured 2026-08-14), which must be reported
-    # as a data gap rather than silently omitted — see
-    # docs/audits/2026-08-14-tenq-mda-recovery-kill.md.
+    # ^ set whenever a 10-Q was LOCATED, whether or not its MD&A parsed.
+    # `tenq_accession and not tenq_mda` means the filing was found but Item 2 could not
+    # be read; report that as a data gap. See docs/audits/2026-08-14-tenq-mda-recovery-kill.md.
     tenq_added_risks: str = ""
-    # ^ Part II Item 1A blocks absent from the 10-K's Item 1A — the quarter's risk
-    # CHANGES (research/filings.py:_tenq_added_risks). Filing text, so unlike
-    # `text_similarity` it DOES enter the haystack — as its own segment, so a
-    # verified quote is attributed to the 10-Q and not to the 10-K.
+    # ^ Part II Item 1A blocks absent from the 10-K's Item 1A
+    # (research/filings.py:_tenq_added_risks). Filing text, so unlike `text_similarity`
+    # it enters the haystack, as its own segment.
     debt_notes: list = field(default_factory=list)
-    # ^ list[DebtNote] — debt & liquidity statement notes (research/notes.py), the
-    # maturity-ladder input SYSTEM_PROMPT's refinancing-coverage arithmetic needs.
-    # Empty unless `research.notes` is enabled AND the filer files one, which is
-    # what keeps the prompt byte-identical for every other name. 10-K notes first:
-    # a 10-Q debt note is a legitimate subset (5 of 20 filers file none at all).
+    # ^ list[DebtNote] (research/notes.py). Empty keeps the prompt byte-identical.
+    # 10-K notes first; a 10-Q may legitimately carry none.
     controls: Optional["ControlsFinding"] = None
-    # ^ an ADVERSE internal-control conclusion, or None (the common case — measured
-    # 5.3% of 228 large/small-mid caps, 10.0% of 120 held-out $300M-$5B names).
-    # None keeps the prompt byte-identical, so this costs nothing on a clean filer.
+    # ^ an ADVERSE internal-control conclusion, or None (the common case). None keeps
+    # the prompt byte-identical.
 
     def segments(self) -> list[tuple[str, str]]:
         """The grounding corpus split into (provenance label, text) pairs, in the
@@ -262,9 +234,8 @@ class Finding:
 @dataclass
 class Moat:
     summary: str = ""
-    # {claim, evidence} pairs, NOT bare strings: 17 of 38 moat sources measured on
-    # 2026-08-17 asserted a specific figure with no grounding anywhere in the brief.
-    # An empty `evidence` is valid here (declared inference) — see _evidence_pairs.
+    # {claim, evidence} pairs, NOT bare strings, so claims can be grounded.
+    # An empty `evidence` is valid here (declared inference); see _evidence_pairs.
     sources: list["Finding"] = field(default_factory=list)
     trajectory: Optional[str] = None  # one of TRAJECTORIES, or None
 
@@ -299,20 +270,13 @@ class ScreeningCall:
     stance_clamped: bool = False
     clamp_note: str = ""                  # e.g. "tripped negative_fcf gate"
     as_of_price: Optional[float] = None   # snapshot for future hit-rate
-    # ScoreCard.confidence at decision time. It drives two of the three conviction
-    # guards, so without it a retrospective cannot tell whether a conviction was the
-    # model's own or a rule's (see docs/audits/2026-08-04-deep-brief-assessment.md D4).
+    # ScoreCard.confidence at decision time; it drives two conviction guards, so a
+    # retrospective can attribute a conviction (docs/audits/2026-08-04-deep-brief-assessment.md D4).
     confidence: Optional[float] = None
-    # What the MODEL said, before apply_guards overwrote `stance`/`conviction` in place.
-    # Python-owned and never parsed from the payload (the `decided_without` precedent).
-    #
-    # WHY these exist: `clamp_note` records which GATES tripped, never what the model
-    # said before they did, so "Avoid — tripped negative_fcf gate" could not distinguish
-    # "the model also said Avoid and the gate agreed" from "the gate overruled the
-    # model's Buy". That is the most decision-relevant fact about a clamped call and it
-    # used to be discarded. None => that guard did not fire, so there is nothing to
-    # report; None is ALSO what pre-2026-08-20 briefs read back as, and every reader
-    # must treat the two the same (omit the line).
+    # What the MODEL said before apply_guards overwrote `stance`/`conviction`. Python-owned,
+    # never parsed from the payload. `clamp_note` names only the gates, so these tell
+    # "the gate agreed" from "the gate overruled a Buy". None means the guard did not fire
+    # or the brief is older; readers must treat both the same (omit the line).
     model_stance: Optional[str] = None       # pre-clamp stance, set iff stance_clamped
     model_conviction: Optional[str] = None   # pre-cap conviction, set iff conviction_capped
 
@@ -353,27 +317,21 @@ class QualitativeAssessment:
     thesis: Thesis = field(default_factory=Thesis)
     unverified_count: int = 0
     silent_count: int = 0
-    # Claims that declared themselves unquoted (empty evidence) in the two lists
-    # where that is legal. Deliberately NOT folded into unverified_count: that
-    # number means "the model quoted something absent from the filing" — a
-    # fabrication signal — and mixing populations would destroy it.
+    # Declared-inference claims (empty evidence). NOT folded into unverified_count, which
+    # is the fabrication signal.
     inference_count: int = 0
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
-    cache_key: str = ""        # assess() sets this to the narrow FILING key (falls back to
-                               # filing_accession); research/__init__.py:_enrich_card then
-                               # overwrites it with the WIDE on-disk key (filing + prompt/config
-                               # fingerprint + context digest + day bucket) before report.write,
-                               # so the two never diverge on disk
+    cache_key: str = ""        # narrow filing key from assess(); _enrich_card overwrites it
+                               # with the wide on-disk key before report.write
     text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
     stub_sections: list[str] = field(default_factory=list)  # FilingText.stub_sections() of the 10-K
-    # The "ROIC persistence" section (research/durability.py) and its status code. COMPUTED
-    # FROM SEC DATA AFTER assess() RETURNS: the model never sees it and it is never a
-    # grounding segment. Both stay "" unless `research.durability.enabled`.
+    # The "ROIC persistence" section (research/durability.py) and its status code.
+    # Computed AFTER assess() returns; never in the prompt or a grounding segment.
     durability_line: str = ""
     durability_status: str = ""
-    # The "Recent news" section (research/news.py), fetched AFTER assess() returns: the model
-    # never sees it. Status "" means the section was off.
+    # The "Recent news" section (research/news.py), fetched AFTER assess() returns.
+    # Status "" means the section was off.
     news_items: list[NewsItem] = field(default_factory=list)
     news_status: str = ""
     news_as_of: str = ""
@@ -383,9 +341,7 @@ class QualitativeAssessment:
 
     @property
     def synthesis(self) -> str:
-        """Back-compat: the old flat synthesis is now the thesis takeaway.
-        A read-only property — NOT a dataclass field, so dataclasses.asdict()
-        does not serialize it (see report.write for the on-disk injection)."""
+        """The thesis takeaway. Not a dataclass field, so asdict() omits it; see report.write."""
         return self.thesis.takeaway
 
 
@@ -399,7 +355,7 @@ def _evidence_pairs(raw, limit: Optional[int] = None) -> list[Finding]:
     """Tolerant parse of the two lists where an empty quote is legal (`moat.sources`,
     `management_findings`). Accepts BOTH shapes on purpose:
 
-    - a bare string is the pre-2026-08-17 form — claim only, no quote;
+    - a bare string is the legacy form: claim only, no quote;
     - a dict is the {claim, evidence} form.
 
     Anything else is skipped. Tolerance is not a style choice here: `_finding_from`

@@ -33,8 +33,8 @@ from .models import (
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12
 
-# Conviction-cap confidence thresholds (config research.screening_call.conviction_cap
-# overrides). Module-level so apply_guards and _high_corroborated can never drift.
+# Conviction-cap confidence thresholds (research.screening_call.conviction_cap overrides),
+# shared by apply_guards and _high_corroborated.
 _LOW_BELOW_DEFAULT = 0.45
 _MEDIUM_BELOW_DEFAULT = 0.70
 
@@ -212,9 +212,8 @@ def _utcnow_iso() -> str:
 
 def _log_attempt(ticker: str, attempt: int, total: int, dur: float,
                  outcome: str, detail: str = "") -> None:
-    """One observability line per `claude` call → stderr → journald, so the timeout /
-    retry rate can be tuned against real durations instead of priors. Redacts the detail
-    (it may carry an error string with a request URL)."""
+    """One observability line per `claude` call to stderr. Redacts the detail, which may
+    carry a request URL."""
     msg = (f"research: {ticker} attempt {attempt}/{total} "
            f"outcome={outcome} dur={dur:.1f}s")
     if detail:
@@ -223,11 +222,9 @@ def _log_attempt(ticker: str, attempt: int, total: int, dur: float,
 
 
 def _salvage_json(text: str) -> Optional[str]:
-    """Best-effort extraction of a JSON object from model output: strip code
-    fences, then return the first *balanced* {...} object starting at the first
-    `{`. A brace-depth scan (string- and escape-aware) avoids the first-`{`..
-    last-`}` trap, where trailing prose containing a `}` would swallow non-JSON
-    text into the slice and break json.loads on an otherwise-valid object."""
+    """Strip code fences, then return the first *balanced* {...} object. A string- and
+    escape-aware brace scan avoids the first-`{`..last-`}` trap, where trailing prose
+    containing a `}` breaks json.loads on a valid object."""
     if not text:
         return None
     t = text.strip()
@@ -262,9 +259,7 @@ def _salvage_json(text: str) -> Optional[str]:
 # Typographic characters SEC filings use where a model transcribing "verbatim" emits
 # ASCII. Applied to BOTH the quote and the haystack, so folding can only recover a real
 # match — it can never manufacture one (a stitched or fabricated quote still fails).
-# Measured: folding recovers 73% of unverified findings, the dominant single character
-# being U+2019 in the FILING text. Does NOT fix filing-extraction artifacts (bare page
-# numbers / bullet markers bled inline) — see
+# Does NOT fix filing-extraction artifacts (page numbers or bullets bled inline); see
 # docs/audits/2026-08-04-deep-brief-assessment.md D1.
 _FOLD = str.maketrans({
     "’": "'", "‘": "'",            # curly single quotes
@@ -284,9 +279,8 @@ def _norm(s: str) -> str:
 
 
 def _segments(bundle: FilingBundle) -> list[tuple[str, str]]:
-    """(provenance label, normalized text) per document shown to the model. Falls
-    back to one unlabelled haystack for the duck-typed bundles several tests inject,
-    so grounding never depends on a stub growing a new method."""
+    """(provenance label, normalized text) per document shown to the model. Falls back
+    to one unlabelled haystack for duck-typed bundles that lack `segments`."""
     getter = getattr(bundle, "segments", None)
     if getter is None:
         return [("", _norm(bundle.haystack()))]
@@ -295,8 +289,8 @@ def _segments(bundle: FilingBundle) -> list[tuple[str, str]]:
 
 def _locate(evidence: str, segments: list[tuple[str, str]]) -> Optional[str]:
     """The label of the FIRST segment containing `evidence`, or None if no single
-    segment does. Per-segment (not whole-haystack) so a quote can be attributed —
-    and so a quote stitched across two different documents cannot verify."""
+    segment does. Per-segment, so a quote can be attributed and a quote stitched across
+    two documents cannot verify."""
     if len(evidence) < _MIN_EVIDENCE_CHARS:
         return None
     for label, hay in segments:
@@ -307,14 +301,11 @@ def _locate(evidence: str, segments: list[tuple[str, str]]) -> Optional[str]:
 
 def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -> None:
     """Mark each risk/red_flag/added_risk finding verified iff its evidence quote is
-    a substring of ONE document shown to the model (bundle.segments()), compared
-    under `_norm` — whitespace-normalized AND typographic-punctuation-folded, so a
-    curly apostrophe in the filing still matches an ASCII one in the quote. Folding
-    is symmetric, so it never verifies a stitched or fabricated quote. The prior-year
-    10-K (diff baseline) is excluded, so a quote only present there is correctly
-    counted unverified. Also records WHICH document verified it (`source`): an 8-K
-    exhibit is filing text, but "verified" must not silently widen from "the 10-K"
-    to "a furnished press release". Reconciliation handled as before.
+    a substring of ONE document shown to the model (bundle.segments()), compared under
+    `_norm` (whitespace-normalized and punctuation-folded). The prior-year 10-K (diff
+    baseline) is excluded, so a quote only present there counts as unverified. Records
+    WHICH document verified it (`source`), so "verified" does not silently widen from
+    "the 10-K" to "a furnished press release".
 
     `moat.sources` and `management_findings` verify the same way with ONE exception:
     an empty quote there is a DECLARED INFERENCE — a legal answer, not a failed
@@ -327,13 +318,9 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
         finding.source = source or ""
         if not finding.verified:
             unverified += 1
-    # The two lists where an empty quote is a legal answer. A declared inference is
-    # branched on BEFORE _locate is ever called — never rely on _locate's
-    # _MIN_EVIDENCE_CHARS guard to carry this meaning: `"" in hay` is True for every
-    # segment, so the day that guard moves, every empty quote would verify against
-    # the first document and render as grounded (cf. models.py:139, which drops empty
-    # texts for the mirror-image reason). Branch on the NORMALIZED string so a
-    # whitespace-only quote is an inference, not a fabrication.
+    # Here an empty quote is a legal answer. Branch on it BEFORE _locate: do not rely
+    # on _MIN_EVIDENCE_CHARS, since `"" in hay` is True for every segment. Branch on the
+    # NORMALIZED string so a whitespace-only quote is an inference, not a fabrication.
     inferences = 0
     for finding in (*assessment.moat.sources, *assessment.management_findings):
         quote = _norm(finding.evidence)
@@ -409,10 +396,9 @@ def _insider_line(insider_recent: Optional[list], cfg: Optional[dict]) -> str:
 
 def _macro_line(macro, cfg: Optional[dict]) -> str:
     """One run-level macro context line, or '' to omit (disabled / no macro fetched).
-    Prompt context only — never the grounding haystack. Deliberately a fixed template
-    of rate/credit levels rather than free text: the bar is 'changes how THIS company's
-    numbers should be read' (discount rate, financing cost, cyclicality), not an
-    invitation to write market-timing prose."""
+    Prompt context only, never the grounding haystack. A fixed template of rate and
+    credit levels, not free text: it must change how THIS company's numbers are read,
+    not invite market-timing prose."""
     if not cfg or not cfg.get("enabled", False) or macro is None:
         return ""
     parts = [(lbl, getattr(macro, attr, None)) for lbl, attr in
@@ -429,8 +415,7 @@ def _macro_line(macro, cfg: Optional[dict]) -> str:
 
 def _similarity_line(similarity: Optional[float]) -> str:
     """One prompt context line for the Lazy-Prices YoY text change, or "" to omit.
-    PROMPT-ONLY — never the grounding haystack: this is a computed cosine, not
-    filing text, and must not survive quote-verification as a filing fact."""
+    PROMPT-ONLY: a computed cosine is not filing text and must not pass quote-verification."""
     if similarity is None:
         return ""
     rewritten = max(0.0, min(1.0, 1.0 - float(similarity)))
@@ -456,9 +441,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                            rcfg.get("analyst_revision"))
     events_line = ""
     if filing_events:
-        # 8-K item codes ride along free (already in the edgartools filings index).
-        # An Item 4.02 non-reliance restatement is the most decision-relevant 8-K
-        # there is and previously rendered as a bare form label.
+        # Item codes come free from the filings index; Item 4.02 (non-reliance) matters most.
         parts = []
         for e in filing_events[:6]:
             codes = e.get("items")
@@ -469,12 +452,10 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
             "\n\nRecent SEC filings (context only — do not treat as 10-K text): "
             f"{items}.")
     insider_line = _insider_line(insider_recent, rcfg.get("insider_detail"))
-    # Proxy (DEF 14A) compensation & governance — PROMPT-ONLY, never the haystack
-    # (a computed/interpretive proxy claim must not pass quote-verification).
+    # Proxy compensation & governance: PROMPT-ONLY, never the haystack.
     proxy_ctx_line = proxy_ctx.context_line(proxy_facts, rcfg.get("proxy"))
     proxy_section = f"\n\n{proxy_ctx_line}" if proxy_ctx_line else ""
-    # Options surface — PROMPT-ONLY, never the haystack. These are market prices, so a
-    # quote-verified one would be a market price passing as a filing fact.
+    # Options surface: PROMPT-ONLY. A market price must not pass as a filing fact.
     options_line = options_ctx.context_line(
         options_surface, getattr(card, "metrics", None), rcfg.get("options"),
         earnings_moves=earnings_moves)
@@ -486,38 +467,28 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         tenq_section = (f"=== LATEST 10-Q — MD&A (current quarter) ===\n"
                         f"{bundle.tenq_mda}\n\n")
     elif getattr(bundle, "tenq_accession", ""):
-        # A 10-Q exists but Item 2 would not parse (2.19% of filings — the edgartools
-        # heading-detection gap). Say so: silence let the model read "no quarterly MD&A"
-        # as "nothing changed". PROMPT-ONLY — a computed status line, never a haystack
-        # segment, so it cannot be quoted back and pass quote-verification.
+        # A 10-Q exists but Item 2 would not parse. Say so, or the model reads "no
+        # quarterly MD&A" as "nothing changed". PROMPT-ONLY, never a haystack segment.
         tenq_section = (
             "=== LATEST 10-Q — MD&A UNAVAILABLE ===\n"
             "A 10-Q was filed for the current quarter, but its Part I Item 2 (MD&A) could "
             "not be extracted, so NO quarterly MD&A appears in this brief. Treat that as a "
             "data gap in the evidence available to you, NOT as evidence that nothing "
             "changed this quarter, and do not infer quarterly trends from its absence.\n\n")
-    # The quarter's risk-factor CHANGES, already diffed against the 10-K Item 1A
-    # above (research/filings.py:_tenq_added_risks) — so this section is small and
-    # non-duplicative by construction. Empty => byte-identical prompt.
+    # Risk-factor CHANGES already diffed against the 10-K Item 1A
+    # (research/filings.py:_tenq_added_risks). Empty => byte-identical prompt.
     tenq_risk_section = ""
     if getattr(bundle, "tenq_added_risks", ""):
         tenq_risk_section = (
             f"=== LATEST 10-Q — PART II ITEM 1A (RISK FACTORS NEW SINCE THE 10-K) ===\n"
             f"{bundle.tenq_added_risks}\n\n")
-    # 8-K substance sits directly after the 10-Q MD&A: both are "fresher than the
-    # 10-K" filing text, and the header names the date + items so the model can see
-    # what it is quoting. Empty list => byte-identical prompt.
+    # Placed after the 10-Q MD&A: both are fresher than the 10-K. Empty => byte-identical prompt.
     eightk_section = "".join(
         f"=== RECENT 8-K — {e.filed}, Item(s) {e.items} ===\n{e.text}\n\n"
         for e in getattr(bundle, "eightks", None) or [])
-    # Debt & liquidity statement notes — the maturity-ladder input the DO THE
-    # ARITHMETIC clause's refinancing-coverage ask needs and had no producer for
-    # (2026-08-19 live run: 0 of 3 briefs computed anything). The header names the
-    # form and the note title as filed, so the model can see which document it is
-    # quoting. Empty list => byte-identical prompt.
-    # The "(TRUNCATED …)" suffix lives in the HEADER, never in `n.text`: the text is a
-    # grounding segment, so a marker mixed into it would be non-filing text that a
-    # model could quote and have "verified" (research/notes.py, TRUNCATION comment).
+    # Debt & liquidity notes: the maturity-ladder input for the refinancing-coverage ask.
+    # Empty => byte-identical prompt. The "(TRUNCATED …)" suffix lives in the HEADER,
+    # never in `n.text`, which is a grounding segment (see research/notes.py).
     notes_section = "".join(
         f"=== {n.form} STATEMENT NOTE — {n.title}"
         f"{' (TRUNCATED — this note continues beyond what is shown)' if n.truncated else ''}"
@@ -527,11 +498,9 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
     if bundle.added_risks_text:
         added_section = (f"=== NEWLY ADDED RISK FACTORS (vs prior-year 10-K) ===\n"
                          f"{bundle.added_risks_text}\n\n")
-    # An adverse internal-control conclusion. The QUOTE is filing text and is a
-    # grounding segment, so it must be rendered here too: a segment the model never
-    # saw could still verify a quote, which would make "verified" mean the opposite
-    # of what it says. The derived verdict rides in `controls_line` instead, outside
-    # the haystack (research/controls.py:context_line).
+    # The adverse-conclusion QUOTE is a grounding segment, so it must be rendered here:
+    # a segment the model never saw could still verify a quote. The derived verdict
+    # rides in `controls_line`, outside the haystack (research/controls.py:context_line).
     controls = getattr(bundle, "controls", None)
     controls_section = ""
     if controls is not None:
@@ -660,9 +629,8 @@ def _quant_context(card, gaps_line="", rdcfg=None, gcfg=None,  # noqa: C901 — 
         present = ", ".join(f"{k}={v:.3g}" for k, v in scalars if v is not None)
         if present:
             lines.append(f"Fundamentals: {present}.")
-        # Valuation. Without these the model reconciles the `value` sub-score against
-        # an opaque 0-100 number and cannot state what the company costs (measured:
-        # 1/35 briefs cited any multiple). All already on StockMetrics — no new fetch.
+        # Valuation multiples, so the model can state what the company costs rather
+        # than reconcile an opaque 0-100 `value` sub-score.
         val = [("price", getattr(m, "price", None)),
                ("pe_ttm", getattr(m, "pe_ttm", None)),
                ("pe_median_5y", getattr(m, "pe_median_5y", None)),
@@ -759,8 +727,7 @@ def apply_guards(assessment, card, config: dict) -> None:
     call.decided_without, call.not_applicable = coverage_caveats(card)
     m = getattr(card, "metrics", None)
     call.as_of_price = getattr(m, "price", None) if m is not None else None
-    # Snapshot the guard INPUT alongside the guard OUTPUT (conviction_capped), so a
-    # later retrospective can attribute a conviction to a rule instead of inferring it.
+    # Snapshot the guard INPUT too, so a conviction can be attributed to a rule.
     call.confidence = getattr(card, "confidence", None)
 
     orig_conv = call.conviction
@@ -778,8 +745,7 @@ def apply_guards(assessment, card, config: dict) -> None:
         elif gi == ceil_idx:
             ceil_gates.append(g)
     if ceil_idx > _stance_idx(call.stance):
-        # Record what the model said BEFORE overwriting it — clamp_note names the gates,
-        # not the stance they replaced, so without this the model's own view is lost.
+        # Keep the model's own stance; clamp_note names only the gates.
         call.model_stance = orig_stance
         call.stance = STANCES[ceil_idx]
         call.stance_clamped = True
@@ -802,7 +768,7 @@ def apply_guards(assessment, card, config: dict) -> None:
         call.conviction = "MEDIUM"
 
     call.conviction_capped = call.conviction != orig_conv
-    # Same reasoning as model_stance: keep the pre-cap value, not just the bool.
+    # As with model_stance, keep the pre-cap value.
     if call.conviction_capped:
         call.model_conviction = orig_conv
 
@@ -812,14 +778,11 @@ def assess(card, bundle: FilingBundle, config: dict,
            macro=None) -> Optional[QualitativeAssessment]:
     """Produce a grounded QualitativeAssessment for one FilingBundle, or None if the
     model call fails, truncates, or returns unparseable JSON after one retry.
-    `card` is the ScoreCard; its metrics and sub-scores supply the quant-context
-    block (via `_quant_context`) and the `filing_events` context line injected
-    into the prompt."""
+    `card` is the ScoreCard; its metrics supply the quant context and context lines."""
     rcfg = config.get("research", {})
     scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-5-5")
-    # Passed to the runner only when set, so the many injected test doubles that take
-    # the pre-feature signature keep working on the default path.
+    # Passed to the runner only when set, so injected test doubles keep working.
     fallback = rcfg.get("fallback_model")
     timeout = rcfg.get("timeout_s", 180)
     vs = default_valid_signals()
@@ -834,8 +797,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     m = getattr(card, "metrics", None)
     fe = getattr(m, "filing_events", None)
     ir = getattr(m, "insider_recent", None)
-    # DEF 14A proxy facts — research-layer fetch (per deep-dive, NOT on every screen).
-    # Failure-isolated: any error → None → the line simply abstains.
+    # Per-deep-dive fetch, failure-isolated: any error abstains.
     pcfg = rcfg.get("proxy") or {}
     proxy_facts = None
     if pcfg.get("enabled", False):
@@ -843,19 +805,16 @@ def assess(card, bundle: FilingBundle, config: dict,
             proxy_facts = proxy_ctx.fetch_proxy(filing.ticker)
         except Exception:
             proxy_facts = None
-    # Options surface + the realized post-earnings moves that make an implied move
-    # interpretable — research-layer fetches, per deep-dive, NOT on every screen.
-    # Failure-isolated: any error → abstain → the clause simply does not render. Kept
-    # off `harness_sources` deliberately: /screen would spend the per-IP budget (§4.1
-    # of the design) on data no screen renders.
+    # Options surface and realized post-earnings moves: per-deep-dive, failure-isolated.
+    # Kept off `harness_sources` so /screen does not spend the per-IP budget (§4.1 of
+    # docs/audits/2026-08-24-options-surface-design.md) on data no screen renders.
     ocfg = rcfg.get("options") or {}
     options_surface, earnings_moves = None, None
     if ocfg.get("enabled", False):
         options_surface = options_ctx.fetch_surface(filing.ticker, ocfg)
         if options_surface is not None:
             earnings_moves = earnings_moves_mod.fetch_moves(filing.ticker, ocfg)
-    # Passed only when set, so the injected test doubles that take the pre-feature
-    # signature keep working on the default path — same reason as `fallback` above.
+    # Passed only when set, as with `fallback`.
     extra = {}
     if options_surface is not None:
         extra["options_surface"] = options_surface
@@ -867,20 +826,15 @@ def assess(card, bundle: FilingBundle, config: dict,
     system = (SYSTEM_PROMPT
               + (CALL_SYSTEM_ADDENDUM if scfg.get("enabled", True) else "")
               + (PROXY_SYSTEM_ADDENDUM if pcfg.get("enabled", False) else "")
-              # Keyed on the BUNDLE, not the config: a name with no qualifying 8-K
-              # renders no block, so describing one would be instructions about
-              # text that is not there (and a non-byte-identical system prompt).
+              # Keyed on the BUNDLE, not the config: no 8-K block, no instructions about one.
               + (EIGHTK_SYSTEM_ADDENDUM if getattr(bundle, "eightks", None) else "")
-              # Keyed on the SURFACE, not the config, for the same reason as the 8-K
-              # addendum: a name whose options line abstained must not be told to
-              # account for a line that is not there.
+              # Keyed on the SURFACE, not the config, for the same reason.
               + (OPTIONS_SYSTEM_ADDENDUM
                  if (options_surface is not None
                      and ocfg.get("require_in_thesis", False)) else ""))
 
-    # A single slow `claude` call intermittently exceeds the CLI timeout; that failure
-    # is transient (the next call usually succeeds), so retry it rather than dropping the
-    # whole brief. max_attempts caps total tries (transient errors + reparse retries).
+    # A slow `claude` call can exceed the CLI timeout transiently; retry instead of
+    # dropping the brief. max_attempts caps total tries, including reparse retries.
     max_attempts = max(1, int(rcfg.get("max_attempts", 3)))
     prompt = user_prompt
     total_cost = 0.0

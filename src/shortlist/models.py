@@ -182,7 +182,7 @@ class StockMetrics:
     earnings_days_since_last_report: Optional[int] = None  # APPROX days since the last announcement
 
     # Cosine of Item-1A + MD&A tokens vs the prior same-type filing. Input to the
-    # `filing_text_change` flag, which is disabled (see config.yaml). No producer today.
+    # `filing_text_change` flag, which is disabled (see config.yaml).
     filing_text_similarity: Optional[float] = None  # 1.0 == unchanged, 0.0 == fully rewritten
 
     # Bookkeeping: which provider supplied each populated field

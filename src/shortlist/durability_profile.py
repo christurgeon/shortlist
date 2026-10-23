@@ -14,8 +14,8 @@ measured effect is a straight-line fit within sector and cohort year, and a per-
 would extrapolate it.
 
 THREE GUARDS HERE ARE NOT IN THE STUDY, because the study never met their cases:
-- an unknown SIC abstains (in the study 12,523 of 12,539 filers had one; live, a failed SIC
-  fetch would let a bank through the sector mask);
+- an unknown SIC abstains (almost every study filer had one; live, a failed SIC fetch
+  would let a bank through the sector mask);
 - `investment` is dropped unless the two year ends are about a year apart (YEAR_GAP_DAYS);
 - the reference table is for ONE fiscal year. A company one year past it is read against it
   and told so; one further out, or one whose latest year on file is BEFORE it, abstains."""
@@ -225,8 +225,7 @@ def profile(compacted: dict, today: date, table: Optional[dict], *, sic, config:
     A NAME WHOSE LATEST YEAR ON FILE IS BEFORE THE TABLE'S YEAR ABSTAINS (a company in the
     weeks before its new 10-K). The table does hold lists for the three years before its own,
     but they are those years AS SEEN IN THE TABLE-YEAR SNAPSHOT: they omit every firm that
-    left in between, so their floor is not that year's floor (fiscal 2024: 15.92% in the
-    table against 15.75% in its own snapshot), and the cohort the thirds come from is the
+    left in between, so their floor is not that year's floor, and the cohort the thirds come from is the
     table year's. Shown, the section would name a population that is not the study's.
 
     IT CAN RAISE on malformed facts (a `val` that is not a number, a list where a dict is

@@ -8,10 +8,8 @@ def retry_after_seconds(header_value: Optional[str], fallback: float,
                         *, cap: float = 30.0) -> float:
     """Backoff delay (seconds) from an HTTP ``Retry-After`` header.
 
-    RFC 7231 permits either a delay-seconds integer OR an HTTP-date; parse both,
-    fall back to ``fallback`` on an absent/unparseable header (e.g. a date-form
-    header from an intermediary, which a bare ``float()`` would choke on), and cap
-    the result so a hostile/huge value can't hang a run. Never raises.
+    Parses delay-seconds or HTTP-date (RFC 7231). Returns ``fallback`` when the header
+    is absent or unparseable. The result is capped at ``cap``. Never raises.
     """
     if header_value:
         try:
@@ -37,9 +35,8 @@ def retry_after_seconds(header_value: Optional[str], fallback: float,
 def first(payload: Any) -> Optional[dict]:
     """First record of an FMP-style response, or None.
 
-    FMP ``/stable/`` endpoints return either a single-element list or a bare
-    object; this normalizes both to one dict. Empty lists and any other shape
-    (``None``, scalar, ...) return ``None``.
+    FMP ``/stable/`` endpoints return a single-element list or a bare object.
+    Empty lists and any other shape return ``None``.
     """
     if isinstance(payload, list):
         return payload[0] if payload else None
@@ -51,10 +48,8 @@ def first(payload: Any) -> Optional[dict]:
 def pick(row: dict, *keys: str) -> Any:
     """First non-``None`` value among ``keys`` in ``row`` (or ``None``).
 
-    For provider field aliases (e.g. FMP ``/stable/`` vs legacy key names). Unlike
-    ``row.get(a, row.get(b))``, this falls through when the primary key is
-    *present but null* — providers routinely emit explicit ``null`` for a missing
-    line item, which the default-arg form would return instead of trying ``b``.
+    For provider field aliases. Unlike ``row.get(a, row.get(b))``, it falls through
+    when the primary key is present but null.
     """
     for k in keys:
         v = row.get(k)
@@ -66,9 +61,7 @@ def pick(row: dict, *keys: str) -> Any:
 def pct(x: Any) -> Optional[float]:
     """Percentage -> fraction (Finnhub reports margins/returns as percentages).
 
-    Non-numeric input (``None``, strings, ...) returns ``None`` rather than
-    raising — the ``isinstance`` guard tolerates the soft-failure payloads
-    upstream sources occasionally emit.
+    Non-numeric input returns ``None``.
     """
     return x / 100.0 if isinstance(x, (int, float)) else None
 
@@ -76,9 +69,8 @@ def pct(x: Any) -> Optional[float]:
 def from_millions(x: Any) -> Optional[float]:
     """Millions of USD -> absolute dollars (e.g. Finnhub reports market cap in $M).
 
-    A generic millions->dollars scaler. The motivating case is market cap, stored
-    absolute to match FMP's ``quote.marketCap`` so the ``below_min_mktcap`` gate and
-    the insider net-flow ratio (both assuming dollars) line up. Non-numeric input
-    returns ``None`` rather than raising.
+    Market cap is stored in absolute dollars, as in FMP ``quote.marketCap``, because
+    the ``below_min_mktcap`` gate and the insider net-flow ratio assume dollars.
+    Non-numeric input returns ``None``.
     """
     return x * 1.0e6 if isinstance(x, (int, float)) else None

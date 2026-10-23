@@ -27,12 +27,8 @@ def research_chain(sources: list[str], config: dict) -> list[str]:
 
 def run_harness(tickers: list[str], source_names: list[str], config: dict,
                 macro=None) -> list[ScoreCard]:
-    """Score via the harness stack: collect TickerSnapshots, bridge each to
-    StockMetrics, then run the same scorer the screener uses. Harness cards now
-    carry the same `coverage` diagnostic as screener cards, via the
-    snapshot_to_coverage_inputs adapter — so per-source fetch status (gated_402,
-    empty, error) and unavailable sub-scores are surfaced identically on both
-    paths."""
+    """Collect TickerSnapshots, bridge each to StockMetrics and score it. Each card
+    carries a `coverage` diagnostic (per-source fetch status, unavailable sub-scores)."""
     from .data.bridge import snapshot_to_metrics
     from .data.collector import collect
     from .data.coverage_adapt import snapshot_to_coverage_inputs
@@ -155,9 +151,6 @@ def main(argv: list[str] | None = None) -> int:
 
     load_env()
 
-    # Guarded config load (shared shape contract in config.py): a missing file,
-    # invalid/empty YAML, or non-mapping top level would otherwise surface as a
-    # raw traceback deep inside scoring.
     try:
         config = load_config(args.config)
     except ConfigError as e:
@@ -167,7 +160,6 @@ def main(argv: list[str] | None = None) -> int:
     from .cache import configure_default_cache
     cache_cfg = config.get("cache", {})
     configure_default_cache(
-        # --demo is offline (mock source, no HTTP), so there's nothing to cache.
         enabled=(not args.no_cache) and (not args.demo) and cache_cfg.get("enabled", True),
         refresh=args.refresh_cache,
         path=cache_cfg.get("path"),
@@ -179,8 +171,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.demo:
         tickers = ["GEV", "LMT", "SCHW", "TMO", "GOOGL"]
     else:
-        # Strip whitespace and drop empties so "AAPL, MSFT," never sends "" or
-        # " MSFT" into the harness.
         tickers = [t.strip().upper() for t in args.tickers.split(",") if t.strip()]
         if not tickers:
             ap.error(f"--tickers {args.tickers!r} contains no ticker symbols")
@@ -190,16 +180,14 @@ def main(argv: list[str] | None = None) -> int:
     elif args.provider:
         sources = [s.strip() for s in args.provider.split(",") if s.strip()]
         if not sources:
-            # an all-empty value (e.g. a misexpanded shell variable) must fail
-            # loudly — an empty source list would "succeed" with all-null scores
+            # An empty source list would "succeed" with all-null scores.
             ap.error(f"--provider {args.provider!r} contains no source names")
     else:
         sources = config.get("harness_sources",
                              ["yahoo", "fmp", "finnhub", "edgar", "finra", "wsb"])
         if args.research:
             sources = research_chain(sources, config)
-    # --demo is offline (mock source, no HTTP) — skip the keyless FRED fetch too,
-    # so the demo never makes a network call or hangs on a timeout.
+    # --demo must make no network call.
     from .data.macro import fetch_macro
     macro = None if args.demo else fetch_macro(config)
     cards = run_harness(tickers, sources, config, macro=macro)
@@ -212,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.csv:
         _write_csv(cards, args.csv)
-        # stderr, NOT stdout — with --json this line would corrupt the JSON stream.
+        # stderr: stdout carries the --json stream.
         print(f"wrote {args.csv}", file=sys.stderr)
     if args.json:
         print(json.dumps([_card_dict(c, research_paths) for c in cards], indent=2))
@@ -235,10 +223,9 @@ def _run_enrich(cards: list[ScoreCard], config: dict, n: int, refresh: bool, mac
 
 
 def _run_research_phase(cards, config, n: int, refresh: bool, macro=None) -> dict:
-    """Run the qualitative research phase over the top-N non-gated cards.
-    Returns {ticker: brief_path} for names that produced (or have a cached)
-    brief. All console output goes to stderr so it never contaminates --json
-    stdout. Never raises."""
+    """Run the research phase over the top-N non-gated cards.
+    Returns {ticker: brief_path} for names with a fresh or cached brief.
+    Output goes to stderr, not the --json stdout. Never raises."""
     if not _research_available():
         print("  ! skipping research: `claude` CLI or edgartools unavailable",
               file=sys.stderr)
@@ -278,30 +265,25 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "piotroski_f": c.piotroski_f,
         "piotroski_f_legs": c.piotroski_f_legs,
         "share_count_cagr": round(c.share_count_cagr, 4) if c.share_count_cagr is not None else None,
-        # Investment & earnings-quality (§3); surfaced from metrics (no ScoreCard field).
         "asset_growth": (round(c.metrics.asset_growth, 4)
                          if c.metrics and c.metrics.asset_growth is not None else None),
         "accruals": (round(c.metrics.accruals, 4)
                      if c.metrics and c.metrics.accruals is not None else None),
-        # Total shareholder yield (§5); surfaced from metrics (no ScoreCard field).
+        # The next keys come from metrics (no ScoreCard field).
         "shareholder_yield": (round(c.metrics.shareholder_yield, 4)
                               if c.metrics and c.metrics.shareholder_yield is not None else None),
-        # PREDICTIVE_SIGNALS §2 price-refinement measurement axes; surfaced from metrics
-        # (no ScoreCard field, no production leg — backtest-only).
+        # Backtest-only axes.
         "pct_to_52w_high": (round(c.metrics.pct_to_52w_high, 4)
                             if c.metrics and c.metrics.pct_to_52w_high is not None else None),
         "max_daily_return": (round(c.metrics.max_daily_return, 4)
                              if c.metrics and c.metrics.max_daily_return is not None else None),
         "vol_scaled_momentum": (round(c.metrics.vol_scaled_momentum, 4)
                                 if c.metrics and c.metrics.vol_scaled_momentum is not None else None),
-        # SUE inputs (§1); surfaced from metrics (no ScoreCard field). days_since_last_report
-        # is an APPROXIMATION (see bridge/_earnings). The decayed SUE leg itself is in momentum.
+        # SUE inputs; days_since_last_report is approximate. The SUE leg is scored in momentum.
         "earnings_surprise_dispersion": (round(c.metrics.earnings_surprise_dispersion, 3)
                                          if c.metrics and c.metrics.earnings_surprise_dispersion is not None else None),
         "earnings_days_since_last_report": (c.metrics.earnings_days_since_last_report
                                             if c.metrics else None),
-        # "Lazy Prices" YoY filing-text similarity (§4); surfaced from metrics (no
-        # ScoreCard field). LOW values trip the advisory filing_text_change flag.
         "filing_text_similarity": (round(c.metrics.filing_text_similarity, 4)
                                    if c.metrics and c.metrics.filing_text_similarity is not None
                                    else None),
@@ -320,8 +302,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     if c.abstentions:
         d["abstentions"] = c.abstentions
     if c.metrics is not None and c.metrics.rating_months:
-        # Deltas only, never a prior level: the levels merge across vendors while
-        # these come from one Finnhub payload (data/models.py:Analyst).
+        # Deltas only; see Analyst in data/models.py.
         d["analyst_revision"] = {
             "months": c.metrics.rating_months,
             "buy_delta": c.metrics.rating_buy_delta,

@@ -1,35 +1,25 @@
 """Realized post-announcement price moves, from 8-K Item 2.02 (research-only).
 
-The anchor that makes an implied earnings move interpretable. "The market prices +/-8%"
-means nothing alone; "+/-8% against a company that has moved 0.8% on its last six
-prints" is a finding, and so is the reverse. Measured spread across four names:
-
-    AAPL   -7.4  +3.2  +0.5  -0.4  -2.5  -3.7    |median| 3.2%
-    INTC   -7.9 +23.6 -17.0  +0.3  -8.5  -6.7    |median| 8.5%
-    MSFT  +15.5  -3.9 -10.0  -2.9  +3.9  +7.6    |median| 7.6%
-    KO     +0.9  +0.7  +2.3  -0.6  -0.7  +0.3    |median| 0.7%
+The anchor that makes an implied earnings move interpretable: "+/-8%" means little
+alone, but a lot against a company that has moved 0.8% on its last six prints.
 
 Prompt-only, never scored, never in the grounding haystack. Feeds
 `research/options.py:context_line`. Design: docs/audits/2026-08-24-options-surface-design.md.
 
 WHY 8-K ITEM 2.02 AND NOT THE VENDOR CALENDAR
 ----------------------------------------------
-Finnhub's `stock/earnings` rows carry only the fiscal `period` (quarter-end), never the
-print date, and the free-tier calendar holds no past entries at all
-(`data/sources/finnhub.py:_earnings`). So the stack has no historical announcement date.
-8-K Item 2.02 (Results of Operations and Financial Condition) IS the announcement, it is
-free and authoritative, and it validated at +0 days against print dates recovered
-independently from the snapshot store on AAPL, GOOGL and MSFT.
+Finnhub's `stock/earnings` rows carry only the fiscal `period`, never the print date,
+and the free-tier calendar holds no past entries (`data/sources/finnhub.py:_earnings`).
+8-K Item 2.02 (Results of Operations and Financial Condition) is the announcement, and
+it is free and authoritative.
 
 KNOWN IMPRECISION — THE SESSION AMBIGUITY
 ------------------------------------------
 An 8-K 2.02 filed after the close reacts on the NEXT session; one filed pre-open reacts
-the same day. This module spans the announcement close-to-close (last close on or before
-the filing date, to the first close after it), which is correct for after-close filers —
-most large caps — and shifts by one session for pre-open filers. The filing's ACCEPTANCE
-TIMESTAMP disambiguates it and is not yet used; a pre-open filer's move is therefore
-attributed to the session after the reaction. Treat single readings as approximate and
-the median of six as sound.
+the same day. This module spans the last close on or before the filing date to the first
+close after it. That is correct for after-close filers and shifts by one session for
+pre-open filers. The filing's ACCEPTANCE TIMESTAMP would disambiguate and is not used.
+Treat single readings as approximate and the median of six as sound.
 """
 from __future__ import annotations
 
@@ -40,17 +30,13 @@ from typing import Any, Optional
 
 from ..data.diskcache import read_json_cache, write_json_cache
 
-# Item codes as filed, e.g. "2.02,9.01". Anchored on both sides so a substring search
-# cannot fire: a bare `"2.02" in items` also matches 12.02 (Ability to Fund Operations,
-# a different disclosure entirely) and 2.021, and a wrong announcement date silently
-# shifts every realized move that follows from it.
+# Item codes as filed, e.g. "2.02,9.01". Anchored so it does not match 12.02 or 2.021.
 _ITEM_202 = re.compile(r"(?<![\d.])2\.02(?![\d])")
 _DEFAULT_QUARTERS = 6
-# 8-K filings scanned back from newest. Six quarters of results sit well inside this on
-# every filer measured; a large filer posts many non-2.02 8-Ks between prints.
+# 8-K filings scanned back from newest. Large filers post many non-2.02 8-Ks between prints.
 _INDEX_SCAN = 40
-# Shared with data/sources/yahoo.py — same directory, same key format, same request
-# params, so the two hit the same day-cache entry rather than each paying for a fetch.
+# Shared with data/sources/yahoo.py: same directory, key format and params, so both hit
+# the same day-cache entry.
 _YAHOO_CACHE_DIR = ".cache/yahoo"
 _YAHOO_CHART = "https://query1.finance.yahoo.com/v8/finance/chart"
 _YAHOO_PARAMS = {"range": "5y", "interval": "1d"}
@@ -158,9 +144,7 @@ def _closes_from_payload(raw: Any) -> list:
     quote = (result.get("indicators") or {}).get("quote") or [{}]
     values = quote[0].get("close") or []
     return [(datetime.datetime.fromtimestamp(t, datetime.timezone.utc).date(), c)
-            # strict=False: Yahoo has been seen to return a close array shorter than
-            # its timestamp array on a partial session; truncating is correct, raising
-            # would take out the whole clause.
+            # strict=False: Yahoo can return fewer closes than timestamps; truncate.
             for t, c in zip(stamps, values, strict=False) if c is not None]
 
 

@@ -7,47 +7,26 @@ filing fact — the reverse_dcf discipline). Pure; no I/O.
 
 WHY THIS REPORTS A LEVEL AND NOT A CASH-FLOW BRIDGE
 ---------------------------------------------------
-An earlier design computed "FCF excluding the inventory build" and flagged names where
-the build fully explained a negative FCF. That was cut. Measured on HDSN FY2024->FY2025
-(docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.2):
-
-    FCF ex-inventory only      +26.26M -> +32.70M   (+24%, "improved")
-    FCF ex-(inventory+AR+AP)   +26.66M -> +16.30M   (-39%, declined)
-
-The improvement is an artifact of stripping the inventory outflow while keeping a
-+20.2M payables inflow. A single-line adjustment is not a neutral decomposition, so
-this module does not compute one and callers should not reconstruct one from it.
-
-What it reports instead is DAYS INVENTORY OUTSTANDING, which is a ratio of two figures
-that move together and therefore does not depend on which working-capital lines anyone
-chooses to strip. On the same HDSN data DIO runs 326.9 / 317.6 / 205.0 / 268.9 days
-across FY2022-25 — FY2024 is the outlier, not FY2025, which is the honest version of
-the "restocking, not deterioration" read.
+"FCF excluding the inventory build" is not a neutral decomposition: stripping one
+working-capital line while keeping the others can flip the sign of the trend. This
+module does not compute one, and callers should not reconstruct one from it. It reports
+DAYS INVENTORY OUTSTANDING instead, a ratio that does not depend on which lines are
+stripped. Evidence: docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.2.
 
 KNOWN LIMITATION — DIO needs `gross_profit`, which EDGAR does not supply
 ------------------------------------------------------------------------
-COGS is derived as `revenue - gross_profit`, and `gross_profit` is NOT in
-EdgarFinancials: `_merge_statements` year-joins it in from FMP. So on an FMP-gated or
-rate-limited run (a 402 on a gated symbol, or a 429 against the 250/day free quota) the
-DIO leg silently abstains and only the balance/revenue divergence renders. That is
-graceful degradation, not a failure — but it means the most useful leg is missing
-exactly when the free tier is under pressure.
-
-Fixing it means extracting cost of revenue from EDGAR, which is NOT free: the natural
-source is `us-gaap_GrossProfit` (LULU has it non-dimensional; HDSN and FISV report only
-`CostOfGoodsAndServicesSold`, and on LULU every such row is a segment breakdown with
-dimension=True). Supplying gross_profit from EDGAR would change a SCORED input
-(gross_margin) and its merge precedence, so it is deliberately out of scope here.
+COGS is `revenue - gross_profit`, and `gross_profit` is year-joined in from FMP by
+`_merge_statements`. On an FMP-gated or rate-limited run the DIO leg abstains and only
+the balance/revenue divergence renders. Supplying gross_profit from EDGAR would change
+a SCORED input (gross_margin) and its merge precedence, so it is out of scope here.
 """
 from __future__ import annotations
 
 from typing import Optional
 
-# A balance-sheet inventory change and a cash-flow inventory line do not reconcile for
-# every filer: FX translation and non-cash write-downs both sit between them (LULU FY26
-# moved +258.7M on the balance sheet against a +188.7M cash-flow line, a 70.0M FX gap;
-# HDSN's gap is a recurring LCNRV write-down). This module never pairs the two, which is
-# why no such caveat is needed here — but see the module docstring before adding one.
+# A balance-sheet inventory change and a cash-flow inventory line do not reconcile:
+# FX translation and non-cash write-downs sit between them. This module never pairs
+# the two.
 
 
 def _money(x: float) -> str:

@@ -22,10 +22,8 @@ def record_path(ticker: str, accession: str, root) -> Path:
 
 
 def is_cached(ticker: str, accession: str, root) -> bool:
-    """A brief for this exact key already exists. `accession` here is really the
-    WIDE cache key from `research/cachekey.py:brief_key` — filing accessions plus
-    a prompt/config fingerprint, a context digest and a day bucket — not the bare
-    filing accession; the param name predates that change."""
+    """A brief for this exact key exists. `accession` is the wide cache key from
+    `research/cachekey.py:brief_key`, not a bare filing accession."""
     return brief_path(ticker, accession, root).exists()
 
 
@@ -34,25 +32,18 @@ def _findings_md(findings, empty_label: str) -> list[str]:
         return [f"- {empty_label}"]
     lines = []
     for f in findings:
-        # A bare string is the pre-2026-08-17 moat.sources shape. Coerce rather than
-        # raise: rendering must never be the thing that drops a brief, and any caller
-        # can still construct Moat(sources=["brand"]). Mirrors bot/report/viewmodel.py's
-        # _finding, which tolerates the same shape on the bot surface.
+        # Coerce a bare string, never raise: rendering must not drop a brief.
         if isinstance(f, str):
             f = Finding(claim=f, evidence="")
-        # Three states, not two. A DECLARED inference (empty quote, legal only in
-        # moat.sources / management_findings) must not read as a failed grounding
-        # check — and the label avoids calling it "analyst inference", because a
-        # figure from Item 5 or the financial statements is a filing fact we simply
-        # never sent to the model (the haystack is Item 1/7/1A + 10-Q MD&A + 8-K +
-        # the debt & liquidity statement notes — NOT the other note families).
+        # Three states. A declared inference (empty quote) must not read as a failed
+        # grounding check. The label avoids "analyst inference": the claim may be a
+        # filing fact from a section never sent to the model (see docs/RESEARCH.md).
         if not f.verified and not (f.evidence or "").strip():
             lines.append(f"- **{f.claim}** _(unquoted — inference or from a section "
                          "not provided)_")
             continue
         mark = "" if f.verified else " _(unverified)_"
-        # Name the source document only when it is NOT the 10-K a reader already
-        # assumes — so a brief with no 8-K text renders byte-identically.
+        # Name the source document only when it is not the 10-K.
         source = getattr(f, "source", "") or ""
         if f.verified and source and source != "10-K":
             mark = f" _— verified against {source}_"
@@ -99,10 +90,8 @@ def _call_md(a, config=None):
     block = ["", "## Screening call _(triage — not investment advice)_",
              f"- **Call:** {label} · **conviction** {c.conviction.title()}"]
     if c.stance_clamped:
-        # Name the stance the gate REPLACED, not just the gate. "Avoid, and the model
-        # also said Avoid" and "Avoid, but the model said Buy" are different reads, and
-        # only the second means a rule overrode a judgment. model_stance is None on
-        # pre-2026-08-20 briefs -> fall back to the older wording rather than guessing.
+        # Name the stance the gate replaced: only "Avoid, but the model said Buy" means a
+        # rule overrode a judgment. model_stance is None on older briefs.
         if c.model_stance:
             was = stance_label(c.model_stance, config)
             why = (f"the {c.clamp_note} overrode the model's {was}" if c.clamp_note
@@ -164,12 +153,9 @@ def to_markdown(a: QualitativeAssessment, config=None,
         from .news import markdown_lines
         lines += markdown_lines(a.news_items, a.news_status, a.news_as_of, a.news_from,
                                 a.news_truncated)
-    # NO Lazy-Prices section. `text_similarity` is still computed and still stored in
-    # the brief JSON, but rendering it stated a falsehood on every brief: the metric
-    # retains stopwords, so on a full-length risk+MD&A section the cosine compresses
-    # near the top of its range and every real YoY pair rounded to "0% rewritten"
-    # (measured 2026-08-20: LULU 0.9966, HDSN 0.9972).
-    # docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
+    # No Lazy-Prices section on purpose: `text_similarity` is stored in the brief JSON,
+    # but the metric keeps stopwords, so every real YoY pair rounds to "0% rewritten".
+    # See docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4.
     lines += ["", "## Moat",
               f"- **Trajectory:** {a.moat.trajectory or 'n/a'}",
               f"- {a.moat.summary}"]
@@ -190,8 +176,7 @@ def to_markdown(a: QualitativeAssessment, config=None,
     if a.unverified_count:
         lines += ["", f"_{a.unverified_count} claim(s) could not be verified "
                   "against the filing text._"]
-    # Its own line, never folded into the count above: that one means "the model
-    # quoted something absent from the filing" and is the reader's fabrication signal.
+    # Separate from the count above, which is the reader's fabrication signal.
     if a.inference_count:
         lines += ["", f"_{a.inference_count} claim(s) stated without a filing quote "
                   "(declared inference, or from a section not provided)._"]
@@ -202,23 +187,19 @@ def to_markdown(a: QualitativeAssessment, config=None,
 def write(a: QualitativeAssessment, root, config=None,
           capital_allocation: Optional[tuple[str, str]] = None) -> Path:
     """Write both the markdown brief and the JSON record; return the brief path.
-    Keyed on a.cache_key (the wide key from research/cachekey.py:brief_key — quote
-    that module for the current composition, not this line), falling back to
-    filing_accession for back-compat with assessments that predate the bundle."""
+    Keyed on a.cache_key (see research/cachekey.py:brief_key), else filing_accession."""
     key = a.cache_key or a.filing_accession
     bp = brief_path(a.ticker, key, root)
     bp.parent.mkdir(parents=True, exist_ok=True)
-    # Commit order matters: is_cached() keys on the .md brief, so the .md is the
-    # COMMIT MARKER and must be written LAST. JSON record first — a crash between
-    # the two writes must never strand a "cached" brief with no screening-call record.
+    # The .md is the commit marker (is_cached keys on it): write it LAST, so a crash
+    # never strands a "cached" brief with no JSON record.
     record = dataclasses.asdict(a)
     record["synthesis"] = a.thesis.takeaway   # asdict drops the property; preserve the key
     record["capital_allocation_line"], record["capital_allocation_status"] = (
         capital_allocation or ("", ""))
     record_path(a.ticker, key, root).write_text(
         json.dumps(record, indent=2, default=str), encoding="utf-8")
-    # The marker itself must be atomic too: a truncated .md would read as
-    # "cached" forever. PID-unique temp + os.replace (the store.py pattern).
+    # Atomic: a truncated .md would read as "cached" forever.
     tmp = bp.with_name(f"{bp.name}.{os.getpid()}.tmp")
     try:
         tmp.write_text(to_markdown(a, config, capital_allocation), encoding="utf-8")

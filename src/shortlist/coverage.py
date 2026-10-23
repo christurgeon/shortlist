@@ -8,11 +8,8 @@ from .models import Coverage, ScoreCard
 # confidence/scored by design, so its absence is never a data gap worth flagging.
 _SUBSCORE_FIELDS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
-# Single source of truth for the per-provider fetch statuses that signal a coverage
-# problem, mapped to their human label. A status with a label here is "flagged"
-# (drives both the note and the stderr line); "ok" is intentionally absent. Add any
-# new status here only — both `_build_note` and `coverage_note_line` key off it, so
-# they can never silently disagree about which statuses to surface.
+# Fetch statuses that signal a coverage problem, with their label. Both `_build_note`
+# and `coverage_note_line` key off this; "ok" is absent on purpose.
 _STATUS_LABEL = {
     "gated_402": "gated (402)",
     "rate_limited_429": "rate-limited (429)",
@@ -57,9 +54,8 @@ def build_coverage(outcomes: dict[str, str], contributed: set[str], card: ScoreC
     if all(status == "ok" for status in providers.values()):
         return None
 
-    # A sub-score that is None because it was MASKED-INAPPLICABLE for the sector is
-    # not a coverage gap (it is by-design) — exclude it so the gating note never
-    # contradicts the abstentions diagnostic.
+    # A sector-masked sub-score is by design, not a gap; excluding it keeps this
+    # consistent with the abstentions diagnostic.
     masked = {a["field"] for a in getattr(card, "abstentions", [])
               if a.get("scope") == "subscore" and a.get("reason") == "inapplicable"}
     unavailable = [f for f in _SUBSCORE_FIELDS
@@ -77,13 +73,11 @@ def _build_note(providers: dict[str, str]) -> Optional[str]:
     flagged = {n: s for n, s in providers.items() if s in _STATUS_LABEL}
     if not flagged:
         return None
-    # FMP recognized-pattern notes take precedence over the generic multi-provider note.
-    # A 429 is throttling (retry/wait), distinct from gating (needs Starter) — so it
-    # gets its own note and must NOT claim the symbol is gated.
+    # FMP notes take precedence over the generic one. A 429 is throttling, not gating,
+    # so it must not claim the symbol is gated.
     if providers.get("fmp") == "rate_limited_429":
         return _FMP_RATE_LIMIT_NOTE
-    # Only fire the gating note for gated_402/empty — an fmp "error" is a transient
-    # fetch failure, not a tier-gating issue, so it must NOT claim "needs Starter tier".
+    # An fmp "error" is transient, so it must not claim "needs Starter tier".
     if providers.get("fmp") in ("gated_402", "empty"):
         return _FMP_NOTE
     return f"{', '.join(sorted(flagged))}: supplied no usable data for this symbol"

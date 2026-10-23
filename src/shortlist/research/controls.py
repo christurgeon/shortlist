@@ -1,40 +1,29 @@
 """Adverse internal-control conclusions (Item 9A) from a filing's own text.
 
-Answers the "are the earnings real?" question with a FACT rather than a composite:
-management's own conclusion that internal control over financial reporting (ICFR) or
-disclosure controls and procedures (DCP) were not effective. `docs/DATA_SOURCES.md`
-§2 gap 3 asked for this; the Tier-D Beneish/Altman composites it also proposed are
-inference, this is a disclosure.
+A FACT rather than a composite: management's own conclusion that internal control over
+financial reporting (ICFR) or disclosure controls and procedures (DCP) were not
+effective. `docs/DATA_SOURCES.md` §2 gap 3 asked for this.
 
 Two rules make it work, and neither is optional.
 
-**The phrase alone is worthless.** A bare `"material weakness"` search matched 226 of
-228 filers, because the auditor's standard definition paragraph appears in nearly every
+**The phrase alone is worthless.** A bare `"material weakness"` search matches nearly
+every filer, because the auditor's standard definition paragraph is in nearly every
 10-K. Only the adverse-CONCLUSION phrasings in `_PHRASES` discriminate.
 
-**Tense decides everything.** The dominant false positive is not boilerplate — it is a
-prior-period weakness, since remediated, discussed in a later filing. JJSF's FY2025 10-K
-says "internal control over financial reporting was not effective", dated 2024-09-28
-against a 2025-09-27 period end. So a phrase counts only when its own sentence anchors
-to THIS filing's period: an "as of <date>" within `window_chars` matching
-`period_of_report`, or the self-referential "end of the period covered by this report"
-that filers use instead of a date.
+**Tense decides everything.** The dominant false positive is a prior-period weakness,
+since remediated, discussed in a later filing. A phrase counts only when its own
+sentence anchors to THIS filing's period: an "as of <date>" within `window_chars`
+matching `period_of_report`, or the self-referential "end of the period covered by this
+report" that filers use instead of a date.
 
 Whitespace normalization happens HERE, not in the caller. On raw section text the
-window straddles newlines and the date match fails — CASH and GPK both flipped
-false-to-true on the same document once flattened.
+window straddles newlines and the date match fails.
 
-`detect` takes `form` and works on a 10-Q unchanged — 11 of 228 tickers, 27/27 hand-read
-precision, measured 2026-09-07. It is NOT wired to one, deliberately: incremental
-lead-time yield over the shipped 10-K path is 0 of 228, because filers ineffective at
-year end disclose annually too and interim-only weaknesses are remediated by year end.
-`docs/audits/2026-09-07-tenq-controls-base-rate.md`.
-
-Measured 2026-08-23 (`docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`):
-16/0/0 tp/fp/fn against hand labels on 68 in-sample filings; on 120 HELD-OUT names the
-16 flagged filings were 16 for 16 genuine, with no missed positive found. Verdict is
-flat for `window_chars` 100-800 and `tolerance_days` 7-200, so both are slack rather
-than tuned knobs; 1600 chars bleeds into unrelated dates (3 false positives).
+`detect` takes `form` and works on a 10-Q unchanged. It is NOT wired to one on purpose:
+the 10-Q path adds no lead time over the 10-K path. Evidence:
+`docs/audits/2026-09-07-tenq-controls-base-rate.md`. Detection accuracy and knob
+sensitivity: `docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md`. A window of
+1600 chars bleeds into unrelated dates.
 """
 from __future__ import annotations
 
@@ -44,9 +33,8 @@ from typing import Optional
 
 from .models import ControlsFinding
 
-# Adverse-conclusion phrasings only. Each is a MANAGEMENT CONCLUSION, which is why
-# these discriminate where "material weakness" does not. The plural ICFR variant is
-# not redundant: NSSC is caught by it alone.
+# Adverse-conclusion phrasings only. The plural ICFR variant is not redundant: some
+# filers use it alone.
 _ICFR_PHRASES = (
     "internal control over financial reporting was not effective",
     "internal controls over financial reporting were not effective",
@@ -55,20 +43,14 @@ _ICFR_PHRASES = (
 _DCP_PHRASE = "disclosure controls and procedures were not effective"
 _PHRASES = _ICFR_PHRASES + (_DCP_PHRASE,)
 
-# Filers who write this instead of a date are asserting currency in words. SMP's
-# FY2025 10-K is caught by this branch and by nothing else.
+# Filers who write this instead of a date assert currency in words.
 #
-# DO NOT widen this to accept "this quarterly report" (or "this Form 10-K") on the
-# strength of phrase counts — 2,955 10-Qs used the quarterly phrasing in 2026 and the
-# widening still gained 0 tickers and 0 filings when scored against all 27 flagged
-# 10-Qs on 2026-09-07. The `_AS_OF` branch already rescues every case, and filers who
-# write "covered by this Report" match the bare-`report` branch as-is.
+# DO NOT widen this to accept "this quarterly report" (or "this Form 10-K"): it gained
+# nothing, because the `_AS_OF` branch already rescues every case.
 # `docs/audits/2026-09-07-tenq-controls-base-rate.md` §4.
 _SELF_REF = re.compile(r"end of the period covered by this (annual )?report", re.I)
-# Case-insensitive on "as of" because filers open sentences with it ("As of
-# December 31, 2025, management concluded ..."); the month itself stays capitalized,
-# which is what keeps this from matching prose. The corpus does not contain a
-# sentence-initial case, so this guards a gap rather than fixing an observed miss.
+# Case-insensitive on "as of" because sentences can open with it; the capitalized
+# month keeps it from matching prose.
 _AS_OF = re.compile(r"as of ([A-Z][a-z]+ \d{1,2},? \d{4})", re.I)
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["January", "February", "March", "April", "May", "June", "July",

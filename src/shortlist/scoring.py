@@ -386,9 +386,8 @@ def _shareholder_yield_on(config: dict) -> bool:
 def _upside_to_target_on(config: dict) -> bool:
     """OPT-OUT, unlike every other gate here: an absent key keeps the leg ON.
 
-    Accepts both `{enabled: false}` and a bare `false`. Reading only the dict form would
-    silently leave the leg on and make a "leg-off" measurement run identical to baseline.
-    Rationale for the knob: docs/PREDICTIVE_SIGNALS_RESEARCH.md, Quick wins #1."""
+    Accepts both `{enabled: false}` and a bare `false`; reading only the dict form would
+    leave the leg on silently. Rationale: docs/PREDICTIVE_SIGNALS_RESEARCH.md, Quick wins."""
     d = ((config or {}).get("value") or {}).get("upside_to_target")
     if isinstance(d, dict):
         return bool(d.get("enabled", True))
@@ -651,8 +650,8 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     scored = True if bucket == "unknown" else confidence >= _v["min_scored_weight"]
     # Bucket-independent floor: `unknown` otherwise scores at any confidence, so a card
     # whose components are all null could rank on the risk tilt alone. This counts
-    # components, not weight: a legitimate momentum-only name sits at confidence ~0.08,
-    # too close to 0.0 for any weight threshold to separate them.
+    # components, not weight: a legitimate momentum-only name has too low a confidence
+    # for any weight threshold to separate it from an empty card.
     _min_components = _v.get("min_composite_components")
     if _min_components is not None:
         n_components = sum(1 for _, s, _, _ in components if s is not None)

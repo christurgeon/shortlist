@@ -1,36 +1,29 @@
 # src/shortlist/research/cachekey.py
 """The on-disk key for one research brief.
 
-WHY THIS EXISTS. The key used to be the filing accessions alone
-(`filings.py:fetch_bundle`), so a brief only went stale when a new 10-K/10-Q
-landed — even though the prompt also carries price, valuation, macro regime,
-insider Form-4s, short interest and recent 8-K events, and even though editing
-the prompt itself invalidated nothing.
+The filing accessions alone would go stale only when a new 10-K/10-Q lands, but the
+prompt also carries price, valuation, macro regime, insider trades, short interest and
+8-K events, and the prompt text itself can change.
 
 THREE PARTS, each guarding a different failure mode:
 
-1. `PROMPT_FINGERPRINT` — a hash of the SOURCE of every module that shapes the
-   prompt or the guards, plus the `research` config block. Two narrower designs
-   were rejected: hashing `_build_user_prompt`/`apply_guards` misses their
-   callees (`inspect.getsource` does not follow calls), and hashing `assess.py`
-   alone misses `SCHEMA_HINT` (models.py, concatenated at assess.py:87) and
-   every context-line renderer in its own module. Config is in the hash because
-   `research.max_chars`, `research.model` and the `max_*` caps shape the prompt
-   from YAML, not from source.
+1. `PROMPT_FINGERPRINT`: a hash of the SOURCE of every module that shapes the prompt or
+   the guards, plus the `research` config block. Hashing only `_build_user_prompt` or
+   `assess.py` misses callees (`inspect.getsource` does not follow calls) and modules
+   such as models.py that contribute `SCHEMA_HINT`. Config is in the hash because
+   `research.max_chars`, `research.model` and the `max_*` caps shape the prompt.
 
-2. `context_digest` — a hash of a BUCKETED materiality tuple off the ScoreCard.
-   Bucketing is the point: hashing a raw price would miss the cache on every
-   tick. The completeness rule is that everything `_quant_context` renders from
-   the card belongs here; the three auxiliary lines are hashed as their RENDERED
-   strings so their internals are covered by construction.
+2. `context_digest`: a hash of a BUCKETED materiality tuple off the ScoreCard.
+   Bucketing stops a raw price from missing the cache on every tick. Everything
+   `_quant_context` renders from the card belongs here; the auxiliary lines are hashed
+   as their RENDERED strings, so their internals are covered by construction.
 
-3. a day bucket — `research.cache.max_age_days` (0 disables it).
+3. a day bucket: `research.cache.max_age_days` (0 disables it).
 
-None-safety is not decorative: every StockMetrics field is Optional, and the
-cards in `tests/research/test_enrich.py` are duck-typed stubs with no `.metrics`
-at all. Every read below is getattr-guarded, and every numeric coercion rejects
-NaN/inf — `math.floor(inf)` and `round(nan)` both raise, and this module runs on
-the live `/deep` path where one raised exception would abort the whole batch.
+None-safety is required: every StockMetrics field is Optional, and test cards are
+duck-typed stubs with no `.metrics`. Every read is getattr-guarded, and every numeric
+coercion rejects NaN/inf, because `math.floor(inf)` and `round(nan)` raise and this runs
+on the live `/deep` path, where one exception would abort the batch.
 """
 from __future__ import annotations
 
@@ -51,20 +44,16 @@ _SCORE_STEP = 5.0
 _CONFIDENCE_STEP = 0.05
 
 # Every module whose source shapes the prompt or the deterministic guards.
-# ADD TO THIS LIST when a new context-line renderer gets its own module.
-# `filings`/`textsim` produce `bundle.text_similarity` (the Lazy-Prices YoY
-# cosine rendered by `_similarity_line`); `filings` also owns `_filing_sections`
-# / `_tenq_mda` / `cap_bundle` — most of the prompt's actual bytes.
-# `options` renders the options-surface line; `earnings_moves` computes the realized
-# post-announcement moves rendered inside it, so its source shapes the prompt too.
-# `controls` renders the internal-control verdict line AND selects the quote that
-# becomes a haystack segment. All three were missing until the discovery test below
-# found them (`test_every_context_line_module_is_hashed`), which is why that test
-# enforces the rule by scanning rather than by one hand-written assert per module.
-# `durability` and `news` render brief sections the model never sees. They are brief content,
-# not prompt content, but the rule is the same: their wording must not change under a cached
-# brief. Neither renderer is named `context_line`, so the discovery test does not find them;
-# tests of their own do. `capital_allocation` is deliberately absent; see its module docstring.
+# ADD TO THIS LIST when a new context-line renderer gets its own module;
+# `test_every_context_line_module_is_hashed` scans for omissions.
+# `filings` owns most of the prompt's bytes (`_filing_sections`, `_tenq_mda`,
+# `cap_bundle`), and with `textsim` produces `bundle.text_similarity`.
+# `earnings_moves` computes values rendered inside the options line. `controls` renders
+# the verdict line AND selects the quote that becomes a haystack segment.
+# `durability` and `news` render brief sections the model never sees; their wording must
+# still not change under a cached brief. Their renderers are not named `context_line`,
+# so tests of their own cover them. `capital_allocation` is absent on purpose; see its
+# module docstring.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
                    "analyst_revision", "options", "earnings_moves", "controls",
@@ -168,10 +157,8 @@ def _s(v: Any) -> str:
 
 def _aux_lines(m, config: Optional[dict]) -> list[str]:
     """The auxiliary context lines (gov-contract / lobbying / earnings / inventory /
-    analyst-revision), RENDERED. Hashing the rendered string (rather than picked
-    fields) means a future field added inside one of these lines is covered
-    automatically. All are pure and network-free. Any failure degrades to "" —
-    never raises."""
+    analyst-revision), RENDERED, so a field added inside a line is covered automatically.
+    All are pure and network-free. Any failure degrades to "" and never raises."""
     rcfg = (config or {}).get("research") or {}
     out = []
     try:
@@ -196,16 +183,11 @@ def _aux_lines(m, config: Optional[dict]) -> list[str]:
 
 def _gaps_line(card, config: Optional[dict]) -> str:
     """The rendered DATA GAPS line (`assess._data_gaps_line`, built from
-    `card.coverage`/`card.abstentions` via `coverage_caveat.coverage_caveats`).
-    Hashed as the RENDERED string, same approach as `_aux_lines`: a future field
-    added inside the line is covered by construction. `assess` is already forced
-    into `sys.modules` by `_module_sources()` above (it's a `_PROMPT_MODULES`
-    entry), so this import is not new I/O and cannot introduce a cycle — `assess`
-    does not import `cachekey`. Mirrors `_build_user_prompt`'s own
-    `screening_call.enabled` gate, so the digest only reacts to a gaps line the
-    prompt would actually render. Any failure (a duck-typed stub with neither
-    `.coverage` nor `.abstentions`, or no `research` block at all) degrades to
-    "" — never raises."""
+    `card.coverage`/`card.abstentions` via `coverage_caveat.coverage_caveats`), hashed
+    as the RENDERED string like `_aux_lines`. `assess` does not import `cachekey`, so the
+    import cannot cycle. Mirrors `_build_user_prompt`'s `screening_call.enabled` gate, so
+    the digest reacts only to a line the prompt would render. Any failure degrades to ""
+    and never raises."""
     if card is None:
         return ""
     scfg = ((config or {}).get("research") or {}).get("screening_call") or {}
@@ -220,13 +202,9 @@ def _gaps_line(card, config: Optional[dict]) -> str:
 
 def _macro_summary_line(macro, config: Optional[dict]) -> str:
     """The rendered macro-backdrop line (`assess._macro_line`), hashed as the
-    RENDERED string — same approach as `_gaps_line`/`_aux_lines` — so a same-day
-    move in dgs10/t10y2y/hy_oas/vix/fedfunds that does not cross
-    `classify_regime`'s bucket boundaries still busts the key. Previously only the
-    bucketed `regime` was hashed, so e.g. a VIX move from 22.0 to 28.5 with
-    'neutral' unchanged served a stale brief whose printed macro numbers no longer
-    matched live data. Degrades to "" (no macro fetched, the line disabled in
-    config, or any failure) — never raises, mirroring `_gaps_line`."""
+    RENDERED string, so a same-day move in a printed macro number busts the key even when
+    `classify_regime`'s bucket does not change. Degrades to "" (no macro, line disabled,
+    or any failure) and never raises."""
     if macro is None:
         return ""
     rcfg = ((config or {}).get("research") or {}).get("macro") or {}
@@ -239,12 +217,10 @@ def _macro_summary_line(macro, config: Optional[dict]) -> str:
 
 def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     """8 hex chars over the bucketed materiality tuple. Deliberately EXCLUDES
-    DEF 14A proxy facts: they are fetched inside `assess()` (assess.py:594-598),
-    so hashing them would force a network call on every cache check. Proxy data
-    moves annually; the day bucket covers it. The 8-K substance is excluded for the
-    same reason (it is fetched in `fetch_bundle`, after the key is needed) — its
-    ACCESSIONS mostly ride in via `filing_events` above, and the day bucket covers
-    the residue: an 8-K selected outside the 40-row mixed index
+    DEF 14A proxy facts: they are fetched inside `assess()`, so hashing them would force
+    a network call on every cache check. Proxy data moves annually; the day bucket covers
+    it. The 8-K substance is excluded for the same reason; its ACCESSIONS ride in via
+    `filing_events` and the filing half of the key, and the day bucket covers the residue
     (docs/audits/2026-08-13-eightk-text-in-deep-design.md F1)."""
     raw_band = _num(_cache_cfg(config).get("price_band_pct"))
     band = _DEFAULT_PRICE_BAND if raw_band is None else raw_band
@@ -265,31 +241,28 @@ def context_digest(card, macro=None, config: Optional[dict] = None) -> str:
     parts.append(_step(getattr(m, "days_to_cover", None), 0.5))
     parts.append(_s(getattr(m, "short_interest_rising", None)))
 
-    # The full Fundamentals + Valuation lines (assess.py:424-441).
+    # The full Fundamentals + Valuation lines of the quant context.
     for name in ("revenue_cagr", "fcf_cagr", "eps_cagr", "revenue_growth_persistence",
                  "gross_margin", "net_margin", "roic", "debt_to_equity",
                  "interest_coverage", "pe_ttm", "pe_median_5y", "fcf_yield", "peg"):
         parts.append(_sig3(getattr(m, name, None)))
 
-    # `accession` is in the tuple so a same-day 8-K/A cannot collide with the
-    # original it amends — (form, items, filed) alone are identical for that pair.
+    # `accession` keeps a same-day 8-K/A from colliding with its original.
     events = getattr(m, "filing_events", None) or []
     parts.append(sorted((_s(e.get("form")), _s(e.get("items")), _s(e.get("filed")),
                          _s(e.get("accession")))
                         for e in events if isinstance(e, dict)))
 
-    # Per-trade (date, kind, value bucket), NOT a gross sum: `value` is an
-    # UNSIGNED magnitude (`summarize` in providers/_form4.py — direction lives in
-    # `kind`), so summing it loses a buy<->sell flip at identical count and
-    # identical gross dollars. Sorted so trade ORDER (irrelevant to the prompt,
-    # which is already date-ordered upstream) cannot itself move the key.
+    # Per-trade (date, kind, value bucket), NOT a gross sum: `value` is UNSIGNED
+    # (direction lives in `kind`), so a sum loses a buy<->sell flip. Sorted so order
+    # cannot move the key.
     trades = getattr(m, "insider_recent", None) or []
     trade_rows = sorted(
         (_s(t.get("date")), _s(t.get("kind")), round((_num(t.get("value")) or 0.0) / 1e5))
         for t in trades if isinstance(t, dict))
     parts.append((len(trades), trade_rows))
 
-    # Every column _render_series prints (assess.py:349-366), not just revenue/FCF.
+    # Every column _render_series prints, not just revenue/FCF.
     series = getattr(m, "financial_series", None) or []
     cols = ("revenue", "gross_profit", "net_income", "operating_cash_flow",
             "free_cash_flow", "cash_and_equivalents", "total_debt", "diluted_eps",
@@ -309,10 +282,8 @@ def brief_key(bundle, card, *, macro=None, config: Optional[dict] = None,
     """The on-disk key for one brief: filing accessions + prompt fingerprint +
     context digest + day bucket.
 
-    MUST be computed BEFORE the `is_cached` short-circuit in
-    `research/__init__.py`. Computing it only before `report.write` would leave
-    the pre-LLM skip keyed on the narrow accession key, so nothing would ever
-    regenerate and every legacy brief would read as current forever."""
+    MUST be computed BEFORE the `is_cached` check in `research/__init__.py`. Otherwise
+    the pre-LLM skip keys on the narrow accession key and nothing ever regenerates."""
     cfg = _cache_cfg(config)
     raw_age = _num(cfg.get("max_age_days"))
     max_age = _DEFAULT_MAX_AGE_DAYS if raw_age is None else int(raw_age)
@@ -322,8 +293,7 @@ def brief_key(bundle, card, *, macro=None, config: Optional[dict] = None,
     key = f"{base}-p{prompt8}-c{context_digest(card, macro, config)}"
     if max_age > 0:
         day = today or datetime.now(timezone.utc).date()
-        # Guard the ordinal arithmetic: a silly max_age (or a bad clock) must not
-        # raise ValueError out of a function on the live /deep path.
+        # A bad max_age or clock must not raise on the live /deep path.
         try:
             bucket = date.fromordinal((day.toordinal() // max_age) * max_age).isoformat()
         except (ValueError, OverflowError):

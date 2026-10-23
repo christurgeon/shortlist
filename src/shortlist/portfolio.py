@@ -1,9 +1,8 @@
 """Portfolio-awareness leaf: load a hand-maintained holdings file and, given the
 ScoreCards the harness already produced, compute exposure + monitoring alerts.
 
-Pure and dependency-light — stdlib only, plus the ScoreCard type and the no_data
-predicate. No I/O beyond reading the holdings file; no network; no optional deps.
-Safe to import on the always-on bot path.
+Pure and dependency-light: stdlib, the ScoreCard type and the no_data predicate.
+Only I/O is reading the holdings file. Safe on the always-on bot path.
 """
 from __future__ import annotations
 
@@ -25,13 +24,12 @@ class Holding:
 def load_holdings(path) -> tuple[list[Holding], list[str]]:
     """Parse `ticker,shares` rows leniently. Returns (holdings, warnings).
 
-    - A header row (first column exactly "TICKER", case-insensitive) is silently
-      skipped; any OTHER row with non-numeric shares is treated as malformed and warned.
-    - `shares` is parsed as a float; negative values (short positions) are accepted as-is.
-    - Blank lines and `#` comment lines are silently skipped (annotations are fine).
-    - Extra columns ignored; malformed rows skipped with a warning.
-    - Tickers upper-cased + stripped; duplicate tickers summed (warned).
-    - Missing/unreadable file -> ([], [warning]); never raises.
+    - A header row (first column "TICKER", any case) is skipped silently.
+      Any other row with non-numeric shares is skipped with a warning.
+    - Negative shares (shorts) are accepted.
+    - Blank lines and `#` lines are skipped silently. Extra columns are ignored.
+    - Tickers are upper-cased and stripped. Duplicates are summed with a warning.
+    - Missing or unreadable file -> ([], [warning]); never raises.
     """
     p = Path(path)
     if not p.exists():
@@ -99,19 +97,14 @@ def _is_alert(card: Optional[ScoreCard], no_data: bool) -> bool:
 
 
 def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSummary:
-    """Pure. Join holdings to their ScoreCards by ticker; read live price from
-    card.metrics.price; compute exposure, sector mix, and monitoring alerts.
+    """Pure. Join holdings to ScoreCards by ticker; compute exposure, sector mix and alerts.
 
-    A holding with no matching card OR a no-data card (validation.no_data) is an
-    alert and contributes no exposure (so a CSV typo can't hide).
+    A holding with no card, or a no-data card (validation.no_data), is an alert and
+    has no exposure, so a CSV typo cannot hide.
 
-    Weights are NET exposure computed against the sum of priced position values
-    (the standard portfolio convention): a long-heavy book can give a single
-    holding a weight above 100%, and a short (negative shares, which
-    `load_holdings` accepts) gets a negative weight; weights over the priced
-    set sum to 1.0. This is intentional, not a bug."""
+    Weights are NET exposure over the sum of priced values. One holding can exceed
+    100%, a short gets a negative weight, and weights sum to 1.0. This is intended."""
     by_ticker = {c.ticker: c for c in cards}
-    # First pass: resolve card / no_data / price / raw value.
     raw: list[dict] = []
     total = 0.0
     for h in holdings:
@@ -121,7 +114,7 @@ def summarize(holdings: list[Holding], cards: list[ScoreCard]) -> PortfolioSumma
         if card is not None and not nd:
             m = getattr(card, "metrics", None)
             p = getattr(m, "price", None) if m is not None else None
-            price = p if p else None          # 0/None price -> unpriced: excluded from total_value & weights, listed in `unpriced`
+            price = p if p else None          # 0/None price -> unpriced
         value = h.shares * price if (price and h.shares is not None) else None
         if value is not None:
             total += value
