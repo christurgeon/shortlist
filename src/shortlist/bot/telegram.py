@@ -356,10 +356,8 @@ class TelegramBot:
             self.notifier.send_message(fmt_note)
 
     def _free_sources(self):
-        """The source chain minus FMP — rations the metered provider for the free-tier
-        commands. Order-preserving; a no-op when 'fmp' is already absent. Derives from
-        `self.sources` (not `bot_cfg` directly) so both share exactly one default
-        list — a second hardcoded copy here previously omitted 'finra'."""
+        """The source chain minus FMP, which rations the metered provider for the
+        free-tier commands. Derives from `self.sources` so the default list exists once."""
         return [s for s in self.sources if s != "fmp"]
 
     def _do_add(self, raw: str) -> None:
@@ -586,8 +584,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"shortlist-bot: {e}", file=sys.stderr)
         return 2
 
-    # Honour the cache block exactly like screen.py's main() so the bot benefits
-    # from warm re-screens and respects the operator's TTL/kill-switch.
+    # Same cache block handling as screen.py's main().
     from ..cache import configure_default_cache
     cache_cfg = config.get("cache", {})
     configure_default_cache(enabled=cache_cfg.get("enabled", True),

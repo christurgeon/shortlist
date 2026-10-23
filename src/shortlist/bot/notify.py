@@ -69,15 +69,12 @@ class TelegramNotifier:
                 resp = c.post(url, **kwargs)
                 retriable = resp.status_code == 429 or 500 <= resp.status_code < 600
                 if retriable and attempt < self.max_retries:
-                    # Retry-After-aware backoff, mirroring FMPSource._get's 429 idiom;
-                    # transient 5xx use the same capped exponential backoff. The shared
-                    # parser tolerates the RFC-7231 HTTP-date header form.
+                    # Retry-After-aware backoff; 5xx use the same capped exponential backoff.
                     time.sleep(retry_after_seconds(resp.headers.get("Retry-After"), 2 ** attempt))
                     continue
                 if resp.status_code != 200:
-                    # LOUD degradation: a silently-dropped chunk/photo is invisible. The
-                    # body carries Telegram's error description; the URL (which embeds the
-                    # token) is never printed, and the body is redacted anyway.
+                    # Fail loudly: a dropped chunk is invisible otherwise. Never print the
+                    # URL, which embeds the token.
                     print(f"telegram {method} failed: HTTP {resp.status_code} "
                           f"{redact_secrets(resp.text[:200])}", file=sys.stderr)
                 return resp.status_code == 200
