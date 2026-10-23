@@ -8,7 +8,7 @@ An open-source Python stock screener for fundamental analysis. It pulls data fro
 Yahoo Finance, FMP and Finnhub, scores each stock on quality, moat, growth, value, momentum
 and insider activity, and ranks the list — so your deep dive is spent on fewer, better names.
 
-[![Python](https://img.shields.io/badge/python-3.11%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/christurgeon/shortlist/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/christurgeon/shortlist/actions/workflows/ci.yml)
 [![Built with uv](https://img.shields.io/badge/built%20with-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
@@ -30,7 +30,7 @@ and insider activity, and ranks the list — so your deep dive is spent on fewer
 
 ## Quick start
 
-Requires Python 3.11+ and [uv](https://github.com/astral-sh/uv).
+Requires Python 3.12+ and [uv](https://github.com/astral-sh/uv).
 
 ```bash
 git clone https://github.com/christurgeon/shortlist.git && cd shortlist
