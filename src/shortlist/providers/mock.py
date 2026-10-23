@@ -3,10 +3,7 @@ from __future__ import annotations
 from ..models import StockMetrics
 from .base import Provider
 
-# Illustrative sample data for offline demo / tests. Prices and targets are
-# approximately as of late May 2026; margins, ROIC, and insider figures are
-# ROUGH PLACEHOLDERS so the pipeline produces sensible output without API keys.
-# Do NOT treat these as verified fundamentals — run a live provider for that.
+# Illustrative placeholders for the offline demo and tests, not verified fundamentals.
 _SAMPLE: dict[str, dict] = {
     "GEV": dict(
         name="GE Vernova", sector="AI power", price=969, market_cap=260e9,
@@ -29,9 +26,8 @@ _SAMPLE: dict[str, dict] = {
         insider_net_6m=-0.4e6, insider_sentiment=0.0,
     ),
     "SCHW": dict(
-        # Broker-dealer (SIC 6211). Masked legs are PRESENT (not None) so abstention
-        # is driven by sector masking, not missing data — and D/E 8.0 would trip
-        # over_leveraged if the gate weren't masked for financials.
+        # Broker-dealer (SIC 6211). Masked legs are present, not None, so abstention comes
+        # from sector masking. D/E 8.0 would trip over_leveraged without the financials mask.
         name="Charles Schwab", sector="Financials", sic="6211", price=87, market_cap=152e9,
         pe_ttm=17.0, pe_median_5y=20.0, fcf_yield=0.02, target_median=115,
         roe=0.17, roic=0.20, roic_5y_avg=0.20, gross_margin=0.55, net_margin=0.36,

@@ -3,10 +3,8 @@ from .mock import MockProvider
 
 __all__ = ["Provider", "MockProvider", "build_providers"]
 
-# Registry of synchronous `Provider`s. The live fetching providers were retired
-# with the screener engine (the async harness `Source`s in `data/sources/` are
-# the production data layer now). What remains is `mock`, a lightweight offline
-# `StockMetrics` factory used by the scoring tests. Modules are imported lazily.
+# Only `mock` remains, an offline `StockMetrics` factory for scoring tests. The
+# production data layer is the harness `Source`s in `data/sources/`. Imports are lazy.
 _REGISTRY = {
     "mock": ("shortlist.providers.mock", "MockProvider"),
 }

@@ -1,36 +1,24 @@
 """Shared FMP insider-transaction primitives: the buy/sell/other classification
 and the shares*price value formula.
 
-Dependency-free leaf used by the harness ``FMPSource`` — same pattern as
-``_form4.py``. Edit the interpretation of FMP's Form-4-ish ``insider-trading``
-rows here. ``FMPSource`` builds per-transaction ``InsiderTxn`` records but shares
-these primitives so the classification has a single source of truth.
+Dependency-free leaf used by ``FMPSource``, like ``_form4.py``. Edit the
+interpretation of FMP's ``insider-trading`` rows here.
 
-**The netting loop deliberately does NOT live here.** It lives in
-``data/sources/fmp.py`` because it is inseparable from two things this leaf cannot
-see: the 183-day window (matched to ``EdgarSource``'s lookback so both sources
-describe the same period in ``_merge_insider``) and the abstain guard that stops a
-fabricated ``net_value_6m == 0`` from winning that merge. A convenience
-``net_value()`` helper used to sit here with neither, which made it a second,
-subtly-divergent definition of "FMP net insider flow"; it had no production caller
-and was removed 2026-08-04 rather than left as a trap.
+The netting loop does not live here. It lives in ``data/sources/fmp.py`` because it
+depends on the 183-day window and the abstain guard, which this leaf cannot see. A
+second netting helper here would diverge from that definition.
 """
 
 
 def tx_value(tx: dict) -> float:
     """Dollar value of one FMP insider transaction (shares * price).
 
-    TOTAL BY DESIGN — returns 0.0 rather than raising on a malformed row. This is
-    load-bearing, not defensive habit: `_normalize_fmp` has no try/except of its own,
-    and `collector` degrades a source that raises to an errored-empty SourceResult — so
-    ONE bad insider row would otherwise cost the ticker its entire FMP snapshot
-    (profile, quote, statements included), not merely its insider section. Returning
-    0.0 instead feeds the caller's `> 0` valued-trade predicate, which drops just that row.
+    Total by design: returns 0.0 on a malformed row instead of raising. `_normalize_fmp`
+    has no try/except and `collector` degrades a raising source to an empty result, so
+    one bad insider row would cost the ticker its whole FMP snapshot. The caller's
+    `> 0` valued-trade predicate drops the 0.0 row.
 
-    Numeric strings are COERCED (JSON APIs commonly emit numbers as strings), so a
-    string-encoded row is recovered as a real trade rather than discarded; genuinely
-    non-numeric values fall through to 0.0. Without the coercion, `"1000" * 10` silently
-    produced a 40-character STRING that then raised on the `> 0` comparison.
+    Numeric strings are coerced; non-numeric values give 0.0.
     """
     try:
         return float(tx.get("securitiesTransacted") or 0) * float(tx.get("price") or 0)
@@ -41,20 +29,15 @@ def tx_value(tx: dict) -> float:
 def classify_tx(tx: dict) -> str:
     """Map an FMP insider row to 'buy' | 'sell' | 'other'.
 
-    FMP's ``transactionType`` is an ENRICHED string (``"P-Purchase"``), unlike
-    edgartools' bare single-letter ``Code`` column that ``_form4.classify_code``
-    parses with an exact ``== "P"`` — do NOT swap one for the other, in either
-    direction. Feeding ``"P-Purchase"`` to ``classify_code`` returns ``"other"``
-    and would classify every FMP transaction as a non-trade.
+    FMP's ``transactionType`` is an enriched string (``"P-Purchase"``), unlike the bare
+    single-letter ``Code`` that ``_form4.classify_code`` matches with ``== "P"``. Do not
+    swap them: ``classify_code("P-Purchase")`` returns ``"other"``.
 
-    ASSUMPTION, unverified against a live response: FMP emits ``<CODE>-<Description>``
-    (``"P-Purchase"``, ``"A-Award"``). No recorded FMP insider payload exists in this
-    repo to confirm it — ``fmp.fetch_insider`` ships false, so the endpoint is never
-    called and the HTTP cache holds no sample; the test fixtures assert the same
-    assumption rather than evidencing it. A dashless payload (``"Purchase"``) would
-    classify as ``other``, and since an all-``other`` batch abstains, that degrades to
-    "EDGAR wins the merge" rather than to wrong numbers — fail-safe, but re-check this
-    against a real response before relying on FMP insider data on a paid tier.
+    Unverified assumption: FMP emits ``<CODE>-<Description>``. No recorded payload
+    exists (``fmp.fetch_insider`` ships false). A dashless payload classifies as
+    ``other``; an all-``other`` batch abstains and EDGAR wins the merge, which is
+    fail-safe. Re-check against a real response before relying on FMP insider data on
+    a paid tier.
     """
     raw = (tx.get("transactionType") or "").strip()
     code = raw.split("-", 1)[0].strip().upper()
