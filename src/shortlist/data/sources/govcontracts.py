@@ -7,7 +7,7 @@ from typing import Optional
 
 from ...env import redact_secrets
 from ..models import SourceResult
-from ._common import _DEFAULT_DEADLINE_S, _NameIndexedSource
+from ._common import _DEFAULT_DEADLINE_S, _NameIndexedSource, alias_keys
 
 
 class GovContractsSource(_NameIndexedSource):
@@ -15,9 +15,11 @@ class GovContractsSource(_NameIndexedSource):
 
     Resolves ticker->name via SEC company_tickers.json (bulk-loaded once, month-
     cached), then per ticker queries `spending_by_transaction` for the trailing
-    24m, confidence-filters recipients (see govcontract_match), and buckets
-    window-scoped `Transaction Amount` into TTM vs prior-TTM. Aux section; never
-    moves coverage. Never raises — degrades to None on any failure.
+    24m with the SEC title and each configured alias as one OR'd search. A
+    recipient matches the title by confidence (see govcontract_match), an alias
+    exactly, or a subsidiary seed phrase. Window-scoped `Transaction Amount` buckets
+    into TTM vs prior-TTM. Aux section; never moves coverage. Never raises —
+    degrades to None on any failure.
 
     NOTE: uses the action-level `spending_by_transaction` endpoint, NOT
     `spending_by_award` (whose `time_period` is an overlap filter returning
@@ -42,25 +44,28 @@ class GovContractsSource(_NameIndexedSource):
                 timeout=float(cfg.get("timeout", timeout)),
                 headers={"User-Agent": "shortlist gov-contracts (contact in SEC_IDENTITY)"}),
             Path(cfg.get("cache_dir", cache_dir)),
-            float(cfg.get("deadline_s", _DEFAULT_DEADLINE_S)))
+            float(cfg.get("deadline_s", _DEFAULT_DEADLINE_S)),
+            cfg.get("aliases"))
         self._min_conf = float(cfg.get("match_min_confidence", 0.80))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages", 5))
 
-    def _filters(self, name: str, start: str, end: str) -> dict:
-        return {"recipient_search_text": [name],
+    def _filters(self, names: list[str], start: str, end: str) -> dict:
+        return {"recipient_search_text": names,   # the API ORs the list
                 "award_type_codes": self._CONTRACT_CODES,
                 "time_period": [{"start_date": start, "end_date": end}]}
 
     async def _fetch(self, ticker: str) -> SourceResult:
+        from ..entity_match import normalize_name
         from ..govcontract_match import match_confidence
         from ..models import GovContracts
-        res, snap, name = await self._begin(ticker)
-        if name is None:
+        res, snap, names = await self._begin(ticker)
+        if names is None:
             return res
+        exact = alias_keys(names)
         today = date.today()
         end = today.isoformat()
-        cached, snap.gov_contracts = self._cached_model(ticker, end, GovContracts, "gc")
+        cached, snap.gov_contracts = self._cached_model(ticker, end, GovContracts, "gc", names)
         if cached is not None:
             res.raw.update({"matched": bool(cached.get("matched")),
                             "total_txns": cached.get("total_txns"), "cached": True})
@@ -69,7 +74,7 @@ class GovContractsSource(_NameIndexedSource):
         cutoff = (today - timedelta(days=self._TTM_DAYS)).isoformat()
         try:
             cnt = await self._client.post(
-                self.COUNT_URL, json={"filters": self._filters(name, start, end)})
+                self.COUNT_URL, json={"filters": self._filters(names, start, end)})
             cnt.raise_for_status()
             total = ((cnt.json() or {}).get("results") or {}).get("contracts")
             ttm = prior = 0.0
@@ -80,7 +85,7 @@ class GovContractsSource(_NameIndexedSource):
             truncated = False
             page = 1
             while page <= self._max_pages:
-                body = {"filters": self._filters(name, start, end),
+                body = {"filters": self._filters(names, start, end),
                         "fields": ["Award ID", "Recipient Name", "Action Date",
                                    "Transaction Amount", "Awarding Agency"],
                         "sort": "Transaction Amount", "order": "desc",
@@ -91,7 +96,8 @@ class GovContractsSource(_NameIndexedSource):
                 rows = payload.get("results") or []
                 for row in rows:
                     recip = row.get("Recipient Name") or ""
-                    conf = match_confidence(name, recip, alias_for=(ticker,))
+                    conf = (1.0 if normalize_name(recip) in exact
+                            else match_confidence(names[0], recip, alias_for=(ticker,)))
                     if conf < self._min_conf:
                         continue
                     amt = row.get("Transaction Amount")
@@ -115,7 +121,8 @@ class GovContractsSource(_NameIndexedSource):
                     truncated = True
                 page += 1
             if primary_name is None:           # nothing cleared the match guard
-                self._write_cache(ticker, end, {"matched": False, "total_txns": total})
+                self._write_cache(ticker, end, {"matched": False, "names": names,
+                                                "total_txns": total})
                 res.raw.update({"matched": False, "total_txns": total})
                 return res
             gc = GovContracts(
@@ -124,7 +131,7 @@ class GovContractsSource(_NameIndexedSource):
                 matched_recipient=primary_name, match_confidence=primary_conf,
                 recipient_count=len(recipients), truncated=truncated, total_txns=total)
             snap.gov_contracts = gc
-            self._write_cache(ticker, end, {"matched": True, "total_txns": total,
+            self._write_cache(ticker, end, {"matched": True, "names": names, "total_txns": total,
                                             "gc": dataclasses.asdict(gc)})
             res.raw.update({"matched": True, "total_txns": total})
         except Exception as e:

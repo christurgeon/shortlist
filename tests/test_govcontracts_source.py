@@ -242,3 +242,44 @@ def test_default_deadline_bounds_the_fetch():
     src = GovContractsSource(config={"gov_contracts": {"cache_dir": tempfile.mkdtemp(prefix="gctest-")}})
     assert src._deadline_s > 0
     _run(src.aclose())
+
+
+def test_aliases_join_the_title_in_one_ored_search():
+    import json as _json
+    bodies = []
+
+    def handler(req):
+        bodies.append((req.url.path, _json.loads(req.content)["filters"]["recipient_search_text"]))
+        if req.url.path.endswith("count/"):
+            return httpx.Response(200, json={"results": {"contracts": 12}})
+        return httpx.Response(200, json={"results": [
+            {"Recipient Name": "GOOGLE LLC", "Action Date": "2025-12-01",
+             "Transaction Amount": 2e6},
+            {"Recipient Name": "GOOGLE PUBLIC SECTOR PARTNERS LLC",   # not the alias
+             "Action Date": "2025-12-01", "Transaction Amount": 9e6},
+        ], "page_metadata": {"hasNext": False}})
+    src = _source_with(handler, name_map={"GOOGL": "Alphabet Inc."},
+                       aliases={"GOOGL": ["Google LLC"]})
+    res = _run(src.fetch("GOOGL"))
+    gc = res.partial.gov_contracts
+    assert [s for _, s in bodies] == [["Alphabet Inc.", "Google LLC"]] * 2
+    assert sum(p.endswith("count/") for p, _ in bodies) == 1
+    assert gc.ttm_obligated == 2e6 and gc.matched_recipient == "GOOGLE LLC"
+    assert res.raw["total_txns"] == 12
+    _run(src.aclose())
+
+
+def test_a_seeded_subsidiary_matches_its_parent():
+    def handler(req):
+        if req.url.path.endswith("count/"):
+            return httpx.Response(200, json={"results": {"contracts": 2}})
+        return httpx.Response(200, json={"results": [
+            {"Recipient Name": "OPTUMSERVE HEALTH SERVICES, INC.",
+             "Action Date": "2025-12-01", "Transaction Amount": 4e9},
+            {"Recipient Name": "PLUS ONE HOLDINGS, INC.",
+             "Action Date": "2025-12-01", "Transaction Amount": 1e6},
+        ], "page_metadata": {"hasNext": False}})
+    src = _source_with(handler, name_map={"UNH": "UNITEDHEALTH GROUP INC"})
+    gc = _run(src.fetch("UNH")).partial.gov_contracts
+    assert gc.ttm_obligated == 4e9 and gc.recipient_count == 1
+    _run(src.aclose())

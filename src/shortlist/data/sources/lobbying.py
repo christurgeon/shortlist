@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import itertools
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional
@@ -9,7 +10,7 @@ from typing import Any, Optional
 from ..._util import retry_after_seconds
 from ...env import redact_secrets
 from ..models import SourceResult
-from ._common import _NameIndexedSource
+from ._common import _NameIndexedSource, alias_keys
 
 # LDA's keyless limit is per minute and its Retry-After can exceed the shared 30 s cap;
 # waiting less than it asks only spends the next attempt on another 429.
@@ -23,9 +24,13 @@ class LobbyingSource(_NameIndexedSource):
 
     Resolves ticker->name via SEC company_tickers.json (bulk-loaded once, month-
     cached), then per ticker queries the LDA filings API (`/filings/?client_name=`)
-    across the calendar years overlapping the trailing window, confidence-filters
-    clients (see entity_match), and buckets spend (income-else-expenses) into TTM vs
-    prior-TTM by `dt_posted`. Aux section; never moves coverage. Never raises.
+    for the SEC title and each configured alias, across the calendar years
+    overlapping the trailing window. A client matches the title by confidence (see
+    entity_match) or an alias exactly. Spend (income-else-expenses) buckets into TTM
+    vs prior-TTM by `dt_posted`. Aux section; never moves coverage. Never raises.
+
+    LDA's client search is spelling-sensitive ("Chevron USA" does not find
+    "CHEVRON U.S.A. INC."), so an alias lists each spelling the filings use.
 
     Targets lda.gov (lda.senate.gov is retired after 2026-06-30); base URL is
     config-driven."""
@@ -48,7 +53,8 @@ class LobbyingSource(_NameIndexedSource):
                 headers={"Accept": "application/json",
                          "User-Agent": "shortlist lobbying (contact in SEC_IDENTITY)"}),
             Path(cfg.get("cache_dir", cache_dir)),
-            float(cfg.get("deadline_s", _DEADLINE_S)))
+            float(cfg.get("deadline_s", _DEADLINE_S)),
+            cfg.get("aliases"))
         self._min_conf = float(cfg.get("match_min_confidence", 0.85))
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages_per_year", 4))
@@ -94,14 +100,15 @@ class LobbyingSource(_NameIndexedSource):
         return None
 
     async def _fetch(self, ticker: str) -> SourceResult:
-        from ..entity_match import match_confidence
+        from ..entity_match import match_confidence, normalize_name
         from ..models import Lobbying
-        res, snap, name = await self._begin(ticker)
-        if name is None:
+        res, snap, names = await self._begin(ticker)
+        if names is None:
             return res
+        exact = alias_keys(names)
         today = date.today()
         end = today.isoformat()
-        cached, snap.lobbying = self._cached_model(ticker, end, Lobbying, "lb")
+        cached, snap.lobbying = self._cached_model(ticker, end, Lobbying, "lb", names)
         if cached is not None:
             res.raw.update({"matched": bool(cached.get("matched")),
                             "cached": True})
@@ -118,17 +125,25 @@ class LobbyingSource(_NameIndexedSource):
                 best_client, best_conf = None, 0.0
                 latest = None
                 truncated = False
-                for yr in years:
+                seen: set[str] = set()
+                for name, yr in itertools.product(names, years):
                     page = 1
                     while page <= self._max_pages:
                         payload = await self._get_json(
                             "filings/",
                             {"client_name": name, "filing_year": yr, "page": page}) or {}
+                        # Summed over names, so an upper bound when their results overlap.
                         total += (payload.get("count") or 0) if page == 1 else 0
                         rows = payload.get("results") or []
                         for row in rows:
+                            uid = row.get("filing_uuid")
+                            if uid:
+                                if uid in seen:     # returned again for another name
+                                    continue
+                                seen.add(uid)
                             client = (row.get("client") or {}).get("name") or ""
-                            conf = match_confidence(name, client)
+                            conf = (1.0 if normalize_name(client) in exact
+                                    else match_confidence(names[0], client))
                             if conf < self._min_conf:
                                 continue
                             spend = self._spend(row)
@@ -156,7 +171,7 @@ class LobbyingSource(_NameIndexedSource):
                             truncated = True
                         page += 1
                 if best_client is None:
-                    self._write_cache(ticker, end, {"matched": False})
+                    self._write_cache(ticker, end, {"matched": False, "names": names})
                     res.raw.update({"matched": False, "total_filings": total})
                     return res
                 lb = Lobbying(
@@ -165,7 +180,8 @@ class LobbyingSource(_NameIndexedSource):
                     match_confidence=best_conf, registrant_count=len(registrants),
                     truncated=truncated, total_filings=total)
                 snap.lobbying = lb
-                self._write_cache(ticker, end, {"matched": True, "lb": dataclasses.asdict(lb)})
+                self._write_cache(ticker, end, {"matched": True, "names": names,
+                                                "lb": dataclasses.asdict(lb)})
                 res.raw.update({"matched": True, "total_filings": total})
             except Exception as e:
                 res.errors.append(f"{self.name}: {redact_secrets(e)}")

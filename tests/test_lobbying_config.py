@@ -18,3 +18,13 @@ def test_config_has_lobbying_blocks():
 def test_lobbying_fetch_deadline_is_configured():
     cfg = yaml.safe_load(Path("config.yaml").read_text())
     assert cfg["lobbying"]["deadline_s"] > 0
+
+
+def test_configured_aliases_all_survive_parsing():
+    from shortlist.data.sources._common import _parse_aliases
+    cfg = yaml.safe_load(Path("config.yaml").read_text())
+    for section in ("lobbying", "gov_contracts"):
+        raw = cfg[section]["aliases"]
+        assert all(isinstance(k, str) and k == k.upper() for k in raw), section
+        parsed = _parse_aliases(raw)
+        assert {k: list(v) for k, v in parsed.items()} == raw, section

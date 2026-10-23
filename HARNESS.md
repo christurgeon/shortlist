@@ -185,6 +185,10 @@ request per ticker. See `docs/SCORING.md` → Sector-aware abstention.
   - They query by the SEC title without its trailing qualifier (`/DE/`, `/NEW`, `/ADR`):
     upstream search returns nothing for the qualified form. A name that, so stripped, belongs
     to more than one CIK abstains (`raw["ambiguous_name"]`).
+  - A renamed issuer or a subsidiary that files under its own name abstains unless
+    `config.yaml: <source>.aliases` lists that name. An alias is searched alongside the title
+    and matches only exactly; every share class with the same SEC title uses it. Gov
+    contracts also lift known subsidiary recipients through `govcontract_match._ALIAS_SEED`.
   - One deadline bounds each ticker's whole fetch (`deadline_s`); on expiry it is an error,
     never a raise. Lobbying fetches one ticker at a time and waits out LDA's Retry-After
     (up to 65 s), because concurrent tickers share one per-minute budget; a ticker's wait in
