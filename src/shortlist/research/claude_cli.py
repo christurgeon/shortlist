@@ -54,9 +54,7 @@ def run(prompt: str, system: str, model: str, timeout_s: float,
         "--strict-mcp-config",
         "--max-turns", "1",
     ]
-    # An overloaded primary otherwise fails all of assess()'s attempts identically and
-    # the brief is dropped. Omitted entirely when unset, so the invocation stays
-    # byte-identical to the pre-feature form.
+    # Without a fallback, an overloaded primary fails every assess() attempt the same way.
     if fallback_model:
         argv += ["--fallback-model", fallback_model]
     try:
@@ -122,12 +120,9 @@ def _is_auth_failure(detail) -> bool:
 
 
 def _answering_model(envelope: dict, requested: str) -> str:
-    """The model that actually produced the answer. With --fallback-model that need not
-    be the one requested, and this value is printed in the brief header — echoing the
-    request would silently mislabel a fallback-produced brief. The CLI envelope keys
-    `modelUsage` by the model that ran; when several did (primary attempted, fallback
-    answered) the answering one is the one with output tokens. Falls back to the
-    requested model if the envelope says nothing."""
+    """The model that produced the answer, printed in the brief header. With
+    --fallback-model it can differ from the requested one. `modelUsage` keys the models
+    that ran; the answering one has output tokens. Falls back to `requested`."""
     usage = envelope.get("modelUsage")
     if not isinstance(usage, dict) or not usage:
         return requested

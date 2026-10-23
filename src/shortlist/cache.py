@@ -1,11 +1,8 @@
 """Persistent HTTP-response cache for the FMP/Finnhub data boundary.
 
-Repeated ad-hoc runs would otherwise re-fetch identical data and exhaust free-tier
-daily quotas (FMP ~250/day). This caches parsed JSON payloads on disk (SQLite) keyed
-by (provider, endpoint, params) with a per-bucket TTL, so a warm re-run makes zero
-upstream calls. See docs/DATA_SOURCES.md §6.
-
-The module is a dependency-light leaf: only stdlib + env.redact_secrets.
+Caches parsed JSON payloads on disk (SQLite) keyed by (provider, endpoint, params)
+with a per-bucket TTL, so a warm re-run makes no upstream calls and spares free-tier
+quotas. Dependency-light leaf: stdlib and env.redact_secrets only.
 """
 
 from __future__ import annotations
@@ -27,16 +24,15 @@ _DEFAULT_PATH = ".cache/http.sqlite"
 
 
 def cache_key(provider: str, endpoint: str, params: dict) -> str:
-    """Stable SHA-256 key for (provider, endpoint, params). Secrets are stripped by
-    name so key rotation doesn't fragment the cache and no secret enters the store.
-    Raises TypeError on a non-JSON-serializable param (fail loud — the call site is
-    wrong) rather than papering over it with default=str. SHA-256 (not hash()) because
-    hash() is PYTHONHASHSEED-salted and unstable across the separate processes a
-    persistent cache must serve.
+    """Stable SHA-256 key for (provider, endpoint, params).
 
-    The `v1:` prefix is a manual schema epoch: BUMP IT whenever a source's `_get`
-    changes the SHAPE of what it stores, or warm caches keep serving payloads the
-    new parser cannot read."""
+    Secret params are stripped, so key rotation does not fragment the cache. Raises
+    TypeError on a non-JSON-serializable param. SHA-256 is used because hash() is
+    salted per process.
+
+    The `v1:` prefix is a manual schema epoch. Bump it whenever a source's `_get`
+    changes the SHAPE of what it stores, or warm caches serve payloads the new
+    parser cannot read."""
     clean = {k: v for k, v in params.items() if k.lower() not in _SECRET_PARAMS}
     canon = json.dumps(clean, sort_keys=True, separators=(",", ":"))
     raw = f"v1:{provider}:{endpoint}:{canon}"
@@ -44,9 +40,8 @@ def cache_key(provider: str, endpoint: str, params: dict) -> str:
 
 
 def _is_cacheable(payload: object) -> bool:
-    """A 2xx body can still be a soft failure (FMP gating / no-coverage returns 200
-    with [] or {}; Finnhub returns error-keyed bodies). Don't store those — they'd
-    poison the cache for the whole TTL. Genuine successes here are always non-empty."""
+    """A 2xx body can be a soft failure (FMP gating returns 200 with [] or {}; Finnhub
+    returns error-keyed bodies). Storing one would poison the cache for the whole TTL."""
     if payload is None or payload == [] or payload == {} or payload == "":
         return False
     if isinstance(payload, dict) and any(k.lower() == "error" for k in payload):
@@ -120,15 +115,12 @@ CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires_at);
 class HttpCache:
     """Persistent SQLite cache for HTTP JSON payloads.
 
-    Uses SQLite's default rollback journal (NOT WAL): the process is short-lived/ad-hoc
-    and may sit on a networked filesystem, so WAL's `-wal`/`-shm` sidecar files and
-    NFS incompatibility are a poor fit. `check_same_thread=False` plus a `threading.Lock`
-    makes the single connection safe even if a future caller touches it from a worker
-    thread (the harness runs EdgarSource under `asyncio.to_thread`); the Lock — not
-    `check_same_thread` — is what serializes access. The async harness path is itself
-    single-threaded, so the Lock is uncontended there.
+    Uses SQLite's default rollback journal, not WAL: the DB may sit on a networked
+    filesystem, where WAL sidecar files do not work. The Lock, not
+    `check_same_thread=False`, serializes access; the harness runs EdgarSource under
+    `asyncio.to_thread`.
 
-    The cache OWNS TTL resolution via `ttl_for()`; callers never pass a TTL.
+    The cache owns TTL resolution via `ttl_for()`; callers never pass a TTL.
     """
 
     def __init__(self, path: str, *, refresh: bool = False, ttls: dict | None = None):
@@ -142,8 +134,6 @@ class HttpCache:
             self._conn.row_factory = sqlite3.Row
             self._conn.executescript(_SCHEMA)
         except Exception:
-            # Don't leak the open handle if schema init fails — configure_default_cache
-            # catches and degrades to NoOpCache, but the connection must close first.
             self._conn.close()
             raise
 
@@ -158,9 +148,7 @@ class HttpCache:
         self.close()
 
     def _read(self, key: str, now: float):
-        # A runtime DB fault (locked/corrupt/dropped table) or a malformed stored row
-        # must degrade to a miss, never crash the screen — caching is an optimization.
-        # Mirrors the try/except in _write and sweep.
+        # A DB fault or malformed stored row degrades to a miss, never a crash.
         try:
             with self._lock:
                 row = self._conn.execute(
@@ -196,9 +184,8 @@ class HttpCache:
         return result
 
     async def aget_or_fetch(self, provider: str, endpoint: str, params: dict, fetcher):
-        """Async twin of get_or_fetch. SQLite calls are made directly (not via
-        asyncio.to_thread): a PK lookup is tens of microseconds; only the awaited fetch
-        on a miss genuinely blocks, and it's already async."""
+        """Async twin of get_or_fetch. SQLite calls are direct (not via to_thread)
+        because a PK lookup is fast."""
         key = cache_key(provider, endpoint, params)
         now = time.time()
         if not self._refresh:
@@ -221,8 +208,7 @@ class HttpCache:
             pass
 
     def maybe_sweep(self, probability: float = 0.05) -> None:
-        """Sweep with low probability per open — bounds file growth without turning
-        every (read-mostly) CLI invocation into a guaranteed write."""
+        """Sweep with low probability per open, to bound file growth."""
         if random.random() < probability:
             self.sweep()
 
@@ -246,9 +232,8 @@ _default_cache = None
 
 def configure_default_cache(*, enabled: bool = True, refresh: bool = False,
                             path: str | None = None, ttls: dict | None = None) -> None:
-    """Configure the process-global cache once at CLI startup. On any open failure
-    (corrupt/unreadable DB, NFS without locking), degrade to NoOpCache — caching is an
-    optimization, never a hard dependency, so a broken cache must never break a screen."""
+    """Configure the process-global cache once at CLI startup. On any open failure,
+    degrade to NoOpCache: a broken cache must never break a screen."""
     global _default_cache
     reset_default_cache()
     if not enabled:

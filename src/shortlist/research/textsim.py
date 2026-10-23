@@ -6,35 +6,19 @@ Cohen, Malloy & Nguyen (2020), "Lazy Prices" (J. Finance 75(3)): firms that
 factors and MD&A — subsequently underperform. A big YoY text change is the
 signal; high similarity (the firm "lazily" copied last year's text) is benign.
 
-This is a NEW similarity SCORER, not an extension of `riskdiff` (which is a
-block-EXTRACTOR returning newly-added blocks, Item-1A-only). We do reuse
-riskdiff's normalization idea (lowercase, collapse whitespace, strip digits/
-currency/punctuation) so that boilerplate/numeric churn — a changed dollar
-figure, a rolled-forward fiscal year, reflowed whitespace — does NOT register as
-a substantive change. The metric is a stdlib **bag-of-words cosine** over the
-normalized token multiset (`collections.Counter`); no new dependency.
+A similarity SCORER, unlike `riskdiff` (a block extractor). It normalizes as riskdiff
+does (lowercase, strip digits/currency/punctuation) so numeric and whitespace churn does
+not register as change. The metric is a stdlib **bag-of-words cosine**.
 
 `similarity` in [0, 1]: 1.0 == identical normalized text, 0.0 == no shared
 vocabulary. `None` when there is no usable baseline (either side empty).
 
-POOR DISCRIMINATION — read before trusting the absolute level (measured 2026-08-20).
-Retaining stopwords (see the note below) means a full-length risk+MD&A section is
-dominated by shared English function words, so the cosine compresses into a narrow
-band near the top of the range. Two 10-Ks from UNRELATED companies score 0.72-0.90
-(NVDA vs Permian Basin Royalty Trust 0.7216; HDSN vs LULU 0.8973), while real
-same-firm YoY self-comparisons sit at ~0.997. So the scale barely separates "the same
-firm changed nothing" from "a different company in a different industry" — but note
-the low end is only 0.02 above the 0.7 flag threshold, NOT far above it. Do not
-describe 0.897 as a floor.
-
-Same-firm text change cannot realistically reach 0.7: even a de-SPAC transition, where
-the registrant's entire business changes between consecutive 10-Ks of the same CIK,
-scores ~0.90-0.92.
-
-A single-firm absolute cosine is also not what Cohen-Malloy-Nguyen use — they sort on
-the CROSS-SECTIONAL RANK of similarity, so interpreting one number without a peer
-distribution has no basis either way. Fixing this needs IDF or stopword weighting AND
-a reference distribution. docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4."""
+POOR DISCRIMINATION: retaining stopwords compresses the cosine into a narrow band near
+the top of the range, so the scale barely separates "the same firm changed nothing" from
+"a different company". Do not read the absolute level. The paper sorts on the
+CROSS-SECTIONAL RANK of similarity, so one number without a peer distribution has no
+basis. Fixing this needs IDF or stopword weighting AND a reference distribution.
+docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4."""
 from __future__ import annotations
 
 import math
@@ -42,18 +26,13 @@ import re
 from collections import Counter
 from typing import Optional
 
-# Stopwords are NOT removed: in 10-K text the connective/boilerplate words are
-# part of the "did they rewrite it" signal, and dropping them would make small
-# substantive edits look larger. We normalize instead (below).
+# Stopwords are NOT removed: dropping them would make small edits look larger.
 
 _TOKEN_RE = re.compile(r"[a-z]+")
 
 
 def normalize_tokens(text: str) -> list[str]:
-    """Tokenize for similarity: lowercase, drop digits / currency / punctuation
-    (so a changed dollar figure or year is not a change), keep only alphabetic
-    word tokens. Mirrors riskdiff._key's normalization intent, applied to the
-    WHOLE section rather than a 160-char prefix."""
+    """Lowercase alphabetic tokens only, so a changed dollar figure or year is not a change."""
     if not text:
         return []
     return _TOKEN_RE.findall(text.lower())
@@ -62,11 +41,8 @@ def normalize_tokens(text: str) -> list[str]:
 def cosine_similarity(current: str, prior: str) -> Optional[float]:
     """Bag-of-words cosine similarity in [0, 1] between two filing sections.
 
-    Returns None when either side normalizes to no tokens (no baseline to
-    compare against — never fabricate a "0.0 = totally rewritten" from missing
-    text). Identical normalized text -> 1.0; disjoint vocabularies -> 0.0.
-    Whitespace / number / caption-number churn cancels out via normalize_tokens,
-    so it does NOT depress the score (the boilerplate false-positive guard)."""
+    Returns None when either side has no tokens: missing text must not read as
+    "0.0 = totally rewritten". Identical text -> 1.0; disjoint vocabularies -> 0.0."""
     a = Counter(normalize_tokens(current))
     b = Counter(normalize_tokens(prior))
     if not a or not b:
@@ -84,14 +60,8 @@ def cosine_similarity(current: str, prior: str) -> Optional[float]:
 def combined_similarity(
     cur_risk: str, prior_risk: str, cur_mda: str, prior_mda: str
 ) -> Optional[float]:
-    """Overall YoY similarity across Item 1A (risk factors) + MD&A — the two
-    sections the Lazy-Prices paper found carry the drift.
-
-    Pools the normalized tokens of both sections into one bag per year and takes
-    a single cosine, so the score is length-weighted toward the bigger section
-    (a wholesale MD&A rewrite is not diluted by an unchanged risk section).
-    Returns None only when BOTH sections lack a usable baseline; a section that
-    is empty on one side simply contributes no tokens for that side."""
+    """YoY similarity over Item 1A + MD&A pooled into one bag per year, so the larger
+    section weighs more. Returns None only when BOTH sections lack a baseline."""
     cur = (cur_risk or "") + "\n" + (cur_mda or "")
     prior = (prior_risk or "") + "\n" + (prior_mda or "")
     return cosine_similarity(cur, prior)

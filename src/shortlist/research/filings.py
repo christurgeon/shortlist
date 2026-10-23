@@ -66,17 +66,13 @@ _OVER_CAPTURE_FRACTION = 0.50
 
 
 def _note_over_capture(text: str, tenq: Any, ticker: str) -> None:
-    """stderr note when the extracted MD&A span is >= half the whole 10-Q — the
-    mirror image of the INTC gap: a NEIGHBOURING item's heading went undetected, so
-    this span swallowed it. Measured 2026-08-14 over 35 large caps: JPM 0.846, MCD
-    0.644, PFE 0.566 against a median 0.230 and p90 0.397, so the threshold sits in
-    a clean gap.
+    """stderr note when the extracted MD&A span is >= half the whole 10-Q: a NEIGHBOURING
+    item's heading went undetected, so the span swallowed it.
 
-    OBSERVABILITY ONLY — it must never change the returned text. All three
-    over-capturing spans start at a genuine MD&A heading, and the prefix surviving
-    `research.max_chars.tenq_mda` (40,000) is genuine MD&A prose, so the model sees
-    correct content. Whole-document length is neither cheap nor guaranteed, so an
-    absent or raising `doc` skips the check silently rather than failing."""
+    OBSERVABILITY ONLY: it must never change the returned text. Over-captured spans
+    still start at a genuine MD&A heading, and the prefix kept by
+    `research.max_chars.tenq_mda` is genuine MD&A prose. An absent or raising `doc`
+    skips the check silently."""
     try:
         whole = len(tenq.doc.text())
         if not whole:
@@ -92,31 +88,27 @@ def _note_over_capture(text: str, tenq: Any, ticker: str) -> None:
 
 def _tenq_mda(tenq: Any, ticker: str = "") -> str:
     """10-Q MD&A is Part I, Item 2 — NOT a `management_discussion` attribute (that
-    exists only on TenK). Returns "" on any extraction failure, and says so on
-    stderr: an empty span is a systematic edgartools heading-detection failure, not
-    "this filer has no MD&A", and looking identical to no-data is how INTC's silent
-    0-char gap (1 of 35 large caps, measured 2026-08-14) went unnoticed.
+    exists only on TenK). Returns "" on any extraction failure and says so on stderr: an
+    empty span is an edgartools heading-detection failure, not "this filer has no
+    MD&A", and must not look like no-data.
 
-    TWO MEASURED NON-FIXES, both of which look obvious (`tests/research/test_filings.py`):
-    - `tenq["Item 2"]` is NOT a fallback. On INTC it returns 2,459 chars of *Part II*
-      Item 2 (share repurchases) — wrong content silently labelled MD&A.
-    - `tenq.items` is NOT a guard. XOM/TSLA/MCD list misleading entries yet extract
-      69,820 / 49,879 / 122,045 chars, so an `items` check reports phantom failures.
-    Recovering the missing span (slicing the containing Part I Item 1 blob at an MD&A
-    heading) is deliberately deferred — fitted to n=1, and it would inject wrong text
-    into the grounding haystack."""
+    TWO NON-FIXES that look obvious (`tests/research/test_filings.py`):
+    - `tenq["Item 2"]` is NOT a fallback: it can return *Part II* Item 2 (share
+      repurchases), wrong content labelled MD&A.
+    - `tenq.items` is NOT a guard: it lists misleading entries for filers whose MD&A
+      extracts fine, so it reports phantom failures.
+    Recovering the missing span is deferred: it would inject wrong text into the
+    grounding haystack. See docs/audits/2026-08-14-tenq-mda-recovery-kill.md."""
     try:
         getter = getattr(tenq, "get_item_with_part", None)
-        # markdown=True is passed for the legacy-fallback path only; on the current
-        # parser path get_item_with_part returns Section.text() and ignores it.
+        # markdown=True applies to the legacy-fallback path only.
         value = getter("Part I", "Item 2", markdown=True) if getter is not None else None
         text = str(value) if value else ""
     except Exception as e:
         log_abstain("10-Q MD&A extraction failed", ticker or "?", e)
         return ""
     if not text:
-        # Not an exception, so log_abstain (which formats one) does not fit; keep the
-        # same `research: <action> for <ticker>` shape it prints.
+        # Not an exception, so log_abstain does not fit; keep its message shape.
         print(f"research: 10-Q MD&A empty (Part I Item 2 not detected) for "
               f"{ticker or '?'}", file=sys.stderr)
         return ""
@@ -126,22 +118,16 @@ def _tenq_mda(tenq: Any, ticker: str = "") -> str:
 
 def _tenq_risk_factors(tenq: Any, ticker: str = "") -> str:
     """10-Q risk factors are Part II Item 1A — NOT a `risk_factors` attribute (that
-    exists only on TenK; `TenQ.risk_factors` is always "", verified live 10/10 names).
-    Mirrors `_tenq_mda`'s extraction pattern: same getter, same never-raises contract, "" on any failure or missing section. Used only by
+    exists only on TenK; `TenQ.risk_factors` is always ""). Same getter and never-raises
+    contract as `_tenq_mda`: "" on any failure or missing section. Used only by
     `filing_text_change`'s 10-Q arm (`_filing_sections`).
 
-    RETURNS THE RAW SECTION, AND THAT IS A KNOWN WEAKNESS OF THE METRIC — do not read
-    `_tenq_added_risks` above as precedent that this is safe. That function reads the
-    same Part II Item 1A but DIFFS it against the 10-K Item 1A and caps it at 4,000
-    chars, which is exactly what makes it safe; nothing here does either.
-    `textsim.combined_similarity` pools both sections into ONE bag, so the cosine is
-    length-weighted — and 4 filers in 10 restate EVERY risk factor quarterly (measured
-    2026-08-14: GILD 84K, NVDA 43K, AAPL 19K chars). For those names this near-identical
-    section dominates the pool and drags the similarity toward 1.0, diluting exactly the
-    wholesale-MD&A-rewrite signal `combined_similarity`'s docstring says the weighting
-    exists to protect. Blast radius today is nil — `filing_text_change` has no
-    production caller — but ANY producer wired to it must fix this first (route through
-    `riskdiff.added_risk_blocks`, or cap), not inherit it."""
+    RETURNS THE RAW SECTION, A KNOWN WEAKNESS OF THE METRIC. Unlike `_tenq_added_risks`,
+    it neither DIFFS against the 10-K Item 1A nor caps. Many filers restate every risk
+    factor quarterly, so that near-identical section dominates the pooled bag in
+    `textsim.combined_similarity` and drags the similarity toward 1.0. `filing_text_change`
+    has no production caller; any producer wired to it must fix this first (route
+    through `riskdiff.added_risk_blocks`, or cap)."""
     try:
         getter = getattr(tenq, "get_item_with_part", None)
         value = getter("Part II", "Item 1A", markdown=True) if getter is not None else None
@@ -155,8 +141,8 @@ _TENQ_RISK_DEFAULTS = {"enabled": True, "max_blocks": 4, "max_chars": 4000}
 
 
 def _tenq_risk_cfg(config: Optional[dict]) -> dict:
-    """Own config block, deliberately NOT `research.risk_diff`: that one tunes the
-    YoY 10-K diff, which feeds a different prompt section. Absent block ships ON."""
+    """Own config block, NOT `research.risk_diff`, which tunes the YoY 10-K diff.
+    An absent block ships ON."""
     blk = ((config or {}).get("research") or {}).get("tenq_risk_update") or {}
     return {**_TENQ_RISK_DEFAULTS, **blk}
 
@@ -165,21 +151,15 @@ def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict])
     """Risk-factor blocks in the 10-Q's Part II Item 1A that are NOT already in the
     10-K's Item 1A — the quarter's *changes*. Returns "" on any failure.
 
-    A DIFF, not the raw section, and that is load-bearing. Measured live on 10 large
-    caps (2026-08-14): raw Part II Item 1A spans 204-84,281 chars because four of ten
-    restate every risk factor quarterly (GILD 84K, NVDA 43K, AAPL 19K, DIS 17.6K) —
-    text the 10-K Item 1A in the same prompt already carries. Feeding it raw would
-    duplicate up to 84K chars against a `timeout_s` ceiling a heavy filer already
-    approaches. Diffing collapses all ten to <3K while keeping the genuinely new
-    blocks (AAPL's new AI-compute-capacity risk, DIS's IP-litigation risk).
+    A DIFF, not the raw section, and that is load-bearing: some filers restate every risk
+    factor quarterly, so the raw section can run to tens of thousands of chars that the
+    10-K Item 1A in the same prompt already carries. Diffing keeps only the new blocks.
 
-    No boilerplate filter: NVDA's section OPENS with "there have been no material
-    changes..." and then lists 2,949 chars of new risk factors, so a regex on that
-    sentence would drop real content. The diff already collapses a true boilerplate
-    filer to ~200 chars.
+    No boilerplate filter: a section can open with "no material changes..." and still
+    list new risk factors, so a regex on that sentence would drop real content.
 
-    `tenk_risk_factors` is the UNCAPPED 10-K section (cap_bundle runs later) — a
-    fuller baseline can only reduce false 'new' blocks."""
+    `tenk_risk_factors` is the UNCAPPED 10-K section (cap_bundle runs later); a fuller
+    baseline can only reduce false 'new' blocks."""
     cfg = _tenq_risk_cfg(config)
     if not cfg.get("enabled", True):
         return ""
@@ -187,15 +167,13 @@ def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict])
         getter = getattr(tenq, "get_item_with_part", None)
         if getter is None:
             return ""
-        # markdown=True mirrors _tenq_mda: honoured on the legacy-fallback path,
-        # ignored by the current parser (which returns Section.text()).
+        # markdown=True mirrors _tenq_mda.
         value = getter("Part II", "Item 1A", markdown=True)
         current = str(value) if value else ""
     except Exception:
         return ""
     if not current or not tenk_risk_factors:
-        # No baseline => abstain. Emitting the raw section here is exactly the
-        # 84K-char dump this function exists to prevent.
+        # No baseline => abstain. The raw section is the dump this function prevents.
         return ""
     return riskdiff.added_risk_blocks(current, tenk_risk_factors, {"research": {"risk_diff": {
         k: v for k, v in cfg.items() if k != "enabled"}}})
@@ -208,35 +186,21 @@ def _fiscal_year(filing: Any) -> Optional[int]:
 
 
 def _similarity_enabled(config: Optional[dict]) -> bool:
-    """Lazy-Prices similarity ships ON. Note this is the one research key whose
-    ABSENT block is not a no-op — a producer nobody switches on is exactly how
-    this signal sat dead with a fully-built consumer (`docs/audits/README.md` → Lazy Prices)."""
+    """Similarity ships ON: an ABSENT block is not a no-op (see `docs/audits/README.md`,
+    Lazy Prices)."""
     block = ((config or {}).get("research") or {}).get("text_similarity") or {}
     return bool(block.get("enabled", True))
 
 
 def _prior_year_sections(ticker: str, company_factory=None, filings=None) -> tuple[str, str]:
-    """(risk_factors, mda) from the prior fiscal year's 10-K — the diff baseline
-    AND the Lazy-Prices baseline, taken from ONE already-parsed filing object so
-    the similarity costs no extra network request. Excludes 10-K/A amendments and
-    selects by fiscal year (not 'second most recent'). ("", "") if there is no
-    genuinely-prior annual report. Never raises.
+    """(risk_factors, mda) from the prior fiscal year's 10-K: the diff baseline and the
+    similarity baseline, from ONE parsed filing. Excludes 10-K/A amendments and selects
+    by fiscal year, not 'second most recent'. ("", "") if there is no genuinely-prior
+    annual report. Never raises.
 
-    `company_factory` exists ONLY so tests can inject a fake without patching
-    `sys.modules`; production always takes the lazy `edgar` import below (the
-    [edgar] extra is optional, so it must not be imported at module scope).
-
-    `filings` lets a caller that has ALREADY fetched the 10-K filings index (e.g.
-    `fetch_bundle`, via `_fetch_10k_parsed`'s 4th return value) hand it in directly
-    so this function costs no second network request. None (the default) preserves
-    the original fetch-it-here behavior.
-
-    BEHAVIOUR CHANGE vs `_prior_year_risk_factors`: the `edgar` import now sits
-    INSIDE the try, so a missing [edgar] extra degrades to ("", "") + a stderr
-    line instead of raising ImportError. That is unreachable in practice —
-    `_fetch_10k_parsed` runs first in `fetch_bundle` and imports `edgar` at its
-    top — and
-    it matches this function's documented never-raises contract."""
+    `company_factory` lets tests inject a fake. The `edgar` import is lazy because the
+    [edgar] extra is optional. `filings` lets a caller pass an already-fetched 10-K
+    index to save a request; None fetches it here."""
     try:
         if filings is None:
             if company_factory is None:
@@ -310,25 +274,20 @@ def filing_text_change(
 ) -> Optional[dict]:
     """POINT-IN-TIME "Lazy Prices" similarity for `ticker`.
 
-    Compares the current same-`form` filing against the **immediately-prior**
-    same-type filing, restricted to those whose acceptance (filing) date is
-    `<= as_of` (an ISO 'YYYY-MM-DD' string; None == "now", live-screen path).
-    This is the look-ahead guard: in any backtest/replay the comparison NEVER
-    uses a filing dated after as_of, so a historical date is never compared
-    against a future (e.g. 2026) filing.
+    Compares the current same-`form` filing against the immediately-prior same-type
+    filing, using only filings dated `<= as_of` (ISO 'YYYY-MM-DD'; None == now). This is
+    the look-ahead guard for backtest and replay.
 
-    Returns a dict {similarity, current_accession, prior_accession,
-    current_date, prior_date} or None when there is no usable
-    current-and-prior pair (fewer than two filings at-or-before as_of, or no
-    extractable text). Never raises. Requires SEC_IDENTITY (the [edgar] extra).
+    Returns {similarity, current_accession, prior_accession, current_date, prior_date},
+    or None when there is no usable pair or no extractable text. Never raises.
+    Requires SEC_IDENTITY (the [edgar] extra).
     """
     from edgar import Company  # lazy: optional [edgar] extra
 
     require_identity(identity)
     try:
         filings = Company(ticker).get_filings(form=form)
-        # Exact-form only (drop /A amendments and adjacent forms), then restrict to
-        # filings available AT as_of (filing_date <= as_of). This is the PiT cut.
+        # Exact-form only, then filing_date <= as_of: the point-in-time cut.
         rows = [f for f in filings if str(getattr(f, "form", "")) == form]
         if as_of is not None:
             rows = [f for f in rows if _acceptance_date(f) and _acceptance_date(f) <= as_of]
@@ -349,26 +308,20 @@ def filing_text_change(
             "prior_date": _acceptance_date(prior),
         }
     except Exception as e:
-        # Never-raises contract: the similarity abstains to None — but say why
-        # on stderr so a systematic failure doesn't hide as "no filing pair".
+        # Abstain to None, but log why so a systematic failure is visible.
         log_abstain("filing_text_change failed", ticker, e)
         return None
 
 
 def _latest_exact_10k(filings: Any) -> Any:
     """The newest exact-form 10-K in a filings index, or None if it holds only
-    amendments. edgartools returns 10-K/A rows inside `get_filings(form="10-K")`,
-    and an amendment is usually a Part III patch carrying no Item 1/1A/7 — so
-    `.latest(1)` picked a document the brief cannot be built from. Two failure
-    shapes, both live: TSLA's 2026-04-30 10-K/A yields nothing and the brief
-    abstains with the misleading "no 10-K"; AMD's yields an MD&A but zero business
-    and zero risk-factors text, so `has_content()` passes and the brief is built on
-    a partial filing without saying so.
+    amendments. edgartools returns 10-K/A rows inside `get_filings(form="10-K")`, and an
+    amendment is usually a Part III patch with no Item 1/1A/7. `.latest(1)` would pick a
+    document the brief cannot be built from: either an abstain with a misleading "no
+    10-K", or a partial brief that passes `has_content()`.
 
-    Selecting by filing_date rather than index position matches
-    `_prior_year_sections` and `filing_text_change`, which already drop /A rows.
-    The cost of that choice: a genuine full-restatement amendment is ignored in
-    favour of the superseded original."""
+    Selects by filing_date, as `_prior_year_sections` and `filing_text_change` do. Cost:
+    a genuine full-restatement amendment is ignored for the superseded original."""
     rows = [f for f in filings if str(getattr(f, "form", "")) == "10-K"]
     if not rows:
         return None
@@ -382,26 +335,20 @@ def _fetch_10k_parsed(
     """(FilingText|None, parsed filing object|None, filing|None, filings index) — the
     shared core of fetch_10k.
 
-    Split out so `fetch_bundle` can read the statement notes off the SAME parsed
-    object the narrative sections came from. Re-deriving it would mean a second
-    `.obj()` parse of a multi-hundred-KB document per brief, for data already in
-    hand.
+    Split out so `fetch_bundle` reads the statement notes off the SAME parsed object,
+    avoiding a second `.obj()` parse.
 
-    The third element is the FILING, not the parsed object: `controls.detect` needs
-    the whole document's text and the parsed `TenK` exposes no text accessor. Item
-    9A alone is not a substitute — `part_ii_item_9a` returned 0 chars for 3 of 15
-    filers measured and missed HP's adverse conclusion outright.
+    The third element is the FILING, not the parsed object: `controls.detect` needs the
+    whole document text and `TenK` has no text accessor. Item 9A alone is not a
+    substitute; `part_ii_item_9a` can be empty.
 
-    The 4th element is the raw 10-K filings index (`Company(ticker).get_filings(
-    form="10-K")`), returned so `fetch_bundle` can hand it to `_prior_year_sections`
-    instead of that function re-fetching the same index from scratch — the fetch
-    itself, not just the `.obj()` parse, used to happen twice per brief."""
+    The 4th element is the raw 10-K filings index, returned so `fetch_bundle` can pass it
+    to `_prior_year_sections` and avoid a second fetch."""
     from edgar import Company  # lazy: optional [edgar] extra
 
     require_identity(identity)
     filings = Company(ticker).get_filings(form="10-K")
-    # `is None`, not truthiness: a falsy filing row must not fall through to the
-    # amendment this selection exists to avoid.
+    # `is None`, not truthiness: a falsy row must not fall through to an amendment.
     latest = _latest_exact_10k(filings)
     if latest is None:
         latest = filings.latest(1)      # amendment-only filer: nothing else to use
@@ -441,14 +388,11 @@ def _detect_controls(filing: Any, tenk_obj: Any, accession: str, ticker: str,
                      config: Optional[dict] = None):
     """The 10-K's adverse internal-control conclusion, or None. Never raises.
 
-    COSTS ~2 EXTRA SEC REQUESTS per brief (the filing index page + the document),
-    measured 2026-08-23 — `filing.text()` re-downloads rather than reusing what
-    `.obj()` parsed, and the parsed `TenK` exposes no text accessor. Bounded by the
-    same process-wide throttle as every other sec.gov call. The cheaper section-only
-    route was measured and rejected: `FilingText.combined()` alone fires on 2 of 7
-    known positives, and adding `part_ii_item_9a` still returns 0 chars for 3 of 15
-    filers. Skipped entirely when the block is disabled, so `enabled: false` costs
-    nothing at all."""
+    COSTS ~2 EXTRA SEC REQUESTS per brief: `filing.text()` re-downloads rather than
+    reusing what `.obj()` parsed. They go through the shared sec.gov throttle. A
+    section-only route was rejected because it misses known positives (see
+    docs/audits/2026-08-23-icfr-adverse-conclusion-detection.md). Skipped when the block
+    is disabled."""
     from . import controls as controls_mod
 
     cfg = controls_mod.config_block(config)
@@ -473,14 +417,12 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     degrade to "" on any failure (failure isolation)."""
     from edgar import Company  # lazy: optional [edgar] extra
 
-    # sets identity / raises if SEC_IDENTITY unset. Keeps the parsed object so the
-    # statement notes below cost no second parse.
+    # Sets identity; raises if SEC_IDENTITY is unset. Keeps the parsed object for the notes.
     tenk, tenk_obj, tenk_filing, tenk_filings = _fetch_10k_parsed(ticker, identity)
     if tenk is None:
         return None
 
-    # Debt & liquidity notes. Imported here, not at module scope: `notes` imports
-    # log_abstain back out of this module, matching the `eightk` cycle break.
+    # Imported here, not at module scope: `notes` imports log_abstain from this module.
     from . import notes as debtnotes
     ncfg = debtnotes.config_block(config)
     debt_notes = debtnotes.collect(tenk_obj, "10-K", tenk.accession, ticker, ncfg)
@@ -496,37 +438,29 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
             tenq_mda = _tenq_mda(qobj, ticker)
             tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
-            # KEEP LAST, and keep `tenq_acc` immediately above it. The `except`
-            # below resets the three 10-Q strings but NOT `debt_notes`, so this only
-            # stays correct because nothing can raise between the accession being
-            # assigned and the notes being appended. Insert a statement after this
-            # line and 10-Q notes can survive with a stale accession.
+            # KEEP LAST, right after `tenq_acc`. The `except` below resets the three
+            # 10-Q strings but NOT `debt_notes`, so nothing may raise between the
+            # accession assignment and this append.
             debt_notes += debtnotes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
     except Exception:
         tenq_mda, tenq_acc, tenq_added = "", "", ""
 
     prior_1a, prior_mda = _prior_year_sections(ticker, filings=tenk_filings)
     added = riskdiff.added_risk_blocks(tenk.risk_factors, prior_1a, config or {})
-    # Lazy-Prices YoY similarity from documents ALREADY in hand — no extra fetch.
     similarity = None
     if _similarity_enabled(config):
         similarity = textsim.combined_similarity(
             tenk.risk_factors, prior_1a, tenk.mda, prior_mda)
 
-    # Recent 8-K substance. Imported here, not at module scope: `eightk` imports
-    # log_abstain back out of this module, and its own contract is never-raises, so
-    # a dead SEC endpoint costs a bare label rather than the whole brief.
+    # Imported here, not at module scope: `eightk` imports log_abstain from this module.
     from . import eightk
     eightks = eightk.fetch_eightks(ticker, config)
 
     cache_key = f"{tenk.accession}+{tenq_acc}" if tenq_acc else tenk.accession
-    # 8-K accessions belong in the FILING half of the key: selection is deliberately
-    # independent of `filing_events` (that is the F1 fix), so `context_digest`'s event
-    # tuple cannot see an 8-K outside EdgarSource's 40-row index — exactly the JPM case
-    # the design was built around. Without this, a fresh earnings release only busts the
-    # brief via the `max_age_days` day bucket, i.e. up to 24h late. Sorted for
-    # determinism; empty list appends nothing, so a name with no qualifying 8-K keeps a
-    # byte-identical key.
+    # 8-K accessions belong in the FILING half of the key: selection is independent of
+    # `filing_events`, so `context_digest` cannot see an 8-K outside EdgarSource's index,
+    # and a fresh release would bust the brief only via the day bucket. Sorted for
+    # determinism; no 8-K appends nothing.
     for acc in sorted(e.accession for e in eightks if e.accession):
         cache_key += f"+{acc}"
     return FilingBundle(

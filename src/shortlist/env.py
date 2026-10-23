@@ -11,9 +11,8 @@ _SECRET_RE = re.compile(rf"((?:{'|'.join(_SECRET_PARAMS)})=)[^&\s]+", re.IGNOREC
 # Bare API tokens that may appear in CLI/subprocess output (not as URL params).
 _TOKEN_RE = re.compile(r"sk-ant-[A-Za-z0-9_-]+")
 
-# Telegram bot token embedded in a URL path: /bot<token>/... or /bot<token> at the
-# end of the string (an httpx error's str() can end right after the token, with no
-# trailing path segment — the old regex required one and left that case unredacted).
+# Telegram bot token in a URL path: /bot<token>/... or /bot<token> at end of string
+# (an httpx error's str() can end right after the token).
 _TELEGRAM_BOT_RE = re.compile(r"/bot[^/\s]+/?")
 
 
@@ -32,14 +31,11 @@ def redact_secrets(text: object) -> str:
 def load_env(path: Optional[str] = None) -> Optional[str]:
     """Load API keys from a .env file into the environment, if one exists.
 
-    Searches upward from the current working directory for a `.env` file (or
-    uses `path` if given). Real environment variables already set take
-    precedence — an explicit `export` always wins over the file, so secrets in
-    your shell are never silently overridden.
+    Searches upward from the current directory for `.env` (or uses `path`).
+    Variables already set in the environment win over the file.
 
-    `python-dotenv` is imported lazily and treated as optional: if it isn't
-    installed, this is a no-op and keys must come from the environment directly.
-    Returns the path of the .env file that was loaded, or None.
+    `python-dotenv` is optional: if missing, this is a no-op.
+    Returns the path of the loaded file, or None.
     """
     try:
         from dotenv import find_dotenv, load_dotenv

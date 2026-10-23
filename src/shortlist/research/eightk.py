@@ -4,23 +4,18 @@ An 8-K IS filing text, so unlike the proxy / reverse-DCF / similarity context
 lines this enters the grounding haystack — but as its own labelled segment, so
 "verified" never silently widens from "the 10-K" to "a furnished press release".
 
-Every rule below is traceable to a named filing in the 60-filing probe
-(`docs/audits/scripts/probe_8k.py`); the design + evidence is
-`docs/audits/2026-08-13-eightk-text-in-deep-design.md`. Two consequences of that
-measurement drive the shape of this module:
+Design and evidence: `docs/audits/2026-08-13-eightk-text-in-deep-design.md`
+(probe: `docs/audits/scripts/probe_8k.py`). Two rules shape this module:
 
-- Selection does NOT read `m.filing_events`. `EdgarSource._index_limit = 40`
-  truncates a MIXED-form index before the 90-day filter — measured on JPM, 35 of
-  40 rows are SCHEDULE 13G/A, collapsing the window to 26 days and dropping its
-  Item 2.02 earnings release entirely. A dedicated `form="8-K"` index call is both
-  the fix and one fewer dependency.
-- Extraction is value-aware and body-aware. JPM 2026-06-25 files an EX-99.1 of
-  length 0; NKE 2026-06-23 puts its officer-change narrative in the 17,522-char
-  body while the EX-99.1 release is 5,114.
+- Selection does NOT read `m.filing_events`. `EdgarSource._index_limit` truncates a
+  MIXED-form index before the 90-day filter, so a heavy 13G/A filer loses its Item 2.02
+  release. A dedicated `form="8-K"` index call fixes that.
+- Extraction is value-aware and body-aware: some exhibits are empty, and some filings
+  put the event narrative in the body, not the exhibit.
 
-Never raises: any fetch/parse failure degrades that filing (or the whole ticker)
-to today's bare `filing_events` label via `log_abstain`. No throttle of its own —
-it goes through edgartools like the rest of the research layer (CLAUDE.md).
+Never raises: any fetch or parse failure degrades that filing (or the ticker) to the
+bare `filing_events` label via `log_abstain`. No throttle of its own: it goes through
+edgartools like the rest of the research layer.
 """
 from __future__ import annotations
 
@@ -45,8 +40,7 @@ _DEFAULTS = {
 # it fails the `_norm` substring check and is correctly marked unverified.
 _ELISION = " […] "
 
-# Outlook/guidance language, verbatim from the probe that measured F4 (23 releases
-# scanned; JPM at 0.45 and CVX at 0.41 of the document sit past any sane prefix).
+# Outlook/guidance language; in some releases it sits far past any sane prefix.
 _GUIDANCE_RE = re.compile(r"outlook|guidance|we expect|expects? (?:to|revenue|full)", re.I)
 
 _ITEM_CODE_RE = re.compile(r"\d+\.\d+")
@@ -65,16 +59,14 @@ def config_block(config: Optional[dict]) -> dict:
 
 
 def _norm_ws(text: Any) -> str:
-    """Collapse whitespace on ingest. Recovers 47-85% of exhibit bytes (§2.3) and
-    costs nothing: `assess._norm` already collapses whitespace on both sides at
+    """Collapse whitespace on ingest. Safe: `assess._norm` collapses it on both sides at
     verification, so a quote that matched before still matches."""
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
 def _codes(items: Any) -> list[str]:
-    """The `d.dd` item codes of a filing, in document order. Measured populated and
-    uniformly a comma-separated str in 60/60 probe rows, but parsed by regex so a
-    list or a None cannot raise."""
+    """The `d.dd` item codes of a filing, in document order. Parsed by regex so a list
+    or None cannot raise."""
     return _ITEM_CODE_RE.findall(str(items or ""))
 
 
@@ -88,21 +80,19 @@ def _priority(codes: list[str], priority: list[str]) -> tuple[int, list[str]]:
 
 def _ex99_rank(document_type: str) -> tuple[int, ...]:
     """Sort key over an EX-99 attachment's numbering: EX-99 -> (), EX-99.1 -> (1,),
-    EX-99.2 -> (2,). The lowest sorts first, which picks JPM's 38K-char release over
-    its 115K-char financial supplement (EX-99.2) and sorts LLY's bare `EX-99` first."""
+    EX-99.2 -> (2,). The lowest sorts first: the release, not the financial supplement."""
     tail = document_type.upper().replace("EX-99", "", 1)
     return tuple(int(n) for n in re.findall(r"\d+", tail))
 
 
 def _exhibit_text(filing: Any) -> tuple[str, str]:
     """(document_type, normalized text) of the lowest-numbered EX-99 attachment with
-    NON-EMPTY text, or ("", ""). Value-aware because empty exhibits exist — JPM
-    2026-06-25 files an EX-99.1 of length 0 (F3), the same lesson `_edgar_facts.py`
-    already encodes. Each attachment is failure-isolated: edgartools parses
-    lazily, so one unreadable exhibit must not blank the others.
+    NON-EMPTY text, or ("", ""). Value-aware because empty exhibits exist. Each
+    attachment is failure-isolated: edgartools parses lazily, so one unreadable exhibit
+    must not blank the others.
 
     Reads `attachments`, not `exhibits`: edgartools' `exhibits` drops every document
-    sequenced after an XBRL file (CALM files EX-101 before its EX-99.1)."""
+    sequenced after an XBRL file."""
     candidates = []
     for att in (getattr(filing, "attachments", None) or []):
         dtype = str(getattr(att, "document_type", "") or "")
@@ -130,12 +120,9 @@ def _body_text(filing: Any) -> str:
 def _strip_cover(body: str) -> str:
     """Drop the SEC cover page, which precedes the substance of every 8-K body.
 
-    MEASURED FAILURE this fixes: NKE's 2026-08-10 Item 5.02 body is 4,023 normalized
-    chars and the CFO appointment sits at char 2,672 — so a prefix slice fed the model
-    2,672 chars of "Securities and Exchange Commission / One Bowerman Drive"
-    letterhead and dropped the event. A prefix slice is only defensible on text whose
-    front matter is material (10-K risk factors are ordered worst-first); an 8-K body
-    is the opposite, so the cover has to go before the cap applies.
+    A prefix slice is only defensible on text whose front matter is material (10-K risk
+    factors are ordered worst-first). An 8-K body is the opposite: the cover letterhead
+    can fill the whole cap and drop the event, so strip it before the cap applies.
 
     Cuts at the first `Item d.dd` heading. Falls back to the untouched body when there
     is no heading or it sits implausibly early (<200 chars in, i.e. a match inside the
@@ -147,12 +134,10 @@ def _strip_cover(body: str) -> str:
 def _allocate(lengths: list[int], total: int, per_filing: int) -> list[int]:
     """Per-filing char budgets, in selection (priority) order.
 
-    MEASURED FAILURE this fixes: a priority-ORDERED greedy walk let two routine NKE
-    earnings releases take 6,000 + 3,400 of 10,000, leaving 600 for the Item 5.02 CFO
-    appointment — the one materially new event in the window. Item priority ranks
-    which filings are WORTH reading; it must not also decide which one gets to be
-    read. Equal shares first, then unused share (a filing shorter than its slice)
-    redistributed in priority order so nothing is wasted."""
+    A priority-ORDERED greedy walk lets routine earnings releases starve a short,
+    material filing. Item priority ranks which filings are worth reading; it must not
+    also decide which gets read. Equal shares first, then unused share redistributed
+    in priority order."""
     if not lengths:
         return []
     share = min(per_filing, total // len(lengths))
@@ -180,13 +165,11 @@ def _cap(text: str, cap: int, window: int) -> str:
     """Prefix-trim to `cap`, splicing in a `window`-char excerpt around the first
     outlook/guidance hit that the prefix WOULD LOSE, marked `[…]`.
 
-    F4: 10-K risk factors are ordered worst-first, which is what justifies the plain
-    prefix slice in `cap_sections`; earnings releases are not — 2 of 23 measured
-    releases place an "Outlook" section AFTER the financial tables (JPM at 0.45,
-    CVX at 0.41 of the document). This is the one heuristic in the design and the
-    weakest part: it is a TRADE, not a free add, since the window displaces prefix
-    characters inside the same cap. Absent a lost hit the output is exactly the
-    plain prefix, so the splice can only fire where the prefix already failed."""
+    10-K risk factors are ordered worst-first, which justifies the plain prefix slice in
+    `cap_sections`; earnings releases are not, and some place "Outlook" after the
+    financial tables. This is the weakest heuristic in the design: a TRADE, since the
+    window displaces prefix characters inside the same cap. Absent a lost hit the output
+    is the plain prefix."""
     if cap <= 0:
         return ""
     if len(text) <= cap:
@@ -203,12 +186,10 @@ def _cap(text: str, cap: int, window: int) -> str:
 def extract(filing: Any, hits: list[str], cap: int, window: int) -> tuple[str, list[str]]:
     """(text, source parts) for ONE selected 8-K, capped to `cap` normalized chars.
 
-    The body is included unless the filing's priority items are exactly {2.02}: a
-    pure earnings release has a cover-boilerplate body (AAPL 2026-07-30, 4,607
-    chars of it), but NKE 2026-06-23 is `2.02,5.02,7.01` and its officer-change
-    narrative exists ONLY in the body (F2). With no usable EX-99 the body is all
-    there is anyway (CVX 2026-04-09 files a 2.02 with no exhibit at all; XOM
-    2026-07-01 carries EX-3/EX-4 only)."""
+    The body is included unless the filing's priority items are exactly {2.02}: a pure
+    earnings release has a boilerplate body, but a filing that also carries e.g. Item
+    5.02 may hold its narrative ONLY in the body. With no usable EX-99 the body is all
+    there is."""
     text, parts = extract_raw(filing, hits)
     return (_cap(text, cap, window) if text else ""), parts
 
@@ -293,10 +274,8 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
         return []
 
     window = int(cfg["guidance_window_chars"])
-    # Extract every selected filing FIRST, then size the budgets against what each
-    # one actually holds. Fetching before allocating costs nothing extra (the
-    # documents are already being downloaded) and is what lets `_allocate` protect a
-    # short, material filing from a long routine one.
+    # Extract first, then size budgets against what each filing holds, so `_allocate`
+    # can protect a short, material filing from a long routine one.
     raw: list[tuple[Any, list[str], list[str], str, list[str]]] = []
     for filing, codes, hits in selected:
         try:

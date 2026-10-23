@@ -29,12 +29,10 @@ def partition_format(tickers: Iterable[str]) -> tuple[list[str], list[str]]:
 
 
 def no_data(card) -> bool:
-    """True iff no source returned anything for this symbol: every sub-score is
-    None AND market_cap is None. A real-but-FMP-gated symbol still gets a Finnhub
-    market_cap, so this cleanly separates 'unknown ticker' from 'thin/gated'.
+    """True iff every sub-score and market_cap are None. A real but FMP-gated symbol
+    still gets a Finnhub market_cap, which separates 'unknown ticker' from 'thin/gated'.
 
-    opportunity is omitted deliberately: it is display-only max(momentum, value)
-    and is never independently non-None when both legs are None.
+    opportunity is omitted: it is max(momentum, value), so it is never non-None alone.
     """
     subs = [card.quality, card.moat, card.growth, card.momentum,
             card.value, card.insider, getattr(card, "risk", None)]

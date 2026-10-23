@@ -1,15 +1,12 @@
 """DEF 14A proxy statement → compensation & governance research context line.
 
-A research-only, prompt-only context line (NEVER the grounding haystack — a
-computed/interpretive proxy claim must not pass quote-verification as a filing
-fact; the reverse_dcf / gov_contracts discipline). Not scored, not gated, no flag.
+A research-only, prompt-only context line (NEVER the grounding haystack: an
+interpretive claim must not pass quote-verification as a filing fact). Not scored,
+not gated, no flag.
 
-The proxy's reliable signal is STRUCTURED XBRL data (Item 402(v) "Pay versus
-Performance", mandatory since FY2023), not narrative — there is no clean
-related-party / CD&A extractor, so v1 reads the structured fields edgartools'
-`ProxyStatement` exposes and renders a curated, evidence-framed line. Fetched in
-the research layer per deep-dive (NOT on every screen's snapshot — the heavy
-per-ticker fetch is deliberately kept out of the harness).
+The reliable signal is STRUCTURED XBRL data (Item 402(v) "Pay versus Performance"),
+not narrative, so this reads the structured fields edgartools' `ProxyStatement` exposes.
+Fetched per deep dive, not on every screen: the heavy fetch stays out of the harness.
 """
 from __future__ import annotations
 
@@ -44,9 +41,8 @@ class ProxyFacts:
 
     @property
     def cps(self) -> Optional[float]:
-        """CEO-to-average-NEO pay multiple = CEO total comp / average-NEO total comp — a
-        pay-concentration proxy related to the Bebchuk-Cremers-Peyer CEO pay slice (which
-        uses sum-of-top-5; this is the simpler CEO/avg-NEO ratio). None if either is absent/zero."""
+        """CEO total comp / average-NEO total comp, a pay-concentration proxy. None if
+        either is absent or zero."""
         if self.peo_total_comp and self.neo_avg_total_comp and self.neo_avg_total_comp > 0:
             return self.peo_total_comp / self.neo_avg_total_comp
         return None

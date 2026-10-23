@@ -12,30 +12,25 @@ Feed, guards and every constant below: docs/audits/2026-08-24-options-surface-de
 
 A SINGLE FIRM'S NUMBER IS UNINTERPRETABLE, SO EVERY ITEM CARRIES A REFERENCE
 ---------------------------------------------------------------------------
-This is the trap that killed the Lazy-Prices cosine (`docs/audits/README.md` → Lazy
-Prices: "a single-firm absolute cosine is uninterpretable"). A skew of -4.2 vol points and an
-implied/realized ratio of 1.75 mean nothing on their own, so the line always prints the
-measured large-cap cross-section beside them, with its `n` and its date. Both references
-are REGIME-DEPENDENT single-day cross-sections — re-measure with
-`docs/audits/scripts/probe_cboe_surface.py --with-realized` and treat one older than
+This is the trap that killed the Lazy-Prices cosine (`docs/audits/README.md`). A skew or
+an implied/realized ratio means nothing alone, so the line prints the large-cap
+cross-section beside it, with its `n` and date. The references are single-day,
+REGIME-DEPENDENT cross-sections: re-measure with
+`docs/audits/scripts/probe_cboe_surface.py --with-realized`, and treat one older than
 ~6 months as indicative only.
 
 DO NOT ADD THE VARIANCE-RISK-PREMIUM CAVEAT BACK
 ------------------------------------------------
-The textbook line — "option prices embed a risk premium, so implied exceeds realized" —
-was in an early draft of this module's rendered text. It is MEASURED FALSE on the
-committed cross-section: the median IV30/realized is 0.93 and 60 of 80 large caps price
-implied UNDER realized (50 of 80 on a 21-day denominator, 71 of 80 on a 63-day, so the
-direction is not an artifact of one window). Print the reference, never the prior.
+"Option prices embed a risk premium, so implied exceeds realized" is MEASURED FALSE on
+the committed cross-section: the median IV30/realized is below 1.0 in every window
+tried. Print the reference, never the prior.
 
 WHY THE REALIZED DENOMINATOR IS THE 252-DAY FIELD AND NOT A 30-DAY ONE
 ----------------------------------------------------------------------
-Matching a 30-day implied vol to a 30-day realized vol looks like the horizon-correct
-choice and is not: a trailing 21 trading days can contain an earnings reaction while the
-forward 30 days contains none, which is a horizon mismatch wearing the right label. The
-252-day window spans four earnings cycles and is correspondingly tighter across the
-cross-section (0.73-1.36 against 0.43-1.61). So this module uses the `realized_vol` the
-Yahoo source already computes and adds no field.
+A trailing 21-day realized vol can contain an earnings reaction while the forward 30
+days contains none: a horizon mismatch under the right label. The 252-day window spans
+four earnings cycles and is tighter across the cross-section. This module uses the
+`realized_vol` the Yahoo source already computes.
 """
 from __future__ import annotations
 
@@ -47,24 +42,19 @@ from typing import Any, Optional
 # CBOE's delayed-quote chain. Keyless, no signup. One request per deep dive.
 CHAIN_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{}.json"
 
-# Large-cap 25-delta skew (put IV - call IV, volatility points), n=80, quotes as of
-# the 2026-08-21 close. 23 of 80 were negative (calls bid over puts).
+# Large-cap 25-delta skew (put IV - call IV, volatility points).
 SKEW_REFERENCE = {"n": 80, "as_of": "2026-08-21",
                   "p10": -0.9, "median": 0.9, "p90": 3.0}
-# Large-cap IV30 / realized-vol(252d), same universe and date. The median below 1.0 is
-# the measurement that retired the variance-risk-premium caveat — see the docstring.
+# Large-cap IV30 / realized-vol(252d), same universe and date. See the docstring.
 IV_RV_REFERENCE = {"n": 80, "as_of": "2026-08-21",
                    "p10": 0.83, "median": 0.93, "p90": 1.07}
 
-# The reference expiry for skew: the listed expiry nearest this many days out. Skew is
-# a term-structure-sensitive quantity, so it is only comparable against the reference
-# when measured at a comparable tenor.
+# Skew reference expiry: the listed expiry nearest this many days out. Skew depends on
+# tenor, so only a comparable tenor is comparable to the reference.
 _SKEW_TARGET_DTE = 30
 _DELTA_TARGET = 0.25
 _ATM_DELTA = 0.50
-# Cap on retained expiries. The chain carries up to 24 for a large cap; the earnings
-# selection never looks past a few months, and an unbounded list would put a large
-# object on a research object for no gain.
+# Cap on retained expiries; the earnings selection never looks past a few months.
 _MAX_EXPIRIES = 16
 
 
@@ -92,9 +82,8 @@ class OptionsSurface:
 
     def stale_days(self, today: Optional[datetime.date] = None) -> Optional[int]:
         """Age of the QUOTES, not of the file. CBOE's file-level `timestamp` moves when
-        it regenerates the JSON and is not a freshness signal: on one probe GE's file
-        was stamped 2026-08-22 and WFC's 2026-08-24 while both carried 2026-08-21
-        quotes. `last_trade_time` is the only honest anchor."""
+        it regenerates the JSON and is not a freshness signal. `last_trade_time` is the
+        only honest anchor."""
         if not self.quote_time:
             return None
         try:
@@ -133,11 +122,9 @@ def _pick(rows: list[dict], target: float, tolerance: float) -> Optional[dict]:
     """The contract nearest `target` delta, or None when even the nearest misses by
     more than `tolerance`.
 
-    Rejecting on the ACHIEVED delta is the guard that matters, and it is strictly better
-    than requiring a minimum contract count: RES produced a 77-volatility-point skew
-    from a put at delta -0.888 against a call at 0.869, because only two or three
-    contracts per side carried usable quotes and "nearest to 0.25" landed wherever it
-    could. A count would have passed that chain; this does not."""
+    Rejecting on the ACHIEVED delta is the guard, and it beats a minimum contract count:
+    a sparse chain passes a count while "nearest to 0.25" lands on a deep in-the-money
+    contract and yields a nonsense skew."""
     scored = []
     for o in rows:
         delta = _num(o.get("delta"))
@@ -187,9 +174,7 @@ def _build_surface(payload: dict, today: datetime.date,
             expiry, right, _strike = _parse_osi(str(o.get("option") or ""), root)
         except (ValueError, IndexError):
             continue
-        # The file RETAINS expired contracts — 21 of 80 large-cap chains carried them,
-        # up to 260 on one name. Reading them produced a nonsense 82% implied move
-        # before this filter existed.
+        # The file retains expired contracts; reading them gives a nonsense implied move.
         if expiry < today:
             continue
         sides = by_expiry.setdefault(expiry, {"C": [], "P": []})
@@ -251,17 +236,15 @@ def select_earnings_expiry(expiries: list, days_to_earnings: Optional[int],
                            cfg: Optional[dict]) -> Optional[dict]:
     """The expiry whose straddle prices the next earnings print, or None to abstain.
 
-    THE GUARD THIS EXISTS FOR. The vendor earnings calendar revises a still-future date
-    routinely: 14 revisions across 42 tickers in ~2 months, median 7 days and max 8
-    (CSCO oscillated between 2026-08-11 and 2026-08-19 four times). If the date is
-    revised LATER after we pick the first expiry following it, that expiry now falls
-    BEFORE the print — so the straddle prices no earnings event at all while the line
-    says it prices one. A silent wrong answer is worse than an abstention.
+    THE GUARD THIS EXISTS FOR. The vendor calendar revises a still-future date. If it is
+    revised LATER after we pick the first expiry following it, that expiry falls BEFORE
+    the print and prices no earnings event while the line says it does. A silent wrong
+    answer is worse than an abstention.
 
     So the window opens at `days_to_earnings + earnings_date_uncertainty_days` (the
-    measured maximum revision) rather than at the predicted date itself, and closes at
-    `max_earnings_expiry_gap_days` beyond it, past which the straddle prices the event
-    plus weeks of ordinary drift and overstates it."""
+    maximum observed revision), not at the predicted date. It closes at
+    `max_earnings_expiry_gap_days` beyond that, past which the straddle overstates the
+    event with ordinary drift. Evidence: docs/audits/2026-08-24-options-surface-design.md."""
     if days_to_earnings is None or not expiries:
         return None
     cfg = cfg or {}
@@ -276,12 +259,9 @@ def select_earnings_expiry(expiries: list, days_to_earnings: Optional[int],
 def earnings_buffer_days(days_to_earnings: int, cfg: dict) -> int:
     """How far past the predicted date the expiry must sit — proximity-aware.
 
-    The date FIRMS UP as the print approaches. Across the 14 observed revisions, none
-    happened with fewer than 12 days to go (lead times ran 12-36 days). Applying the
-    full buffer regardless would skip the weekly expiry that actually straddles a print
-    two days away, which is the case the reader cares about most, so inside
-    `earnings_date_firm_within_days` (default 7, comfortably below the measured minimum
-    lead of 12) the predicted date is taken at face value."""
+    The date firms up as the print approaches. The full buffer would skip the weekly
+    expiry that straddles a print two days away, so inside
+    `earnings_date_firm_within_days` the predicted date is taken at face value."""
     firm_within = int(cfg.get("earnings_date_firm_within_days", 7))
     if days_to_earnings < firm_within:
         return 0
