@@ -1,11 +1,8 @@
 """Shared FINRA ConsolidatedShortInterest primitives.
 
-The dataset URLs, the paging limit, and the pure row helpers live here so the async
-harness ``FinraSource`` (``data/sources/finra.py``) and any sync fetcher agree on ONE
-definition of the FINRA row shape and the
-disk-cache contract — the ``_form4.py`` / ``_gaap_tags.py`` shared-leaf precedent
-(``CLAUDE.md`` "edit … not in two places"). No HTTP here; both callers do their own
-(async vs sync) fetch and reuse these helpers.
+The dataset URLs, paging limit and pure row helpers live here so the async
+``FinraSource`` (``data/sources/finra.py``) and any sync fetcher share one definition of
+the FINRA row shape and disk-cache contract. No HTTP here; callers do their own fetch.
 
 Row fields used downstream: ``symbolCode``, ``settlementDate``,
 ``currentShortPositionQuantity``, ``previousShortPositionQuantity``,
@@ -19,7 +16,7 @@ from typing import Any, Optional
 
 from .models import ShortInterest
 
-# The ConsolidatedShortInterest dataset (NOT the frozen OTC-only EquityShortInterest).
+# ConsolidatedShortInterest, not the frozen OTC-only EquityShortInterest.
 FINRA_DATA_URL = "https://api.finra.org/data/group/otcMarket/name/ConsolidatedShortInterest"
 FINRA_PARTS_URL = "https://api.finra.org/partitions/group/otcMarket/name/ConsolidatedShortInterest"
 FINRA_PAGE = 5000   # FINRA record-max-limit (paginate past it)

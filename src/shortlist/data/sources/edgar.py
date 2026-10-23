@@ -20,11 +20,9 @@ from ..models import (
 )
 from .base import Source
 
-# SEC enforces ~10 req/s fair-access per IP, and each ticker pulls many filings.
-# The collector's per-ticker semaphore doesn't bound SEC request *rate* (EDGAR's
-# calls happen inside a worker thread, invisible to it), so all EdgarSource work
-# is funnelled through this shared gate — well under the limit. Re-created if the
-# event loop changes (e.g. a second collect() call) to stay loop-bound-safe.
+# SEC allows ~10 req/s per IP. The collector's semaphore cannot see EDGAR calls (they
+# run in a worker thread), so all EdgarSource work goes through this gate. It is
+# re-created when the event loop changes.
 _EDGAR_MAX_CONCURRENCY = 3
 _edgar_gate: dict = {}
 
@@ -44,12 +42,10 @@ def _concept_url(cik: int) -> str:
 
 
 def _is_company_not_found(err: Any) -> bool:
-    """True when `err` (an exception OR an already-formatted error string) is
-    edgartools' unresolvable-ticker failure. Matched on the message rather than by
-    importing `CompanyNotFoundError`, because `edgar` is an OPTIONAL extra — importing
-    it at module scope would make the whole harness require it. The phrase is stable
-    across edgartools releases; a false negative merely restores the old four-error
-    behaviour, so this cannot lose data."""
+    """True when `err` (an exception or an error string) is edgartools' unresolvable-
+    ticker failure. Matches the message, not `CompanyNotFoundError`: `edgar` is an
+    optional extra and a module-scope import would make the harness require it. A false
+    negative only repeats the error and loses no data."""
     return "company not found" in str(err).lower()
 
 
@@ -60,38 +56,32 @@ def _edgar_semaphore() -> asyncio.Semaphore:
     return _edgar_gate["sem"]
 
 
-# form prefix (upper) -> Events boolean attribute. Prefix match absorbs /A amendments;
-# both the "SC 13x" and SEC's "SCHEDULE 13x" spellings are handled (exact-match fetch
-# can return either).
+# form prefix (upper) -> Events boolean attribute. Prefix match absorbs /A amendments.
+# Both the "SC 13x" and "SCHEDULE 13x" spellings occur.
 _EVENT_FORM_PREFIXES = (
     ("SC 13D", "activist_13d"), ("SCHEDULE 13D", "activist_13d"),
     ("SC 13G", "passive_13g"), ("SCHEDULE 13G", "passive_13g"),
     ("8-K", "recent_8k"),
     ("144", "planned_insider_sale_144"),
-    # PREFIX MATCHING IS THE TRAP HERE, not a convenience. Every entry below must be
-    # checked against the OTHER forms in `edgar_events.forms`: a prefix that is also
-    # the start of another form silently reclassifies it. "424B5" is why a bare "4"
-    # can never be added (it would swallow Form 4), and it is why these are spelled
-    # in full rather than shortened. `tests/test_edgar_events.py` pins the collisions.
+    # Prefix matching is a trap: a prefix that starts another form silently reclassifies
+    # it. A bare "4" would swallow Form 4 and "424B5", so spell entries in full.
+    # `tests/test_edgar_events.py` pins the collisions.
     ("NT 10-K", "late_filing"), ("NT 10-Q", "late_filing"),
     ("S-3", "shelf_offering"),        # also S-3ASR / S-3/A / S-3MEF, all shelf capacity
     ("424B5", "shelf_offering"),      # the takedown itself
     ("UPLOAD", "sec_comment_letter"), ("CORRESP", "sec_comment_letter"),
 )
 
-# 8-K item codes worth their own flag, read from the `items` column the filings index
-# ALREADY carries (so this costs no request). Deliberately narrow: 8-K items 2.02 and
-# 5.02 fire on 98% and 89% of names per year and would be noise as flags.
+# 8-K item codes worth a flag, read from the filings index `items` column at no extra
+# request. Narrow on purpose: items 2.02 and 5.02 fire on most names and would be noise.
 _EIGHTK_ITEM_FLAGS = (
     ("4.02", "restatement_8k"),
     ("4.01", "auditor_change"),
     ("3.01", "listing_deficiency"),
 )
 
-# Form 25 / 25-NSE are EXCLUDED on the evidence, not by oversight: 17 of 228 large and
-# small/mid caps filed one within a year, essentially all for a matured note or warrant
-# rather than the issuer's common stock. As a delisting flag it would be wrong ~7% of
-# the time on exactly the names where a delisting flag matters most.
+# Form 25 / 25-NSE are excluded on purpose: most are filed for a matured note or warrant,
+# not the issuer's common stock, so a delisting flag would often be wrong.
 
 
 def classify_event_form(form: str) -> Optional[str]:
@@ -104,10 +94,9 @@ def classify_event_form(form: str) -> Optional[str]:
     return None
 
 
-# A 13D/13G or Form 144 is also listed on the filer's own submissions index, but only the
-# subject company's row carries a file number; a blank one means the company filed it
-# about another issuer, or it cannot be attributed. Company-filed forms such as CORRESP
-# are blank too, so do not extend this beyond the three ownership reports.
+# Only the subject company's row of a 13D/13G/144 carries a file number. A blank one
+# means the company filed it about another issuer. CORRESP rows are blank too, so do
+# not extend this beyond the three ownership reports.
 _SUBJECT_FILED_ATTRS = frozenset({"activist_13d", "passive_13g", "planned_insider_sale_144"})
 
 
@@ -132,11 +121,10 @@ def classify_event_items(items: Any) -> list[str]:
 def build_events_section(records: list[dict], lookback_days: int,
                          today: date) -> Optional[Events]:
     """Pure: filter records to the lookback window, classify, and build an Events.
-    Returns None when there is nothing at all — NEVER an all-falsy Events
-    (load-bearing for the merge's _has_data check). Separately from the
-    advisory flags, the latest exact-form 10-Q/10-K filed date is carried as
-    `last_report_filed` (the bridge's SUE decay anchor) — exact forms only, since
-    a 10-Q/A can land months after the print and would wrongly freshen the anchor."""
+    Returns None when there is nothing, never an all-falsy Events (the merge's
+    _has_data check relies on it). The latest exact-form 10-Q/10-K filed date is
+    carried as `last_report_filed` (the bridge's SUE decay anchor). Exact forms only:
+    a 10-Q/A can land months after the print and would freshen the anchor."""
     cutoff = today - timedelta(days=lookback_days)
     kept: list[tuple[str, FilingEvent]] = []
     item_attrs: set[str] = set()
@@ -191,9 +179,8 @@ class EdgarSource(Source):
             raise RuntimeError("SEC_IDENTITY (a contact email) is required by the SEC")
         self.lookback_days = lookback_days
         ev = (config or {}).get("edgar_events", {})
-        # 10-Q/10-K are fetched for the SUE decay anchor — they never enter the
-        # advisory `recent` list. edgartools auto-includes /A amendments in the
-        # fetch; build_events_section's exact-form compare keeps them off the anchor.
+        # 10-Q/10-K feed the SUE decay anchor, never the advisory `recent` list.
+        # edgartools includes /A amendments; build_events_section's exact-form compare drops them.
         self._event_forms = ev.get(
             "forms", ["8-K", "SC 13D", "SC 13G", "144", "SCHEDULE 13D", "SCHEDULE 13G",
                       "10-Q", "10-K"])
@@ -261,27 +248,19 @@ class EdgarSource(Source):
         self, ticker: str, fin: Any, errors: Optional[list[str]] = None,
     ) -> TickerSnapshot:
         """Map an edgartools Financials onto a Statements-only snapshot. No scaling is
-        applied. Mostly pure given `fin`, but ALSO fires the companyconcept
-        diluted-share fallback (a network seam) when the statement view has no
-        share-count row at all -- root cause B (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
-        When `errors` is given, a fallback failure (SEC blocks the UA or changes the
-        URL) is appended to it; a filer that does not report the tag appends nothing."""
+        applied. Pure given `fin`, except that it fires the companyconcept diluted-share
+        fallback (a network seam) when the statement view has no share-count row
+        (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). When `errors` is given, a fallback
+        failure is appended to it; a filer that does not report the tag appends nothing."""
         from ...providers._edgar_facts import diluted_shares_from_concept, extract_financials
         try:
-            # UNITS HAZARD, not fixed here: edgartools returns this scalar in whatever
-            # scale the filer's income statement uses. MCD's is ~716.4 -- MILLIONS, not
-            # absolute shares. Filer-presentation scaling is NOT unique to
-            # this scalar: MCD's per-row `ef.diluted_shares` series is the same
-            # convention ([716.4, 721.9, 732.3] -- do not mistake that list for this
-            # scalar; docs/audits/2026-07-31-edgar-concept-match.md).
-            # It reaches exactly one consumer: extract_financials' computed-EPS fallback
-            # (`ni / shares_diluted`), which fires only when no as-reported EPS row was
-            # matched -- so a millions-scaled value there yields an EPS 1e6x too small
-            # (MCD's recorded 11,952,819.65 is that bug). share_count_cagr and the
-            # dilution flag are unaffected because they are SCALE-INVARIANT, not because
-            # the series is absolute. No sanity bound is applied: every candidate
-            # threshold is fitted to this one observation, and this repo does not ship
-            # n=1 heuristics.
+            # Units hazard: edgartools returns this scalar in the filer's presentation
+            # scale, which can be millions rather than absolute shares
+            # (docs/audits/2026-07-31-edgar-concept-match.md). Its only consumer is
+            # extract_financials' computed-EPS fallback (`ni / shares_diluted`), so a
+            # millions-scaled value gives an EPS 1e6x too small. share_count_cagr and the
+            # dilution flag are scale-invariant. No sanity bound is applied: any
+            # threshold would be fitted to one observation.
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
             shares = None
@@ -292,11 +271,9 @@ class EdgarSource(Source):
             shares_diluted=shares,
         )
         if not ef.diluted_shares and ef.fiscal_period_end:
-            # Own try/except: never let a RECOVERY path reduce coverage. If this
-            # raises, `res.partial.statements` in `_fetch_sync` would otherwise
-            # never be assigned and the ticker loses ALL statements, not just
-            # diluted_shares (C1, docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md). Best-effort,
-            # but -- unlike a bare `contextlib.suppress` -- record what happened.
+            # Own try/except: a raise here would drop all statements for the ticker,
+            # not just diluted_shares (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
+            # Best-effort, but record the failure.
             try:
                 ef.diluted_shares = diluted_shares_from_concept(
                     self._fetch_diluted_shares_concept(ticker, errors), ef.fiscal_period_end)
@@ -330,19 +307,15 @@ class EdgarSource(Source):
                 debt_repayments=ef.debt_repayments,
                 debt_issuance=ef.debt_issuance,
             )
-        # `gross_profit` isn't in EdgarFinancials; _merge_statements year-joins it back in from
-        # FMP when available (docs/design/STATEMENTS_MERGE.md). `total_equity` USED to be in the same
-        # boat — it is now extracted directly (2026-08-10), because that FMP backfill cannot
-        # fire on the FMP-gated path, which is exactly where bridge.py needs invested capital
-        # for a computed ROIC. Parent-only concept first, so the value means the same thing
-        # whichever source wins the merge.
+        # `gross_profit` is not in EdgarFinancials; _merge_statements year-joins it from
+        # FMP (docs/design/STATEMENTS_MERGE.md). `total_equity` is extracted directly
+        # because that backfill cannot fire on the FMP-gated path. Parent-only concept
+        # first, so the value means the same whichever source wins the merge.
         return snap
 
     def _fetch_sic(self, ticker: str) -> Optional[str]:
-        """Network seam (mockable): best-effort SIC off an edgartools Company.
-        EdgarSource has no reusable Company handle in its assembly path, so this is
-        one extra lightweight SEC request per ticker, bounded by the module
-        concurrency semaphore. Returns a 4-digit string or None."""
+        """Network seam (mockable): best-effort SIC off an edgartools Company. Costs
+        one extra SEC request per ticker. Returns a 4-digit string or None."""
         from edgar import Company
 
         from ...sectors import extract_sic
@@ -385,9 +358,8 @@ class EdgarSource(Source):
         Any other failure is appended to `errors` when given, so a systemic break
         (blocked UA, changed URL) stays visible.
 
-        Resolves the CIK off a fresh edgartools `Company(ticker)`, NOT the raw
-        `company_tickers.json` first-occurrence map, which sends XOM to a
-        fee-filing shell CIK."""
+        Resolves the CIK with edgartools `Company(ticker)`, not the raw
+        `company_tickers.json` first-occurrence map, which can pick a shell CIK."""
         import httpx
         from edgar import Company
 
@@ -441,9 +413,7 @@ class EdgarSource(Source):
                 "filed": fd.isoformat() if hasattr(fd, "isoformat") else (fd or ""),
                 "accession": getattr(f, "accession_no", None),
                 "url": getattr(f, "url", None),
-                # Already in the edgartools filings index (an `items` column); dropping
-                # it made an Item 4.02 non-reliance restatement indistinguishable from a
-                # routine 8-K in the brief. Costs no additional request.
+                # Without items, an Item 4.02 restatement looks like a routine 8-K.
                 "items": getattr(f, "items", None) or None,
             })
         return out
@@ -452,23 +422,17 @@ class EdgarSource(Source):
         return build_events_section(records, self._event_lookback_days, date.today())
 
     def _fetch_sync(self, ticker: str) -> SourceResult:
-        res = self._fetch_insider(ticker)        # always sets res.partial (existing branches)
-        # Ticker resolution is a PRECONDITION, not a fifth isolated section: if the
-        # symbol is not in SEC's ticker map, none of the sections below can succeed
-        # and each would append its own copy of edgartools' nearest-neighbour guess
-        # (four errors suggesting "MMCP (Mag Mile Capital)" for MMC). Report it once,
-        # in terms the user can act on, and skip the rest. Measured 2026-08-15: 8 of
-        # 238 tickers in the committed universes no longer resolve — 4 renamed their
-        # symbol, the rest stopped filing.
+        res = self._fetch_insider(ticker)        # always sets res.partial
+        # Ticker resolution is a precondition, not an isolated section: if the symbol is
+        # not in SEC's ticker map, no later section can succeed and each would repeat
+        # edgartools' nearest-neighbour guess. Report once and skip the rest.
         if res.errors and _is_company_not_found(res.errors[0]):
             res.errors = [
                 f"edgar: {ticker} is not in SEC's current ticker map — the issuer may "
                 f"have renamed its symbol or been delisted/acquired. No EDGAR data "
                 f"(statements, insider, SIC, events) is available under this symbol."]
             return res
-        # SIC is isolated: a failure must never drop insider/statements/events. We
-        # emit a PARTIAL Profile carrying only sic; _merge_flat fills the rest from
-        # FMP/Finnhub, so SIC survives even when those gate the symbol's profile.
+        # SIC is isolated. The partial Profile carries only sic; _merge_flat fills the rest.
         try:
             sic = self._fetch_sic(ticker)
             if sic:

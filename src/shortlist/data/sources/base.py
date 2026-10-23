@@ -33,12 +33,10 @@ class Source(ABC):
 
 class _KeyedHttpSource(Source):
     """Shared scaffolding for keyed JSON-over-HTTP sources (FMP, Finnhub): env-key
-    resolution, a lazily-built httpx ``AsyncClient``, and a cache-delegating GET with
-    optional Retry-After-aware backoff. Subclasses set ``BASE`` / ``_AUTH_PARAM`` /
-    ``_ENV_VAR`` / ``_PROVIDER`` and implement ``fetch``; the default ``_max_retries``
-    of 0 means a single attempt (no retry) — a subclass opts in by raising it. Keeping
-    the request/cache path in one place means the cacheability + redaction invariants
-    don't drift between the two sources."""
+    resolution, a lazy httpx ``AsyncClient``, and a cache-delegating GET with optional
+    Retry-After-aware backoff. Subclasses set ``BASE`` / ``_AUTH_PARAM`` / ``_ENV_VAR``
+    / ``_PROVIDER`` and implement ``fetch``. ``_max_retries`` defaults to 0 (one
+    attempt); a subclass opts in by raising it."""
 
     BASE: str = ""
     _AUTH_PARAM: str = ""    # query param that carries the key ("apikey" / "token")
@@ -61,10 +59,6 @@ class _KeyedHttpSource(Source):
         params[self._AUTH_PARAM] = self.key
 
         async def fetch():
-            # _retry_after_backoff retries transient throttling (429) and 5xx,
-            # Retry-After-aware, capped when _max_retries > 0; 402 gating and other
-            # 4xx are NOT retried. With _max_retries == 0 this is a single attempt
-            # (the no-retry default).
             for attempt in range(self._max_retries + 1):
                 r = await self._client.get(f"{self.BASE}/{path}", params=params)
                 if await _retry_after_backoff(r, attempt, self._max_retries):
@@ -81,11 +75,9 @@ async def _fetch_sections(
     get: Callable[..., Awaitable[Any]],
     sections: dict[str, tuple[str, dict[str, Any]]],
 ) -> None:
-    """Fetch each named section into `res.raw` CONCURRENTLY, recording per-section
-    failures as redacted `"<source>.<section>: <err>"` strings. One failed section
-    never aborts the rest — each fetch is isolated inside `_one` and gathered, so a
-    raised exception in one coroutine cannot cancel its siblings (unlike a bare
-    `asyncio.gather` without `return_exceptions`, which would)."""
+    """Fetch each named section into `res.raw` concurrently. Failures become redacted
+    `"<source>.<section>: <err>"` strings in `res.errors`. One failed section never
+    aborts the others."""
     async def _one(name: str, path: str, params: dict[str, Any]) -> tuple[str, Any, Optional[str]]:
         try:
             return name, await get(path, **params), None
@@ -101,11 +93,9 @@ async def _fetch_sections(
 
 
 async def _retry_after_backoff(r: Any, attempt: int, max_retries: int) -> bool:
-    """Retry-After-aware backoff decision for `_KeyedHttpSource._get`: 429 and 5xx are
-    retriable, 402 gating and other 4xx are NOT. Sleeps (Retry-After header, else
-    exponential 2**attempt) and returns True when the caller should retry;
-    returns False once not-retriable or attempts are exhausted, so the caller
-    proceeds to `raise_for_status()`/`return r.json()`."""
+    """Backoff decision for `_KeyedHttpSource._get`. 429 and 5xx are retriable; 402
+    gating and other 4xx are not. Sleeps (Retry-After, else 2**attempt) and returns
+    True to retry, False once not retriable or attempts are exhausted."""
     retriable = r.status_code == 429 or 500 <= r.status_code < 600
     if retriable and attempt < max_retries:
         await asyncio.sleep(_retry_after_seconds(r.headers.get("Retry-After"), 2 ** attempt))

@@ -59,8 +59,8 @@ class LobbyingSource(_NameIndexedSource):
         self._months = int(cfg.get("trailing_months", 24))
         self._max_pages = int(cfg.get("max_pages_per_year", 4))
         self._max_retries = int(cfg.get("max_retries", 2))   # 5xx only
-        # One ticker at a time against LDA: concurrent tickers sharing one per-minute
-        # budget retry into the same window together and exhaust their attempts.
+        # One ticker at a time: concurrent tickers share one per-minute budget and
+        # would retry into the same window together.
         self._lda_gate = asyncio.Lock()
 
     async def _get_json(self, path: str, params: dict) -> Any:
@@ -86,10 +86,9 @@ class LobbyingSource(_NameIndexedSource):
 
     @staticmethod
     def _spend(row: dict) -> Optional[float]:
-        """A filing reports EITHER income (outside firm fee) OR expenses (in-house).
-        Summing across a client's filings can modestly double-count when the same
-        activity is reported by a retained firm (income) AND in-house (expenses) —
-        bounded and acceptable for a research-only presence/trend signal."""
+        """A filing reports either income (outside firm) or expenses (in-house). Summing
+        can double-count activity reported both ways. That is acceptable for a
+        research-only trend signal."""
         for k in ("income", "expenses"):
             v = row.get(k)
             if v not in (None, ""):
@@ -154,9 +153,8 @@ class LobbyingSource(_NameIndexedSource):
                                 best_conf, best_client = conf, client
                             if latest is None or posted > latest:
                                 latest = posted
-                            # Window by dt_posted (submission date): it lags the activity
-                            # quarter by up to a filing cycle, but it's the only monotone
-                            # timestamp — acceptable for a trend context line.
+                            # Window by dt_posted: it lags the activity quarter by up to a
+                            # filing cycle but is the only monotone timestamp.
                             if posted >= cutoff:
                                 ttm += spend
                                 ttm_n += 1

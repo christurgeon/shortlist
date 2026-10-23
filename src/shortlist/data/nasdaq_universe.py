@@ -8,32 +8,27 @@ universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request pe
 
 **Three things to know before touching this.**
 
-1. **It is undocumented**, the same fragility class as the Yahoo screener this repo
-   retired. That is why every failure path here returns `{}` rather than raising: a caller
-   that treats a symbol's absence from this map as *abstain, never a drop* degrades cleanly
-   to inert on a total fetch failure instead of blocking a run.
-2. **It is NOT on sec.gov**, so it draws nothing from the shared `sec_throttle()` budget.
-   Do not route it there — that budget exists to keep this box under SEC's fair-access
-   ceiling, and padding it with unrelated hosts would misreport the thing it measures.
-3. **It excludes ETFs and funds**, which matters beyond sizing: a symbol's absence here is
-   weak evidence it is not listed common stock, but it also captures OTC names, recent
-   listings and plain API gaps — so a caller should still treat absence as abstain, never
-   a drop.
+1. **It is undocumented.** Every failure path returns `{}` rather than raising, so a
+   caller that treats absence as abstain, never a drop, degrades to inert on a total
+   fetch failure.
+2. **It is not on sec.gov**, so it draws nothing from the shared `sec_throttle()` budget.
+   Do not route it there: that budget measures SEC fair-access use.
+3. **It excludes ETFs and funds.** A symbol's absence is weak evidence that it is not
+   listed common stock. It also covers OTC names, recent listings and API gaps, so treat
+   absence as abstain, never a drop.
 
 Rows with an unparseable `marketCap` are skipped **individually**, never failing the whole
 payload.
 
-**No production caller, and this must never become one.** The obvious-looking use — generate
-`universe_largecap.txt` / `universe_smallmid.txt` at RUN TIME instead of maintaining them —
-would destroy the reproducibility those files exist for. `CLAUDE.md` gates new scoring legs on
-*reproducible* cross-universe rank IC, and a membership set that silently differs between runs
-makes two verdicts non-comparable: you could no longer separate a decaying signal from drifting
-membership. The correct role is a **deliberate membership-refresh tool**, run by a human who
-then commits the diff. (Those files key on tickers, which are not stable identifiers — ~3-4%/yr
-rot, measured 2026-08-15. `backtest/universe.py:stale_tickers` aborts a bundled-universe run on
-symbols absent from SEC's map, so staleness cannot silently corrupt a measurement; a ticker
-REASSIGNED to a different issuer still resolves and is the residual hole. Storing `CIK,TICKER`
-pairs and resolving via `edgar/symbology.py` is the fix if it ever earns the half day.)
+**No production caller, and this must never become one.** Generating
+`universe_largecap.txt` / `universe_smallmid.txt` at run time would destroy the
+reproducibility those files exist for. `CLAUDE.md` gates new scoring legs on
+reproducible cross-universe rank IC, and membership that differs between runs makes
+verdicts non-comparable. The correct role is a deliberate membership-refresh tool: a
+human runs it and commits the diff. (Tickers are not stable identifiers.
+`backtest/universe.py:stale_tickers` aborts a run on symbols absent from SEC's map. A
+ticker reassigned to another issuer still resolves; that is the residual gap. Storing
+`CIK,TICKER` pairs and resolving via `edgar/symbology.py` would close it.)
 
 CI pins the parse shapes; the live fetch tests skip by default.
 """

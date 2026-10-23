@@ -21,9 +21,8 @@ class GovContractsSource(_NameIndexedSource):
     into TTM vs prior-TTM. Aux section; never moves coverage. Never raises —
     degrades to None on any failure.
 
-    NOTE: uses the action-level `spending_by_transaction` endpoint, NOT
-    `spending_by_award` (whose `time_period` is an overlap filter returning
-    un-window-scoped award totals — verified)."""
+    Uses the action-level `spending_by_transaction` endpoint, not `spending_by_award`:
+    its `time_period` is an overlap filter that returns un-window-scoped award totals."""
 
     name = "gov_contracts"
     feeds_axes = False

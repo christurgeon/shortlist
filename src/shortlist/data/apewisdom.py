@@ -21,10 +21,8 @@ _DEFAULT_CACHE_DIR = ".cache/apewisdom"
 @dataclass
 class WsbMention:
     """One ApeWisdom WSB row, normalized. `ticker` is the upcased symbol (dots kept,
-    e.g. "BRK.B") used for downstream screening; the index keys it via norm_symbol().
-    `mention_delta_pct`/`rising` are derived HERE; the bridge
-    re-derives the parallel StockMetrics fields from raw facts (ShortInterest pattern)
-    — keep the two derivations in lockstep if you edit either."""
+    e.g. "BRK.B"); the index keys it via norm_symbol(). `mention_delta_pct`/`rising` are
+    derived here and re-derived by the bridge. Keep both derivations in lockstep."""
     ticker: str
     mentions: Optional[int] = None
     mentions_24h_ago: Optional[int] = None

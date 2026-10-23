@@ -7,12 +7,9 @@ from pathlib import Path
 
 from .models import TickerSnapshot
 
-# One file per ticker per fetch day: <root>/<TICKER>/<YYYY-MM-DD>.json.gz
-# (legacy stores also contain uncompressed <YYYY-MM-DD>.json — readable forever,
-# never rewritten). Keeping the raw payloads is what gives us a point-in-time
-# record to learn from later — the data as it actually looked when the
-# assessment was made; gzip (~8.5:1 measured) keeps that affordable at
-# full-watchlist breadth (~5 MB/day vs ~40).
+# One file per ticker per fetch day: <root>/<TICKER>/<YYYY-MM-DD>.json.gz. Legacy
+# uncompressed <YYYY-MM-DD>.json files stay readable and are never rewritten. Raw
+# payloads give a point-in-time record of the data as it looked at assessment time.
 
 
 def _day_of(path: Path) -> str:

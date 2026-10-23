@@ -33,8 +33,7 @@ class YahooSource(Source):
         self._cache_dir = Path(cache_dir)
         self._spy_closes: Optional[list[float]] = None
         self._spy_dates: Optional[list[date]] = None
-        # Guards the load-once SPY fetch: without it ~8 concurrent cold-cache
-        # tickers would each fire the full SPY chart request (thundering herd).
+        # Stops concurrent cold-cache tickers from each fetching SPY.
         self._load_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
@@ -54,12 +53,9 @@ class YahooSource(Source):
         try:
             r.raise_for_status()
         except Exception as exc:  # noqa: BLE001 — status inspected, non-404 re-raised
-            # ONLY 404 is a definitive answer about the SYMBOL (Yahoo's reply for a
-            # delisted/unknown ticker): day-cache the empty envelope so a dead name costs
-            # one request per DAY instead of one per run. Everything else — 429 WAF blocks
-            # above all — is a statement about the CONNECTION and must propagate uncached,
-            # or a block would fabricate "no price data" for a live ticker and silently
-            # null out price/momentum/risk for the whole run.
+            # Only 404 is a definitive answer about the symbol: day-cache the empty envelope.
+            # Anything else (429 WAF blocks above all) describes the connection and must
+            # propagate uncached, or a block would fabricate "no price data" for a live ticker.
             if getattr(getattr(exc, "response", None), "status_code", None) != 404:
                 raise
             raw = {"chart": {"result": None, "error": {"code": "Not Found"}}}
@@ -88,14 +84,12 @@ class YahooSource(Source):
             raw = await self._get_chart(ticker)
             closes = _closes_from_chart(raw)
             spy = await self._spy()
-            # Plumb the date-aligned stock + SPY series so residual_momentum computes on
-            # the live path (PREDICTIVE_SIGNALS §2). _dates_from_chart drops to [] on a
-            # date-less / misaligned payload; _normalize_yahoo then leaves residual_momentum
-            # None (the leg abstains) rather than crashing the screen.
+            # _dates_from_chart returns [] for a date-less or misaligned payload; the
+            # leg then abstains (residual_momentum None).
             dates = _dates_from_chart(raw)
             spy_dates = self._spy_dates
             if not dates or not spy_dates:
-                dates = spy_dates = None  # fall back to the date-less (None-residual) path
+                dates = spy_dates = None
             res.partial = _normalize_yahoo(ticker, closes, spy, dates, spy_dates)
             if res.partial.price is not None:
                 res.partial.price.monthly_closes = _monthly_closes_from_chart(raw)

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-# Illustrative sample bundles for offline demo / tests. Prices, targets, and
-# statement figures are approximate for late May 2026; some fields are rounded
-# placeholders. NOT verified fundamentals — run a live source for real numbers.
+# Illustrative placeholders for the offline demo and tests, not verified fundamentals.
 from .models import (
     Analyst,
     Fundamentals,
@@ -16,8 +14,6 @@ from .models import (
 
 
 def _snap(profile, fund, stmts, analyst, insider, price):
-    # The snapshot's ticker comes from the runtime arg `t` (the SAMPLE lookup key),
-    # not a literal here — see sources/mock.py `data["snapshot"](ticker)`.
     def make(t: str) -> TickerSnapshot:
         s = TickerSnapshot(ticker=t)
         s.profile, s.fundamentals, s.statements = profile, fund, stmts

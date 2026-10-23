@@ -15,12 +15,10 @@ from .base import Source
 
 async def _load_ticker_name_index(client: Any, cache_dir: str,
                                   ) -> tuple[dict, frozenset[str], Optional[str]]:
-    """Bulk-load SEC company_tickers.json into a ticker->name index, shared by
-    GovContractsSource and LobbyingSource (both resolve ticker->entity name the
-    same way via `backtest.xbrl`'s month-cached bulk fetch). Returns
-    `(index, ambiguous, error)`: `ambiguous` is `_ambiguous_tickers(raw)`; error is
-    None on success; on failure index is `{}`, ambiguous is empty and error is the
-    redacted exception string."""
+    """Bulk-load SEC company_tickers.json into a ticker->name index (month-cached via
+    `backtest.xbrl`). Returns `(index, ambiguous, error)`: `ambiguous` is
+    `_ambiguous_tickers(raw)`; error is None on success. On failure index is `{}`,
+    ambiguous is empty and error is the redacted exception string."""
     try:
         from ...backtest import xbrl
         month = date.today().strftime("%Y-%m")
@@ -54,9 +52,8 @@ def _ambiguous_tickers(raw: dict) -> frozenset[str]:
 
 
 def _read_versioned_cache(path: Path, version: int) -> Optional[dict]:
-    """Version-gated JSON-dict cache read, shared by GovContractsSource and
-    LobbyingSource: a stale-shape / legacy un-versioned payload is treated as a
-    miss so bumping `version` refetches rather than deserializing garbage."""
+    """Version-gated JSON-dict cache read. A payload with another or no version is a
+    miss, so bumping `version` refetches."""
     payload = read_json_cache(path)
     if isinstance(payload, dict) and payload.get("v") == version:
         return payload

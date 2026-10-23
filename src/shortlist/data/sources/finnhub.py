@@ -21,10 +21,9 @@ from .base import _fetch_sections, _KeyedHttpSource
 # News-flow windows (fixed priors; only the flag thresholds in config are tunable).
 _NEWS_LOOKBACK_DAYS = 30   # company-news fetch window
 _NEWS_RECENT_DAYS = 7      # recent vs prior bucket size
-# Finnhub's free company-news returns only the ~250 most-recent articles. For a
-# high-volume name that cap can fall entirely inside the recent window, so the
-# prior bucket is a false 0 -> we DETECT it and mark the window truncated.
-_NEWS_TRUNCATE_AT = 240    # near the ~250 cap: a list this long is almost certainly capped
+# Free-tier company-news returns only the ~250 newest articles. For a busy name the cap
+# can cover only the recent window, which makes the prior bucket a false 0.
+_NEWS_TRUNCATE_AT = 240    # a list this long is almost certainly capped
 
 
 # --- Finnhub: complements with insider sentiment + recommendation trend ----
@@ -35,8 +34,7 @@ class FinnhubSource(_KeyedHttpSource):
     _AUTH_PARAM = "token"
     _ENV_VAR = "FINNHUB_API_KEY"
     _PROVIDER = "finnhub"
-    # No retry override: Finnhub's 60/min is comfortable, so the base default
-    # (_max_retries = 0, single attempt) is intentional.
+    # No retry: the 60/min limit is comfortable, so the base default is intentional.
 
     async def fetch(self, ticker: str) -> SourceResult:
         res = SourceResult(source=self.name)
@@ -54,12 +52,9 @@ class FinnhubSource(_KeyedHttpSource):
                 "from": (today - timedelta(days=_NEWS_LOOKBACK_DAYS)).isoformat(),
                 "to": today.isoformat()}),
             "earnings": ("stock/earnings", {"symbol": ticker}),
-            # Window reaches BACK ~120d (one quarter + print lag) so a PAST
-            # announcement (epsActual) can land in the payload — _earnings' preferred
-            # SUE decay anchor. Live-probed 2026-07-09: the FREE tier returns no
-            # historical entries at all (even a full past year is empty), so on this
-            # plan the anchor comes from the EDGAR 10-Q/10-K filed date (bridge)
-            # instead; the reach-back costs nothing and activates on a paid key.
+            # The 120d reach-back lets a past announcement (epsActual) land in the payload,
+            # which is _earnings' preferred SUE anchor. The free tier returns no past
+            # entries, so the bridge falls back to the EDGAR 10-Q/10-K filed date.
             "earnings_calendar": ("calendar/earnings", {
                 "symbol": ticker,
                 "from": (today - timedelta(days=120)).isoformat(),
@@ -98,9 +93,8 @@ def _news_flow(articles: list, ref: Optional[date] = None) -> NewsFlow:
             recent += 1
         elif d >= prior_cut:
             prior += 1
-    # `capped`: the list hit the free-tier ~250 cap (always-noisy name). Separately,
-    # `prior_unreliable`: the cap also ate the prior window (no history past 14d), so
-    # `prior`'s 0 is a false 0 -> blank it. truncated == capped (honest: any capped list).
+    # `capped`: the list hit the free-tier cap. `prior_unreliable`: the cap also ate
+    # the prior window, so its 0 is false and is blanked. truncated == capped.
     capped = window >= _NEWS_TRUNCATE_AT
     prior_unreliable = capped and oldest is not None and oldest > prior_cut
     return NewsFlow(
@@ -114,13 +108,13 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
     """Build an Earnings section from Finnhub `stock/earnings` rows (newest-first)
     and a `calendar/earnings` payload. Pure. surprisePercent is already in percent."""
     today = ref or date.today()
-    # Sort newest-first by period so correctness doesn't depend on Finnhub's ordering.
+    # Sort so correctness does not depend on Finnhub's ordering.
     ordered = sorted((rows or []), key=lambda r: r.get("period") or "", reverse=True)
     surprises = [r.get("surprisePercent") for r in ordered
                  if isinstance(r.get("surprisePercent"), (int, float))]
     beats = sum(1 for s in surprises if s > 0) if surprises else None
-    # Next report = earliest calendar entry today-or-later with no actual yet (>= so a
-    # same-day after-close print isn't dropped on the morning it matters most).
+    # Next report = earliest calendar entry today or later with no actual yet. The >= keeps
+    # a same-day after-close print.
     next_date = None
     cal = (calendar or {}).get("earningsCalendar") or []
     future = sorted(d["date"] for d in cal
@@ -128,17 +122,12 @@ def _earnings(rows: list, calendar: Optional[dict], ref: Optional[date] = None) 
                     and d.get("epsActual") is None)
     if future:
         next_date = future[0]
-    # last_report_date: the best-available APPROXIMATION of the most-recent ANNOUNCEMENT
-    # date (PREDICTIVE_SIGNALS §1 SUE leg). Finnhub `stock/earnings` rows carry only the
-    # fiscal `period` (quarter-END), NOT the print date, so we prefer the `calendar/
-    # earnings` entries that DO carry a true announcement `date` AND an `epsActual` (i.e.
-    # a report that has already happened, date <= today). Pick the latest such date.
-    # Fallback (calendar missing past entries — ALWAYS the case on the free tier,
-    # live-probed 2026-07-09): the most recent `stock/earnings` period (quarter-end) — a
-    # WEAKER proxy, since the actual print lands ~30-45 days later, so this OVER-states
-    # staleness. `last_report_date_estimated` marks the fallback so the bridge can
-    # refine the anchor with the EDGAR 10-Q/10-K filed date (~0-5d proxy) without ever
-    # degrading a true announcement date.
+    # last_report_date approximates the latest announcement date for the SUE leg.
+    # `stock/earnings` rows carry only the quarter-end `period`, so prefer past
+    # `calendar/earnings` entries (true `date` plus an `epsActual`). Fallback when the
+    # calendar has none (always on the free tier): the latest quarter-end, a weaker proxy
+    # that overstates staleness. `last_report_date_estimated` marks it so the bridge can
+    # refine with the EDGAR filed date without degrading a true announcement date.
     last_report_date = None
     estimated = True
     past = sorted(d["date"] for d in cal
@@ -168,13 +157,11 @@ def _rating_month(row: dict) -> Optional[tuple[int, int]]:
 
 
 def _rating_trend(trend: Optional[list]) -> Optional[Analyst]:
-    """Levels from the newest period plus the REVISION across the whole window.
+    """Levels from the newest period plus the revision across the whole window.
 
-    The free tier returns ~4 monthly periods. Rows are ordered by `period` rather
-    than trusted in payload order — nothing documents Finnhub's ordering, and a
-    reversed payload would silently invert the sign of every delta. Rows with no
-    usable period cannot be ordered or dated, so the drift abstains (levels still
-    come from the first row, preserving the pre-revision behaviour).
+    Rows are ordered by `period`, not payload order: Finnhub's ordering is undocumented
+    and a reversed payload would invert every delta's sign. Rows with no usable period
+    cannot be ordered, so the drift abstains (levels still come from the first row).
     """
     if not isinstance(trend, list) or not trend:
         return None
@@ -207,15 +194,10 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     snap = TickerSnapshot(ticker=ticker)
     p = raw.get("profile") or {}
     if p:
-        # Finnhub reports `marketCapitalization` in the issuer's NATIVE currency (TSM comes
-        # back as 60,163,096 with currency "TWD" — millions of Taiwan dollars). `market_cap`
-        # is the insider net-flow denominator AND the `below_min_mktcap` gate input, both of
-        # which assume DOLLARS. Reading TWD/JPY/KRW as USD overstates by 30-1000x, and
-        # scoring.py only trips that gate when the cap is BELOW the floor — so an inflated
-        # cap silently PASSES, favouring exactly the foreign nano-caps the composition audit
-        # complains about. Abstain rather than convert: there is no FX source here, and FMP
-        # (which reports USD) outranks Finnhub in the merge, so a real figure still wins
-        # wherever FMP has one. Found 2026-08-06 via a $63.9T TSM in the selection ledger.
+        # `marketCapitalization` is in the issuer's native currency, but market_cap feeds the
+        # insider denominator and the `below_min_mktcap` gate, which assume dollars. The gate
+        # trips only below the floor, so an inflated non-USD cap silently passes. Abstain
+        # rather than convert: no FX source exists here, and FMP (USD) outranks Finnhub.
         cur = (p.get("currency") or "").strip().upper()
         snap.profile = Profile(
             name=p.get("name"), industry=p.get("finnhubIndustry"),
@@ -225,15 +207,9 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         )
     m = (raw.get("metric") or {}).get("metric", {})
     if m:
-        # RESOLVED 2026-08-10: Finnhub publishes NO ROIC, so `roic` is left None here.
-        # `roiTTM` is Return on *Investment* and was mapped in as a proxy until it was measured
-        # against FMP's real ROIC on paired snapshots: it OVERSTATES in 92% of them, median
-        # +26.6% relative (GOOGL +164%, AMZN +97%, NVDA +67%) — it FLATTERS the mega-cap
-        # compounders rather than penalising cash-rich ones, which is the opposite of the
-        # natural intuition. It also carried no multi-year average, so the moat leg lost its
-        # durability dimension (its whole thesis) on this entire path.
-        # ROIC is now COMPUTED from statements in `bridge.py` (gap-filling only), which needed
-        # `total_equity` extraction in `_edgar_facts.py` to become possible.
+        # Finnhub publishes no ROIC, so `roic` stays None. Its `roiTTM` is Return on
+        # Investment, not ROIC: it overstates and has no multi-year average. `bridge.py`
+        # computes ROIC from statements instead.
         # Evidence: docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md.
         snap.fundamentals = Fundamentals(
             roe=_pct(m.get("roeTTM")), roic=None,
@@ -253,9 +229,9 @@ def _normalize_finnhub(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
     if q.get("c"):
         snap.price = Price(price=q["c"])
     news = raw.get("news")
-    if isinstance(news, list):          # present (even empty) -> a real 0-count fact
-        # Re-bucketed against date.today() every call; correctness on a cache HIT
-        # relies on the from/to dates being in the cache key (so it's day-partitioned).
+    if isinstance(news, list):          # present, even if empty -> a real 0-count fact
+        # Buckets against date.today(); on a cache hit this relies on the from/to dates
+        # being in the cache key.
         snap.news = _news_flow(news)
     er = raw.get("earnings")
     if isinstance(er, list):            # present (even empty) -> a real Earnings fact
