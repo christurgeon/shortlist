@@ -67,6 +67,31 @@ def _write_versioned_cache(path: Path, version: int, payload: dict) -> None:
     write_json_cache(path, {"v": version, **payload})
 
 
+def _parse_aliases(raw: Any) -> dict[str, tuple[str, ...]]:
+    """``{TICKER: (name, ...)}`` from a config ``aliases`` mapping. A scalar value is
+    one name; non-string keys (YAML reads an unquoted ON or NO as a bool) and blank
+    or non-string names are dropped."""
+    out: dict[str, tuple[str, ...]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for tk, vals in raw.items():
+        if not isinstance(tk, str) or not tk.strip():
+            continue
+        vals = [vals] if isinstance(vals, str) else vals
+        if not isinstance(vals, (list, tuple)):
+            continue
+        names = tuple(v.strip() for v in vals if isinstance(v, str) and v.strip())
+        if names:
+            out[tk.strip().upper()] = names
+    return out
+
+
+def alias_keys(names: list[str]) -> frozenset[str]:
+    """Normalized forms that match a row exactly: every name after the SEC title.
+    A curated alias already names the entity, so it gets no fuzzy band."""
+    return frozenset(k for k in map(normalize_name, names[1:]) if k)
+
+
 _DEFAULT_DEADLINE_S = 90.0
 
 
@@ -79,10 +104,12 @@ class _NameIndexedSource(Source):
     _CACHE_PREFIX: str
     _CACHE_V: int
 
-    def __init__(self, client: Any, cache_dir: Path, deadline_s: float = _DEFAULT_DEADLINE_S):
+    def __init__(self, client: Any, cache_dir: Path, deadline_s: float = _DEFAULT_DEADLINE_S,
+                 aliases: Optional[dict] = None):
         self._client = client
         self._cache_dir = cache_dir
         self._deadline_s = deadline_s
+        self._aliases = _parse_aliases(aliases)
         self._name_index: Optional[dict] = None
         self._ambiguous: frozenset[str] = frozenset()
         self._load_error: Optional[str] = None
@@ -125,12 +152,14 @@ class _NameIndexedSource(Source):
     def _write_cache(self, ticker: str, day: str, payload: dict) -> None:
         _write_versioned_cache(self._cache_path(ticker, day), self._CACHE_V, payload)
 
-    async def _begin(self, ticker: str) -> tuple[SourceResult, TickerSnapshot, Optional[str]]:
-        """A fresh result whose partial is the returned snapshot, plus the entity name
-        to query and match on: the SEC title without its trailing qualifiers.
-        ``res.raw["resolved_name"]`` keeps the SEC title. The name is None when the
-        caller should return the result as is: the index failed to load (error
-        recorded), the ticker is unknown, or its name is ambiguous (``raw`` says so)."""
+    async def _begin(self, ticker: str,
+                     ) -> tuple[SourceResult, TickerSnapshot, Optional[list[str]]]:
+        """A fresh result whose partial is the returned snapshot, plus the names to
+        query: the SEC title without its trailing qualifiers, then the configured
+        aliases of every ticker with that title. ``res.raw["resolved_name"]`` keeps
+        the SEC title. The names are None when the caller should return the result
+        as is: the index failed to load (error recorded), the ticker is unknown, or
+        its name is ambiguous (``raw`` says so)."""
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
@@ -145,14 +174,25 @@ class _NameIndexedSource(Source):
         if ticker.upper() in self._ambiguous:
             res.raw["ambiguous_name"] = True
             return res, snap, None
-        return res, snap, strip_sec_qualifiers(title) or title
+        names = [strip_sec_qualifiers(title) or title]
+        for tk, extra in self._aliases.items():
+            if self._name_index.get(tk) == title:   # share classes share one title
+                names.extend(extra)
+        # Deduped by spelling, not by normalized form: upstream search is
+        # spelling-sensitive, so "ExxonMobil" and "ExxonMobil Holdings Corp" are two queries.
+        unique: dict[str, str] = {}
+        for n in names:
+            unique.setdefault(n.casefold(), n)
+        return res, snap, list(unique.values())
 
-    def _cached_model(self, ticker: str, day: str, model: type, key: str) -> tuple[Optional[dict], Any]:
+    def _cached_model(self, ticker: str, day: str, model: type, key: str,
+                      names: list[str]) -> tuple[Optional[dict], Any]:
         """``(payload, model(**payload[key]))`` from the day cache; the model is None
-        for an unmatched payload. ``(None, None)`` on a miss, and a payload that
-        fails to rebuild is a miss: the live path runs and, on success, overwrites it."""
+        for an unmatched payload. ``(None, None)`` on a miss. A payload fetched for
+        other ``names`` is a miss, and so is one that fails to rebuild: the live path
+        runs and, on success, overwrites it."""
         cached = self._read_cache(ticker, day)
-        if cached is None:
+        if cached is None or cached.get("names") != names:
             return None, None
         try:
             return cached, (model(**cached[key]) if cached.get("matched") else None)

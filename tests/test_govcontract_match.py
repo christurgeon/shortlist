@@ -55,3 +55,62 @@ def test_labeled_threshold_recall_precision():
     # recorded recall — do NOT relax silently.
     assert precision == 1.0, f"precision {precision} (false positives present)"
     assert recall >= 0.6, f"recall {recall} below documented bar"
+
+
+# (ticker, SEC title, recipient spelled as USAspending returns it, same entity?)
+_SEEDED = [
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUM PUBLIC SECTOR SOLUTIONS, INC.", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUMSERVE HEALTH SERVICES, INC.", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUMRX ADMINISTRATIVE SERVICES, LLC", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUMHEALTH CARE SOLUTIONS, LLC", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUM360 LLC", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "OPTUMINSIGHT LIFE SCIENCES INC", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "CHANGE HEALTHCARE TECHNOLOGIES LLC", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "UNITED HEALTHCARE SERVICES,INC.", True),
+    ("UNH", "UNITEDHEALTH GROUP INC", "PLUS ONE HOLDINGS, INC.", False),
+    ("JNJ", "JOHNSON & JOHNSON", "JOHNSON & JOHNSON HEALTH CARE SYSTEMS INC.", True),
+    ("JNJ", "JOHNSON & JOHNSON", "DEPUY SYNTHES SALES, INC.", True),
+    ("JNJ", "JOHNSON & JOHNSON", "JANSSEN BIOTECH INC", True),
+    ("JNJ", "JOHNSON & JOHNSON", "AURIS HEALTH, INC", True),
+    ("JNJ", "JOHNSON & JOHNSON", "ABIOMED INC", True),
+    ("JNJ", "JOHNSON & JOHNSON", "MENTOR WORLDWIDE LLC", True),
+    ("JNJ", "JOHNSON & JOHNSON", "NEUWAVE MEDICAL, INC.", True),
+    ("JNJ", "JOHNSON & JOHNSON", "JOHNSON CONTROLS INC", False),
+    ("JNJ", "JOHNSON & JOHNSON", "JOHNSON HEALTH CARE SYSTEMS LLC", False),
+    ("CVX", "CHEVRON CORP", "CHEVRON USA INC.", True),
+    ("CVX", "CHEVRON CORP", "CHEVRON U.S.A. INC.", True),
+    ("CVX", "CHEVRON CORP", "CHEVRON PHILLIPS CHEMICAL COMPANY LP", False),
+    ("XOM", "ExxonMobil Holdings Corp", "EXXONMOBIL MARINE LIMITED", True),
+    ("XOM", "ExxonMobil Holdings Corp", "EXXON MOBIL CORPORATION", True),
+    ("CMCSA", "COMCAST CORP", "COMCAST BUSINESS COMMUNICATIONS, LLC", True),
+    ("CMCSA", "COMCAST CORP", "COMCAST OF CALIFORNIA/COLORADO/ILLINOIS/INDIANA/MICHIGAN GP, LLC",
+     True),
+    ("MRK", "Merck & Co., Inc.", "MERCK SHARP & DOHME LLC", True),
+    ("MRK", "Merck & Co., Inc.", "BIOMARK LLC", False),
+    ("MRK", "Merck & Co., Inc.", "MERCK KGAA", False),
+    ("JPM", "JPMORGAN CHASE & CO", "JPMORGAN CHASE BANK, NATIONAL ASSOCIATION", True),
+    ("JPM", "JPMORGAN CHASE & CO", "J. P. MORGAN INVESTMENT MANAGEMENT INC.", True),
+    ("GS", "GOLDMAN SACHS GROUP INC", "J. ARON & COMPANY LLC", True),
+    ("GS", "GOLDMAN SACHS GROUP INC", "GOLDMAN SACHS ASSET MANAGEMENT, L.P", True),
+    ("QCOM", "QUALCOMM INC", "QUALCOMM TECHNOLOGIES INC", True),
+    ("QCOM", "QUALCOMM INC", "RESERVOIR LABS, INC.", False),
+    ("DIS", "Walt Disney Co", "TWENTIETH CENTURY FOX FILM CORPORATION", True),
+    ("DIS", "Walt Disney Co", "METRONOME, LLC", False),
+    ("WFC", "WELLS FARGO & COMPANY", "ALLSPRING GLOBAL INVESTMENTS, LLC", False),  # divested
+]
+
+
+def test_seed_phrases_attribute_subsidiaries_and_reject_near_misses():
+    wrong = [(tk, recip) for tk, sec, recip, same in _SEEDED
+             if (match_confidence(sec, recip, alias_for=(tk,)) >= THRESHOLD) != same]
+    assert not wrong
+
+
+def test_seed_phrases_are_in_normalized_form():
+    from shortlist.data.govcontract_match import _ALIAS_SEED
+    assert all(normalize_name(p) == p for ps in _ALIAS_SEED.values() for p in ps)
+
+
+def test_a_seed_phrase_matches_whole_contiguous_words():
+    assert match_confidence("RTX Corporation", "WHITNEY PRATT LLC", alias_for=("RTX",)) < THRESHOLD
+    assert match_confidence("Boeing Co", "BOEINGS FARM", alias_for=("BA",)) < THRESHOLD

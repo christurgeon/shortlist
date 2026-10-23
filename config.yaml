@@ -475,6 +475,12 @@ gov_contracts:
   timeout: 20
   deadline_s: 90               # ceiling on one ticker's whole fetch; on expiry the fetch records
                                # an error (coverage shows it) and the context line abstains
+  # Ticker -> other recipient names (a renamed issuer, a subsidiary that holds the
+  # contracts). Each is searched with the SEC title and matches only exactly. Quote a
+  # ticker YAML reads as a bool (ON, NO, Y).
+  aliases:
+    GOOGL: [Google LLC]
+    XOM: [Exxon Mobil Corp]
 
 # Federal lobbying (LobbyingSource, Senate LDA). Keyless; data + research context line
 # only, no sub-score or flag.
@@ -488,6 +494,15 @@ lobbying:
   deadline_s: 180              # ceiling on one ticker's whole fetch, waits for LDA's per-minute
                                # limit included; on expiry the fetch records an error (coverage
                                # shows it) and the context line abstains
+  # Ticker -> other client names, each spelling the filings use (LDA search is
+  # spelling-sensitive). Each is searched and matches only exactly; each costs one LDA
+  # request per filing year and page, inside deadline_s. Quote a bool-like ticker.
+  aliases:
+    GOOGL: [Google Client Services]
+    AMZN: [Amazon.com Services, Amazon Corporate]
+    MO: [Altria Client Services]
+    XOM: [Exxon Mobil Corp, ExxonMobil]
+    CVX: [Chevron U.S.A., Chevron USA]
 
 # EDGAR filing-stream events (EdgarSource). Advisory flags only.
 edgar_events:

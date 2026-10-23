@@ -42,6 +42,6 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
         of = f" of ~{total:,}" if total else ""
         caveat = (f" [PARTIAL: top actions{of} by size only — figure is approximate "
                   f"and omits smaller/negative (de-obligation) actions]")
-    return (f"Government contracts: {body}.{caveat} Attribution is fuzzy and excludes "
+    return (f"Government contracts: {body}.{caveat} Attribution is fuzzy and may exclude "
             f"subsidiaries booked under other names — reconcile against the "
             f"business (a new award is a tailwind; a recompete loss a risk).")

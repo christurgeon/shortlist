@@ -316,3 +316,113 @@ def test_a_long_429_run_never_overflows_the_backoff(monkeypatch):
     res = _run(src.fetch("LMT"))
     assert not res.errors and res.partial.lobbying is not None
     _run(src.aclose())
+
+
+def _client_row(client, spend="1000.00", uid=None):
+    row = {"client": {"name": client}, "registrant": {"name": "IN HOUSE"},
+           "income": None, "expenses": spend, "dt_posted": _TTM + "T00:00:00-04:00"}
+    if uid:
+        row["filing_uuid"] = uid
+    return row
+
+
+def _by_client(rows_for):
+    """A handler serving ``rows_for[client_name]`` in the TTM year, and logging queries."""
+    seen = []
+
+    def handler(req):
+        q = req.url.params.get("client_name")
+        seen.append(q)
+        rows = rows_for.get(q, []) if int(req.url.params.get("filing_year")) == _TTM_YEAR else []
+        return httpx.Response(200, json={"count": len(rows), "next": None, "results": rows})
+    return handler, seen
+
+
+def test_an_alias_is_searched_and_matches_its_own_filings():
+    handler, seen = _by_client({"Altria Client Services": [
+        _client_row("ALTRIA CLIENT SERVICES LLC", "5000.00"),
+        _client_row("ALTRIA CLIENT SERVICES FOUNDATION", "99.00")]})   # not the alias
+    src = _source_with(handler, name_map={"MO": "ALTRIA GROUP, INC."},
+                       aliases={"MO": ["Altria Client Services"]})
+    res = _run(src.fetch("MO"))
+    lb = res.partial.lobbying
+    assert set(seen) == {"ALTRIA GROUP, INC.", "Altria Client Services"}
+    assert lb.ttm_spend == 5000.0 and lb.match_confidence == 1.0
+    assert lb.matched_client == "ALTRIA CLIENT SERVICES LLC"
+    _run(src.aclose())
+
+
+def test_an_alias_matches_exactly_not_within_the_fuzzy_band():
+    # 0.86 against "Amazon.com Services" by ratio: inside a 0.85 floor, but another entity.
+    handler, _ = _by_client({"Amazon.com Services": [_client_row("AMAZON COMMUNITY SERVICES")]})
+    src = _source_with(handler, name_map={"AMZN": "AMAZON COM INC"},
+                       aliases={"AMZN": ["Amazon.com Services"]})
+    res = _run(src.fetch("AMZN"))
+    assert res.partial.lobbying is None and res.raw["matched"] is False
+    _run(src.aclose())
+
+
+def test_an_alias_never_admits_a_joint_venture():
+    handler, _ = _by_client({"Chevron U.S.A.": [
+        _client_row("CHEVRON U.S.A. INC.", "700.00"),
+        _client_row("CHEVRON PHILLIPS CHEMICAL COMPANY LP", "9999.00")]})
+    src = _source_with(handler, name_map={"CVX": "CHEVRON CORP"},
+                       aliases={"CVX": ["Chevron U.S.A."]})
+    assert _run(src.fetch("CVX")).partial.lobbying.ttm_spend == 700.0
+    _run(src.aclose())
+
+
+def test_a_filing_found_by_two_names_counts_once():
+    dup = _client_row("EXXONMOBIL CORPORATION", "300.00", uid="f-1")
+    handler, seen = _by_client({"Exxon Mobil Corporation": [dup], "ExxonMobil": [dup],
+                                "ExxonMobil Holdings Corp": [_client_row("EXXONMOBIL", "1.00")]})
+    src = _source_with(handler, name_map={"XOM": "ExxonMobil Holdings Corp"},
+                       aliases={"XOM": ["Exxon Mobil Corporation", "ExxonMobil"]})
+    lb = _run(src.fetch("XOM")).partial.lobbying
+    # "ExxonMobil" normalizes like the title but is spelled differently, so it is still searched.
+    assert set(seen) == {"ExxonMobil Holdings Corp", "Exxon Mobil Corporation", "ExxonMobil"}
+    assert lb.ttm_spend == 301.0 and lb.filing_count_ttm == 2
+    _run(src.aclose())
+
+
+def test_share_classes_share_aliases_through_the_sec_title():
+    handler, seen = _by_client({"Google Client Services": [_client_row("GOOGLE CLIENT SERVICES LLC")]})
+    src = _source_with(handler, name_map={"GOOGL": "Alphabet Inc.", "GOOG": "Alphabet Inc."},
+                       aliases={"googl": "Google Client Services"})
+    assert _run(src.fetch("GOOG")).partial.lobbying is not None
+    assert "Google Client Services" in seen
+    _run(src.aclose())
+
+
+def test_an_ambiguous_name_abstains_even_with_aliases():
+    handler, seen = _by_client({})
+    src = _source_with(handler, name_map={"IBCP": "INDEPENDENT BANK CORP /MI/"},
+                       aliases={"IBCP": ["Independent Bank"]})
+    src._ambiguous = frozenset({"IBCP"})
+    assert _run(src.fetch("IBCP")).partial.lobbying is None and seen == []
+    _run(src.aclose())
+
+
+def test_a_day_cache_fetched_for_other_names_is_a_miss():
+    handler, seen = _by_client({"Altria Client Services": [_client_row("ALTRIA CLIENT SERVICES LLC")]})
+    src = _source_with(handler, name_map={"MO": "ALTRIA GROUP, INC."})
+    assert _run(src.fetch("MO")).partial.lobbying is None        # cached unmatched, title only
+    src._aliases = {"MO": ("Altria Client Services",)}
+    seen.clear()
+    assert _run(src.fetch("MO")).partial.lobbying is not None    # alias added: refetched
+    assert seen
+    seen.clear()
+    assert _run(src.fetch("MO")).partial.lobbying is not None and seen == []
+    _run(src.aclose())
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ({"mo": ["Altria Client Services", " ", 7]}, {"MO": ("Altria Client Services",)}),
+    ({"XOM": "ExxonMobil"}, {"XOM": ("ExxonMobil",)}),
+    ({True: ["On Semiconductor"], "AMZN": 5, "CVX": []}, {}),
+    (None, {}),
+    (["GOOGL"], {}),
+])
+def test_alias_config_is_parsed_defensively(raw, expected):
+    from shortlist.data.sources._common import _parse_aliases
+    assert _parse_aliases(raw) == expected
