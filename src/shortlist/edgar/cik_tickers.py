@@ -84,10 +84,9 @@ def reset_resolver_cache() -> None:
 def _newest_cached_payload(cache_dir: str, today: date, max_stale_days: int) -> dict:
     """Newest `company_tickers-<day>.json` on disk within `max_stale_days` of `today`, or {}.
 
-    The 2026-08-04 outage: a transient SEC 429 abstained every resolver-backed originator
-    for a whole session while a valid 24h-old index sat unread here. The map drifts by a
-    handful of rows a day, so a recent copy beats abstaining — but past the ceiling it can
-    mis-resolve renamed/delisted symbols, and abstaining is right again."""
+    A recent copy beats abstaining on a transient SEC 429: the map drifts by a few rows a
+    day. Past the ceiling it can mis-resolve renamed or delisted symbols, and abstaining
+    is right again."""
     best_day, best_payload = None, {}
     try:
         entries = list(Path(cache_dir).glob("company_tickers-*.json"))

@@ -132,9 +132,8 @@ def build_trade_month_index(txns) -> dict[str, set[tuple[int, int]]]:
 def quarters_back(as_of: date, n: int) -> list[str]:
     """The `n` quarters ending with the one before `as_of`'s, newest first ('2025q1').
 
-    DERA publishes roughly a quarter in arrears, so the CURRENT quarter is normally absent
-    and `ensure_quarters` skips it rather than failing (verified 2026-07-26: 2026q1 was
-    published, 2026q2 was not).
+    DERA publishes about a quarter in arrears, so the newest quarters are often absent
+    and `ensure_quarters` skips them rather than failing.
     """
     y, q = as_of.year, (as_of.month - 1) // 3 + 1
     out = []
@@ -149,14 +148,12 @@ def quarters_back(as_of: date, n: int) -> list[str]:
 def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]:
     """Download each quarterly ZIP to `cache_dir` if absent; return the paths that exist.
 
-    Cached FOREVER by filename -- a published quarter is immutable. A 404 means "not
-    published yet" and is SKIPPED, never raised: a missing recent quarter must degrade the
-    history, not abort the daily run.
+    Cached forever by filename: a published quarter is immutable. A 404 means "not
+    published yet" and is skipped, never raised, so a missing recent quarter degrades the
+    history instead of aborting the daily run.
 
-    Writes are ATOMIC (PID-unique sibling temp file + os.replace, the positions.json
-    pattern) -- I-3: a kill or disk-full mid-write must not leave a truncated `p` that
-    `p.exists()` treats as "already downloaded" forever after (a corrupt ZIP `_index_from_zip`
-    would then fail on, every run, with no self-healing retry).
+    Writes are atomic (PID-unique temp file + os.replace). A truncated file would pass
+    `p.exists()` forever and fail `_index_from_zip` on every run.
     """
     d = Path(cache_dir)
     d.mkdir(parents=True, exist_ok=True)
@@ -166,30 +163,22 @@ def ensure_quarters(quarters, cache_dir: str, identity: str = _UA) -> list[Path]
         if not p.exists():
             tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
             try:
-                # www.sec.gov — draws on the shared budget. DERA is few requests but very
-                # large ones, and a DERA 429 is the evidence the 2026-08-04 cascade was
-                # diagnosed from, so it must be paced and counted with everything else.
+                # www.sec.gov draws on the shared budget: few but very large requests.
                 sec_throttle()("dera")
                 req = urllib.request.Request(dera_zip_url(q), headers={"User-Agent": identity})
                 with urllib.request.urlopen(req, timeout=120) as r:
                     tmp.write_bytes(r.read())
-                # A 200 carrying an SEC block page or an edge-cache error body is NOT a
-                # ZIP. Without this check it is cached forever, and _index_from_zip then
-                # raises BadZipFile on every later run -- the same never-self-healing shape
-                # as the C-1 cache-poisoning bug. Atomic write guards truncation, not
-                # garbage-but-complete payloads.
+                # A 200 can carry an SEC block page or an error body that is not a ZIP.
+                # Cached, it would raise BadZipFile on every later run. The atomic write
+                # guards truncation, not complete garbage.
                 if not zipfile.is_zipfile(tmp):
                     warnings.warn(f"dera: {q} response was not a ZIP; discarding",
                                   stacklevel=2)
                     continue
                 os.replace(tmp, p)
             except (TypeError, AttributeError, NameError, ImportError) as exc:
-                # A BUG, not a data gap. On 2026-08-05 a mid-run deploy left a torn import
-                # state (old SecThrottle in memory, new dera.py on disk) and the labelled
-                # throttle call raised TypeError -- which `except Exception` below reported
-                # as "2026q2 unavailable", indistinguishable from SEC not having published
-                # it. Still degrades (a daily run never dies on one quarter), but the
-                # message must not lie about what happened.
+                # A bug, not a data gap (for example a torn import after a mid-run deploy).
+                # Still degrades, but the message must not say "unavailable".
                 warnings.warn(f"dera: {q} FAILED WITH A CODE ERROR (not a data gap) — "
                               f"{type(exc).__name__}: {redact_secrets(str(exc))}",
                               stacklevel=2)
@@ -218,41 +207,24 @@ def _index_from_zip(path: Path) -> list[InsiderTxn]:
 def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int]:
     """Trade-month index across `quarters`, disk-cached as compact JSON.
 
-    Returns (index, n_missing): `n_missing` counts requested quarters that did NOT
-    contribute -- not yet published, or a download/parse failure (indistinguishable from
-    here; both degrade the history the same way). Callers surface both numbers so an
-    operator can tell "running on a thin history" from "the feature silently stopped."
+    Returns (index, n_missing): `n_missing` counts requested quarters that did not
+    contribute (not yet published, or a download/parse failure; both degrade the history
+    the same way). Callers surface both numbers.
 
-    C-1 FIX (2026-07-27, REVISED 2026-07-30): the cache is written only when at least one
-    quarter contributed (`if contributed`). The first revision required EVERY requested
-    quarter, which was self-defeating: `quarters_back` yields the previous quarter first and
-    DERA publishes ~a quarter in arrears, so `n_missing >= 1` in the steady state (a live run
-    reported 15/16) and the cache therefore NEVER wrote -- rebuilding ~15 ZIPs at the ~288 MB
-    peak every single night. Requiring `contributed` is enough, because the key is derived
-    from the quarters that ACTUALLY contributed, so a late-arriving quarter mints its own
-    key rather than reusing a thinner index. A prior version wrote the cache unconditionally, so a
-    single network blip on the very first run after deploy persisted an EMPTY (or partial)
-    index to disk FOREVER -- every later run hit that cache and never retried the failed
-    download, silently classifying every insider UNCLASSIFIED (measured 48.5% of the
-    population would otherwise be ROUTINE and correctly dropped).
+    The cache is written only when at least one quarter contributed, and the cache key is
+    the sorted list of quarters that actually contributed, not the requested list. Two
+    constraints follow:
+    - Requiring every requested quarter would never write the cache, because the newest
+      quarter is routinely unpublished.
+    - A late-arriving quarter gets its own key instead of reusing a thinner index.
+    Never write the cache unconditionally: one network blip would persist an empty index
+    that every later run reuses, classifying every insider UNCLASSIFIED.
 
-    The cache key is the SORTED list of quarters that actually CONTRIBUTED, not the
-    requested list (I-5): a quarter that 404s today (DERA publishes ~a quarter in arrears,
-    so the newest requested quarter is routinely absent for weeks) and shows up six weeks
-    later gets its own cache entry once it does, instead of being pinned behind a
-    requested-quarter key that never changes within the quarter. The tradeoff: while any
-    requested quarter is missing, nothing is cached and every call rebuilds from the ZIPs
-    that ARE present -- correctness over efficiency, and an under-complete cache file from
-    an earlier session is simply orphaned (harmless; not cleaned up).
+    Values are stored as `y*12+m` ints and rehydrated to the (year, month) tuples
+    `classify_tier` expects.
 
-    Rebuilding a COMPLETE set from ~16 ZIPs on every daily run would be wasteful, which is
-    why a complete index is persisted. Values are stored as `y*12+m` ints (far smaller than
-    [y, m] pairs) and rehydrated to the (year, month) tuples `classify_tier` expects.
-
-    Memory: quarters are processed ONE AT A TIME (`_index_from_zip` per path, merged into
-    `idx` and discarded) -- the parsed InsiderTxn list for a quarter never coexists with
-    another quarter's, and the ~900k-submission full-history case never materializes as one
-    list. This runs on a 1.9 GB VPS.
+    Memory: quarters are parsed one at a time and merged into `idx`, so two quarters'
+    transaction lists never coexist. This runs on a 1.9 GB VPS.
     """
     paths = ensure_quarters(quarters, cache_dir, identity)
     downloaded = sorted(p.name.removesuffix("_form345.zip") for p in paths)
@@ -265,10 +237,10 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
             return ({k: {(v // 12, v % 12 + 1) for v in vs} for k, vs in raw.items()},
                     len(quarters) - len(downloaded))
         except (json.JSONDecodeError, OSError):
-            probe.unlink(missing_ok=True)  # I-3: don't re-serve a corrupt cache forever
+            probe.unlink(missing_ok=True)  # never re-serve a corrupt cache
 
-    # `contributed` is built from quarters that actually PARSED, not merely downloaded -- a
-    # corrupt archive must not be encoded into the cache key as though it had contributed.
+    # `contributed` lists quarters that parsed, not merely downloaded: a corrupt archive
+    # must not enter the cache key.
     idx: dict[str, set] = {}
     contributed: list[str] = []
     for p in paths:

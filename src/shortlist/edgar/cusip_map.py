@@ -31,10 +31,8 @@ from ..env import redact_secrets
 
 _FTD_URL = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails{ym}{half}.zip"
 
-# Corporate-form / share-class suffix tokens stripped before an EXACT name comparison. The
-# fallback is deliberately conservative (FTD is the primary resolver) — it must abstain on a
-# near miss, never fuzzy-match, so we only cancel boilerplate that is noise across both the
-# 13F nameOfIssuer and the company_tickers title.
+# Suffix tokens stripped before an exact name comparison. The fallback must abstain on a
+# near miss, never fuzzy-match, so only boilerplate noise is cancelled.
 _SUFFIX_TOKENS = frozenset({
     "INC", "INCORPORATED", "CORP", "CORPORATION", "CO", "COMPANY", "COMPANIES",
     "LTD", "LIMITED", "PLC", "LP", "LLC", "LLP", "LP.", "HOLDINGS", "HLDGS", "HLDG",
@@ -43,12 +41,9 @@ _SUFFIX_TOKENS = frozenset({
 
 
 # SEC issuer titles append the state/country of incorporation as a TRAILING `/XX/` or `/XX`
-# ("TJX COMPANIES INC /DE/", "WELLS FARGO & COMPANY/MN", "COSTCO WHOLESALE CORP /NEW").
-# It is metadata, not part of the name — but punctuation-stripping turned it into a stray
-# token ("TJX DE") that can never match a counterparty's rendering of the same issuer.
-# Measured 2026-08-05: 821 of 10,398 live issuers (7.9%) were affected, including COST,
-# AMAT, QCOM, TJX, WFC and ARM. Anchored to the END only: an interior slash is part of the
-# name ("A/B Testing"), and stripping it would truncate a legitimate issuer.
+# ("TJX COMPANIES INC /DE/", "WELLS FARGO & COMPANY/MN"). It is metadata, and punctuation
+# stripping would turn it into a stray token ("TJX DE") that never matches another rendering
+# of the issuer. Anchored to the end only: an interior slash is part of the name ("A/B Testing").
 _STATE_MARKER = re.compile(r"/\s*[A-Z]{2,3}\s*/?\s*$", re.I)
 
 
@@ -56,10 +51,9 @@ def normalize_issuer_name(name: str | None) -> str:
     """Uppercase, drop punctuation, strip corporate-form/share-class suffix tokens, collapse
     whitespace. Returns '' for an empty/degenerate name (which never matches — abstain).
 
-    The trailing SEC state-of-incorporation marker is removed FIRST (see `_STATE_MARKER`).
-    Doing so can make two different issuers normalise alike ("First Bancorp /PR/" and
-    "/NC/"); `build_name_to_ticker`'s cross-CIK collision guard then makes both ABSTAIN,
-    which is the safe direction — measured net-new collisions: 4."""
+    The trailing state-of-incorporation marker is removed first (`_STATE_MARKER`). That
+    can make two issuers normalise alike ("First Bancorp /PR/" and "/NC/"); the cross-CIK
+    collision guard in `build_name_to_ticker` then makes both abstain, the safe direction."""
     if not name:
         return ""
     up = re.sub(r"[^A-Z0-9 ]", " ", _STATE_MARKER.sub(" ", str(name)).upper())

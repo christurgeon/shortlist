@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import re
 
-# XML tier: the 13D/G-modernization structured filings (late 2024+). Element name pinned
-# by a live probe — adjust there, not ad hoc.
+# XML tier: the 13D/G-modernization structured filings (late 2024+).
 _XML_PCT_RE = re.compile(
     r"<(?:\w+:)?percentOfClass>\s*([0-9]{1,3}(?:\.[0-9]+)?)\s*%?\s*<", re.IGNORECASE)
 # Legacy tier: text/HTML cover pages. Tag-strip first, then find every row-13 block.
@@ -37,8 +36,7 @@ def extract_stake_pct(raw: str | None) -> float | None:
 def stake_pct_from_filing(filing) -> float | None:
     """Best-effort percent-of-class from an edgartools Filing: structured XML first
     (13D/G modernization, late 2024+), then raw HTML, then rendered text. The html tier
-    recovers sibling-div legacy cover pages the text renderer drops; live-probed
-    2026-07-18. Never raises -> None."""
+    recovers sibling-div legacy cover pages the text renderer drops. Never raises -> None."""
     for getter in ("xml", "html", "text"):
         try:
             raw = getattr(filing, getter)()

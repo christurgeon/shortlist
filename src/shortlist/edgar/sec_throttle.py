@@ -9,19 +9,15 @@ from __future__ import annotations
 import threading
 import time
 
-# SEC fair access is ~10 req/s. We run at ~6 (0.167 s) — 60% of the ceiling, NOT the 80%
-# that pure throughput would argue for, because this IP has a RECENT throttling history
-# (real DERA 429s on 2026-08-03/04). The headroom also covers the harness EdgarSource, which
-# fetches on its own asyncio semaphore OUTSIDE this budget — `screen.py:main` only starts
-# the research phase (the SecThrottle-metered consumers: index.py, dera.py, thirteenf.py,
-# cik_tickers.py, research/durability.py) after run_harness returns, so the two do not overlap in
-# practice, but nothing enforces that.
+# SEC fair access is ~10 req/s. This runs at ~6 (0.167 s), 60% of the ceiling, because
+# this IP has a history of 429s. The headroom also covers the harness EdgarSource, which
+# fetches on its own semaphore outside this budget. `screen.py:main` starts the research
+# phase (the metered consumers) only after run_harness returns, so the two do not overlap
+# in practice, but nothing enforces that.
 #
-# Sizing (measured 2026-08-05): `full_text_submission()` latency is ~17 ms median, so a
-# serial unthrottled loop reaches ~57 req/s — 5.7x over the ceiling. That is what made the
-# Form 4 sweep starve every other SEC consumer in the run. Serialisation is NOT the
-# bottleneck at this latency, so a thread pool would buy nothing; the interval is the whole
-# constraint. See `docs/audits/2026-08-05-discovery-funnel-audit.md` §4/§9.
+# Request latency is so low that an unthrottled serial loop far exceeds the ceiling, and
+# a thread pool would buy nothing: the interval is the whole constraint. See
+# `docs/audits/2026-08-05-discovery-funnel-audit.md` §4/§9.
 DEFAULT_MIN_INTERVAL_S = 0.167
 
 
@@ -29,9 +25,7 @@ class SecThrottle:
     """Min-interval throttle + per-consumer request accounting. Thread-safe: callers run
     signals on one worker thread, but the bot and the harness can call in concurrently.
 
-    Counting exists because the 2026-08-04 cascade (the Form 4 sweep starving 13D and DERA)
-    is still INFERRED from timing correlation. Per-consumer counts turn that into evidence
-    and size how much of the budget a new originator can safely take."""
+    Per-consumer counts show which caller uses how much of the budget."""
 
     def __init__(self, min_interval_s: float = DEFAULT_MIN_INTERVAL_S) -> None:
         self.min_interval_s = min_interval_s
@@ -40,9 +34,8 @@ class SecThrottle:
         self._counts: dict[str, int] = {}
 
     def __call__(self, consumer: str | None = None) -> None:
-        """Acquire one slot. `consumer` labels the caller for the budget report; an
-        unlabelled call is still COUNTED (as `unattributed`) so no request can vanish from
-        the budget just because a call site predates the label."""
+        """Acquire one slot. `consumer` labels the caller for the budget report. An
+        unlabelled call is counted as `unattributed`."""
         with self._lock:
             key = consumer or "unattributed"
             self._counts[key] = self._counts.get(key, 0) + 1

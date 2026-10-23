@@ -24,18 +24,12 @@ class InsiderTxn:
     plan_10b5_1: bool
     roles: frozenset[str]
     title: str | None = None
-    # Last field (positional back-compat): a joint filing (multiple <reportingOwner>
-    # blocks on one Form 4) has no per-owner attribution in the XML or in DERA -- the
-    # transaction is reported once but the CIK we pick is a guess. We DON'T guess;
-    # qualifies() (a later task) is where that abstention gets acted on, so the parser
-    # stays a faithful reader and every drop decision lives in one place. Measured
-    # 2025Q1 DERA: 1.72% of all Form 4s are joint, but 12.05% of Form 4s with an open-
-    # market purchase are -- and 9.5% of the v1 (P >= $100k, officer/director) population.
+    # Fields below are appended last for positional back-compat.
+    # A joint filing (several <reportingOwner> blocks) has no per-owner attribution, so
+    # the owner CIK is a guess. The parser does not guess; qualifies() drops it, so every
+    # drop decision lives in one place. Joint filings are common among open-market purchases.
     joint_filing: bool = False
-    # LAST field (positional back-compat, the convention this repo uses everywhere): the
-    # issuer's own CIK. Carried so a discovery Emission can set cik= directly instead of
-    # shipping cik=None like thirteenf.py's emissions still do (thirteenf.thirteenf_emissions)
-    # -- both parse_form4_xml and parse_dera_tsvs have it inline already.
+    # The issuer's own CIK, so a discovery Emission can set cik= directly.
     issuer_cik: str = ""
 
     @property
@@ -46,8 +40,8 @@ class InsiderTxn:
 
 
 def _flag(raw) -> bool:
-    """aff10b5One / isOfficer appear as BOTH 0|1 AND false|true in real filings
-    (live-verified 2026-07-26). A missing element is False."""
+    """aff10b5One / isOfficer appear as both 0|1 and false|true in real filings. A
+    missing element is False."""
     return str(raw or "").strip().lower() in _TRUE
 
 
@@ -198,8 +192,8 @@ def _title_weight(title: str | None) -> float:
 def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     if txn.code != "P" or tier == ROUTINE:
         return False
-    # Joint filings carry no per-transaction owner attribution, so owner_cik -- and every
-    # tier derived from it -- would be a guess. 9.5% of this population.
+    # Joint filings carry no per-transaction owner attribution, so owner_cik and every
+    # tier derived from it would be a guess.
     if txn.joint_filing:
         return False
     if cfg.get("exclude_10b5_1", True) and txn.plan_10b5_1:
@@ -211,17 +205,12 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     return v is not None and v >= float(cfg.get("min_value", 100_000))
 
 
-# Tokens filers put in <issuerTradingSymbol> when there is no listed symbol. They are all
-# TRUTHY, so a bare `if not ticker` check passes them straight through.
+# Tokens filers put in <issuerTradingSymbol> when there is no listed symbol. They are
+# truthy, so a bare `if not ticker` check passes them.
 #
-# DO NOT DELETE THIS GUARD. It previously lived in edgar_index._is_real_ticker, whose
-# docstring records the bug as observed in PRODUCTION: unresolved issuers collapse into a
-# phantom "NONE" candidate. That guard's Form 4 call sites were removed along with
-# cluster_buys_from_records and nothing re-owned it, which the final whole-branch review
-# caught. Measured on real SEC data (2025Q1, 57,797 Form 4 filings): 459 (0.79%) carry a
-# placeholder symbol -- NONE x305, N/A x91, "-" x42, NA x15, a bare CIK x6. Since
-# emissions_from_txns buckets by ticker, those 305 NONE rows would merge into ONE emission
-# across unrelated companies, summing dollars and pooling owner counts at near-max strength.
+# Do not delete this guard. emissions_from_txns buckets by ticker, so placeholder rows
+# would merge into one emission across unrelated companies, summing dollars and pooling
+# owner counts at near-max strength.
 _PLACEHOLDER_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
 
 
@@ -237,11 +226,8 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
     by_ticker: dict[str, list[tuple[InsiderTxn, str]]] = {}
     for t in txns:
         tier = classify_tier(t.owner_cik, index, as_of)
-        # A 5th-letter security-type suffix means the symbol is not common stock. An
-        # insider buy cannot originate at a mutual fund or a warrant, so such a row is a
-        # resolver artifact, not a signal -- FTECX/VFLEX/BBASX all reached the live ledger
-        # this way and BBASX was delivered UNGATED at composite 100.0. The other EDGAR
-        # originators (8-K, buyback, 13F) have always applied this rule; Form 4 did not.
+        # A 5th-letter security-type suffix means the symbol is not common stock, so the
+        # row is a resolver artifact (see _ticker_rules).
         if not is_real_ticker(t.ticker) or junk_suffix(t.ticker.strip().upper()):
             continue
         if not qualifies(t, tier, cfg):
@@ -262,9 +248,8 @@ def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emiss
         size = min(0.30, total / 5_000_000.0)          # materiality, capped
         cluster = min(0.20, 0.10 * (len(buyers) - 1))  # cluster is a BONUS, not a gate
         strength = round(min(1.0, (0.50 + size + cluster) * role_w * tier_mult), 4)
-        # One symbol must map to one issuer. If the rows disagree, the bucket is incoherent
-        # -- abstain rather than pick one, because Emission.cik is persisted to the firehose
-        # as the PERMANENT measurement record and a wrong CIK there is unrecoverable.
+        # One symbol must map to one issuer. Abstain if the rows disagree: Emission.cik is
+        # persisted as a permanent record and a wrong CIK is unrecoverable.
         ciks = {t.issuer_cik for t, _ in rows if t.issuer_cik}
         if len(ciks) > 1:
             continue
