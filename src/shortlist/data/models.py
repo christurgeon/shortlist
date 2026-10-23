@@ -12,11 +12,8 @@ def utcnow_iso() -> str:
 
 
 def _is_present(v: Any) -> bool:
-    """Whether a field value counts as supplied by a source. The single definition
-    of the merge/coverage 'present-ness' convention: None, the empty list, and the
-    empty string all read as absent (so a lower-priority source can fill the field).
-    Reused by merge (`_merge_flat`/`_merge_insider`/`_has_data`) and coverage()/
-    missing() so the rule lives in exactly one place."""
+    """Whether a source supplied a field value. The one definition of presence for
+    merge and coverage: None, [] and "" read as absent."""
     return v not in (None, [], "")
 
 
@@ -59,11 +56,9 @@ class Fundamentals:
 class Statements:
     """Up to 5 fiscal years, most-recent-first, for trend/stability signals.
 
-    A MERGED instance (`_merge_statements`) may carry `None` holes in a
-    backfilled series where a lower-priority donor had no row for one of the
-    spine's fiscal years (year-joined, not truncated) — every consumer
-    (`piotroski_f`, `bridge._financial_series`, `cagr`, `[0]`-as-latest) is
-    already `None`-tolerant, so this is part of the class contract, not a bug."""
+    A merged instance (`_merge_statements`) may carry `None` holes in a backfilled
+    series. Every consumer (`piotroski_f`, `bridge._financial_series`, `cagr`,
+    `[0]`-as-latest) must tolerate `None`."""
     fiscal_years: list[int] = field(default_factory=list)
     revenue: list[float] = field(default_factory=list)
     gross_profit: list[float] = field(default_factory=list)
@@ -75,33 +70,28 @@ class Statements:
     diluted_eps: list[float] = field(default_factory=list)
     diluted_shares: list[float] = field(default_factory=list)   # weighted-avg, newest-first
     fiscal_period_end: list[str] = field(default_factory=list)  # ISO dates, newest-first
-    # Leverage / coverage (ASSESSMENT_GAPS §2.7), absolute USD, newest-first.
+    # Leverage / coverage, absolute USD, newest-first.
     operating_income: list[float] = field(default_factory=list)
     dep_amort: list[float] = field(default_factory=list)
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     cash_and_equivalents: list[float] = field(default_factory=list)
-    # Inventory BALANCE, newest-first. Research context only (the /deep inventory
-    # line); never scored, never flagged. Excluded from coverage below.
+    # Inventory balance, newest-first. /deep context only; never scored or flagged.
     inventory: list[float] = field(default_factory=list)
-    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). total_assets
-    # is plumbing; asset_growth/accruals are pre-computed scalars (the source aligns
-    # NI/CFO/Assets by their own statement dates — the bridge can't, so it copies).
+    # asset_growth/accruals are pre-computed scalars: the source aligns NI/CFO/Assets
+    # by their own statement dates, which the bridge cannot do, so the bridge copies them.
     total_assets: list[float] = field(default_factory=list)
     asset_growth: Optional[float] = None
     accruals: Optional[float] = None
-    # Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5). Latest-FY dollar
-    # magnitudes; the bridge divides by market_cap to derive shareholder_yield (it can't
-    # be pre-computed at extraction — market_cap is a price-merge product). None where
-    # the source didn't supply financing rows (e.g. FMP-won statements).
+    # Shareholder-yield financing legs: latest-FY dollars. The bridge divides by
+    # market_cap, which is a price-merge product. None when the source has no financing rows.
     dividends_paid: Optional[float] = None
     repurchases: Optional[float] = None
     debt_repayments: Optional[float] = None
     debt_issuance: Optional[float] = None
 
     def gross_margins(self) -> list[float]:
-        # Guard BOTH sides: FMP stores gross_profit verbatim, so a year can carry
-        # truthy revenue with a None gross profit — `if r` alone would TypeError.
+        # FMP can carry revenue with a None gross profit, so guard both sides.
         return [g / r for g, r in zip(self.gross_profit, self.revenue, strict=False)
                 if r and g is not None]
 
@@ -116,10 +106,8 @@ class Analyst:
     target_high: Optional[float] = None
     target_low: Optional[float] = None
     consensus: Optional[str] = None
-    # Rating REVISION over the recommendation window. Stored as CHANGES, never as
-    # prior levels: this object merges field-by-field with `fmp` ahead of `finnhub`,
-    # so a prior level here would be differenced against a level from a different
-    # vendor's analyst panel. Deltas are computed inside one source's payload.
+    # Rating revision over the window. Store deltas, never prior levels: fields merge
+    # across vendors, so a stored level could be differenced against another vendor's panel.
     rating_months: Optional[int] = None   # span of the window; None => no drift known
     buy_delta: Optional[int] = None
     hold_delta: Optional[int] = None
@@ -146,9 +134,8 @@ class Insider:
     sell_count: Optional[int] = None
     sentiment_mspr: Optional[float] = None      # -1..1 net signal
     recent: list[InsiderTxn] = field(default_factory=list)
-    # Conviction enrichment — default None (NOT 0) so an empty Insider() does not trip
-    # the _merge_insider wholesale branch. Derived from the SAME Form-4 txn set as the
-    # counts above -> travel wholesale with them.
+    # Default None, not 0, so an empty Insider() does not trip the _merge_insider
+    # wholesale branch. Derived from the same Form 4 set as the counts above.
     distinct_buyers: Optional[int] = None
     role_weighted_buy_value: Optional[float] = None
     planned_sell_value: Optional[float] = None
@@ -162,22 +149,12 @@ class Price:
     ma200: Optional[float] = None
     year_high: Optional[float] = None
     year_low: Optional[float] = None
-    # The four ret_* horizons feed NO SCORING LEG — set by FMP (sources/fmp.py) and mock,
-    # plus Yahoo for ret_6m only; the bridge, scorer and every backtest source ignore them
-    # (`momentum_score` is `price_vs_200dma` + `rel_strength_6m`). Do not wire a leg to
-    # them assuming they are populated everywhere; only `rel_strength_6m` is load-bearing.
-    #
-    # They are NOT inert, though, and deleting them is NOT cosmetic: they are absent from
-    # _NON_SIGNAL_FIELDS, so `coverage()`/`missing()` count all four in the Price
-    # denominator (4 of 13). Removing them would shift every snapshot's coverage ratio and
-    # therefore the accumulate.py GATED / THIN / CAPTURED classification — measured
-    # 2026-08-04 against the 1,432-snapshot store: +0.016 mean coverage, flipping
-    # THIN/CAPTURED for 233 snapshots (16%). `ret_6m` is populated in ~700 of them, so it
-    # is a filled numerator entry, not denominator padding.
-    #
-    # That, and NOT store back-compat, is why they stay: `from_dict` drops unknown keys by
-    # design, so old persisted snapshots would read back fine. If you want them gone, move
-    # them to _NON_SIGNAL_FIELDS deliberately and re-baseline coverage — never silently delete.
+    # The ret_* horizons feed no scoring leg and are not populated by every source;
+    # only `rel_strength_6m` is load-bearing. Do not wire a leg to them.
+    # They are absent from _NON_SIGNAL_FIELDS, so coverage()/missing() count them.
+    # Deleting them shifts every snapshot's coverage ratio and the accumulate.py
+    # GATED / THIN / CAPTURED classification. To remove them, move them to
+    # _NON_SIGNAL_FIELDS deliberately and re-baseline coverage.
     ret_1m: Optional[float] = None
     ret_3m: Optional[float] = None
     ret_6m: Optional[float] = None
@@ -185,19 +162,16 @@ class Price:
     rel_strength_6m: Optional[float] = None     # 6m return minus benchmark 6m return
     realized_vol: Optional[float] = None        # annualized stdev of daily returns
     max_drawdown: Optional[float] = None        # trailing ~1y peak-to-trough, negative
-    # Residual (idiosyncratic) momentum: 12-1 momentum of CAPM (vs SPY) residuals,
-    # standardized by residual vol (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2).
-    # Needs the DATE-ALIGNED stock + SPY series, so it is set only on the dated seam
-    # (snapshot_from_closes_dated), None on the scalar live-merge path that lacks dates.
+    # 12-1 momentum of CAPM (vs SPY) residuals, standardized by residual vol.
+    # Needs date-aligned stock + SPY series: set only by snapshot_from_closes_dated,
+    # None on the scalar live-merge path.
     residual_momentum: Optional[float] = None
-    # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (backtest-only; no production
-    # leg reads them). Pure closes functions, so unlike residual_momentum they populate on
-    # EVERY path — hence excluded from coverage via _NON_SIGNAL_FIELDS below.
+    # Backtest-only measurement axes; no production leg reads them. They populate on
+    # every path, so _NON_SIGNAL_FIELDS excludes them from coverage.
     pct_to_52w_high: Optional[float] = None       # closes[-1]/max(last 252) in (0,1] (George-Hwang)
     max_daily_return: Optional[float] = None      # largest daily return, last ~21d (Bali MAX; negative pred.)
     vol_scaled_momentum: Optional[float] = None   # mom_12_1 / 6m realized vol (Barroso-Santa-Clara)
-    # ~monthly-sampled (date, close) pairs over the fetch window, oldest->newest.
-    # Lets the bridge align EDGAR fiscal-year-end dates to a historical price.
+    # ~Monthly (date, close) pairs, oldest->newest. The bridge aligns EDGAR fiscal-year-end dates to them.
     monthly_closes: list[list] = field(default_factory=list)
 
     def price_vs_200dma(self) -> Optional[float]:
@@ -290,10 +264,9 @@ class Earnings:
     last_surprise_pct: Optional[float] = None  # newest quarter's surprise %
     next_date: Optional[str] = None       # next earnings date (ISO) or None
     last_report_date: Optional[str] = None  # APPROX last-announcement date (ISO); see _earnings
-    # True when last_report_date is the quarter-END proxy (not a real print date) — lets
-    # the bridge refine the SUE decay anchor with the EDGAR 10-Q/10-K filed date. Defaults
-    # True so legacy persisted snapshots (free-tier era: calendar never had past entries)
-    # also get the refinement on replay.
+    # True when last_report_date is the quarter-end proxy, not a real print date. The bridge
+    # then refines the SUE decay anchor with the EDGAR 10-Q/10-K filed date. Defaults True
+    # so persisted snapshots that predate the field get the refinement on replay.
     last_report_date_estimated: bool = True
 
 
@@ -303,9 +276,7 @@ class FilingEvent:
     filed: str                         # ISO date (filing date)
     accession: Optional[str] = None
     url: Optional[str] = None          # public SEC index URL — carries no key
-    # Comma-separated 8-K item codes ("2.02,9.01") as edgartools' filings index
-    # supplies them; None for forms that carry no items. Defaulted, so snapshots
-    # persisted before this field load unchanged (from_dict filters to known names).
+    # Comma-separated 8-K item codes ("2.02,9.01"); None for forms without items.
     items: Optional[str] = None
 
 
@@ -317,21 +288,16 @@ class Events:
     activist_13d: bool = False         # SC 13D / SCHEDULE 13D (and /A) in window
     passive_13g: bool = False          # SC 13G / SCHEDULE 13G (and /A) in window
     planned_insider_sale_144: bool = False  # Form 144 (and /A) in window
-    # Distress / dilution / accounting-integrity forms. All ride the SAME submissions
-    # index the flags above already read, so they cost no additional request
-    # (measured 2026-08-23: widening the form filter from 8 to 18 made 0 requests).
-    # Base rates over 228 names, 365d: shelf 18-20%, comment letter 6.6-7.5%,
-    # auditor change 1.8%, listing deficiency 1.3%, restatement 0.4%, late filing 0.0%.
-    # The rare ones are insurance, not features — that is the deal their zero cost buys.
+    # Distress / dilution / accounting-integrity forms. They read the same submissions
+    # index as the flags above, so they cost no extra request.
     late_filing: bool = False          # NT 10-K / NT 10-Q (and /A) in window
     shelf_offering: bool = False       # S-3 / S-3ASR / 424B5 — dilution capacity
     sec_comment_letter: bool = False   # UPLOAD (staff letter) / CORRESP (reply)
     restatement_8k: bool = False       # 8-K Item 4.02 — non-reliance on prior financials
     auditor_change: bool = False       # 8-K Item 4.01
     listing_deficiency: bool = False   # 8-K Item 3.01 — exchange listing-standard notice
-    # Latest exact-form 10-Q/10-K filed date (ISO) — the bridge's SUE decay-anchor
-    # refinement (a ~0-5d announcement proxy). NOT an advisory: kept out of `recent`
-    # so the research filing-events line and the presence flags are untouched.
+    # Latest exact-form 10-Q/10-K filed date (ISO), the bridge's SUE decay anchor.
+    # Not an advisory: kept out of `recent` and the presence flags.
     last_report_filed: Optional[str] = None
 
 
@@ -340,36 +306,23 @@ class Events:
 # Which top-level objects must be present for a snapshot to be "assessment-ready".
 KEY_OBJECTS = ("profile", "fundamentals", "statements", "analyst", "insider", "price")
 
-# `recent` is illustrative; the rest are internal derivation plumbing, not
-# assessment-ready signals -> excluded from coverage/missing accounting.
+# Plumbing and illustrative fields, excluded from coverage()/missing(). Do not
+# add or remove a field on a KEY_OBJECT without re-baselining coverage: it moves
+# every snapshot's ratio and the accumulate.py CAPTURED/THIN split.
 _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_end", "monthly_closes",
                       "distinct_buyers", "role_weighted_buy_value", "planned_sell_value",
-                      # Leverage derivation plumbing (feed net_debt_to_ebitda / coverage,
-                      # not assessment-ready signals themselves) — §2.7.
+                      # Leverage derivation inputs.
                       "operating_income", "dep_amort", "interest_expense", "ebitda",
                       "cash_and_equivalents",
-                      # Asset-growth / accruals plumbing + pre-computed scalars (§3) —
-                      # surfaced via StockMetrics, not coverage-accounted here.
+                      # Asset-growth / accruals inputs and scalars.
                       "total_assets", "asset_growth", "accruals",
-                      # Rating-revision deltas: DERIVED, and only Finnhub-with->=2-periods
-                      # can supply them. `analyst` is a KEY_OBJECT, so leaving them in
-                      # would dilute the coverage denominator of every snapshot ever
-                      # taken and shift accumulate's GATED/THIN/CAPTURED split — the
-                      # same trap the `inventory` and ret_* notes describe.
+                      # Rating-revision deltas: only Finnhub with >=2 periods supplies them.
                       "rating_months", "buy_delta", "hold_delta", "sell_delta",
-                      # Inventory is a /deep research context input only. MUST stay
-                      # excluded: `statements` is in KEY_OBJECTS, so an un-excluded
-                      # field moves the coverage DENOMINATOR for every snapshot ever
-                      # taken (measured: mock GEV 0.855 -> 0.825), which shifts
-                      # accumulate.py's THIN_MARK CAPTURED/THIN split -- the same
-                      # class of break documented above at 16% of 1,432 snapshots.
+                      # /deep context only.
                       "inventory",
-                      # Shareholder-yield financing legs (§5) — plumbing the bridge
-                      # divides by market_cap; surfaced via StockMetrics, not here.
+                      # Shareholder-yield financing legs.
                       "dividends_paid", "repurchases", "debt_repayments", "debt_issuance",
-                      # PREDICTIVE_SIGNALS §2 price-refinement measurement axes — populated on
-                      # every screen (pure closes fns), surfaced via StockMetrics, NOT coverage-
-                      # accounted here (mirrors asset_growth/accruals).
+                      # Backtest measurement axes.
                       "pct_to_52w_high", "max_daily_return", "vol_scaled_momentum")
 
 
@@ -428,13 +381,10 @@ class TickerSnapshot:
 
     @classmethod
     def from_dict(cls, d: dict) -> "TickerSnapshot":
-        """Inverse of to_dict: rebuild a snapshot (and its nested sections) from a
-        persisted JSON dict. Unknown keys are ignored so the model can evolve."""
+        """Inverse of to_dict. Ignores unknown keys."""
         def _build(klass, payload):
-            # A corrupt store file can carry a non-dict section payload (list/str);
-            # treat it as absent rather than AttributeError-ing the whole load —
-            # but LOUDLY, or a store-format regression silently thins every
-            # snapshot the replay backtest reads.
+            # A corrupt store file can carry a non-dict payload. Treat it as absent,
+            # but warn: silence would thin every snapshot the replay backtest reads.
             if not isinstance(payload, dict):
                 if payload is not None:
                     warnings.warn(
@@ -471,9 +421,8 @@ _DEFAULTS: dict[str, type] = {
 }
 
 
-# Auxiliary sections live on the snapshot and are merged, but are DELIBERATELY excluded
-# from KEY_OBJECTS so they never move coverage()/missing() (sparse signals, not
-# assessment-ready fundamentals). from_dict round-trips them via this map.
+# Auxiliary sections are merged but stay out of KEY_OBJECTS so they never move
+# coverage()/missing().
 _AUX_DEFAULTS: dict[str, type] = {
     "short_interest": ShortInterest, "events": Events,
     "social": SocialSentiment, "gov_contracts": GovContracts,
@@ -530,29 +479,24 @@ def _has_data(obj: Any) -> bool:
 
 
 # --- statements merge helpers --------------------------------------------
-# `statements` is the one list-bearing section merged across sources. Every
-# consumer aligns its parallel series by LIST POSITION (piotroski_f,
-# bridge._financial_series, cagr, `[0]`-as-latest), so a backfill must join on
-# the fiscal YEAR key or it silently pairs one source's 2022 revenue with
-# another's 2023 share count.
+# Every consumer aligns `statements` series by list position, so a backfill must
+# join on the fiscal-year key. A positional join pairs one source's 2022 revenue
+# with another's 2023 share count.
 
 def _newest_year(years: list[Optional[int]]) -> Optional[int]:
-    """Newest real fiscal year in a spine, ignoring None holes. None if there
-    are no usable years (never assumes newest-first ordering)."""
+    """Newest fiscal year in a spine, ignoring None holes. None if there is none.
+    Does not assume ordering."""
     real = [y for y in years if y is not None]
     return max(real) if real else None
 
 
 def _usable_years(st: "Statements") -> Optional[list[Optional[int]]]:
-    """A Statements' fiscal-year spine, or None when it cannot serve as a join
-    key: empty (nothing to key on) or containing duplicates (ambiguous — a
-    52/53-week fiscal can put two period ends in one calendar year).
+    """A Statements' fiscal-year spine, or None when it cannot be a join key:
+    empty, or containing duplicates (a 52/53-week fiscal year can put two period
+    ends in one calendar year).
 
-    An ALL-`None` spine is deliberately NOT rejected here even though it is
-    equally unusable as a key. It does not need to be: `_reindex_by_year` treats
-    a None year as a non-key on both sides, so an all-None spine lands nothing
-    and returns [], which `_is_present` reads as absent — the same observable
-    outcome as returning None from here. The branch would be dead weight."""
+    An all-`None` spine is not rejected: `_reindex_by_year` lands nothing from it
+    and returns [], which reads as absent."""
     years = st.fiscal_years
     if not years:
         return None
@@ -564,12 +508,9 @@ def _usable_years(st: "Statements") -> Optional[list[Optional[int]]]:
 
 def _reindex_by_year(donor_years: list[Optional[int]],
                      donor_values: list, spine_years: list[Optional[int]]) -> list:
-    """Re-index a donor series onto the spine's fiscal-year keys: the returned
-    list is spine-length and spine-ordered, with None wherever the donor has no
-    row for that year. A None year is NOT a key (an unparseable date on both
-    sides must not join to itself). Returns [] when nothing lands, so
-    `_is_present` still reads the field as absent rather than as a list of
-    Nones. Ragged inputs are tolerated, never raised on."""
+    """Re-index a donor series onto the spine's fiscal years. The result is
+    spine-length and spine-ordered, with None where the donor has no row. A None
+    year is not a key. Returns [] when nothing lands. Tolerates ragged inputs."""
     by_year: dict[int, object] = {}
     for y, v in zip(donor_years, donor_values, strict=False):
         if y is not None:
@@ -578,11 +519,8 @@ def _reindex_by_year(donor_years: list[Optional[int]],
     return out if any(v is not None for v in out) else []
 
 
-# Pre-computed latest-fiscal-year scalars. The SOURCE aligns their inputs by its
-# own statement dates (the bridge can't), so they carry no positional risk — but
-# a latest-FY scalar attached to a NEWER spine would read as current in
-# --json/CSV with nothing marking the vintage. Copied only on a newest-year
-# match; abstain otherwise.
+# Latest-fiscal-year scalars. A scalar attached to a newer spine would read as
+# current with nothing marking its vintage, so copy only on a newest-year match.
 _STATEMENTS_LATEST_FY_SCALARS = (
     "asset_growth", "accruals", "dividends_paid", "repurchases",
     "debt_repayments", "debt_issuance",
@@ -592,35 +530,26 @@ _STATEMENTS_LATEST_FY_SCALARS = (
 def _merge_statements(
     instances: list[tuple[str, Optional["Statements"]]],
 ) -> tuple[Optional["Statements"], list[str]]:
-    """Priority-ordered, fiscal-year-joined merge of the one list-bearing
-    section. The highest-priority source with data wins the object outright and
-    its `fiscal_years` becomes the join key — so the spine's own series (and
-    every growth leg derived from them) are byte-identical to the old
-    whole-source pick. Fields the spine left EMPTY are then backfilled from
-    lower-priority sources, re-indexed onto that spine by YEAR, never by list
-    position: every consumer of Statements reads its parallel series by index,
-    so a positional backfill would pair one source's 2022 revenue with another's
-    2023 share count with no test failing. Source-agnostic: it composes whatever
-    `harness_sources` order is configured.
+    """Priority-ordered, fiscal-year-joined merge of `statements`. The
+    highest-priority source with data wins the object and its `fiscal_years`
+    becomes the join key. Fields the spine left empty are backfilled from
+    lower-priority sources, re-indexed by year, never by list position.
 
-    Abstains (leaves a field empty) rather than guessing: a spine with no or
-    duplicate fiscal years disables backfill entirely; an individual donor with
-    the same problem is skipped without vetoing the donors after it."""
+    Abstains rather than guesses: a spine with no or duplicate fiscal years
+    disables backfill. A donor with the same problem is skipped without
+    vetoing later donors."""
     present = [(s, o) for s, o in instances if o is not None and _has_data(o)]
     if not present:
         return None, []
     spine_src, spine = present[0]
     merged = dataclasses.replace(spine)      # copy: never alias SourceResult.partial
-    # NOTE: dataclasses.replace() is a SHALLOW copy — any list attribute this loop
-    # does not `setattr` stays the SAME object as the spine's (i.e. the source's
-    # SourceResult.partial). Safe only under the repo-wide invariant that Statements
-    # series are never mutated in place — always rebound wholesale (`setattr`/`=`),
-    # never `.append()`/`[i] =` on an existing list.
+    # replace() is a shallow copy: unset lists alias the source's SourceResult.partial.
+    # Safe only because Statements series are rebound wholesale, never mutated in place.
     contributors = [spine_src]
 
     spine_years = _usable_years(spine)
     if spine_years is None:
-        return merged, contributors          # no join key -> pre-change behaviour
+        return merged, contributors          # no join key
 
     spine_newest = _newest_year(spine_years)
     list_fields = [f.name for f in fields(merged)
@@ -652,20 +581,16 @@ def _merge_statements(
     return merged, contributors
 
 
-# The transaction facts in Insider are one accounting derived from a single set
-# of Form 4 trades; they must come from ONE source or the dollar figure and the
-# counts could describe different trades. `sentiment_mspr` is an independent
-# signal (Finnhub's MSPR) that no transaction source supplies.
+# These fields derive from one set of Form 4 trades and must come from one source.
+# `sentiment_mspr` is independent (Finnhub's MSPR).
 _INSIDER_TXN_FIELDS = ("net_value_6m", "buy_count", "sell_count", "recent",
                        "distinct_buyers", "role_weighted_buy_value", "planned_sell_value")
 
 
 def _merge_insider(instances: list[tuple[str, Optional["Insider"]]]) -> tuple[Optional["Insider"], list[str]]:
-    """Take the coupled transaction group wholesale from the highest-priority
-    source that actually has trades (keeping net/counts/recent coherent), then
-    fill `sentiment_mspr` independently from the highest-priority source that has
-    it. This composes EDGAR's authoritative flow with Finnhub's sentiment without
-    ever mixing two sources' transaction sets into one incoherent aggregate."""
+    """Take the transaction group wholesale from the highest-priority source with
+    trades. Fill `sentiment_mspr` separately from the highest-priority source that
+    has it. Never mixes two sources' transaction sets."""
     present = [(s, o) for s, o in instances if o is not None]
     if not present:
         return None, []

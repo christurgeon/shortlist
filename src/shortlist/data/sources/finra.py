@@ -13,10 +13,9 @@ from .base import Source
 
 
 class FinraSource(Source):
-    """Keyless FINRA ConsolidatedShortInterest. Bulk-loads the latest bi-monthly
-    cycle ONCE per run (the YahooSource fetch-once-reuse precedent), indexes by
-    normalized symbol, and serves per-ticker lookups as O(1) dict hits. Disk-cached
-    by SETTLEMENT DATE so the cache survives the ~2 weeks until the next cycle."""
+    """Keyless FINRA ConsolidatedShortInterest. Bulk-loads the latest bi-monthly cycle
+    once per run and indexes it by normalized symbol. Disk-cached by settlement date,
+    so the cache lasts until the next cycle."""
 
     name = "finra"
     feeds_axes = False
@@ -90,9 +89,8 @@ class FinraSource(Source):
                           f"settlement {settlement}; result may be truncated",
                           file=sys.stderr)
                 if not truncated:
-                    # never cache a truncated set: the short-interest
-                    # fetcher shares this file and requires the COMPLETE rows
-                    # for the whole ~2-week settlement cycle
+                    # Never cache a truncated set: the short-interest fetcher shares this
+                    # file and needs the complete rows.
                     self._write_cache(settlement, rows)
             self._index = _finra_index(rows)
             self._settlement = settlement
@@ -111,16 +109,14 @@ class FinraSource(Source):
         row = (self._index or {}).get(_finra_norm_symbol(ticker))
         if row is not None:
             snap.short_interest = _finra_row_to_si(row)
-        # raw carries the cycle + whether THIS symbol matched (visible, not silent)
         res.raw = {"settlement_date": self._settlement, "matched": row is not None}
         res.partial = snap
         return res
 
 
 # --- FINRA short interest (pure helpers) ----------------------------------
-# Single-sourced in data/finra.py so every consumer shares one row-shape
-# definition (CLAUDE.md "edit … not in two places"). Re-exported under the historical
-# _finra_* names so call sites + tests that import them from here keep working.
+# Single-sourced in data/finra.py. Re-exported under the _finra_* names that call
+# sites and tests import from here.
 _finra_latest_partition = _finra.latest_partition
 _finra_norm_symbol = _finra.norm_symbol
 _finra_row_to_si = _finra.row_to_si

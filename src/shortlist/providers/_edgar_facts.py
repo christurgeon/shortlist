@@ -1,17 +1,13 @@
 """Pure transform: edgartools statement DataFrames -> normalized annual series.
 
-Dependency-isolated leaf (sibling of _form4.py). Imports pandas (a transitive
-edgartools dep) but NOT edgar/httpx, so it is unit-testable with synthetic
-DataFrames and never reached unless the `edgar` extra is installed.
+Dependency-isolated leaf (sibling of _form4.py). Imports pandas but not edgar/httpx,
+so it is unit-testable with synthetic DataFrames.
 
-UNITS: values are passed through verbatim, but "verbatim" is NOT always absolute
-USD/shares. edgartools to_dataframe() returns ABSOLUTE USD for most issuers
-(verified: AAPL revenue 416_161_000_000.0), matching FMP statements and
-market_cap -- but NOT universally: MCD's diluted_shares series is
-[716.4, 721.9, 732.3] (MILLIONS, filer-presentation-scaled), not absolute
-share count. No scaling is applied here or downstream, so a per-issuer scale
-drift passes through uncaught (docs/audits/2026-07-31-edgar-concept-match.md).
-All series are NEWEST-FIRST to match the existing Statements convention."""
+UNITS: values pass through verbatim. edgartools returns absolute USD for most
+issuers but not all: some filers present diluted_shares in millions. No scaling is
+applied here or downstream, so a per-issuer scale drift passes through uncaught
+(docs/audits/2026-07-31-edgar-concept-match.md).
+All series are newest-first, matching the Statements convention."""
 from __future__ import annotations
 
 import re
@@ -23,9 +19,7 @@ import pandas as pd
 
 from ..stats import accruals, asset_growth
 
-# Cash-flow financing concept FAMILIES for total shareholder yield (PREDICTIVE_SIGNALS
-# §5). Raw us-gaap tags (matched on the `concept` column). Single-sourced in
-# _gaap_tags.py (shared with the XBRL panel in _xbrl_facts.py — edit THERE).
+# Financing tag sets are single-sourced in _gaap_tags.py (shared with _xbrl_facts.py). Edit them there.
 from ._gaap_tags import (
     DEBT_ISSUANCE_TAGS as _DEBT_ISSUANCE_TAGS,
 )
@@ -61,25 +55,19 @@ class EdgarFinancials:
     interest_expense: list[float] = field(default_factory=list)
     ebitda: list[float] = field(default_factory=list)   # operating_income + D&A, date-aligned
     total_debt: list[float] = field(default_factory=list)
-    # NEW 2026-08-10. EDGAR previously supplied no equity at all — docs/design/STATEMENTS_MERGE.md routes
-    # it in from FMP by fiscal year, a backfill that cannot fire on the FMP-GATED path, which
-    # is exactly where a computed ROIC is needed.
+    # The FMP-equity backfill (docs/design/STATEMENTS_MERGE.md) cannot fire on the
+    # FMP-gated path, which is where a computed ROIC is needed.
     total_equity: list[float] = field(default_factory=list)
     cash_and_equivalents: list[float] = field(default_factory=list)
     total_assets: list[float] = field(default_factory=list)   # instant total assets, newest-first
-    # Inventory BALANCE, newest-first (research context only; never scored). Same
-    # all-or-nothing `_series` contract as cash_and_equivalents, which is what makes
-    # index-0 pairing with the income-statement spine safe: a gap yields [] rather
-    # than a half-filled list, and both spines are newest-first.
+    # Newest-first, /deep context only. The all-or-nothing `_series` contract makes
+    # index-0 pairing with the income-statement spine safe: a gap yields [].
     inventory: list[float] = field(default_factory=list)
-    # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3), computed here
-    # because they need each series keyed by its OWN statement dates (NI on income,
-    # CFO on cash-flow, Assets on balance-sheet instant) — list positions can differ.
+    # Computed here because each input series needs its own statement dates
+    # (NI on income, CFO on cash-flow, Assets on balance-sheet instants).
     asset_growth: Optional[float] = None
     accruals: Optional[float] = None
-    # Total shareholder yield (PREDICTIVE_SIGNALS §5). Computed at extraction (needs
-    # market_cap, supplied by the bridge) -> these are the three latest-FY dollar legs;
-    # the bridge divides by market_cap. All are OUTFLOW MAGNITUDES (abs in shareholder_yield).
+    # Latest-FY dollar legs; the bridge divides by market_cap. shareholder_yield() takes abs().
     dividends_paid: Optional[float] = None        # latest FY, outflow magnitude
     repurchases: Optional[float] = None           # latest FY, outflow magnitude (common+preferred)
     debt_repayments: Optional[float] = None       # latest FY, outflow magnitude
@@ -138,16 +126,12 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     hit = df[df["standard_concept"] == concept]
     if hit.empty:
         return None
-    # edgartools' standard_concept is a lossy bucket: the same tag lands on rows
-    # that are NOT the line we want. Two failure modes, seen on real filings:
-    #   1. Non-cash supplemental NOTES. GOOGL tags "Capital expenditures incurred
-    #      but not yet paid" (a positive accrual, +15B) as CapitalExpenses; adding
-    #      it instead of the -91B cash payment makes FCF exceed OCF. These rows sit
-    #      under a *Noncash...Disclosure* parent abstract -> drop them first.
-    #   2. Nested CHILD line items. MSFT tags working-capital children ("Other
-    #      long-term assets", -3B) as NetCashFromOperatingActivities at level 4;
-    #      the real subtotal ("Net cash from operations", +136B) is level 2. Picking
-    #      iloc[0] grabbed a child and collapsed FCF to ~-capex -> prefer min level.
+    # standard_concept is a lossy bucket. Two failure modes:
+    #   1. Non-cash supplemental notes (e.g. unpaid capex accruals tagged as
+    #      CapitalExpenses) make FCF exceed OCF. They sit under a Noncash/Disclosure
+    #      parent abstract, so drop them first.
+    #   2. Nested child line items (e.g. working-capital children tagged as operating
+    #      cash flow) hide the real subtotal. Prefer the minimum level.
     if "parent_abstract_concept" in hit.columns:
         pac = hit["parent_abstract_concept"].astype(str).str.lower()
         cash_flow = hit[~pac.str.contains("noncash|disclosure|supplemental", regex=True)]
@@ -156,12 +140,9 @@ def _row_by_standard_concept(df: pd.DataFrame, concept: str) -> Optional[pd.Seri
     if "level" in hit.columns:
         lvl = pd.to_numeric(hit["level"], errors="coerce")
         if lvl.notna().any():
-            # Positional, NOT `.loc[lvl.idxmin()]`: on a duplicated index `.loc[label]`
-            # returns every row sharing that label as a DataFrame (not a Series), which
-            # later blows up in `_series()` (`ValueError: truth value of a Series is
-            # ambiguous`) and silently degrades the ticker's ENTIRE statements payload
-            # to None (EdgarSource failure-isolates the section). Same fix as
-            # `_rows_by_concept`.
+            # Positional, not `.loc[lvl.idxmin()]`: on a duplicated index `.loc` returns a
+            # DataFrame, which breaks `_series()` and silently drops the ticker's whole
+            # statements payload.
             return hit.iloc[int((lvl.to_numpy() == lvl.min()).nonzero()[0][0])]
     return hit.iloc[0]
 
@@ -187,22 +168,16 @@ def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
 
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                            cols: list[tuple[str, str]]) -> Optional[float]:
-    """Latest-FY value of a us-gaap concept FAMILY on the CASH-FLOW statement, summed
-    across the family's distinct member tags (PREDICTIVE_SIGNALS §5). Matches the raw
-    `concept` column (e.g. 'us-gaap_PaymentsOfDividends'), NOT `standard_concept` —
-    edgartools' standard_concept mislabels financing rows (it buckets PaymentsOfDividends
-    under 'DistributionsToMinorityInterests'), so we read the authoritative raw tag instead.
+    """Latest-FY value of a us-gaap concept family on the cash-flow statement, summed
+    across the distinct member tags present. Matches the raw `concept` column, not
+    `standard_concept`, which mislabels financing rows.
 
-    A FAMILY because filers tag the same economic line differently — dividends are
-    `PaymentsOfDividends` (AAPL) or `PaymentsOfDividendsCommonStock` (MSFT/LMT); debt
-    repayment is `RepaymentsOfLongTermDebt` / `RepaymentsOfDebt` / `RepaymentsOfDebt-
-    MaturingInMoreThanThreeMonths`. We sum the DISTINCT tags present (e.g. common +
-    preferred repurchases), but EXCLUDE dimensional breakdown rows (`dimension=True`)
-    so a member's by-instrument sub-rows aren't double-counted with its total.
+    A family because filers tag the same line differently (for example
+    `PaymentsOfDividends` vs `PaymentsOfDividendsCommonStock`). Dimensional rows
+    (`dimension=True`) are excluded so sub-rows do not double-count the total.
 
-    Returns the value at the LATEST FY column reporting any family member, or None when
-    no family member is tagged. The value is returned VERBATIM (signed as edgartools
-    presents it — outflows negative); shareholder_yield() abs()-normalizes each leg."""
+    Returns None when no member is tagged. The value is verbatim and signed as
+    edgartools presents it (outflows negative)."""
     if "concept" not in df.columns or not cols:
         return None
     rows = df.copy()
@@ -230,16 +205,11 @@ def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:
 
 
 def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
-    """Weighted-average diluted SHARE COUNT row (e.g. "Weighted average shares
-    outstanding, diluted" or "Shares used in computing diluted earnings per share")
-    — distinct from the per-share EPS *value* row. We require the plural "shares"
-    (the EPS value rows read "...per share", singular), which already excludes the
-    per-share line, so we do NOT exclude "per share" here (that would wrongly drop
-    legitimate "shares used in computing ... per share" COUNT rows). Single pass:
-    return the first canonical (weighted-average / used-in-computation / outstanding)
-    row; otherwise fall back to the first diluted-shares row seen — a stray "diluted
-    shares from <X>" reconciliation/component line that lacks level/parent
-    disambiguation here."""
+    """Weighted-average diluted share-count row, distinct from the per-share EPS row.
+    Requires the plural "shares". Do not exclude "per share": that would drop
+    legitimate "shares used in computing ... per share" count rows. Returns the first
+    canonical (weighted / used in computation / outstanding) row, else the first
+    diluted-shares row seen."""
     if "label" not in df.columns:
         return None
     fallback = None
@@ -256,9 +226,8 @@ def _row_diluted_shares(df: pd.DataFrame) -> Optional[pd.Series]:
 
 def _end_map(row: Optional[pd.Series],
              cols: list[tuple[str, str]]) -> dict[str, float]:
-    """{iso_end: float} for the columns this row populates, tolerant of gaps
-    (unlike _series, which is all-or-nothing). Used to align NI/CFO/Assets by their
-    OWN statement dates for the asset-growth / accruals scalars."""
+    """{iso_end: float} for the columns this row populates. Tolerates gaps, unlike
+    _series. Aligns NI/CFO/Assets by their own statement dates."""
     if row is None:
         return {}
     out: dict[str, float] = {}
@@ -281,44 +250,27 @@ def _series(row: Optional[pd.Series], fy_cols: list[tuple[str, str]]) -> list[fl
     return out
 
 
-# Authoritative raw us-gaap tags. Matched on `concept`, NOT `label` (filer
-# presentation text: MSFT/COST/ORCL/PEP label the share-count row just "Diluted",
-# IBM "Assuming dilution (in shares)", VZ omits "diluted" — 7 of 42 production
-# tickers extracted EMPTY on labels alone) and NOT `standard_concept` (bucket names
-# drift across edgartools releases — docs/audits/2026-07-12-accruals-leg-disable.md).
+# Match on raw `concept`, not `label` (filer presentation text varies and extracts
+# empty for some issuers) and not `standard_concept` (bucket names drift across
+# edgartools releases: docs/audits/2026-07-12-accruals-leg-disable.md).
 _DILUTED_SHARES_CONCEPTS = (f"us-gaap_{DILUTED_SHARES_TAG}",)
 _DILUTED_EPS_CONCEPTS = ("us-gaap_EarningsPerShareDiluted",)
 
 
 def _rows_by_concept(df: pd.DataFrame, concepts: tuple[str, ...]) -> list[pd.Series]:
-    """Non-dimensional rows whose raw `concept` EXACTLY equals one of `concepts`.
-    Exact equality guards against a genuine suffix-extension tag posing as its
-    parent — NOT the JNJ/QCOM continuing-ops case: neither
-    `us-gaap_EarningsPerShareDiluted` nor
-    `us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare` is a substring of
-    the other, so a prefix match would not have let one pose as the other there.
-    What protects THAT case is matching `concept` (the raw tag) at all instead of
-    `label` (filer presentation text) — real JNJ/QCOM filings label BOTH rows
-    identically ("Diluted (in dollars per share)"), so only the `concept` column
-    tells them apart.
+    """Non-dimensional rows whose raw `concept` exactly equals one of `concepts`.
+    Matching the raw tag, not `label`, is what separates rows that filers label
+    identically (for example basic and continuing-ops diluted EPS).
 
-    Returns only rows at the MINIMUM `level` — the same preference as
-    `_row_by_standard_concept`, which exists because iloc[0] grabbed a nested child
-    on real MSFT/GOOGL filings. Deeper children are dropped, NOT kept as later
-    candidates. A sparse min-level total then falls through to the label scan next
-    — but that scan is LEVEL-BLIND (`_row_diluted_eps`/`_row_diluted_shares` never
-    consult `level`), so its result is row-order-dependent: with a sparse min-level
-    total and a complete deeper child listed first, the label picker CAN return the
-    child. That is pre-existing label-scan behaviour, not something this function
-    fixes or guarantees against — concept matching only narrows the candidate SET
-    passed to `_series_by_concept_or_label`; it does not make the label-scan
-    fallback level-aware.
+    Returns only rows at the minimum `level`, as `_row_by_standard_concept` does.
+    Deeper children are dropped, not kept as later candidates. A sparse min-level
+    total falls through to the label scan, which is level-blind
+    (`_row_diluted_eps`/`_row_diluted_shares` ignore `level`) and so can return a
+    deeper child. This function does not guard against that.
 
-    Indexing is POSITIONAL (`.iloc` + a boolean mask via `.nonzero()`, no argsort).
-    `.loc` with a sorted index is wrong here: on a duplicated index it silently
-    returns the cartesian expansion AND inverts the ordering (measured: index
-    [7,7], levels [4,2] -> 4 rows, child first), reintroducing the exact bug the
-    min-level rule prevents."""
+    Indexing is positional (`.iloc` + a boolean mask). `.loc` on a duplicated index
+    returns a cartesian expansion with inverted order, which reintroduces the
+    child-first bug the min-level rule prevents."""
     if "concept" not in df.columns:
         return []
     rows = df
@@ -364,11 +316,9 @@ def _row_by_concept_or_bucket(df: pd.DataFrame, concepts: tuple[str, ...], bucke
 def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
                                 label_picker: Callable[[pd.DataFrame], Optional[pd.Series]],
                                 fy_cols: list[tuple[str, str]]) -> list[float]:
-    """VALUE-AWARE pick. A concept row wins only if it yields a COMPLETE series;
-    otherwise we fall through to the next candidate and finally to the label scan.
-    Keying the fallback on row-presence instead would let a sparse or all-NaN
-    concept row SHADOW a label row that works today, turning a populated series
-    into [] (`_series` is all-or-nothing) — a regression, not a no-op."""
+    """Value-aware pick. A concept row wins only if it yields a complete series;
+    otherwise fall through to the next candidate, then the label scan. Keying on
+    row presence would let a sparse concept row shadow a working label row."""
     for row in _rows_by_concept(df, concepts):
         series = _series(row, fy_cols)
         if series:
@@ -376,19 +326,15 @@ def _series_by_concept_or_label(df: pd.DataFrame, concepts: tuple[str, ...],
     return _series(label_picker(df), fy_cols)
 
 
-# Equity is a concept FAMILY (live-probed 2026-08-10): CSCO carries only
-# `StockholdersEquity`, UNH only the NCI-inclusive tag, KO both. `standard_concept` cannot
-# express it — CSCO/KO expose `AllEquityBalance` while UNH exposes
-# `AllEquityBalanceIncludingMinorityInterest`.
+# Equity is a concept family: some filers carry only `StockholdersEquity`, some only the
+# NCI-inclusive tag, some both. `standard_concept` cannot express it.
 #
-# PARENT-ONLY FIRST, deliberately: FMP supplies `totalStockholdersEquity` (parent-only) and
-# EDGAR outranks FMP in `_merge_statements`, so preferring the NCI-inclusive tag would make one
-# field mean two things depending on which source won, and would pre-empt the documented FMP
-# backfill (docs/design/STATEMENTS_MERGE.md) on snapshots that already carry FMP equity. The
-# NCI-inclusive tag is the fallback, which is what lets UNH resolve at all.
+# Parent-only first, deliberately: FMP supplies parent-only equity and EDGAR outranks FMP
+# in `_merge_statements`. Preferring the NCI-inclusive tag would make one field mean two
+# things by winning source and would pre-empt the FMP backfill
+# (docs/design/STATEMENTS_MERGE.md). The NCI-inclusive tag is the fallback.
 #
-# NOT a sum (unlike total_debt's `_sum_concepts`): a filer reporting both variants would be
-# double-counted.
+# Not a sum: a filer reporting both variants would double-count.
 _EQUITY_CONCEPTS = (
     "us-gaap_StockholdersEquity",
     "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
@@ -398,18 +344,16 @@ _EQUITY_CONCEPTS = (
 def _total_equity_series(df: pd.DataFrame, cols: list[tuple[str, str]]) -> list[float]:
     """Total equity, newest-first, aligned to the balance sheet's instant columns.
 
-    Reuses `_rows_by_concept`, which already supplies every guard this needs, so no new matcher
-    is introduced: EXACT `concept` equality — so `us-gaap_LiabilitiesAndStockholdersEquity`,
-    which CONTAINS `StockholdersEquity` and equals TOTAL ASSETS, can never match — plus
-    `dimension != True` to drop breakdown rows and min-`level` so a nested child cannot pose as
-    the balance-sheet total (that one would read equity ~15x small, i.e. ROIC ~15x LARGE).
+    Uses `_rows_by_concept`: exact `concept` equality (so
+    `us-gaap_LiabilitiesAndStockholdersEquity`, which equals total assets, never
+    matches), no dimensional rows, and the minimum level (a nested child would read
+    equity far too small and ROIC far too large).
 
-    Value-aware fall-through, the `_series_by_concept_or_label` pattern: a SPARSE row must not
-    shadow a later concept whose series is complete, since `_series` is all-or-nothing. Equity
-    has no label-scan fallback, so an exhausted family yields [].
+    A sparse row does not shadow a later concept with a complete series. There is no
+    label-scan fallback, so an exhausted family yields [].
 
-    Consumed by `bridge.py`'s computed ROIC —
-    docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md."""
+    Consumed by the computed ROIC in `bridge.py`
+    (docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md)."""
     for row in _rows_by_concept(df, _EQUITY_CONCEPTS):
         series = _series(row, cols)
         if series:
@@ -427,13 +371,10 @@ def extract_financials(
     empty lists (never partial). EPS prefers the filed diluted-EPS row; if absent,
     falls back to net_income/shares_diluted; if neither, stays empty.
 
-    fiscal_period_end is labelled from the INCOME statement's FY columns — the same
-    basis as revenue/net_income/diluted_eps/diluted_shares, and the basis the bridge's
-    PE-history fallback pairs diluted_eps against. Cash-flow-derived series
-    (operating_cash_flow/free_cash_flow) are extracted on the cash-flow statement's own
-    FY columns; when the two statements cover different period counts these can differ
-    in length from fiscal_period_end, so callers must NOT assume the cash-flow series
-    aligns index-for-index with fiscal_period_end."""
+    fiscal_period_end comes from the income statement's FY columns, the same basis as
+    revenue/net_income/diluted_eps/diluted_shares. Cash-flow series use the cash-flow
+    statement's own FY columns and can differ in length, so callers must not assume
+    they align index-for-index with fiscal_period_end."""
     cf_fy = _fy_columns(cashflow_df) or _fy_columns(income_df)
     inc_fy = _fy_columns(income_df)
     fin = EdgarFinancials(fiscal_period_end=[d for d, _ in (inc_fy or cf_fy)])
@@ -456,22 +397,17 @@ def extract_financials(
     fin.diluted_shares = _series_by_concept_or_label(
         income_df, _DILUTED_SHARES_CONCEPTS, _row_diluted_shares, inc_fy)
 
-    # Leverage / coverage inputs (ASSESSMENT_GAPS §2.7). The standard_concept names
-    # below are edgartools' OWN normalized buckets (NOT raw us-gaap) — verified against a
-    # live AAPL filing (tests/test_edgar_leverage_live.py). Key facts learned there:
-    #   - D&A lives on the CASH-FLOW statement (`DepreciationExpense`), not the income stmt.
-    #   - Balance-sheet columns are INSTANT dates (no '(FY)' suffix) -> _instant_columns.
-    #   - Total debt = long-term + current portion + short-term (summed components).
-    #   - Interest expense is often netted into other income (e.g. AAPL) -> may be [],
-    #     which leaves interest_coverage None (the gate's net-debt/EBITDA path is primary).
+    # The standard_concept names below are edgartools' own buckets, not raw us-gaap
+    # (tests/test_edgar_leverage_live.py).
+    #   - D&A is on the cash-flow statement, not the income statement.
+    #   - Interest expense is often netted into other income and may be [], which
+    #     leaves interest_coverage None.
     fin.operating_income = _series(_row_by_standard_concept(income_df, "OperatingIncomeLoss"), inc_fy)
     fin.dep_amort = _series(_row_by_standard_concept(cashflow_df, "DepreciationExpense"), cf_fy)
     fin.interest_expense = _series(_row_by_standard_concept(income_df, "InterestExpense"), inc_fy)
 
-    # EBITDA = operating income + D&A, combined ONLY at matching fiscal ends. Operating
-    # income keys off the income statement's FY dates, D&A off the cash-flow statement's
-    # — these can differ (see this function's docstring), so we align by date here rather
-    # than zipping by list position downstream (the bridge consumes fin.ebitda directly).
+    # EBITDA = operating income + D&A, combined only at matching fiscal ends: the two
+    # statements' FY dates can differ (see the docstring).
     _oi_by = dict(zip([d for d, _ in inc_fy], fin.operating_income, strict=False))
     _da_by = dict(zip([d for d, _ in cf_fy], fin.dep_amort, strict=False))
     fin.ebitda = [_oi_by[d] + _da_by[d]
@@ -480,31 +416,22 @@ def extract_financials(
     bal_inst = _instant_columns(balance_df)
     fin.total_debt = _sum_concepts(
         balance_df, ["LongTermDebt", "CurrentPortionOfLongTermDebt", "ShortTermDebt"], bal_inst)
-    # Invested capital's other half, for bridge.py's computed ROIC on the FMP-gated path.
     fin.total_equity = _total_equity_series(balance_df, bal_inst)
-    # edgartools' `CashAndMarketableSecurities` bucket maps to the "Cash and cash
-    # equivalents" balance-sheet LINE (cash-only; marketable securities are a separate
-    # `ShortTermInvestments` row), so this is cash & equivalents — comparable to the
-    # screener's FMP `cashAndCashEquivalents` and the XBRL `CashAndCashEquivalents...`
-    # concept. Verified on live AAPL (~$30B, not the ~$160B incl. securities).
+    # The `CashAndMarketableSecurities` bucket maps to the cash-only balance-sheet line
+    # (securities are a separate `ShortTermInvestments` row), comparable to FMP's
+    # `cashAndCashEquivalents`.
     fin.cash_and_equivalents = _series(
         _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
 
-    # Inventory balance. Matched on the RAW concept, never standard_concept: HDSN's
-    # inventory rows carry standard_concept NaN and edgartools buckets
-    # InventoryWriteDown as "RestructuringExpenseBenefit". Abstain on anything but a
-    # single non-dimensional row — a duplicated row must not be summed or guessed at.
+    # Match the raw concept, never standard_concept: some inventory rows have a NaN
+    # bucket and edgartools buckets InventoryWriteDown as "RestructuringExpenseBenefit".
+    # Abstain unless exactly one non-dimensional row exists.
     _inv_rows = _rows_by_concept(balance_df, (f"us-gaap_{INVENTORY_BALANCE_TAG}",))
     if len(_inv_rows) == 1:
         fin.inventory = _series(_inv_rows[0], bal_inst)
 
-    # Investment & earnings-quality fundamentals (PREDICTIVE_SIGNALS §3). Total
-    # assets ("Assets" is edgartools' standard_concept for us-gaap:Assets, the
-    # balance-sheet total — verified against the gaap standardization map). asset_growth
-    # and accruals align NI/CFO/Assets by their OWN statement dates (the three spines can
-    # differ in length), then apply the consecutive-fiscal-end guard + Sloan average-
-    # assets in shared stats helpers. CFO is the as-reported operating cash flow (no sign
-    # flip — distinct from the capex-style negation align_fcf applies).
+    # asset_growth and accruals align NI/CFO/Assets by their own statement dates (the
+    # spines can differ in length). CFO is as reported, with no sign flip.
     assets_by_end = _end_map(_row_by_standard_concept(balance_df, "Assets"), bal_inst)
     ni_by_end = _end_map(_row_net_income(income_df), inc_fy)
     cfo_by_end = _end_map(_row_by_concept_or_bucket(
@@ -513,9 +440,7 @@ def extract_financials(
     fin.asset_growth = asset_growth(assets_by_end)
     fin.accruals = accruals(ni_by_end, cfo_by_end, assets_by_end)
 
-    # Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5). All four are
-    # cash-flow FAMILIES, read off the raw us-gaap `concept` column (standard_concept
-    # mislabels these). Latest-FY dollar magnitudes; the bridge divides by market_cap.
+    # Read from the raw `concept` column; standard_concept mislabels these rows.
     fin.dividends_paid = _concept_family_latest(cashflow_df, _DIVIDEND_TAGS, cf_fy)
     fin.repurchases = _concept_family_latest(cashflow_df, _REPURCHASE_TAGS, cf_fy)
     fin.debt_repayments = _concept_family_latest(cashflow_df, _DEBT_REPAYMENT_TAGS, cf_fy)
@@ -524,45 +449,31 @@ def extract_financials(
 
 
 # --- companyconcept fallback (root cause B) ---------------------------------
-# Recovers diluted_shares for issuers whose income-statement view carries NO
-# share-count tag at all (CMCSA CVX GOOGL HON LMT MO MRK PG — XOM genuinely has
-# none since 2013). Fallback ONLY, fired from EdgarSource only when the
-# statement-level extraction above already returned []. See
-# docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.
+# Recovers diluted_shares for issuers whose income-statement view has no share-count
+# tag. Fallback only: EdgarSource calls it when statement extraction returned [].
+# See docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.
 
-# Measured across all 8 issuers' 10-K rows (2026-08-02): observed durations are exactly
-# {364, 365}. The 350-380 band also admits 52-week (363) and 53-week (370) filers, so a
-# COST-style retail calendar passes if it ever reaches this path.
+# The band admits 52-week (363) and 53-week (370) filers as well as 364/365-day years.
 _ANNUAL_MIN_DAYS, _ANNUAL_MAX_DAYS = 350, 380
 
 
 def diluted_shares_from_concept(payload: dict, fiscal_period_end: list[str]) -> list[float]:
     """Weighted-average diluted share counts from an SEC `companyconcept` payload,
-    re-indexed onto `fiscal_period_end`. Fallback ONLY — the statement view is
-    authoritative when it has the row.
+    re-indexed onto `fiscal_period_end`. Fallback only: the statement view wins when
+    it has the row.
 
-    Guards, each from a live-probed failure mode (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md):
-      - ANNUAL only: a 10-K payload also carries quarterly durations, so a fact is
-        used only when end-start is ~1 year.
-      - RESTATEMENTS: the same `end` recurs across filings with different values;
-        the most recently `filed` wins.
-      - ALL-OR-NOTHING: any spine year without a fact -> [] (never a partial series,
-        matching _series' contract, so `cagr` can't span a hole). NOTE the cost: an extra or
-        partial `inc_fy` column (the "MSFT FY2026" hazard the prior plan named) silently
-        yields []. Verified 3 columns for HON/PG/GOOGL/CMCSA and the audit's 42-row table
-        shows 3 everywhere, so risk is low — but this is the likeliest partial failure of
-        go/no-go clause 1.
-      - form == "10-K" ONLY: these payloads carry 8-K recast rows (measured: CMCSA 3, HON 3,
-        PG 12) whose `filed` can POSTDATE the 10-K and would win the dedup. It also drops
-        10-K/A (LMT 3, PG 3; values identical today). Both drops are deliberate.
-      - `filed` is present on 100% of rows across all 8 payloads and is ISO YYYY-MM-DD, so
-        lexicographic ordering == chronological (measured 2026-08-02).
-      - TAG ECHO: the live audit's structural guarantee (the check the NI/EPS
-        arithmetic cross-check can't give) is that the requested concept URL's
-        response echoes its own `tag` -- enforced here too, not just in the
-        one-off audit script: a payload whose `tag` field is present and
-        doesn't match `DILUTED_SHARES_TAG` abstains rather than trusting rows
-        that may belong to a different concept entirely.
+    Guards (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md):
+      - Annual only: a 10-K payload also carries quarterly durations, so a fact counts
+        only when end-start is ~1 year.
+      - Restatements: the same `end` recurs across filings. The latest `filed` wins.
+        `filed` is ISO, so string order is chronological.
+      - All-or-nothing: any spine year without a fact gives [], never a partial series,
+        so `cagr` cannot span a hole. An extra or partial `inc_fy` column therefore
+        yields [].
+      - form == "10-K" only: 8-K recast rows can be filed after the 10-K and would win
+        the dedup. 10-K/A rows are dropped too. Both drops are deliberate.
+      - Tag echo: a payload whose `tag` is present and not `DILUTED_SHARES_TAG`
+        abstains, because its rows may belong to another concept.
     Never raises: malformed input (including a non-list `units.shares`) yields []."""
     payload = payload or {}
     try:

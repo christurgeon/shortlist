@@ -6,18 +6,15 @@ from typing import Iterable
 
 # 5th-letter security-type codes on a 5-letter symbol that mean NOT US common stock:
 # F=foreign ordinary (the OTC *F junk), Y=ADR, W=warrant, U=unit, R=rights, Q=bankruptcy.
-# Only applied to 5-char symbols — 4-char tickers ending in these letters (e.g. WOOF) are fine.
-# `X` (open-end mutual fund) was added 2026-08-07: three X-suffixed funds (FTECX, VFLEX,
-# BBASX) reached the live picks ledger through `edgar_form4`, and BBASX scored composite
-# 100.0 UNGATED — a mutual fund delivered to the analyst as a top-ranked stock idea.
+# Only applied to 5-char symbols; 4-char tickers ending in these letters (e.g. WOOF) are fine.
+# `X` is an open-end mutual fund, which scored ungated as a top-ranked stock.
 # Evidence: docs/audits/2026-08-07-funnel-gate-mismatch.md §3.
 _FIFTH_LETTER_SUFFIXES = frozenset("FYWURQX")
 
 _ITEM_RE = re.compile(r"\d+\.\d{2}")
 
-# aff10b5One / isOfficer appear as BOTH 0|1 AND false|true in real Form 4 filings
-# (live-verified 2026-07-26). Shared by dera.py and insider.py, which both parse those
-# same boolean-ish fields off raw filing XML/TSV.
+# aff10b5One / isOfficer appear as both 0|1 and false|true in real Form 4 filings.
+# Shared by dera.py and insider.py.
 _TRUE = {"1", "true", "yes", "y"}
 
 

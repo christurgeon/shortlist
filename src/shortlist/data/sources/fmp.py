@@ -22,34 +22,26 @@ from .base import _fetch_sections, _KeyedHttpSource
 
 # --- FMP: primary, broad coverage ----------------------------------------
 
-# Cap on insider transactions netted into net_value_6m. Since the non-trade and
-# unvaluable filters now run BEFORE it, this bounds REAL TRADES (it used to bound raw
-# rows, most of which could be awards). Restored as a named constant when the old
-# `_fmp_insider._WINDOW` was deleted with its dead netting helper — a bare `60` in the
-# loop left the magnitude unexplained.
+# Cap on valued insider trades netted into net_value_6m (filters run before it).
 #
-# KNOWN, UNVERIFIED ASSUMPTION: truncation keeps whichever rows FMP returned first, so
-# it is only safe if the endpoint really is "most recent N" as its docs imply. We have
-# no recorded payload to confirm that ordering (fetch_insider ships false, so nothing is
-# cached) — same class of assumption, and same blast radius, as classify_tx's
-# `<CODE>-<Description>` split. On a reversed feed the retained set would be the OLDEST
-# trades. The 183-day window bounds the damage; re-check before trusting FMP insider
-# data on a paid tier. Truncation past this cap is currently silent.
+# Unverified assumption: truncation keeps the rows FMP returned first, which is safe only
+# if the endpoint is "most recent N" as its docs imply. On a reversed feed the retained
+# set would be the oldest trades. The 183-day window bounds the damage. Re-check before
+# trusting FMP insider data on a paid tier. Truncation past this cap is silent.
 _MAX_TRADES = 60
 
 
 def _sum_or_none(*vals: Optional[float]) -> Optional[float]:
-    """Sum values, treating a missing (None) one as 0 — but return None only when
-    EVERY value is missing, never when the sum is a legitimate 0 (e.g. unanimous
-    buy ratings: sell=strongSell=0 is complete data, not an absent field)."""
+    """Sum values, treating None as 0. Returns None only when every value is None;
+    a sum of real zeros (unanimous buy ratings) is complete data."""
     present = [v for v in vals if v is not None]
     return sum(present) if present else None
 
 
 class FMPSource(_KeyedHttpSource):
     name = "fmp"
-    # FMP's `/stable/` API; the legacy `/v3`–`/v4` endpoints were retired for
-    # new keys on 2025-08-31. Every endpoint takes `?symbol=`.
+    # `/stable/` only: the legacy `/v3`-`/v4` endpoints were retired for new keys on
+    # 2025-08-31. Every endpoint takes `?symbol=`.
     BASE = "https://financialmodelingprep.com/stable"
     _AUTH_PARAM = "apikey"
     _ENV_VAR = "FMP_API_KEY"
@@ -58,16 +50,11 @@ class FMPSource(_KeyedHttpSource):
     def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *,
                  cache=None, config: Optional[dict] = None):
         super().__init__(api_key, timeout, cache=cache)
-        # FMP opts into Retry-After-aware retry (per-minute 429s clear on backoff; a
-        # recovered call caches a real 200, an exhausted 429 -> coverage rate_limited_429,
-        # a persistent 5xx -> the generic "error" status). Daily-quota 429s won't clear,
-        # so max_retries is deliberately small (config: fmp.max_retries, default 2).
+        # Per-minute 429s clear on backoff; daily-quota 429s do not, so max_retries is small.
         fmp_cfg = (config or {}).get("fmp") or {}
         self._max_retries = int(fmp_cfg.get("max_retries", 2))
-        # The /stable/ insider endpoint is PAID (402 on free plans) — config.yaml
-        # ships fetch_insider: false so the guaranteed-to-fail request stops
-        # burning ~1 of the ~13 quota calls/ticker. Default True: an absent key
-        # keeps the historical fetch-everything behavior.
+        # The insider endpoint is paid (402 on free plans). config.yaml sets
+        # fetch_insider: false to save the quota call. An absent key defaults to True.
         self._fetch_insider = bool(fmp_cfg.get("fetch_insider", True))
 
     async def fetch(self, ticker: str) -> SourceResult:
@@ -88,7 +75,7 @@ class FMPSource(_KeyedHttpSource):
             "price_change": ("stock-price-change", {"symbol": ticker}),
         }
         if not self._fetch_insider:
-            del sections["insider"]     # paid endpoint disabled -> save the quota call
+            del sections["insider"]
         await _fetch_sections(res, self._get, sections)
         res.partial = _normalize_fmp(ticker, res.raw)
         return res
@@ -172,42 +159,31 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
         )
     insiders = raw.get("insider")
     if isinstance(insiders, list) and insiders:
-        # WINDOW the raw list before netting: the endpoint returns "the most recent
-        # N transactions" with no date scope, which for a low-velocity name spans
-        # years — un-windowed, the sum mislabels itself as net_value_6m. Undated
-        # rows are dropped (can't be confirmed in-window; ISO dates compare
-        # lexicographically). The window matches EdgarSource's lookback (183d) so
-        # the two sources' figures describe the same period in _merge_insider.
+        # Window before netting: the endpoint returns the most recent N transactions with
+        # no date scope, which can span years. Undated rows are dropped. The 183d window
+        # matches EdgarSource's lookback, so _merge_insider compares the same period.
         cutoff = (date.today() - timedelta(days=183)).isoformat()
         insiders = [tx for tx in insiders
                     if (tx.get("transactionDate") or "") >= cutoff]
-        # Keep only VALUED TRADES — one predicate, applied BEFORE the cap.
+        # Keep only valued trades, before the cap. Non-trades (awards, exercises, gifts,
+        # withholding, conversions) carry no signal. A row with no usable price or share
+        # count is dropped, not counted at zero:
         #
-        # Non-trades (awards/exercises/gifts/tax-withholding/conversions) carry no
-        # insider signal. A row we cannot value (missing/zero/negative price or share
-        # count) is dropped ENTIRELY rather than counted at zero. Two reasons:
+        # 1. Counting it would let `sell_count` describe trades excluded from
+        #    `net_value_6m` and would put value=0 rows in `recent`.
+        # 2. An all-unvaluable batch must abstain. A fabricated net_value_6m == 0 is
+        #    "present" and would win _merge_insider (fmp precedes edgar) over EDGAR's
+        #    real aggregate.
         #
-        # 1. COHERENCE. Counting an unvalued row lets `sell_count` describe transactions
-        #    deliberately excluded from `net_value_6m`, and pollutes `recent` — which
-        #    feeds the research.insider_detail context line — with value=0 rows. The
-        #    emitted record now describes exactly the trades it valued.
-        # 2. THE FABRICATED-ZERO CLOBBER. An all-unvaluable batch used to emit
-        #    net_value_6m == 0, and `_is_present(0)` is True, so that fabricated zero won
-        #    _merge_insider wholesale (fmp precedes edgar) and discarded EDGAR's real
-        #    aggregate. Such a batch now abstains, and EDGAR wins.
+        # A batch of one valued trade still emits that trade's value: honest, not
+        # representative. EDGAR outranks FMP (`collector.DEFAULT_PRIORITY`), so this
+        # figure is used only when EDGAR has no trades.
         #
-        # SCOPE — do not over-read this. 1 priced $1 buy + 59 unpriced sales still emits
-        # net_value_6m == +1.0: HONEST (it describes exactly one valued trade, with
-        # sell_count 0 rather than 59), not representative. EDGAR outranks FMP in the
-        # merge (`collector.DEFAULT_PRIORITY`), so this figure is used only when EDGAR
-        # has no trades.
+        # `> 0` (not `is not None`) is load-bearing: tx_value has no sign handling, so a
+        # negative share count would make a sale add to net buying.
         #
-        # `> 0` (not `is not None`) is load-bearing: tx_value is shares*price with no
-        # sign handling, so a negative share count would otherwise net WITH the buy/sell
-        # sign applied — making a sale ADD to net insider buying.
-        #
-        # Filtering before the cap also stops a burst of RSU vesting from starving real
-        # purchases out of it (59 award rows + 5 purchases => 4 purchases silently lost).
+        # Filtering before the cap also stops a burst of RSU awards from crowding real
+        # purchases out of it.
         trades = [(tx, c, v) for tx in insiders
                   if (c := classify_tx(tx)) != "other" and (v := tx_value(tx)) > 0]
         if trades:
@@ -224,8 +200,7 @@ def _normalize_fmp(ticker: str, raw: dict[str, Any]) -> TickerSnapshot:
                         role=tx.get("typeOfOwner"), kind="buy" if buy else "sell",
                         shares=tx.get("securitiesTransacted"), price=tx.get("price"), value=val,
                     ))
-            # No separate presence flag: every kept row is a valued trade, so a
-            # non-empty `trades` IS the abstain guard.
+            # Every kept row is a valued trade, so a non-empty `trades` is the abstain guard.
             snap.insider = Insider(net_value_6m=net, buy_count=buys, sell_count=sells, recent=recent)
     return snap
 

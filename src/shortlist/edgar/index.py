@@ -4,21 +4,15 @@ The daily index lists ~800-1,500 rows/day (CIK + accession only), so each filing
 further request for its submission text. Live fetching is bounded by a per-day cap; the pure
 aggregation stays testable in isolation.
 
-MOSTLY UNCALLED BY `src/`, DELIBERATELY KEPT (reviewed 2026-08-21). `_dedup_by_accession`
-(via `backtest/edgar_history.py`) and `_walk_back_to_published` are the only symbols
-production still imports. `fetch_form4_submissions`, `fetch_activist_records`,
-`fetch_recent_activist_records`, `fetch_amendment_records`, `fetch_recent_amendment_records`
-and `activist_stakes_from_records` are reachable only from tests: their caller,
-`edgar/signals.py`, retired with the autonomous scout
-(`docs/audits/2026-08-11-scout-retirement.md`).
+Mostly uncalled by `src/`, deliberately kept. Only `_dedup_by_accession` (via
+`backtest/edgar_history.py`) and `_walk_back_to_published` have production importers.
+The fetchers and `activist_stakes_from_records` are reachable only from tests: their
+caller was retired with the scout (`docs/audits/2026-08-11-scout-retirement.md`).
 
-That audit stopped the repo ACTING on 13D/Form-4 signals; it did not disprove the
-collectors, and archiving them was explicit. They stay because they parse SEC's daily
-index, an external format that drifts, and their ~570 lines of tests (one `live`-marked,
-skipped by default) are exactly what would tell a reviver whether the parsing still holds.
-Deleting them to save lines in a module nothing imports trades days of re-derivation for
-no measurable gain. Do not "clean up" this module without a decision to abandon 13D/Form-4
-ingestion outright.
+That audit stopped the repo acting on 13D/Form-4 signals; it did not disprove the
+collectors. They parse SEC's daily index, an external format that drifts, and their tests
+show whether the parsing still holds. Do not delete this module without a decision to
+abandon 13D/Form-4 ingestion.
 """
 from __future__ import annotations
 
@@ -33,19 +27,16 @@ from .models import Emission
 from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
 from .sec_throttle import sec_throttle
 
-# Tokens edgartools emits when an issuer ticker can't be resolved (private funds,
-# foreign filers). They are NOT real symbols — left unfiltered they bucket together
-# into a phantom "NONE" issuer that looks like a multi-insider cluster buy.
+# Tokens edgartools emits for an unresolved issuer ticker. Unfiltered, they bucket into a
+# phantom "NONE" issuer that looks like a multi-insider cluster buy.
 _NON_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
 
 
 def _is_real_ticker(raw: str | None) -> str:
     """Normalize and validate an issuer ticker; return "" if it's a placeholder.
 
-    Catches the documented `str(None).upper() -> "NONE"` case plus whitespace, the
-    em-dash/punctuation-only forms, and CIK-as-ticker (pure digits). A real symbol
-    always contains at least one letter (e.g. BRK.B, AXIA3), so requiring an alpha
-    char rejects numeric/punctuation junk without dropping any valid ticker.
+    Rejects `str(None).upper() -> "NONE"`, punctuation-only forms and CIK-as-ticker.
+    A real symbol has at least one letter (BRK.B, AXIA3).
     """
     t = (raw or "").strip().upper()
     if not t or t in _NON_TICKERS or not any(c.isalpha() for c in t):
@@ -55,13 +46,11 @@ def _is_real_ticker(raw: str | None) -> str:
 
 def _walk_back_to_published(session: date, lookback: int,
                             fetch_day: Callable[[date], list[dict]]) -> tuple[list[dict], date]:
-    """Shared walk-back shape for every "most-recent published SEC daily index" scanner
-    (Form 4, initial 13D, 13D/A): the SEC daily index for `session` is not published
-    until ~02:00 UTC, so an after-close caller finds today's index empty even
-    though the session has closed. An empty result means "not published yet," not "no
-    activity" — so call `fetch_day` for `session`, then walk back up to `lookback` trading
-    days until it returns non-empty. Returns (records, day_used); ([], session) if the
-    whole window comes up empty. Never raises (that's `fetch_day`'s contract)."""
+    """Walk-back for every "most-recent published SEC daily index" scanner. The index
+    for `session` is not published until ~02:00 UTC, so an empty result means "not
+    published yet", not "no activity". Calls `fetch_day` for `session`, then walks back
+    up to `lookback` trading days until it returns rows. Returns (records, day_used);
+    ([], session) if the window is empty. Never raises (`fetch_day`'s contract)."""
     d = session
     for _ in range(lookback + 1):
         recs = fetch_day(d)
@@ -76,28 +65,21 @@ def _walk_back_to_published(session: date, lookback: int,
 def fetch_form4_submissions(session: date, max_filings: int, identity: str,
                             _throttle=None) -> tuple[list[str], date | None]:
     """Form 4 complete-submission texts for `session` (walk-back to the last published
-    index — see _walk_back_to_published for the rationale).
+    index, see _walk_back_to_published).
 
-    ONE request per filing: `Filing.full_text_submission` downloads the complete-submission
-    `.txt` (~4.6 KB, the full ownershipDocument XML embedded) directly from its
-    deterministic URL (base_dir + accession + '.txt') -- no index.json lookup, since the
-    primary document filename is arbitrary (live-verified 2026-07-26).
+    One request per filing: `Filing.full_text_submission` downloads the complete-submission
+    `.txt` (the ownershipDocument XML embedded) from its deterministic URL, with no
+    index.json lookup because the primary document filename is arbitrary.
 
-    Deliberately NOT `Filing.text()`: for XML-native forms (3/4/5) that method renders the
-    parsed Ownership object back out to HTML and then flattens THAT to prose text (see
-    edgartools' Filing.html()) -- it can cost a second request and, worse, the result no
-    longer contains the raw `<ownershipDocument>` tags parse_form4_xml scans for.
-    `full_text_submission` fetches the same URL scan/text() would eventually reach for HTML
-    filings, just without the XML round-trip, and its output is exactly the raw text
-    parse_form4_xml already expects.
+    Not `Filing.text()`: for XML-native forms it renders the parsed object back to HTML
+    and flattens that to prose, which can cost a second request and drops the raw
+    `<ownershipDocument>` tags parse_form4_xml scans for.
 
-    Never raises. Two DISTINCT empty outcomes (I-1, 2026-07-27):
-    - A normal walk-back exhaustion (the daily index just isn't published yet for any of
-      the last `lookback` days) -> `([], session)`, `used == session`. Not an error.
-    - A real failure (edgartools missing, SEC outage, identity error, ...) -> `([], None)`.
-      `used is None` is the hard-failure sentinel that keeps a genuine outage from reading
-      identically to a quiet day. Its consumer, `edgar/signals.py:available()`, was retired
-      with the scout (2026-08-11); the distinction is kept for whatever reads this next.
+    Never raises. Two distinct empty outcomes:
+    - Walk-back exhaustion (no index published in the last `lookback` days) ->
+      `([], session)`, `used == session`. Not an error.
+    - A real failure (edgartools missing, SEC outage, identity error) -> `([], None)`.
+      `used is None` keeps an outage from reading like a quiet day.
     """
     try:
         from edgar import get_filings, set_identity
@@ -110,13 +92,12 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
         throttle = _throttle or sec_throttle()
         for f in candidates:
             try:
-                throttle("edgar_form4")   # heaviest SEC consumer
-                                          # (docs/audits/2026-08-05-discovery-funnel-audit.md §4)
+                throttle("edgar_form4")   # heaviest SEC consumer (docs/audits/2026-08-05-discovery-funnel-audit.md §4)
                 out.append(f.full_text_submission())
             except Exception:  # noqa: BLE001 -- skip one bad filing
                 continue
-        # `considered` is the pre-error count: the caller needs it to know the cap BOUND,
-        # which len(out) cannot tell it once any filing errors (I-6).
+        # len(candidates) is the pre-error count, which shows whether the cap bound;
+        # len(out) cannot once any filing errors.
         return out, used, len(candidates)
     except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
         warnings.warn(f"edgar: form4 submission fetch failed: {redact_secrets(str(exc))}",
@@ -124,18 +105,14 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
         return [], None, 0
 
 
-# --- Activist SCHEDULE 13D discovery (a SECOND ingestion path on this module) ---
-# A fresh initial SCHEDULE 13D = an investor crossed 5% with intent to influence: a
-# leading catalyst for a re-rating. We enter after-close (T+1), so the catchable edge is
-# the post-filing DRIFT, not the filing-day pop — these are "watch / pass to /deep"
-# candidates, not early-pop trades. The raw firehose is noise-dominated (SPAC shells,
-# foreign holdcos, affiliate/sponsor filings), so quality.py filters it; the scorer + the
-# market-cap gate remain the downstream skeptic.
+# --- Activist SCHEDULE 13D discovery ---
+# The raw 13D firehose is noise-dominated (SPAC shells, foreign holdcos, affiliate filings),
+# so quality.py filters it.
 
 
 def _dedup_by_accession(filings):
-    """edgartools get_filings returns every row TWICE (verified 2026-06-28). Keep the
-    first occurrence per accession so co-filer counts and header fetches aren't doubled."""
+    """edgartools get_filings returns every row twice. Keep the first occurrence per
+    accession so co-filer counts and header fetches are not doubled."""
     seen: set = set()
     out = []
     for f in filings:
@@ -252,8 +229,7 @@ def fetch_activist_records(session: date, max_filings: int, identity: str,
                 continue
         return records
     except Exception as exc:  # noqa: BLE001 — edgartools missing / SEC error -> degrade
-        # Still never-raises, but LOUD: a missing edgartools install or an SEC outage
-        # must not read as "0 filings today".
+        # Loud on purpose: an outage must not read as "0 filings today".
         warnings.warn(f"edgar: index fetch failed: {redact_secrets(str(exc))}", stacklevel=2)
         return []
 

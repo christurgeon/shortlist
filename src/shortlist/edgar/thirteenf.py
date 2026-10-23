@@ -117,14 +117,12 @@ def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
     meaningful). Order-independent: a `None`-shares row seen first never swallows a later
     usable count.
 
-    KNOWN asymmetry: a row with an unparseable `value` is dropped before its `shares` are
-    read, so a usable share count on a value-less row is lost. On the PRIOR side that
-    understates prior shares and therefore **inflates** the add ratio — i.e. this fabricates an
-    add rather than abstaining, the wrong direction. Not defended against, because summing
-    shares from value-less rows would break value/shares coherence; and live coverage is
-    154/154 real positions with zero occurrences
-    (`docs/audits/2026-08-09-13f-material-adds-design.md` §6a). Revisit if the abstain counter
-    in production is ever nonzero.
+    Known asymmetry: a row with an unparseable `value` is dropped before its `shares` are
+    read. On the prior side that understates prior shares and inflates the add ratio, which
+    fabricates an add instead of abstaining. Summing shares from value-less rows would break
+    value/shares coherence, so this is not defended against
+    (`docs/audits/2026-08-09-13f-material-adds-design.md` §6a). Revisit if the abstain
+    counter is ever nonzero.
 
     Never raises."""
     agg: dict[str, dict] = {}

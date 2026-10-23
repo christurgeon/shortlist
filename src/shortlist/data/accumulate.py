@@ -6,10 +6,9 @@ days before spending any API call), per-ticker isolated (one bad name can't abor
 run), and observable (per-run log + a status verdict against the backtest's
 24-date **and** 30-name-breadth thresholds).
 
-Point-in-time integrity: capture is ALWAYS the current UTC day. There is no path to
-write a snapshot dated to a past day — `as_of` comes from `utcnow` via collect, and
-a snapshot older than the run day is rejected. Backfilled/restated data would
-silently reintroduce look-ahead into the backtest, so it is forbidden by design.
+Point-in-time integrity: capture is always the current UTC day. `as_of` comes from
+`utcnow` via collect, and a snapshot older than the run day is rejected. Backfilled
+data would reintroduce look-ahead into the backtest.
 """
 from __future__ import annotations
 
@@ -84,18 +83,14 @@ def accumulate(tickers: list[str], sources: list[str], root: str | Path, *,
                collect_fn: Optional[Callable] = None) -> AccumulationRun:
     """Capture today's snapshot for each ticker. Idempotent and per-ticker isolated.
 
-    min_coverage: an explicit save-gate — snapshots below this coverage fraction
-    are GATED (not saved, not counted toward readiness) so a caller can still
-    exclude fully/partly gated symbols (e.g. FMP's per-symbol 402) on demand. The
-    default is 0.0 (gate off): everything actually fetched is saved. A snapshot
-    that clears the gate but still has < THIN_MARK (50%) key-field coverage is
-    SAVED and classified THIN, not dropped — it still carries whatever
-    keyless/aux sections (price, earnings) landed, which is exactly what the
-    replay/SUE axes need. A snapshot with genuinely nothing fetched from any
-    source (total outage) FAILS instead of being saved as an empty husk.
-    collect_fn is injectable for testing; defaults to the real collector.
+    min_coverage: save-gate. Snapshots below it are GATED (not saved, not counted
+    toward readiness). The default 0.0 saves everything fetched. A snapshot that
+    clears the gate but has coverage < THIN_MARK is saved and classified THIN: it
+    still carries the keyless price and earnings sections the replay axes need. A
+    snapshot with nothing from any source FAILS instead of being saved empty.
+    collect_fn is injectable for testing.
     """
-    cf = collect_fn or collect                        # resolved at call time (testable via monkeypatch)
+    cf = collect_fn or collect                        # resolved at call time for monkeypatching
     day = _today_iso()
     # `None` = no cap; an explicit 0 means "capture nothing" (not "all").
     sel = list(tickers) if max_tickers is None else tickers[:max_tickers]

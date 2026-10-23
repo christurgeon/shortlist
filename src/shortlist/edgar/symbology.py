@@ -23,10 +23,7 @@ from .cik_tickers import _PREF_SUFFIX, _UNIT_SUFFIX, _norm_cik, build_cik_to_tic
 
 _CDX_URL = "http://web.archive.org/cdx/search/cdx"
 _WB_RAW = "http://web.archive.org/web/{ts}id_/https://www.sec.gov/files/company_tickers.json"
-_MIN_INTERVAL_S = 1.0                       # archive.org politeness ceiling (0 x 429 over 20
-                                             # sequential spike fetches at ~5.7s/fetch; capped
-                                             # to ~1 req/s as cheap insurance given the VPS's
-                                             # 2x free-host IP-block history)
+_MIN_INTERVAL_S = 1.0                       # ~1 req/s: archive.org politeness
 _last_request_ts: float = 0.0               # module-level throttle (monotonic seconds)
 
 
@@ -93,8 +90,7 @@ def cdx_snapshots(*, cache_dir: str, client: Optional[httpx.Client] = None,
         client = client or httpx.Client(timeout=60.0, headers={"User-Agent": "shortlist symbology"})
         try:
             _throttle()
-            # Limit far above the real snapshot count so a single call is complete.
-            # Truncation guard: warn if we ever hit the cap (would mean silent pagination).
+            # The limit is far above the real snapshot count so one call is complete.
             _CAP = 100000
             resp = client.get(_CDX_URL, params={"url": "sec.gov/files/company_tickers.json",
                                                 "output": "json", "limit": str(_CAP)},
@@ -105,7 +101,7 @@ def cdx_snapshots(*, cache_dir: str, client: Optional[httpx.Client] = None,
             if owns:
                 client.close()
         snaps = parse_cdx(rows)
-        if len(rows) - 1 >= _CAP:            # header + rows hit the cap -> possible truncation
+        if len(rows) - 1 >= _CAP:            # header + rows hit the cap
             import warnings
             warnings.warn("symbology: CDX response hit the row cap — snapshot list may be "
                           "truncated (raise the limit)", stacklevel=2)
@@ -143,9 +139,9 @@ def _raw_snapshot(timestamp: str, *, cache_dir: str, client: Optional[httpx.Clie
                 return raw
         except Exception:  # noqa: BLE001
             pass
-        if attempt < 2:                     # no dead sleep after the final failed attempt
-            time.sleep(2 ** attempt)        # fixed backoff 1s/2s (no random)
-    import warnings  # L2: a give-up is NOT silent (distinguish from "no snapshot")
+        if attempt < 2:
+            time.sleep(2 ** attempt)        # fixed backoff 1s/2s
+    import warnings  # a give-up is not silent
     warnings.warn(f"symbology: snapshot fetch failed after retries for {timestamp}", stacklevel=2)
     return None
 
@@ -180,14 +176,14 @@ def snapshot_reverse(timestamp: str, *, cache_dir: str, client: Optional[httpx.C
     return out
 
 
-# Curated overrides for known bad historical resolutions (delisted multi-class names where the
-# ≲2019 first-occurrence convention misfires). Extend as spot-checks find them. {cik10: ticker}.
+# Curated overrides {cik10: ticker} for delisted multi-class names where the pre-2019
+# first-occurrence convention misfires.
 _OVERRIDES: dict[str, str] = {}
 
 
 def snapshot_multi(timestamp: str, *, cache_dir: str, client: Optional[httpx.Client] = None) -> set[str]:
     """Set of 10-digit CIKs with >1 ticker row in this snapshot (multi-share-class / units /
-    preferred) — flags where the first-occurrence convention could misfire (C2). Never raises."""
+    preferred), where the first-occurrence convention could misfire. Never raises."""
     raw = _raw_snapshot(timestamp, cache_dir=cache_dir, client=client)
     if not raw:
         return set()
@@ -208,10 +204,8 @@ class Symbology:
     def __init__(self, identity: str, *, cache_dir: str, client: Optional[httpx.Client] = None,
                  today: Optional[date] = None) -> None:
         self._cache_dir = cache_dir
-        # C1 FIX: OWN a client when none is passed, so the snapshot-BLOB fetch path (delisted +
-        # reverse resolution) actually works in the default `Symbology(identity, cache_dir=...)`
-        # construction — `_raw_snapshot` returns None when client is None, which would silently
-        # make every delisted/reverse resolution None. UA=identity satisfies both SEC + archive.org.
+        # Own a client when none is passed: `_raw_snapshot` returns None without one, which
+        # would make every delisted and reverse resolution None. UA=identity serves SEC and archive.org.
         self._owns_client = client is None
         self._client = client or httpx.Client(timeout=60.0, headers={"User-Agent": identity})
         self._live = load_cik_to_ticker(identity, cache_dir=str(Path(cache_dir) / "sec_tickers"),
@@ -222,7 +216,7 @@ class Symbology:
         self._multi_cache: dict[str, set[str]] = {}
         self._overrides = dict(_OVERRIDES)
         self.disagreements: list[tuple[str, str, str]] = []
-        self.low_confidence: list[tuple[str, str]] = []   # (cik10, ticker) delisted multi-class (C2)
+        self.low_confidence: list[tuple[str, str]] = []   # (cik10, ticker) delisted multi-class
 
     def close(self) -> None:
         if self._owns_client:
@@ -251,7 +245,7 @@ class Symbology:
         return self._multi_cache[ts]
 
     def resolve_ticker(self, cik, as_of: date) -> Optional[str]:
-        try:                                          # M2: never raise on a malformed CIK
+        try:                                          # never raise on a malformed CIK
             cik10 = _norm_cik(cik)
         except (TypeError, ValueError):
             return None
@@ -259,15 +253,15 @@ class Symbology:
             return self._overrides[cik10]
         live_tkr = self._live.get(cik10)
         as_of_tkr = self._snapshot_map_for(as_of).get(cik10)
-        if live_tkr is not None:                     # active issuer -> live wins (sidesteps the
-                                                       # pre-2019 first-occurrence bug — see §17)
+        if live_tkr is not None:                     # active issuer: live wins (sidesteps the
+                                                       # pre-2019 first-occurrence bug)
             if as_of_tkr is not None and as_of_tkr != live_tkr:
                 self.disagreements.append((cik10, live_tkr, as_of_tkr))
             return live_tkr
-        # delisted: archive-only (may be None). The ≲2019 convention bug can ONLY bite here (no
-        # live cross-check possible), so flag low-confidence when the archived ticker looks like a
-        # unit/warrant/preferred sibling OR the CIK had >1 ticker in that snapshot (C2). The
-        # operator/coordinator spot-checks these + seeds `_OVERRIDES` before a verdict trusts them.
+        # Delisted: archive-only (may be None). The pre-2019 convention bug bites only here,
+        # with no live cross-check. Flag low-confidence when the archived ticker looks like a
+        # unit/warrant/preferred sibling or the CIK had >1 ticker in that snapshot. Spot-check
+        # these and seed `_OVERRIDES` before trusting a verdict.
         if as_of_tkr is not None and (
                 _UNIT_SUFFIX.match(as_of_tkr) or _PREF_SUFFIX.match(as_of_tkr)
                 or cik10 in self._snapshot_multi_for(as_of)):
@@ -283,8 +277,7 @@ class Symbology:
         return self._rev_cache[ts]
 
     def resolve_cik(self, ticker: str, as_of: date) -> Optional[int]:
-        # str() guards a truthy non-str ticker (honors the module's never-raises contract,
-        # symmetric with the forward path's _norm_cik try/except).
+        # str() guards a truthy non-str ticker (never-raises contract).
         return self._reverse_map_for(as_of).get(str(ticker or "").upper())
 
     def resolve_ciks(self, tickers: list[str], as_of: date) -> tuple[dict[str, int], float]:

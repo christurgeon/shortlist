@@ -1,32 +1,27 @@
 """SEC EDGAR full-text search (EFTS) primitives for 8-K discovery.
 
-The 13D-pattern daily index carries NO item codes; EFTS returns them inline
-(`_source.items`), so a full day of 8-Ks costs 3-6 requests instead of a header fetch
-per filing. Shared-leaf pattern (data/finra.py): the URL, normalization, day-cache
-contract, and windowing live here ONCE.
+EFTS returns 8-K item codes inline (`_source.items`), so a full day of 8-Ks costs a
+few requests instead of a header fetch per filing. The URL, normalization, day-cache
+contract and windowing live here once (shared-leaf pattern, as in data/finra.py).
 
-Live-probed facts this module encodes (2026-07-07, twice — do not "fix" back):
-- `forms=8-K` filters on `root_forms` and RETURNS 8-K/A rows -> `file_type` is preserved
-  on every normalized row; the `file_type != "8-K"` drop is the AGGREGATORS' job (the
-  cache always stores the complete, unfiltered day).
-- EFTS lags: querying today's date returns `total: 0` -> the day cache is only FINAL
-  once fetched >= EFTS_LAG_DAYS after the day; younger fetches are reused intra-day only.
-- ES-style pagination window (`from+size <= 10k`) -> any range whose `total >= 9,900`
-  is split recursively at the date midpoint (earnings-heavy months approach the cap).
-- Browser-ish UA + Accept headers required; intermittent 500s -> bounded retry+backoff.
+Observed EFTS behavior this module encodes. Do not "fix" it back:
+- `forms=8-K` filters on `root_forms` and returns 8-K/A rows. `file_type` is preserved
+  on every row; dropping non-8-K rows is the aggregators' job. The cache stores the
+  complete, unfiltered day.
+- EFTS lags: today's date returns `total: 0`. A day cache is final only once fetched
+  >= EFTS_LAG_DAYS after the day; younger fetches are reused intra-day only.
+- The pagination window is `from+size <= 10k`, so any range with `total >= 9,900` is
+  split recursively at the date midpoint.
+- A browser-like UA + Accept set is required. 500s are intermittent: bounded retry.
 - SEC fair access: THROTTLE_S sleep before every request (~3 req/s).
 
-The default (`q=None`) item-query path's request params are FROZEN (a byte-identical
-regression test in tests/test_data_efts.py pins them). An OPTIONAL exact-phrase `q` threads
-a `"..."` full-text query through the same fetch discipline, with its own cache namespace
-(`.cache/efts_buyback/<phrase-hash>/`) — the shared retry/throttle/split/finality machinery
-lives here ONCE; only the params gain a `q` key when a phrase is set.
+The default (`q=None`) request params are frozen; tests/test_data_efts.py pins them. An
+optional exact-phrase `q` adds a `q` key and uses its own cache namespace
+(`.cache/efts_buyback/<phrase-hash>/`).
 
-**No production caller** (the discovery-funnel consumers this was built for — an 8-K item
-veto sweep and a buyback-authorization originator — retired with the scout; see
-`docs/audits/2026-08-11-scout-retirement.md`). CI pins the parse shapes; the live fetch
-tests skip by default. Kept for its measured EFTS behavior below, which any future 8-K/
-full-text consumer would have to re-derive.
+No production caller: the scout consumers were retired
+(`docs/audits/2026-08-11-scout-retirement.md`). CI pins the parse shapes; live tests
+skip by default. Kept for the EFTS behavior above.
 """
 from __future__ import annotations
 
@@ -46,18 +41,15 @@ EFTS_LAG_DAYS = 2       # EFTS indexes with a lag: today's query returns total 0
 THROTTLE_S = 0.35       # sleep before EVERY request (~3 req/s SEC fair access)
 _PAGE = 100
 _SPLIT_TOTAL = 9_900    # ES from+size window is 10k; split any range at/above this
-# EFTS 500s arrive in BURSTS, not as isolated blips (live-diagnosed 2026-07-08: the veto's
-# 30-day cold-start sweep failed twice on ~43-page crawls while every short smoke passed;
-# an instrumented run absorbed two 500s mid-crawl). max_retries=2 rides out only ~3s of
-# burst (waits 1+2s); 5 rides out ~23s (1+2+4+8+8) — the whole-range fetch is all-or-nothing
-# per chunk, so one exhausted page throws away the other ~40 pages' work.
+# EFTS 500s arrive in bursts. 2 retries ride out only ~3s; 5 ride out ~23s (waits
+# 1+2+4+8+8). A range fetch is all-or-nothing per chunk, so one exhausted page discards
+# the chunk's other pages.
 _MAX_RETRIES = 5
 _RETRY_BASE_S = 1.0
 _RETRY_MAX_S = 8.0
 
-# EFTS rejects bot-shaped (UA-only) requests — a browser-ish UA + Accept set is required
-# (live-probed). The operator identity rides in the UA tail for SEC fair-access contact.
-# Accept-Encoding stays a subset of what httpx can decode (no br/zstd — the Yahoo gotcha).
+# EFTS rejects UA-only requests. The operator identity rides in the UA tail for SEC
+# fair-access contact. Accept-Encoding must stay within what httpx decodes (no br/zstd).
 def _efts_headers(identity: str) -> dict:
     return {
         "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -72,8 +64,8 @@ def _efts_headers(identity: str) -> dict:
 
 def normalize_hit(hit) -> Optional[dict]:
     """One EFTS hit -> the normalized row every consumer reads. None on junk (no adsh /
-    no ciks). `file_type` is preserved verbatim (8-K/A included — see module docstring);
-    `display_names` are carried for the SPAC name check ONLY, NEVER as a ticker source."""
+    no ciks). `file_type` is preserved verbatim (8-K/A included). `display_names` are not
+    a ticker source."""
     src = (hit or {}).get("_source") or {}
     adsh = src.get("adsh")
     ciks = src.get("ciks") or []
@@ -102,8 +94,7 @@ def _hits(payload: dict) -> list:
 
 
 def _phrase_q(phrase: str) -> str:
-    """EFTS exact-phrase query value: the phrase wrapped in double quotes (live-probed —
-    `q="share repurchase program"` matches the phrase, unquoted ANDs the terms)."""
+    """EFTS exact-phrase query value: the phrase in double quotes. Unquoted terms are ANDed."""
     return f'"{phrase}"'
 
 
@@ -111,8 +102,8 @@ def _page(get: Callable, start: date, end: date, from_: int, *,
           throttle_s: float, max_retries: int, q: Optional[str] = None) -> Optional[dict]:
     """One throttled page with bounded retry-on-5xx. None = failed (never raises).
 
-    `q=None` (the default) reproduces the FROZEN item-query params byte-for-byte (pinned by
-    tests/test_data_efts.py); a non-None `q` adds ONLY a trailing exact-phrase `q` key."""
+    `q=None` keeps the frozen item-query params (tests/test_data_efts.py); a non-None `q`
+    only adds a trailing exact-phrase `q` key."""
     params = {"forms": "8-K", "dateRange": "custom",
               "startdt": start.isoformat(), "enddt": end.isoformat(),
               "from": from_, "size": _PAGE}
@@ -170,10 +161,7 @@ def fetch_eightk_range(start: date, end: date, *, identity: str,
                        _get=None) -> Optional[list[dict]]:
     """All normalized 8-K-rooted rows filed in [start, end]. None = fetch failed (warned,
     redacted); [] = none. `_get(params) -> (status, payload|None)` is the test seam; the
-    default opens ONE httpx.Client for the whole (possibly split/paginated) range.
-
-    `q` (optional exact phrase) narrows the query to full-text hits; the default `q=None`
-    is the frozen item-query path (see module docstring)."""
+    default opens one httpx.Client for the whole range. `q` is an optional exact phrase."""
     close = None
     get = _get
     if get is None:
@@ -201,15 +189,15 @@ def fetch_eightk_range(start: date, end: date, *, identity: str,
             close()
 
 
-# --- day cache (COMPLETE unfiltered rows; envelope carries the fetch date) ---
+# --- day cache (complete, unfiltered rows) ---
 
 def _day_cache_path(cache_dir: str, day: date) -> Path:
     return Path(cache_dir) / f"{day.isoformat()}.json"
 
 
 def _fresh(env: dict, day: date, today: date) -> bool:
-    """FINAL once fetched >= EFTS_LAG_DAYS after the day; a younger fetch is reused
-    intra-day only (so same-run callers share one fetch), else it is a miss."""
+    """Final once fetched >= EFTS_LAG_DAYS after the day; a younger fetch is reused
+    intra-day only, else it is a miss."""
     try:
         fetched = date.fromisoformat(str(env.get("fetched_on")))
     except (TypeError, ValueError):
@@ -232,8 +220,8 @@ def _write_day_cache(day: date, rows: list[dict], cache_dir: str, today: date) -
 
 def fetch_eightk_day(day: date, *, identity: str, cache_dir: str = ".cache/efts",
                      today: Optional[date] = None, **fetch_kw) -> Optional[list[dict]]:
-    """One day's complete normalized rows, day-cached. None = fetch failed (cache
-    untouched — a failure is never frozen)."""
+    """One day's complete normalized rows, day-cached. None = fetch failed (the cache is
+    untouched)."""
     today = today or date.today()
     cached = _read_day_cache(day, cache_dir, today)
     if cached is not None:
@@ -241,7 +229,7 @@ def fetch_eightk_day(day: date, *, identity: str, cache_dir: str = ".cache/efts"
     rows = fetch_eightk_range(day, day, identity=identity, **fetch_kw)
     if rows is None:
         return None
-    _write_day_cache(day, rows, cache_dir, today)   # complete + unfiltered, ALWAYS
+    _write_day_cache(day, rows, cache_dir, today)
     return rows
 
 
@@ -258,18 +246,12 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
                         cache_dir: str = ".cache/efts",
                         today: Optional[date] = None, q: Optional[str] = None,
                         **fetch_kw) -> Optional[list[dict]]:
-    """Ranged fetch over [start, end], chunked by month, reusing the day cache: a chunk
-    whose every day is cache-fresh makes ZERO requests; otherwise ONE ranged fetch (with
-    the >=9,900 split inside fetch_eightk_range) re-fills every day cache in the chunk
-    (empty days included, so weekends/holidays never force a refetch). None = any chunk
-    failed (the caller treats the window as failed — resumable at its own layer).
+    """Ranged fetch over [start, end], chunked by month, reusing the day cache. A chunk
+    whose days are all cache-fresh makes no request; otherwise one ranged fetch re-fills
+    every day cache in the chunk, empty days included. None = any chunk failed.
 
-    `q` (optional exact phrase) is threaded to the range fetch AND stored complete/unfiltered
-    per-day. STRUCTURAL GUARD: whenever `q` is set, the day cache is redirected under a
-    phrase-hash subdir (`_phrase_subdir`) of `cache_dir`, so phrase-FILTERED rows can NEVER
-    pool into the shared item-query day cache (`.cache/efts`) regardless of the caller's
-    `cache_dir` — the cache-completeness invariant is enforced by construction, not docstring.
-    The `q=None` path is byte-identical (no redirect)."""
+    When `q` is set, the day cache moves under a phrase-hash subdir (`_phrase_subdir`),
+    so phrase-filtered rows never pool into the shared item-query day cache."""
     today = today or date.today()
     if q is not None:
         cache_dir = _phrase_subdir(cache_dir, q)
@@ -293,14 +275,13 @@ def fetch_eightk_window(start: date, end: date, *, identity: str,
     return out
 
 
-# --- exact-phrase full-text queries (own cache namespace) ---
+# --- exact-phrase full-text queries ---
 
 BUYBACK_CACHE_DIR = ".cache/efts_buyback"
 
 
 def _phrase_subdir(cache_dir: str, phrase: str) -> str:
-    """A phrase-hash subdirectory under the buyback cache namespace, so each phrase's
-    complete/unfiltered day cache is isolated (keyed by (phrase-hash, day))."""
+    """A phrase-hash subdirectory of `cache_dir`, isolating each phrase's day cache."""
     h = hashlib.sha1(phrase.encode("utf-8")).hexdigest()[:16]
     return str(Path(cache_dir) / h)
 
@@ -308,13 +289,9 @@ def _phrase_subdir(cache_dir: str, phrase: str) -> str:
 def fetch_phrase_day(phrase: str, day: date, *, identity: str,
                      cache_dir: str = BUYBACK_CACHE_DIR, today: Optional[date] = None,
                      **fetch_kw) -> Optional[list[dict]]:
-    """One day's COMPLETE normalized rows matching an exact phrase, day-cached under
-    `<cache_dir>/<phrase-hash>/<day>.json` (same envelope + finality rule as the item-query
-    day cache). None = fetch failed (cache untouched — a failure is never frozen).
-
-    A single-day `fetch_eightk_window(day, day, q=phrase)` — so the phrase day-cache contract
-    (phrase-hash subdir choice, envelope, finality rule) has exactly ONE implementation, the
-    one `fetch_phrase_window` also rides."""
+    """One day's complete normalized rows matching an exact phrase, day-cached under
+    `<cache_dir>/<phrase-hash>/<day>.json`. None = fetch failed. A single-day
+    `fetch_eightk_window(day, day, q=phrase)`."""
     return fetch_eightk_window(day, day, identity=identity, cache_dir=cache_dir,
                                today=today, q=phrase, **fetch_kw)
 
@@ -322,10 +299,9 @@ def fetch_phrase_day(phrase: str, day: date, *, identity: str,
 def fetch_phrase_window(phrases, start: date, end: date, *, identity: str,
                         cache_dir: str = BUYBACK_CACHE_DIR, today: Optional[date] = None,
                         **fetch_kw) -> Optional[list[dict]]:
-    """Ranged fetch over [start, end] for EVERY phrase, each with its own phrase-hash day
-    cache (fetch_eightk_window namespaces automatically whenever `q` is set); rows are tagged
-    with the matched `phrase` and merged (accession dedup is the aggregator's job, never
-    here). None = any phrase's window failed."""
+    """Ranged fetch over [start, end] for every phrase. Rows are tagged with the matched
+    `phrase` and merged; accession dedup is the aggregator's job. None = any phrase's
+    window failed."""
     today = today or date.today()
     out: list[dict] = []
     for phrase in phrases:

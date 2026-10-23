@@ -18,12 +18,10 @@ from ..stats import (
 )
 from .models import TickerSnapshot
 
-# `monthly_closes` carries ONE point per calendar month, so for any target inside the
-# history the nearest point is <=~31 days away by construction. A wider gap means the
-# target lies OUTSIDE the sampled span -- the bound is the sampling interval plus slack
-# for a month whose last valid observation falls early, NOT a value fitted to an observed
-# failure. Without it a short history pairs an old fiscal end with the oldest close it
-# has, inventing a P/E from a price years away; `pe_vs_history` is a scored value leg.
+# `monthly_closes` has one point per month, so a target inside the history is within
+# ~31 days of a point. A wider gap means the target is outside the sampled span. Without
+# this bound a short history pairs an old fiscal end with the oldest close, which
+# invents a P/E for the scored `pe_vs_history` leg.
 _MAX_CLOSE_GAP_DAYS = 45
 
 
@@ -70,9 +68,8 @@ def _age_days(as_of: Optional[str], settlement: Optional[str]) -> Optional[int]:
 
 
 def _financial_series(st) -> list[dict]:
-    """Newest-first list-of-dicts from the parallel Statements series, for the
-    research quant-context. Per-index None-guarded so ragged lengths never raise;
-    a cell is None where its series is shorter. Returns [] for empty Statements."""
+    """Newest-first list of dicts from the parallel Statements series, for /deep.
+    A cell is None where its series is shorter. Returns [] for empty Statements."""
     cols = ("fiscal_years", "fiscal_period_end", "revenue", "gross_profit",
             "net_income", "operating_cash_flow", "free_cash_flow", "diluted_eps",
             "total_debt", "cash_and_equivalents", "diluted_shares", "inventory")
@@ -98,24 +95,19 @@ def _financial_series(st) -> list[dict]:
 
 
 ROIC_TAX_RATE = 0.25
-"""Flat tax rate for the computed-ROIC NOPAT.
+"""Flat tax rate for the computed-ROIC NOPAT (~21% US federal + state).
 
-No tax-expense field exists in `Statements`, and deriving an effective rate from
-net_income / operating_income / interest_expense is noisy (non-operating items swamp it).
-0.25 ~= 21% US federal + state, the standard screening convention.
+`Statements` has no tax-expense field, and a derived effective rate is noisy.
 
-A module CONSTANT, deliberately NOT config-plumbed: a knob nobody will tune is a knob that
-rots, and `--source xbrl` computes its own ROIC with a per-year effective rate clamped to
-[0, 0.5] (`_xbrl_facts.py:286`), so one config value could not honestly govern both. The two
-axes therefore differ by ~(1-0.25)/(1-0.21) = 0.949, about 5% — a known, documented gap, not a
-bug. Revisit only with a measured case for tuning it.
+A module constant, not a config knob: `--source xbrl` computes its own ROIC with a
+per-year effective rate (`_xbrl_facts._roic_series`), so one config value cannot govern
+both. The two differ by ~(1-0.25)/(1-0.21) = 0.949, about 5%. This gap is known, not a bug.
 """
 
 
 def _at(seq, i):
-    """Positional access tolerating a short or absent series. The statements series have
-    DIFFERENT lengths (real UNH: 3 years of operating income and equity, 2 of debt), so an
-    index valid for one is out of range for another."""
+    """Positional access tolerating a short or absent series. Statements series have
+    different lengths, so an index valid for one can be out of range for another."""
     return seq[i] if seq and i < len(seq) else None
 
 
@@ -125,18 +117,14 @@ def _nopat_and_invested_capital(st, tax_rate: float) -> dict[int, tuple[float, f
 
     `NOPAT = operating_income * (1 - tax_rate)`; `invested capital = total_debt + total_equity`.
 
-    **This indexes all three series by the POSITION of `fiscal_years[i]`, plus a skip for
-    missing values — it is not true fiscal-year pairing, and does not claim to be.** `Statements`
-    carries one year spine: the balance-sheet series have no year labels of their own
-    (`edgar.py` derives `fiscal_years` from the INCOME statement's period ends, and the
-    balance sheet's instant dates are discarded by `_series`). Genuine per-series labels would
-    be a change to `Statements`. Positional is correct while the series are newest-first
-    prefixes of one spine (a shorter balance-sheet series simply ends early), and the None-skip
-    makes it degrade safely rather than pairing a year against a neighbour's value.
+    **This indexes all three series by the position of `fiscal_years[i]`, with a skip for
+    missing values. It is not true fiscal-year pairing.** `Statements` has one year spine:
+    the balance-sheet series have no year labels (`edgar.py` derives `fiscal_years` from
+    the income statement's period ends). Positional is correct while the series are
+    newest-first prefixes of one spine, and the None-skip degrades safely.
 
-    `invested_capital <= 0` abstains rather than emitting a negative or explosive ratio: real
-    MCD filings carry NEGATIVE total equity (buyback compounders), which
-    `docs/ASSESSMENT_GAPS.md` flags for exactly this reason."""
+    `invested_capital <= 0` abstains: buyback compounders carry negative total equity
+    (see `docs/ASSESSMENT_GAPS.md`)."""
     out: dict[int, tuple[float, float]] = {}
     for i, fy in enumerate(st.fiscal_years or []):
         if fy is None:
@@ -159,16 +147,10 @@ def _roic_by_fiscal_year(st, tax_rate: float) -> dict[int, float]:
 
 
 def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 — order-dependent pipeline; a split was measured and rejected (docs/audits/README.md)
-    """Map a harness TickerSnapshot onto the flat StockMetrics that
-    scoring.score() consumes. Pure (no I/O). Absent inputs stay None so the
-    scorer's weight-redistribution handles them.
-
-    Several fields are DERIVED here because the harness has the raw material but
-    not the field: gross_margin_stability, fcf_positive, and the growth legs
-    (revenue_cagr/fcf_cagr/eps_cagr/revenue_growth_persistence) — all from the 5y
-    Statements via the shared shortlist.stats helpers. eps_revision is the one
-    accepted None parity gap (Alpha Vantage, out of scope); pe_median_5y and
-    roic_5y_avg flow from FMPSource's annual history fetches."""
+    """Map a harness TickerSnapshot onto the flat StockMetrics that scoring.score()
+    consumes. Pure (no I/O). Absent inputs stay None so the scorer redistributes
+    their weight. Derives the growth, stability and yield fields from the
+    snapshot's raw sections via `shortlist.stats`. `eps_revision` stays None."""
     m = StockMetrics(ticker=snap.ticker)
 
     p = snap.profile
@@ -222,7 +204,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.insider_distinct_buyers = ins.distinct_buyers
         m.insider_role_weighted_buy_value = ins.role_weighted_buy_value
         m.insider_planned_sell_value = ins.planned_sell_value
-        # Compact recent Form-4 trades for the research brief (enrichment only).
+        # Compact recent Form 4 trades for /deep.
         if ins.recent:
             m.insider_recent = [
                 {"date": t.date, "name": t.name, "role": t.role,
@@ -231,46 +213,33 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
     st = snap.statements
     if st:
         m.gross_margin_stability = gross_margin_stability(st.gross_margins())
-        # Growth legs derived from the 5y series (statements are newest-first).
         m.revenue_cagr = cagr(st.revenue)
         m.fcf_cagr = cagr(st.free_cash_flow)
         m.eps_cagr = cagr(st.net_income)
         m.eps_cagr_ps = cagr(st.diluted_eps)             # genuine per-share (dilution-aware)
         m.share_count_cagr = cagr(st.diluted_shares)     # + = net issuance, - = buybacks
         m.revenue_growth_persistence = growth_persistence(st.revenue)
-        # Investment & earnings-quality scalars (PREDICTIVE_SIGNALS §3) are pre-computed
-        # at extraction (the source aligns NI/CFO/Assets by their own statement dates);
-        # copy them through. None where the source didn't supply them (e.g. FMP-won
-        # statements) -> the opt-in quality legs redistribute.
+        # Pre-computed at extraction; copied through. None when the source did not supply them.
         m.asset_growth = st.asset_growth
         m.accruals = st.accruals
-        # ROIC computed from statements when NO fundamentals source supplied one — the
-        # FMP-gated path, where Finnhub publishes no ROIC at all and used to substitute
-        # `roiTTM` (Return on *Investment*), which overstated the truth in 92% of 591 paired
-        # observations, median +26.6%. GAP-FILLING ONLY: a supplied roic always wins, so this
-        # can never degrade a card. Placed here rather than in finnhub.py because it is not a
-        # Finnhub concern — it works whichever source chain was gated.
+        # Gap-filling only: a supplied roic always wins. Computed here, not in a source,
+        # so it works whichever source chain was gated.
         # docs/audits/2026-08-10-roic-proxy-and-edgar-equity-design.md
         if m.roic is None:
             by_year = _roic_by_fiscal_year(st, ROIC_TAX_RATE)
             if by_year:
-                m.roic = by_year[max(by_year)]           # newest RESOLVABLE fiscal year
-                # Guard the average too, not just roic: an FMP 5-year figure must never be
-                # clobbered by a 2-3 year EDGAR one.
+                m.roic = by_year[max(by_year)]           # newest resolvable fiscal year
+                # Never clobber an FMP 5-year average with a shorter EDGAR one.
                 if len(by_year) >= 2 and m.roic_5y_avg is None:
-                    # A 2-3 YEAR average, not 5: EDGAR balance sheets carry 2-3 instants. The
-                    # thresholds.roic band was calibrated on FMP's 5y figure, so this is a
-                    # documented approximation — §6.1 of the design measures the level shift.
+                    # A 2-3 year average: EDGAR balance sheets carry 2-3 instants. The
+                    # thresholds.roic band was calibrated on FMP's 5y figure (see the audit above).
                     m.roic_5y_avg = sum(by_year.values()) / len(by_year)
-        # Fundamental-quality (Piotroski-inspired Core-6, asset-free). Statements lists
-        # are newest-first and index-parallel by fiscal year; free-source derivable so
-        # it survives FMP-402 gating (serves broad ticker coverage).
         m.piotroski_f, m.piotroski_f_legs = piotroski_f(
             net_income=st.net_income, ocf=st.operating_cash_flow,
             total_debt=st.total_debt, gross_profit=st.gross_profit,
             revenue=st.revenue,
         )
-        # Raw newest-first series for the research quant-context (scorer-inert).
+        # For /deep only; the scorer ignores it.
         series = _financial_series(st)
         if series:
             m.financial_series = series
@@ -285,8 +254,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         fcf0 = st.free_cash_flow[0] if st.free_cash_flow else None
         if st.free_cash_flow:
             m.fcf_positive = (fcf0 > 0) if fcf0 is not None else None
-        # Leverage / coverage (ASSESSMENT_GAPS §2.7). FMP keeps priority where it set
-        # these (m.* already non-None); EDGAR fills the gated gap. UNITS: absolute USD.
+        # Leverage / coverage, absolute USD. FMP keeps priority where it set these.
         rev0 = st.revenue[0] if st.revenue else None
         if m.revenue is None and rev0 is not None:
             m.revenue = rev0
@@ -297,50 +265,32 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         debt0 = st.total_debt[0] if st.total_debt else None
         if m.cash_and_equivalents is None and cash0 is not None:
             m.cash_and_equivalents = cash0
-        # EBITDA is date-aligned at extraction (st.ebitda), so no cross-statement
-        # positional combine here. interest_coverage stays op-income/interest (both
-        # from the income statement -> already aligned).
+        # st.ebitda is date-aligned at extraction; do not recombine positionally here.
         if m.ebitda is None and ebitda0 is not None:
             m.ebitda = ebitda0
         if m.interest_coverage is None and oi0 is not None and ie0:
-            # edgartools to_dataframe() reports InterestExpense as a NEGATIVE
-            # deduction (e.g. CMCSA -4.409B). abs() the denominator so coverage
-            # stays positive; the numerator's sign is meaningful (a real
-            # operating loss -> negative coverage).
+            # edgartools reports InterestExpense as a negative deduction. abs() keeps
+            # coverage positive; an operating loss still gives negative coverage.
             m.interest_coverage = oi0 / abs(ie0)
-        # EBITDA must be POSITIVE, not just non-zero: a negative denominator flips
-        # the ratio's sign, so a leveraged money-loser would read as net cash (the
-        # display floor + inverted backtest axis both trust the sign). Abstain —
-        # the over_leveraged gate's D/E fallback covers gating (its own ebitda>0
-        # usability check already refuses negative EBITDA).
+        # EBITDA must be positive: a negative denominator flips the sign, so a leveraged
+        # money-loser would read as net cash. The over_leveraged gate's D/E fallback covers it.
         if (m.net_debt_to_ebitda is None and m.ebitda is not None and m.ebitda > 0
                 and debt0 is not None and m.cash_and_equivalents is not None):
             m.net_debt_to_ebitda = (debt0 - m.cash_and_equivalents) / m.ebitda
-        # EV/EBIT earnings yield (absolute valuation leg, ASSESSMENT_GAPS.md §2.2). EBIT = operating
-        # income; EV = market_cap + net_debt. Same positional [0] alignment the
-        # net_debt_to_ebitda derivation above already relies on. Sole producer
-        # (no source sets it) -> the is-None guard is for symmetry. UNITS: USD.
+        # EV/EBIT yield: EBIT = operating income; EV = market_cap + net_debt. USD.
         if m.ebit_ev_yield is None:
             m.ebit_ev_yield = compute_ebit_ev_yield(
                 oi0, m.market_cap, net_debt_from(debt0, m.cash_and_equivalents))
-        # Total shareholder yield (PREDICTIVE_SIGNALS §5): (dividends + net buybacks +
-        # net debt reduction) / market_cap. Derived here (not at extraction) because it
-        # needs market_cap, a price-merge product. The financing legs are latest-FY dollar
-        # magnitudes; shareholder_yield() abs()-normalizes each, nets repayments-issuance
-        # (signed), and abstains when all legs or market_cap are absent.
+        # Derived here because it needs market_cap, a price-merge product.
+        # shareholder_yield() abstains when all legs or market_cap are absent.
         if m.shareholder_yield is None:
             m.shareholder_yield = shareholder_yield(
                 st.dividends_paid, st.repurchases,
                 st.debt_repayments, st.debt_issuance, m.market_cap)
-        # Value-leg derivation (FMP-gating fallback). UNITS: st.free_cash_flow and
-        # m.market_cap are BOTH absolute USD (EDGAR + Finnhub/Yahoo), so the quotient
-        # is the fcf_yield fraction directly -- no scaling. Only fires when FMP gave
-        # nothing (m.fcf_yield set from f.fcf_yield earlier keeps FMP's priority).
+        # FMP-gating fallback. Both operands are absolute USD, so no scaling.
         if m.fcf_yield is None and fcf0 is not None and m.market_cap:
             m.fcf_yield = fcf0 / m.market_cap
-        # PE-vs-history from EDGAR EPS + Yahoo closes when FMP gated the symbol.
-        # pr is in scope from the function top. pe_ttm uses latest ANNUAL EPS as a
-        # TTM proxy (documented approximation).
+        # FMP-gating fallback. pe_ttm uses the latest annual EPS as a TTM proxy.
         eps, ends = st.diluted_eps, st.fiscal_period_end
         if m.pe_ttm is None and pr and pr.price and eps and eps[0]:
             m.pe_ttm = pr.price / eps[0]
@@ -368,9 +318,8 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
 
     soc = snap.social
     if soc:
-        # rising/delta are re-derived here from raw facts (the ShortInterest pattern);
-        # the apewisdom leaf computes the parallel WsbMention fields — keep both
-        # derivations in lockstep if you edit either.
+        # The apewisdom leaf computes the parallel WsbMention fields. Keep both
+        # derivations in lockstep.
         m.social_mentions = soc.mentions
         m.social_rank = soc.rank
         if soc.mentions is not None and soc.mentions_24h_ago is not None:
@@ -379,8 +328,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
             m.social_mention_delta_pct = (soc.mentions - soc.mentions_24h_ago) / soc.mentions_24h_ago
         m.social_data_age_days = _age_days(snap.as_of, soc.as_of)
 
-    # Government contracts (USAspending). Runs AFTER the statements block above, so
-    # m.revenue is populated for the materiality ratio. Raw facts -> derived ratios.
+    # Must run after the statements block: the materiality ratio needs m.revenue.
     gc = snap.gov_contracts
     if gc:
         m.gov_contract_ttm_usd = gc.ttm_obligated
@@ -391,16 +339,13 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.gov_contract_truncated = gc.truncated
         m.gov_contract_total_txns = gc.total_txns
         if gc.ttm_obligated is not None and (gc.prior_ttm_obligated or 0) > 0:
-            # > 0 excludes both a zero prior AND a negative net de-obligation quarter,
-            # either of which would sign-flip or blow up the ratio.
+            # > 0 excludes a zero or negative prior, which would flip the sign or blow up the ratio.
             m.gov_contract_yoy_growth = (
                 (gc.ttm_obligated - gc.prior_ttm_obligated) / gc.prior_ttm_obligated)
         if gc.ttm_obligated is not None and m.revenue:  # truthy excludes 0/None
             m.gov_contract_to_revenue = gc.ttm_obligated / m.revenue
-        # Staleness from the newest captured Action Date (real data age), not the
-        # query date — falls back to query date when no action captured.
+        # Age from the newest captured action date; falls back to the query date.
         m.gov_contract_data_age_days = _age_days(snap.as_of, gc.latest_action or gc.as_of)
-    # Federal lobbying (Senate LDA). Raw facts -> derived YoY + staleness. None-safe.
     lb = snap.lobbying
     if lb:
         m.lobbying_ttm_usd = lb.ttm_spend
@@ -414,7 +359,6 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
             m.lobbying_yoy_growth = (
                 (lb.ttm_spend - lb.prior_ttm_spend) / lb.prior_ttm_spend)
         m.lobbying_data_age_days = _age_days(snap.as_of, lb.latest_filing or lb.as_of)
-    # News flow (Finnhub company-news). Raw counts -> rising + staleness. None-safe.
     nf = snap.news
     if nf:
         m.news_count_7d = nf.count_recent
@@ -425,7 +369,6 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         if nf.count_recent is not None and nf.count_prior is not None:
             m.news_flow_rising = nf.count_recent > nf.count_prior
         m.news_data_age_days = _age_days(snap.as_of, nf.latest_dt)
-    # Earnings execution (Finnhub surprises + calendar). Raw facts -> rates. None-safe.
     e = snap.earnings
     if e:
         if e.quarters:
@@ -436,29 +379,22 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         if e.recent_surprise_pcts:
             m.earnings_avg_surprise_pct = sum(e.recent_surprise_pcts) / len(e.recent_surprise_pcts)
         m.earnings_last_surprise_pct = e.last_surprise_pct
-        # days_to_next: as_of -> next_date (forward); _age_days returns as_of - other,
-        # so negate to get a positive "days until".
+        # _age_days returns as_of - other, so negate to get days until next_date.
         days = _age_days(snap.as_of, e.next_date)
         if days is not None:
             m.earnings_days_to_next = -days
-        # SUE inputs (PREDICTIVE_SIGNALS §1). Dispersion = pop std-dev of the firm's own
-        # recent surprises (the SUE denominator); None below the min-quarters floor — its
-        # presence also serves as the >=min-quarters guard for the scoring SUE leg.
+        # SUE denominator. None below the min-quarters floor, which also guards the scoring SUE leg.
         m.earnings_surprise_dispersion = surprise_dispersion(e.recent_surprise_pcts)
-        # days_since_last_report: as_of - anchor. Keyed off the PAST report, so the SUE
-        # decay anchor never leaks the next (unannounced) report. When Finnhub's date is
-        # the quarter-END proxy (free tier serves no past calendar entries — live-probed
-        # 2026-07-09), refine with the EDGAR 10-Q/10-K filed date: truth is bracketed
+        # Anchor on the past report so SUE decay never leaks the next one. When Finnhub's
+        # date is the quarter-end proxy, refine with the EDGAR 10-Q/10-K filed date:
         # quarter_end <= announcement <= filed, so max() is never worse than either proxy.
-        # Exact forms only — a 10-Q/A or unrelated 8-K would wrongly FRESHEN the anchor.
+        # Exact forms only: a 10-Q/A or an unrelated 8-K would wrongly freshen the anchor.
         anchor = e.last_report_date
         if e.last_report_date_estimated and snap.events is not None:
             filed = snap.events.last_report_filed
             if filed and (anchor is None or filed > anchor):
                 anchor = filed
         m.earnings_days_since_last_report = _age_days(snap.as_of, anchor)
-
-    # Accepted parity gap (left None): eps_revision (Alpha Vantage, out of scope).
 
     ev = snap.events
     if ev is not None:

@@ -20,9 +20,8 @@ def classify_code(code: str) -> str:
     return "other"
 
 
-# Role classification: ordered substring match. c_suite (CEO/CFO) checked before the
-# generic officer bucket; a person who is officer AND director carries their officer
-# title (so resolves to officer). Inputs are the role strings _owner_role builds.
+# Ordered substring match on the role strings _owner_role builds. c_suite is checked
+# before the generic officer bucket.
 def classify_role(role: Optional[str]) -> str:
     r = (role or "").strip().lower()
     if not r:
@@ -37,9 +36,7 @@ def classify_role(role: Optional[str]) -> str:
     return "officer"
 
 
-# 10b5-1 detection: footnote-text heuristic only (edgartools parses no structured
-# checkbox). HIGH PRECISION, LOW RECALL — detected => almost certainly a planned trade;
-# absence proves nothing. Reimplemented here to keep this leaf dependency-free.
+# Reimplemented here to keep this leaf dependency-free.
 _10B5_1_PATTERNS = ("10b5-1", "10b-5-1", "rule 10b5", "rule 10b-5", "10b5 plan", "10b-5 plan")
 
 
@@ -62,7 +59,7 @@ class Txn:
     shares: Optional[float] = None
     price: Optional[float] = None
     value: Optional[float] = None    # unsigned transaction value (shares * price)
-    planned: bool = False            # True iff a 10b5-1 footnote was detected on this trade (only sells feed planned_sell_value)
+    planned: bool = False            # a 10b5-1 footnote was detected; only sells feed planned_sell_value
 
 
 @dataclass
@@ -74,8 +71,7 @@ class Form4Summary:
     sell_count: int = 0
     txns: list[Txn] = field(default_factory=list)
     found: bool = False
-    # --- v2 conviction aggregates (no-signal defaults; computed only when a
-    # conviction config is passed to summarize) ---
+    # Conviction aggregates: computed only when summarize gets a conviction config.
     distinct_buyers: int = 0
     role_weighted_buy_value: float = 0.0
     planned_sell_value: float = 0.0
@@ -84,10 +80,8 @@ class Form4Summary:
 def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4Summary:
     """Aggregate open-market (P/S) transactions. Each row is
     (shares, price, code, date, name, role, planned); non-P/S codes are ignored.
-    When `conviction` is None the v2 fields stay at their no-signal defaults and the
-    result is identical to the pre-conviction scorer (back-compat). When a conviction
-    dict (role_weights, min_cluster_buy_value) is supplied, three extra aggregates are
-    computed in the same single pass."""
+    When `conviction` is None the conviction fields keep their defaults. A conviction
+    dict (role_weights, min_cluster_buy_value) adds three aggregates in the same pass."""
     s = Form4Summary()
     buyer_value: dict[str, float] = {}   # normalized name -> total in-window buy $
     buyer_tier: dict[str, str] = {}      # normalized name -> role tier (first seen)
@@ -179,7 +173,7 @@ def _frame_rows(market_trades: Any, name: Optional[str], role: Optional[str],
     With `seen`, rows `_already_reported` are dropped, and after the frame every row's
     key is recorded in `seen` under `owners`, so rows of one frame never drop each other.
     `planned` is the 10b5-1 footnote heuristic, resolved via `resolve_footnotes` (the
-    duck-typed form4._resolve_footnotes; None in tests/absence -> planned False).
+    duck-typed form4._resolve_footnotes; None -> planned False).
     Guards the DataFrame truth-value trap (`if df:` raises)."""
     if market_trades is None or getattr(market_trades, "empty", True):
         return []
@@ -271,8 +265,7 @@ def aggregate_form4(filings: Iterable[Any], cutoff: date,
     counted. A row identical (`_trade_key`) to one in an earlier-listed counted filing is
     dropped when it is indirect or the filings share a reporting owner; rows within one
     filing are never merged. A filing that fails to parse or has no readable issuer CIK
-    is skipped. When `conviction` is supplied, role + 10b5-1
-    extraction feed the v2 aggregates."""
+    is skipped. With `conviction`, role and 10b5-1 data feed the conviction aggregates."""
     want = int(issuer_cik)
     rows: list[tuple] = []
     # Joint reporters (e.g. co-trustees) each file the same trade, and a form is
