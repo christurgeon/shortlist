@@ -19,21 +19,9 @@
 # --- Financials (banks / thrifts / insurers) ---
 # --- Energy ---
 # --- Materials ---
-# 2026-08-15 maintenance — 7 stale symbols, all verified against SEC company_tickers.json:
-#   renamed (same CIK, still filing): CSWI -> CSW, UCBI -> UCB,
-#     LANC -> MZTI (Lancaster Colony renamed itself Marzetti Co, CIK 57515)
-#   REMOVED, no longer filing: AMED (last 10-Q 2025-07-30), CIVI (2025-11-06),
-#     SCS (Steelcase, 2025-09-26, no ticker/exchange in SEC's record)
-#   REMOVED, unresolvable and successor UNCONFIRMED: TOWN
-#   REMOVED, ticker REASSIGNED to a different issuer: B — Barnes Group (CIK 9984)
-#     stopped filing 2024-10-29 and the symbol now belongs to BARRICK MINING (CIK
-#     756894), a Canadian 6-K filer. This is the dangerous shape: it RESOLVES, so it
-#     fails silently rather than loudly, and was only caught because Barrick files no
-#     10-Q. A resolution check CANNOT find reassignments that land on a valid 10-Q
-#     filer — only pinning CIKs would. See CLAUDE.md's Company("BBBY") -> Overstock note.
-# A stale symbol is not inert: it raises CompanyNotFoundError and contributes nothing,
-# so the universe silently shrinks. This edit CHANGES what a re-run measures — prior
-# verdicts over these files were computed without these 7 names.
+# Keep symbols current: a stale or renamed symbol raises CompanyNotFoundError and silently
+# shrinks the universe (see `stale_tickers`). A ticker reassigned to another issuer still
+# resolves and is not caught by that check.
 
 AGCO
 ALG

@@ -145,7 +145,7 @@ def kendall_tau(rank_a: list[str], rank_b: list[str]) -> float:
     return (concordant - discordant) / total
 
 
-# Pre-registered STOP thresholds (band-free, rank-based churn). See spec Stage 0.
+# Pre-registered STOP thresholds (band-free, rank-based churn).
 _STOP_OVERLAP = 0.9       # top-N set overlap at/above this == "did not move"
 _STOP_TAU = 0.95          # full-basket Kendall tau at/above this == "did not move"
 _MC_TRIALS = 200          # random-rank Monte-Carlo trials for the weight bound

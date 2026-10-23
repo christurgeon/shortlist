@@ -33,8 +33,8 @@ def _resolve_get_filings(identity: str, _get_filings):
     """The bound `get_filings(form=..., filing_date=...)` callable to use: the
     caller-supplied test seam if given, else a freshly-imported edgartools
     `get_filings` with `set_identity(identity)` applied. None (warned) if
-    edgartools is unavailable — shared by fetch_activist_window and
-    fetch_amendment_window, which otherwise duplicated this exact fallback."""
+    edgartools is unavailable. Shared by fetch_activist_window and
+    fetch_amendment_window."""
     if _get_filings is not None:
         return _get_filings
     try:
@@ -42,9 +42,7 @@ def _resolve_get_filings(identity: str, _get_filings):
         set_identity(identity)
         return get_filings
     except Exception as exc:  # noqa: BLE001
-        # stacklevel=3, not 2: this helper adds a frame, so 3 still attributes the
-        # warning to the caller of fetch_activist_window/fetch_amendment_window
-        # (what warnings filters and the reported lineno key on).
+        # stacklevel=3: this helper adds a frame, so the warning attributes to the caller.
         warnings.warn(f"edgar_history: edgartools unavailable: {redact_secrets(str(exc))}",
                       stacklevel=3)
         return None
@@ -84,13 +82,10 @@ def fetch_activist_window(start: date, end: date, identity: str, *,
     n_poisoned = 0
     last_exc: Optional[str] = None
     for f in _dedup_by_accession(rows):
-        # Everything below reads attributes off an untrusted edgartools filing object. A
-        # poisoned row (e.g. a property that raises something other than AttributeError)
-        # must not abort the whole window -- that's a deterministic wedge: a re-run over
-        # the same range hits the same poisoned row and dies again. This outer guard is
-        # last-resort: it wraps ONLY the basic attribute reads/loop control, never the
-        # header try/except below, whose own semantics (failure -> cik=None record, not a
-        # skip) are unchanged.
+        # Last-resort guard: a poisoned edgartools filing row (a property raising something
+        # other than AttributeError) must not abort the window, or every re-run over the
+        # same range dies on the same row. It wraps only the basic attribute reads and loop
+        # control, never the header try/except below (failure -> cik=None record).
         try:
             if not is_initial_13d(getattr(f, "form", "") or ""):
                 continue
@@ -175,9 +170,7 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
     last_exc: Optional[str] = None
     n_parsed = n_docs = 0
     for f in _dedup_by_accession(rows):
-        # Same outer poisoned-row guard as fetch_activist_window: wraps only the basic
-        # attribute reads/loop control, never the header try/except below (whose own
-        # failure -> cik=None semantics are unchanged).
+        # Same poisoned-row guard as fetch_activist_window.
         try:
             form = getattr(f, "form", "") or ""
             if not (is_initial_13d(form) or is_13d_amendment(form)):

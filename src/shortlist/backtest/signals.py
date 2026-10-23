@@ -72,28 +72,21 @@ class MomentumSignalSource:
         if len(closes) < self.min_history:
             return None                               # dropped, never zeroed
         spy_dates, spy_closes = self.spy.through(as_of)
-        # Dated seam: residual_momentum needs the date-aligned stock+SPY series, which it
-        # INNER-JOINS internally (§2). The production `momentum` sub-score is byte-identical
-        # to the scalar seam (the dated path only ADDS m.residual_momentum).
+        # Dated seam: residual_momentum needs the date-aligned stock and SPY series.
         snap = snapshot_from_closes_dated(ticker.upper(), dates, closes, spy_dates, spy_closes)
         m = snapshot_to_metrics(snap)
         score = scoring.momentum_score(m, self.thresholds)
         if score is None:
             return None
         sig: dict[str, float] = {"momentum": score}
-        # Standalone residual-momentum axis (Blitz-Huij-Martens 2011, §2). UNLIKE SUE this
-        # IS price-reconstructable, so it rides the LIVE-price path. Emitting it lets the
-        # `residual_momentum~momentum` collinearity pair (and head-to-head rank IC) be
-        # measured — the point is to show it dominates raw momentum. None-safe (a flat/thin
-        # window or absent band drops it).
+        # Standalone residual-momentum axis (Blitz-Huij-Martens 2011). Price-reconstructable,
+        # so it rides the live-price path. Dropped when the window is flat or thin.
         rm = scoring.residual_momentum_score(m, self.thresholds)
         if rm is not None:
             sig["residual_momentum"] = rm
-        # PREDICTIVE_SIGNALS §2 price-refinement MEASUREMENT axes (George-Hwang 52wk-high,
-        # Bali MAX-effect, Barroso-Santa-Clara vol-scaled momentum) + the two LEG-reference
-        # axes (price_vs_200dma / rel_strength_6m) so the leg-level collinearity can be
-        # measured. Backtest-only — NO production leg reads them (the momentum sub-score above
-        # is byte-identical). Emitted None-safe.
+        # Price-refinement measurement axes (George-Hwang 52wk-high, Bali MAX-effect,
+        # Barroso-Santa-Clara vol-scaled momentum) plus the two leg-reference axes for
+        # collinearity checks. Backtest-only: no production leg reads them.
         sig.update(_score_axes(m, self.thresholds,
                                 ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
                                  "price_vs_200dma", "rel_strength_6m")))
@@ -106,17 +99,11 @@ class SnapshotSignalSource:
     daily captures (never backfilled/restated data). Produces nothing until the
     store has history; the CLI guards activation (see fit/cli).
 
-    CAVEAT (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 2): from the
-    fix/edgar-companyconcept-fallback deploy date, `store.py` snapshots for
-    CMCSA/CVX/GOOGL/HON/LMT/MO/MRK/PG carry a populated `diluted_shares`;
-    snapshots before it carry `[]` -- a mid-panel field-presence break
-    concentrated in 8 large caps. Currently LATENT: this class emits no
-    `share_count` axis (only composite + quality/moat/growth/value/momentum/
-    insider + sue), so nothing here reads `diluted_shares` today. If a future
-    `share_count` axis is added to this source, date-gate or exclude those 8
-    tickers before fitting on it, or compute the break date from the store
-    itself (first date under state/snapshots/ where CMCSA/HON diluted_shares
-    is non-empty) rather than trusting a hand-recorded date.
+    CAVEAT (latent): stored snapshots for CMCSA/CVX/GOOGL/HON/LMT/MO/MRK/PG have an
+    empty `diluted_shares` before the EDGAR companyconcept fallback shipped and a
+    populated one after. Nothing here reads `diluted_shares` today. Before adding a
+    `share_count` axis, date-gate or exclude those tickers, deriving the break date
+    from the store (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
     """
     name = "composite"
 
@@ -132,12 +119,9 @@ class SnapshotSignalSource:
         snap = TickerSnapshot.from_dict(raw)
         m = snapshot_to_metrics(snap)
         card = scoring.score(m, self.config)
-        # Composite only for cards production would rank with confidence: `scored`
-        # alone is toothless here (always True for the unknown bucket, and thin
-        # accumulated snapshots usually lack a SIC), so pair it with the validity
-        # floor. Sub-axes stay per-axis None-safe below. Known gap: a Finnhub-only
-        # name can still clear the shipped `validity.min_scored_weight` — a
-        # measurement-policy line to revisit WITH data, not here.
+        # `scored` alone is toothless here (always True for the unknown bucket, and thin
+        # snapshots usually lack a SIC), so pair it with the validity floor. Known gap: a
+        # Finnhub-only name can still clear `validity.min_scored_weight`.
         sig: dict[str, float] = {}
         floor = scoring._validity(self.config or {})["min_scored_weight"]
         if card.scored and (card.confidence or 0.0) >= floor:
@@ -146,12 +130,8 @@ class SnapshotSignalSource:
             v = getattr(card, axis, None)
             if v is not None:
                 sig[axis] = v
-        # Standalone SUE axis (PREDICTIVE_SIGNALS §1). SUE cannot be reconstructed on the
-        # live-price MomentumSignalSource (price-only snapshots carry NO earnings) nor on
-        # the XBRL path (surprises aren't in companyfacts), so it rides ONLY this guarded
-        # snapshot-replay path — and only once accumulation captures the earnings fields.
-        # Emitting it here lets the `sue~momentum` collinearity pair be measured (no-op
-        # until accumulated snapshots carry the SUE inputs; the score helper is None-safe).
+        # SUE needs earnings surprises, which price-only snapshots and companyfacts lack,
+        # so it exists only on this snapshot-replay path.
         sue = scoring.sue_score(m, (self.config or {}).get("thresholds") or {})
         if sue is not None:
             sig["sue"] = sue
@@ -170,25 +150,12 @@ class XbrlSignalSource:
     weight-redistribution are scoring.score() concerns and not applied here, so
     IC stays comparable across sources. value emits 2 of 4 legs (fcf_yield,
     pe_vs_history); peg + upside_to_target need analyst data absent from XBRL.
-    Also emits a standalone `piotroski` axis (Core-6 fundamental-quality, unfitted prior),
-    a standalone `share_count` axis (diluted-share-count dilution, unfitted prior), and a
-    standalone `net_debt_to_ebitda` axis (net-debt/EBITDA leverage, unfitted prior) so
-    their rank IC is measurable before any is trusted in production scoring.
-
-    Also emits the absolute-valuation axes `ebit_ev_yield` (EBIT/EV earnings yield,
-    unfitted prior), the per-leg value-attribution axes `value_fcf_yield` /
-    `value_pe_vs_history`, and `value_plus_evebit` (the value average WITH the
-    EV/EBIT leg) so the leg's additive-or-dilutive effect on the combined `value`
-    IC is measurable before any production use (see scoring.py:ebit_ev_yield_score).
-
-    Also emits the investment & earnings-quality axes `asset_growth` (Cooper-Gulen-
-    Schill 2008) and `accruals` (Sloan 1996), both unfitted priors and both NEGATIVE
-    predictors the score helpers invert, so their rank IC + collinearity (`accruals~
-    piotroski`, `asset_growth~growth`) are measurable before the opt-in quality legs
-    are trusted (PREDICTIVE_SIGNALS §3). And `shareholder_yield` (Boudoukh et al. 2007 /
-    Faber, PREDICTIVE_SIGNALS §5) — a POSITIVE predictor scored straight, with the
-    `shareholder_yield~fcf_yield` and `shareholder_yield~share_count` collinearity pairs
-    (the buyback leg is the dollar-twin of dilution) measured before the opt-in value leg.
+    Also emits candidate axes (see `_AXES`) so their rank IC and collinearity can be
+    measured before any production use: `piotroski`, `share_count`, `net_debt_to_ebitda`,
+    `ebit_ev_yield`, the per-leg `value_fcf_yield` / `value_pe_vs_history`,
+    `value_plus_evebit` (value average with the EV/EBIT leg), `asset_growth` and
+    `accruals` (both negative predictors the score helpers invert) and
+    `shareholder_yield` (a positive predictor scored straight).
     """
     name = "xbrl"
     _AXES = ("quality", "moat", "growth", "value", "piotroski", "share_count",

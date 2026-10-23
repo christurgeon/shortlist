@@ -3,9 +3,9 @@
 # (names delisted/acquired/bankrupt are absent). Realized IC/spreads are an upper
 # bound — read the report as RELATIVE signal validation, not tradeable PnL.
 # One ticker per line; blank lines and #-comments ignored.
-# 2026-08-15: MMC -> MRSH (Marsh & McLennan renamed its symbol; CIK 62709 unchanged).
-# Verified against SEC company_tickers.json — the OLD symbol raises CompanyNotFoundError
-# and yields zero EDGAR data, so a stale line silently drops the name from every run.
+# Keep symbols current: a stale symbol raises CompanyNotFoundError and silently drops
+# the name from every run (see `stale_tickers`).
+
 AAPL
 MSFT
 GOOGL

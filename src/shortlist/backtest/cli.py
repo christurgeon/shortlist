@@ -34,34 +34,29 @@ from .xbrl import cik_for, fetch_cik_index, fetch_companyfacts, read_companyfact
 
 _RESIDUALIZE_MIN_NAMES = 10   # deliberately fixed, not a CLI flag
 
-# Minimum store-wide captured days before --source snapshot will run. Carried over
-# unchanged from the stub gate this replaces -- the bar was never the disputed part,
-# only that the stub asserted it instead of measuring it.
+# Minimum store-wide captured days before --source snapshot will run.
 _SNAPSHOT_MIN_CAPTURE_DAYS = 24
 
-# Collinearity diagnostic pairs (candidate axis, already-scored axis). Each is checked
-# for cross-sectional rank correlation; >~_COLLINEARITY_REDUNDANT means the candidate
-# duplicates the existing axis (the EV/EBIT-vs-fcf_yield precedent: don't-ship a
-# correlated leg). Add a pair here when proposing a new standalone axis for scoring.
+# Collinearity diagnostic pairs (candidate axis, already-scored axis). A cross-sectional
+# rank correlation above _COLLINEARITY_REDUNDANT means the candidate duplicates the
+# scored axis. Add a pair when proposing a new standalone axis.
 _COLLINEARITY_PAIRS = [
-    ("ebit_ev_yield", "value_fcf_yield"),   # EV/EBIT leg vs absolute fcf yield (§11 in
-                                             # its design doc, see scoring.py:ebit_ev_yield_score)
-    ("net_debt_to_ebitda", "growth"),       # leverage vs scored growth (measured corr ~0.54)
-    ("net_debt_to_ebitda", "value"),        # leverage vs scored value
-    ("net_debt_to_ebitda", "quality"),      # leverage vs scored quality
-    ("accruals", "piotroski"),              # accruals vs Piotroski CFO>NI overlap (PREDICTIVE_SIGNALS §3)
-    ("asset_growth", "growth"),             # asset growth vs scored growth (§3)
-    ("shareholder_yield", "value_fcf_yield"),  # total payout vs cash GENERATED (§5; the standalone fcf-yield axis)
-    ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution (§5)
-    ("sue", "momentum"),                       # earnings-surprise drift vs price momentum (§1) — SNAPSHOT-REPLAY only
-    ("residual_momentum", "momentum"),         # idiosyncratic vs raw 12-1 momentum (§2) — WILL correlate; the point is it dominates on rank IC
-    # PREDICTIVE_SIGNALS §2 price-refinement measurement axes — the load-bearing duplication
-    # checks (|corr| >= 0.5 => reject regardless of IC; EV/EBIT precedent).
-    ("pct_to_52w_high", "price_vs_200dma"),    # both are close/(trailing ref) — the key 52wk-high dup check
+    ("ebit_ev_yield", "value_fcf_yield"),
+    ("net_debt_to_ebitda", "growth"),
+    ("net_debt_to_ebitda", "value"),
+    ("net_debt_to_ebitda", "quality"),
+    ("accruals", "piotroski"),              # overlaps Piotroski CFO>NI
+    ("asset_growth", "growth"),
+    ("shareholder_yield", "value_fcf_yield"),  # total payout vs cash generated
+    ("shareholder_yield", "share_count"),      # buyback leg is the dollar-twin of dilution
+    ("sue", "momentum"),                       # snapshot replay only
+    ("residual_momentum", "momentum"),         # expected to correlate; the test is rank IC
+    # Price-refinement axes: |corr| >= 0.5 rejects the candidate regardless of IC.
+    ("pct_to_52w_high", "price_vs_200dma"),    # both are close / trailing reference
     ("pct_to_52w_high", "rel_strength_6m"),
     ("pct_to_52w_high", "momentum"),
-    ("max_daily_return", "momentum"),          # defensive/lottery vs trend (expect low corr)
-    ("vol_scaled_momentum", "residual_momentum"),  # cousins — the key vol-scaled dup check
+    ("max_daily_return", "momentum"),          # lottery vs trend; expect low corr
+    ("vol_scaled_momentum", "residual_momentum"),
     ("vol_scaled_momentum", "price_vs_200dma"),
     ("vol_scaled_momentum", "momentum"),
 ]
@@ -192,16 +187,10 @@ async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict
 
 
 async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
-    # SERIAL BY DESIGN — do not "optimize" into a concurrent gather. This is pure latency,
-    # not correctness, and a backtest is offline-batch with nothing to gain from parallelism.
-    # Be precise about WHY, because the obvious citation is a misread: the known Yahoo
-    # screener WAF gotcha (a HEADER-SHAPE fingerprint block, "not throttling") concerns
-    # the SCREENER endpoint — this function calls the CHART endpoint with UA-only
-    # headers. So concurrency is not a documented trigger. Serial is kept as the
-    # conservative default against an unofficial endpoint (see prices.py's own "baits the
-    # WAF" note), not because a burst is known to be unsafe. Revisit only if a full-universe
-    # run's wall-clock becomes a real bottleneck — then bound it with an
-    # asyncio.Semaphore(3-5). Reviewed 2026-06-26, re-verified + corrected 2026-08-04.
+    # SERIAL BY DESIGN. Concurrency is not a known trigger for the Yahoo WAF block (that
+    # block is a header-shape fingerprint on the screener endpoint, and this calls the
+    # chart endpoint). Serial is the conservative default for an unofficial endpoint.
+    # If wall-clock becomes a bottleneck, bound a gather with asyncio.Semaphore(3-5).
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
         try:
             spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)
@@ -385,17 +374,10 @@ def _per_date_ic(rows) -> dict[date, float]:
 def run_residualize(src, hists, spy, *, start: date, end: date, horizons: list[int],
                     target: str, controls: list[str], return_mode: str = "excess",
                     n_buckets: int = 5) -> tuple[list, dict]:
-    """Compute the residualized-IC measurement: residuals computed ONCE from a
-    union-grid observation pass, then per horizon joined to THAT horizon's own step=h grid +
-    forward returns and emitted as three extra SignalReports (`<target>_resid`
-    rank/primary, `<target>_resid_level` secondary, `<target>_rawx` the paired raw
-    baseline). Returns `(extra_reports, residualized_json)` — callers append
-    `extra_reports` onto `BacktestReport.reports` and stash `residualized_json`
-    under a top-level `residualized` --json key.
-
-    Pure given its inputs (no argv/config coupling) — unit-testable against a
-    planted SignalSource + PriceHistory dict without touching main()'s
-    network/CLI plumbing."""
+    """Compute residuals once on a union-grid pass, then join them per horizon to that
+    horizon's own step=h grid. Emits three extra SignalReports: `<target>_resid` (rank,
+    primary), `<target>_resid_level` (secondary) and `<target>_rawx` (paired raw baseline).
+    Returns `(extra_reports, residualized_json)`. Pure given its inputs."""
     union_dates = sorted(set().union(*(observation_grid(start, end, h) for h in horizons)))
     union_obs = collect_observations(src, sorted(hists.keys()), union_dates)
 
@@ -424,9 +406,8 @@ def run_residualize(src, hists, spy, *, start: date, end: date, horizons: list[i
             f"{target}_rawx", h, rawx_rows_h,
             xs_min_breadth=_TRUST_MIN_BREADTH, n_buckets=n_buckets))
 
-        # Paired per-date IC difference (design review B2): over dates where BOTH the
-        # rawx and residual per-date IC exist on THIS horizon's grid — never two
-        # independently-sampled numbers.
+        # Paired over dates where both the rawx and residual IC exist on this horizon's
+        # grid, never two independently sampled numbers.
         resid_ic_by_date = _per_date_ic(resid_rows_h)
         rawx_ic_by_date = _per_date_ic(rawx_rows_h)
         common = sorted(set(resid_ic_by_date) & set(rawx_ic_by_date))
@@ -470,18 +451,14 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
                   f"--source momentum.", file=sys.stderr)
             return 2
     if args.fit and args.fit_horizon < 1:
-        # A 0-month horizon would spin observation_grid forever (_add_months(cur, 0)
-        # never advances) — reject before any work.
+        # A 0-month horizon would loop observation_grid forever.
         print("--fit-horizon must be a positive integer month (>= 1)", file=sys.stderr)
         return 2
 
     residualize: tuple[str, list[str]] | None = None
     if args.residualize:
-        # An explicit --step-months override would put the residual computation on a
-        # different grid than the per-horizon non-overlapping step it must track (design
-        # review N9/B1 — the collinearity diag_grid t-inflation bug this design is
-        # named for). --step-months defaults to 0 (falsy); any nonzero value is an
-        # explicit override.
+        # An explicit --step-months puts the residuals on a different grid than the
+        # per-horizon non-overlapping step. The default 0 is falsy.
         if args.step_months:
             ap.error("--residualize cannot be combined with an explicit --step-months "
                      "override (the residual grid must track each horizon's own "
@@ -539,9 +516,7 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
                       file=sys.stderr)
                 return 2
     today = datetime.now(tz=timezone.utc).date().isoformat()
-    # Shared shape contract (config.py). Only 'thresholds' is required here —
-    # 'weights' is read solely by the --fit path (_fit_prior_from_config),
-    # which carries its own missing-key guard.
+    # 'weights' is read only by the --fit path, which guards its own missing key.
     try:
         config = load_config(args.config, required_keys=("thresholds",))
     except ConfigError as e:
@@ -580,10 +555,9 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
 
         src = XbrlSignalSource(None, hists, thresholds, fact_loader=_fact_loader)
     elif args.source == "snapshot":
-        # Signals come from the stored point-in-time snapshots; forward RETURNS still
-        # come from `hists`, so the store's span bounds the observation grid only, not
-        # the horizon. NOTE this branch must exist: without it `snapshot` falls through
-        # to the momentum `else` and reports a momentum backtest as a snapshot result.
+        # Forward returns still come from `hists`: the store's span bounds the
+        # observation grid only. Without this branch, `snapshot` would fall through to
+        # the momentum source.
         src = SnapshotSignalSource(args.store_root, config)
     else:
         src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
@@ -603,16 +577,8 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
             return_mode=args.return_mode, n_buckets=args.buckets)
         report.reports.extend(extra_reports)
 
-    # Collinearity diagnostics: does a candidate standalone axis duplicate an
-    # already-scored one? A high cross-sectional rank corr (>~0.5) means the candidate
-    # adds a CORRELATED bet, not new signal, and would dilute the composite rather than
-    # improve it (the EV/EBIT-vs-fcf_yield precedent: corr 0.72 -> don't-ship). Runs on
-    # both the XBRL and momentum paths: the momentum source's candidate axes
-    # (residual_momentum and the §2 price-refinement axes pct_to_52w_high /
-    # max_daily_return / vol_scaled_momentum) are duplication-checked against the scored
-    # momentum sub-score and its legs (price_vs_200dma / rel_strength_6m) on the
-    # live-price path, exactly as ebit_ev_yield was checked on the XBRL path.
-    # Printed to stderr so --json stays clean.
+    # Collinearity diagnostics for candidate axes (XBRL and momentum paths). Printed to
+    # stderr so --json stays clean.
     collinearity: dict[str, float] = {}
     if args.source in ("xbrl", "momentum"):
         diag_grid = observation_grid(start, end, args.step_months or horizons[0])
