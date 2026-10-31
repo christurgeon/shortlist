@@ -214,7 +214,8 @@ really covers. Design, evidence and the gate for any model use:
 - **The filter** (`research/news.py:select`, deterministic): the headline must name the
   company (a ticker of three characters or fewer only in a form like `(ON)`); opinion sources,
   listicles, roundups, previews, call notices, transcripts, Zacks-rank and price-target notes and
-  dividend columns are dropped, while a broker rating change is kept; an opinion-shaped headline
+  dividend columns are dropped, while a broker rating change is kept; a company named only as
+  someone's former employer does not count as named; an opinion-shaped headline
   survives only if it names a strong event; articles about one event become one item, shown
   under its strongest headline: first by shared words, then by one merge pass on similar wording,
   a shared results or layoff event, or a deal with the same counterparty, which never folds a

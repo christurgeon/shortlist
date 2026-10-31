@@ -91,3 +91,46 @@ What the acceptance run shows: the section finds material events on nearly every
 approval, a reported takeover approach, layoffs, a class action, a CEO selling his whole direct
 stake, a blocked settlement), and the remaining cost is repetition. The next change is one item
 per event; articles that only mention the company in passing are the second source of NOT items.
+
+## Filter v9 and the item test (2026-10-26)
+
+**Verdict: the item test is retired. The section test stays the kill rule. Filter v9 ships
+three small rules, and filter tuning stops here.**
+
+The item test cannot pass on this feed while the recall guard holds. The evidence:
+
+- **List length does not help.** In both panel runs, wanted items are spread evenly over display
+  ranks: the share wanted in the top K stays between 31% and 47% for every K from 2 to 10. A
+  shorter list removes wanted items as fast as unwanted ones.
+- **Duplicates are no longer the limit.** From the hand tags on the acceptance names
+  (`scripts/dedupe_2026-10-18/accept_score.py`), v8 shows 51 items: 19 distinct events, 13
+  duplicates and 19 non-events. If every duplicate were removed, 19 of 38 items would be events,
+  which is exactly the bar and not above it.
+- **The guard protects the largest non-event class.** Analyst rating notes are the most common
+  non-event the raters rejected, but the 24 labelled names count a rating change as a
+  high-tier event. If ratings stop counting as strong events, high-tier recall falls to 40 of 47,
+  below the floor of 43.
+- **No rule removes the second-largest class.** Every flag tried on articles that only mention
+  the company also dropped a real high-tier event (`2026-10-18-news-event-dedupe.md`).
+
+The two pre-set rules therefore conflict, and the committed guard wins. The item test was set
+before any data existed. It measures per-headline noise in a display-only list, where a
+non-event line costs a reader a few seconds and never reaches a score or the model. The section
+test measures what the section is for, and it passed on 7 of 8 new names. The section stays
+on while that test passes. Re-run the panel protocol on 8 new tickers if the section becomes a
+complaint. A failing section test turns the section off.
+
+**Filter v9** (`scripts/news_filter_v9.py`; production matches it on all 24 labelled names):
+
+- "to cut 1,000 jobs" and "to lay off" now count as strong events. In the saved feeds, 12 of 18
+  such headlines graded 0. The event still showed only because other outlets used the words
+  "layoffs" or "job cuts".
+- Past-quarter peer earnings roundups are dropped.
+- A company named only as someone's former employer ("Rival names former Acme CFO") does not
+  make the headline about the company. On all saved feeds the rule drops 7 headlines, and every
+  one of them is about another company.
+
+High-tier recall stays at 44 of 47. On the acceptance names, non-events fall from 19 to 16, plus
+one untagged backfill. On a busy name a freed slot refills with the next non-event, so the gain
+appears mainly on quiet names. These rules were written on the acceptance names, and the test
+there is not a holdout.
