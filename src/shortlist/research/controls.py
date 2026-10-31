@@ -2,7 +2,7 @@
 
 A FACT rather than a composite: management's own conclusion that internal control over
 financial reporting (ICFR) or disclosure controls and procedures (DCP) were not
-effective. `docs/DATA_SOURCES.md` §2 gap 3 asked for this.
+effective.
 
 Two rules make it work, and neither is optional.
 

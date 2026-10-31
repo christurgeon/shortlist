@@ -83,7 +83,7 @@ Everything else orchestrates that pipeline; none of it adds scoring logic:
 |---|---|---|
 | Screener CLI | `shortlist` | `README.md` |
 | Raw snapshots | `shortlist-harness` | `HARNESS.md` |
-| Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md`, `docs/ASSESSMENT_GAPS.md` |
+| Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md` |
 | Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `docs/BACKTEST.md` → Feeding the snapshot path |
 | Telegram bot — `/screen`, `/deep`, portfolio | `shortlist-bot` | `docs/TELEGRAM.md` (held-name alerting does not exist; `docs/design/POSITION_MONITOR.md` is design-time) |
 
@@ -101,9 +101,8 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 | The `shortlist/edgar/` client library | `edgar/__init__.py`, `docs/EDGAR_CLIENTS.md` |
 | The `/deep` research layer | `docs/RESEARCH.md`, then the `research/*.py` docstrings |
 | Deploying | `deploy/README.md` |
-| Data-source roadmap / what's shipped | `docs/DATA_SOURCES.md` |
-| Signal research and priors | `docs/PREDICTIVE_SIGNALS_RESEARCH.md` |
-| Known gaps, unvalidated assumptions | `docs/ASSESSMENT_GAPS.md`, `TODO.md` |
+| Open and declined ideas, signal literature | `docs/ROADMAP.md` |
+| Committed open work | `TODO.md` |
 | Whether a question is already settled | `docs/audits/README.md` — the verdict register; **read before opening any work item** |
 | Why a past decision went the way it did | `docs/audits/YYYY-MM-DD-*.md` |
 
@@ -111,10 +110,8 @@ Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 `docs/TELEGRAM.md`, `docs/EDGAR_CLIENTS.md`, `HARNESS.md`, `docs/BACKTEST.md` and `README.md` track current
 behaviour. `docs/audits/` is **dated evidence**, indexed by `docs/audits/README.md`, which also
 carries the register of closed verdicts — cite it for *why*, never as a description of
-how the code behaves. The docs in `docs/design/`, plus `docs/DATA_SOURCES.md`,
-`docs/ASSESSMENT_GAPS.md` and `docs/PREDICTIVE_SIGNALS_RESEARCH.md`, are **design-time**: they
-record intent at the time of writing and their file/line references are not maintained (the
-three roadmaps keep stable section numbers because code cites them). Read the code for
+how the code behaves. The docs in `docs/design/`, plus `docs/ROADMAP.md`, are **design-time**: they
+record intent at the time of writing and their file/line references are not maintained. Read the code for
 behaviour; read these for the reasoning behind it.
 
 **`README.md` is the public front page.** Keep it short and free of dated facts, measurements

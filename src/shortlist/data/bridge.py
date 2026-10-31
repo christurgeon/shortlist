@@ -123,8 +123,7 @@ def _nopat_and_invested_capital(st, tax_rate: float) -> dict[int, tuple[float, f
     the income statement's period ends). Positional is correct while the series are
     newest-first prefixes of one spine, and the None-skip degrades safely.
 
-    `invested_capital <= 0` abstains: buyback compounders carry negative total equity
-    (see `docs/ASSESSMENT_GAPS.md`)."""
+    `invested_capital <= 0` abstains: buyback compounders carry negative total equity."""
     out: dict[int, tuple[float, float]] = {}
     for i, fy in enumerate(st.fiscal_years or []):
         if fy is None:

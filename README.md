@@ -195,16 +195,14 @@ step with the code.
 | Doc | Contents |
 |---|---|
 | [docs/audits/](docs/audits/README.md) | Every signal measured, shipped or killed, with the evidence |
-| [docs/ASSESSMENT_GAPS.md](docs/ASSESSMENT_GAPS.md) | What is not validated yet, and the scoring roadmap |
-| [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) | Data-source survey and roadmap |
-| [docs/PREDICTIVE_SIGNALS_RESEARCH.md](docs/PREDICTIVE_SIGNALS_RESEARCH.md) | The literature review behind the candidate signals |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Open and declined ideas, and the literature behind the optional legs |
 | [docs/design/](docs/design/) | Design notes written before a feature was built |
 | [CLAUDE.md](CLAUDE.md) | Working rules for AI coding agents in this repo |
 
 ## Limitations
 
 - **The weights are a starting assumption, not a fitted result.** Only some inputs are
-  validated against later returns. See [docs/ASSESSMENT_GAPS.md](docs/ASSESSMENT_GAPS.md).
+  validated against later returns. See [docs/BACKTEST.md](docs/BACKTEST.md).
 - **It is a triage tool, not a return-prediction model.** Validation runs on a few hundred
   currently-listed stocks on free data. At that size most factor effects cannot be told
   apart from noise, and the survivor bias makes results look better than they are.

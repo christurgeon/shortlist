@@ -62,7 +62,7 @@ def test_build_financials_snapshot_fills_statements():
     assert snap.statements.diluted_eps == [7.46, 6.08]
     assert snap.statements.fiscal_period_end == ["2025-09-27", "2024-09-28"]
     assert snap.statements.fiscal_years == [2025, 2024]
-    # Leverage fields (§2.7): D&A from cash-flow, debt summed, cash from balance.
+    # Leverage fields: D&A from cash-flow, debt summed, cash from balance.
     assert snap.statements.dep_amort == [12_000_000_000.0, 11_000_000_000.0]
     assert snap.statements.total_debt == [90_000_000_000.0, 96_000_000_000.0]
     assert snap.statements.cash_and_equivalents == [30_000_000_000.0, 29_000_000_000.0]

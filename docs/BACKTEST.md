@@ -1,7 +1,6 @@
 # Backtesting (`shortlist.backtest`, CLI `shortlist-backtest`)
 
-The scorer's weights and bands are validated against forward returns here
-(closes `docs/ASSESSMENT_GAPS.md` §2.1). The backtest harness is **signal-agnostic**: the unit
+The scorer's weights and bands are validated against forward returns here. The backtest harness is **signal-agnostic**: the unit
 of currency is an `Observation(as_of, ticker, {signal: 0–100 sub-score})`, and
 every signal value is a sub-score produced by the **real** scoring functions —
 not a reimplementation — so a future point-in-time fundamentals source slots in
@@ -92,13 +91,13 @@ are backtest-only; live status is in `docs/SCORING.md` → Optional legs.
 price-only momentum source nor SEC companyfacts carries. `scoring.sue_score` and the
 `sue~momentum` pair ride only the guarded snapshot-replay path (`SnapshotSignalSource`) and
 no-op until accumulation captures the earnings fields. `momentum.sue` is OFF by default; see
-`docs/SCORING.md` → Optional legs and `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §1.
+`docs/SCORING.md` → Optional legs and `docs/ROADMAP.md` → Literature.
 
 **Residual momentum IS a live-price axis.** `MomentumSignalSource` date-inner-joins the stock
 and SPY series (`stats.join_on_dates`) and emits `residual_momentum` beside the production
 `momentum` sub-score, with the `residual_momentum~momentum` pair. It passed the
 cross-sectional bar, so `config.yaml: momentum.residual.enabled` ships `true`. See
-`docs/SCORING.md` → Optional legs and `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §2.
+`docs/SCORING.md` → Optional legs and `docs/ROADMAP.md` → Literature.
 
 ```bash
 uv run shortlist-backtest --source xbrl --universe largecap --horizons 3,6,12 --json
@@ -150,7 +149,7 @@ uv run shortlist-accumulate status  --root snapshots   # both floors + SUE bread
 - **Breadth vs the free tier.** The replay path needs ≥ 30 names/date to clear the trust
   floor, but `--max-tickers` defaults to 15, so a default run stays below it. Pass
   `--max-tickers 42` (the `deploy/` sample does); the FMP free quota then leaves the rest THIN.
-  A paid FMP tier removes that limit (`docs/DATA_SOURCES.md`).
+  A paid FMP tier removes that limit (`TODO.md` §4).
 - **`status` reports both floors:** distinct capture dates (≥ 24) and dates meeting the
   30-name breadth floor, plus SUE breadth and store size. READY needs both.
 - **Replay suppression is measured on large caps only.** Every stored large-cap snapshot

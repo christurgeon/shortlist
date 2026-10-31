@@ -238,7 +238,7 @@ def test_ebit_ev_yield_abstains_on_missing_inputs():
     assert compute_ebit_ev_yield(100.0, 900.0, None) is None
 
 
-# --- asset_growth / accruals (PREDICTIVE_SIGNALS §3) -----------------------
+# --- asset_growth / accruals -----------------------
 
 def test_asset_growth_consecutive_ends():
     # Two consecutive ~1yr-spaced fiscal ends: 1100/1000 - 1 = 0.10.
@@ -289,7 +289,7 @@ def test_accruals_none_on_missing_inputs_or_gap():
     assert accruals({"2024-12-31": 200.0}, {"2024-12-31": 150.0}, gap) is None
 
 
-# --- shareholder_yield (PREDICTIVE_SIGNALS §5) -----------------------------
+# --- shareholder_yield -----------------------------
 
 def test_shareholder_yield_adds_dividends_and_buybacks():
     # (div + repur + (repay - issue)) / mcap = (50 + 150 + (80 - 30)) / 1000 = 0.25.
@@ -326,7 +326,7 @@ def test_shareholder_yield_abstains_when_all_legs_or_mktcap_missing():
     assert shareholder_yield(50, 150, 80, 30, 0) is None                 # non-positive mcap
 
 
-# --- surprise_dispersion + sue (PREDICTIVE_SIGNALS §1) ---------------------
+# --- surprise_dispersion + sue ---------------------
 
 def test_surprise_dispersion_pop_stdev():
     from statistics import pstdev
@@ -369,7 +369,7 @@ def test_sue_no_decay_anchor_returns_undecayed():
     assert sue(10.0, 5.0, -3) == pytest.approx(2.0)       # future-dated artifact -> fresh
 
 
-# --- Residual (idiosyncratic) momentum + the date inner-join (PREDICTIVE_SIGNALS §2) ---
+# --- Residual (idiosyncratic) momentum + the date inner-join ---
 
 def _closes_from_returns(rets, start=100.0):
     """Build a close series whose period returns are exactly `rets`."""

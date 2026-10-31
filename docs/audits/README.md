@@ -128,7 +128,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   "price-implied perpetual FCF growth", so anything present in the baseline is disqualified as
   evidence. `2026-08-25-options-line-destination-verdict.md`.
 - **Options-implied signals: a keyless feed EXISTS, and it belongs in `/deep`, not the
-  pre-screen (2026-08-24)** — `docs/ASSESSMENT_GAPS.md` had recorded "no keyless feed known
+  pre-screen (2026-08-24)** — the scoring roadmap had recorded "no keyless feed known
   (mostly paid); likely noise for a fundamental pre-screen". The first half is **measured
   false**: CBOE's `delayed_quotes` endpoint returns a full chain with per-contract IV and
   greeks, keyless, 80/80 large caps and 79/80 small/mid from oracle-prod. The second half is
@@ -333,15 +333,15 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
 ## Argued by an external review, recorded but NOT endorsed
 
 The 2026-08-11 review of `/deep` (its open half, the peer bundle, is in
-`docs/ASSESSMENT_GAPS.md` §2.3). These four were
+`docs/ROADMAP.md` → Sector-relative scoring). These four were
 positions this repo considered and declined at the time; each conflicted with a committed rule or
 restated something already recorded. One has since been settled by measurement.
 
 - **"Split risk out of the composite."** Declined here on 2026-08-11 because it was an
   argument, not evidence. **The evidence arrived 2026-09-25 and the review was right**: see
   the register entry "The `risk` tilt is weighted 0.0" above.
-- **"Disable `upside_to_target`."** Already recorded at
-  `docs/PREDICTIVE_SIGNALS_RESEARCH.md` §Quick wins #1 (Brav & Lehavy: the *level* is
+- **"Disable `upside_to_target`."** Already recorded in
+  `docs/ROADMAP.md` → The sign of `upside_to_target` (Brav & Lehavy: the *level* is
   negatively related to realised returns; the *revision* predicts). The mechanical obstacle is
   GONE as of 2026-08-18 — the leg is the scorer's one **opt-OUT** block
   (`scoring.py:_upside_to_target_on`), so the counterfactual can be run from config. The
@@ -351,7 +351,7 @@ restated something already recorded. One has since been settled by measurement.
   multiple-testing-controlled validation exists."** That is already `CLAUDE.md`'s design premise
   verbatim. No action; do not open a work item that restates it.
 - **Transcripts / estimate-revision history / 13F / news sentiment** are all already triaged in
-  `docs/PREDICTIVE_SIGNALS_RESEARCH.md` (transcripts + estimates paid or no free point-in-time
+  `docs/ROADMAP.md` (transcripts + estimates paid or no free point-in-time
   source; 13F a Phase-2 candidate; social/news as trigger not valuation). The one live free item
   was **recommendation-*change***, which SHIPPED 2026-08-22 as a display-only signal:
   `_rating_trend` (`data/sources/finnhub.py`) keeps the whole ~4-month window and stores the

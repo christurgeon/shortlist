@@ -13,8 +13,7 @@ item, so a closed question is not reopened from scratch.
 Section numbers are stable anchors: `src/`, `tests/` and `config.yaml` cite them (`TODO.md
 §2a`), so a retired section leaves a GAP rather than renumbering the rest.
 
-See `docs/PREDICTIVE_SIGNALS_RESEARCH.md` for signal designs and `docs/ASSESSMENT_GAPS.md` for
-the scoring roadmap.
+Ideas that are not yet work items live in `docs/ROADMAP.md`.
 
 > **HOW TO PRIORITISE ANYTHING BELOW.** The bar is **"surface interesting stocks the user
 > evaluates, and passes to `/deep` when they want a closer look."** *It is fine for a signal to
