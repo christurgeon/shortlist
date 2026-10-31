@@ -1,6 +1,6 @@
 """The "Recent news" filter: which company-news articles become event clusters in the brief.
 
-Rules and evidence: docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
+Rules and evidence: docs/audits/2026-10-16-deep-news-leads-design.md.
 """
 from __future__ import annotations
 

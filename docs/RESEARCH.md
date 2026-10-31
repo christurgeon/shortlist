@@ -202,7 +202,7 @@ verified"**: up to `max_items` event clusters from Finnhub `company-news` over
 `lookback_days`, each with its first-report date (UTC), outlet, report count, linked headline
 and a short summary. The free feed returns only its newest ~250 articles, which for a
 high-volume name is a few days, not the whole window; the section then prints the span it
-really covers. Design, evidence and the gate for any model use:
+really covers. Decisions and rejected options:
 `docs/audits/2026-10-16-deep-news-leads-design.md`.
 
 - **Why.** The bundle's freshest text is the 10-Q and up to three 8-Ks of five item types.
@@ -222,8 +222,8 @@ really covers. Design, evidence and the gate for any model use:
   denial into the report it answers; a quiet name shows fewer items, never filler.
 - **Where it is computed.** `_enrich_card`, **after** `assess()` returns, like the
   ROIC-persistence section. The prompts are byte-identical with the flag on or off, and news
-  text is never a grounding segment. Feeding it to the model is gated on the design's
-  pre-registration (§9) and is not built.
+  text is never a grounding segment. Feeding it to the model is not built; it needs
+  evidence that it improves the brief first.
 - **Failure.** One Finnhub request per brief, key in a header, no retry, under a wall-clock
   deadline (`timeout`, at most 45 s) enforced by a daemon thread. Any failure prints
   "unavailable", never an empty section, so an outage cannot read as "no news". A cached

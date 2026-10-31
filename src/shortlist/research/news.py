@@ -3,7 +3,7 @@
 Fetched AFTER the model call and never shown to the model, so the prompt is byte-identical
 with the section on or off. Headlines are third-party leads, not filing facts, and the outlet
 is often a syndicator. Behaviour: docs/RESEARCH.md → the recent-news section. Why these rules:
-docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
+docs/audits/2026-10-16-deep-news-leads-design.md.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ _SUMMARY_MAX = 220
 _CLUSTER_SECONDS = 4 * 86400
 _MIN_SHARED_KEYS = 2
 _REPORTS_CAP = 5            # ranking only: past this, more syndication is not more corroboration
-_MERGE_COS = 0.20          # lower merges distinct events: docs/audits/2026-10-18-news-event-dedupe.md
+_MERGE_COS = 0.20          # lower merges distinct events, higher leaves duplicates
 _DEAL_SECONDS = 7 * 86400   # a deal story (chatter, report, denial) outlasts the 4-day window
 
 _SUFFIX = re.compile(r"[,.]?\s+(inc|incorporated|corp|corporation|co|company|holdings?|group|"
