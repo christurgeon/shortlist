@@ -294,7 +294,7 @@ research:
                                # Remove the key to omit the flag.
   output_root: research        # artifacts: research/<TICKER>/<key>.{md,json}, keyed by the
                                # wide cache key (research/cachekey.py), not the accession
-  cache:                       # brief staleness (docs/design/PLAN_DEEP_FRESHNESS.md §4)
+  cache:                       # brief staleness
     max_age_days: 1            # day bucket; 0 = content-addressed only, no time decay. 0
                                # also freezes the macro line: only `macro.regime` is hashed,
                                # but the line prints rate levels that can move without it.

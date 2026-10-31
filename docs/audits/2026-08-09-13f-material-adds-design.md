@@ -274,7 +274,7 @@ whole feature off ⇒ emissions byte-identical to today.
 
 ## 6. Verification and deploy
 
-Per `docs/audits/2026-08-06-discovery-breadth-plan.md` §7, lint is a hard gate:
+Per `docs/audits/2026-08-06-discovery-breadth-plan.md` (deleted; in git history) §7, lint is a hard gate:
 
 ```bash
 uv run ruff check src tests

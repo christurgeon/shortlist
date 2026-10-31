@@ -442,7 +442,7 @@ the whole path **byte-identical** for a snapshot whose fundamentals already carr
 
 **Regression** — `--source xbrl` backtest still runs, since `_edgar_facts.py` is shared.
 
-Verification per `docs/audits/2026-08-06-discovery-breadth-plan.md` §7, lint a hard gate:
+Verification per `docs/audits/2026-08-06-discovery-breadth-plan.md` (deleted; in git history) §7, lint a hard gate:
 
 ```bash
 uv run ruff check src tests

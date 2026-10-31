@@ -3,7 +3,7 @@
 Fetched AFTER the model call and never shown to the model, so the prompt is byte-identical
 with the section on or off. Headlines are third-party leads, not filing facts, and the outlet
 is often a syndicator. Behaviour: docs/RESEARCH.md → the recent-news section. Why these rules:
-docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
+docs/audits/2026-10-16-deep-news-leads-design.md.
 """
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ _SUMMARY_MAX = 220
 _CLUSTER_SECONDS = 4 * 86400
 _MIN_SHARED_KEYS = 2
 _REPORTS_CAP = 5            # ranking only: past this, more syndication is not more corroboration
-_MERGE_COS = 0.20          # lower merges distinct events: docs/audits/2026-10-18-news-event-dedupe.md
+_MERGE_COS = 0.20          # lower merges distinct events, higher leaves duplicates
 _DEAL_SECONDS = 7 * 86400   # a deal story (chatter, report, denial) outlasts the 4-day window
 
 _SUFFIX = re.compile(r"[,.]?\s+(inc|incorporated|corp|corporation|co|company|holdings?|group|"
@@ -49,10 +49,10 @@ _GENERIC = frozenset({"the", "first", "general", "american", "united", "national
                       "international", "global", "new", "bank"})
 # Contributor opinion and screen output by construction, bullish and bearish alike.
 _OPINION_SOURCES = frozenset({"SeekingAlpha", "ChartMill"})
-# Never an event: listicles, previews, call notices, transcripts, Zacks-rank and price-target
-# notes, dividend columns. A broker rating change is kept: the measured labels count it as an event.
+# Never an event: listicles, previews, call notices, transcripts, past-quarter peer roundups,
+# Zacks-rank and price-target notes, dividend columns. A broker rating change is kept: the measured labels count it as an event.
 _DROP = re.compile(
-    r"^prediction:|\btop \d+\b|\b\d+ (stocks|reasons|things)\b|\bstocks to (watch|buy)\b|"
+    r"^prediction:|\btop \d+\b|\bearnings roundup\b|\breflecting on\b.{0,60}\bearnings\b|\b\d+ (stocks|reasons|things)\b|\bstocks to (watch|buy)\b|"
     r"facts to (know|note)|trending stock|what you need to know|important facts|analyst blog|"
     r"some (facts|information) |things to know|\bearnings preview\b|\bunusual options\b|"
     r"\boptions activity\b|\b(technical|chart) (analysis|setup)\b|\bwall street (wrap|breakfast)\b|"
@@ -69,6 +69,9 @@ _DROP = re.compile(
     r"\bstill a buy\b|\bwhat investors need to know\b|\bwhat you should know\b|"
     r"\bcould go by 20\d\d\b|"
     r"\btraders see\b.{0,40}\bmov|\bimplied move\b", re.I)
+# "Rival names former Acme CFO" is about someone who left, so a former-employee mention does
+# not make the headline about the company.
+_FORMER = re.compile(r"\b(former\s+|ex-)(\S+\s+){0,2}$", re.I)
 # Opinion, valuation and recap shapes: dropped unless the headline names a strong event.
 _SOFT = re.compile(
     r"\?\s*$|^(should|could|can|is|are|will|does|do|what|why|how)\b|\bvs\.?\b|\bversus\b|"
@@ -87,7 +90,7 @@ _STRONG = re.compile(
     r"reinstates?)\b.{0,30}\bdividend|\bdividend (raise|hike|cut|increase|suspension)|"
     r"\bcuts?\b.*\bto (hold|sell|neutral|underweight|underperform|market perform)|initiat|"
     r"\bstake\b|activist|contract|agreement|\bdeal\b|partnership|\border(s)?\b|award|"
-    r"layoff|job cuts|restructur|strike|outage|breach|cyber|tariff|\bban\b|export|smuggl|"
+    r"layoff|job cuts|\blay(s|ing)? off\b|\bcut(s|ting)? .{0,20}\bjobs\b|restructur|strike|outage|breach|cyber|tariff|\bban\b|export|smuggl|"
     r"restat|going concern|material weakness|short[- ]seller|short report|fraud|bankrupt|"
     r"chapter 11|delist|\bhalt|auditor|\bdefault|class action|whistleblow|data leak|"
     r"withdraws? (its )?guidance|suspend|warning|phase (i|ii|iii|1|2|3)|trial", re.I)
@@ -285,7 +288,8 @@ def select(articles: list, ticker: str, name: Optional[str], max_items: int) -> 
     members: list[dict] = []
     for a in sorted(rows, key=lambda a: (a["datetime"], str(a.get("id")))):
         h = _feed_text(a.get("headline"), 1000)
-        if not h or not any(p.search(h) for p in pats):
+        hits = [m for p in pats for m in p.finditer(h)] if h else []
+        if not hits or all(_FORMER.search(h[:m.start()]) for m in hits):
             continue
         g = grade(h)
         if (a.get("source") in _OPINION_SOURCES or _DROP.search(h) or _ROUNDUP.search(h)

@@ -1,6 +1,6 @@
 """The "Recent news" filter: which company-news articles become event clusters in the brief.
 
-Rules and evidence: docs/audits/2026-10-16-deep-news-leads-design.md §4.2.
+Rules and evidence: docs/audits/2026-10-16-deep-news-leads-design.md.
 """
 from __future__ import annotations
 
@@ -199,9 +199,31 @@ def test_an_entity_encoded_company_name_still_matches():
     "Acme Just Raised Its Outlook. Here's Why the Dividend King Is Still a Buy.",
     "Better Dividend Stock for Retirees: Beta vs. Acme",
     "Here's How Much Traders See Acme Stock Moving After Earnings",
+    "Q2 Earnings Roundup: Acme (NASDAQ:ACME) And The Rest Of The Widget Stocks",
+    "Reflecting On Widget Stocks' Q2 Earnings: Acme (NYSE:ACME)",
 ])
 def test_previews_notices_transcripts_and_columns_are_not_events(headline):
     assert news.select([_art(headline)], "ACME", "Acme Inc.", 10) == []
+
+
+@pytest.mark.parametrize("headline", [
+    "Acme to cut 1,000 jobs in its biggest ever cull",
+    "Acme to lay off roughly 1,000 employees",
+    "Acme Cuts 1,000 Jobs as Stock Sinks 40%: Is a Bottom Near?",
+])
+def test_job_cuts_are_events_in_any_word_order(headline):
+    assert news.grade(headline) == 2
+
+
+@pytest.mark.parametrize("headline,shown", [
+    ("Beta Corp Appoints Former Acme Veteran Jane Doe as Chief Affairs Officer", False),
+    ("Beta Mining Names Liam Roe, Former President of Acme Upstream, to its Board", False),
+    ("Gamma taps ex-Acme exec as CTO", False),
+    ("Acme names former Beta CFO as finance chief", True),
+    ("Former Acme CEO sues Acme over pension", True),
+])
+def test_a_company_named_only_as_a_former_employer_is_not_the_subject(headline, shown):
+    assert bool(news.select([_art(headline)], "ACME", "Acme Inc.", 10)) is shown
 
 
 def test_a_broker_rating_change_stays_an_event():

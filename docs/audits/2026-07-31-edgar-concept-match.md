@@ -3,7 +3,7 @@
 **Date:** 2026-07-31 · **Change:** `fix/edgar-diluted-shares` (`db79d2f`) — row selection for
 `diluted_shares`/`diluted_eps` in `src/shortlist/providers/_edgar_facts.py` now matches the
 raw us-gaap `concept` column first (value-aware: a concept row wins only if it yields a
-complete series), falling back to the existing label scan. Design: `docs/design/PLAN_EDGAR_DILUTED_SHARES.md`
+complete series), falling back to the existing label scan. Design: the implementation plan (deleted; in git history)
 (revision 4, signed off, amended `491b6a1` after this verification). Committed evidence of
 record per `CLAUDE.md`'s measure-first doctrine — this is the tracked surface, not a commit
 message or a gitignored `docs/superpowers/specs/` artifact.
@@ -22,7 +22,7 @@ corrected 14-ticker set and passes: no ticker outside it moved.
 
 Keyless (EDGAR only, no FMP quota). `set -a && . ./.env && set +a` for `SEC_IDENTITY`.
 Universe enumerated from the real production accumulation store, exactly as
-`docs/design/PLAN_EDGAR_DILUTED_SHARES.md` §Task 2 specifies:
+The implementation plan's Task 2 specified:
 
 ```python
 tickers = sorted({os.path.basename(os.path.dirname(p))
@@ -158,7 +158,7 @@ overlap A+C; DIS/MCD/UNH are C-only; QCOM is A-only here). The [R4] sweep found 
 (HON, MRK, XOM = class D; JNJ, QCOM = class E), but QCOM was already in the 10 via class A —
 so [R4] contributes **4 net-new** tickers (HON, MRK, XOM, JNJ), bringing the distinct total to
 10 + 4 = **14**, not the naive 10 + 5 = 15 or the "7+9+5=21" multiset sum quoted in earlier
-drafts of this doc and in `docs/design/PLAN_EDGAR_DILUTED_SHARES.md`.
+drafts of this doc and in the implementation plan.
 
 ## Go/no-go — all four clauses (revised 14-ticker distinct expected-change set)
 
@@ -285,7 +285,7 @@ it as a side effect of matching on the exact-equality `concept` column: `Earning
 can never be confused with `IncomeLossFromContinuingOperationsPerDilutedShare` because they are
 different raw us-gaap tags, whereas both satisfy the old label regex ("Diluted" + "per share").
 
-**Adjudicated (plan owner, `docs/design/PLAN_EDGAR_DILUTED_SHARES.md` §[R4], commit `491b6a1`): not a
+**Adjudicated (plan owner, implementation plan §[R4], commit `491b6a1`): not a
 Task 1 code defect.** The concept-first picker behaves correctly and identically on all five —
 it always selects the single row whose `concept` exactly equals `us-gaap_EarningsPerShareDiluted`,
 which is by construction the total. The defect is in the **plan's blast-radius measurement**:

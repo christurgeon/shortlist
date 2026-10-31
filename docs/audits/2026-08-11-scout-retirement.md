@@ -34,7 +34,7 @@ priors, not on anything this system measured.
 
 ### 1.2 The measurement apparatus was blocked on spend that is not happening
 
-`2026-08-06-discovery-breadth-plan.md` Track D: the form4 cohort, the regime-break audit,
+`2026-08-06-discovery-breadth-plan.md` (deleted; in git history) Track D: the form4 cohort, the regime-break audit,
 the buyback attribution and the 8-K coverage split are all *blocked, needs price history*.
 The scout's entire justification was "the selection ledger earns signals their weight over
 time" — but the ledger was accruing picks that could not be scored without a paid price

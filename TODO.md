@@ -44,22 +44,6 @@ owner to approve it.
 
 # 2. `/deep`
 
-## 2e. Recent-news section — remaining filter gaps (2026-10-18)
-
-- **Passing mentions.** Articles about other companies that name this one in passing
-  ("Paramount-Warner merger closes: why Disney and Netflix are better stocks"). Every flag tried
-  also dropped a real high-tier event (`docs/audits/2026-10-18-news-event-dedupe.md`).
-- **Long multi-angle stories.** The merge pass cuts duplicates by about a third, but a story told
-  over more than a week, or in opinion pieces without a deal word, still repeats (CMG: 9 items,
-  7 duplicates).
-- **"Cut N jobs" is not an event.** "Acme to cut 15,000 jobs" grades 0 and is dropped; `_STRONG`
-  has "job cuts" and "layoff" but not this word order.
-- **Event terms that match inside other words** (`trial` in "Industrial"). Word-anchoring failed
-  its pre-set bar by one item (`docs/audits/2026-10-16-deep-news-leads-design.md` §4.2).
-
-**Status:** no work scheduled. Re-run the panel protocol on 8 new tickers if the section's
-duplicates or noise become a complaint again.
-
 ## 2d. ROIC-persistence section — reference-table refresh
 
 - **A reference-table refresh builder, due before fiscal-2027 10-Ks (about September 2027).**

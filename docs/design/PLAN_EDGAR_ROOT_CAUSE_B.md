@@ -77,7 +77,7 @@ basic count** — it is a different measure, and conflating them silently corrup
 `share_count_cagr`. XOM stays uncovered; that is the correct outcome.
 
 **Cost — this is the finding that reverses the plan's original deferral.**
-`docs/design/PLAN_EDGAR_DILUTED_SHARES.md` deferred route 1 partly on cost ("a per-ticker fetch
+The diluted-shares implementation plan deferred route 1 partly on cost ("a per-ticker fetch
 (~2.5 MB/CIK cached), which the harness deliberately avoids on the hot path"). That was
 measured against the wrong endpoint. Measured:
 

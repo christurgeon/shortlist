@@ -258,7 +258,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   *and* a measurement plan. `edgartools` `standard_concept` alias lists stay untouched
   (version-sensitive; they have broken accruals before).
 - **WSB:** a per-ticker mention-ratio baseline and a market-cap ceiling were both measured and
-  killed — do not rebuild either (`2026-08-07-wsb-novelty-rule.md`).
+  killed — do not rebuild either.
 - **A market-cap pre-filter in the funnel** deleted the only names there were (13 of 25
   sessions → zero candidates). Resolved instead by lowering `gates.min_market_cap` to $300M.
 - **Cohort levels are structurally unmeasurable on free data** (outcome-correlated attrition;
@@ -374,9 +374,7 @@ marked *verdict* closes a question.
 | 2026-10-20 | `2026-10-20-edgar-concept-404.md` — a filer without the diluted-shares tag (BRK-B and several 20-F/40-F filers) showed as an EDGAR fetch error; SEC's 404 cannot tell absence from a broken URL, so a reference filer decides. Also: coverage matched 402/429 inside CIKs | evidence |
 | 2026-10-20 | `2026-10-20-form4-amendments-and-duplicates.md` — EDGAR insider flow counted a trade more than once: Form 4/A amendments summed with their originals (PG, NKE in the current window; NVDA, AMD, CRM, GOOGL, ADBE earlier) and identical rows in separate filings (WMT Walton joint reporters, a re-filed NFLX form). 4/A now skipped, identical rows across filings counted once; skip kept over supersede on DERA-wide evidence | evidence |
 | 2026-10-19 | `2026-10-19-form4-other-issuer.md` — EDGAR insider flow counted Form 4s the company filed as owner of another issuer (BRK-B, XOM, BAC, GS, GOOGL); filtered by issuer CIK. The 40-filing window truncation and the same contamination in the filing-events section were both closed the same day: filing-event flags by submissions-index file number, Form 4 read over the full window (cap 200) | evidence |
-| 2026-10-18 | `2026-10-18-news-event-dedupe.md` — one item per event in the `/deep` news section: lexical clustering, event-type merges, local embeddings and LLM grouping measured against event labels; a deterministic merge pass ships, the LLM does not | verdict |
-| 2026-10-18 | `2026-10-18-deep-news-usefulness-review.md` — the §8 review of the `/deep` news section: a blind 3-rater panel; useful on 4 of 8 names but 20 of 56 items wanted, so the kill rule fires; kept on by maintainer override while the filter is fixed | verdict |
-| 2026-10-16 | `2026-10-16-deep-news-leads-design.md` — recent news in `/deep`: feeds compared, a filter measured against blind labels on 24 names, and a display-only section; feeding news to the model is gated on a pre-registration | design + evidence |
+| 2026-10-16 | `2026-10-16-deep-news-leads-design.md` — recent news in `/deep`: why Finnhub, why display only, and what was tried and rejected (LLM dedupe, embeddings, passing-mention flags, feeding news to the model) | decisions |
 | 2026-10-15 | `2026-10-15-moat-weight.md` — does `moat` earn its 0.18 composite weight? A pre-registered `no_moat` variant on both universes; kept | pre-registration + verdict |
 | 2026-10-10 | `2026-10-10-sec-filing-index-403.md` — sec.gov denies the short filing-index URL, so every research brief was skipped as "no 10-K"; edgartools 5.33.0 -> 5.61.1 | evidence |
 | 2026-10-08 | `2026-10-08-moat-durability-phase1.md` — the ROIC-persistence section of the `/deep` brief: what was built, the evidence that the shared code moved no study number, why fiscal 2025 is the reference year, and what a prompt integration must measure first | design + evidence |
@@ -403,12 +401,10 @@ marked *verdict* closes a question.
 | 2026-08-11 | `2026-08-11-scout-retirement.md` — the big one | verdict |
 | 2026-08-10 | `2026-08-10-roic-proxy-and-edgar-equity-design.md` | design |
 | 2026-08-09 | `2026-08-09-13f-material-adds-design.md` | design |
-| 2026-08-07 | `2026-08-07-wsb-novelty-rule.md` | verdict |
 | 2026-08-07 | `2026-08-07-investability-floor.md` | evidence |
 | 2026-08-07 | `2026-08-07-funnel-gate-mismatch.md` | evidence |
-| 2026-08-06 | `2026-08-06-discovery-breadth-plan.md` | design |
-| 2026-08-05 | `2026-08-05-*` — discovery funnel, standing-screen spikes (DERA/FDIC), quality floor, cohort price coverage, session log | evidence |
-| 2026-08-04 | `2026-08-04-deep-brief-assessment.md`, `2026-08-04-tech-debt-burndown.md` | evidence |
+| 2026-08-05 | `2026-08-05-discovery-funnel-audit.md`, `2026-08-05-cohort-price-coverage.md` | evidence |
+| 2026-08-04 | `2026-08-04-deep-brief-assessment.md` | evidence |
 | 2026-08-03 | `2026-08-03-evaluator-rederivation.md` — supersedes older spread claims | verdict |
 | 2026-08-02 | `2026-08-02-edgar-companyconcept-fallback.md` | design |
 | 2026-07-31 | `2026-07-31-edgar-concept-match.md` | evidence |
