@@ -679,7 +679,7 @@ def test_panel_to_metrics_populates_piotroski_two_years():
 
 
 # ---------------------------------------------------------------------------
-# Asset-growth + accruals (PREDICTIVE_SIGNALS §3)
+# Asset-growth + accruals
 # ---------------------------------------------------------------------------
 
 def test_extract_panel_collects_assets_instant_series():
@@ -713,7 +713,7 @@ def test_panel_to_metrics_asset_signals_none_without_assets():
 
 
 # ---------------------------------------------------------------------------
-# Total shareholder yield (PREDICTIVE_SIGNALS §5)
+# Total shareholder yield
 # ---------------------------------------------------------------------------
 
 def test_extract_panel_sum_family_adds_common_and_preferred():

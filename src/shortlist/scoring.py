@@ -387,7 +387,7 @@ def _upside_to_target_on(config: dict) -> bool:
     """OPT-OUT, unlike every other gate here: an absent key keeps the leg ON.
 
     Accepts both `{enabled: false}` and a bare `false`; reading only the dict form would
-    leave the leg on silently. Rationale: docs/PREDICTIVE_SIGNALS_RESEARCH.md, Quick wins."""
+    leave the leg on silently. Why it is in question: docs/ROADMAP.md."""
     d = ((config or {}).get("value") or {}).get("upside_to_target")
     if isinstance(d, dict):
         return bool(d.get("enabled", True))

@@ -116,9 +116,8 @@ def piotroski_f(*, net_income: list[Optional[float]], ocf: list[Optional[float]]
       F4 net margin rising (net_income/revenue), F5 debt-intensity falling
       (total_debt/revenue), F6 gross margin rising (gross_profit/revenue).
 
-    Deliberately asset-free AND equity-free: total assets is not extracted on either
-    stack, and equity denominators darken/distort on buyback-heavy firms
-    (DATA_SOURCES.md D1). Revenue is the natural denominator; a non-positive (zero or negative) revenue year abstains the three delta legs.
+    Deliberately equity-free: equity denominators distort on buyback-heavy firms, so
+    revenue is the denominator; a non-positive (zero or negative) revenue year abstains the three delta legs.
 
     Returns RAW (won, evaluated) — no min-legs floor here, so this leaf needs no
     config (the floor is applied by consumers in scoring/backtest). A 1-year input
@@ -250,7 +249,7 @@ def shareholder_yield(dividends: Optional[float], repurchases: Optional[float],
                       market_cap: Optional[float]) -> Optional[float]:
     """Total shareholder yield (Boudoukh-Michaely-Richardson-Roberts 2007; Faber):
     (dividends + net buybacks + net debt reduction) / market_cap — cash RETURNED to
-    owners, the legs FCF-yield misses (PREDICTIVE_SIGNALS §5).
+    owners, the legs FCF-yield misses.
 
     SIGN DISCIPLINE (the subtle part):
       * `dividends` / `repurchases` are OUTFLOW MAGNITUDES taken as their absolute
@@ -283,7 +282,7 @@ def shareholder_yield(dividends: Optional[float], repurchases: Optional[float],
 def surprise_dispersion(surprise_pcts: list[Optional[float]],
                         min_quarters: int = 3) -> Optional[float]:
     """Population std-dev of a firm's own recent earnings-surprise percentages —
-    the denominator for SUE (PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989).
+    the denominator for SUE (Bernard-Thomas 1989).
 
     Drops None entries; requires >= `min_quarters` usable points (a 1-quarter or
     empty history has no dispersion). Returns None below that floor. NOTE: this can
@@ -299,7 +298,7 @@ def sue(last_surprise_pct: Optional[float], dispersion: Optional[float],
         days_since_last_report: Optional[int], *,
         sigma_floor: float = 1.0, decay_trading_days: int = 60) -> Optional[float]:
     """Standardized earnings surprise (SUE), time-decayed over the post-announcement
-    drift window (PREDICTIVE_SIGNALS §1; Bernard-Thomas 1989, Novy-Marx 2015).
+    drift window (Bernard-Thomas 1989, Novy-Marx 2015).
 
     SUE = last_surprise_pct / dispersion  (a beat -> positive -> a higher score),
     then linearly DECAYED to 0 over `decay_trading_days` trading days since the last
@@ -328,7 +327,7 @@ def sue(last_surprise_pct: Optional[float], dispersion: Optional[float],
     return raw * weight
 
 
-# Residual-momentum window (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2). The 12-1
+# Residual-momentum window (Blitz-Huij-Martens 2011). The 12-1
 # convention in MONTHLY terms: regress on the trailing ~12 months, then take residuals
 # over t-12..t-2 (skip the most recent month). Expressed in trading days at ~21/month.
 _RESID_MOM_LOOKBACK_DAYS = 252   # ~12 months of trailing daily closes for the regression
@@ -377,7 +376,7 @@ def residual_momentum(stock_dates: list[date], stock_closes: list[float],
                       lookback_days: int = _RESID_MOM_LOOKBACK_DAYS,
                       skip_days: int = _RESID_MOM_SKIP_DAYS,
                       min_points: int = _RESID_MOM_MIN_POINTS) -> Optional[float]:
-    """Residual (idiosyncratic) momentum (Blitz-Huij-Martens 2011, PREDICTIVE_SIGNALS §2).
+    """Residual (idiosyncratic) momentum (Blitz-Huij-Martens 2011).
 
     Estimate the stock's CAPM beta over the trailing window by OLS of stock returns on
     market (SPY) returns — stdlib only, no numpy — over the DATE-INNER-JOINED series, take

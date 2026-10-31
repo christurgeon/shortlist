@@ -88,7 +88,7 @@ def test_asset_growth_none_when_assets_absent():
     assert ef.accruals is None
 
 
-# --- Total shareholder yield financing legs (PREDICTIVE_SIGNALS §5) ----------
+# --- Total shareholder yield financing legs ----------
 
 def _cf_concept_df(rows):
     """Cash-flow DataFrame with a raw us-gaap `concept` column + optional `dimension`

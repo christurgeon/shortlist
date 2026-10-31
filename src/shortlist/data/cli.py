@@ -28,8 +28,7 @@ def main(argv: list[str] | None = None) -> int:
 
     load_env()
 
-    # This CLI loads no config.yaml, so the cache uses its hardcoded TTL defaults
-    # (docs/DATA_SOURCES.md §6).
+    # This CLI loads no config.yaml, so the cache uses its hardcoded TTL defaults.
     from ..cache import configure_default_cache
     configure_default_cache(enabled=not args.no_cache, refresh=args.refresh_cache)
 

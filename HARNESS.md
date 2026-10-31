@@ -69,7 +69,7 @@ uv run shortlist-harness --tickers GEV,LMT --sources fmp,finnhub --out snapshots
 **Caching.** FMP and Finnhub responses are cached on disk (`.cache/http.sqlite`) by default,
 so a warm re-run within TTL makes no upstream calls. `--no-cache` disables it for a run;
 `--refresh-cache` repopulates. Yahoo and FINRA keep their own caches; EDGAR is uncached.
-TTLs are in `config.yaml: cache.ttl`; design in `docs/DATA_SOURCES.md` §6.
+TTLs are in `config.yaml: cache.ttl`; design in `cache.py`.
 
 Output per ticker is a coverage line:
 
@@ -181,7 +181,7 @@ request per ticker. See `docs/SCORING.md` → Sector-aware abstention.
 - **Gov contracts** (USAspending) and **lobbying** (Senate LDA) are keyless, self-cached, and
   match the company by name with a confidence floor, abstaining rather than mis-attributing
   (`data/govcontract_match.py`, `data/entity_match.py`). Neither is scored: flat data and a
-  research context line only. See `docs/DATA_SOURCES.md` §C2 and `docs/RESEARCH.md`.
+  research context line only. See `docs/RESEARCH.md`.
   - They query by the SEC title without its trailing qualifier (`/DE/`, `/NEW`, `/ADR`):
     upstream search returns nothing for the qualified form. A name that, so stripped, belongs
     to more than one CIK abstains (`raw["ambiguous_name"]`).
@@ -224,9 +224,9 @@ sources.
 
 - Dataclasses, not pydantic: bad payloads normalize to `None` rather than failing loud.
 - The free-tier FMP daily quota, not per-call backoff, is the scale ceiling. A paid tier or a
-  warm cache is the fix (`docs/DATA_SOURCES.md`).
+  warm cache is the fix (`TODO.md` §4).
 - FMP's free plan gates many symbols per-symbol with a 402, so coverage correctly drops to
   "thin" for those names.
 - Residual sector miscalibration (e.g. `net_margin` for banks) is tracked in
-  `docs/SCORING.md` → Sector-aware abstention and `docs/ASSESSMENT_GAPS.md`.
+  `docs/SCORING.md` → Sector-aware abstention and `docs/ROADMAP.md` → Sector-relative scoring.
 - Mock data is illustrative, not verified.

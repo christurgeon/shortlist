@@ -160,7 +160,7 @@ def test_growth_weight_redistributed_when_axis_absent():
     assert card.composite == 50.0
 
 
-# --- dilution / earnings-quality (ASSESSMENT_GAPS 2.5) --------------------
+# --- dilution / earnings-quality -----------------------------------------
 
 def _dilution_config(*, score_leg: bool, flag: bool) -> dict:
     """CONFIG plus the share_count_cagr band, optionally the opt-in quality
@@ -240,7 +240,7 @@ def test_dilution_leg_redistributes_when_signal_missing():
     assert score(m, c).quality == 50.0
 
 
-# --- asset-growth + accruals earnings-quality legs (PREDICTIVE_SIGNALS §3) ----
+# --- asset-growth + accruals earnings-quality legs ----
 
 def _eq_config(*, enabled: bool = True) -> dict:
     """CONFIG plus the inverted asset_growth / accruals bands and (optionally) the
@@ -378,7 +378,7 @@ def test_asset_growth_and_accruals_backtest_axes():
     assert accruals_score(none_m, t) is None
 
 
-# --- upside_to_target opt-out (TODO §2d / PREDICTIVE_SIGNALS Quick wins #1) ---
+# --- upside_to_target opt-out ---
 
 def test_upside_to_target_default_is_on_and_byte_identical():
     """The ONLY opt-OUT leg in the scorer. An absent key, an absent `value:` block and a
@@ -432,7 +432,7 @@ def test_upside_to_target_off_leaves_the_other_axes_untouched():
         assert getattr(off_card, axis) == getattr(on_card, axis)
 
 
-# --- total shareholder-yield value leg (PREDICTIVE_SIGNALS §5) ----------------
+# --- total shareholder-yield value leg ----------------
 
 def _sy_config(*, enabled: bool = True) -> dict:
     """CONFIG plus the (straight, non-inverted) shareholder_yield band and (optionally)
@@ -1325,7 +1325,7 @@ def test_value_plus_evebit_equals_value_when_leg_absent():
     assert value_plus_evebit_score(m, _T) == value_score(m, _T)
 
 
-# --- SUE / PEAD momentum leg (PREDICTIVE_SIGNALS §1) ----------------------
+# --- SUE / PEAD momentum leg ----------------------
 
 def _sue_config(*, enabled: bool = True) -> dict:
     """CONFIG plus the (straight, non-inverted) SUE band and the opt-in momentum.sue block."""
@@ -1411,7 +1411,7 @@ def test_sue_backtest_axis():
     assert sue_score(_sue_metrics(earnings_quarters=1, earnings_surprise_dispersion=None), t) is None
 
 
-# --- Residual (idiosyncratic) momentum leg (PREDICTIVE_SIGNALS §2) ------------
+# --- Residual (idiosyncratic) momentum leg ------------
 
 def _residmom_config(*, enabled: bool = True) -> dict:
     """CONFIG plus the (straight, non-inverted) residual_momentum band [0,1] and the opt-in

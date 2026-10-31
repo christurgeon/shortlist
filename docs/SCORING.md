@@ -1,7 +1,8 @@
 # Scoring (`scoring.py`)
 
 How a `TickerSnapshot` becomes a ranked `ScoreCard`. See [`../README.md`](../README.md) for
-the overview and [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) for what is **not** yet validated.
+the overview, [`BACKTEST.md`](BACKTEST.md) for how a leg is validated and
+[`ROADMAP.md`](ROADMAP.md) for ideas not yet built.
 
 > **Design premise.** This is a triage funnel for a human deep dive, **not** a return-predicting
 > alpha model. New scoring legs are gated hard on reproducible cross-universe rank IC — not
@@ -50,7 +51,7 @@ When a sub-score has no inputs it is **excluded and its weight redistributed** �
 silently zeroed, which would penalize a name for a data gap.
 
 > The default weights are a defensible prior, **not a fitted result**. See
-> [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) §2.1 and §2.9.
+> [`BACKTEST.md`](BACKTEST.md) and the verdicts in [`audits/README.md`](audits/README.md).
 
 ## Gates vs flags
 
@@ -138,10 +139,10 @@ Config blocks, **OFF unless noted** — byte-identical output when absent.
 | Leg | Config key | Status | Note |
 |---|---|---|---|
 | Residual (de-betaed) momentum | `momentum.residual` | **ON** | The only optional leg that passed the cross-sectional test |
-| Share-count-aware quality + true diluted-EPS growth | `quality.dilution` | OFF | [`ASSESSMENT_GAPS.md`](ASSESSMENT_GAPS.md) §2.5 |
+| Share-count-aware quality + true diluted-EPS growth | `quality.dilution` | OFF | Unfitted prior; a `share_count` backtest axis measures it |
 | Asset growth (inverted, Cooper-Gulen-Schill) | `quality.earnings_quality.asset_growth` | OFF | No cross-sectional edge measured |
 | Accruals (inverted, Sloan) | `quality.earnings_quality.accruals` | OFF | Killed on evidence — [`audits/2026-07-12`](audits/2026-07-12-accruals-leg-disable.md) |
-| Shareholder yield | `value.shareholder_yield` | OFF | [`PREDICTIVE_SIGNALS_RESEARCH.md`](PREDICTIVE_SIGNALS_RESEARCH.md) §5 |
+| Shareholder yield | `value.shareholder_yield` | OFF | Boudoukh et al. (2007); [`ROADMAP.md`](ROADMAP.md) → Literature |
 | Insider conviction (cluster/role/10b5-1) | `insider.conviction` | OFF | One-directional — can only raise `insider` |
 | SUE / earnings-surprise drift | `momentum.sue` | OFF | Needs a paid Finnhub tier for full accuracy |
 
