@@ -6,7 +6,7 @@ production run manifests. It documents one structural finding that is **not bein
 and two small fixes that **are**.
 
 **Why it exists:** while executing Track A of
-`docs/audits/2026-08-06-discovery-breadth-plan.md`, a proposed change — a market-cap
+`docs/audits/2026-08-06-discovery-breadth-plan.md` (deleted; in git history), a proposed change — a market-cap
 pre-filter at the funnel stage — was measured before building and turned out to be actively
 harmful. The measurement is worth more than the feature would have been.
 
@@ -150,7 +150,7 @@ Three open-end mutual funds and one ETF reached the live selection ledger:
 top-ranked stock idea of the night. A mutual fund cannot be the issuer of an insider buy, so
 these are **resolver artifacts**, not signals.
 
-**This corrects `2026-08-05-session-log.md` §4b**, which investigated a security-type filter
+**This corrects `2026-08-05-session-log.md` (deleted; in git history) §4b**, which investigated a security-type filter
 and declined to build it because *"all 6 non-operating names came from already-dead
 originators (`wsb:hype` disabled, `edgar:form4_cluster_buy` retired)."* Both premises are
 wrong: `edgar:form4_cluster_buy` is the **pre-rewrite emission name of the still-enabled
@@ -206,7 +206,7 @@ and 10 names**. The evidence for building a standing sampler to guarantee a non-
 is weaker after this correction, not stronger.
 
 4. **Track B/C omitted a directly adjacent committed decision.**
-   `docs/audits/2026-08-05-standing-screen-data-source.md` §6 concludes *"Do NOT build a
+   `docs/audits/2026-08-05-standing-screen-data-source.md` (deleted; in git history) §6 concludes *"Do NOT build a
    standing full-universe originator… build it as a FILTER on existing originators' output
    instead."* The plan resurrected a standing sampler without citing it. A neutral-sign
    random control draw is arguably a different animal from a ranked full-universe

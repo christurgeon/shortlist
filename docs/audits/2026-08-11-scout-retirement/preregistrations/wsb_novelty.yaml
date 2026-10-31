@@ -1,6 +1,6 @@
 # Pre-registered validation parameters for the wsb:novel signal (rank-novelty WSB
 # discovery: qualify a ticker only when it is NOT an ApeWisdom board regular).
-# Design + evidence: docs/audits/2026-08-07-wsb-novelty-rule.md
+# Design + evidence: docs/audits/2026-08-07-wsb-novelty-rule.md (deleted; in git history)
 #
 # Committed BEFORE any evaluation run -- the anti-p-hacking guard. `preregister.load_prereg`
 # reads `git show HEAD:<path>`, NOT the worktree, so editing this file has no effect until

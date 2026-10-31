@@ -258,7 +258,7 @@ correct. Reopen an entry only with new evidence, and say precisely what is new.
   *and* a measurement plan. `edgartools` `standard_concept` alias lists stay untouched
   (version-sensitive; they have broken accruals before).
 - **WSB:** a per-ticker mention-ratio baseline and a market-cap ceiling were both measured and
-  killed — do not rebuild either (`2026-08-07-wsb-novelty-rule.md`).
+  killed — do not rebuild either.
 - **A market-cap pre-filter in the funnel** deleted the only names there were (13 of 25
   sessions → zero candidates). Resolved instead by lowering `gates.min_market_cap` to $300M.
 - **Cohort levels are structurally unmeasurable on free data** (outcome-correlated attrition;
@@ -403,12 +403,10 @@ marked *verdict* closes a question.
 | 2026-08-11 | `2026-08-11-scout-retirement.md` — the big one | verdict |
 | 2026-08-10 | `2026-08-10-roic-proxy-and-edgar-equity-design.md` | design |
 | 2026-08-09 | `2026-08-09-13f-material-adds-design.md` | design |
-| 2026-08-07 | `2026-08-07-wsb-novelty-rule.md` | verdict |
 | 2026-08-07 | `2026-08-07-investability-floor.md` | evidence |
 | 2026-08-07 | `2026-08-07-funnel-gate-mismatch.md` | evidence |
-| 2026-08-06 | `2026-08-06-discovery-breadth-plan.md` | design |
-| 2026-08-05 | `2026-08-05-*` — discovery funnel, standing-screen spikes (DERA/FDIC), quality floor, cohort price coverage, session log | evidence |
-| 2026-08-04 | `2026-08-04-deep-brief-assessment.md`, `2026-08-04-tech-debt-burndown.md` | evidence |
+| 2026-08-05 | `2026-08-05-discovery-funnel-audit.md`, `2026-08-05-cohort-price-coverage.md` | evidence |
+| 2026-08-04 | `2026-08-04-deep-brief-assessment.md` | evidence |
 | 2026-08-03 | `2026-08-03-evaluator-rederivation.md` — supersedes older spread claims | verdict |
 | 2026-08-02 | `2026-08-02-edgar-companyconcept-fallback.md` | design |
 | 2026-07-31 | `2026-07-31-edgar-concept-match.md` | evidence |
