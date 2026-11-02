@@ -144,8 +144,7 @@ A portfolio larger than `portfolio.max_holdings` (default **50**) is screened up
 with an explicit "alerts incomplete" warning naming the un-screened tickers.
 
 > **Held-name alerting does not exist.** Nothing watches your holdings between `/portfolio`
-> runs: an alert needs a scheduler, and none is built. The design is kept in
-> [`POSITION_MONITOR.md`](design/POSITION_MONITOR.md) but describes a feature that is not built.
+> runs: an alert needs a scheduler, and none is built.
 
 ## Research kill-switch
 
