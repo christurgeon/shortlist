@@ -78,8 +78,6 @@ truncation noted in the header only.
   not its geographic table. A customer concentration filed only in the accounting-policies
   note is not selected (HDSN).
 
-Design and evidence: `docs/audits/2026-11-02-deep-exposure-map-design.md`.
-
 The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
 guidance, a non-reliance restatement, a material cyber incident, a completed acquisition, an
 officer departure. Selected by item priority (`4.02 > 1.05 > 2.02 > 2.01 > 1.01 > 5.02`),
@@ -136,9 +134,12 @@ and a score-vs-filing reconciliation.
 **Exposures** map the material dependencies outside management's control, one entry each:
 `{kind, claim, evidence}` with `kind` one of geography, customer, supplier, government,
 commodity, currency or regulation. A share the model computes goes in `claim` with its
-inputs; `evidence` is a verbatim quote, verified like a risk. An unknown `kind` is dropped
-at parse time. `research.max_exposures` (default 5) is a ceiling, and an empty list is the
-correct answer for a company with no material concentration. The section renders as
+inputs; `evidence` is a verbatim quote, verified like a risk, and must contain a word: a
+run of table figures without its row label could back a claim about any row, so it does not
+verify. The government as customer or payer is `government`; as regulator it is
+`regulation`. An unknown `kind` is dropped at parse time with a stderr line.
+`research.max_exposures` (default 5) is a ceiling, and an empty list is the correct answer
+for a company with no material concentration. The section renders as
 "Exposures (filing-grounded)" in the markdown brief and as "Exposures" in the Telegram
 report; briefs written before the field render without it.
 

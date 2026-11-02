@@ -333,7 +333,6 @@ research:
     max_chars_10q: 8000        # crowd out the fresher quarterly note
   exposure_notes:              # segment, geographic, concentration and revenue notes, 10-K
                                # only (research/notes.py): the input for `exposures`.
-                               # docs/audits/2026-11-02-deep-exposure-map-design.md
     enabled: true
     max_notes_per_form: 3
     max_chars_per_note: 12000  # below the form budget, so a long segment note leaves room

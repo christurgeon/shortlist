@@ -7,9 +7,7 @@ sends only Item 1, Item 7, Item 1A and the 10-Q MD&A.
   refinancing-coverage instruction. Design: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`
   (probe: `docs/audits/scripts/probe_debt_notes.py`).
 - **exposure** (10-K only): the segment, geographic, revenue-disaggregation and
-  concentration notes behind the `exposures` field. Design:
-  `docs/audits/2026-11-02-deep-exposure-map-design.md`
-  (probe: `docs/audits/scripts/probe_exposure_notes.py`).
+  concentration notes behind the `exposures` field (`docs/RESEARCH.md`).
 
 A note IS filing text, so it enters the grounding haystack as its own labelled segment,
 so "verified" never silently widens from "the 10-K" to "a note we sliced out of it".
@@ -108,7 +106,12 @@ _MIN_USEFUL_CHARS = 200
 
 
 def _config_block(config: Optional[dict], family: _Family) -> dict:
-    block = ((config or {}).get("research") or {}).get(family.config_key) or {}
+    """A scalar block (`notes: false`) is read as `enabled`, not merged."""
+    block = ((config or {}).get("research") or {}).get(family.config_key)
+    if block is None:
+        block = {}
+    elif not isinstance(block, dict):
+        block = {"enabled": bool(block)}
     return {**family.defaults, **block}
 
 
@@ -131,10 +134,11 @@ def _title(note: Any) -> str:
 
     The flattening is NOT cosmetic. The title is FILER-CONTROLLED and goes into a
     `=== 10-K STATEMENT NOTE — {title} ===` prompt header and the segment `label`.
-    Raw newlines and `===` could forge a section boundary in the prompt. Grounding is
-    unaffected, since the title is not in the haystack."""
+    Raw newlines and `===` could forge a section boundary in the prompt, so whitespace
+    runs and `=` runs are collapsed. Grounding is unaffected, since the title is not in
+    the haystack."""
     raw = str(getattr(note, "title", None) or getattr(note, "name", "") or "")
-    return re.sub(r"\s+", " ", raw).strip()[:_MAX_TITLE_CHARS]
+    return re.sub(r"={2,}", "=", re.sub(r"\s+", " ", raw)).strip()[:_MAX_TITLE_CHARS]
 
 
 def _norm_ws(text: Any) -> str:

@@ -421,26 +421,35 @@ def _added_risks(payload: dict, limit: int) -> list[Finding]:
     return out
 
 
-_KIND_ALIASES = {"geographic": "geography", "region": "geography", "country": "geography",
-                 "customers": "customer", "suppliers": "supplier",
-                 "commodities": "commodity", "currencies": "currency", "fx": "currency",
-                 "regulatory": "regulation"}
+# `regulator` folds to `regulation`, matching the prompt: the government as customer or
+# payer is `government`, as regulator it is `regulation`.
+_KIND_ALIASES = {"geographic": "geography", "geographies": "geography", "region": "geography",
+                 "country": "geography", "customers": "customer",
+                 "customer concentration": "customer", "suppliers": "supplier",
+                 "supply chain": "supplier", "commodities": "commodity",
+                 "raw materials": "commodity", "currencies": "currency", "fx": "currency",
+                 "foreign currency": "currency", "regulatory": "regulation",
+                 "regulator": "regulation"}
 
 
-def _exposures(payload: dict, limit: int) -> list[Exposure]:
+def _exposures(payload: dict, limit: int, ticker: str = "") -> list[Exposure]:
     """Tolerant parse of the optional `exposures` list. Missing key -> []; a non-dict
-    item, or a `kind` outside EXPOSURE_KINDS after case and alias folding, is dropped,
-    never raised. Truncated to `limit`, the hard ceiling."""
+    item, or a `kind` outside EXPOSURE_KINDS after case and alias folding, is dropped
+    with a stderr line, never raised. Truncated to `limit`, the hard ceiling."""
+    from .filings import log_abstain  # local: filings imports this module
     out: list[Exposure] = []
     if limit <= 0:
         return out
     raw = payload.get("exposures")
     for item in (raw if isinstance(raw, list) else []):
         if not isinstance(item, dict):
+            log_abstain("exposure dropped", ticker, ValueError("item is not an object"))
             continue
-        kind = str(item.get("kind") or "").strip().lower()
+        kind = " ".join(str(item.get("kind") or "").lower().split())
         kind = _KIND_ALIASES.get(kind, kind)
         if kind not in EXPOSURE_KINDS:
+            log_abstain("exposure dropped", ticker,
+                        ValueError(f"kind {kind[:40]!r} is not one of EXPOSURE_KINDS"))
             continue
         out.append(Exposure(claim=str(item.get("claim", "")),
                             evidence=str(item.get("evidence", "")), kind=kind))
@@ -530,5 +539,5 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         reconciliation=_reconciliation(payload, valid_signals=vs, max_conflicts=max_conflicts),
         thesis=_thesis(payload, max_falsifiers=max_falsifiers),
         added_risks=_added_risks(payload, max_added_risks),
-        exposures=_exposures(payload, max_exposures),
+        exposures=_exposures(payload, max_exposures, ticker),
     )

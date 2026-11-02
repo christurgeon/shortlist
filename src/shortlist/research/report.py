@@ -58,7 +58,7 @@ def _exposures_md(exposures) -> list[str]:
     return _findings_md(
         [Finding(claim=f"{(e.kind or 'other').capitalize()} — {e.claim}", evidence=e.evidence,
                  verified=e.verified, source=e.source) for e in exposures],
-        "No material concentration identified.")
+        "None identified.")
 
 
 def _reconciliation_md(conflicts) -> list[str]:

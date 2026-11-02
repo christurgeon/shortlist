@@ -108,7 +108,7 @@ class AssessmentVM:
     risks: list[FindingVM] = field(default_factory=list)
     red_flags: list[FindingVM] = field(default_factory=list)
     added_risks: list[FindingVM] = field(default_factory=list)
-    # The kind leads the claim ("Customer — …"). Empty on every brief from before the field.
+    # The kind leads the claim ("Customer — …"). A record without the key loads as [].
     exposures: list[FindingVM] = field(default_factory=list)
     moat_sources: list[FindingVM] = field(default_factory=list)
     management_findings: list[FindingVM] = field(default_factory=list)
