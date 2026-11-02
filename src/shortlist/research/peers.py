@@ -27,6 +27,9 @@ from .models import PeerRow, PeerTable
 BASE = "https://finnhub.io/api/v1"
 HEADING = "Peer comparison — vendor data (Finnhub), not from filings; not seen by the model"
 SHOWN, NOT_SHOWN, UNAVAILABLE = "shown", "not_shown", "unavailable"
+SUB_INDUSTRY = "Finnhub sub-industry"
+WIDER_TOO_FEW = "Finnhub sub-industry + industry (too few sub-industry peers)"
+WIDER_SMALLER = "Finnhub sub-industry + industry (sub-industry peers were much smaller)"
 
 NO_KEY_TEXT = "Not shown: no Finnhub API key is configured."
 UNAVAILABLE_TEXT = ("Not shown: the vendor data was unavailable for this brief (an error, a rate "
@@ -40,8 +43,8 @@ RANK_NOTE = ("Rank counts {ticker} with the peers that report the measure. For t
              "multiple or ratio on negative earnings, EBITDA or equity, and is not ranked.")
 
 _DEFAULTS: dict = {
-    "enabled": False, "max_candidates": 12, "max_peers": 6, "min_peers": 3,
-    "min_interval_s": 1.2, "timeout": 30,
+    "enabled": False, "max_candidates": 12, "max_calls": 20, "max_peers": 6, "min_peers": 3,
+    "size_mismatch_ratio": 0.1, "min_interval_s": 1.2, "timeout": 30,
     "masks": {"default": ["pb", "roe"]},
 }
 # Shared with research/news.py and research/durability.py: the research phase's slack.
@@ -302,7 +305,7 @@ def build(ticker: str, bucket: Optional[str], raw: dict, cfg: dict, floor_m: flo
     failed = sum(1 for _, m in candidates if m is None)
     below = sum(1 for _, m in candidates
                 if m is not None and (m.get("marketCapitalization") or 0) < floor_m)
-    basis = (f"Peers from Finnhub's {raw.get('grouping', 'sub-industry')} list: of "
+    basis = (f"Peer source: {raw.get('grouping') or SUB_INDUSTRY}. Of "
              f"{len(candidates)} examined, {below} below {fmt('usd_m', floor_m)} market cap "
              f"and {failed} without vendor metrics were dropped; the {len(kept)} closest to "
              f"{ticker} in market cap are kept.")
@@ -369,23 +372,35 @@ class _Vendor:
         return metrics_from(self.get("/stock/metric", {"symbol": ticker, "metric": "all"}), ticker)
 
 
+def _too_small(kept: list[tuple[str, dict]], target_cap_m: Optional[float], ratio: float) -> bool:
+    """The kept peers' median market cap is below `ratio` of the company's."""
+    if not kept or not target_cap_m or target_cap_m <= 0:
+        return False
+    return statistics.median(m["marketCapitalization"] for _, m in kept) < ratio * target_cap_m
+
+
 def collect(vendor: _Vendor, ticker: str, cfg: dict, floor_m: float, today: str) -> dict:
-    """The vendor data the table needs, in a bounded number of calls: the peer list (twice at
-    most), the company, at most `max_candidates` peers and the S&P 500 reference (once a day per
-    process). A failed peer call drops that peer; any other failure or a 429 raises."""
+    """The vendor data the table needs: the company, the sub-industry peer list and at most
+    `max_candidates` of its peers, then the industry list and at most `max_candidates` more when
+    the sub-industry leaves too few usable peers or peers much smaller than the company, then the
+    S&P 500 reference (once a day per process). All calls together stay within `max_calls`.
+    A failed peer call drops that peer; any other failure or a 429 raises."""
     target = vendor.metrics(ticker)
     if target is None:
         return {"target": None}
-    budget = max(0, int(cfg["max_candidates"]))
+    per_list = max(0, int(cfg["max_candidates"]))
+    # One call is held back for the S&P 500 reference.
+    call_cap = max(0, int(cfg["max_calls"])) - 1
     candidates: list[tuple[str, Optional[dict]]] = []
-    grouping = "sub-industry"
 
     def examine(tickers: list[str]) -> None:
+        added = 0
         for t in tickers:
-            if len(candidates) >= budget:
+            if added >= per_list or vendor.calls >= call_cap:
                 return
             if any(t == c for c, _ in candidates):
                 continue
+            added += 1
             try:
                 candidates.append((t, vendor.metrics(t)))
             except (_RateLimited, _Stopped):
@@ -394,12 +409,22 @@ def collect(vendor: _Vendor, ticker: str, cfg: dict, floor_m: float, today: str)
                 candidates.append((t, None))
 
     examine(peer_list(vendor.get("/stock/peers", {"symbol": ticker}), ticker))
-    if len(usable(candidates, target, floor_m)) < int(cfg["min_peers"]):
-        wider = peer_list(vendor.get("/stock/peers", {"symbol": ticker, "grouping": "industry"}),
-                          ticker)
-        if any(t not in {c for c, _ in candidates} for t in wider):
-            grouping = "sub-industry and industry"
-        examine(wider)
+    ok = usable(candidates, target, floor_m)
+    cap = target.get("marketCapitalization")
+    wider = None
+    if len(ok) < int(cfg["min_peers"]):
+        wider = WIDER_TOO_FEW
+    elif _too_small(closest_in_size(ok, cap, int(cfg["max_peers"])), cap,
+                    float(cfg["size_mismatch_ratio"])):
+        wider = WIDER_SMALLER
+    grouping = SUB_INDUSTRY
+    if wider and vendor.calls < call_cap:
+        industry = peer_list(vendor.get("/stock/peers", {"symbol": ticker, "grouping": "industry"}),
+                             ticker)
+        before = len(candidates)
+        examine(industry)
+        if len(candidates) > before:
+            grouping = wider
     return {"target": target, "candidates": candidates, "grouping": grouping,
             "spy": _spy(vendor, today)}
 

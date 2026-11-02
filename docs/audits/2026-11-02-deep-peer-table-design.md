@@ -14,8 +14,11 @@ item 1 of `docs/design/DEEP_CONTEXT_PLAN.md`.
   company and its peers, so a column compares like with like even where the vendor's
   definition differs from ours (the card's own P/E or ROIC can differ from the table's).
 - **Peer filter:** drop the company, duplicates, another share class, names with no metrics
-  and names below the `gates.min_market_cap` floor; retry once with `grouping=industry` when
-  fewer than three remain; keep up to six closest in log market cap.
+  and names below the `gates.min_market_cap` floor; add the `grouping=industry` list once when
+  fewer than three remain or when the kept peers' median market cap is below 0.1 of the
+  company's; keep up to six closest in log market cap from both lists.
+- **Sub-industry stays the default list.** AMAT's sub-industry list (LRCX, KLAC, TER, Q, ENTG)
+  holds its competitors; its industry list (NVDA, AVGO, MU, AMD) does not.
 - **S&P 500 reference: SPY's own `52WeekPriceReturnDaily`.** `stock/metric?symbol=SPY` returns
   19 fields, including that one. It is a price return on the same field as the stocks. The
   `priceRelativeToS&P500*` fields were not used: their definition is undocumented.
@@ -77,12 +80,25 @@ median's gap to the index, so the rule leans to "company-specific". All six live
 "company-specific", and in each the company's gap was at least as large as the other part
 (NKE −67 against +16, O −15 against +3). Treat it as a description of the split, not a test.
 
+## The size-mismatch fallback (live, 2026-11-02)
+
+| Ticker | Kept from the sub-industry (median cap) | Fallback | Kept after |
+|---|---|---|---|
+| DE ($182B) | TTC, AGCO, ALG, LNN, TWI ($1.8B) | yes | CAT, PH, ITW, CMI, PCAR, TTC ($74.0B) |
+| NKE ($57B) | DECK, CROX, SHOO, WWW, RCKY ($3.2B) | yes | RL, TPR, DECK, LEVI, CROX, VFC ($9.9B) |
+| AMAT ($310B) | LRCX, KLAC, TER, Q, ENTG, MKSI ($33.7B) | no | unchanged |
+
+AMAT sits at a ratio of 0.109, just above the 0.1 threshold. A small move in caps would add the
+industry list for it, and the closeness rule would then pull in NVDA-class names. The ratio is
+a judgement, not a fit.
+
 ## Call budget and timing
 
 Per brief: one call for the company, one or two peer lists, at most `max_candidates` (12)
-peer metric calls, and one SPY call per UTC day per process: at most 16. A process-wide pacer
-keeps 1.2 s between calls (the free tier is 60 a minute and the news call shares the key).
-Measured: 13.4 to 16.8 s per brief for the six tickers above. The deadline is 30 s (at most
+peer metric calls per list, and one SPY call per UTC day per process, all within `max_calls`
+(20). A process-wide pacer keeps 1.2 s between calls (the free tier is 60 a minute and the news
+call shares the key). Measured: 13.4 to 16.8 s per brief without the fallback; DE and NKE with
+the fallback and SPY uncached (20 calls) took 23.0 s each. The deadline is 30 s (at most
 45 s). With the news (10 s) and ROIC-persistence (15 s) defaults, the three optional sections
 together stay inside the research phase's slack of about 100 s. Several briefs that finish the
 model call together queue on the pacer; a late one reads "unavailable".
@@ -90,6 +106,4 @@ model call together queue on the pacer; a late one reads "unavailable".
 ## Not done
 
 - **Feeding the table to the model.** Needs the A/B the plan describes.
-- **A size-aware fallback.** When every sub-industry peer is far smaller (NKE, DE), the industry
-  list may be better; the fallback today triggers only on too few peers.
 - **Sector-relative scoring.** Changes scores; needs cross-universe rank IC.

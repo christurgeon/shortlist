@@ -438,9 +438,14 @@ research:
                                # docs/audits/2026-11-02-deep-peer-table-design.md
     enabled: true
     # min_market_cap: absent = gates.min_market_cap (dollars)
-    max_candidates: 12         # peer metric calls per brief, both peer lists together
+    max_candidates: 12         # peers examined per peer list (one metric call each)
+    max_calls: 20              # all Finnhub calls of one brief; with min_interval_s it must fit
+                               # inside timeout
     max_peers: 6               # kept by closeness in log market cap
-    min_peers: 3               # below this, retry with the industry list, then "Not shown"
+    min_peers: 3               # below this, add the industry list, then "Not shown"
+    size_mismatch_ratio: 0.1   # kept sub-industry peers' median cap below this share of the
+                               # company's: add the industry list. Not the default list, because
+                               # the industry list is worse where the sub-industry is right.
     min_interval_s: 1.2        # process-wide gap between Finnhub calls; the free tier is
                                # 60/min and the news call shares the key
     timeout: 30                # wall-clock seconds for the whole section; values above 45 read

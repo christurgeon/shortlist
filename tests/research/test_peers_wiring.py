@@ -15,7 +15,7 @@ from shortlist.research.models import (FilingBundle, FilingText, Moat, PeerRow, 
                                        QualitativeAssessment, Thesis)
 
 TABLE = PeerTable(status=peers.SHOWN, as_of="2026-11-02 14:00 UTC", ticker="ACME",
-                  basis="Peers from Finnhub's sub-industry list.", peers=["AAA", "BBB", "CCC"],
+                  basis="Peer source: Finnhub sub-industry.", peers=["AAA", "BBB", "CCC"],
                   rows=[PeerRow("P/E (TTM)", "15.0x", "20.0x", 3, "lowest of 4")],
                   relative="52-week price return: ACME +1.0%.", growth="Not shown: x.",
                   values={"ACME": {"peTTM": 15.0}})
@@ -92,7 +92,10 @@ def test_the_shipped_config_has_the_section_on():
     cfg = load_config(str(root / "config.yaml"))["research"]["peers"]
     assert cfg["enabled"] is True and "min_market_cap" not in cfg
     assert (cfg["max_candidates"], cfg["max_peers"], cfg["min_peers"]) == (12, 6, 3)
+    assert cfg["size_mismatch_ratio"] == 0.1
     assert cfg["timeout"] <= peers.MAX_DEADLINE_S
+    # Pacing alone must leave room for request latency inside the deadline.
+    assert cfg["max_calls"] * cfg["min_interval_s"] <= 0.85 * cfg["timeout"]
 
 
 def test_the_demo_path_never_fetches_peers(monkeypatch):

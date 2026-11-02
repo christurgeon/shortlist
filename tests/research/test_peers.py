@@ -184,7 +184,7 @@ def _built(bucket, cfg=None):
         "default": ["pb", "roe"], "financials": ["ev_ebitda", "revenue_growth", "roi"]}}}})
     raw = {"target": _m(10_000), "candidates": [(t, _m(c)) for t, c in
                                                 [("AAA", 9_000), ("BBB", 8_000), ("CCC", 7_000)]],
-           "grouping": "sub-industry", "spy": 10.0}
+           "grouping": peers.SUB_INDUSTRY, "spy": 10.0}
     return peers.build("ACME", bucket, raw, cfg, 300.0, "t")
 
 
@@ -218,7 +218,8 @@ def test_a_full_fetch_with_the_key_in_a_header():
     v = _Vendor({"default": ["AAA", "ACME", "BBB", "CCC", "DDD", "DDD"]}, _five())
     t = _fetch(v)
     assert t.status == peers.SHOWN and t.as_of == "2026-11-02 14:00 UTC"
-    assert t.peers == ["AAA", "BBB", "CCC", "DDD"] and "sub-industry" in t.basis
+    assert t.peers == ["AAA", "BBB", "CCC", "DDD"]
+    assert t.basis.startswith(f"Peer source: {peers.SUB_INDUSTRY}. Of 4 examined,")
     assert all(r.headers["x-finnhub-token"] == "k-123" and "k-123" not in str(r.url)
                for r in v.requests)
     assert v.paths() == [("metric", "ACME", None), ("peers", "ACME", None),
@@ -232,7 +233,7 @@ def test_too_few_usable_peers_retries_once_with_the_industry_list():
     v = _Vendor({"default": ["AAA", "TINY", "GONE"], "industry": ["AAA", "BBB", "EEE"]}, metrics)
     t = _fetch(v)
     assert t.status == peers.SHOWN and t.peers == ["AAA", "BBB", "EEE"]
-    assert "sub-industry and industry" in t.basis and "1 below $300M" in t.basis
+    assert f"Peer source: {peers.WIDER_TOO_FEW}." in t.basis and "1 below $300M" in t.basis
     assert "1 without vendor metrics" in t.basis
     assert [p for p in v.paths() if p[0] == "peers"] == [("peers", "ACME", None),
                                                          ("peers", "ACME", "industry")]
@@ -249,11 +250,68 @@ def test_still_too_few_is_one_not_shown_sentence():
 
 def test_the_candidate_budget_bounds_the_calls():
     many = {f"P{i}": _m(1_000 + i) for i in range(30)}
-    v = _Vendor({"default": list(many)}, {"ACME": _m(10_000), **many})
+    v = _Vendor({"default": list(many)}, {"ACME": _m(5_000), **many})
     cfg = {"research": {"peers": {**CFG["research"]["peers"], "max_candidates": 4}}}
     t = _fetch(v, cfg=cfg)
     assert sum(1 for p in v.paths() if p[0] == "metric" and p[1].startswith("P")) == 4
     assert len(t.peers) == 4
+
+
+def _big_target(sub, industry, extra=None):
+    """A $100B company: `sub` and `industry` are (ticker, cap in $M) lists."""
+    metrics = {"ACME": _m(100_000), **{t: _m(c) for t, c in sub + industry}, **(extra or {})}
+    return _Vendor({"default": [t for t, _ in sub], "industry": [t for t, _ in industry]}, metrics)
+
+
+def test_much_smaller_sub_industry_peers_add_the_industry_list():
+    # DE's case: every sub-industry peer is a small fraction of the company.
+    v = _big_target([("S1", 5_000), ("S2", 3_000), ("S3", 1_000)],
+                    [("B1", 80_000), ("S1", 5_000), ("B2", 150_000), ("B3", 40_000)])
+    t = _fetch(v)
+    assert t.status == peers.SHOWN
+    assert f"Peer source: {peers.WIDER_SMALLER}." in t.basis and "Of 6 examined" in t.basis
+    assert t.peers == ["B2", "B1", "B3", "S1", "S2", "S3"]
+    assert [p for p in v.paths() if p[0] == "peers"] == [("peers", "ACME", None),
+                                                         ("peers", "ACME", "industry")]
+    assert sum(1 for p in v.paths() if p[1] == "S1") == 1
+
+
+def test_the_merged_pool_is_reselected_by_size():
+    v = _big_target([(f"S{i}", 1_000 + i) for i in range(6)],
+                    [(f"B{i}", 61_000 + 10_000 * i) for i in range(6)])
+    t = _fetch(v)
+    assert sorted(t.peers) == [f"B{i}" for i in range(6)]
+
+
+def test_comparable_sub_industry_peers_keep_the_default_list():
+    # AMAT's case: the sub-industry holds the real competitors; the industry list is worse.
+    v = _big_target([("LRCX", 120_000), ("KLAC", 90_000), ("TER", 20_000), ("ENTG", 15_000)],
+                    [("NVDA", 4_000_000), ("AVGO", 1_500_000)])
+    t = _fetch(v)
+    assert t.basis.startswith(f"Peer source: {peers.SUB_INDUSTRY}.")
+    assert [p for p in v.paths() if p[0] == "peers"] == [("peers", "ACME", None)]
+    assert "NVDA" not in t.peers
+
+
+def test_the_size_rule_is_strict_and_skips_an_unknown_company_cap():
+    kept = [("A", _m(1_000)), ("B", _m(3_000))]
+    assert peers._too_small(kept, 20_001, 0.1) and not peers._too_small(kept, 20_000, 0.1)
+    assert not peers._too_small(kept, None, 0.1) and not peers._too_small([], 1e9, 0.1)
+
+
+def test_an_industry_list_with_nothing_new_keeps_the_default_label():
+    v = _big_target([("S1", 5_000), ("S2", 3_000), ("S3", 1_000)], [("S1", 5_000)])
+    assert _fetch(v).basis.startswith(f"Peer source: {peers.SUB_INDUSTRY}.")
+
+
+def test_all_calls_stay_within_the_total_cap_and_keep_the_index():
+    v = _big_target([(f"S{i}", 1_000 + i) for i in range(12)],
+                    [(f"B{i}", 60_000 + i) for i in range(12)])
+    cfg = {"research": {"peers": {**CFG["research"]["peers"], "max_calls": 18}}}
+    t = _fetch(v, cfg=cfg)
+    assert len(v.requests) == 18 and v.paths()[-1] == ("metric", "SPY", None)
+    assert t.status == peers.SHOWN and f"{peers.WIDER_SMALLER}" in t.basis
+    assert sum(1 for p in v.paths() if p[1].startswith("B")) == 2
 
 
 def test_the_index_is_fetched_once_a_day():
