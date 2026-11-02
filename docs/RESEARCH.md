@@ -147,8 +147,8 @@ report; briefs written before the field render without it.
 
 On by default (`research.durability.enabled`). Every brief carries one more section,
 **"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. The model did
-not write it and never sees it (the capital-allocation and recent-news sections below are the
-others).
+not write it and never sees it (the capital-allocation, recent-news and peer-comparison sections
+below are the others).
 
 - **What it is.** A pre-registered study measured, among firms with a ROIC in the top fifth,
   which ones still had it three years later
@@ -260,6 +260,55 @@ really covers. Decisions and rejected options:
   deadline (`timeout`, at most 45 s) enforced by a daemon thread. Any failure prints
   "unavailable", never an empty section, so an outage cannot read as "no news". A cached
   brief keeps the news as of its own generation and prints that time.
+
+### The peer-comparison section — vendor data, not seen by the model
+
+On by default (`research.peers.enabled`). Every brief carries a section **"Peer comparison —
+vendor data (Finnhub), not from filings; not seen by the model"**: the company against up to
+`max_peers` competitors on one vendor basis (`research/peers.py`). Design and probe evidence:
+`docs/audits/2026-11-02-deep-peer-table-design.md`.
+
+- **What it is.** For each measure (market cap, P/E, EV/EBITDA, P/S, gross and operating
+  margin, TTM and 3-year revenue growth, ROI, debt/equity, 52-week price return): the
+  company's value, the median of the peers that report it with their count, and the company's
+  rank among those peers plus itself. Multiples rank from the low end; the brief says lower is
+  cheaper on that measure, never that it is better value. A negative multiple or ratio is
+  "n/m" and is not ranked; zero debt/equity is a real value.
+- **The peers.** Finnhub `stock/peers` (the sub-industry list), without the company, duplicates,
+  another share class of the same company, names with no vendor metrics and names below the
+  market-cap floor (`gates.min_market_cap` unless the block sets `min_market_cap`). Fewer than
+  `min_peers` left: one retry with the wider `grouping=industry` list. Up to `max_peers` are kept
+  by closeness in log market cap. The list is the vendor's, and its quality varies (see the
+  design note).
+- **Sector masks** (`research.peers.masks`). Banks, insurers and REITs hide the measures the
+  vendor gets wrong for them (a bank's "revenue" includes gross interest income) and show P/B
+  and ROE; other names hide P/B and ROE. The section lists what it hid.
+- **Relative performance.** The 52-week price return of the company, the peer median and the
+  S&P 500 (SPY's 52-week price return on the same vendor field, fetched once a day per
+  process). Fixed rule: the company's move splits into its gap to the peer median and the peer
+  median's gap to the S&P 500 (to zero when SPY is unavailable); the larger part names the move
+  ("mostly company-specific" or "mostly shared with the peers"); both under 5 points reads as
+  small.
+- **Growth against the peer set.** The company's TTM revenue growth against the growth of the
+  peers' combined revenue, where revenue TTM = market cap ÷ P/S and the prior year is revenue ÷
+  (1 + growth). Labelled "within this peer set only". A gap under 1 point reads "about in line".
+- **Abstention.** Each derived line abstains on its own, with its reason. The whole section
+  abstains with one "Not shown: …" sentence from a closed set: no key, no metrics for the
+  company, no peers listed, too few usable peers, or vendor data unavailable.
+- **What it is not.** Not filing text, not a score, gate or flag, not a valuation verdict.
+- **Where it is computed.** `_enrich_card`, after `assess()` returns, like the news section.
+  The prompts are byte-identical with the flag on or off; the table is never a grounding
+  segment. It is stored with the brief (`peer_table` in the JSON record, with the raw vendor
+  values for audit). Like the news module it is in `cachekey._PROMPT_MODULES`, so a wording
+  change is not served under an older cached brief.
+- **Failure and cost.** At most two peer-list calls, one call for the company, `max_candidates`
+  peer calls and one SPY call per day: about 12 to 16 Finnhub calls per brief. A process-wide
+  pacer keeps `min_interval_s` between calls, because several briefs run at once on one
+  free-tier key (60 calls a minute, shared with the news call). The calls run in a daemon thread
+  under one wall-clock deadline (`timeout`, at most 45 s); past it the thread makes no further
+  call. A 429, a failed peer-list call or the deadline gives "unavailable", never an empty
+  table; a failed call for one peer drops that peer. Several briefs that finish their model call
+  at the same moment queue on the pacer, and a late one can read "unavailable".
 
 ## Quote verification
 
