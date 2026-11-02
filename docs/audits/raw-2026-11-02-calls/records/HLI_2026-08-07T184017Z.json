@@ -1,0 +1,18 @@
+{
+ "as_of": "2026-08-07T18:40:17+00:00",
+ "filing_date": "2026-05-22",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 129.08999633789062,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/HLI/0001302215-26-000053+0001302215-26-000067.json",
+ "ticker": "HLI"
+}

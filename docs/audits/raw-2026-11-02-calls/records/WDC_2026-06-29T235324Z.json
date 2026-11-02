@@ -1,0 +1,17 @@
+{
+ "as_of": "2026-06-29T23:53:24+00:00",
+ "filing_date": "2025-08-14",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 651.8800048828125,
+  "clamp_note": "",
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/WDC/0000106040-25-000038+0001628280-26-029054.json",
+ "ticker": "WDC"
+}

@@ -1,0 +1,18 @@
+{
+ "as_of": "2026-08-20T22:25:57+00:00",
+ "filing_date": "2026-03-17",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 115.69000244140625,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/LULU/0001397187-26-000020+0001397187-26-000078+0001213900-26-061531+0001397187-26-000077+0001397187-26-000088-p969e6de9-cd7851f83-2026-08-20.json",
+ "ticker": "LULU"
+}

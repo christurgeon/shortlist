@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-17T22:50:51+00:00",
+ "filing_date": "2026-02-26",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 80.81999969482422,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "LOW",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "BUY",
+  "stance_clamped": false
+ },
+ "source": "research/LMAT/0001193125-26-073360+0001193125-26-333762+0001193125-26-332982+0001193125-26-422885-pbc45aa17-c72b9d103-2026-10-17.json",
+ "ticker": "LMAT"
+}

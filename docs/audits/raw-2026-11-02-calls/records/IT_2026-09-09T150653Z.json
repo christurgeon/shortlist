@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-09-09T15:06:53+00:00",
+ "filing_date": "2026-02-12",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 170.10000610351562,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/IT/0000749251-26-000112+0000749251-26-000245+0000749251-26-000243-pe2f3e033-c15e8400a-2026-09-09.json",
+ "ticker": "IT"
+}

@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-09-23T15:53:02+00:00",
+ "filing_date": "2026-02-13",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 69.55000305175781,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/UBER/0001543151-26-000015+0001543151-26-000032+0001543151-26-000027+0001552781-26-000382+0001552781-26-000414-pe2f3e033-c03867219-2026-09-23.json",
+ "ticker": "UBER"
+}

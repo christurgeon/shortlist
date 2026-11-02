@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-21T13:39:56+00:00",
+ "filing_date": "2026-03-10",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 118.36000061035156,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/IPAR/0001753926-26-000464+0001753926-26-001317+0001753926-26-001221+0001753926-26-001319+0001753926-26-001970-p72a86450-c0352a330-2026-10-21.json",
+ "ticker": "IPAR"
+}

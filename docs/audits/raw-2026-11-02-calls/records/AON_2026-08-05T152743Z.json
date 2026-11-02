@@ -1,0 +1,22 @@
+{
+ "as_of": "2026-08-05T15:27:43+00:00",
+ "filing_date": "2026-02-13",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 356.69000244140625,
+  "clamp_note": "",
+  "confidence": 0.707,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [
+   "value axis \u2014 FMP rate-limited this run (429)"
+  ],
+  "not_applicable": [
+   "moat axis \u2014 not applicable (insurer)"
+  ],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/AON/0001628280-26-008116+0001628280-26-050610.json",
+ "ticker": "AON"
+}

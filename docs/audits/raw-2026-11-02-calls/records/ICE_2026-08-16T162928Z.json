@@ -1,0 +1,18 @@
+{
+ "as_of": "2026-08-16T16:29:28+00:00",
+ "filing_date": "2026-02-05",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 154.72999572753906,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/ICE/0001571949-26-000004+0001571949-26-000011+0001104659-26-052145+0001104659-26-088462+0001193125-26-324909-peb1aa058-ccaa876fd-2026-08-16.json",
+ "ticker": "ICE"
+}

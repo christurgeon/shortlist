@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-17T18:05:39+00:00",
+ "filing_date": "2026-05-21",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 113.54000091552734,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/ELF/0001600033-26-000020+0001600033-26-000040+0001600033-26-000036-pbc45aa17-c15a5869b-2026-10-17.json",
+ "ticker": "ELF"
+}

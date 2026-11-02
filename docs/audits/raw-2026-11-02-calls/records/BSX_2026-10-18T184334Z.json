@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-18T18:43:34+00:00",
+ "filing_date": "2026-02-17",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 44.38999938964844,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "LOW",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/BSX/0000885725-26-000010+0000885725-26-000053+0000885725-26-000051+0000885725-26-000059+0000885725-26-000064-p1cd2d1d4-cec91e30f-2026-10-18.json",
+ "ticker": "BSX"
+}

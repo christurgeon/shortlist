@@ -1,0 +1,18 @@
+{
+ "as_of": "2026-08-05T15:32:55+00:00",
+ "filing_date": "2025-11-06",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 367.1600036621094,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/V/0001403161-25-000089+0001403161-26-000104.json",
+ "ticker": "V"
+}

@@ -1,0 +1,17 @@
+{
+ "as_of": "2026-08-04T13:51:19+00:00",
+ "filing_date": "2026-02-17",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 136.2899932861328,
+  "clamp_note": "",
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/BMI/0001193125-26-054739+0001193125-26-313981.json",
+ "ticker": "BMI"
+}

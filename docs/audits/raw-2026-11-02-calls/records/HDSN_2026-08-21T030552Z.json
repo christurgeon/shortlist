@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-08-21T03:05:52+00:00",
+ "filing_date": "2026-03-16",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 5.570000171661377,
+  "clamp_note": "tripped negative_fcf gate",
+  "confidence": 1.0,
+  "conviction": "LOW",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": "HOLD",
+  "not_applicable": [],
+  "stance": "AVOID",
+  "stance_clamped": true
+ },
+ "source": "research/HDSN/0001104659-26-028445+0001104659-26-092682+0001104659-26-056260+0001104659-26-064492+0001104659-26-091092-p52b594f8-c715cdf01-2026-08-21.json",
+ "ticker": "HDSN"
+}

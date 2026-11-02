@@ -1,0 +1,388 @@
+{
+ "cutoff": "2026-10-30",
+ "eligible": 48,
+ "excluded": [
+  [
+   "ABBV 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "AXON 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "BSX 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "CMG 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "DECK 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "DUOL 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "ELF 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "GOOG 2026-06-07",
+   "no screening_call"
+  ],
+  [
+   "GOOG 2026-10-29",
+   "younger than 21 sessions (2)"
+  ],
+  [
+   "IPAR 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "IPAR 2026-10-21",
+   "younger than 21 sessions (8)"
+  ],
+  [
+   "ISRG 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "JNJ 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "JPM 2026-10-10",
+   "younger than 21 sessions (15)"
+  ],
+  [
+   "LMAT 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "LMT 2026-10-22",
+   "younger than 21 sessions (6)"
+  ],
+  [
+   "MSFT 2026-10-15",
+   "younger than 21 sessions (11)"
+  ],
+  [
+   "MSFT 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "NFLX 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "NFLX 2026-10-29",
+   "younger than 21 sessions (2)"
+  ],
+  [
+   "NVDA 2026-06-07",
+   "no screening_call"
+  ],
+  [
+   "NVDA 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "PGR 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "PGR 2026-10-18",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "TGT 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "UBER 2026-10-29",
+   "younger than 21 sessions (2)"
+  ],
+  [
+   "UNH 2026-10-17",
+   "younger than 21 sessions (10)"
+  ],
+  [
+   "XOM 2026-10-18",
+   "younger than 21 sessions (10)"
+  ]
+ ],
+ "flags": [],
+ "post_hoc_next_close": {
+  "x21n": {
+   "hi": 0.14015973861598077,
+   "lo": -0.16123687013453614,
+   "median_spread": 0.00293637319470208,
+   "n_bear": 12,
+   "n_bull": 7,
+   "redraws": 1,
+   "spread": -0.006414907386060936,
+   "tickers": 19
+  },
+  "xlastn": {
+   "hi": 0.28150800795324554,
+   "lo": -0.0677568177215718,
+   "median_spread": 0.04759654803815766,
+   "n_bear": 12,
+   "n_bull": 7,
+   "redraws": 1,
+   "spread": 0.1020049087453497,
+   "tickers": 19
+  }
+ },
+ "pre_stance": {
+  "episodes": 40,
+  "spreads": {
+   "x21": {
+    "hi": 0.13218658347949136,
+    "lo": -0.1469274765479721,
+    "median_spread": 0.011488874813106786,
+    "n_bear": 9,
+    "n_bull": 7,
+    "redraws": 1,
+    "spread": 0.0034936259403011982,
+    "tickers": 16
+   },
+   "x63": {
+    "hi": 0.38056368880703906,
+    "lo": 0.02141922281279135,
+    "median_spread": 0.23432279853722876,
+    "n_bear": 5,
+    "n_bull": 6,
+    "redraws": 10,
+    "spread": 0.2014071403951258,
+    "tickers": 11
+   },
+   "xlast": {
+    "hi": 0.336439237166948,
+    "lo": -0.09836097291974705,
+    "median_spread": 0.055751587320175267,
+    "n_bear": 9,
+    "n_bull": 7,
+    "redraws": 1,
+    "spread": 0.11283943824441446,
+    "tickers": 16
+   }
+  },
+  "table": [
+   {
+    "group": "bullish",
+    "hit": 0.7142857142857143,
+    "horizon": "x21",
+    "mean": 0.03513392570906959,
+    "median": 0.059495200860936626,
+    "n": 7,
+    "tickers": 7
+   },
+   {
+    "group": "bullish",
+    "hit": 0.5,
+    "horizon": "x63",
+    "mean": 0.019834188387115648,
+    "median": -0.022769316838925968,
+    "n": 6,
+    "tickers": 6
+   },
+   {
+    "group": "bullish",
+    "hit": 0.14285714285714285,
+    "horizon": "xlast",
+    "mean": -0.010924547254741028,
+    "median": -0.019827027361072447,
+    "n": 7,
+    "tickers": 7
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.4583333333333333,
+    "horizon": "x21",
+    "mean": -0.013342859210748298,
+    "median": -0.026354089999217456,
+    "n": 24,
+    "tickers": 24
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.7777777777777778,
+    "horizon": "x63",
+    "mean": 0.17039373539701963,
+    "median": 0.15702167295424485,
+    "n": 9,
+    "tickers": 9
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.5833333333333334,
+    "horizon": "xlast",
+    "mean": 0.07151846254073108,
+    "median": 0.03592855750021018,
+    "n": 24,
+    "tickers": 24
+   },
+   {
+    "group": "bearish",
+    "hit": 0.4444444444444444,
+    "horizon": "x21",
+    "mean": 0.03164029976876839,
+    "median": 0.04800632604782984,
+    "n": 9,
+    "tickers": 9
+   },
+   {
+    "group": "bearish",
+    "hit": 0.8,
+    "horizon": "x63",
+    "mean": -0.18157295200801016,
+    "median": -0.25709211537615473,
+    "n": 5,
+    "tickers": 5
+   },
+   {
+    "group": "bearish",
+    "hit": 0.6666666666666666,
+    "horizon": "xlast",
+    "mean": -0.12376398549915549,
+    "median": -0.07557861468124771,
+    "n": 9,
+    "tickers": 9
+   }
+  ]
+ },
+ "records": 76,
+ "sensitivity_no_flagged": {
+  "hi": 0.14187461113517877,
+  "lo": -0.09725249827155039,
+  "median_spread": 0.04315194713660997,
+  "n_bear": 12,
+  "n_bull": 7,
+  "redraws": 1,
+  "spread": 0.028263166932310967,
+  "tickers": 19
+ },
+ "stance": {
+  "episodes": 44,
+  "spreads": {
+   "x21": {
+    "hi": 0.14187461113517877,
+    "lo": -0.09725249827155039,
+    "median_spread": 0.04315194713660997,
+    "n_bear": 12,
+    "n_bull": 7,
+    "redraws": 1,
+    "spread": 0.028263166932310967,
+    "tickers": 19
+   },
+   "x63": {
+    "hi": 0.3149807965395357,
+    "lo": -0.011643885873936513,
+    "median_spread": 0.012274165247130042,
+    "n_bear": 7,
+    "n_bull": 6,
+    "redraws": 7,
+    "spread": 0.1421417019986877,
+    "tickers": 13
+   },
+   "xlast": {
+    "hi": 0.30102148097071224,
+    "lo": -0.04074300302468973,
+    "median_spread": 0.12778771968320152,
+    "n_bear": 12,
+    "n_bull": 7,
+    "redraws": 1,
+    "spread": 0.1265338618182049,
+    "tickers": 19
+   }
+  },
+  "table": [
+   {
+    "group": "bullish",
+    "hit": 0.7142857142857143,
+    "horizon": "x21",
+    "mean": 0.03513392570906959,
+    "median": 0.059495200860936626,
+    "n": 7,
+    "tickers": 7
+   },
+   {
+    "group": "bullish",
+    "hit": 0.5,
+    "horizon": "x63",
+    "mean": 0.019834188387115648,
+    "median": -0.022769316838925968,
+    "n": 6,
+    "tickers": 6
+   },
+   {
+    "group": "bullish",
+    "hit": 0.14285714285714285,
+    "horizon": "xlast",
+    "mean": -0.010924547254741028,
+    "median": -0.019827027361072447,
+    "n": 7,
+    "tickers": 7
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.52,
+    "horizon": "x21",
+    "mean": -0.006936699310520349,
+    "median": 0.004601541751326765,
+    "n": 25,
+    "tickers": 25
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.7272727272727273,
+    "horizon": "x63",
+    "mean": 0.12466514496112908,
+    "median": 0.08701982900569072,
+    "n": 11,
+    "tickers": 11
+   },
+   {
+    "group": "HOLD",
+    "hit": 0.64,
+    "horizon": "xlast",
+    "mean": 0.07974847271509376,
+    "median": 0.04265423920007483,
+    "n": 25,
+    "tickers": 25
+   },
+   {
+    "group": "bearish",
+    "hit": 0.5,
+    "horizon": "x21",
+    "mean": 0.006870758776758625,
+    "median": 0.016343253724326656,
+    "n": 12,
+    "tickers": 12
+   },
+   {
+    "group": "bearish",
+    "hit": 0.5714285714285714,
+    "horizon": "x63",
+    "mean": -0.12230751361157206,
+    "median": -0.03504348208605601,
+    "n": 7,
+    "tickers": 7
+   },
+   {
+    "group": "bearish",
+    "hit": 0.75,
+    "horizon": "xlast",
+    "mean": -0.13745840907294593,
+    "median": -0.14761474704427396,
+    "n": 12,
+    "tickers": 12
+   }
+  ]
+ }
+}

@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-18T20:18:59+00:00",
+ "filing_date": "2026-02-27",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 141.75999450683594,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/DUOL/0001628280-26-012494+0001628280-26-053603+0001628280-26-053299+0001628280-26-055015-p0fe3fd3f-c35941cb5-2026-10-18.json",
+ "ticker": "DUOL"
+}

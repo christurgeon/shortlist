@@ -1,0 +1,20 @@
+{
+ "as_of": "2026-10-29T15:29:48+00:00",
+ "filing_date": "2026-01-23",
+ "model": "claude-sonnet-5-5",
+ "screening_call": {
+  "as_of_price": 62.2400016784668,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "model_conviction": null,
+  "model_stance": null,
+  "not_applicable": [],
+  "stance": "BUY",
+  "stance_clamped": false
+ },
+ "source": "research/NFLX/0001065280-26-000034+0001065280-26-000291+0001065280-26-000211+0001065280-26-000214+0001065280-26-000290-p5b606dc6-caea84530-2026-10-29.json",
+ "ticker": "NFLX"
+}

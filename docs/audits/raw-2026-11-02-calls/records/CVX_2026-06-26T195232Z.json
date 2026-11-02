@@ -1,0 +1,17 @@
+{
+ "as_of": "2026-06-26T19:52:32+00:00",
+ "filing_date": "2026-02-24",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 170.05999755859375,
+  "clamp_note": "",
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/CVX/0000093410-26-000078+0000093410-26-000113.json",
+ "ticker": "CVX"
+}

@@ -1,0 +1,21 @@
+{
+ "as_of": "2026-07-25T16:37:39+00:00",
+ "filing_date": "2026-03-13",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 12.350000381469727,
+  "clamp_note": "tripped below_min_mktcap gate",
+  "conviction": "LOW",
+  "conviction_capped": false,
+  "decided_without": [
+   "growth, value axes \u2014 FMP rate-limited this run (429)"
+  ],
+  "not_applicable": [
+   "moat axis \u2014 not applicable (financials)"
+  ],
+  "stance": "HOLD",
+  "stance_clamped": true
+ },
+ "source": "research/RBKB/0001751783-26-000005+0001751783-26-000018.json",
+ "ticker": "RBKB"
+}

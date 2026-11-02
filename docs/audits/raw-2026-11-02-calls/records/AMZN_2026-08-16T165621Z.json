@@ -1,0 +1,18 @@
+{
+ "as_of": "2026-08-16T16:56:21+00:00",
+ "filing_date": "2026-02-06",
+ "model": "claude-sonnet-5",
+ "screening_call": {
+  "as_of_price": 262.6499938964844,
+  "clamp_note": "",
+  "confidence": 1.0,
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/AMZN/0001018724-26-000004+0001018724-26-000026+0001018724-26-000012+0001018724-26-000024+0001104659-26-072140-peb1aa058-c3d21e23d-2026-08-16.json",
+ "ticker": "AMZN"
+}

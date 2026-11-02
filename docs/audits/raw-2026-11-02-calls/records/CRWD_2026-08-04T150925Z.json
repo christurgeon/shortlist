@@ -1,0 +1,17 @@
+{
+ "as_of": "2026-08-04T15:09:25+00:00",
+ "filing_date": "2026-03-05",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 209.55999755859375,
+  "clamp_note": "",
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [],
+  "not_applicable": [],
+  "stance": "HOLD",
+  "stance_clamped": false
+ },
+ "source": "research/CRWD/0001535527-26-000010+0001535527-26-000025.json",
+ "ticker": "CRWD"
+}

@@ -1,0 +1,19 @@
+{
+ "as_of": "2026-06-12T00:33:29+00:00",
+ "filing_date": "2026-02-26",
+ "model": "claude-sonnet-4-6",
+ "screening_call": {
+  "as_of_price": 23.81999969482422,
+  "clamp_note": "",
+  "conviction": "MEDIUM",
+  "conviction_capped": false,
+  "decided_without": [
+   "growth axis \u2014 FMP gated this symbol (402)"
+  ],
+  "not_applicable": [],
+  "stance": "AVOID",
+  "stance_clamped": false
+ },
+ "source": "research/QBTS/0001907982-26-000026+0001907982-26-000059.json",
+ "ticker": "QBTS"
+}
