@@ -7,6 +7,9 @@ TRAJECTORIES = ("widening", "stable", "eroding")
 
 VERDICTS = ("confirms", "contradicts", "silent")
 
+EXPOSURE_KINDS = ("geography", "customer", "supplier", "government", "commodity",
+                  "currency", "regulation")
+
 STANCES = ("STRONG_BUY", "BUY", "HOLD", "AVOID", "STRONG_AVOID")  # most-bullish-first
 CONVICTIONS = ("HIGH", "MEDIUM", "LOW")
 
@@ -57,6 +60,7 @@ SCHEMA_HINT = """{
   "risks": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "red_flags": [{"claim": "string", "evidence": "verbatim quote from the filing"}],
   "added_risks": [{"claim": "string (a risk newly disclosed vs the prior year)", "evidence": "verbatim quote from the NEWLY ADDED RISK FACTORS section"}],
+  "exposures": [{"kind": "geography|customer|supplier|government|commodity|currency|regulation", "claim": "string (the dependency, with its share or magnitude when disclosed)", "evidence": "verbatim quote from the filing"}],
   "management_capital_allocation": "string (your JUDGMENT of capital-allocation quality — do NOT enumerate figures here, they belong in management_findings)",
   "management_findings": [{"claim": "one specific, checkable capital-allocation fact", "evidence": "verbatim quote, or \\"\\" if this is your inference rather than something the filing states"}],
   "reconciliation": [{"signal": "value|growth|moat|quality|momentum|insider|risk|short_interest|narrative_tone|gate:<name>|flag:<name>", "tension": "one sentence: the number vs the narrative", "filing_says": "verbatim quote, or \\"\\" if the filing is silent", "verdict": "confirms|contradicts|silent"}],
@@ -121,10 +125,11 @@ class EightKText:
 
 
 @dataclass
-class DebtNote:
-    """One debt & liquidity statement note (research/notes.py). Filing text, so it
-    enters the grounding haystack as its OWN segment. `label` (e.g. "10-K note:
-    LONG-TERM OBLIGATIONS") tells the reader which document a verified quote came from.
+class StatementNote:
+    """One targeted statement note (research/notes.py: debt or exposure family). Filing
+    text, so it enters the grounding haystack as its OWN segment. `label` (e.g. "10-K
+    note: LONG-TERM OBLIGATIONS") tells the reader which document a verified quote came
+    from.
 
     `text` is PURE FILING TEXT: anything mixed in becomes quotable and could pass
     quote-verification as a filing fact. `truncated` is therefore only a FLAG;
@@ -139,12 +144,15 @@ class DebtNote:
     truncated: bool = False
 
 
+DebtNote = StatementNote
+
+
 @dataclass
 class ControlsFinding:
     """Management's own conclusion that internal controls were not effective as of
     the filing's period end (research/controls.py).
 
-    `quote` is PURE FILING TEXT and a grounding segment, so, as for DebtNote, nothing
+    `quote` is PURE FILING TEXT and a grounding segment, so, as for StatementNote, nothing
     computed may be mixed into it. `basis` and `as_of` are computed, so they travel in
     the prompt-only `controls.context_line`.
     """
@@ -184,8 +192,11 @@ class FilingBundle:
     # (research/filings.py:_tenq_added_risks). Filing text, so unlike `text_similarity`
     # it enters the haystack, as its own segment.
     debt_notes: list = field(default_factory=list)
-    # ^ list[DebtNote] (research/notes.py). Empty keeps the prompt byte-identical.
+    # ^ list[StatementNote] (research/notes.py). Empty keeps the prompt byte-identical.
     # 10-K notes first; a 10-Q may legitimately carry none.
+    exposure_notes: list = field(default_factory=list)
+    # ^ list[StatementNote], 10-K only (research/notes.py). Empty keeps the prompt
+    # byte-identical.
     controls: Optional["ControlsFinding"] = None
     # ^ an ADVERSE internal-control conclusion, or None (the common case). None keeps
     # the prompt byte-identical.
@@ -201,6 +212,7 @@ class FilingBundle:
                  ("newly disclosed risks", self.added_risks_text)]
         parts += [(e.label, e.text) for e in self.eightks]
         parts += [(n.label, n.text) for n in self.debt_notes]
+        parts += [(n.label, n.text) for n in self.exposure_notes]
         if self.controls is not None:
             parts.append((self.controls.label, self.controls.quote))
         return [(label, text) for label, text in parts if text]
@@ -229,6 +241,12 @@ class Finding:
     evidence: str
     verified: bool = False
     source: str = ""               # provenance label of the segment that verified it ("" if none)
+
+
+@dataclass
+class Exposure(Finding):
+    """One material dependency outside management's control. Verified like a risk."""
+    kind: str = ""                 # one of EXPOSURE_KINDS
 
 
 @dataclass
@@ -322,6 +340,7 @@ class QualitativeAssessment:
     inference_count: int = 0
     notes: list[str] = field(default_factory=list)
     added_risks: list[Finding] = field(default_factory=list)
+    exposures: list[Exposure] = field(default_factory=list)
     cache_key: str = ""        # narrow filing key from assess(); _enrich_card overwrites it
                                # with the wide on-disk key before report.write
     text_similarity: Optional[float] = None   # Lazy-Prices YoY cosine; None == not computed
@@ -402,6 +421,34 @@ def _added_risks(payload: dict, limit: int) -> list[Finding]:
     return out
 
 
+_KIND_ALIASES = {"geographic": "geography", "region": "geography", "country": "geography",
+                 "customers": "customer", "suppliers": "supplier",
+                 "commodities": "commodity", "currencies": "currency", "fx": "currency",
+                 "regulatory": "regulation"}
+
+
+def _exposures(payload: dict, limit: int) -> list[Exposure]:
+    """Tolerant parse of the optional `exposures` list. Missing key -> []; a non-dict
+    item, or a `kind` outside EXPOSURE_KINDS after case and alias folding, is dropped,
+    never raised. Truncated to `limit`, the hard ceiling."""
+    out: list[Exposure] = []
+    if limit <= 0:
+        return out
+    raw = payload.get("exposures")
+    for item in (raw if isinstance(raw, list) else []):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        kind = _KIND_ALIASES.get(kind, kind)
+        if kind not in EXPOSURE_KINDS:
+            continue
+        out.append(Exposure(claim=str(item.get("claim", "")),
+                            evidence=str(item.get("evidence", "")), kind=kind))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _thesis(payload: dict, max_falsifiers: int = 3) -> "Thesis":
     """Build a Thesis from payload['thesis']. Presence is enforced HERE (must be a
     dict) — NOT via _REQUIRED — mirroring the moat dict-check. Sub-fields default."""
@@ -453,7 +500,8 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
                             max_red_flags: int = 8,
                             max_added_risks: int = 8,
                             max_moat_sources: int = 6,
-                            max_management_findings: int = 6) -> QualitativeAssessment:
+                            max_management_findings: int = 6,
+                            max_exposures: int = 5) -> QualitativeAssessment:
     """Build a QualitativeAssessment from the model's parsed JSON.
     Raises ValueError if required keys are missing/mistyped or thesis is not a dict."""
     missing = [k for k in _REQUIRED if k not in payload]
@@ -482,4 +530,5 @@ def assessment_from_payload(payload: dict, *, ticker: str, as_of: str, accession
         reconciliation=_reconciliation(payload, valid_signals=vs, max_conflicts=max_conflicts),
         thesis=_thesis(payload, max_falsifiers=max_falsifiers),
         added_risks=_added_risks(payload, max_added_risks),
+        exposures=_exposures(payload, max_exposures),
     )

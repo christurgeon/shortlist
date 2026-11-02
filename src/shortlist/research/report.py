@@ -53,6 +53,14 @@ def _findings_md(findings, empty_label: str) -> list[str]:
     return lines
 
 
+def _exposures_md(exposures) -> list[str]:
+    """`_findings_md` with the kind leading each claim."""
+    return _findings_md(
+        [Finding(claim=f"{(e.kind or 'other').capitalize()} — {e.claim}", evidence=e.evidence,
+                 verified=e.verified, source=e.source) for e in exposures],
+        "No material concentration identified.")
+
+
 def _reconciliation_md(conflicts) -> list[str]:
     if not conflicts:
         return ["- None — numbers and filing not reconciled."]
@@ -170,6 +178,7 @@ def to_markdown(a: QualitativeAssessment, config=None,
         lines += ["", f"## {CA_HEADING}", capital_allocation[0]]
     lines += [
               "", "## Material risks", *_findings_md(a.risks, "None identified."),
+              "", "## Exposures (filing-grounded)", *_exposures_md(a.exposures),
               "", "## Red flags", *_findings_md(a.red_flags, "None identified."),
               "", "## Newly disclosed risks (vs prior year)",
               *_findings_md(a.added_risks, "No newly disclosed risks identified.")]

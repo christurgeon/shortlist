@@ -1,8 +1,15 @@
-"""Debt & liquidity statement notes for the research brief — selection + extraction.
+"""Targeted statement notes for the research brief — selection + extraction.
 
-Supplies the maturity ladder behind `SYSTEM_PROMPT`'s refinancing-coverage instruction.
-The ladder lives in a statement note, and `assess.py` otherwise sends only Item 1,
-Item 7, Item 1A and the 10-Q MD&A.
+Two note FAMILIES, each feeding one shipped prompt instruction. `assess.py` otherwise
+sends only Item 1, Item 7, Item 1A and the 10-Q MD&A.
+
+- **debt** (10-K and 10-Q): the maturity ladder behind `SYSTEM_PROMPT`'s
+  refinancing-coverage instruction. Design: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`
+  (probe: `docs/audits/scripts/probe_debt_notes.py`).
+- **exposure** (10-K only): the segment, geographic, revenue-disaggregation and
+  concentration notes behind the `exposures` field. Design:
+  `docs/audits/2026-11-02-deep-exposure-map-design.md`
+  (probe: `docs/audits/scripts/probe_exposure_notes.py`).
 
 A note IS filing text, so it enters the grounding haystack as its own labelled segment,
 so "verified" never silently widens from "the 10-K" to "a note we sliced out of it".
@@ -11,18 +18,20 @@ This reads `TenK.notes` / `TenQ.notes` (`edgar.xbrl.notes.Notes`), an XBRL-deriv
 STRUCTURED INDEX of addressable notes. So there is no heading detection and no span
 slicing, and none of the `_tenq_mda` item-boundary fault class.
 
-Design and evidence: `docs/audits/2026-08-20-debt-liquidity-notes-design.md` (probe:
-`docs/audits/scripts/probe_debt_notes.py`). Three rules shape this module:
+A family is a title regex list, an exclude regex and a budget. Rules that shape them:
 
-- The `long[- ]term obligation` alternative exists for filers whose debt note has no
-  `debt`/`borrow` token. It stays narrow: bare `obligation` also matches
-  `ASSET RETIREMENT OBLIGATIONS`.
-- `_EXCLUDE_RE` is required: some ASSET notes match `debt` and eat the budget.
-- The per-note cap is 16,000 because a 10,000 cap silently drops the 12-month ladder
-  for heavy borrowers while appearing to work.
+- Every family needs its own exclude regex: a title regex alone selects notes of the
+  wrong kind (an ASSET note matches `debt`; a deferred-revenue note matches `revenue`).
+- Debt: the `long[- ]term obligation` alternative exists for filers whose debt note has
+  no `debt`/`borrow` token. It stays narrow: bare `obligation` also matches
+  `ASSET RETIREMENT OBLIGATIONS`. The per-note cap is 16,000 because a 10,000 cap
+  silently drops the 12-month ladder for heavy borrowers while appearing to work.
+- Exposure: the title regexes are in PRIORITY order (segment, then concentration, then
+  revenue), so the segment note, which carries most of the geography and customer data,
+  is never crowded out of the budget by a long revenue note filed before it. Titles the
+  debt family takes are excluded, so no note reaches the prompt twice.
 
-Build any further targeted note extractor the same way. Each note family needs its own
-`_EXCLUDE_RE`. None is worth building until a shipped prompt instruction waits on it.
+Build a further family only when a shipped prompt instruction waits on it.
 
 Never raises: any index or render failure degrades that note (or the form) to nothing
 via `log_abstain`. No throttle of its own: it goes through edgartools like the rest of
@@ -31,10 +40,11 @@ the research layer.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from .filings import log_abstain
-from .models import DebtNote
+from .models import StatementNote
 
 _DEFAULTS = {
     "enabled": True,
@@ -51,23 +61,66 @@ _TITLE_RE = re.compile(
 
 _EXCLUDE_RE = re.compile(r"investment|marketable securit|available[- ]for[- ]sale", re.I)
 
+# 10-K only, so there is no `max_chars_10q`: the annual segment note is the backbone,
+# and a 10-Q segment note is a quarterly subset of it.
+_EXPOSURE_DEFAULTS = {
+    "enabled": True,
+    "max_notes_per_form": 3,
+    "max_chars_per_note": 12000,
+    "max_chars_10k": 16000,
+}
+
+_EXPOSURE_TITLE_RES = (
+    re.compile(r"segment|geographic", re.I),
+    re.compile(r"concentration|major customer|significant customer", re.I),
+    re.compile(r"revenue|net sales", re.I),
+)
+
+_EXPOSURE_EXCLUDE_RE = re.compile(
+    r"deferred|unearned|contract (asset|liabilit)|income tax|"
+    + _TITLE_RE.pattern, re.I)
+
+
+@dataclass(frozen=True)
+class _Family:
+    noun: str                      # "debt" | "exposure", for log lines only
+    title_res: tuple
+    exclude_re: re.Pattern
+    defaults: dict
+    config_key: str                # the `research.<key>` block
+
+
+DEBT = _Family("debt", (_TITLE_RE,), _EXCLUDE_RE, _DEFAULTS, "notes")
+EXPOSURE = _Family("exposure", _EXPOSURE_TITLE_RES, _EXPOSURE_EXCLUDE_RE,
+                   _EXPOSURE_DEFAULTS, "exposure_notes")
+
 # Truncation is signalled in the PROMPT HEADER (assess.py), never inside the note text.
-# `DebtNote.text` is a haystack segment, so any marker in it would be quotable filing
-# text and could pass quote-verification as evidence. SYSTEM_PROMPT tells the model to
-# NAME a missing input, which needs the truncation visible in the header. Unlike the
-# 8-K `_ELISION`, truncation drops only a suffix and splices nothing: text past the cut
-# is absent from the haystack, so a model reconstructing a severed figure fails.
+# `StatementNote.text` is a haystack segment, so any marker in it would be quotable
+# filing text and could pass quote-verification as evidence. SYSTEM_PROMPT tells the
+# model to NAME a missing input, which needs the truncation visible in the header.
+# Unlike the 8-K `_ELISION`, truncation drops only a suffix and splices nothing: text
+# past the cut is absent from the haystack, so a model reconstructing a severed figure
+# fails.
 
 # Below this, a leftover budget buys a sliver with no usable clause. Applied only after
 # a note has been emitted, so a small configured budget still yields its first note.
 _MIN_USEFUL_CHARS = 200
 
 
+def _config_block(config: Optional[dict], family: _Family) -> dict:
+    block = ((config or {}).get("research") or {}).get(family.config_key) or {}
+    return {**family.defaults, **block}
+
+
 def config_block(config: Optional[dict]) -> dict:
     """The merged `research.notes` block. An ABSENT block is NOT a no-op — the
     feature ships ON — but `enabled: false` is byte-identical."""
-    block = ((config or {}).get("research") or {}).get("notes") or {}
-    return {**_DEFAULTS, **block}
+    return _config_block(config, DEBT)
+
+
+def exposure_config_block(config: Optional[dict]) -> dict:
+    """The merged `research.exposure_notes` block; same contract as `config_block`."""
+    return _config_block(config, EXPOSURE)
 
 
 _MAX_TITLE_CHARS = 200
@@ -93,6 +146,24 @@ def _norm_ws(text: Any) -> str:
     return re.sub(r"\n{3,}", "\n\n", out).strip()
 
 
+def _select(notes_index: Any, family: _Family) -> list:
+    """Every note of one filing the family selects, ordered by the first title regex
+    each matches, then document order. Uncapped: the cap counts EMITTED notes."""
+    ranked: list = []
+    for i in range(len(notes_index)):
+        try:
+            note = notes_index[i]
+            title = _title(note)
+        except Exception:
+            continue                       # one unreadable entry must not lose the rest
+        if not title or family.exclude_re.search(title):
+            continue
+        rank = next((r for r, rx in enumerate(family.title_res) if rx.search(title)), None)
+        if rank is not None:
+            ranked.append((rank, i, note))
+    return [note for _, _, note in sorted(ranked, key=lambda t: (t[0], t[1]))]
+
+
 def select(notes_index: Any) -> list:
     """EVERY debt/liquidity note of one filing, in document order. Empty when the
     filer files none, which for a 10-Q is the NORMAL case.
@@ -100,16 +171,12 @@ def select(notes_index: Any) -> list:
     Deliberately UNCAPPED, so it takes no config: `max_notes_per_form` counts notes
     EMITTED, and `collect` drops candidates that render empty. Capping here would let
     an empty-rendering note consume a slot."""
-    picked: list = []
-    for i in range(len(notes_index)):
-        try:
-            note = notes_index[i]
-            title = _title(note)
-        except Exception:
-            continue                       # one unreadable entry must not lose the rest
-        if title and _TITLE_RE.search(title) and not _EXCLUDE_RE.search(title):
-            picked.append(note)
-    return picked
+    return _select(notes_index, DEBT)
+
+
+def select_exposures(notes_index: Any) -> list:
+    """Every exposure note of one filing, segment notes first. Uncapped, as `select`."""
+    return _select(notes_index, EXPOSURE)
 
 
 def extract(note: Any, limit: int) -> tuple[str, bool]:
@@ -137,34 +204,46 @@ def extract(note: Any, limit: int) -> tuple[str, bool]:
     return head[:cut].rstrip(), True
 
 
-def collect(filing_obj: Any, form: str, accession: str, ticker: str,
-            cfg: dict) -> list[DebtNote]:
-    """The debt & liquidity notes of one parsed filing, within the per-form char
-    budget. Never raises: an unreadable notes index costs this form its notes, and
-    an unrenderable note costs only itself."""
+def _collect_family(filing_obj: Any, form: str, accession: str, ticker: str,
+                    cfg: dict, family: _Family) -> list[StatementNote]:
     if not cfg.get("enabled", True):
         return []
     if filing_obj is None:
         return []                      # no filing parsed — expected, not a failure
     try:
-        return _collect(filing_obj, form, accession, ticker, cfg)
+        return _collect(filing_obj, form, accession, ticker, cfg, family)
     except Exception as e:
         # The net must be outer. `.notes` is a `cached_property` that does a LIVE XBRL
         # download and parse, so errors surface on ATTRIBUTE ACCESS. The 10-K `collect`
         # call in `fetch_bundle` has no try around it, so an escape would discard the
         # whole brief. A malformed config value lands here too.
-        log_abstain(f"{form} debt notes", ticker, e)
+        log_abstain(f"{form} {family.noun} notes", ticker, e)
         return []
 
 
+def collect(filing_obj: Any, form: str, accession: str, ticker: str,
+            cfg: dict) -> list[StatementNote]:
+    """The debt & liquidity notes of one parsed filing, within the per-form char
+    budget. Never raises: an unreadable notes index costs this form its notes, and
+    an unrenderable note costs only itself."""
+    return _collect_family(filing_obj, form, accession, ticker, cfg, DEBT)
+
+
+def collect_exposures(filing_obj: Any, accession: str, ticker: str,
+                      cfg: dict) -> list[StatementNote]:
+    """The exposure notes of one parsed 10-K, within the 10-K char budget. Never
+    raises, as `collect`."""
+    return _collect_family(filing_obj, "10-K", accession, ticker, cfg, EXPOSURE)
+
+
 def _collect(filing_obj: Any, form: str, accession: str, ticker: str,
-             cfg: dict) -> list[DebtNote]:
-    """`collect`'s body, split out so the exception boundary covers all of it."""
+             cfg: dict, family: _Family) -> list[StatementNote]:
+    """`_collect_family`'s body, split out so the exception boundary covers all of it."""
     index = getattr(filing_obj, "notes", None)
     if index is None:
         # Log it: edgartools is pinned loosely, and a renamed `.notes` would otherwise
         # zero every brief's notes silently. Also fires for a pre-XBRL filing.
-        log_abstain(f"{form} debt notes (no `.notes` on the parsed filing — "
+        log_abstain(f"{form} {family.noun} notes (no `.notes` on the parsed filing — "
                     f"pre-XBRL filing or edgartools API change)", ticker,
                     AttributeError("notes"))
         return []
@@ -174,13 +253,13 @@ def _collect(filing_obj: Any, form: str, accession: str, ticker: str,
     per_note = int(cfg.get("max_chars_per_note") or 0)
     max_notes = int(cfg.get("max_notes_per_form") or 0)
     if budget <= 0 or per_note <= 0 or max_notes <= 0:
-        # Log it: a config that zeroes the feature must not look like "no debt note".
-        log_abstain(f"{form} debt notes disabled by config "
+        # Log it: a config that zeroes the feature must not look like "no such note".
+        log_abstain(f"{form} {family.noun} notes disabled by config "
                     f"(budget={budget}, per_note={per_note}, max_notes={max_notes})",
                     ticker, ValueError("non-positive cap"))
         return []
-    out: list[DebtNote] = []
-    for note in select(index):
+    out: list[StatementNote] = []
+    for note in _select(index, family):
         # `max_notes` counts EMITTED notes.
         if len(out) >= max_notes:
             break
@@ -191,11 +270,12 @@ def _collect(filing_obj: Any, form: str, accession: str, ticker: str,
             text, truncated = extract(note, min(per_note, budget))
             title = _title(note)
         except Exception as e:
-            log_abstain(f"{form} debt note render", ticker, e)
+            log_abstain(f"{form} {family.noun} note render", ticker, e)
             continue
         if not text:
             continue
-        out.append(DebtNote(form=str(form), accession=str(accession or ""), title=title,
-                            label=f"{form} note: {title}", text=text, truncated=truncated))
+        out.append(StatementNote(form=str(form), accession=str(accession or ""),
+                                 title=title, label=f"{form} note: {title}", text=text,
+                                 truncated=truncated))
         budget -= len(text)            # exact: `text` is all that reaches the prompt
     return out

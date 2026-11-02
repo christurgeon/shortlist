@@ -423,9 +423,11 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         return None
 
     # Imported here, not at module scope: `notes` imports log_abstain from this module.
-    from . import notes as debtnotes
-    ncfg = debtnotes.config_block(config)
-    debt_notes = debtnotes.collect(tenk_obj, "10-K", tenk.accession, ticker, ncfg)
+    from . import notes as stmt_notes
+    ncfg = stmt_notes.config_block(config)
+    debt_notes = stmt_notes.collect(tenk_obj, "10-K", tenk.accession, ticker, ncfg)
+    exposure_notes = stmt_notes.collect_exposures(
+        tenk_obj, tenk.accession, ticker, stmt_notes.exposure_config_block(config))
 
     controls = _detect_controls(tenk_filing, tenk_obj, tenk.accession, ticker, config)
 
@@ -441,7 +443,7 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
             # KEEP LAST, right after `tenq_acc`. The `except` below resets the three
             # 10-Q strings but NOT `debt_notes`, so nothing may raise between the
             # accession assignment and this append.
-            debt_notes += debtnotes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
+            debt_notes += stmt_notes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
     except Exception:
         tenq_mda, tenq_acc, tenq_added = "", "", ""
 
@@ -467,4 +469,5 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
         tenk=tenk, primary_accession=tenk.accession, cache_key=cache_key,
         filing_date=tenk.filing_date, tenq_mda=tenq_mda, added_risks_text=added,
         text_similarity=similarity, eightks=eightks, tenq_added_risks=tenq_added,
-        tenq_accession=tenq_acc, debt_notes=debt_notes, controls=controls)
+        tenq_accession=tenq_acc, debt_notes=debt_notes, controls=controls,
+        exposure_notes=exposure_notes)
