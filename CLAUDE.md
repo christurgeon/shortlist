@@ -85,7 +85,7 @@ Everything else orchestrates that pipeline; none of it adds scoring logic:
 | Raw snapshots | `shortlist-harness` | `HARNESS.md` |
 | Backtest (rank IC, quantile spreads, `--fit`) | `shortlist-backtest` | `docs/BACKTEST.md` |
 | Point-in-time capture (scheduling ships OFF) | `shortlist-accumulate` | `docs/BACKTEST.md` → Feeding the snapshot path |
-| Telegram bot — `/screen`, `/deep`, portfolio | `shortlist-bot` | `docs/TELEGRAM.md` (held-name alerting does not exist; `docs/design/POSITION_MONITOR.md` is design-time) |
+| Telegram bot — `/screen`, `/deep`, portfolio | `shortlist-bot` | `docs/TELEGRAM.md` (held-name alerting does not exist) |
 
 Run **one** bot instance — two concurrent `getUpdates` pollers 409.
 
