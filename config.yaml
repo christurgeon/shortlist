@@ -432,7 +432,30 @@ research:
     lookback_days: 30
     max_items: 10              # keeps the most-reported event clusters; shown newest first
     timeout: 10                # wall-clock seconds for the request; values above 45 read as 45
-  insider_detail:              # recent Form-4 trades as a brief context line
+  peers:                       # "Peer comparison" section (research/peers.py): Finnhub peer list
+                               # and metrics, DISPLAY ONLY, fetched after the model call; never
+                               # scored and never shown to the model.
+                               # docs/audits/2026-11-02-deep-peer-table-design.md
+    enabled: true
+    # min_market_cap: absent = gates.min_market_cap (dollars)
+    max_candidates: 12         # peer metric calls per brief, both peer lists together
+    max_peers: 6               # kept by closeness in log market cap
+    min_peers: 3               # below this, retry with the industry list, then "Not shown"
+    min_interval_s: 1.2        # process-wide gap between Finnhub calls; the free tier is
+                               # 60/min and the news call shares the key
+    timeout: 30                # wall-clock seconds for the whole section; values above 45 read
+                               # as 45
+    masks:                     # measures hidden per sector bucket; P/B and ROE show only here.
+                               # The vendor traps behind each: the design note above.
+      default: [pb, roe]
+      # Vendor "revenue" for a bank includes gross interest income; EBITDA, gross margin,
+      # invested capital and debt are not operating measures for a bank.
+      financials: [ev_ebitda, ps, gross_margin, operating_margin, revenue_growth,
+                   revenue_growth_3y, roi, debt_to_equity]
+      insurer: [ev_ebitda, gross_margin, roi, debt_to_equity]
+      # Depreciation of property depresses REIT earnings and returns; P/FFO is not on file.
+      reit: [pe, gross_margin, roi, roe]
+  insider_detail:             # recent Form-4 trades as a brief context line
     enabled: true
     max_items: 6               # newest-first
 

@@ -92,6 +92,10 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
             (assessment.news_items, assessment.news_status, assessment.news_as_of,
              assessment.news_from, assessment.news_truncated) = (
                 s.items, s.status, s.as_of, s.covers_from, s.truncated)
+        pcfg = (config.get("research") or {}).get("peers")
+        if isinstance(pcfg, dict) and pcfg.get("enabled", False):
+            from . import peers
+            assessment.peer_table = peers.fetch_section(card, config)
         from . import capital_allocation
         bp = report.write(assessment, root, config,
                           capital_allocation=capital_allocation.section(card))

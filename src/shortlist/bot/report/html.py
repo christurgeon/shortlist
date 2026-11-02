@@ -212,6 +212,11 @@ details.fold[open]>summary{margin-bottom:6px}
 .call-row .why{color:var(--text-2); font-size:13.5px; line-height:1.45}
 .bull{color:var(--bull)} .bear{color:var(--bear)} .flag{color:var(--flag)}
 .muted{color:var(--text-3); font-size:12.5px}
+table.peers{border-collapse:collapse; width:100%; min-width:max-content; font-size:13px}
+table.peers th,table.peers td{padding:6px 9px; white-space:nowrap; text-align:right;
+  border-bottom:1px solid var(--line-soft)}
+table.peers th:first-child,table.peers td:first-child{text-align:left}
+table.peers th{font:600 11px/1.2 var(--mono); color:var(--text-3)}
 /* evidence: the quote is one click away, so the default view stays as terse as the
    claim list was before grounding reached this surface. */
 .unver{font:600 10px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
