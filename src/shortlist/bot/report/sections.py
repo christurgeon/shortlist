@@ -467,6 +467,30 @@ def _news_text(a) -> list[str]:
         f"      {it.date} · {it.headline} ({news.reports_label(it.reports)})" for it in a.news]
 
 
+def _peers_html(h, t) -> str:
+    """The "Peer comparison" section, folded. Every value is escaped."""
+    from ...research import peers
+    parts = [h.tag("p", peers.note(t), _class="muted")]
+    if t.status != peers.SHOWN:
+        return _fold(h, peers.HEADING, "".join(parts) + h.tag("p", t.text))
+    head = "".join(h.tag("th", x) for x in
+                   ("Measure", t.ticker, "Peer median (n)", f"{t.ticker} rank"))
+    body = "".join(h.raw("tr", h.tag("td", r.label) + h.tag("td", r.company) +
+                         h.tag("td", f"{r.median} ({r.n})") + h.tag("td", r.rank or "—"))
+                   for r in t.rows)
+    table = h.raw("table", h.raw("thead", h.raw("tr", head)) + h.raw("tbody", body),
+                  _class="peers")
+    lines = (h.raw("li", "<b>Relative performance:</b> " + h.esc(t.relative)) +
+             h.raw("li", "<b>Growth vs the peer set:</b> " + h.esc(t.growth)))
+    parts += [h.tag("p", t.basis), h.raw("div", table, _class="scroll-x"),
+              h.tag("p", f"Peers: {', '.join(t.peers)}.")]
+    if t.masked:
+        parts.append(h.tag("p", peers.masked_note(t)))
+    parts += [h.tag("p", peers.RANK_NOTE.format(ticker=t.ticker), _class="muted"),
+              h.raw("ul", lines)]
+    return _fold(h, peers.HEADING, "".join(parts))
+
+
 def _findings_list(h, items) -> str:
     return h.raw("ul", "".join(h.raw("li", h.esc(f.claim) +
                                      _evidence_html(h, f.status, f.evidence, f.source))
@@ -556,6 +580,8 @@ class _Research:
                                    h.raw("ul", lis), _class="block"))
             if a.news_status:
                 parts.append(_news_html(h, a))
+            if a.peers is not None:
+                parts.append(_peers_html(h, a.peers))
             if a.reconciliation:
                 lis = "".join(h.raw("li", h.esc(f"{c.signal}: {c.tension}") +
                                     _evidence_html(h, c.status, c.filing_says, c.source))
@@ -615,6 +641,9 @@ class _Research:
                     out.append(_capital_allocation_text(a))
                 if a.news_status:
                     out += _news_text(a)
+                if a.peers is not None:
+                    from ...research.peers import text_lines as peer_text_lines
+                    out += peer_text_lines(a.peers)
                 for f in a.red_flags:
                     out.append(f"   🚩 {f.claim}")
                     out += _evidence_text(f.status, f.evidence, f.source)

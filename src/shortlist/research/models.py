@@ -236,6 +236,33 @@ class NewsItem:
 
 
 @dataclass
+class PeerRow:
+    """One measure of the peer table, already formatted (research/peers.py)."""
+    label: str
+    company: str               # "—" when missing, "n/m" when not meaningful
+    median: str                # median of the peers that report it; "—" when none do
+    n: int = 0                 # peers in the median
+    rank: str = ""             # e.g. "2nd lowest of 7"; "" when the company is not ranked
+
+
+@dataclass
+class PeerTable:
+    """The "Peer comparison" section as recorded with the brief. Status "" means off."""
+    status: str = ""
+    text: str = ""             # the "Not shown: …" sentence unless status is "shown"
+    as_of: str = ""
+    ticker: str = ""
+    basis: str = ""            # where the peers came from and how they were kept
+    peers: list[str] = field(default_factory=list)
+    rows: list[PeerRow] = field(default_factory=list)
+    masked: list[str] = field(default_factory=list)    # labels hidden for the sector
+    relative: str = ""
+    growth: str = ""
+    # Raw vendor values per ticker (company first), kept for audit; renderers do not read it.
+    values: dict = field(default_factory=dict)
+
+
+@dataclass
 class Finding:
     claim: str
     evidence: str
@@ -356,6 +383,8 @@ class QualitativeAssessment:
     news_as_of: str = ""
     news_from: str = ""             # first date the items can come from
     news_truncated: bool = False    # the feed's article cap cut the window short
+    # The "Peer comparison" section (research/peers.py), fetched AFTER assess() returns.
+    peer_table: Optional[PeerTable] = None
     screening_call: Optional[ScreeningCall] = None
 
     @property

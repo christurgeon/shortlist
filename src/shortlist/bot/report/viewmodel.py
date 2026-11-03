@@ -10,6 +10,7 @@ from shortlist.models import ScoreCard, rank_key
 from .theme import SUBS
 
 if TYPE_CHECKING:
+    from shortlist.research.models import PeerTable
     from shortlist.research.reverse_dcf import ImpliedGrowth
 
 
@@ -133,6 +134,9 @@ class AssessmentVM:
     news_as_of: str = ""
     news_from: str = ""
     news_truncated: bool = False
+    # The "Peer comparison" section as research/peers.py recorded it; None on a brief written
+    # with the section off and on every brief from before it existed.
+    peers: "PeerTable | None" = None
     call_stance: str = ""
     call_label: str = ""
     call_conviction: str = ""
@@ -242,6 +246,7 @@ def _news(raw) -> list[NewsVM]:
 
 def _assessment_vm(rec: dict) -> AssessmentVM:
     from ...research.models import stance_label
+    from ...research.peers import from_record as peers_from_record
     th = rec.get("thesis") or {}
     sc = rec.get("screening_call") if isinstance(rec.get("screening_call"), dict) else None
     cmm = [str(x) for x in (th.get("what_would_change_my_mind") or [])]
@@ -285,6 +290,7 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         news_as_of=str(rec.get("news_as_of") or ""),
         news_from=str(rec.get("news_from") or ""),
         news_truncated=bool(rec.get("news_truncated")),
+        peers=peers_from_record(rec.get("peer_table")),
         capital_allocation=rec.get("management_capital_allocation", "") or "",
         call_stance=stance,
         call_label=stance_label(stance) if stance else "",

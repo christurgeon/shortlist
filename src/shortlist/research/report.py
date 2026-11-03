@@ -153,7 +153,7 @@ def to_markdown(a: QualitativeAssessment, config=None,
     if a.silent_count:
         lines += [f"_{a.silent_count} reconciliation(s) unaddressed by the filing._"]
     # Deterministic sections the model did not write (research/durability.py,
-    # research/news.py). Their headings say so, against the banner above.
+    # research/news.py, research/peers.py). Their headings say so, against the banner above.
     if a.durability_line:
         from .durability import HEADING
         lines += ["", f"## {HEADING}", a.durability_line]
@@ -161,6 +161,9 @@ def to_markdown(a: QualitativeAssessment, config=None,
         from .news import markdown_lines
         lines += markdown_lines(a.news_items, a.news_status, a.news_as_of, a.news_from,
                                 a.news_truncated)
+    if a.peer_table is not None:
+        from .peers import markdown_lines as peer_lines
+        lines += peer_lines(a.peer_table)
     # No Lazy-Prices section on purpose: `text_similarity` is stored in the brief JSON,
     # but the metric keeps stopwords, so every real YoY pair rounds to "0% rewritten".
     # See docs/design/PLAN_INVENTORY_DECOMPOSITION.md §0.4.

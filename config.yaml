@@ -432,7 +432,38 @@ research:
     lookback_days: 30
     max_items: 10              # keeps the most-reported event clusters; shown newest first
     timeout: 10                # wall-clock seconds for the request; values above 45 read as 45
-  insider_detail:              # recent Form-4 trades as a brief context line
+  peers:                       # "Peer comparison" section (research/peers.py): Finnhub peer list
+                               # and metrics, DISPLAY ONLY, fetched after the model call; never
+                               # scored and never shown to the model.
+    enabled: true
+    # min_market_cap: absent = gates.min_market_cap (dollars)
+    max_candidates: 12         # peers examined per peer list (one metric call each)
+    max_calls: 20              # all Finnhub calls of one brief, at least 3
+    max_peers: 6               # kept by closeness in log market cap
+    min_peers: 3               # below this, add the industry list, then "Not shown"
+    size_mismatch_ratio: 0.1   # kept sub-industry peers' median cap below this share of the
+                               # company's: add the industry list. Not the default list, because
+                               # the industry list is worse where the sub-industry is right.
+    # A token bucket shared by every brief in the process. The refill keeps the sustained rate
+    # under the free tier's 60 calls a minute; the capacity lets three /deep briefs that start
+    # together all finish inside `timeout`. A burst of the full capacity on top of a minute of
+    # refill can exceed 60 in that minute, which reads as "unavailable", not as an error.
+    bucket_capacity: 40
+    refill_per_s: 0.9
+    timeout: 30                # wall-clock seconds for the whole section; values above 45 read
+                               # as 45
+    masks:                     # measures hidden per sector bucket; P/B and ROE show only here
+      default: [pb, roe]
+      # Vendor revenue for a bank includes gross interest income, so revenue, margins and P/S
+      # do not compare; EBITDA, invested capital and debt are not operating measures for a bank.
+      financials: [ev_ebitda, ps, gross_margin, operating_margin, revenue_growth,
+                   revenue_growth_3y, roi, debt_to_equity]
+      # An insurer has no gross margin, and its float makes EBITDA, ROI and debt/equity
+      # incomparable; the scorer masks the same legs.
+      insurer: [ev_ebitda, gross_margin, roi, debt_to_equity]
+      # Property depreciation depresses REIT earnings and returns; P/FFO is not on file.
+      reit: [pe, gross_margin, roi, roe]
+  insider_detail:             # recent Form-4 trades as a brief context line
     enabled: true
     max_items: 6               # newest-first
 
