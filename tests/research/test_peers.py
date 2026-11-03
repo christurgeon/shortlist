@@ -13,7 +13,8 @@ from shortlist.research import peers
 from shortlist.research.models import PeerTable
 
 NOW = datetime(2026, 11, 2, 14, 0, tzinfo=timezone.utc)
-CFG = {"research": {"peers": {"enabled": True, "min_interval_s": 0, "timeout": 5}},
+CFG = {"research": {"peers": {"enabled": True, "bucket_capacity": 1000, "refill_per_s": 1000,
+                              "timeout": 5}},
        "gates": {"min_market_cap": 3.0e8}}
 
 
@@ -58,6 +59,7 @@ class _Vendor:
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(peers, "_spy_cache", {})
+    monkeypatch.setattr(peers, "_BUCKET", peers._Bucket())
     monkeypatch.setenv("FINNHUB_API_KEY", "k-123")
 
 
@@ -117,6 +119,11 @@ def test_median_and_rank_use_only_peers_that_report_the_measure():
     assert peers.row(col, 5.0, [10.0]).rank == "lowest of 2"
     assert peers.row(peers._BY_KEY["gross_margin"], 50.0, [10.0, 60.0]).rank == "2nd highest of 3"
     assert peers.row(peers._BY_KEY["market_cap"], 9.0, [1.0]).rank == "largest of 2"
+
+
+def test_no_peer_reporting_the_measure_leaves_the_rank_empty():
+    r = peers.row(peers._BY_KEY["pe"], 15.0, [None, -3.0])
+    assert (r.company, r.median, r.n, r.rank) == ("15.0x", "—", 0, "")
 
 
 def test_ties_share_the_better_rank_and_a_missing_company_is_not_ranked():
@@ -377,12 +384,110 @@ def test_the_deadline_is_clamped():
     assert min(max(float(peers.config_block(slow)["timeout"]), 0.1), peers.MAX_DEADLINE_S) == 45.0
 
 
-def test_the_pacer_spaces_calls(monkeypatch):
-    monkeypatch.setattr(peers, "_last_call", [0.0])
+def test_the_bucket_bursts_to_capacity_then_waits_for_refill():
+    import threading
+    b, stop = peers._Bucket(), threading.Event()
     t0 = time.monotonic()
-    for _ in range(3):
-        peers._pace(0.1)
-    assert time.monotonic() - t0 >= 0.19
+    for _ in range(5):
+        b.take(5, 10.0, stop)
+    assert time.monotonic() - t0 < 0.05
+    b.take(5, 10.0, stop)
+    assert time.monotonic() - t0 >= 0.08
+
+
+def test_a_stopped_brief_takes_no_token():
+    import threading
+    b, stop = peers._Bucket(), threading.Event()
+    b.take(2, 0.0, stop)
+    stop.set()
+    with pytest.raises(peers._Stopped):
+        b.take(2, 0.0, stop)
+    assert b.tokens == 1
+
+
+def test_a_waiting_brief_wakes_when_stopped():
+    import threading
+    b, stop = peers._Bucket(), threading.Event()
+    b.take(1, 0.01, stop)
+    threading.Timer(0.1, stop.set).start()
+    t0 = time.monotonic()
+    with pytest.raises(peers._Stopped):
+        b.take(1, 0.01, stop)
+    assert time.monotonic() - t0 < 0.5
+
+
+def test_three_concurrent_briefs_are_all_shown_within_the_deadline():
+    import threading
+
+    def slow(request):
+        time.sleep(0.02)
+        return _Vendor({"default": ["AAA", "BBB", "CCC", "DDD"]}, _five())(request)
+    # The shipped shape, time-scaled: capacity for about half the calls, refill for the rest.
+    cfg = {"research": {"peers": {"enabled": True, "bucket_capacity": 10, "refill_per_s": 20,
+                                  "timeout": 3}}}
+    out = {}
+
+    def run(name):
+        out[name] = peers.fetch_section(SimpleNamespace(ticker="ACME"), cfg, now=NOW,
+                                        transport=httpx.MockTransport(slow))
+    t0 = time.monotonic()
+    threads = [threading.Thread(target=run, args=(n,)) for n in range(3)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert [out[n].status for n in range(3)] == [peers.SHOWN] * 3
+    assert time.monotonic() - t0 < 3
+
+
+def test_the_call_cap_holds_from_the_first_call():
+    v = _Vendor({"default": ["AAA", "BBB", "CCC"]}, _five())
+    cfg = {"research": {"peers": {**CFG["research"]["peers"], "max_calls": 0}}}
+    t = _fetch(v, cfg=cfg)
+    assert len(v.requests) == 3 and t.status == peers.NOT_SHOWN
+
+
+def test_drop_counts_name_each_reason():
+    target = _m(10_000, revenueGrowthTTMYoy=7.0)
+    raw = {"target": target, "grouping": peers.SUB_INDUSTRY, "spy": 1.0, "candidates": [
+        ("NOCAP", _m(None)), ("GONE", None), ("TINY", _m(1)),
+        ("ACMEB", _m(10_000, revenueGrowthTTMYoy=7.0)),
+        ("AAA", _m(9_000)), ("BBB", _m(8_000)), ("CCC", _m(7_000))]}
+    t = peers.build("ACME", None, raw, peers.config_block(CFG), 300.0, "t")
+    assert ("Of 7 examined, dropped 1 below $300M market cap, 2 without vendor metrics or "
+            "market cap, 1 another share class of a kept name;") in t.basis
+    raw["candidates"] = raw["candidates"][4:]
+    assert "Of 3 examined, none dropped;" in peers.build("ACME", None, raw,
+                                                        peers.config_block(CFG), 300.0, "t").basis
+
+
+@pytest.mark.parametrize("industry", [500, 429, httpx.ConnectError("boom")])
+def test_a_failed_industry_step_keeps_the_sub_industry_result(industry):
+    v = _big_target([("S1", 5_000), ("S2", 3_000), ("S3", 1_000)], [])
+    v.peer_lists["industry"] = industry
+    t = _fetch(v)
+    assert t.status == peers.SHOWN and t.peers == ["S1", "S2", "S3"]
+    assert t.basis.startswith(f"Peer source: {peers.SUB_INDUSTRY}.")
+    spy_calls = sum(1 for p in v.paths() if p[1] == "SPY")
+    assert spy_calls == (0 if industry == 429 else 1)
+
+
+def test_a_foreign_listing_answering_in_local_currency_is_dropped():
+    v = _Vendor({"default": ["AAA", "BBB", "CCC", "TSM"]}, _five())
+    v.metrics["TSM"] = 200
+    original = v.__call__
+
+    def route(request):
+        if request.url.params.get("symbol") == "TSM":
+            return httpx.Response(200, json={"symbol": "2330.TW", "metric": _m(62_626_670)})
+        return original(request)
+    t = peers.fetch_section(SimpleNamespace(ticker="ACME"), CFG, now=NOW,
+                            transport=httpx.MockTransport(route))
+    assert "TSM" not in t.peers and "1 without vendor metrics or market cap" in t.basis
+
+
+def test_chat_text_survives_an_empty_reason():
+    assert peers.text_lines(PeerTable(peers.UNAVAILABLE)) == ["   🧭 Peer comparison: not shown."]
 
 
 def test_an_internal_error_is_unavailable(monkeypatch):

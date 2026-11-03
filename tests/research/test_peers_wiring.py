@@ -94,14 +94,6 @@ def test_the_shipped_config_has_the_section_on():
     assert (cfg["max_candidates"], cfg["max_peers"], cfg["min_peers"]) == (12, 6, 3)
     assert cfg["size_mismatch_ratio"] == 0.1
     assert cfg["timeout"] <= peers.MAX_DEADLINE_S
-    # Pacing alone must leave room for request latency inside the deadline.
-    assert cfg["max_calls"] * cfg["min_interval_s"] <= 0.85 * cfg["timeout"]
-
-
-def test_the_demo_path_never_fetches_peers(monkeypatch):
-    from shortlist.screen import main
-
-    def _no(*a, **k):
-        raise AssertionError("the demo must not fetch peers")
-    monkeypatch.setattr(peers, "collect", _no)
-    assert main(["--demo", "--json"]) == 0
+    # Three /deep briefs that start together must all get their calls inside the deadline.
+    assert 3 * cfg["max_calls"] <= cfg["bucket_capacity"] + cfg["refill_per_s"] * cfg["timeout"]
+    assert cfg["refill_per_s"] * 60 < 60

@@ -265,8 +265,7 @@ really covers. Decisions and rejected options:
 
 On by default (`research.peers.enabled`). Every brief carries a section **"Peer comparison —
 vendor data (Finnhub), not from filings; not seen by the model"**: the company against up to
-`max_peers` competitors on one vendor basis (`research/peers.py`). Design and probe evidence:
-`docs/audits/2026-11-02-deep-peer-table-design.md`.
+`max_peers` competitors on one vendor basis (`research/peers.py`).
 
 - **What it is.** For each measure (market cap, P/E, EV/EBITDA, P/S, gross and operating
   margin, TTM and 3-year revenue growth, ROI, debt/equity, 52-week price return): the
@@ -275,17 +274,20 @@ vendor data (Finnhub), not from filings; not seen by the model"**: the company a
   cheaper on that measure, never that it is better value. A negative multiple or ratio is
   "n/m" and is not ranked; zero debt/equity is a real value.
 - **The peers.** Finnhub `stock/peers` (the sub-industry list), without the company, duplicates,
-  another share class of the same company, names with no vendor metrics and names below the
+  another share class of the same company, names with no vendor metrics or market cap, foreign
+  listings (the vendor answers them under a home symbol in local currency) and names below the
   market-cap floor (`gates.min_market_cap` unless the block sets `min_market_cap`). The wider
   `grouping=industry` list is added once, when fewer than `min_peers` are left or when the
   median market cap of the peers that would be kept is below `size_mismatch_ratio` of the
   company's. The sub-industry list stays the default: where it holds the real competitors, the
   industry list is worse. Up to `max_peers` are then kept from both lists by closeness in log
   market cap, and the section names the source ("Finnhub sub-industry", or "+ industry" with
-  the reason). The list is the vendor's, and its quality varies (see the design note).
-- **Sector masks** (`research.peers.masks`). Banks, insurers and REITs hide the measures the
-  vendor gets wrong for them (a bank's "revenue" includes gross interest income) and show P/B
-  and ROE; other names hide P/B and ROE. The section lists what it hid.
+  the reason). The list is the vendor's, and its quality varies; the section names the peers
+  and how many were dropped for each reason, so a reader can discount a poor list.
+- **Sector masks** (`research.peers.masks`, with a reason per bucket). Banks, insurers and
+  REITs hide the measures the vendor gets wrong for them (a bank's "revenue" includes gross
+  interest income) and show P/B (and ROE, except REITs); other names hide P/B and ROE. The
+  section lists what it hid.
 - **Relative performance.** The 52-week price return of the company, the peer median and the
   S&P 500 (SPY's 52-week price return on the same vendor field, fetched once a day per
   process). Fixed rule: the company's move splits into its gap to the peer median and the peer
@@ -305,13 +307,15 @@ vendor data (Finnhub), not from filings; not seen by the model"**: the company a
   values for audit). Like the news module it is in `cachekey._PROMPT_MODULES`, so a wording
   change is not served under an older cached brief.
 - **Failure and cost.** One call for the company, one or two peer lists, at most
-  `max_candidates` peer calls per list and one SPY call per day, all within `max_calls`. A process-wide
-  pacer keeps `min_interval_s` between calls, because several briefs run at once on one
-  free-tier key (60 calls a minute, shared with the news call). The calls run in a daemon thread
-  under one wall-clock deadline (`timeout`, at most 45 s); past it the thread makes no further
-  call. A 429, a failed peer-list call or the deadline gives "unavailable", never an empty
-  table; a failed call for one peer drops that peer. Several briefs that finish their model call
-  at the same moment queue on the pacer, and a late one can read "unavailable".
+  `max_candidates` peer calls per list and one SPY call per day, all within `max_calls`.
+  Several briefs run at once on one free-tier key (60 calls a minute, shared with the news
+  call), so every call takes a token from one process-wide bucket (`bucket_capacity`,
+  `refill_per_s`). The capacity covers three briefs that start together; a fourth, or a run
+  of briefs back to back, waits for refill and can miss the deadline. The calls run in a daemon
+  thread under one wall-clock deadline (`timeout`, at most 45 s); past it the thread takes no
+  further token and makes no further call. A 429, a failed sub-industry list call or the deadline
+  gives "unavailable", never an empty table. A failed call for one peer drops that peer, and a
+  failure in the industry step keeps what the sub-industry list gave.
 
 ## Quote verification
 

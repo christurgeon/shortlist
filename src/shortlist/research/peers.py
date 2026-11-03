@@ -6,7 +6,7 @@ brief, never a grounding segment and never a score, gate or flag. Vendor data, n
 In `cachekey._PROMPT_MODULES` only so that a wording change is not served under a cached brief.
 
 Behaviour, the two derived lines and their rules: docs/RESEARCH.md → the peer-comparison
-section. Probe evidence: docs/audits/2026-11-02-deep-peer-table-design.md.
+section.
 
 NEVER RAISES (`fetch_section`). An outage reads "unavailable", never as an empty table.
 """
@@ -44,12 +44,14 @@ RANK_NOTE = ("Rank counts {ticker} with the peers that report the measure. For t
 
 _DEFAULTS: dict = {
     "enabled": False, "max_candidates": 12, "max_calls": 20, "max_peers": 6, "min_peers": 3,
-    "size_mismatch_ratio": 0.1, "min_interval_s": 1.2, "timeout": 30,
+    "size_mismatch_ratio": 0.1, "bucket_capacity": 40, "refill_per_s": 0.9, "timeout": 30,
     "masks": {"default": ["pb", "roe"]},
 }
 # Shared with research/news.py and research/durability.py: the research phase's slack.
 MAX_DEADLINE_S = 45.0
 _REQUEST_TIMEOUT_S = 10.0
+# The company, its peer list and one peer: below this a brief cannot show a table.
+_MIN_CALLS = 3
 _DEFAULT_FLOOR_USD = 3.0e8
 # "About the same" band, in percentage points, for both derived lines.
 _SMALL_GAP = 5.0
@@ -136,6 +138,8 @@ def metrics_from(body: Any, ticker: str) -> Optional[dict]:
     if not isinstance(body, dict) or not isinstance(body.get("metric"), dict):
         return None
     sym = body.get("symbol")
+    # Also the currency guard: a foreign listing answers under its home symbol in local
+    # currency (TSM as 2330.TW), which would not compare with dollar figures.
     if isinstance(sym, str) and sym.upper() != ticker.upper():
         return None
     m = body["metric"]
@@ -150,19 +154,38 @@ def _same_company(a: dict, b: dict) -> bool:
     return all(a.get(k) is not None and a.get(k) == b.get(k) for k in keys)
 
 
-def usable(candidates: list[tuple[str, Optional[dict]]], target: dict,
-           floor_m: float) -> list[tuple[str, dict]]:
-    """Candidates with metrics, at or above the floor, that are not another share class of the
-    company or of a peer already kept. Vendor order is kept."""
+def _sort(candidates: list[tuple[str, Optional[dict]]], target: dict,
+          floor_m: float) -> tuple[list[tuple[str, dict]], dict[str, int]]:
+    """The usable candidates in vendor order, and how many were dropped for each reason."""
     out: list[tuple[str, dict]] = []
+    drops = {"no_data": 0, "below": 0, "share_class": 0}
     for t, m in candidates:
         cap = (m or {}).get("marketCapitalization")
-        if m is None or cap is None or cap < floor_m:
-            continue
-        if _same_company(m, target) or any(_same_company(m, k) for _, k in out):
-            continue
-        out.append((t, m))
-    return out
+        if m is None or cap is None:
+            drops["no_data"] += 1
+        elif cap < floor_m:
+            drops["below"] += 1
+        elif _same_company(m, target) or any(_same_company(m, k) for _, k in out):
+            drops["share_class"] += 1
+        else:
+            out.append((t, m))
+    return out, drops
+
+
+def usable(candidates: list[tuple[str, Optional[dict]]], target: dict,
+           floor_m: float) -> list[tuple[str, dict]]:
+    """Candidates with metrics and a market cap at or above the floor, that are not another
+    share class of the company or of a peer already kept. Vendor order is kept."""
+    return _sort(candidates, target, floor_m)[0]
+
+
+def _dropped(drops: dict[str, int], floor_m: float) -> str:
+    parts = [f"{drops['below']} below {fmt('usd_m', floor_m)} market cap" if drops["below"] else "",
+             f"{drops['no_data']} without vendor metrics or market cap" if drops["no_data"] else "",
+             f"{drops['share_class']} another share class of a kept name"
+             if drops["share_class"] else ""]
+    parts = [p for p in parts if p]
+    return "dropped " + ", ".join(parts) if parts else "none dropped"
 
 
 def closest_in_size(peers: list[tuple[str, dict]], target_cap_m: Optional[float],
@@ -216,6 +239,8 @@ def row(col: Column, company: Optional[float], peer_values: list[Optional[float]
     if not ok(company):
         shown = "n/m" if company is not None else "—"
         return PeerRow(col.label, shown, fmt(col.kind, med), len(vals), "")
+    if not vals:
+        return PeerRow(col.label, fmt(col.kind, company), fmt(col.kind, med), 0, "")
     better = sum(1 for v in vals if (v < company if col.low_first else v > company))
     word = ("lowest" if col.low_first else "largest" if col.key == "market_cap" else "highest")
     return PeerRow(col.label, fmt(col.kind, company), fmt(col.kind, med), len(vals),
@@ -294,7 +319,7 @@ def build(ticker: str, bucket: Optional[str], raw: dict, cfg: dict, floor_m: flo
     if not candidates:
         return PeerTable(NOT_SHOWN, NO_PEERS_TEXT, as_of, ticker)
     min_peers, max_peers = int(cfg["min_peers"]), int(cfg["max_peers"])
-    ok = usable(candidates, target, floor_m)
+    ok, drops = _sort(candidates, target, floor_m)
     if len(ok) < min_peers:
         floor = fmt("usd_m", floor_m)
         return PeerTable(NOT_SHOWN, TOO_FEW_TEXT.format(n=min_peers, floor=floor), as_of, ticker)
@@ -302,13 +327,9 @@ def build(ticker: str, bucket: Optional[str], raw: dict, cfg: dict, floor_m: flo
     hidden = hidden_columns(cfg, bucket)
     cols = [c for c in COLUMNS if c.key not in hidden]
     rows = [row(c, target.get(c.field), [m.get(c.field) for _, m in kept]) for c in cols]
-    failed = sum(1 for _, m in candidates if m is None)
-    below = sum(1 for _, m in candidates
-                if m is not None and (m.get("marketCapitalization") or 0) < floor_m)
-    basis = (f"Peer source: {raw.get('grouping') or SUB_INDUSTRY}. Of "
-             f"{len(candidates)} examined, {below} below {fmt('usd_m', floor_m)} market cap "
-             f"and {failed} without vendor metrics were dropped; the {len(kept)} closest to "
-             f"{ticker} in market cap are kept.")
+    basis = (f"Peer source: {raw.get('grouping') or SUB_INDUSTRY}. Of {len(candidates)} "
+             f"examined, {_dropped(drops, floor_m)}; the {len(kept)} closest to {ticker} in "
+             f"market cap are kept.")
     relative = (relative_line(ticker, target.get("52WeekPriceReturnDaily"),
                               [m.get("52WeekPriceReturnDaily") for _, m in kept],
                               raw.get("spy"), min_peers)
@@ -333,33 +354,57 @@ class _Stopped(RuntimeError):
     pass
 
 
-# One pacer per process: several briefs run at once (research._MAX_ENRICH_WORKERS) against one
-# free-tier key. The lock is held through the sleep so waiters queue in turn.
-_PACE_LOCK = threading.Lock()
-_last_call = [0.0]
+class _OverBudget(RuntimeError):
+    pass
+
+
+class _Bucket:
+    """A token bucket shared by every brief in the process: several briefs run at once
+    (research._MAX_ENRICH_WORKERS) against one free-tier key. Thread-safe; a waiter sleeps
+    outside the lock and wakes early when its brief is stopped."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.tokens: Optional[float] = None
+        self.stamp = time.monotonic()
+
+    def take(self, capacity: float, rate: float, stop: threading.Event) -> None:
+        while True:
+            if stop.is_set():
+                raise _Stopped("over the deadline")
+            with self.lock:
+                now = time.monotonic()
+                if self.tokens is None:
+                    self.tokens = capacity
+                self.tokens = min(capacity, self.tokens + (now - self.stamp) * rate)
+                self.stamp = now
+                if self.tokens >= 1:
+                    self.tokens -= 1
+                    return
+                wait = (1 - self.tokens) / rate if rate > 0 else 1.0
+            stop.wait(min(wait, 1.0))
+
+
+_BUCKET = _Bucket()
 _SPY_LOCK = threading.Lock()
 _spy_cache: dict[str, float] = {}
 
 
-def _pace(min_interval_s: float) -> None:
-    with _PACE_LOCK:
-        wait = _last_call[0] + min_interval_s - time.monotonic()
-        if wait > 0:
-            time.sleep(wait)
-        _last_call[0] = time.monotonic()
-
-
 class _Vendor:
-    def __init__(self, client: Any, min_interval_s: float, stop: threading.Event):
-        self.client, self.min_interval_s, self.stop = client, min_interval_s, stop
+    def __init__(self, client: Any, cfg: dict, stop: threading.Event):
+        self.client, self.stop = client, stop
+        self.capacity = max(float(cfg["bucket_capacity"]), 1.0)
+        self.rate = max(float(cfg["refill_per_s"]), 0.0)
+        self.max_calls = max(int(cfg["max_calls"]), _MIN_CALLS)
         self.calls = 0
 
+    def left(self) -> int:
+        return self.max_calls - self.calls
+
     def get(self, path: str, params: dict) -> Any:
-        if self.stop.is_set():
-            raise _Stopped("over the deadline")
-        _pace(self.min_interval_s)
-        if self.stop.is_set():
-            raise _Stopped("over the deadline")
+        if self.left() <= 0:
+            raise _OverBudget("the call cap is spent")
+        _BUCKET.take(self.capacity, self.rate, self.stop)
         self.calls += 1
         r = self.client.get(BASE + path, params=params)
         if r.status_code == 429:
@@ -384,26 +429,26 @@ def collect(vendor: _Vendor, ticker: str, cfg: dict, floor_m: float, today: str)
     `max_candidates` of its peers, then the industry list and at most `max_candidates` more when
     the sub-industry leaves too few usable peers or peers much smaller than the company, then the
     S&P 500 reference (once a day per process). All calls together stay within `max_calls`.
-    A failed peer call drops that peer; any other failure or a 429 raises."""
+    A failed peer call drops that peer. Any failure in the industry step keeps what the
+    sub-industry gave; any other failure or a 429 raises."""
     target = vendor.metrics(ticker)
     if target is None:
         return {"target": None}
     per_list = max(0, int(cfg["max_candidates"]))
-    # One call is held back for the S&P 500 reference.
-    call_cap = max(0, int(cfg["max_calls"])) - 1
     candidates: list[tuple[str, Optional[dict]]] = []
 
     def examine(tickers: list[str]) -> None:
         added = 0
         for t in tickers:
-            if added >= per_list or vendor.calls >= call_cap:
+            # One call is held back for the S&P 500 reference.
+            if added >= per_list or vendor.left() <= 1:
                 return
             if any(t == c for c, _ in candidates):
                 continue
             added += 1
             try:
                 candidates.append((t, vendor.metrics(t)))
-            except (_RateLimited, _Stopped):
+            except (_RateLimited, _Stopped, _OverBudget):
                 raise
             except Exception:       # noqa: BLE001 — a failed peer is dropped, not fatal
                 candidates.append((t, None))
@@ -417,24 +462,32 @@ def collect(vendor: _Vendor, ticker: str, cfg: dict, floor_m: float, today: str)
     elif _too_small(closest_in_size(ok, cap, int(cfg["max_peers"])), cap,
                     float(cfg["size_mismatch_ratio"])):
         wider = WIDER_SMALLER
-    grouping = SUB_INDUSTRY
-    if wider and vendor.calls < call_cap:
-        industry = peer_list(vendor.get("/stock/peers", {"symbol": ticker, "grouping": "industry"}),
-                             ticker)
+    grouping, limited = SUB_INDUSTRY, False
+    # The list call, one peer and the S&P 500 reference.
+    if wider and vendor.left() >= 3:
         before = len(candidates)
-        examine(industry)
+        try:
+            examine(peer_list(vendor.get("/stock/peers", {"symbol": ticker,
+                                                          "grouping": "industry"}), ticker))
+        except _Stopped:
+            raise
+        except Exception as e:      # noqa: BLE001 — the sub-industry result stands
+            limited = isinstance(e, _RateLimited)
         if len(candidates) > before:
             grouping = wider
     return {"target": target, "candidates": candidates, "grouping": grouping,
-            "spy": _spy(vendor, today)}
+            "spy": _spy(vendor, today, skip=limited)}
 
 
-def _spy(vendor: _Vendor, today: str) -> Optional[float]:
+def _spy(vendor: _Vendor, today: str, skip: bool = False) -> Optional[float]:
     """SPY's 52-week price return, the S&P 500 reference on the same vendor basis as the
-    stocks. Cached per UTC day; a failure (other than a 429) leaves it out."""
+    stocks. Cached per UTC day; `skip` (the key is rate limited) or a failure other than a 429
+    leaves it out."""
     with _SPY_LOCK:
         if today in _spy_cache:
             return _spy_cache[today]
+    if skip:
+        return None
     try:
         m = vendor.metrics("SPY")
     except (_RateLimited, _Stopped):
@@ -465,7 +518,6 @@ def fetch_section(card: Any, config: Optional[dict], *, now: Optional[datetime] 
             return PeerTable(NOT_SHOWN, NO_KEY_TEXT, as_of, ticker)
         floor_m = market_cap_floor_m(config, cfg)
         deadline_s = min(max(float(cfg["timeout"]), 0.1), MAX_DEADLINE_S)
-        interval = max(float(cfg["min_interval_s"]), 0.0)
     except Exception as e:      # noqa: BLE001 — never-raises contract
         log_abstain("peer section failed", ticker or "?", e)
         return PeerTable(UNAVAILABLE, UNAVAILABLE_TEXT, as_of, ticker)
@@ -477,7 +529,7 @@ def fetch_section(card: Any, config: Optional[dict], *, now: Optional[datetime] 
         try:
             with httpx.Client(timeout=min(_REQUEST_TIMEOUT_S, deadline_s), transport=transport,
                               headers={"X-Finnhub-Token": key}) as client:
-                box["raw"] = collect(_Vendor(client, interval, stop), ticker, cfg, floor_m,
+                box["raw"] = collect(_Vendor(client, cfg, stop), ticker, cfg, floor_m,
                                      now.date().isoformat())
         except Exception as e:      # noqa: BLE001 — carried to the caller below
             box["error"] = e
@@ -555,7 +607,8 @@ def text_lines(t: Optional[PeerTable]) -> list[str]:
     if t is None or not t.status:
         return []
     if t.status != SHOWN:
-        return ["   🧭 Peer comparison: " + t.text[0].lower() + t.text[1:]]
+        reason = t.text or "Not shown."
+        return ["   🧭 Peer comparison: " + reason[:1].lower() + reason[1:]]
     return [f"   🧭 Peer comparison (vendor data, not seen by the model) vs "
             f"{', '.join(t.peers)} — the table is in the report",
             f"      {t.relative}", f"      {t.growth}"]
