@@ -472,7 +472,7 @@ def _peers_html(h, t) -> str:
     from ...research import peers
     parts = [h.tag("p", peers.note(t), _class="muted")]
     if t.status != peers.SHOWN:
-        return _fold(h, peers.HEADING, "".join(parts) + h.tag("p", t.text))
+        return _fold(h, peers.heading(t), "".join(parts) + h.tag("p", t.text))
     head = "".join(h.tag("th", x) for x in
                    ("Measure", t.ticker, "Peer median (n)", f"{t.ticker} rank"))
     body = "".join(h.raw("tr", h.tag("td", r.label) + h.tag("td", r.company) +
@@ -488,7 +488,7 @@ def _peers_html(h, t) -> str:
         parts.append(h.tag("p", peers.masked_note(t)))
     parts += [h.tag("p", peers.RANK_NOTE.format(ticker=t.ticker), _class="muted"),
               h.raw("ul", lines)]
-    return _fold(h, peers.HEADING, "".join(parts))
+    return _fold(h, peers.heading(t), "".join(parts))
 
 
 def _findings_list(h, items) -> str:

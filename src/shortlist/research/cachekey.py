@@ -50,10 +50,10 @@ _CONFIDENCE_STEP = 0.05
 # `cap_bundle`), and with `textsim` produces `bundle.text_similarity`.
 # `earnings_moves` computes values rendered inside the options line. `controls` renders
 # the verdict line AND selects the quote that becomes a haystack segment.
-# `durability`, `news` and `peers` render brief sections the model never sees; their wording
-# must still not change under a cached brief. Their renderers are not named `context_line`,
-# so tests of their own cover them. `capital_allocation` is absent on purpose; see its
-# module docstring.
+# `durability`, `news` and `peers` render brief sections; the model sees `peers` only with
+# `research.peers.in_prompt`. Their wording must not change under a cached brief. The
+# `durability` and `news` renderers are not named `context_line`, so tests of their own cover
+# them. `capital_allocation` is absent on purpose; see its module docstring.
 _PROMPT_MODULES = ("assess", "models", "reverse_dcf", "coverage_caveat", "proxy",
                    "gov_contracts", "lobbying", "earnings", "inventory", "riskdiff",
                    "analyst_revision", "options", "earnings_moves", "controls",

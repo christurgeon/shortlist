@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from ..env import redact_secrets
@@ -73,13 +73,24 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
     try:
         from .filings import cap_bundle
         bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
-        assessment = assess_fn(card, bundle, config, macro=macro)
+        pcfg = (config.get("research") or {}).get("peers")
+        peers_on = isinstance(pcfg, dict) and pcfg.get("enabled", False)
+        peer_table = None
+        if peers_on and pcfg.get("in_prompt", False):
+            from . import peers
+            fetched = peers.fetch_section(card, config)
+            peer_table = replace(
+                fetched, in_prompt=peers.context_line(fetched) != "")
+            # Only this branch passes the keyword, so assess doubles without it keep working.
+            assessment = assess_fn(card, bundle, config, macro=macro, peer_table=peer_table)
+        else:
+            assessment = assess_fn(card, bundle, config, macro=macro)
         if assessment is None:
             return ResearchResult(card.ticker, skipped="assessment failed")
         # assess() sets the narrow key; the brief is written under the wide key.
         assessment.cache_key = key
         # AFTER the model call: these sections are display-only and must not reach
-        # the prompt.
+        # the prompt. The peer table is the exception when `in_prompt` is on.
         dcfg = (config.get("research") or {}).get("durability")
         if isinstance(dcfg, dict) and dcfg.get("enabled", False):
             from . import durability
@@ -92,10 +103,9 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
             (assessment.news_items, assessment.news_status, assessment.news_as_of,
              assessment.news_from, assessment.news_truncated) = (
                 s.items, s.status, s.as_of, s.covers_from, s.truncated)
-        pcfg = (config.get("research") or {}).get("peers")
-        if isinstance(pcfg, dict) and pcfg.get("enabled", False):
+        if peers_on:
             from . import peers
-            assessment.peer_table = peers.fetch_section(card, config)
+            assessment.peer_table = peer_table or peers.fetch_section(card, config)
         from . import capital_allocation
         bp = report.write(assessment, root, config,
                           capital_allocation=capital_allocation.section(card))
