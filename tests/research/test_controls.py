@@ -107,6 +107,12 @@ def test_a_52_53_week_fiscal_end_still_matches():
     assert got is not None
 
 
+@pytest.mark.parametrize("d", ["DECEMBER 31, 2025", "december 31, 2025"])
+def test_an_uncapitalized_month_still_anchors(d):
+    got = controls.detect(_CONCLUSION.format(d=d), date(2025, 12, 31), _CFG)
+    assert got is not None and got.as_of == "2025-12-31"
+
+
 # --------------------------------------------------- whitespace, config, safety
 
 def test_whitespace_normalization_is_load_bearing():

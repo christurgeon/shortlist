@@ -49,12 +49,12 @@ _PHRASES = _ICFR_PHRASES + (_DCP_PHRASE,)
 # nothing, because the `_AS_OF` branch already rescues every case.
 # `docs/audits/2026-09-07-tenq-controls-base-rate.md` §4.
 _SELF_REF = re.compile(r"end of the period covered by this (annual )?report", re.I)
-# Case-insensitive on "as of" because sentences can open with it; the capitalized
-# month keeps it from matching prose.
-_AS_OF = re.compile(r"as of ([A-Z][a-z]+ \d{1,2},? \d{4})", re.I)
+# Case-insensitive because sentences open with "As of" and some filers set the date in
+# capitals. `_parse_as_of` rejects any word that is not a month name.
+_AS_OF = re.compile(r"as of ([a-z]+ \d{1,2},? \d{4})", re.I)
 _MONTHS = {m: i + 1 for i, m in enumerate(
-    ["January", "February", "March", "April", "May", "June", "July",
-     "August", "September", "October", "November", "December"])}
+    ["january", "february", "march", "april", "may", "june", "july",
+     "august", "september", "october", "november", "december"])}
 
 _DEFAULTS = {"enabled": True, "window_chars": 240, "tolerance_days": 20,
              "max_quote_chars": 600}
@@ -76,11 +76,12 @@ def _norm(text: str) -> str:
 
 
 def _parse_as_of(raw: str) -> Optional[date]:
-    m = re.match(r"([A-Z][a-z]+) (\d{1,2}),? (\d{4})", raw)
-    if not m or m.group(1) not in _MONTHS:
+    m = re.match(r"([a-z]+) (\d{1,2}),? (\d{4})", raw, re.I)
+    month = _MONTHS.get(m.group(1).lower()) if m else None
+    if month is None:
         return None
     try:
-        return date(int(m.group(3)), _MONTHS[m.group(1)], int(m.group(2)))
+        return date(int(m.group(3)), month, int(m.group(2)))
     except ValueError:
         return None
 
