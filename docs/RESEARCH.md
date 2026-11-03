@@ -37,8 +37,8 @@ The model and its fallback are set in `config.yaml: research` (`model`, `fallbac
 
 The bundle sent to the model is the latest **10-K** (business, MD&A, risk factors), the latest
 **10-Q's MD&A**, a **YoY Item-1A risk-factor diff** (`riskdiff.py`), the substance of up to
-three recent **8-Ks** (`research/eightk.py`), and the **debt & liquidity statement notes**
-(`research/notes.py`).
+three recent **8-Ks** (`research/eightk.py`), and two families of **statement notes**
+(`research/notes.py`): debt & liquidity, and exposure.
 
 The debt notes feed one prompt instruction: `SYSTEM_PROMPT` asks the model to compute
 **refinancing coverage** — debt maturing within twelve months against cash plus operating
@@ -57,6 +57,26 @@ text that enters the haystack** as its own labelled segment (`10-K note: LONG-TE
   grounding text the model could quote and have "verified".
 
 Design and evidence: `docs/audits/2026-08-20-debt-liquidity-notes-design.md`.
+
+The **exposure notes** feed the `exposures` field (below). They are the 10-K's segment,
+geographic, concentration and revenue notes, where revenue by region, customer
+concentration and government sales are disclosed as figures; Items 1, 1A and 7 usually
+describe them only in words. Same mechanism as the debt notes: selected by title from
+`TenK.notes`, each a labelled haystack segment (`10-K note: SEGMENT INFORMATION`),
+truncation noted in the header only.
+
+- **10-K only.** The annual segment note is the backbone; a 10-Q segment note is a
+  quarterly subset.
+- **Segment notes first**, then concentration notes, then revenue notes, each in document
+  order. Deferred or unearned revenue, contract balances, income tax and the debt family's
+  notes are excluded.
+- **Budget** (`research.exposure_notes`): at most 3 notes, 12K chars each, 16K per 10-K.
+  The per-note cap sits below the budget so a long segment note leaves room for a
+  concentration note.
+- **Known gaps.** A geographic table at the end of a very long segment note is cut
+  (XOM). edgartools does not render every table: DE's revenue note keeps its narrative but
+  not its geographic table. A customer concentration filed only in the accounting-policies
+  note is not selected (HDSN).
 
 The 8-Ks are what keeps a brief current between quarterly filings — an earnings release and its
 guidance, a non-reliance restatement, a material cyber incident, a completed acquisition, an
@@ -107,9 +127,21 @@ quote-verification haystack, so a computed value can never pass itself off as a 
   flat case renders as "unchanged" rather than abstaining — with no line at all the
   model cannot tell a still consensus from an unfetched one.
 
-The output covers moat read, material risks, red flags, management and capital allocation,
-business model, a falsifiable thesis (bull / bear / what-would-change-my-mind), and a
-score-vs-filing reconciliation.
+The output covers moat read, material risks, red flags, exposures, management and capital
+allocation, business model, a falsifiable thesis (bull / bear / what-would-change-my-mind),
+and a score-vs-filing reconciliation.
+
+**Exposures** map the material dependencies outside management's control, one entry each:
+`{kind, claim, evidence}` with `kind` one of geography, customer, supplier, government,
+commodity, currency or regulation. A share the model computes goes in `claim` with its
+inputs; `evidence` is a verbatim quote, verified like a risk, and must contain a word: a
+run of table figures without its row label could back a claim about any row, so it does not
+verify. The government as customer or payer is `government`; as regulator it is
+`regulation`. An unknown `kind` is dropped at parse time with a stderr line.
+`research.max_exposures` (default 5) is a ceiling, and an empty list is the correct answer
+for a company with no material concentration. The section renders as
+"Exposures (filing-grounded)" in the markdown brief and as "Exposures" in the Telegram
+report; briefs written before the field render without it.
 
 ### The ROIC-persistence section — computed, not written by the model
 
@@ -231,7 +263,7 @@ really covers. Decisions and rejected options:
 
 ## Quote verification
 
-Factual findings — risks and red flags — must carry a **verbatim quote that is verified to
+Factual findings — risks, red flags and exposures — must carry a **verbatim quote that is verified to
 actually appear in the filing text**. Findings whose quote cannot be located are flagged as
 unverifiable rather than presented as fact. Interpretive prose is labeled as interpretation.
 

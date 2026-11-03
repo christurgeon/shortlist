@@ -108,6 +108,8 @@ class AssessmentVM:
     risks: list[FindingVM] = field(default_factory=list)
     red_flags: list[FindingVM] = field(default_factory=list)
     added_risks: list[FindingVM] = field(default_factory=list)
+    # The kind leads the claim ("Customer — …"). A record without the key loads as [].
+    exposures: list[FindingVM] = field(default_factory=list)
     moat_sources: list[FindingVM] = field(default_factory=list)
     management_findings: list[FindingVM] = field(default_factory=list)
     capital_allocation: str = ""
@@ -195,6 +197,19 @@ def _findings(raw, *, inference_ok: bool = False) -> list[FindingVM]:
     return [_finding(x, inference_ok=inference_ok) for x in (raw or [])]
 
 
+def _exposures(raw) -> list[FindingVM]:
+    out = []
+    for x in (raw or []):
+        if not isinstance(x, dict):
+            continue
+        f = _finding(x, inference_ok=False)
+        kind = str(x.get("kind") or "").strip()
+        if kind:
+            f.claim = f"{kind.capitalize()} — {f.claim}"
+        out.append(f)
+    return out
+
+
 def _reconciliation(raw) -> list[ReconciliationVM]:
     out = []
     for e in (raw or []):
@@ -254,6 +269,7 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         risks=_findings(rec.get("risks")),
         red_flags=_findings(rec.get("red_flags")),
         added_risks=_findings(rec.get("added_risks")),
+        exposures=_exposures(rec.get("exposures")),
         moat_sources=_findings((mo if isinstance(mo, dict) else {}).get("sources"),
                                inference_ok=True),
         management_findings=_findings(rec.get("management_findings"), inference_ok=True),

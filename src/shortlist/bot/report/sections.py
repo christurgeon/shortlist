@@ -546,6 +546,7 @@ class _Research:
                                    _class="callout bear"))
             for label, items, cls, open_n in [("Red flags", a.red_flags, "flag", None),
                                               ("Risks", a.risks, "", _OPEN_RISKS),
+                                              ("Exposures", a.exposures, "", None),
                                               ("Newly disclosed risks", a.added_risks, "", None)]:
                 if items:
                     parts.append(_findings_block(h, label, items, cls, open_n))
@@ -616,6 +617,9 @@ class _Research:
                     out += _news_text(a)
                 for f in a.red_flags:
                     out.append(f"   🚩 {f.claim}")
+                    out += _evidence_text(f.status, f.evidence, f.source)
+                for f in a.exposures:
+                    out.append(f"   🌐 {f.claim}")
                     out += _evidence_text(f.status, f.evidence, f.source)
                 counts = _evidence_counts(a)
                 if counts:

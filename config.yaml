@@ -280,9 +280,9 @@ cache:
 # Two rules cover every sub-block:
 #   1. `enabled: false` (or deleting the block) omits its line from the prompt.
 #   2. These are PROMPT-ONLY context lines, never a sub-score, gate or flag: research
-#      runs after score(). `eightk`, `tenq_risk_update` and `notes` carry real FILING
-#      TEXT, so each enters the quote-grounding haystack as its own labelled segment
-#      (docs/RESEARCH.md → Quote verification).
+#      runs after score(). `eightk`, `tenq_risk_update`, `notes` and `exposure_notes`
+#      carry real FILING TEXT, so each enters the quote-grounding haystack as its own
+#      labelled segment (docs/RESEARCH.md → Quote verification).
 research:
   model: claude-sonnet-5-5     # a judgment call, not a measurement. Reproducibility rests on
                                # the cache key (research/cachekey.py), not this string.
@@ -308,6 +308,7 @@ research:
   max_management_findings: 6   # drops the brief, unretried, on stop_reason == max_tokens
   max_falsifiers: 6
   max_added_risks: 8
+  max_exposures: 5             # a ceiling under the materiality bar, not a target
   risk_diff:                   # YoY Item-1A risk-factor diff (research/riskdiff.py)
     similarity_threshold: 0.5  # below => block counts as "added"
     max_blocks: 4
@@ -330,6 +331,13 @@ research:
     max_chars_per_note: 16000  # not lower: the ladder can sit past 10,000 chars
     max_chars_10k: 16000       # per-form budgets, not a shared pool, so annual notes cannot
     max_chars_10q: 8000        # crowd out the fresher quarterly note
+  exposure_notes:              # segment, geographic, concentration and revenue notes, 10-K
+                               # only (research/notes.py): the input for `exposures`.
+    enabled: true
+    max_notes_per_form: 3
+    max_chars_per_note: 12000  # below the form budget, so a long segment note leaves room
+                               # for a concentration note
+    max_chars_10k: 16000
   screening_call:              # buy/hold/avoid capstone on the research brief
     enabled: true
     labels:
