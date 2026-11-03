@@ -147,8 +147,8 @@ report; briefs written before the field render without it.
 
 On by default (`research.durability.enabled`). Every brief carries one more section,
 **"ROIC persistence"**, in the markdown brief and in the Telegram HTML report. The model did
-not write it and never sees it (the capital-allocation, recent-news and peer-comparison sections
-below are the others).
+not write it and never sees it (the capital-allocation and recent-news sections below are the
+others, and the peer-comparison section unless `in_prompt` is on).
 
 - **What it is.** A pre-registered study measured, among firms with a ROIC in the top fifth,
   which ones still had it three years later
@@ -261,11 +261,12 @@ really covers. Decisions and rejected options:
   "unavailable", never an empty section, so an outage cannot read as "no news". A cached
   brief keeps the news as of its own generation and prints that time.
 
-### The peer-comparison section — vendor data, not seen by the model
+### The peer-comparison section — vendor data
 
 On by default (`research.peers.enabled`). Every brief carries a section **"Peer comparison —
-vendor data (Finnhub), not from filings; not seen by the model"**: the company against up to
-`max_peers` competitors on one vendor basis (`research/peers.py`).
+vendor data (Finnhub), not from filings"**: the company against up to `max_peers` competitors
+on one vendor basis (`research/peers.py`). The heading ends "not seen by the model" or "given to
+the model as context", depending on `in_prompt` (below; on in the shipped config).
 
 - **What it is.** For each measure (market cap, P/E, EV/EBITDA, P/S, gross and operating
   margin, TTM and 3-year revenue growth, ROI, debt/equity, 52-week price return): the
@@ -301,10 +302,19 @@ vendor data (Finnhub), not from filings; not seen by the model"**: the company a
   abstains with one "Not shown: …" sentence from a closed set: no key, no metrics for the
   company, no peers listed, too few usable peers, or vendor data unavailable.
 - **What it is not.** Not filing text, not a score, gate or flag, not a valuation verdict.
-- **Where it is computed.** `_enrich_card`, after `assess()` returns, like the news section.
-  The prompts are byte-identical with the flag on or off; the table is never a grounding
-  segment. It is stored with the brief (`peer_table` in the JSON record, with the raw vendor
-  values for audit). Like the news module it is in `cachekey._PROMPT_MODULES`, so a wording
+- **Where it is computed.** `_enrich_card`. With `in_prompt` off, after `assess()` returns, like
+  the news section, and the prompts are byte-identical with the section on or off. With
+  `in_prompt` on, once before `assess()`: a shown table becomes one prompt line
+  (`peers.context_line`) after the options line, and `PEERS_SYSTEM_ADDENDUM` requires one
+  reconciliation entry with the signal `peers`: whether the valuation against the peers is
+  justified by the company's margins, growth and risks, whether the price move is
+  company-specific, and a filing quote that explains the gap. The entry is outside the
+  `max_conflicts` ceiling. The clause names its own destination field because a context line
+  without one is ignored (`docs/audits/README.md`, 2026-08-25), and not `thesis`, which the
+  options clause already requires. A table that is not shown
+  adds nothing to either prompt. Either way the table is never a grounding segment, so a vendor
+  figure cannot verify as a filing quote. It is stored with the brief (`peer_table` in the JSON
+  record, with the raw vendor values for audit and `in_prompt` true only when the model saw it). Like the news module it is in `cachekey._PROMPT_MODULES`, so a wording
   change is not served under an older cached brief.
 - **Failure and cost.** One call for the company, one or two peer lists, at most
   `max_candidates` peer calls per list and one SPY call per day, all within `max_calls`.

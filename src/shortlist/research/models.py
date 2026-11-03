@@ -39,7 +39,7 @@ def call_disclaimer(config: dict | None = None) -> str:
 # flags (activist_13d…) are presence-based and harness-only — NOT config-derived,
 # so they must be hardcoded here, not assembled from config.
 _AXIS_SIGNALS = ("quality", "moat", "growth", "momentum", "value", "insider",
-                 "risk", "short_interest", "narrative_tone", "governance")
+                 "risk", "short_interest", "narrative_tone", "governance", "peers")
 _GATE_SIGNALS = ("negative_fcf", "below_min_mktcap", "over_leveraged",
                  "heavy_insider_selling")
 _FLAG_SIGNALS = ("crowded_short", "insider_cluster_buy", "planned_sale",
@@ -260,6 +260,7 @@ class PeerTable:
     growth: str = ""
     # Raw vendor values per ticker (company first), kept for audit; renderers do not read it.
     values: dict = field(default_factory=dict)
+    in_prompt: bool = False    # the model saw this table as a context line
 
 
 @dataclass

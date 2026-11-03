@@ -433,9 +433,10 @@ research:
     max_items: 10              # keeps the most-reported event clusters; shown newest first
     timeout: 10                # wall-clock seconds for the request; values above 45 read as 45
   peers:                       # "Peer comparison" section (research/peers.py): Finnhub peer list
-                               # and metrics, DISPLAY ONLY, fetched after the model call; never
-                               # scored and never shown to the model.
+                               # and metrics; vendor data, never scored, never a grounding segment.
     enabled: true
+    in_prompt: true            # fetch before the model call; the table becomes a context line
+                               # that a 'peers' reconciliation entry must address
     # min_market_cap: absent = gates.min_market_cap (dollars)
     max_candidates: 12         # peers examined per peer list (one metric call each)
     max_calls: 20              # all Finnhub calls of one brief, at least 3

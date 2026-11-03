@@ -1,9 +1,9 @@
 """Peer comparison for the research brief: the company against up to `max_peers` competitors
 on one vendor basis (Finnhub `stock/peers` and `stock/metric`).
 
-DISPLAY ONLY, AND NEVER SHOWN TO THE MODEL. Fetched after `assess()` returns, stored with the
-brief, never a grounding segment and never a score, gate or flag. Vendor data, not filing data.
-In `cachekey._PROMPT_MODULES` only so that a wording change is not served under a cached brief.
+Vendor data, not filing data: never a grounding segment and never a score, gate or flag. With
+`in_prompt` on, the table is fetched before `assess()` and `context_line` puts it in the prompt;
+off, it is fetched after and the model never sees it. `PeerTable.in_prompt` records which.
 
 Behaviour, the two derived lines and their rules: docs/RESEARCH.md → the peer-comparison
 section.
@@ -26,6 +26,8 @@ from .models import PeerRow, PeerTable
 
 BASE = "https://finnhub.io/api/v1"
 HEADING = "Peer comparison — vendor data (Finnhub), not from filings; not seen by the model"
+HEADING_IN_PROMPT = ("Peer comparison — vendor data (Finnhub), not from filings; given to the "
+                     "model as context")
 SHOWN, NOT_SHOWN, UNAVAILABLE = "shown", "not_shown", "unavailable"
 SUB_INDUSTRY = "Finnhub sub-industry"
 WIDER_TOO_FEW = "Finnhub sub-industry + industry (too few sub-industry peers)"
@@ -43,7 +45,7 @@ RANK_NOTE = ("Rank counts {ticker} with the peers that report the measure. For t
              "multiple or ratio on negative earnings, EBITDA or equity, and is not ranked.")
 
 _DEFAULTS: dict = {
-    "enabled": False, "max_candidates": 12, "max_calls": 20, "max_peers": 6, "min_peers": 3,
+    "enabled": False, "in_prompt": False, "max_candidates": 12, "max_calls": 20, "max_peers": 6, "min_peers": 3,
     "size_mismatch_ratio": 0.1, "bucket_capacity": 40, "refill_per_s": 0.9, "timeout": 30,
     "masks": {"default": ["pb", "roe"]},
 }
@@ -570,7 +572,27 @@ def from_record(rec: Any) -> Optional[PeerTable]:
         basis=str(rec.get("basis") or ""),
         peers=[str(p) for p in (rec.get("peers") or []) if isinstance(p, str)],
         rows=rows, masked=[str(m) for m in (rec.get("masked") or [])],
-        relative=str(rec.get("relative") or ""), growth=str(rec.get("growth") or ""))
+        relative=str(rec.get("relative") or ""), growth=str(rec.get("growth") or ""),
+        in_prompt=rec.get("in_prompt") is True)
+
+
+def heading(t: PeerTable) -> str:
+    return HEADING_IN_PROMPT if t.in_prompt else HEADING
+
+
+def context_line(t: Optional[PeerTable]) -> str:
+    """The prompt's peer line, or "" unless the table is shown. PROMPT-ONLY: never a
+    grounding segment, so a vendor figure cannot verify as a filing quote."""
+    if t is None or t.status != SHOWN:
+        return ""
+    rows = "; ".join(f"{r.label} {r.company} vs peer median {r.median} (n={r.n}"
+                     + (f", {r.rank}" if r.rank else "") + ")" for r in t.rows)
+    return (f"Peer comparison (Finnhub vendor data as of {t.as_of}; context only, NOT filing "
+            f"text — never quote it as filing evidence). Peers: {', '.join(t.peers)}. "
+            f"{t.basis} {rows}. Ranks count {t.ticker} with the peers that report the measure; "
+            "for a multiple, lower is cheaper on that measure; n/m is a multiple or ratio on "
+            f"negative earnings, EBITDA or equity. Relative performance: {t.relative} Growth vs "
+            f"the peer set: {t.growth}")
 
 
 def note(t: PeerTable) -> str:
@@ -586,7 +608,7 @@ def markdown_lines(t: Optional[PeerTable]) -> list[str]:
     """The brief's section, starting with a blank line; [] when the section is off."""
     if t is None or not t.status:
         return []
-    lines = ["", f"## {HEADING}", f"_{note(t)}_"]
+    lines = ["", f"## {heading(t)}", f"_{note(t)}_"]
     if t.status != SHOWN:
         return lines + [f"_{t.text}_"]
     lines += [t.basis, "", f"| Measure | {t.ticker} | Peer median (n) | {t.ticker} rank |",
@@ -609,6 +631,7 @@ def text_lines(t: Optional[PeerTable]) -> list[str]:
     if t.status != SHOWN:
         reason = t.text or "Not shown."
         return ["   🧭 Peer comparison: " + reason[:1].lower() + reason[1:]]
-    return [f"   🧭 Peer comparison (vendor data, not seen by the model) vs "
+    seen = "given to the model" if t.in_prompt else "not seen by the model"
+    return [f"   🧭 Peer comparison (vendor data, {seen}) vs "
             f"{', '.join(t.peers)} — the table is in the report",
             f"      {t.relative}", f"      {t.growth}"]

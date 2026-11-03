@@ -17,6 +17,7 @@ from . import gov_contracts as gov_contracts_ctx
 from . import inventory as inventory_ctx
 from . import lobbying as lobbying_ctx
 from . import options as options_ctx
+from . import peers as peers_ctx
 from . import proxy as proxy_ctx
 from .claude_cli import CliResult
 from .coverage_caveat import coverage_caveats
@@ -187,6 +188,23 @@ OPTIONS_SYSTEM_ADDENDUM = (
     "and your reading of the filing disagree, say so explicitly: that disagreement is the "
     "most decision-relevant thing on the page. These are MARKET PRICES, not filing facts — "
     "never present them as filing evidence and never attach a filing quote to them.\n")
+
+# Its own destination field, not `thesis`: the options clause already requires `thesis`, and
+# two required clauses on one field let one displace the other.
+PEERS_SYSTEM_ADDENDUM = (
+    "\nA 'Peer comparison' context line is present below. You MUST add exactly one "
+    "reconciliation entry with the signal token 'peers', which EXTENDS the reconciliation "
+    "'signal' options listed in the schema above. It does not count toward the "
+    "reconciliation ceiling. Its `tension` states whether this company's valuation against "
+    "its peers (cheaper or dearer on the multiples) is justified by its margins, growth and "
+    "risks relative to them, and whether its recent price move is company-specific or "
+    "shared with the peers. Do not restate the numbers — say what they imply. Its "
+    "`filing_says` is a verbatim filing quote that explains the gap, or \"\" if the filing "
+    "is silent. REQUIRED whenever the line is present, no exceptions. Carry it into `thesis` "
+    "and the screening call only where it changes them. The peer figures are VENDOR data, "
+    "not filing facts — never present them as filing evidence. The peer list is the "
+    "vendor's classification: if a listed peer is plainly not a competitor, say so in the "
+    "tension.\n")
 
 
 PROXY_SYSTEM_ADDENDUM = (
@@ -460,7 +478,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                        filing_events: Optional[list] = None,
                        insider_recent: Optional[list] = None,
                        proxy_facts=None, macro=None, options_surface=None,
-                       earnings_moves: Optional[list] = None) -> str:
+                       earnings_moves: Optional[list] = None, peer_table=None) -> str:
     rcfg = config.get("research", {})
     filing = bundle.tenk
     scfg = (config.get("research") or {}).get("screening_call") or {}
@@ -490,6 +508,9 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         options_surface, getattr(card, "metrics", None), rcfg.get("options"),
         earnings_moves=earnings_moves)
     options_section = f"\n\n{options_line}" if options_line else ""
+    # Vendor peer table: PROMPT-ONLY, like the options line.
+    peer_line = peers_ctx.context_line(peer_table)
+    peer_section = f"\n\n{peer_line}" if peer_line else ""
     macro_section = _macro_line(macro, rcfg.get("macro"))
     similarity_section = _similarity_line(getattr(bundle, "text_similarity", None))
     tenq_section = ""
@@ -567,6 +588,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{insider_line}"
         f"{proxy_section}"
         f"{options_section}"
+        f"{peer_section}"
         f"{controls_ctx}"
         f"{macro_section}"
         f"{similarity_section}"
@@ -808,10 +830,11 @@ def apply_guards(assessment, card, config: dict) -> None:
 
 def assess(card, bundle: FilingBundle, config: dict,
            runner: Callable[..., CliResult] = claude_cli.run,
-           macro=None) -> Optional[QualitativeAssessment]:
+           macro=None, peer_table=None) -> Optional[QualitativeAssessment]:
     """Produce a grounded QualitativeAssessment for one FilingBundle, or None if the
     model call fails, truncates, or returns unparseable JSON after one retry.
-    `card` is the ScoreCard; its metrics supply the quant context and context lines."""
+    `card` is the ScoreCard; its metrics supply the quant context and context lines.
+    `peer_table` (a PeerTable) becomes a prompt line when shown; None adds nothing."""
     rcfg = config.get("research", {})
     scfg = rcfg.get("screening_call") or {}
     model = rcfg.get("model", "claude-sonnet-5-5")
@@ -854,6 +877,10 @@ def assess(card, bundle: FilingBundle, config: dict,
         extra["options_surface"] = options_surface
     if earnings_moves:
         extra["earnings_moves"] = earnings_moves
+    peer_line = peers_ctx.context_line(peer_table)
+    if peer_line:
+        extra["peer_table"] = peer_table
+        max_conflicts += 1            # the 'peers' entry is outside the ceiling
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
                                      insider_recent=ir, proxy_facts=proxy_facts,
                                      macro=macro, **extra)
@@ -865,7 +892,8 @@ def assess(card, bundle: FilingBundle, config: dict,
               # Keyed on the SURFACE, not the config, for the same reason.
               + (OPTIONS_SYSTEM_ADDENDUM
                  if (options_surface is not None
-                     and ocfg.get("require_in_thesis", False)) else ""))
+                     and ocfg.get("require_in_thesis", False)) else "")
+              + (PEERS_SYSTEM_ADDENDUM if peer_line else ""))
 
     # A slow `claude` call can exceed the CLI timeout transiently; retry instead of
     # dropping the brief. max_attempts caps total tries, including reparse retries.
