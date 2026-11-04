@@ -310,7 +310,10 @@ research:
   max_added_risks: 8
   max_exposures: 5             # a ceiling under the materiality bar, not a target
   risk_diff:                   # YoY Item-1A risk-factor diff (research/riskdiff.py)
-    similarity_threshold: 0.5  # below => block counts as "added"
+    similarity_threshold: 0.5  # lead-clause match ratio; below => block may be "added"
+    containment_threshold: 0.9 # share of a block's text already in the prior Item 1A at
+                               # which it is carried over (page-break splits score ~1.0;
+                               # partly rewritten risks lower, and must stay "added")
     max_blocks: 4
     max_chars: 12000
   max_chars:                   # per-section caps on 10-K text fed to the model

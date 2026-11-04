@@ -50,3 +50,35 @@ def test_max_chars_cap_respected():
 def test_empty_inputs_are_safe():
     assert added_risk_blocks("", PRIOR, CFG) == ""
     assert added_risk_blocks(PRIOR, "", CFG) == ""
+
+def test_a_block_split_at_a_different_point_is_not_flagged():
+    # A page break moves the paragraph boundary, so the tail block starts mid-sentence
+    # and its prefix key matches nothing in the prior year.
+    para = ("Regulation risk.\nChanges in laws governing our products could require us to "
+            "reformulate them and increase our costs. Regulators have proposed new labelling "
+            "rules in several of our largest markets, and consumer groups have petitioned for "
+            "warnings on sweetened drinks. Public concern about certain types of caramel "
+            "coloring used in cola beverages, or substances used in packaging materials such "
+            "as bisphenol, could reduce demand for our brands and expose us to litigation.\n")
+    prior = PRIOR + "\n\n" + para
+    current = PRIOR + "\n\n" + para.replace("Public concern about ", "Public concern about\n\n")
+    assert added_risk_blocks(current, prior, CFG) == ""
+
+
+def test_a_short_page_break_tail_is_not_flagged():
+    para = ("Regulation risk.\nPublic concern about substances used in packaging materials, "
+            "including recent studies by several academic groups, could lead regulators to "
+            "restrict them, which would raise our costs and impair consumer sentiment toward "
+            "our brands and sparkling flavored products.\n")
+    current = PRIOR + "\n\n" + para.replace("toward ", "toward\n\n")
+    assert added_risk_blocks(current, PRIOR + "\n\n" + para, CFG) == ""
+
+
+def test_a_partly_rewritten_risk_is_still_flagged():
+    old = ("Trade risk.\nTariffs and trade restrictions imposed by governments could increase "
+           "the cost of our components and reduce demand for our products in affected "
+           "markets, which could adversely affect our results of operations.\n")
+    new = ("Since the second quarter, new tariffs were announced on imports from several "
+           "countries and remain subject to change. " + old.split("\n", 1)[1])
+    out = added_risk_blocks(PRIOR + "\n\n" + new, PRIOR + "\n\n" + old, CFG)
+    assert "new tariffs were announced" in out
