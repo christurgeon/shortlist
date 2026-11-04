@@ -159,13 +159,13 @@ def _label(filed: str, hits: list[str], parts: list[str]) -> str:
 
 
 def _cap(text: str, cap: int, window: int) -> str:
-    """Prefix-trim to `cap`, splicing in a `window`-char excerpt around the first
-    outlook/guidance hit that the prefix WOULD LOSE, marked `[…]`.
+    """Prefix-trim to `cap`, splicing in a `window`-char excerpt around the
+    first outlook/guidance hit whose window the prefix WOULD LOSE, marked `[…]`.
 
     10-K risk factors are ordered worst-first, which justifies the plain prefix slice in
     `cap_sections`; earnings releases are not, and some place "Outlook" after the
     financial tables. This is the weakest heuristic in the design: a TRADE, since the
-    window displaces prefix characters inside the same cap. Absent a lost hit the output
+    window displaces prefix characters inside the same cap. Absent such a hit the output
     is the plain prefix."""
     if cap <= 0:
         return ""
@@ -174,8 +174,10 @@ def _cap(text: str, cap: int, window: int) -> str:
     head_len = cap - window - len(_ELISION)
     if window <= 0 or head_len <= 0:
         return text[:cap]
-    hit = _GUIDANCE_RE.search(text, cap)
-    if hit is None:
+    # From head_len, not cap: a hit in [head_len, cap) is cut by the splice too, and
+    # searching past it would land on the closing safe-harbor boilerplate instead.
+    hit = _GUIDANCE_RE.search(text, head_len)
+    if hit is None or hit.start() + window <= cap:
         return text[:cap]
     return text[:head_len] + _ELISION + text[hit.start():hit.start() + window]
 

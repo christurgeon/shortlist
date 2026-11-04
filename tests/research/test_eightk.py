@@ -212,6 +212,23 @@ def test_guidance_splice_recovers_an_outlook_the_prefix_would_lose(frac):
     assert "Outlook" not in text[:cap]           # the plain prefix really did lose it
 
 
+def test_an_outlook_cut_by_the_splice_wins_over_later_safe_harbor_boilerplate():
+    cap, window = 6000, 1500
+    marker = "Outlook: we expect full-year revenue to grow."
+    text = ("x" * 5000 + marker + "y" * 3000
+            + "Forward-looking statements: words such as expects, guidance, outlook."
+            + "z" * 4000)
+    out = eightk._cap(text, cap, window)
+    assert marker in out
+    assert "Forward-looking statements" not in out
+
+
+def test_a_window_the_prefix_already_keeps_is_not_spliced():
+    cap, window = 6000, 1500
+    text = "x" * (cap - window) + "Outlook: we expect growth." + "z" * 38000
+    assert eightk._cap(text, cap, window) == text[:cap]
+
+
 def test_without_a_late_hit_the_output_is_exactly_the_plain_prefix():
     text = "z" * 38000
     assert eightk._cap(text, 6000, 1500) == text[:6000]
