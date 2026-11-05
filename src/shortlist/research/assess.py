@@ -366,45 +366,39 @@ def _verify_grounding(assessment: QualitativeAssessment, bundle: FilingBundle) -
     an empty quote there is a DECLARED INFERENCE — a legal answer, not a failed
     check — so it lands in `inference_count` and never in `unverified_count`."""
     segments = _segments(bundle)
+
+    def check(item, quote: str) -> bool:
+        source = _locate(quote, segments)
+        item.verified = source is not None
+        item.source = source or ""
+        return item.verified
+
     unverified = 0
     for finding in (*assessment.risks, *assessment.red_flags, *assessment.added_risks,
                     *assessment.exposures):
-        source = _locate(_norm(finding.evidence), segments)
         if isinstance(finding, Exposure) and not _LABEL_RE.search(finding.evidence):
-            source = None
-        finding.verified = source is not None
-        finding.source = source or ""
-        if not finding.verified:
-            unverified += 1
+            quote = ""
+        else:
+            quote = _norm(finding.evidence)
+        unverified += not check(finding, quote)
     # Here an empty quote is a legal answer. Branch on it BEFORE _locate: do not rely
     # on _MIN_EVIDENCE_CHARS, since `"" in hay` is True for every segment. Branch on the
     # NORMALIZED string so a whitespace-only quote is an inference, not a fabrication.
     inferences = 0
     for finding in (*assessment.moat.sources, *assessment.management_findings):
         quote = _norm(finding.evidence)
-        if not quote:
-            finding.verified = False
-            finding.source = ""
+        if quote:
+            unverified += not check(finding, quote)
+        else:
+            finding.verified, finding.source = False, ""
             inferences += 1
-            continue
-        source = _locate(quote, segments)
-        finding.verified = source is not None
-        finding.source = source or ""
-        if not finding.verified:
-            unverified += 1
     silent = 0
     for c in assessment.reconciliation:
         if c.verdict == "silent":
-            c.filing_says = ""
-            c.verified = False
-            c.source = ""
+            c.filing_says, c.verified, c.source = "", False, ""
             silent += 1
-            continue
-        source = _locate(_norm(c.filing_says), segments)
-        c.verified = source is not None
-        c.source = source or ""
-        if not c.verified:
-            unverified += 1
+        else:
+            unverified += not check(c, _norm(c.filing_says))
     assessment.unverified_count = unverified
     assessment.silent_count = silent
     assessment.inference_count = inferences
