@@ -21,9 +21,8 @@ REGIME-DEPENDENT cross-sections: re-measure with
 
 DO NOT ADD THE VARIANCE-RISK-PREMIUM CAVEAT BACK
 ------------------------------------------------
-"Option prices embed a risk premium, so implied exceeds realized" is MEASURED FALSE on
-the committed cross-section: the median IV30/realized is below 1.0 in every window
-tried. Print the reference, never the prior.
+"Option prices embed a risk premium, so implied exceeds realized" does not hold on the
+committed cross-section (see the design audit). Print the reference, never the prior.
 
 WHY THE REALIZED DENOMINATOR IS THE 252-DAY FIELD AND NOT A 30-DAY ONE
 ----------------------------------------------------------------------
@@ -58,15 +57,14 @@ _ATM_DELTA = 0.50
 _MAX_EXPIRIES = 16
 
 
-def _today() -> datetime.date:               # seam for tests, positions.py pattern
+def _today() -> datetime.date:               # seam for tests
     return datetime.date.today()
 
 
 @dataclass
 class OptionsSurface:
     """The reduced options chain for one ticker — a few dozen numbers, never the
-    contract array. The raw payload runs to a 674 KB median and 3.0 MB worst case,
-    which is why nothing here keeps it."""
+    (multi-megabyte) contract array."""
     ticker: str
     as_of: str                              # query date, YYYY-MM-DD
     quote_time: str                         # CBOE `last_trade_time`; see staleness below
@@ -110,11 +108,8 @@ def _parse_osi(symbol: str, root: str) -> tuple[datetime.date, str, float]:
 
 
 def _tradeable(o: dict) -> bool:
-    """A quote worth reading: two-sided AND a positive implied vol.
-
-    AAPL's chain carries a strike at iv 2.0684 (207%) on delta 0.9998 — a stale
-    one-sided quote inverting to a meaningless implied vol. One-sided quotes are the
-    single largest source of junk in this feed."""
+    """A quote worth reading: two-sided AND a positive implied vol. A stale one-sided
+    quote inverts to a meaningless implied vol, and is the feed's main source of junk."""
     return bool(_num(o.get("bid")) and _num(o.get("ask")) and _num(o.get("iv")))
 
 
@@ -367,11 +362,9 @@ def fetch_surface(ticker: str, cfg: Optional[dict] = None,
     research-only and never scored, so this guards a gap rather than fixing an observed
     leak — but the leak would be silent.
 
-    RATE LIMIT: Cloudflare enforces a rolling per-IP budget on this host. A cookie-less
-    loop at 0.25s spacing died at 60 requests with no recovery; a cookie-persisting
-    client at 1.0s completed 80. One client, one request per deep dive, and a 429
-    abstains rather than retries — this line is optional and must never spend a brief's
-    latency on a retry storm.
+    RATE LIMIT: Cloudflare enforces a rolling per-IP budget on this host. One client, one
+    request per deep dive, and a 429 abstains rather than retries — this line is optional
+    and must never spend a brief's latency on a retry storm.
     """
     from .filings import log_abstain
 

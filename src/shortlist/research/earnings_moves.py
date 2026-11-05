@@ -109,12 +109,10 @@ def daily_closes(ticker: str, timeout: float = 20.0,
 
     REUSES THE PRICE SOURCE'S DAY-CACHED PAYLOAD — same path, same request params — so a
     /deep costs ZERO extra Yahoo requests: `data/sources/yahoo.py` has already fetched
-    and cached this exact chart earlier in the same run (it leads the harness merge for
-    price fields). An earlier version issued its own uncached `range=2y` call and added
-    **40-60 seconds** to every brief, because Yahoo answers the v8 chart slowly from a
-    datacenter IP even while returning 200. Do not reintroduce a second fetch, and do
-    not change `range`/`interval` here without changing them in the source too, or the
-    two will write different payloads to the same cache key.
+    and cached this exact chart earlier in the same run. Do not add a second fetch (Yahoo
+    answers the v8 chart slowly from a datacenter IP, adding tens of seconds per brief),
+    and do not change `range`/`interval` here without changing them in the source too, or
+    the two will write different payloads to the same cache key.
 
     Falls back to a live fetch (and populates the shared cache) when the file is absent,
     which is the `--provider`-narrowed or research-only path."""

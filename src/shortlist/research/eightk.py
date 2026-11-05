@@ -244,15 +244,11 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
                   company_factory=None, today: Optional[date] = None) -> list[EightKText]:
     """Recent 8-K substance for `ticker`, best-first, within the total char budget.
 
-    NEVER RAISES — the contract `_prior_year_sections` already uses: a dead SEC
-    endpoint, a missing [edgar] extra or an unparseable exhibit degrades that
-    filing (or the whole ticker) to today's bare `filing_events` label, with a
-    stderr line so a systematic failure is not indistinguishable from "this name
-    filed nothing". Returns [] when disabled or when nothing qualifies.
-
-    The budget is walked in priority order — each filing takes
-    `min(max_chars_per_filing, remaining)` and the walk stops at exhaustion — so
-    the highest-priority filing is never squeezed by a rebalancing pass.
+    NEVER RAISES: a dead SEC endpoint, a missing [edgar] extra or an unparseable
+    exhibit degrades that filing (or the whole ticker) to the bare `filing_events`
+    label, with a stderr line so a systematic failure is not indistinguishable from
+    "this name filed nothing". Returns [] when disabled or when nothing qualifies.
+    The char budget is split by `_allocate`.
 
     `company_factory` exists ONLY so tests can inject a fake without patching
     `sys.modules`; production takes the lazy `edgar` import (the [edgar] extra is
@@ -271,8 +267,6 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
         return []
 
     window = int(cfg["guidance_window_chars"])
-    # Extract first, then size budgets against what each filing holds, so `_allocate`
-    # can protect a short, material filing from a long routine one.
     raw: list[tuple[Any, list[str], list[str], str, list[str]]] = []
     for filing, codes, hits in selected:
         try:
