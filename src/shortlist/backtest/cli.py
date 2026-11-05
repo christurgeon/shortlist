@@ -200,10 +200,8 @@ async def _load_companyfacts(tickers, cache_dir, month) -> tuple[list[str], dict
 
 
 async def _load_histories(tickers, cache_dir, today) -> tuple[dict[str, PriceHistory], PriceHistory]:
-    # SERIAL BY DESIGN. Concurrency is not a known trigger for the Yahoo WAF block (that
-    # block is a header-shape fingerprint on the screener endpoint, and this calls the
-    # chart endpoint). Serial is the conservative default for an unofficial endpoint.
-    # If wall-clock becomes a bottleneck, bound a gather with asyncio.Semaphore(3-5).
+    # Serial: the conservative default for an unofficial endpoint. If wall-clock matters,
+    # bound a gather with a small asyncio.Semaphore rather than going unbounded.
     async with httpx.AsyncClient(headers={"User-Agent": _UA}) as client:
         try:
             spy = await fetch_history("SPY", client, cache_dir=cache_dir, today=today)
@@ -441,8 +439,8 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
     load_env()  # pick up SEC_IDENTITY / API keys from a .env file if present
     ap = build_arg_parser()
     args = ap.parse_args(argv)
-    # Flag-combination validation first — must NOT depend on SEC_IDENTITY, or the SEC
-    # guard below could return 2 first and a --fit-horizon test would pass for the wrong reason.
+    # Flag-combination checks run before the SEC_IDENTITY check, so each refusal names
+    # its own cause.
     if args.fit and args.source != "xbrl":
         print("--fit requires --source xbrl (fundamental axes come from XBRL)",
               file=sys.stderr)
@@ -555,9 +553,8 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
         if not resolved:
             print("no companyfacts available for the universe", file=sys.stderr)
             return 1
-        # Lazy loader: read one ticker's (already-warmed) companyfacts from disk on
-        # demand. With the engine's ticker-major iteration, each loads once -> RAM is
-        # bounded to the source's small LRU instead of the whole universe.
+        # Lazy loader over the warmed disk cache: with the engine's ticker-major
+        # iteration each ticker loads once, so RAM is bounded by the source's LRU.
         _cdir, _month = args.xbrl_cache_dir, month
 
         def _fact_loader(tk, _idx=cik_index) -> Optional[dict]:
@@ -566,9 +563,7 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
 
         src = XbrlSignalSource(None, hists, thresholds, fact_loader=_fact_loader)
     elif args.source == "snapshot":
-        # Forward returns still come from `hists`: the store's span bounds the
-        # observation grid only. Without this branch, `snapshot` would fall through to
-        # the momentum source.
+        # Forward returns still come from `hists`; the store only supplies the signals.
         src = SnapshotSignalSource(args.store_root, config)
     else:
         src = MomentumSignalSource(hists, spy, thresholds, min_history=200)
