@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from shortlist.backtest.cli import build_arg_parser
 from shortlist.backtest.engine import BacktestReport, SignalReport
 from shortlist.backtest.metrics import ICStats, QuantileResult
@@ -244,6 +246,20 @@ def test_fit_horizon_negative_rejected(capsys):
     rc = main(["--source", "xbrl", "--fit", "--fit-horizon", "-3"])
     assert rc == 2
     assert "--fit-horizon" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("argv", [
+    ["--step-months", "-1"],      # a negative step walks the grid backwards forever
+    ["--buckets", "0"],           # divides by zero in quantile_spread
+    ["--buckets", "1"],           # a single bucket has no top-minus-bottom spread
+    ["--n-folds", "0"],           # divides by zero in fit_weights
+])
+def test_degenerate_integer_flags_are_rejected_at_parse_time(argv, capsys):
+    from shortlist.backtest.cli import main
+    with pytest.raises(SystemExit) as exc:
+        main(["--tickers", "AAPL", *argv])
+    assert exc.value.code == 2
+    assert argv[0] in capsys.readouterr().err
 
 
 # --- snapshot-replay source: un-gated against real store history (2026-08-09) ---

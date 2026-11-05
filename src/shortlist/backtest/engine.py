@@ -18,6 +18,10 @@ _TRUST_MIN_BREADTH = 30
 
 
 def observation_grid(start: date, end: date, step_months: int) -> list[date]:
+    """Dates from `start` to `end` inclusive, `step_months` apart. A step below 1 would
+    never advance past `end`, so it raises ValueError."""
+    if step_months < 1:
+        raise ValueError(f"observation_grid: step_months must be >= 1, got {step_months}")
     grid, cur = [], start
     while cur <= end:
         grid.append(cur)

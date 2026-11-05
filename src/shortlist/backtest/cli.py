@@ -74,6 +74,15 @@ def _collinearity(diag_obs) -> dict[str, float]:
     return out
 
 
+def _int_at_least(floor: int):
+    def parse(value: str) -> int:
+        n = int(value)
+        if n < floor:
+            raise argparse.ArgumentTypeError(f"must be an integer >= {floor}")
+        return n
+    return parse
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="shortlist-backtest",
@@ -83,7 +92,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--tickers", help="alias for an ad-hoc --universe CSV")
     ap.add_argument("--horizons", default="3",
                     help="comma-separated months, e.g. 1,3,6,12")
-    ap.add_argument("--buckets", type=int, default=5)
+    ap.add_argument("--buckets", type=_int_at_least(2), default=5)
     ap.add_argument("--return-mode", dest="return_mode",
                     choices=["excess", "raw"], default="excess")
     ap.add_argument("--source", choices=["momentum", "snapshot", "xbrl"],
@@ -94,8 +103,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--store-root", dest="store_root", default="snapshots",
                     help="accumulated point-in-time snapshot store (--source snapshot); "
                          "same default as shortlist-accumulate --root")
-    ap.add_argument("--step-months", dest="step_months", type=int, default=0,
-                    help="grid spacing; 0 = non-overlapping (= max horizon)")
+    ap.add_argument("--step-months", dest="step_months", type=_int_at_least(0), default=0,
+                    help="grid spacing in months; 0 = non-overlapping (step = each horizon)")
     ap.add_argument("--residualize", dest="residualize",
                     help="TARGET~CTRL1,CTRL2 -- measure TARGET's partial rank IC after "
                          "removing linear exposure to CTRL1,CTRL2 "
@@ -119,7 +128,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ap.add_argument("--fit-axes", dest="fit_axes",
                     default=",".join(_FUNDAMENTAL_AXES),
                     help="comma-separated axes to fit (subset of the fundamentals)")
-    ap.add_argument("--n-folds", dest="n_folds", type=int, default=6,
+    ap.add_argument("--n-folds", dest="n_folds", type=_int_at_least(2), default=6,
                     help="walk-forward folds; >=6 needed to reach the 5-OOS-fold gate")
     ap.add_argument("--shrink", type=float, default=0.5,
                     help="shrinkage toward the prior (0..1)")
@@ -128,14 +137,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def _known_symbols(cache_dir: str) -> dict[str, str]:
     """{TICKER -> CIK} from SEC's company_tickers.json, month-cached on disk by
-    `fetch_company_tickers_raw`, so this costs one request per month rather than one
-    per run. Returns {} on ANY failure — the freshness check must abstain rather than
-    block a backtest because SEC is unreachable (`stale_tickers` treats {} as
-    "could not check", not "everything is dead")."""
+    `fetch_company_tickers_raw` (the same file the XBRL source reads). Returns {} on ANY
+    failure: the freshness check must abstain rather than block a backtest because SEC
+    is unreachable (`stale_tickers` treats {} as "could not check").
+
+    SEC fair access wants a contact email in the User-Agent, so SEC_IDENTITY is used when
+    set; a refused request would otherwise make the check abstain silently."""
     from .xbrl import build_cik_index, fetch_company_tickers_raw
 
+    ua = os.environ.get("SEC_IDENTITY") or _UA
+
     async def go():
-        async with httpx.AsyncClient(headers={"User-Agent": _UA}, timeout=30.0) as c:
+        async with httpx.AsyncClient(headers={"User-Agent": ua}, timeout=30.0) as c:
             raw = await fetch_company_tickers_raw(
                 c, cache_dir=cache_dir, month=date.today().strftime("%Y-%m"))
         return build_cik_index(raw)
@@ -439,10 +452,8 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
               file=sys.stderr)
         return 2
     if args.source == "snapshot":
-        # Activates automatically off real store history. The stub this replaces
-        # asserted emptiness unconditionally and never inspected the store, so it
-        # kept refusing 23 days after the store passed its own stated bar. Report
-        # the count found: a refusal has to be falsifiable.
+        # Gate on the store's real history and report the count found, so a refusal is
+        # falsifiable.
         n_days = len(capture_days(args.store_root))
         if n_days < _SNAPSHOT_MIN_CAPTURE_DAYS:
             print(f"--source snapshot needs >= {_SNAPSHOT_MIN_CAPTURE_DAYS} captured days "
@@ -484,7 +495,7 @@ def main(argv=None) -> int:  # noqa: C901 — argparse surface + flat subcommand
     tickers = load_universe(args.tickers or args.universe)
     _spec = args.tickers or args.universe
     if is_named_universe(_spec) and not args.allow_stale_universe:
-        dead = stale_tickers(tickers, _known_symbols(args.cache_dir))
+        dead = stale_tickers(tickers, _known_symbols(args.xbrl_cache_dir))
         if dead:
             print(
                 f"universe contains {len(dead)} symbol(s) absent from SEC's current "
