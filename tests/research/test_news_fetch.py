@@ -98,13 +98,16 @@ def test_a_capped_feed_says_how_far_back_it_really_covers(monkeypatch):
 
 
 def test_a_stalled_request_is_abandoned_at_the_deadline(monkeypatch):
+    import threading
     import time
+    release = threading.Event()
 
-    def slow(request):
-        time.sleep(3)
+    def stalled(request):
+        release.wait(5)
         return httpx.Response(200, json=ARTICLES)
     monkeypatch.setenv("FINNHUB_API_KEY", "k-123")
-    cfg = {"research": {"news": {**CFG["research"]["news"], "timeout": 0.3}}}
+    cfg = {"research": {"news": {**CFG["research"]["news"], "timeout": 0.1}}}
     t0 = time.monotonic()
-    s = news.fetch_section(_card(), cfg, now=NOW, transport=httpx.MockTransport(slow))
+    s = news.fetch_section(_card(), cfg, now=NOW, transport=httpx.MockTransport(stalled))
+    release.set()
     assert s.status == news.UNAVAILABLE and time.monotonic() - t0 < 2
