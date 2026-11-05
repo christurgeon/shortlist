@@ -35,6 +35,16 @@ from .models import (
 # Evidence quotes shorter than this are too trivial to count as grounding.
 _MIN_EVIDENCE_CHARS = 12
 
+# Per-list ceilings (research.max_*), shared by the prompt text and the parser.
+_CAP_DEFAULTS = {"max_risks": 8, "max_red_flags": 8, "max_added_risks": 8,
+                 "max_exposures": 5, "max_conflicts": 3, "max_moat_sources": 6,
+                 "max_management_findings": 6, "max_falsifiers": 3}
+
+
+def _caps(rcfg: dict) -> dict:
+    return {k: rcfg.get(k, d) for k, d in _CAP_DEFAULTS.items()}
+
+
 # Conviction-cap confidence thresholds (research.screening_call.conviction_cap overrides),
 # shared by apply_guards and _high_corroborated.
 _LOW_BELOW_DEFAULT = 0.45
@@ -561,6 +571,7 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
                             f"{controls.quote}\n\n")
     controls_line = controls_mod.context_line(controls)
     controls_ctx = f"\n\n{controls_line}" if controls_line else ""
+    caps = _caps(rcfg)
     return (
         f"Ticker: {filing.ticker}\nAccession: {filing.accession}\n\n"
         f"{quant}"
@@ -573,14 +584,14 @@ def _build_user_prompt(bundle: FilingBundle, config: dict, card=None,
         f"{notes_section}"
         f"{controls_section}"
         f"{added_section}"
-        f"Return at most {rcfg.get('max_risks', 8)} risks, "
-        f"{rcfg.get('max_red_flags', 8)} red_flags, "
-        f"{rcfg.get('max_added_risks', 8)} added_risks, "
-        f"{rcfg.get('max_exposures', 5)} exposures, "
-        f"{rcfg.get('max_conflicts', 3)} reconciliation entries, "
-        f"{rcfg.get('max_moat_sources', 6)} moat.sources, "
-        f"{rcfg.get('max_management_findings', 6)} management_findings, and "
-        f"{rcfg.get('max_falsifiers', 3)} 'what would change my mind' items, "
+        f"Return at most {caps['max_risks']} risks, "
+        f"{caps['max_red_flags']} red_flags, "
+        f"{caps['max_added_risks']} added_risks, "
+        f"{caps['max_exposures']} exposures, "
+        f"{caps['max_conflicts']} reconciliation entries, "
+        f"{caps['max_moat_sources']} moat.sources, "
+        f"{caps['max_management_findings']} management_findings, and "
+        f"{caps['max_falsifiers']} 'what would change my mind' items, "
         "most material first. Those are HARD CEILINGS, not targets: apply the "
         "materiality bar and stop when the material items run out. A short list is "
         "the correct answer whenever the filing supports a short list."
@@ -634,10 +645,8 @@ def _fmt_num(v: float) -> str:
 
 
 def _fmt_mcap(v: float) -> str:
-    """Market cap at magnitude-appropriate scale. A fixed $B scale prints a $490M
-    company as '$0B' — a confidently WRONG number, worse than the scientific notation
-    it replaced, and sub-$1B names DO get briefs (the /deep path passes
-    require_passed=False, so gated small caps are researched on request)."""
+    """Market cap at magnitude-appropriate scale. A fixed $B scale would print a $490M
+    company as '$0B', and sub-$1B names do get briefs (/deep researches gated names)."""
     a = abs(v)
     if a >= 1e12:
         return f"${v / 1e12:,.2f}T"
@@ -842,14 +851,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     fallback = rcfg.get("fallback_model")
     timeout = rcfg.get("timeout_s", 180)
     vs = default_valid_signals()
-    max_conflicts = rcfg.get("max_conflicts", 3)
-    max_falsifiers = rcfg.get("max_falsifiers", 3)
-    max_risks = rcfg.get("max_risks", 8)
-    max_red_flags = rcfg.get("max_red_flags", 8)
-    max_added_risks = rcfg.get("max_added_risks", 8)
-    max_moat_sources = rcfg.get("max_moat_sources", 6)
-    max_management_findings = rcfg.get("max_management_findings", 6)
-    max_exposures = rcfg.get("max_exposures", 5)
+    caps = _caps(rcfg)
     filing = bundle.tenk
     m = getattr(card, "metrics", None)
     fe = getattr(m, "filing_events", None)
@@ -880,7 +882,7 @@ def assess(card, bundle: FilingBundle, config: dict,
     peer_line = peers_ctx.context_line(peer_table)
     if peer_line:
         extra["peer_table"] = peer_table
-        max_conflicts += 1            # the 'peers' entry is outside the ceiling
+        caps["max_conflicts"] += 1    # the 'peers' entry is outside the ceiling
     user_prompt = _build_user_prompt(bundle, config, card, filing_events=fe,
                                      insider_recent=ir, proxy_facts=proxy_facts,
                                      macro=macro, **extra)
@@ -929,12 +931,7 @@ def assess(card, bundle: FilingBundle, config: dict,
                     accession=bundle.primary_accession, filing_date=bundle.filing_date,
                     model=res.model or model, cost_usd=total_cost,
                     stop_reason=res.stop_reason,
-                    valid_signals=vs, max_conflicts=max_conflicts,
-                    max_falsifiers=max_falsifiers, max_risks=max_risks,
-                    max_red_flags=max_red_flags, max_added_risks=max_added_risks,
-                    max_moat_sources=max_moat_sources,
-                    max_management_findings=max_management_findings,
-                    max_exposures=max_exposures)
+                    valid_signals=vs, **caps)
                 assessment.cache_key = bundle.cache_key
                 assessment.text_similarity = getattr(bundle, "text_similarity", None)
                 assessment.stub_sections = bundle.tenk.stub_sections()
