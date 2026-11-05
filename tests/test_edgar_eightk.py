@@ -81,9 +81,8 @@ def test_resolver_abstention_no_display_names_fallback():
 
 
 def test_junk_suffix_and_deny_list_dropped():
-    # The deny-list ticker is deliberately NOT 5-letter-suffixed: it used to be `DENYX`,
-    # which the `X` (mutual-fund) suffix rule now drops on its own, so the assertion would
-    # have passed without the deny list doing any work at all.
+    # The deny-list ticker is deliberately NOT 5-letter-suffixed: a suffixed one would be
+    # dropped by the junk-suffix rule alone, so the deny list would do no work.
     r_f = _row("a-1", cik="1"); r_ok = _row("a-2", cik="2"); r_deny = _row("a-3", cik="3")
     resolver = _resolver({"1": "ABCDF", "2": "GOOD", "3": "DENY"})
     ems = eightk_events_from_rows([r_f, r_ok, r_deny], resolve_ticker_fn=resolver,

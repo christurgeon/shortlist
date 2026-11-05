@@ -1,6 +1,6 @@
-"""Task 1: pure companyconcept aggregator (`diluted_shares_from_concept`).
-Task 2: the mockable network seam + fallback wiring on EdgarSource, isolated
-from the rest of Statements construction (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
+"""The pure companyconcept aggregator (`diluted_shares_from_concept`), then the mockable
+network seam and fallback wiring on EdgarSource, isolated from the rest of Statements
+construction (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md)."""
 from __future__ import annotations
 
 import pandas as pd
@@ -166,10 +166,8 @@ def test_units_shares_wrong_type_abstains():
 
 
 def test_units_shares_non_iterable_abstains():
-    """Demonstrated bug (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 3): unlike a
-    string (iterable, caught per-row by the malformed-row guard), a non-iterable
-    `units.shares` (e.g. a bare int) used to blow past the docstring's "Never
-    raises" claim with a TypeError on `for r in rows`. Must abstain, not raise."""
+    """Unlike a string (iterable, caught per-row by the malformed-row guard), a
+    non-iterable `units.shares` (e.g. a bare int) must abstain, not raise TypeError."""
     assert diluted_shares_from_concept({"units": {"shares": 5}}, SPINE) == []
 
 
@@ -216,10 +214,10 @@ def test_empty_fiscal_period_end_abstains():
 
 
 # =============================================================================
-# Task 2: EdgarSource wiring — the fallback fires only when the statement view
-# already came back diluted_shares == [], is isolated from the rest of
-# Statements construction (C1), and resolves the CIK off the edgartools
-# Company object (C2), never the raw ticker_map / a hardcoded CIK.
+# EdgarSource wiring — the fallback fires only when the statement view already
+# came back diluted_shares == [], is isolated from the rest of Statements
+# construction, and resolves the CIK off the edgartools Company object, never the
+# raw ticker_map / a hardcoded CIK.
 # =============================================================================
 
 class _FakeStatement:

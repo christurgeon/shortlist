@@ -152,9 +152,8 @@ def test_fetch_form4_submissions_outage_degrades_loudly(monkeypatch):
     import pytest
     _broken_edgar_module(monkeypatch)
     with pytest.warns(UserWarning, match="form4 submission fetch failed") as w:
-        # I-1: used=None is the hard-failure sentinel, distinct from a normal walk-back
-        # exhaustion (used == session) -- the caller uses it to tell a real SEC outage
-        # apart from a quiet day.
+        # used=None is the hard-failure sentinel, distinct from walk-back exhaustion
+        # (used == session), so an SEC outage is not mistaken for a quiet day.
         assert fetch_form4_submissions(date(2026, 7, 1), 5, "x@y.z") == ([], None, 0)
     assert "SECRET" not in str(w[0].message)          # redact_secrets applied
 
@@ -202,7 +201,7 @@ def test_fetch_form4_submissions_skips_one_bad_filing(monkeypatch):
     docs, used, considered = fetch_form4_submissions(date(2026, 6, 2), 400, "id@x.z",
                                                      _throttle=_no_throttle)
     # `considered` counts filings the cap admitted, BEFORE per-filing errors -- that is what
-    # lets the caller tell "the cap bound" from "some filings failed" (final review I-6).
+    # lets the caller tell "the cap bound" from "some filings failed".
     assert considered > len(docs)
     assert used == date(2026, 6, 2)
     assert docs == ["<ownershipDocument>B</ownershipDocument>"]

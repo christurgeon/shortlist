@@ -1,9 +1,7 @@
 """A backtest must refuse to run on a universe carrying dead symbols.
 
-Measured 2026-08-15: 8 of 238 tickers in the committed universes no longer resolved
-(4 renamed their symbol, 4 stopped filing). A stale symbol is not inert — it errors
-and contributes nothing, so the cross-section silently shrinks against the ~30-name
-IC trust floor, and nobody notices for a year. The cost lands on the measurement, so
+A stale symbol (renamed, or stopped filing) is not inert — it errors and contributes
+nothing, so the cross-section silently shrinks against the IC trust floor. The cost lands on the measurement, so
 the check belongs at the moment of measurement.
 
 Known limitation, deliberate: this catches symbols that VANISH from SEC's map. It

@@ -402,7 +402,7 @@ def test_roic_skips_years_where_any_input_is_missing():
 
 
 def test_roic_absent_when_equity_series_missing_entirely():
-    """The pre-fix state: EDGAR supplied no equity, so nothing was computable."""
+    """EDGAR supplied no equity, so nothing is computable."""
     assert snapshot_to_metrics(_stmt_snap(
         fiscal_years=[2025], fiscal_period_end=["2025-12-31"],
         operating_income=[1000.0], total_debt=[2000.0], total_equity=[])).roic is None
