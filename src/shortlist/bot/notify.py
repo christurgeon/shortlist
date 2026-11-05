@@ -44,6 +44,12 @@ def _chunks(text: str, size: int):
         yield "".join(buf)
 
 
+def _utf16_prefix(text: str, size: int) -> str:
+    """The longest prefix of `text` within `size` UTF-16 code units (the unit Telegram's
+    caption cap counts, like the message cap)."""
+    return next(_chunks(text, size), "")
+
+
 class TelegramNotifier:
     """One-shot Telegram transport. configured() is the exit-code discriminator.
     Each send returns bool and redacts its own exceptions (the URL embeds the token)."""
@@ -106,12 +112,12 @@ class TelegramNotifier:
 
     def send_photo(self, png: bytes, caption: str = "") -> bool:
         return self._post("sendPhoto",
-                          data={"chat_id": self.chat_id, "caption": caption[:_CAPTION_CAP]},
+                          data={"chat_id": self.chat_id, "caption": _utf16_prefix(caption, _CAPTION_CAP)},
                           files={"photo": ("dashboard.png", png, "image/png")})
 
     def send_document(self, data: bytes, filename: str, caption: str = "") -> bool:
         return self._post("sendDocument",
-                          data={"chat_id": self.chat_id, "caption": caption[:_CAPTION_CAP]},
+                          data={"chat_id": self.chat_id, "caption": _utf16_prefix(caption, _CAPTION_CAP)},
                           files={"document": (filename, data, "text/html")})
 
     def get_updates(self, offset: int, timeout: int, client: httpx.Client) -> PollResult:
@@ -129,7 +135,7 @@ class TelegramNotifier:
                 return PollResult(200, resp.json().get("result", []))
             return PollResult(resp.status_code, [])
         except Exception as e:  # noqa: BLE001
-            print(f"telegram getUpdates failed: {redact_secrets(str(e))}")
+            print(f"telegram getUpdates failed: {redact_secrets(str(e))}", file=sys.stderr)
             return PollResult(0, [])
 
     def delete_webhook(self, drop_pending_updates: bool = True) -> bool:

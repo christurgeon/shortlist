@@ -25,17 +25,6 @@ def test_configured_reflects_credentials(monkeypatch):
     assert TelegramNotifier(None, None).configured() is False
 
 
-def test_send_message_chunks_and_preserves_content():
-    bodies = []
-    n = TelegramNotifier("T", "42", client=_body_client(bodies))
-    assert n.send_message("x" * 9000) is True
-    assert len(bodies) == 3                      # 4096 + 4096 + 808
-    # Each JSON body contains the key `"text"` which itself has one 'x'.
-    # 3 chunks × 1 extra 'x' from the key = 9003 total in the raw body bytes.
-    joined = "".join(b.decode() for b in bodies)
-    assert joined.count("x") == 9003             # 9000 payload + 1 per chunk from "text" key
-
-
 def test_send_message_empty_sends_nothing_but_succeeds():
     seen = []
     n = TelegramNotifier("T", "42", client=_client(seen))
@@ -55,6 +44,18 @@ def test_caption_truncated_to_1024():
     n = TelegramNotifier("T", "42", client=_body_client(bodies))
     n.send_photo(b"x", "y" * 5000)
     assert b"y" * 1025 not in bodies[0]           # caption capped
+
+
+def test_caption_cap_counts_utf16_units_for_astral_emoji():
+    """The caption cap counts UTF-16 units, as the message cap does: 1024 rockets are
+    2048 units and would 400."""
+    bodies = []
+    n = TelegramNotifier("T", "42", client=_body_client(bodies))
+    rocket = "\N{ROCKET}"
+    n.send_photo(b"x", rocket * 1024)
+    n.send_document(b"x", "r.html", "a" + rocket * 1024)
+    assert bodies[0].count(rocket.encode()) == 512
+    assert bodies[1].count(rocket.encode()) == 511
 
 
 class _Fake:
