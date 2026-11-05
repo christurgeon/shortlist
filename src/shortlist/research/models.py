@@ -112,6 +112,10 @@ def stub_sections_note(sections: list[str]) -> str:
             "marks as unaddressed there may be in the filing.")
 
 
+# Marks text omitted from inside one 8-K (research/eightk.py). A grounding segment ends at it.
+ELISION = " […] "
+
+
 @dataclass
 class EightKText:
     """One recent 8-K's extracted substance (research/eightk.py). Filing text, so it
@@ -202,15 +206,17 @@ class FilingBundle:
     # the prompt byte-identical.
 
     def segments(self) -> list[tuple[str, str]]:
-        """The grounding corpus split into (provenance label, text) pairs, in the
-        order they reach the model. haystack() is the join of these, so adding a
-        segment cannot change what verifies — only what it is attributed to.
-        Empty texts are dropped so a label can never match the empty string."""
-        parts = [("10-K", self.tenk.combined()),
-                 ("10-Q MD&A", self.tenq_mda),
-                 ("10-Q Part II Item 1A", self.tenq_added_risks),
-                 ("newly disclosed risks", self.added_risks_text)]
-        parts += [(e.label, e.text) for e in self.eightks]
+        """The grounding corpus as (provenance label, text) pairs, in the order they
+        reach the model. One pair per contiguous span the model sees: each 10-K item is
+        its own pair, and an 8-K splits at its `ELISION`, so no quote can verify across a
+        section header or an omission. Empty texts are dropped so a label can never
+        match the empty string."""
+        tenk = self.tenk
+        parts = [("10-K", text) for text in (tenk.business, tenk.mda, tenk.risk_factors)]
+        parts += [("10-Q MD&A", self.tenq_mda),
+                  ("10-Q Part II Item 1A", self.tenq_added_risks),
+                  ("newly disclosed risks", self.added_risks_text)]
+        parts += [(e.label, piece) for e in self.eightks for piece in e.text.split(ELISION)]
         parts += [(n.label, n.text) for n in self.debt_notes]
         parts += [(n.label, n.text) for n in self.exposure_notes]
         if self.controls is not None:

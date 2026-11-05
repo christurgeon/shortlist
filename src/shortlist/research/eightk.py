@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Any, Optional
 
 from .filings import log_abstain
+from .models import ELISION as _ELISION
 from .models import EightKText
 
 _DEFAULTS = {
@@ -35,10 +36,6 @@ _DEFAULTS = {
     "guidance_window_chars": 1500,
     "items": ["4.02", "1.05", "2.02", "2.01", "1.01", "5.02"],
 }
-
-# Marks the gap the guidance splice jumps. Safe by construction: a quote spanning
-# it fails the `_norm` substring check and is correctly marked unverified.
-_ELISION = " […] "
 
 # Outlook/guidance language; in some releases it sits far past any sane prefix.
 _GUIDANCE_RE = re.compile(r"outlook|guidance|we expect|expects? (?:to|revenue|full)", re.I)

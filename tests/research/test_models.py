@@ -252,9 +252,7 @@ def test_assessment_added_risks_tolerates_malformed_items():
     assert len(a.added_risks) == 1 and a.added_risks[0].claim == "real"
 
 
-def test_segments_label_each_document_and_haystack_is_their_join():
-    """haystack() is the join of segments(), so every existing
-    caller is unchanged and adding a segment cannot change what verifies."""
+def test_segments_label_each_section_and_haystack_is_their_join():
     from shortlist.research.models import EightKText, FilingBundle, FilingText
     tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
     e = EightKText(accession="a1", filed="2026-07-30", items="2.02,9.01",
@@ -262,7 +260,7 @@ def test_segments_label_each_document_and_haystack_is_their_join():
     b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                      filing_date="2026-01-01", tenq_mda="q", added_risks_text="new",
                      eightks=[e])
-    assert b.segments() == [("10-K", "b\n\nm\n\nr"), ("10-Q MD&A", "q"),
+    assert b.segments() == [("10-K", "b"), ("10-K", "m"), ("10-K", "r"), ("10-Q MD&A", "q"),
                             ("newly disclosed risks", "new"),
                             ("8-K 2026-07-30 (Item 2.02, EX-99.1)", "revenue rose")]
     assert b.haystack() == "\n\n".join(t for _, t in b.segments())
@@ -270,11 +268,11 @@ def test_segments_label_each_document_and_haystack_is_their_join():
 
 def test_segments_drops_empty_documents_so_no_label_matches_the_empty_string():
     from shortlist.research.models import FilingBundle, FilingText
-    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="", risk_factors="r")
     b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                      filing_date="2026-01-01")
-    assert b.segments() == [("10-K", "b\n\nm\n\nr")]
-    assert b.haystack() == "b\n\nm\n\nr"        # unchanged with no 8-K, no 10-Q
+    assert b.segments() == [("10-K", "b"), ("10-K", "r")]
+    assert b.haystack() == "b\n\nr"
 
 
 # ---- stub 10-K sections ----

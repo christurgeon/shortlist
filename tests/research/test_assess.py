@@ -362,15 +362,29 @@ def test_a_fabricated_or_stitched_quote_still_fails_with_an_8k_present():
 
 
 def test_a_quote_spanning_the_elision_marker_cannot_verify():
-    """The `[…]` splice is safe by construction: a quote crossing it fails the
-    substring check and is correctly marked unverified."""
+    """The `[…]` splice joins two non-adjacent spans, so a quote crossing it fails
+    whether or not it reproduces the marker."""
     from shortlist.research.assess import _verify_grounding
     from shortlist.research.eightk import _ELISION
     from shortlist.research.models import Finding
     bundle = _bundle_with_8k(f"Revenue rose 8%.{_ELISION}Outlook: we expect growth.")
-    a = _assessment_with([Finding(claim="spliced", evidence="Revenue rose 8%. Outlook: we expect growth.")])
+    a = _assessment_with([Finding(claim="spliced", evidence="Revenue rose 8%. Outlook: we expect growth."),
+                          Finding(claim="marked", evidence=f"Revenue rose 8%.{_ELISION}Outlook: we expect")])
     _verify_grounding(a, bundle)
-    assert a.risks[0].verified is False
+    assert [f.verified for f in a.risks] == [False, False]
+
+
+def test_a_quote_stitched_across_two_10k_items_cannot_verify():
+    """Items 1, 7 and 1A reach the model as separate sections, so a span joining the end of
+    one to the start of the next is stitched, though both halves are in the 10-K."""
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import Finding
+    bundle = _bundle_with_8k("Fourth-quarter revenue rose 8%.")
+    a = _assessment_with([Finding(claim="stitched", evidence="designs devices. Net sales increased."),
+                          Finding(claim="whole", evidence="Net sales increased.")])
+    _verify_grounding(a, bundle)
+    assert [f.verified for f in a.risks] == [False, True]
+    assert a.risks[1].source == "10-K"
 
 
 def test_the_8k_system_addendum_is_keyed_on_the_bundle_not_the_config():
