@@ -83,7 +83,12 @@ class YahooSource(Source):
         try:
             raw = await self._get_chart(ticker)
             closes = _closes_from_chart(raw)
-            spy = await self._spy()
+            try:
+                spy = await self._spy()
+            except Exception as e:
+                # The benchmark only feeds the relative legs; the ticker's own series stands.
+                res.errors.append(f"yahoo.spy: {redact_secrets(e)}")
+                spy = []
             # _dates_from_chart returns [] for a date-less or misaligned payload; the
             # leg then abstains (residual_momentum None).
             dates = _dates_from_chart(raw)

@@ -133,7 +133,7 @@ def _closes_from_chart(raw: Any) -> list[float]:
 def _chart_ts_and_series(raw: Any) -> tuple[Optional[list], Optional[list]]:
     """The chart payload's (timestamp, adjclose) arrays as a pair, or (None, None) on a
     malformed shape. Not used by `_closes_from_chart`, which must accept a payload with
-    closes but no timestamps (older cached payloads)."""
+    closes but no timestamps."""
     try:
         result = raw["chart"]["result"][0]
         return result["timestamp"], result["indicators"]["adjclose"][0]["adjclose"]
@@ -158,9 +158,10 @@ def _dates_from_chart(raw: Any) -> list[date]:
 
 def _monthly_closes_from_chart(raw: Any) -> list[list]:
     """Down-sample to the last valid close of each calendar month, oldest->newest as
-    [iso, close]. Returns [] if timestamps are absent or the payload is malformed."""
+    [iso, close]. Returns [] if timestamps are absent or misaligned, or the payload is
+    malformed."""
     ts, series = _chart_ts_and_series(raw)
-    if not ts or not series:
+    if not ts or not series or len(ts) != len(series):
         return []
     by_month: dict[str, list] = {}
     for t, c in zip(ts, series, strict=False):
