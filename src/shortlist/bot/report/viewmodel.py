@@ -43,15 +43,12 @@ class MetricsVM:
     rating_sell_delta: int | None = None
     target_upside: float | None = None   # from StockMetrics.upside_to_target()
     insider_net_6m: float | None = None
-    # Fundamental quality + leverage (already in --json; surfaced in the report too)
     piotroski_f: int | None = None        # Core-6 quality, 0..6
     piotroski_f_legs: int | None = None   # legs evaluated (the "/N" denominator)
     net_debt_to_ebitda: float | None = None   # display-floored to >=0 (net cash -> 0.0x)
-    # Short interest (FINRA; conditional display — pairs with the crowded_short flag)
     short_pct_outstanding: float | None = None
     days_to_cover: float | None = None
     short_interest_rising: bool | None = None
-    # Earnings execution (Finnhub; conditional display — beat consistency + next report)
     earnings_beats: int | None = None
     earnings_quarters: int | None = None
     earnings_avg_surprise_pct: float | None = None
@@ -270,7 +267,7 @@ def _assessment_vm(rec: dict) -> AssessmentVM:
         reconciliation=_reconciliation(rec.get("reconciliation")),
         bull_case=th.get("bull_case", "") or "",
         bear_case=th.get("bear_case", "") or "",
-        change_my_mind=[str(x) for x in (th.get("what_would_change_my_mind") or [])],
+        change_my_mind=cmm,
         risks=_findings(rec.get("risks")),
         red_flags=_findings(rec.get("red_flags")),
         added_risks=_findings(rec.get("added_risks")),
