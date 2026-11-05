@@ -67,6 +67,7 @@ def test_diluted_shares_tag_single_sourced_everywhere(monkeypatch):
 
     monkeypatch.setattr("edgar.Company", _FakeCompany)
     monkeypatch.setattr("httpx.get", _fake_get)
+    monkeypatch.setattr("shortlist.data.sources.edgar.sec_throttle", lambda: lambda c=None: None)
 
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"

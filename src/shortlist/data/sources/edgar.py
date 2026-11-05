@@ -6,6 +6,7 @@ import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
+from ...edgar.sec_throttle import sec_throttle
 from ...env import redact_secrets
 from ...providers._gaap_tags import DILUTED_SHARES_TAG
 from ..models import (
@@ -39,6 +40,13 @@ _CONCEPT_REFERENCE_CIK = 320193
 def _concept_url(cik: int) -> str:
     return (f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
             f"/us-gaap/{DILUTED_SHARES_TAG}.json")
+
+
+def _concept_get(url: str, identity: str) -> Any:
+    """One companyconcept GET, drawn from the process-wide sec.gov budget."""
+    import httpx
+    sec_throttle()("edgar_concept")
+    return httpx.get(url, headers={"User-Agent": identity}, timeout=10.0)
 
 
 def _is_company_not_found(err: Any) -> bool:
@@ -328,10 +336,8 @@ class EdgarSource(Source):
         (network error or any other status) is not, so the next 404 asks again."""
         if self._concept_reference_verdict is not None:
             return self._concept_reference_verdict
-        import httpx
         try:
-            r = httpx.get(_concept_url(_CONCEPT_REFERENCE_CIK),
-                          headers={"User-Agent": self.identity}, timeout=10.0)
+            r = _concept_get(_concept_url(_CONCEPT_REFERENCE_CIK), self.identity)
         except Exception as e:
             return type(e).__name__
         if r.status_code == 404:
@@ -360,7 +366,6 @@ class EdgarSource(Source):
 
         Resolves the CIK with edgartools `Company(ticker)`, not the raw
         `company_tickers.json` first-occurrence map, which can pick a shell CIK."""
-        import httpx
         from edgar import Company
 
         try:
@@ -371,7 +376,7 @@ class EdgarSource(Source):
             return {}
         url = _concept_url(cik)
         try:
-            r = httpx.get(url, headers={"User-Agent": self.identity}, timeout=10.0)
+            r = _concept_get(url, self.identity)
             if r.status_code == 404:
                 problem = self._concept_reference_problem()
                 if not problem:

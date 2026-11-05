@@ -10,6 +10,14 @@ from shortlist.data.sources import EdgarSource
 from shortlist.providers._edgar_facts import diluted_shares_from_concept
 
 SPINE = ["2025-12-31", "2024-12-31", "2023-12-31"]
+_THROTTLED: list = []
+
+
+@pytest.fixture(autouse=True)
+def _record_sec_throttle(monkeypatch):
+    _THROTTLED.clear()
+    monkeypatch.setattr("shortlist.data.sources.edgar.sec_throttle",
+                        lambda: lambda c=None: _THROTTLED.append(c))
 
 
 def _row(end, val, *, start=None, form="10-K", filed="2026-02-17"):
@@ -648,6 +656,7 @@ def test_seam_404_is_absence_when_reference_concept_resolves(monkeypatch):
     assert src._fetch_diluted_shares_concept("BRK-B", errors) == {}
     assert errors == []
     assert router.reference_requests == 1
+    assert len(_THROTTLED) == len(router.urls) and set(_THROTTLED) == {"edgar_concept"}
 
 
 def test_seam_404_is_recorded_when_reference_concept_also_404s(monkeypatch):
