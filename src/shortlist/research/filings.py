@@ -147,7 +147,8 @@ def _tenq_risk_cfg(config: Optional[dict]) -> dict:
     return {**_TENQ_RISK_DEFAULTS, **blk}
 
 
-def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict]) -> str:
+def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict],
+                      ticker: str = "") -> str:
     """Risk-factor blocks in the 10-Q's Part II Item 1A that are NOT already in the
     10-K's Item 1A — the quarter's *changes*. Returns "" on any failure.
 
@@ -170,7 +171,8 @@ def _tenq_added_risks(tenq: Any, tenk_risk_factors: str, config: Optional[dict])
         # markdown=True mirrors _tenq_mda.
         value = getter("Part II", "Item 1A", markdown=True)
         current = str(value) if value else ""
-    except Exception:
+    except Exception as e:
+        log_abstain("10-Q risk-factor update extraction failed", ticker or "?", e)
         return ""
     if not current or not tenk_risk_factors:
         # No baseline => abstain. The raw section is the dump this function prevents.
@@ -438,13 +440,14 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
             # ONE parse feeds Part I Item 2, Part II Item 1A and the debt notes.
             qobj = latest_q.obj()
             tenq_mda = _tenq_mda(qobj, ticker)
-            tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config)
+            tenq_added = _tenq_added_risks(qobj, tenk.risk_factors, config, ticker)
             tenq_acc = str(getattr(latest_q, "accession_no", "") or "")
             # KEEP LAST, right after `tenq_acc`. The `except` below resets the three
             # 10-Q strings but NOT `debt_notes`, so nothing may raise between the
             # accession assignment and this append.
             debt_notes += stmt_notes.collect(qobj, "10-Q", tenq_acc, ticker, ncfg)
-    except Exception:
+    except Exception as e:
+        log_abstain("10-Q fetch failed", ticker, e)
         tenq_mda, tenq_acc, tenq_added = "", "", ""
 
     prior_1a, prior_mda = _prior_year_sections(ticker, filings=tenk_filings)
