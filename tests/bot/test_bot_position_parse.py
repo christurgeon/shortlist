@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.bot.telegram import parse_add, parse_thesis, parse_ticker_note
 
 
@@ -26,6 +28,12 @@ def test_add_bulk_dedups_and_uppercases():
 def test_add_non_numeric_second_token_is_error():
     # "2 years of runway" -> the old ambiguity; now rejected, not silently eaten
     tickers, shares, err = parse_add("/add NVDA years of runway")
+    assert tickers == [] and shares is None and err is not None
+
+@pytest.mark.parametrize("token", ["nan", "inf", "-Infinity"])
+def test_add_non_finite_shares_is_error(token):
+    """float() parses these, but a NaN or infinite share count poisons every weight."""
+    tickers, shares, err = parse_add(f"/add NVDA {token}")
     assert tickers == [] and shares is None and err is not None
 
 def test_add_invalid_ticker_is_error():
