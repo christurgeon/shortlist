@@ -1,8 +1,5 @@
-"""Direct cover for the shared leaf the EDGAR clients depend on.
-
-Both symbols previously lived in separate modules and were imported across module
-boundaries, so retiring either module would silently have broken the other. This file pins
-them at their new single source.
+"""Direct cover for the shared leaf the EDGAR clients depend on, pinned at its single
+source so retiring a consumer module cannot silently break the others.
 """
 from shortlist.edgar._ticker_rules import (
     _FIFTH_LETTER_SUFFIXES,

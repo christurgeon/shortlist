@@ -4,10 +4,10 @@ import asyncio
 from typing import Optional
 
 from ..models import SocialSentiment, SourceResult, TickerSnapshot
-from .base import Source
+from .base import Source, _LoadOnce
 
 
-class WsbSource(Source):
+class WsbSource(_LoadOnce, Source):
     """Keyless WSB social mentions via ApeWisdom. Bulk-loads the top WSB tickers once
     per run and indexes them by normalized symbol. Disk-cached by fetch date; cache_dir
     is shared across consumers."""
@@ -21,17 +21,12 @@ class WsbSource(Source):
         self._cache_dir = cache_dir
         self._index: Optional[dict] = None
         self._load_error: Optional[str] = None
-        self._load_lock = asyncio.Lock()   # bulk load fires once, not per ticker
+        self._load_lock = asyncio.Lock()
 
-    async def _load(self) -> None:
-        if self._index is not None or self._load_error is not None:
-            return
-        async with self._load_lock:
-            await self._load_locked()
+    def _is_loaded(self) -> bool:
+        return self._index is not None or self._load_error is not None
 
     async def _load_locked(self) -> None:
-        if self._index is not None or self._load_error is not None:
-            return   # another task won the race while we waited on the lock
         from .. import apewisdom
         idx, err = await asyncio.to_thread(
             apewisdom.fetch_wsb_mentions, self._cache_dir, self._timeout)

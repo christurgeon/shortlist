@@ -191,6 +191,17 @@ def test_from_dict_ignores_non_dict_sections():
     assert snap.short_interest is None
 
 
+def test_from_dict_drops_corrupt_list_entries():
+    with pytest.warns(UserWarning, match="non-dict payload"):
+        snap = TickerSnapshot.from_dict({
+            "ticker": "X",
+            "insider": {"net_value_6m": 1.0, "recent": [{"kind": "buy"}, "corrupt"]},
+            "events": {"recent_8k": True, "recent": 7},
+        })
+    assert [t.kind for t in snap.insider.recent] == ["buy"]
+    assert snap.events.recent == []
+
+
 def test_from_dict_absent_sections_stay_silent():
     import warnings as _w
     with _w.catch_warnings():

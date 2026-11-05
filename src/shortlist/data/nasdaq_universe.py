@@ -1,36 +1,21 @@
 """Listed-universe market caps and last-sale prices, keyless, in three requests.
 
-The `_form4.py` / `finra.py` shared-leaf pattern: a **pure** parser plus a thin day-cached
-fetcher, so every consumer is testable offline.
+A pure parser plus a thin day-cached fetcher, so every consumer is testable offline.
+`api.nasdaq.com/api/screener/stocks` returns the NASDAQ / NYSE / AMEX common-stock
+universe, one request per exchange.
 
-`api.nasdaq.com/api/screener/stocks` returns the full NASDAQ / NYSE / AMEX common-stock
-universe — ~7,200 symbols, ~5,800 with a usable `marketCap` — one request per exchange.
-
-**Three things to know before touching this.**
-
-1. **It is undocumented.** Every failure path returns `{}` rather than raising, so a
-   caller that treats absence as abstain, never a drop, degrades to inert on a total
-   fetch failure.
+1. **It is undocumented.** Every failure path returns `{}` rather than raising.
 2. **It is not on sec.gov**, so it draws nothing from the shared `sec_throttle()` budget.
    Do not route it there: that budget measures SEC fair-access use.
-3. **It excludes ETFs and funds.** A symbol's absence is weak evidence that it is not
-   listed common stock. It also covers OTC names, recent listings and API gaps, so treat
-   absence as abstain, never a drop.
+3. **It excludes ETFs and funds**, and misses OTC names, recent listings and API gaps,
+   so a symbol's absence is abstain, never a drop.
 
-Rows with an unparseable `marketCap` are skipped **individually**, never failing the whole
-payload.
+Rows with an unparseable `marketCap` are skipped individually.
 
-**No production caller, and this must never become one.** Generating
-`universe_largecap.txt` / `universe_smallmid.txt` at run time would destroy the
-reproducibility those files exist for. `CLAUDE.md` gates new scoring legs on
-reproducible cross-universe rank IC, and membership that differs between runs makes
-verdicts non-comparable. The correct role is a deliberate membership-refresh tool: a
-human runs it and commits the diff. (Tickers are not stable identifiers.
-`backtest/universe.py:stale_tickers` aborts a run on symbols absent from SEC's map. A
-ticker reassigned to another issuer still resolves; that is the residual gap. Storing
-`CIK,TICKER` pairs and resolving via `edgar/symbology.py` would close it.)
-
-CI pins the parse shapes; the live fetch tests skip by default.
+**No production caller, and this must never become one.** Generating the committed
+universe files at run time would make backtest membership differ between runs and
+verdicts non-comparable. Its role is a deliberate membership-refresh tool: a human runs
+it and commits the diff.
 """
 from __future__ import annotations
 
@@ -45,9 +30,8 @@ _URL = ("https://api.nasdaq.com/api/screener/stocks"
         "?tableonly=true&limit=25000&offset=0&exchange={exchange}")
 _EXCHANGES = ("NASDAQ", "NYSE", "AMEX")
 
-# A browser-shaped header set. The Yahoo-WAF lesson: bot-shaped requests get an HTML
-# rejection while a full header set returns JSON. Accept-Encoding stays httpx-decodable
-# (no br/zstd without the dependency, or .json() fails).
+# A browser-shaped header set: bot-shaped requests get an HTML rejection. Accept-Encoding
+# stays httpx-decodable (no br/zstd without the dependency, or .json() fails).
 _HEADERS = {
     "User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/122.0 Safari/537.36"),
@@ -129,14 +113,11 @@ def _http_get_json(url: str, timeout: float):
 
 def adv_shares_from_finra(rows) -> dict:
     """`{UPPER symbol: average daily share volume}` from FINRA consolidated short-interest
-    rows — the dataset the harness already fetches and disk-caches, so this costs **zero**
-    additional requests.
+    rows, the dataset the harness already fetches and disk-caches (no extra requests).
 
-    `averageDailyVolumeQuantity` is present on ~86% of rows and covered 93% of the tickers
-    the (now-retired) discovery funnel ever surfaced. The dataset is **semi-monthly**, so a
-    value can be up to ~4 weeks old; that is acceptable for a liquidity floor (ADV is
-    slow-moving) but rules this out as a ranking input. Non-positive and unparseable values
-    are omitted so a consumer abstains rather than reading them as "illiquid".
+    The dataset is **semi-monthly**, so a value can be weeks old: fine for a liquidity
+    floor, not for a ranking input. Non-positive and unparseable values are omitted so a
+    consumer abstains rather than reading them as "illiquid".
     """
     out: dict = {}
     for row in rows or []:

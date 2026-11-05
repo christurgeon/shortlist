@@ -28,11 +28,8 @@ def test_edgar_families_come_from_the_shared_leaf():
 
 
 def test_diluted_shares_tag_single_sourced_everywhere(monkeypatch):
-    """docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md fix-wave item 5: the bare
-    WeightedAverageNumberOfDilutedSharesOutstanding tag used to be typed three
-    times independently (_edgar_facts, _xbrl_facts, and the companyconcept
-    fallback's request URL in data/sources/edgar.py) -- exactly the drift this
-    module exists to prevent. All three must now derive from one constant."""
+    """_edgar_facts, _xbrl_facts and the companyconcept fallback's request URL in
+    data/sources/edgar.py must all derive the diluted-shares tag from one constant."""
     pytest.importorskip("pandas")                  # _edgar_facts/edgar.py need the edgar extra
     from shortlist.providers import _edgar_facts as e
 
@@ -67,6 +64,7 @@ def test_diluted_shares_tag_single_sourced_everywhere(monkeypatch):
 
     monkeypatch.setattr("edgar.Company", _FakeCompany)
     monkeypatch.setattr("httpx.get", _fake_get)
+    monkeypatch.setattr("shortlist.data.sources.edgar.sec_throttle", lambda: lambda c=None: None)
 
     src = EdgarSource.__new__(EdgarSource)
     src.name = "edgar"

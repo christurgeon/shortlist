@@ -13,6 +13,11 @@ _FIFTH_LETTER_SUFFIXES = frozenset("FYWURQX")
 
 _ITEM_RE = re.compile(r"\d+\.\d{2}")
 
+# Tokens filers and edgartools put in place of an unresolved issuer ticker. They are
+# truthy, so a bare `if not ticker` passes them, and bucketing by ticker would merge
+# unrelated issuers into one phantom cluster.
+_PLACEHOLDER_TICKERS = frozenset({"", "NONE", "NA", "N/A", "NULL"})
+
 # aff10b5One / isOfficer appear as both 0|1 and false|true in real Form 4 filings.
 # Shared by dera.py and insider.py.
 _TRUE = {"1", "true", "yes", "y"}
@@ -22,6 +27,15 @@ def junk_suffix(ticker: str) -> bool:
     """5th-letter security-type suffix on a 5-letter symbol. 4-char tickers ending in these
     letters (WOOF) are fine; dotted/hyphenated share classes are NOT dropped."""
     return len(ticker) == 5 and ticker.isalpha() and ticker[-1] in _FIFTH_LETTER_SUFFIXES
+
+
+def real_ticker(raw: str | None) -> str:
+    """The stripped, uppercased symbol, or "" for a placeholder, a punctuation-only form
+    or a CIK-as-ticker. A real symbol has at least one letter (BRK.B, AXIA3)."""
+    t = (raw or "").strip().upper()
+    if t in _PLACEHOLDER_TICKERS or not any(c.isalpha() for c in t):
+        return ""
+    return t
 
 
 def normalize_items(raw) -> tuple[str, ...]:

@@ -1,6 +1,6 @@
 """SEC DERA bulk Form 3/4/5 ingest: `InsiderTxn` records + a per-insider trade-month index.
 
-Quarterly ZIPs (~12.8 MB) whose publication lags a quarter, so this is the HISTORY side only —
+Quarterly ZIPs whose publication lags a quarter, so this is the HISTORY side only —
 live detection reads Form 4 XML (`insider.py`). Both build the same `InsiderTxn` from RAW fields.
 """
 from __future__ import annotations
@@ -113,12 +113,8 @@ def build_trade_month_index(txns) -> dict[str, set[tuple[int, int]]]:
     only purchases would classify such a trader as opportunistic and the filter would do
     nothing.
 
-    Keyed on a zero-padded CIK: owner_cik is the join key between this history index and the
-    live Form 4 XML path (classify_tier). If the two sides ever disagreed on zero-padding,
-    every lookup would miss and every insider would silently classify as "unclassified" --
-    still emitted, just at reduced strength, so the failure would never surface as an error.
-    Canonicalizing here (and in classify_tier) makes the join robust to that regardless of
-    which representation a caller passes in.
+    Keyed on a zero-padded CIK, the join key with `classify_tier`, which pads the same way.
+    A padding mismatch would silently classify every insider "unclassified".
     """
     idx: dict[str, set[tuple[int, int]]] = {}
     for t in txns:
@@ -224,7 +220,7 @@ def load_index(cache_dir: str, quarters, identity: str = _UA) -> tuple[dict, int
     `classify_tier` expects.
 
     Memory: quarters are parsed one at a time and merged into `idx`, so two quarters'
-    transaction lists never coexist. This runs on a 1.9 GB VPS.
+    transaction lists never coexist (the deploy target is a small VPS).
     """
     paths = ensure_quarters(quarters, cache_dir, identity)
     downloaded = sorted(p.name.removesuffix("_form345.zip") for p in paths)

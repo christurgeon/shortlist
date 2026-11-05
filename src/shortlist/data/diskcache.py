@@ -1,15 +1,7 @@
-"""Shared best-effort JSON disk-cache primitives.
+"""Shared best-effort JSON disk-cache primitives: read the file if it parses, otherwise
+treat it as a miss; write it back without ever letting a cache failure break a live run.
 
-A dependency-free data-layer leaf. Several keyless sources day-cache a bulk payload
-on disk with the same shape — read the file if it parses, otherwise treat it as a
-miss and refetch; write it back without ever letting a cache failure break a live
-run. That idiom used to be copy-pasted across ``YahooSource._get_chart``,
-``FinraSource``, ``GovContractsSource``, ``LobbyingSource`` and
-``apewisdom.fetch_wsb_mentions``; it lives here once now.
-
-Out of scope by design: ``macro.py`` (TTL-gated single-file fetch) and
-``backtest/xbrl.py`` (a different layer, with "treat as miss" rather than "refetch"
-semantics) keep their own shapes.
+``macro.py`` (TTL-gated single file) and ``backtest/xbrl.py`` keep their own shapes.
 """
 
 from __future__ import annotations
@@ -27,7 +19,7 @@ def read_json_cache(path: Path) -> Optional[Any]:
     try:
         if path.exists():
             return json.loads(path.read_text())
-    except Exception:
+    except (OSError, ValueError):
         pass  # corrupt cache -> refetch
     return None
 
@@ -38,5 +30,5 @@ def write_json_cache(path: Path, obj: Any) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(obj))
-    except Exception:
+    except (OSError, TypeError, ValueError):
         pass  # cache write failure is non-fatal

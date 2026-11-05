@@ -1,18 +1,12 @@
 """EDGAR daily-index scanners: Form 4 submission fetch, initial 13D and 13D/A discovery.
 
-The daily index lists ~800-1,500 rows/day (CIK + accession only), so each filing needs one
-further request for its submission text. Live fetching is bounded by a per-day cap; the pure
-aggregation stays testable in isolation.
+The daily index lists CIK + accession only, so each filing needs one further request for
+its submission text; live fetching is bounded by a per-day cap.
 
-Mostly uncalled by `src/`, deliberately kept. Only `_dedup_by_accession` (via
-`backtest/edgar_history.py`) and `_walk_back_to_published` have production importers.
-The fetchers and `activist_stakes_from_records` are reachable only from tests: their
-caller was retired with the scout (`docs/audits/2026-08-11-scout-retirement.md`).
-
-That audit stopped the repo acting on 13D/Form-4 signals; it did not disprove the
-collectors. They parse SEC's daily index, an external format that drifts, and their tests
-show whether the parsing still holds. Do not delete this module without a decision to
-abandon 13D/Form-4 ingestion.
+Only `_dedup_by_accession` has a production importer (`backtest/edgar_history.py`). The
+fetchers parse SEC's daily index, an external format that drifts, and their tests show
+whether the parsing still holds. Do not delete them without a decision to abandon
+13D/Form-4 ingestion (`docs/audits/2026-08-11-scout-retirement.md`).
 """
 from __future__ import annotations
 
@@ -22,26 +16,11 @@ from datetime import date, timedelta
 from typing import Callable
 
 from ..env import redact_secrets
+from ._ticker_rules import real_ticker as _is_real_ticker
 from .calendar import is_trading_day
 from .models import Emission
 from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
 from .sec_throttle import sec_throttle
-
-# Tokens edgartools emits for an unresolved issuer ticker. Unfiltered, they bucket into a
-# phantom "NONE" issuer that looks like a multi-insider cluster buy.
-_NON_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
-
-
-def _is_real_ticker(raw: str | None) -> str:
-    """Normalize and validate an issuer ticker; return "" if it's a placeholder.
-
-    Rejects `str(None).upper() -> "NONE"`, punctuation-only forms and CIK-as-ticker.
-    A real symbol has at least one letter (BRK.B, AXIA3).
-    """
-    t = (raw or "").strip().upper()
-    if not t or t in _NON_TICKERS or not any(c.isalpha() for c in t):
-        return ""
-    return t
 
 
 def _walk_back_to_published(session: date, lookback: int,
@@ -63,7 +42,7 @@ def _walk_back_to_published(session: date, lookback: int,
 
 
 def fetch_form4_submissions(session: date, max_filings: int, identity: str,
-                            _throttle=None) -> tuple[list[str], date | None]:
+                            _throttle=None) -> tuple[list[str], date | None, int]:
     """Form 4 complete-submission texts for `session` (walk-back to the last published
     index, see _walk_back_to_published).
 
@@ -75,10 +54,12 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
     and flattens that to prose, which can cost a second request and drops the raw
     `<ownershipDocument>` tags parse_form4_xml scans for.
 
-    Never raises. Two distinct empty outcomes:
-    - Walk-back exhaustion (no index published in the last `lookback` days) ->
-      `([], session)`, `used == session`. Not an error.
-    - A real failure (edgartools missing, SEC outage, identity error) -> `([], None)`.
+    Returns `(texts, used, considered)`; `considered` counts the filings the cap admitted,
+    before per-filing errors, so it shows whether the cap bound. Never raises. Two
+    distinct empty outcomes:
+    - Walk-back exhaustion (no index published in the lookback) -> `([], session, 0)`.
+      Not an error.
+    - A real failure (edgartools missing, SEC outage, identity error) -> `([], None, 0)`.
       `used is None` keeps an outage from reading like a quiet day.
     """
     try:
@@ -92,12 +73,10 @@ def fetch_form4_submissions(session: date, max_filings: int, identity: str,
         throttle = _throttle or sec_throttle()
         for f in candidates:
             try:
-                throttle("edgar_form4")   # heaviest SEC consumer (docs/audits/2026-08-05-discovery-funnel-audit.md §4)
+                throttle("edgar_form4")
                 out.append(f.full_text_submission())
             except Exception:  # noqa: BLE001 -- skip one bad filing
                 continue
-        # len(candidates) is the pre-error count, which shows whether the cap bound;
-        # len(out) cannot once any filing errors.
         return out, used, len(candidates)
     except Exception as exc:  # noqa: BLE001 -- edgartools missing or SEC error -> degrade
         warnings.warn(f"edgar: form4 submission fetch failed: {redact_secrets(str(exc))}",
@@ -246,7 +225,7 @@ def fetch_recent_activist_records(session: date, max_filings: int, identity: str
 
 
 def fetch_amendment_records(session: date, max_filings: int, identity: str,
-                            resolve_ticker_fn) -> list[dict]:
+                            resolve_ticker_fn, _throttle=None) -> list[dict]:
     """Live: SCHEDULE 13D/A (+ legacy SC 13D/A) records for `session`. Same contract as
     fetch_activist_records but keeps ONLY amendments and also parses the FILER CIK (the
     stake-baseline pair key needs both sides). Never raises (degrades to [])."""
@@ -254,10 +233,12 @@ def fetch_amendment_records(session: date, max_filings: int, identity: str,
     try:
         rows = _get_13d_index_rows(session, identity)
         records: list[dict] = []
+        throttle = _throttle or sec_throttle()
         for f in _dedup_by_accession(rows)[:max_filings]:
             try:
                 if not is_13d_amendment(getattr(f, "form", "")):
                     continue
+                throttle("edgar_activist_13d_amendment")   # `.header` is a network fetch
                 hdr = f.header
                 subs = getattr(hdr, "subject_companies", None)
                 if not subs:

@@ -448,7 +448,7 @@ def extract_financials(
     return fin
 
 
-# --- companyconcept fallback (root cause B) ---------------------------------
+# --- companyconcept diluted-shares fallback ---------------------------------
 # Recovers diluted_shares for issuers whose income-statement view has no share-count
 # tag. Fallback only: EdgarSource calls it when statement extraction returned [].
 # See docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md for the evidence behind each guard below.

@@ -1,11 +1,8 @@
 """An unresolvable ticker should say so ONCE, clearly — not four times, unhelpfully.
 
-Measured 2026-08-15: 8 of 238 tickers in the committed universes no longer resolve
-because the issuer renamed its symbol or stopped filing (MMC -> MRSH, CSWI -> CSW,
-UCBI -> UCB, LANC -> MZTI; AMED/CIVI/SCS delisted). Each of `_fetch_sync`'s four
-isolated sections independently hit the same wall, so `EdgarSource.fetch("MMC")`
-returned FOUR errors, each carrying edgartools' nearest-neighbour guess — for MMC
-that guess is "MMCP (Mag Mile Capital)", an unrelated micro-cap.
+A renamed or delisted symbol (e.g. MMC -> MRSH) is absent from SEC's ticker map. Each of
+`_fetch_sync`'s four isolated sections would hit the same wall and report edgartools'
+nearest-neighbour guess (for MMC, an unrelated micro-cap).
 
 Ticker resolution is a PRECONDITION, not one of the four isolated sections: if the
 company cannot be resolved, none of them can succeed, so it is reported once and the

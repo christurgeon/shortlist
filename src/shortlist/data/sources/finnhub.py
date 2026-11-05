@@ -26,8 +26,6 @@ _NEWS_RECENT_DAYS = 7      # recent vs prior bucket size
 _NEWS_TRUNCATE_AT = 240    # a list this long is almost certainly capped
 
 
-# --- Finnhub: complements with insider sentiment + recommendation trend ----
-
 class FinnhubSource(_KeyedHttpSource):
     name = "finnhub"
     BASE = "https://finnhub.io/api/v1"

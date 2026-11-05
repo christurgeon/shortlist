@@ -2,8 +2,8 @@
 
 Forward (CIK->ticker): active CIK -> live `company_tickers.json`; delisted CIK -> nearest
 Wayback snapshot at or before the event date. Reverse (ticker->CIK) is archive-only and
-abstains for the ~82% of FINRA's OTC universe absent from `company_tickers.json`. Keyless,
-caches forever, polite to archive.org. Never raises.
+abstains for symbols absent from `company_tickers.json` (most of the OTC universe).
+Keyless, caches forever, polite to archive.org. Never raises.
 
 SERIAL-ONLY: the module-level request throttle is not thread-safe. Do not share one
 `Symbology` across threads without adding a lock.
@@ -160,12 +160,10 @@ def snapshot_reverse(timestamp: str, *, cache_dir: str, client: Optional[httpx.C
     raw = _raw_snapshot(timestamp, cache_dir=cache_dir, client=client)
     if not raw:
         return {}
-    out: dict[str, int] = {}
-    try:
-        rows = raw.values()                 # guard: a non-dict truthy JSON must not raise
-    except AttributeError:
+    if not isinstance(raw, dict):
         return {}
-    for row in rows:
+    out: dict[str, int] = {}
+    for row in raw.values():
         try:
             tk = row.get("ticker")
             if not tk:                      # skip missing/None/empty tickers (no "NONE" keys)
@@ -185,7 +183,7 @@ def snapshot_multi(timestamp: str, *, cache_dir: str, client: Optional[httpx.Cli
     """Set of 10-digit CIKs with >1 ticker row in this snapshot (multi-share-class / units /
     preferred), where the first-occurrence convention could misfire. Never raises."""
     raw = _raw_snapshot(timestamp, cache_dir=cache_dir, client=client)
-    if not raw:
+    if not raw or not isinstance(raw, dict):
         return set()
     counts: dict[str, int] = {}
     for row in raw.values():
@@ -253,8 +251,7 @@ class Symbology:
             return self._overrides[cik10]
         live_tkr = self._live.get(cik10)
         as_of_tkr = self._snapshot_map_for(as_of).get(cik10)
-        if live_tkr is not None:                     # active issuer: live wins (sidesteps the
-                                                       # pre-2019 first-occurrence bug)
+        if live_tkr is not None:   # active issuer: live wins over the archive's convention
             if as_of_tkr is not None and as_of_tkr != live_tkr:
                 self.disagreements.append((cik10, live_tkr, as_of_tkr))
             return live_tkr

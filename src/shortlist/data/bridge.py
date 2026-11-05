@@ -67,6 +67,12 @@ def _age_days(as_of: Optional[str], settlement: Optional[str]) -> Optional[int]:
     return (a - s).days
 
 
+def _at(seq, i):
+    """Positional access tolerating a short or absent series. Statements series have
+    different lengths, so an index valid for one can be out of range for another."""
+    return seq[i] if seq and i < len(seq) else None
+
+
 def _financial_series(st) -> list[dict]:
     """Newest-first list of dicts from the parallel Statements series, for /deep.
     A cell is None where its series is shorter. Returns [] for empty Statements."""
@@ -74,10 +80,7 @@ def _financial_series(st) -> list[dict]:
             "net_income", "operating_cash_flow", "free_cash_flow", "diluted_eps",
             "total_debt", "cash_and_equivalents", "diluted_shares", "inventory")
     n = max((len(getattr(st, c)) for c in cols), default=0)
-
-    def at(seq, i):
-        return seq[i] if i < len(seq) else None
-
+    at = _at
     return [{
         "fiscal_year": at(st.fiscal_years, i),
         "period_end": at(st.fiscal_period_end, i),
@@ -103,12 +106,6 @@ A module constant, not a config knob: `--source xbrl` computes its own ROIC with
 per-year effective rate (`_xbrl_facts._roic_series`), so one config value cannot govern
 both. The two differ by ~(1-0.25)/(1-0.21) = 0.949, about 5%. This gap is known, not a bug.
 """
-
-
-def _at(seq, i):
-    """Positional access tolerating a short or absent series. Statements series have
-    different lengths, so an index valid for one can be out of range for another."""
-    return seq[i] if seq and i < len(seq) else None
 
 
 def _nopat_and_invested_capital(st, tax_rate: float) -> dict[int, tuple[float, float]]:
@@ -203,8 +200,7 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
         m.insider_distinct_buyers = ins.distinct_buyers
         m.insider_role_weighted_buy_value = ins.role_weighted_buy_value
         m.insider_planned_sell_value = ins.planned_sell_value
-        # Compact recent Form 4 trades for /deep.
-        if ins.recent:
+        if ins.recent:   # compact, for /deep
             m.insider_recent = [
                 {"date": t.date, "name": t.name, "role": t.role,
                  "kind": t.kind, "value": t.value} for t in ins.recent]

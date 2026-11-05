@@ -3,9 +3,10 @@ from __future__ import annotations
 from ..models import SourceResult, TickerSnapshot
 from .base import Source
 
-# --- Mock: offline demo (illustrative, not verified) ----------------------
 
 class MockSource(Source):
+    """Offline demo source over illustrative, unverified sample data."""
+
     name = "mock"
 
     async def fetch(self, ticker: str) -> SourceResult:

@@ -1,7 +1,7 @@
 """Sell-side rating REVISION capture from Finnhub's `stock/recommendation` payload.
 
-The payload carries ~4 monthly periods on the free tier and the parser used to keep
-only `trend[0]`. The deltas are computed inside the Finnhub normalizer on purpose:
+The payload carries several monthly periods. The deltas are computed inside the Finnhub
+normalizer on purpose:
 `analyst` merges field-by-field with `fmp` ahead of `finnhub`, so a prior level stored
 here would be differenced against an FMP level from a different analyst panel. Storing
 only the change keeps both ends same-vendor.
