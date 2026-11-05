@@ -45,7 +45,7 @@ class LobbyingSource(_NameIndexedSource):
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/lda",
                  config: Optional[dict] = None):
         import httpx  # lazy: only needed for live runs
-        cfg = (config or {}).get("lobbying", {}) if config else {}
+        cfg = (config or {}).get("lobbying") or {}
         self._base = str(cfg.get("base_url", "https://lda.gov/api/v1")).rstrip("/")
         super().__init__(
             httpx.AsyncClient(
