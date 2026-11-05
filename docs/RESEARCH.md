@@ -336,7 +336,9 @@ unverifiable rather than presented as fact. Interpretive prose is labeled as int
 Verification is **per document, not per corpus**: a quote is matched against one labelled
 segment and the finding records which one, so the brief can say *verified against 8-K
 2026-08-10 (Item 5.02, body)* rather than letting "verified" quietly mean "somewhere in the
-pile". A quote stitched across two documents therefore does not verify.
+pile". A quote stitched across two documents therefore does not verify. The same holds inside
+one document: each 10-K item (1, 1A, 7) is its own segment, and so is each side of an 8-K's
+` […] ` elision, so a quote spanning an item boundary or the elision marker fails too.
 
 ## The screening call
 
