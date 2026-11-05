@@ -400,10 +400,13 @@ class QualitativeAssessment:
         return self.thesis.takeaway
 
 
+def _text(v) -> str:
+    """A payload string; a missing key or JSON null is "", never the text "None"."""
+    return "" if v is None else str(v)
+
+
 def _finding_from(item: dict) -> Finding:
-    """Build a Finding from a payload item's claim/evidence (missing -> empty)."""
-    return Finding(claim=str(item.get("claim", "")),
-                   evidence=str(item.get("evidence", "")))
+    return Finding(claim=_text(item.get("claim")), evidence=_text(item.get("evidence")))
 
 
 def _evidence_pairs(raw, limit: Optional[int] = None) -> list[Finding]:
@@ -416,30 +419,27 @@ def _evidence_pairs(raw, limit: Optional[int] = None) -> list[Finding]:
     Anything else is skipped. Tolerance is not a style choice here: `_finding_from`
     raises AttributeError on a str, and `assess.py`'s parse-retry catches only
     ValueError/JSONDecodeError — so a model that drifts back to the legacy shape
-    would escape the retry and drop the entire brief. `_added_risks` sets the
-    precedent: an advisory list must never sink an otherwise-valid brief.
+    would escape the retry and drop the entire brief.
     """
     out: list[Finding] = []
     for item in (raw or []):
+        if limit is not None and len(out) >= limit:
+            break
         if isinstance(item, str):
             out.append(Finding(claim=item, evidence=""))
         elif isinstance(item, dict):
             out.append(_finding_from(item))
-        else:
-            continue
-        if limit is not None and len(out) >= limit:
-            break
     return out
 
 
 def _findings(payload: dict, key: str, limit: Optional[int] = None) -> list[Finding]:
     out: list[Finding] = []
     for item in (payload.get(key) or []):
+        if limit is not None and len(out) >= limit:
+            break
         if not isinstance(item, dict):
             raise ValueError(f"{key} items must be objects")
         out.append(_finding_from(item))
-        if limit is not None and len(out) >= limit:
-            break
     return out
 
 
@@ -447,14 +447,8 @@ def _added_risks(payload: dict, limit: int) -> list[Finding]:
     """Tolerant parse of the optional `added_risks` list (YoY new risks). Missing
     key -> []; malformed (non-dict) items are skipped, never raised — this advisory
     section must not sink an otherwise-valid brief. Truncated to `limit`."""
-    out: list[Finding] = []
-    for item in (payload.get("added_risks") or []):
-        if not isinstance(item, dict):
-            continue
-        out.append(_finding_from(item))
-        if len(out) >= limit:
-            break
-    return out
+    items = [i for i in (payload.get("added_risks") or []) if isinstance(i, dict)]
+    return [_finding_from(i) for i in items[:max(limit, 0)]]
 
 
 # `regulator` folds to `regulation`, matching the prompt: the government as customer or
@@ -474,10 +468,10 @@ def _exposures(payload: dict, limit: int, ticker: str = "") -> list[Exposure]:
     with a stderr line, never raised. Truncated to `limit`, the hard ceiling."""
     from .filings import log_abstain  # local: filings imports this module
     out: list[Exposure] = []
-    if limit <= 0:
-        return out
     raw = payload.get("exposures")
     for item in (raw if isinstance(raw, list) else []):
+        if len(out) >= limit:
+            break
         if not isinstance(item, dict):
             log_abstain("exposure dropped", ticker, ValueError("item is not an object"))
             continue
@@ -487,10 +481,8 @@ def _exposures(payload: dict, limit: int, ticker: str = "") -> list[Exposure]:
             log_abstain("exposure dropped", ticker,
                         ValueError(f"kind {kind[:40]!r} is not one of EXPOSURE_KINDS"))
             continue
-        out.append(Exposure(claim=str(item.get("claim", "")),
-                            evidence=str(item.get("evidence", "")), kind=kind))
-        if len(out) >= limit:
-            break
+        out.append(Exposure(claim=_text(item.get("claim")),
+                            evidence=_text(item.get("evidence")), kind=kind))
     return out
 
 
@@ -516,6 +508,8 @@ def _reconciliation(payload: dict, *, valid_signals: set[str],
     _findings). Bad verdict is coerced to 'silent'. Truncated to max_conflicts."""
     out: list[Conflict] = []
     for item in (payload.get("reconciliation") or []):
+        if len(out) >= max_conflicts:
+            break
         if not isinstance(item, dict):
             continue
         signal = str(item.get("signal", ""))
@@ -524,14 +518,8 @@ def _reconciliation(payload: dict, *, valid_signals: set[str],
         verdict = item.get("verdict")
         if verdict not in VERDICTS:
             verdict = "silent"
-        out.append(Conflict(
-            signal=signal,
-            tension=str(item.get("tension", "")),
-            filing_says=str(item.get("filing_says", "")),
-            verdict=verdict,
-        ))
-        if len(out) >= max_conflicts:
-            break
+        out.append(Conflict(signal=signal, tension=_text(item.get("tension")),
+                            filing_says=_text(item.get("filing_says")), verdict=verdict))
     return out
 
 
