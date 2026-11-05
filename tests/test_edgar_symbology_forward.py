@@ -84,8 +84,9 @@ def test_init_owns_client_when_none(monkeypatch, tmp_path):   # C1 — the fix, 
         s.close()
 
 
-def test_fetch_path_resolves_delisted_via_client(monkeypatch, tmp_path):  # C1 — wiring end-to-end
+def test_fetch_path_resolves_delisted_via_client(monkeypatch, tmp_path):
     import httpx, shortlist.edgar.symbology as sym
+    monkeypatch.setattr(sym, "_MIN_INTERVAL_S", 0.0)   # no real archive.org pacing
 
     def handler(request):
         u = str(request.url)
@@ -100,5 +101,5 @@ def test_fetch_path_resolves_delisted_via_client(monkeypatch, tmp_path):  # C1 �
     monkeypatch.setattr(sym, "load_cik_to_ticker", lambda *a, **k: {})   # live map empty -> delisted path
     client = httpx.Client(transport=httpx.MockTransport(handler))
     s = sym.Symbology("test@example.com", cache_dir=str(tmp_path), client=client)
-    # delisted CIK resolves via the fetched snapshot blob (the C1 bug would return None here)
+    # delisted CIK resolves via the fetched snapshot blob
     assert s.resolve_ticker(886158, date(2022, 11, 15)) == "BBBY"
