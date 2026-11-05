@@ -219,3 +219,28 @@ def test_window_failed_chunk_returns_none(tmp_path):
                                identity="t@example.com", cache_dir=str(tmp_path),
                                today=date(2026, 7, 1), throttle_s=0, _get=get)
     assert rows is None
+
+
+def test_live_fetch_draws_on_the_shared_sec_throttle(monkeypatch):
+    import httpx
+
+    from shortlist.data import efts
+
+    calls = []
+    monkeypatch.setattr(efts, "sec_throttle", lambda: lambda c=None: calls.append(c))
+
+    class _Client:
+        def __init__(self, **kw):
+            pass
+
+        def get(self, url, params=None):
+            return httpx.Response(200, json={"hits": {"total": {"value": 0}, "hits": []}})
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+    rows = efts.fetch_eightk_range(date(2026, 6, 3), date(2026, 6, 3),
+                                   identity="t@example.com", throttle_s=0)
+    assert rows == []
+    assert calls == ["efts"]
