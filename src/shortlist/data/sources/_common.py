@@ -10,7 +10,7 @@ from ...env import redact_secrets
 from ..diskcache import read_json_cache, write_json_cache
 from ..entity_match import normalize_name, strip_sec_qualifiers
 from ..models import SourceResult, TickerSnapshot
-from .base import Source
+from .base import Source, _LoadOnce
 
 
 async def _load_ticker_name_index(client: Any, cache_dir: str,
@@ -92,7 +92,7 @@ def alias_keys(names: list[str]) -> frozenset[str]:
 _DEFAULT_DEADLINE_S = 90.0
 
 
-class _NameIndexedSource(Source):
+class _NameIndexedSource(_LoadOnce, Source):
     """Scaffolding for keyless sources that query by SEC entity name: the shared
     ticker->name index, a version-gated per-ticker day cache and one deadline over
     the whole fetch. Subclasses set ``_CACHE_PREFIX`` / ``_CACHE_V`` and implement
@@ -110,7 +110,7 @@ class _NameIndexedSource(Source):
         self._name_index: Optional[dict] = None
         self._ambiguous: frozenset[str] = frozenset()
         self._load_error: Optional[str] = None
-        self._load_lock = asyncio.Lock()   # name index loads once, not per ticker
+        self._load_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -128,15 +128,10 @@ class _NameIndexedSource(Source):
     async def _fetch(self, ticker: str) -> SourceResult:
         raise NotImplementedError
 
-    async def _load_names(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return
-        async with self._load_lock:
-            await self._load_names_locked()
+    def _is_loaded(self) -> bool:
+        return self._name_index is not None or self._load_error is not None
 
-    async def _load_names_locked(self) -> None:
-        if self._name_index is not None or self._load_error is not None:
-            return   # another task won the race while we waited on the lock
+    async def _load_locked(self) -> None:
         self._name_index, self._ambiguous, self._load_error = await _load_ticker_name_index(
             self._client, str(self._cache_dir))
 
@@ -160,7 +155,7 @@ class _NameIndexedSource(Source):
         res = SourceResult(source=self.name)
         snap = TickerSnapshot(ticker=ticker)
         res.partial = snap
-        await self._load_names()
+        await self._load()
         if self._load_error:
             res.errors.append(f"{self.name}: {self._load_error}")
             return res, snap, None

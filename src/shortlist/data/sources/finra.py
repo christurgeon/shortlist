@@ -9,10 +9,10 @@ from ...env import redact_secrets
 from .. import finra as _finra
 from ..diskcache import read_json_cache, write_json_cache
 from ..models import SourceResult, TickerSnapshot
-from .base import Source
+from .base import Source, _LoadOnce
 
 
-class FinraSource(Source):
+class FinraSource(_LoadOnce, Source):
     """Keyless FINRA ConsolidatedShortInterest. Bulk-loads the latest bi-monthly cycle
     once per run and indexes it by normalized symbol. Disk-cached by settlement date,
     so the cache lasts until the next cycle."""
@@ -22,7 +22,7 @@ class FinraSource(Source):
     DATA = _finra.FINRA_DATA_URL
     PARTS = _finra.FINRA_PARTS_URL
     PAGE = _finra.FINRA_PAGE   # FINRA record-max-limit
-    MAX_PAGES = 200            # hard cap: ~1M rows dwarfs the real universe (~30k)
+    MAX_PAGES = 200            # hard cap, far above the real universe
 
     def __init__(self, timeout: float = 30.0, cache_dir: str = ".cache/finra"):
         import httpx  # lazy: only needed for live runs
@@ -31,7 +31,7 @@ class FinraSource(Source):
         self._index: Optional[dict] = None
         self._settlement: Optional[str] = None
         self._load_error: Optional[str] = None
-        self._load_lock = asyncio.Lock()   # bulk load fires once, not per ticker
+        self._load_lock = asyncio.Lock()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -59,16 +59,11 @@ class FinraSource(Source):
     def _write_cache(self, settlement: str, rows: list) -> None:
         write_json_cache(self._cache_path(settlement), rows)
 
-    async def _load(self) -> None:
-        """Discover the latest cycle and build the symbol index once."""
-        if self._index is not None or self._load_error is not None:
-            return
-        async with self._load_lock:
-            await self._load_locked()
+    def _is_loaded(self) -> bool:
+        return self._index is not None or self._load_error is not None
 
     async def _load_locked(self) -> None:
-        if self._index is not None or self._load_error is not None:
-            return   # another task won the race while we waited on the lock
+        """Discover the latest cycle and build the symbol index."""
         try:
             settlement = _finra_latest_partition(await self._fetch_partitions())
             if not settlement:
