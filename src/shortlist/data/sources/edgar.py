@@ -196,7 +196,7 @@ class EdgarSource(Source):
         self._index_limit = ev.get("index_limit", 40)
         self._conviction = ((config or {}).get("insider") or {}).get("conviction")
         from edgar import set_identity  # lazy: edgartools is an optional dep
-        set_identity(self.identity)  # process-global mutable state — set once, here
+        set_identity(self.identity)  # process-global edgartools state
 
     async def fetch(self, ticker: str) -> SourceResult:
         async with _edgar_semaphore():
@@ -266,9 +266,8 @@ class EdgarSource(Source):
             # scale, which can be millions rather than absolute shares
             # (docs/audits/2026-07-31-edgar-concept-match.md). Its only consumer is
             # extract_financials' computed-EPS fallback (`ni / shares_diluted`), so a
-            # millions-scaled value gives an EPS 1e6x too small. share_count_cagr and the
-            # dilution flag are scale-invariant. No sanity bound is applied: any
-            # threshold would be fitted to one observation.
+            # millions-scaled value gives an EPS 1e6x too small. No sanity bound is
+            # applied: any threshold would be fitted to one observation.
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
             shares = None
@@ -280,8 +279,7 @@ class EdgarSource(Source):
         )
         if not ef.diluted_shares and ef.fiscal_period_end:
             # Own try/except: a raise here would drop all statements for the ticker,
-            # not just diluted_shares (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
-            # Best-effort, but record the failure.
+            # not just diluted_shares.
             try:
                 ef.diluted_shares = diluted_shares_from_concept(
                     self._fetch_diluted_shares_concept(ticker, errors), ef.fiscal_period_end)
