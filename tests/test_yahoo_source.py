@@ -156,6 +156,29 @@ def test_yahoo_source_error_is_non_fatal(tmp_path, monkeypatch):
     asyncio.run(src.aclose())
 
 
+def test_yahoo_spy_failure_keeps_the_tickers_own_series(tmp_path, monkeypatch):
+    src = YahooSource(cache_dir=str(tmp_path))
+
+    async def fake_get(symbol):
+        if symbol == "SPY":
+            raise RuntimeError("429 Too Many Requests")
+        return _chart_payload([100.0] * 130 + [120.0])
+
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+    res = asyncio.run(src.fetch("AAA"))
+    assert res.partial.price.price == 120.0
+    assert res.partial.price.rel_strength_6m is None
+    assert res.errors and res.errors[0].startswith("yahoo.spy:")
+    asyncio.run(src.aclose())
+
+
+def test_monthly_closes_abstain_on_misaligned_timestamps():
+    from shortlist.data.sources import _monthly_closes_from_chart
+    raw = {"chart": {"result": [{"timestamp": [1_700_000_000],
+                                 "indicators": {"adjclose": [{"adjclose": [1.0, 2.0]}]}}]}}
+    assert _monthly_closes_from_chart(raw) == []
+
+
 class _StatusOnlyClient:
     """Async client whose response raises like httpx, carrying a real status code."""
 

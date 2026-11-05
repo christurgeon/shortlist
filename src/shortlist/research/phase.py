@@ -39,20 +39,14 @@ def research_phase(
     """Run the research layer over `cards` under guardrails.
 
     Returns (briefs, assessments, researched, note, skipped): briefs is
-    dict[ticker, one_line_str], assessments is dict[ticker, full QualitativeAssessment
-    record], researched is list[ticker], note is str|None, and skipped is
-    dict[ticker, reason_str] — the per-ticker reasons enrich() declined a name
-    (e.g. "no 10-K", "assessment failed", "filing error: …"), surfaced so the caller can
-    explain gaps instead of silently omitting research.
+    dict[ticker, one_line_str], assessments is dict[ticker, the brief's JSON record],
+    researched is list[ticker], note is str|None, and skipped is dict[ticker, reason_str]
+    — the per-ticker reasons enrich() declined a name, so the caller can explain gaps
+    instead of silently omitting research.
 
-    Optional _is_available/_enrich kwargs allow injection in tests without monkeypatching
-    the import machinery. When omitted the real research module is imported lazily.
-
-    REAL API: enrich() returns list[ResearchResult] (not dict[ticker, path]).
-    ResearchResult.synthesis is the 2-3 sentence LLM text; ResearchResult.brief_path is the
-    .md file path (a matching .json record is written alongside it). Synthesis is used
-    directly for in-session results; cached results (from_cache=True) carry an empty
-    synthesis, so we fall back to reading the record JSON.
+    `_is_available`/`_enrich` are test seams; omitted, the research package is imported
+    lazily. A cached result carries an empty `synthesis`, so the one-liner then comes
+    from the JSON record beside the brief.
     """
     if _stopped():
         return {}, {}, [], "research skipped: kill-switch", {}
@@ -69,7 +63,6 @@ def research_phase(
     n = top_n if top_n is not None else research_cfg.get("research_top_n", 3)
     budget_s = research_cfg.get("research_phase_budget_s", 600)
     try:
-        # The executor enforces the wall-clock ceiling (research_phase_budget_s).
         # Do NOT use `with ThreadPoolExecutor`: its exit calls shutdown(wait=True) and
         # blocks on a hung thread even after a TimeoutError.
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -94,32 +87,24 @@ def research_phase(
             skipped[r.ticker] = r.skipped
             continue
         researched.append(r.ticker)
-        brief_text = r.synthesis if r.synthesis else one_line_brief_from_file(r.brief_path)
-        briefs[r.ticker] = brief_text[:200]
-        rec = assessment_record_from_file(r.brief_path)
+        rec = _record_json(r.brief_path)
+        briefs[r.ticker] = (r.synthesis or _one_line(rec))[:200]
         if rec:
             assessments[r.ticker] = rec
     return briefs, assessments, researched, None, skipped
 
 
 def _record_json(brief_path) -> dict | None:
-    """Load the JSON record report.write() saves beside the .md, or None on any failure."""
+    """The JSON record report.write() saves beside the .md, or None on any failure."""
     try:
-        return json.loads(Path(brief_path).with_suffix(".json").read_text())
+        rec = json.loads(Path(brief_path).with_suffix(".json").read_text())
     except Exception:  # noqa: BLE001
         return None
+    return rec if isinstance(rec, dict) else None
 
 
-def assessment_record_from_file(brief_path) -> dict | None:
-    """Read the full QualitativeAssessment record (JSON) report.write() saved next to the .md."""
-    return _record_json(brief_path)
-
-
-def one_line_brief_from_file(brief_path) -> str:
-    """Read synthesis from the JSON record file that report.write() writes alongside the .md."""
-    data = _record_json(brief_path)
-    if data is None:
+def _one_line(rec: dict | None) -> str:
+    if rec is None:
         return "brief generated"
-    return (data.get("synthesis")
-            or (data.get("thesis") or {}).get("takeaway")
-            or data.get("summary") or "")[:200]
+    return (rec.get("synthesis") or (rec.get("thesis") or {}).get("takeaway")
+            or rec.get("summary") or "")

@@ -28,15 +28,7 @@ from .mock import MockSource  # noqa: F401
 from .wsb import WsbSource  # noqa: F401
 from .yahoo import YahooSource  # noqa: F401
 from .yahoo_prices import (  # noqa: F401
-    _MAX_RET_WINDOW,
-    _MOM_12_1_BACK,
-    _MOM_SKIP,
-    _PCT_52W_HIGH_MIN_HISTORY,
-    _PCT_52W_HIGH_WINDOW,
-    _VOL_FLOOR,
-    _VOL_SCALE_VOL_WINDOW,
     _YH_SIX_MONTHS,
-    _YH_VOL_WINDOW,
     _chart_ts_and_series,
     _closes_from_chart,
     _dates_from_chart,

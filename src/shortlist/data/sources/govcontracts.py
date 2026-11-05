@@ -37,7 +37,7 @@ class GovContractsSource(_NameIndexedSource):
     def __init__(self, timeout: float = 20.0, cache_dir: str = ".cache/usaspending",
                  config: Optional[dict] = None):
         import httpx  # lazy: only needed for live runs
-        cfg = (config or {}).get("gov_contracts", {}) if config else {}
+        cfg = (config or {}).get("gov_contracts") or {}
         super().__init__(
             httpx.AsyncClient(
                 timeout=float(cfg.get("timeout", timeout)),

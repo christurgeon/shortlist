@@ -20,8 +20,6 @@ from ..models import (
 )
 from .base import _fetch_sections, _KeyedHttpSource
 
-# --- FMP: primary, broad coverage ----------------------------------------
-
 # Cap on valued insider trades netted into net_value_6m (filters run before it).
 #
 # Unverified assumption: truncation keeps the rows FMP returned first, which is safe only
@@ -40,8 +38,8 @@ def _sum_or_none(*vals: Optional[float]) -> Optional[float]:
 
 class FMPSource(_KeyedHttpSource):
     name = "fmp"
-    # `/stable/` only: the legacy `/v3`-`/v4` endpoints were retired for new keys on
-    # 2025-08-31. Every endpoint takes `?symbol=`.
+    # `/stable/` only: the legacy `/v3`-`/v4` endpoints are retired for new keys. Every
+    # endpoint takes `?symbol=`.
     BASE = "https://financialmodelingprep.com/stable"
     _AUTH_PARAM = "apikey"
     _ENV_VAR = "FMP_API_KEY"
@@ -50,11 +48,10 @@ class FMPSource(_KeyedHttpSource):
     def __init__(self, api_key: Optional[str] = None, timeout: float = 15.0, *,
                  cache=None, config: Optional[dict] = None):
         super().__init__(api_key, timeout, cache=cache)
-        # Per-minute 429s clear on backoff; daily-quota 429s do not, so max_retries is small.
         fmp_cfg = (config or {}).get("fmp") or {}
+        # Per-minute 429s clear on backoff; daily-quota 429s do not, so keep this small.
         self._max_retries = int(fmp_cfg.get("max_retries", 2))
-        # The insider endpoint is paid (402 on free plans). config.yaml sets
-        # fetch_insider: false to save the quota call. An absent key defaults to True.
+        # The insider endpoint is paid (402 on free plans); an absent key defaults to True.
         self._fetch_insider = bool(fmp_cfg.get("fetch_insider", True))
 
     async def fetch(self, ticker: str) -> SourceResult:

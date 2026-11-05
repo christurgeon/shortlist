@@ -52,8 +52,8 @@ def test_unmapped_cik_returns_none():
 
 
 def test_malformed_row_skipped_individually_good_rows_survive():
-    """One malformed row among good ones must be skipped INDIVIDUALLY (not discard the whole
-    ~12k-row index) — the all-or-nothing try/except used to silently zero the resolver."""
+    """One malformed row among good ones is skipped INDIVIDUALLY, never discarding the
+    whole index (an all-or-nothing guard would silently zero the resolver)."""
     raw = {
         "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc"},   # good
         "1": {"cik_str": None, "ticker": "BAD", "title": "Null Cik"},       # bad: null cik

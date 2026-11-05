@@ -17,9 +17,8 @@ import threading
 import time
 from pathlib import Path
 
-from .env import redact_secrets
+from .env import _SECRET_PARAMS, redact_secrets
 
-_SECRET_PARAMS = {"apikey", "token", "api_key"}
 _DEFAULT_PATH = ".cache/http.sqlite"
 
 

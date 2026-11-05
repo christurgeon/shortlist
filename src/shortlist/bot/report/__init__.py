@@ -1,5 +1,5 @@
-"""Reporting layer facade. build_report() produces all artifacts; render_message() kept
-for back-compat (demo + existing callers/tests)."""
+"""Reporting layer facade. build_report() produces all artifacts; render_message() is the
+compact GLANCE text."""
 from __future__ import annotations
 
 import base64

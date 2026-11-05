@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from ..env import redact_secrets
 from .diskcache import read_json_cache, write_json_cache
+from .finra import norm_symbol
 
 WSB_URL = "https://apewisdom.io/api/v1.0/filter/wallstreetbets"
 _DEFAULT_CACHE_DIR = ".cache/apewisdom"
@@ -32,11 +33,6 @@ class WsbMention:
     as_of: Optional[str] = None              # ISO date this data was fetched (staleness anchor)
     mention_delta_pct: Optional[float] = None  # (mentions - prev)/prev; None if prev 0/None
     rising: Optional[bool] = None              # mentions > mentions_24h_ago
-
-
-def norm_symbol(sym: str) -> str:
-    """Collapse separators so BRK.B / BRK-B / BRKB all match one key (matches FINRA)."""
-    return (sym or "").upper().replace("-", "").replace(".", "")
 
 
 def _int(v: Any) -> Optional[int]:
@@ -90,7 +86,7 @@ def fetch_wsb_mentions(
     if cached is not None:
         try:
             return parse_wsb(cached.get("payload"), cached.get("as_of", as_of)), None
-        except Exception:
+        except AttributeError:
             pass  # corrupt cache payload -> refetch
     try:
         import httpx  # lazy: only needed for live runs

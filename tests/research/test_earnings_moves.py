@@ -5,6 +5,8 @@ Pure logic only; the EDGAR and price fetches are exercised by the live test.
 """
 import datetime
 
+import pytest
+
 from shortlist.research import earnings_moves
 
 D = datetime.date
@@ -47,10 +49,11 @@ def test_announcement_before_the_series_is_dropped():
     assert earnings_moves.realized_moves(closes, [D(2020, 1, 1)]) == []
 
 
-def test_quarters_cap_is_respected():
+@pytest.mark.parametrize("quarters", [0, 4])
+def test_quarters_cap_is_respected(quarters):
     closes = _series([((2026, 1, d), 100.0 + d) for d in range(1, 20)])
     anns = [D(2026, 1, d) for d in range(2, 18)]
-    assert len(earnings_moves.realized_moves(closes, anns, quarters=4)) == 4
+    assert len(earnings_moves.realized_moves(closes, anns, quarters=quarters)) == quarters
 
 
 def test_zero_or_missing_prior_close_is_dropped_not_divided_by():

@@ -255,6 +255,12 @@ def _run_research_phase(cards, config, n: int, refresh: bool, macro=None) -> dic
     return paths
 
 
+def _metric(c: ScoreCard, name: str, ndigits: int):
+    """`c.metrics.<name>` rounded, or None when the card has no metrics or no value."""
+    v = getattr(c.metrics, name) if c.metrics else None
+    return round(v, ndigits) if v is not None else None
+
+
 def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
     up = c.metrics.upside_to_target() if c.metrics else None
     d = {
@@ -265,28 +271,18 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "piotroski_f": c.piotroski_f,
         "piotroski_f_legs": c.piotroski_f_legs,
         "share_count_cagr": round(c.share_count_cagr, 4) if c.share_count_cagr is not None else None,
-        "asset_growth": (round(c.metrics.asset_growth, 4)
-                         if c.metrics and c.metrics.asset_growth is not None else None),
-        "accruals": (round(c.metrics.accruals, 4)
-                     if c.metrics and c.metrics.accruals is not None else None),
-        # The next keys come from metrics (no ScoreCard field).
-        "shareholder_yield": (round(c.metrics.shareholder_yield, 4)
-                              if c.metrics and c.metrics.shareholder_yield is not None else None),
+        "asset_growth": _metric(c, "asset_growth", 4),
+        "accruals": _metric(c, "accruals", 4),
+        "shareholder_yield": _metric(c, "shareholder_yield", 4),
         # Backtest-only axes.
-        "pct_to_52w_high": (round(c.metrics.pct_to_52w_high, 4)
-                            if c.metrics and c.metrics.pct_to_52w_high is not None else None),
-        "max_daily_return": (round(c.metrics.max_daily_return, 4)
-                             if c.metrics and c.metrics.max_daily_return is not None else None),
-        "vol_scaled_momentum": (round(c.metrics.vol_scaled_momentum, 4)
-                                if c.metrics and c.metrics.vol_scaled_momentum is not None else None),
-        # SUE inputs; days_since_last_report is approximate. The SUE leg is scored in momentum.
-        "earnings_surprise_dispersion": (round(c.metrics.earnings_surprise_dispersion, 3)
-                                         if c.metrics and c.metrics.earnings_surprise_dispersion is not None else None),
+        "pct_to_52w_high": _metric(c, "pct_to_52w_high", 4),
+        "max_daily_return": _metric(c, "max_daily_return", 4),
+        "vol_scaled_momentum": _metric(c, "vol_scaled_momentum", 4),
+        # SUE inputs; days_since_last_report is approximate.
+        "earnings_surprise_dispersion": _metric(c, "earnings_surprise_dispersion", 3),
         "earnings_days_since_last_report": (c.metrics.earnings_days_since_last_report
                                             if c.metrics else None),
-        "filing_text_similarity": (round(c.metrics.filing_text_similarity, 4)
-                                   if c.metrics and c.metrics.filing_text_similarity is not None
-                                   else None),
+        "filing_text_similarity": _metric(c, "filing_text_similarity", 4),
         "ebitda": c.ebitda,
         # Display floor: net cash (signed < 0) shows as 0.0 here; the gate read the raw sign.
         "net_debt_to_ebitda": (round(max(0.0, c.net_debt_to_ebitda), 2)

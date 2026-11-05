@@ -26,7 +26,7 @@ def test_summarize_nets_buys_against_sells():
     assert len(s.txns) == 3
     # value is unsigned; kind carries direction (matches the FMP convention).
     assert s.txns[1].kind == "sell" and s.txns[1].value == 1000.0
-    # v2 fields stay at no-signal defaults when conviction is not requested:
+    # conviction fields stay at their defaults when conviction is not requested:
     assert s.distinct_buyers == 0
     assert s.role_weighted_buy_value == 0.0
     assert s.planned_sell_value == 0.0
@@ -41,14 +41,16 @@ def test_summarize_ignores_non_open_market_codes():
     assert s.txns == []
 
 
-def test_summarize_handles_missing_shares_or_price():
+@pytest.mark.parametrize("missing", [None, float("nan")])
+def test_summarize_handles_missing_shares_or_price(missing):
     rows = [
-        (None, 10.0, "P", None, None, None, False),   # shares None -> value 0
-        (100, None, "S", None, None, None, False),    # price None -> value 0
+        (missing, 10.0, "P", None, None, None, False),   # shares missing -> value 0
+        (100, missing, "S", None, None, None, False),    # price missing -> value 0
+        (10, 5.0, "P", None, None, None, False),
     ]
     s = summarize(rows)
     assert s.found                              # codes were valid
-    assert s.net_value == 0.0
+    assert s.net_value == 50.0                  # a NaN cell must not poison the net
     assert s.txns[0].shares is None and s.txns[0].value == 0.0
 
 

@@ -6,6 +6,7 @@ import os
 from datetime import date, timedelta
 from typing import Any, Optional
 
+from ...edgar.sec_throttle import sec_throttle
 from ...env import redact_secrets
 from ...providers._gaap_tags import DILUTED_SHARES_TAG
 from ..models import (
@@ -39,6 +40,13 @@ _CONCEPT_REFERENCE_CIK = 320193
 def _concept_url(cik: int) -> str:
     return (f"https://data.sec.gov/api/xbrl/companyconcept/CIK{cik:010d}"
             f"/us-gaap/{DILUTED_SHARES_TAG}.json")
+
+
+def _concept_get(url: str, identity: str) -> Any:
+    """One companyconcept GET, drawn from the process-wide sec.gov budget."""
+    import httpx
+    sec_throttle()("edgar_concept")
+    return httpx.get(url, headers={"User-Agent": identity}, timeout=10.0)
 
 
 def _is_company_not_found(err: Any) -> bool:
@@ -188,7 +196,7 @@ class EdgarSource(Source):
         self._index_limit = ev.get("index_limit", 40)
         self._conviction = ((config or {}).get("insider") or {}).get("conviction")
         from edgar import set_identity  # lazy: edgartools is an optional dep
-        set_identity(self.identity)  # process-global mutable state — set once, here
+        set_identity(self.identity)  # process-global edgartools state
 
     async def fetch(self, ticker: str) -> SourceResult:
         async with _edgar_semaphore():
@@ -258,9 +266,8 @@ class EdgarSource(Source):
             # scale, which can be millions rather than absolute shares
             # (docs/audits/2026-07-31-edgar-concept-match.md). Its only consumer is
             # extract_financials' computed-EPS fallback (`ni / shares_diluted`), so a
-            # millions-scaled value gives an EPS 1e6x too small. share_count_cagr and the
-            # dilution flag are scale-invariant. No sanity bound is applied: any
-            # threshold would be fitted to one observation.
+            # millions-scaled value gives an EPS 1e6x too small. No sanity bound is
+            # applied: any threshold would be fitted to one observation.
             shares = fin.get_shares_outstanding_diluted()
         except Exception:
             shares = None
@@ -272,8 +279,7 @@ class EdgarSource(Source):
         )
         if not ef.diluted_shares and ef.fiscal_period_end:
             # Own try/except: a raise here would drop all statements for the ticker,
-            # not just diluted_shares (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
-            # Best-effort, but record the failure.
+            # not just diluted_shares.
             try:
                 ef.diluted_shares = diluted_shares_from_concept(
                     self._fetch_diluted_shares_concept(ticker, errors), ef.fiscal_period_end)
@@ -328,10 +334,8 @@ class EdgarSource(Source):
         (network error or any other status) is not, so the next 404 asks again."""
         if self._concept_reference_verdict is not None:
             return self._concept_reference_verdict
-        import httpx
         try:
-            r = httpx.get(_concept_url(_CONCEPT_REFERENCE_CIK),
-                          headers={"User-Agent": self.identity}, timeout=10.0)
+            r = _concept_get(_concept_url(_CONCEPT_REFERENCE_CIK), self.identity)
         except Exception as e:
             return type(e).__name__
         if r.status_code == 404:
@@ -341,7 +345,7 @@ class EdgarSource(Source):
         else:
             try:
                 tag = r.json().get("tag")
-            except Exception:
+            except (ValueError, AttributeError):
                 verdict = "200 with an unreadable body"
             else:
                 verdict = "" if tag == DILUTED_SHARES_TAG else f"200 with tag {str(tag)[:80]!r}"
@@ -360,7 +364,6 @@ class EdgarSource(Source):
 
         Resolves the CIK with edgartools `Company(ticker)`, not the raw
         `company_tickers.json` first-occurrence map, which can pick a shell CIK."""
-        import httpx
         from edgar import Company
 
         try:
@@ -371,7 +374,7 @@ class EdgarSource(Source):
             return {}
         url = _concept_url(cik)
         try:
-            r = httpx.get(url, headers={"User-Agent": self.identity}, timeout=10.0)
+            r = _concept_get(url, self.identity)
             if r.status_code == 404:
                 problem = self._concept_reference_problem()
                 if not problem:

@@ -40,8 +40,8 @@ def save(snapshot: TickerSnapshot, root: str | Path) -> Path:
     """Persist a snapshot atomically as gzipped compact JSON. The write goes to
     a temp file in the target directory and is then os.replace()'d into place,
     so a process killed mid-write can never leave a truncated file. A legacy
-    uncompressed twin for the same day is unlinked (e.g. a --force re-run after
-    the gzip migration) so day listings never double-count."""
+    uncompressed twin for the same day is unlinked so day listings never
+    double-count."""
     day = snapshot.as_of[:10]
     out_dir = Path(root) / snapshot.ticker
     out_dir.mkdir(parents=True, exist_ok=True)

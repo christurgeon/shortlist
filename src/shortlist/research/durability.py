@@ -120,7 +120,7 @@ _STEADY_THIRDS = ("least steady", "middle", "steadiest")
 _WORDS = {2: "two", 3: "Three", 6: "six", 11: "Eleven"}
 
 
-def _today() -> date:               # seam for tests, options.py pattern
+def _today() -> date:               # seam for tests
     return date.today()
 
 
@@ -143,11 +143,6 @@ def _signed_pct(x: float, places: int = 0) -> str:
 
 def _points(x: float, places: int = 0) -> str:
     return str(_round(x * 100, places))
-
-
-def _signed_points(x: float) -> str:
-    v = _round(x * 100)
-    return f"+{v}" if v > 0 else str(v)
 
 
 def _span(years: list[int]) -> str:
@@ -320,9 +315,8 @@ def _download(cik: int, identity: str, deadline_s: float, transport=None) -> byt
     the run is lost, so one optional section must never be able to wait.
 
     WHY A THREAD. An httpx timeout is per phase and per read, not for the request. A server
-    that drips one header byte inside every read timeout is never timed out at all (measured
-    2026-10-09 on a loopback socket: 79 s against a 1 s timeout, ended only by the header size
-    limit), and name resolution is outside every httpx timeout. So the request runs in a
+    that drips one header byte inside every read timeout is never timed out at all (only the
+    header size limit ends it), and name resolution is outside every httpx timeout. So the request runs in a
     daemon thread and the caller waits `deadline_s` for it, no longer. It cannot delay a brief.
 
     AN ABANDONED THREAD IS NOT STOPPED. It holds one socket until the server ends the response

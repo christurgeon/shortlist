@@ -181,7 +181,6 @@ def test_capital_growth_never_prints_minus_zero(growth, want):
 def test_rounding_is_half_up_on_the_printed_decimal():
     assert [str(rd._round(x)) for x in (0.5, 1.5, 2.5, -0.5, -0.3, 0.0)] == ["1", "2", "3", "-1", "0", "0"]
     assert rd._pct(0.155325, 1) == "15.5%" and rd._pct(0.585) == "59%" and rd._pct(0.5849) == "58%"
-    assert rd._signed_points(-0.0369) == "-4" and rd._signed_points(0.3466) == "+35"
 
 
 def test_every_reason_has_one_sentence_and_no_other():

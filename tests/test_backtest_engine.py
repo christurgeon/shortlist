@@ -1,5 +1,7 @@
 from datetime import date, timedelta
 
+import pytest
+
 from shortlist.backtest.prices import PriceHistory
 from shortlist.backtest.signals import MomentumSignalSource, Observation
 from shortlist.backtest.engine import collect_observations, observation_grid, run_backtest
@@ -25,6 +27,12 @@ def test_observation_grid_non_overlapping():
     assert g[0] == date(2020, 1, 1)
     assert g[1] == date(2020, 4, 1)
     assert all((g[i + 1] - g[i]).days >= 80 for i in range(len(g) - 1))
+
+
+@pytest.mark.parametrize("step", [0, -1])
+def test_observation_grid_rejects_a_step_that_never_advances(step):
+    with pytest.raises(ValueError, match="step_months"):
+        observation_grid(date(2020, 1, 1), date(2021, 1, 1), step_months=step)
 
 
 def _hist(ticker, slope, n=900):

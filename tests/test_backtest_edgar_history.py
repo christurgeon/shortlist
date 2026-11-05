@@ -51,7 +51,7 @@ def test_walker_dedups_filters_amendments_and_threads_dates():
     ]
     fake = _fake_get_filings(rows)
     recs = fetch_activist_window(date(2023, 10, 10), date(2023, 10, 12),
-                                 "t@example.com", throttle_s=0.0, _get_filings=fake)
+                                 "t@example.com", throttle_s=0.0, throttle=lambda _: None, _get_filings=fake)
     assert [r["accession"] for r in recs] == ["a-1", "a-3"]
     assert recs[0]["filing_date"] == date(2023, 10, 10)
     assert recs[0]["cik"] == "0000886158"                            # 10-digit zero-padded
@@ -64,7 +64,7 @@ def test_walker_dedups_filters_amendments_and_threads_dates():
 def test_walker_header_failure_keeps_record_with_none_cik():
     rows = [_filing("SCHEDULE 13D", date(2023, 10, 10), "a-9", boom=True)]
     recs = fetch_activist_window(date(2023, 10, 10), date(2023, 10, 10),
-                                 "t@example.com", throttle_s=0.0,
+                                 "t@example.com", throttle_s=0.0, throttle=lambda _: None,
                                  _get_filings=_fake_get_filings(rows))
     assert len(recs) == 1 and recs[0]["cik"] is None and recs[0]["accession"] == "a-9"
 
@@ -76,11 +76,11 @@ def test_walker_index_failure_returns_none_and_cap_warns():
         raise RuntimeError("EDGAR down")
     with pytest.warns(UserWarning, match="edgar_history"):
         assert fetch_activist_window(date(2023, 1, 1), date(2023, 1, 2),
-                                     "t@example.com", throttle_s=0.0, _get_filings=boom) is None
+                                     "t@example.com", throttle_s=0.0, throttle=lambda _: None, _get_filings=boom) is None
     rows = [_filing("SCHEDULE 13D", date(2023, 1, 1), f"a-{i}") for i in range(5)]
     with pytest.warns(UserWarning, match="max_records"):
         recs = fetch_activist_window(date(2023, 1, 1), date(2023, 1, 2), "t@example.com",
-                                     throttle_s=0.0, max_records=2,
+                                     throttle_s=0.0, throttle=lambda _: None, max_records=2,
                                      _get_filings=_fake_get_filings(rows))
     assert len(recs) == 2
 
@@ -116,7 +116,7 @@ def test_walker_survives_poisoned_filing_row_and_warns():
 
     with pytest.warns(UserWarning, match="edgar_history: skipped 1 unreadable filing row"):
         recs = fetch_activist_window(date(2023, 10, 10), date(2023, 10, 12),
-                                     "t@example.com", throttle_s=0.0, _get_filings=fake)
+                                     "t@example.com", throttle_s=0.0, throttle=lambda _: None, _get_filings=fake)
     # the poisoned row is skipped; both healthy records survive
     assert [r["accession"] for r in recs] == ["a-1", "a-3"]
 
@@ -128,3 +128,11 @@ def test_group_by_day():
     g = group_by_day(recs)
     assert [r["accession"] for r in g[date(2023, 1, 2)]] == ["a", "c"]
     assert list(g) == [date(2023, 1, 2), date(2023, 1, 3)]           # sorted keys
+
+
+def test_walker_draws_on_the_shared_sec_throttle_per_header_fetch():
+    labels = []
+    rows = [_filing("SC 13D", date(2023, 10, 10), "a-1"), _filing("SC 13D", date(2023, 10, 11), "a-2")]
+    fetch_activist_window(date(2023, 10, 10), date(2023, 10, 12), "t@example.com",
+                          throttle=labels.append, _get_filings=_fake_get_filings(rows))
+    assert labels == ["backtest_edgar_history"] * 2

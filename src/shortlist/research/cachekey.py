@@ -1,4 +1,3 @@
-# src/shortlist/research/cachekey.py
 """The on-disk key for one research brief.
 
 The filing accessions alone would go stale only when a new 10-K/10-Q lands, but the

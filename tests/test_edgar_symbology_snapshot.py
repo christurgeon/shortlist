@@ -35,10 +35,11 @@ def test_snapshot_map_missing_cache_no_client_degrades(tmp_path):
     assert snapshot_map("20180101000000", cache_dir=str(tmp_path), client=None) == {}
 
 
-def test_snapshot_reverse_non_dict_json_degrades(tmp_path, monkeypatch):
-    # a truthy non-dict JSON payload must degrade to {} (never raise .values())
+@pytest.mark.parametrize("fn", [symbology.snapshot_reverse, symbology.snapshot_map,
+                                symbology.snapshot_multi])
+def test_snapshot_readers_degrade_on_non_dict_json(tmp_path, monkeypatch, fn):
     monkeypatch.setattr(symbology, "_raw_snapshot", lambda *a, **k: ["not", "a", "dict"])
-    assert snapshot_reverse("20221003133031", cache_dir=str(tmp_path)) == {}
+    assert not fn("20221003133031", cache_dir=str(tmp_path))
 
 
 def test_snapshot_reverse_skips_none_ticker(tmp_path, monkeypatch):

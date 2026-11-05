@@ -60,6 +60,8 @@ def realized_moves(closes: list, announcements: list,
     px = dict(closes)
     out: list[tuple[str, float]] = []
     for announced in sorted(set(announcements), reverse=True):
+        if len(out) >= quarters:
+            break
         before = [d for d in dates if d <= announced]
         after = [d for d in dates if d > announced]
         if not before or not after:
@@ -68,8 +70,6 @@ def realized_moves(closes: list, announcements: list,
         if not prior:
             continue
         out.append((announced.isoformat(), round((px[after[0]] / prior - 1) * 100, 1)))
-        if len(out) >= quarters:
-            break
     return out
 
 
@@ -93,13 +93,13 @@ def announcement_dates(ticker: str, quarters: int = _DEFAULT_QUARTERS,
     require_identity(identity)
     found: list[datetime.date] = []
     for filing in Company(ticker).get_filings(form="8-K").head(_INDEX_SCAN):
+        if len(found) >= quarters:
+            break
         if not is_results_8k(getattr(filing, "items", None)):
             continue
         filed = _as_date(getattr(filing, "filing_date", None))
         if filed is not None:
             found.append(filed)
-        if len(found) >= quarters:
-            break
     return found
 
 
@@ -109,12 +109,10 @@ def daily_closes(ticker: str, timeout: float = 20.0,
 
     REUSES THE PRICE SOURCE'S DAY-CACHED PAYLOAD — same path, same request params — so a
     /deep costs ZERO extra Yahoo requests: `data/sources/yahoo.py` has already fetched
-    and cached this exact chart earlier in the same run (it leads the harness merge for
-    price fields). An earlier version issued its own uncached `range=2y` call and added
-    **40-60 seconds** to every brief, because Yahoo answers the v8 chart slowly from a
-    datacenter IP even while returning 200. Do not reintroduce a second fetch, and do
-    not change `range`/`interval` here without changing them in the source too, or the
-    two will write different payloads to the same cache key.
+    and cached this exact chart earlier in the same run. Do not add a second fetch (Yahoo
+    answers the v8 chart slowly from a datacenter IP, adding tens of seconds per brief),
+    and do not change `range`/`interval` here without changing them in the source too, or
+    the two will write different payloads to the same cache key.
 
     Falls back to a live fetch (and populates the shared cache) when the file is absent,
     which is the `--provider`-narrowed or research-only path."""

@@ -1,9 +1,6 @@
 """13F client (edgar/thirteenf.py): infotable parse, putCall + PRN drops, same-CUSIP
 multi-row aggregation, new-position diff + strength math, material-add diff, top_n, and
-submissions selection with /A exclusion. All offline, all pure.
-
-The signal-wrapper tests that used to live below these were retired with the scout
-orchestrator on 2026-08-10; the parse/diff surface they sat on is what survives."""
+submissions selection with /A exclusion. All offline."""
 
 from shortlist.edgar.thirteenf import (
     aggregate_positions,
@@ -18,8 +15,8 @@ _NS = "http://www.sec.gov/edgar/document/thirteenf/informationtable"
 
 
 def _infotable(rows) -> str:
-    """rows: list of (name, cusip, value, ssh_type, put_call[, shares]). put_call '' = none.
-    `shares` (sshPrnamt) defaults to 1, so existing 5-tuple call sites are unchanged."""
+    """rows: list of (name, cusip, value, ssh_type, put_call[, shares]). put_call '' = none;
+    `shares` (sshPrnamt) defaults to 1."""
     body = []
     for row in rows:
         name, cusip, value, ssh, pc = row[:5]
@@ -354,3 +351,39 @@ def test_material_add_and_new_position_diffs_are_disjoint():
     assert {a["cusip"] for a in adds}.isdisjoint({n["cusip"] for n in news})
     assert {n["cusip"] for n in news} == {"NEW"}
     assert {a["cusip"] for a in adds} == {"AAA"}
+
+
+def test_live_fetch_defaults_to_the_shared_sec_throttle(monkeypatch):
+    import httpx
+
+    from shortlist.edgar import thirteenf
+
+    calls = []
+    monkeypatch.setattr(thirteenf, "sec_throttle", lambda: lambda c=None: calls.append(c))
+
+    class _Resp:
+        content = b"<informationTable/>"
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"directory": {"item": [{"name": "primary_doc.xml"}, {"name": "info.xml"}]}}
+
+    class _Client:
+        def __init__(self, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            return _Resp()
+
+    monkeypatch.setattr(httpx, "Client", _Client)
+    thirteenf.fetch_submissions(1067983, "me@x.com")
+    assert thirteenf.fetch_infotable_rows(1067983, "0000-26-000001", "me@x.com") == []
+    assert calls == ["thirteenf"] * 3

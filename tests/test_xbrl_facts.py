@@ -376,7 +376,7 @@ def test_latest_returns_most_recent_or_none():
 
 
 # ---------------------------------------------------------------------------
-# Task 5: XbrlPanel + extract_panel
+# XbrlPanel + extract_panel
 # ---------------------------------------------------------------------------
 from shortlist.providers._xbrl_facts import extract_panel
 
@@ -454,7 +454,7 @@ def test_extract_panel_shares_picks_latest_instant():
 
 
 # ---------------------------------------------------------------------------
-# Task 6: panel_to_metrics — StockMetrics derivation from XbrlPanel
+# panel_to_metrics — StockMetrics derivation from XbrlPanel
 # ---------------------------------------------------------------------------
 from shortlist.providers._xbrl_facts import XbrlPanel, panel_to_metrics
 

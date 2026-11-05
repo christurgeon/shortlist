@@ -50,7 +50,6 @@ def describe_code(code: str) -> str:
 
 BG = (23, 33, 43)        # #17212b
 FG = (233, 237, 239)     # #e9edef
-GRID = (43, 57, 71)      # #2b3947
 GRAY_BAD = (51, 64, 77)  # #33404d — None / masked cell
 
 # RdYlGn anchors at 0 / 50 / 100.

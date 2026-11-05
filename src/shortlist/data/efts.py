@@ -13,15 +13,15 @@ Observed EFTS behavior this module encodes. Do not "fix" it back:
 - The pagination window is `from+size <= 10k`, so any range with `total >= 9,900` is
   split recursively at the date midpoint.
 - A browser-like UA + Accept set is required. 500s are intermittent: bounded retry.
-- SEC fair access: THROTTLE_S sleep before every request (~3 req/s).
+- SEC fair access: every live request draws on the process-wide `sec_throttle()` budget,
+  plus a THROTTLE_S sleep of EFTS-specific spacing.
 
 The default (`q=None`) request params are frozen; tests/test_data_efts.py pins them. An
 optional exact-phrase `q` adds a `q` key and uses its own cache namespace
 (`.cache/efts_buyback/<phrase-hash>/`).
 
-No production caller: the scout consumers were retired
-(`docs/audits/2026-08-11-scout-retirement.md`). CI pins the parse shapes; live tests
-skip by default. Kept for the EFTS behavior above.
+No production caller (`docs/audits/2026-08-11-scout-retirement.md`). CI pins the parse
+shapes; live tests skip by default. Kept for the EFTS behavior above.
 """
 from __future__ import annotations
 
@@ -33,17 +33,17 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
+from ..edgar.sec_throttle import sec_throttle
 from ..env import redact_secrets
 from .diskcache import read_json_cache, write_json_cache
 
 EFTS_URL = "https://efts.sec.gov/LATEST/search-index"
 EFTS_LAG_DAYS = 2       # EFTS indexes with a lag: today's query returns total 0
-THROTTLE_S = 0.35       # sleep before EVERY request (~3 req/s SEC fair access)
+THROTTLE_S = 0.35       # EFTS-specific spacing before every request, beyond the shared budget
 _PAGE = 100
 _SPLIT_TOTAL = 9_900    # ES from+size window is 10k; split any range at/above this
-# EFTS 500s arrive in bursts. 2 retries ride out only ~3s; 5 ride out ~23s (waits
-# 1+2+4+8+8). A range fetch is all-or-nothing per chunk, so one exhausted page discards
-# the chunk's other pages.
+# EFTS 500s arrive in bursts; 5 retries ride out ~23s (waits 1+2+4+8+8). A range fetch
+# is all-or-nothing per chunk, so one exhausted page discards the chunk's other pages.
 _MAX_RETRIES = 5
 _RETRY_BASE_S = 1.0
 _RETRY_MAX_S = 8.0
@@ -99,7 +99,8 @@ def _phrase_q(phrase: str) -> str:
 
 
 def _page(get: Callable, start: date, end: date, from_: int, *,
-          throttle_s: float, max_retries: int, q: Optional[str] = None) -> Optional[dict]:
+          throttle_s: float, max_retries: int, q: Optional[str] = None,
+          throttle: Optional[Callable] = None) -> Optional[dict]:
     """One throttled page with bounded retry-on-5xx. None = failed (never raises).
 
     `q=None` keeps the frozen item-query params (tests/test_data_efts.py); a non-None `q`
@@ -110,6 +111,8 @@ def _page(get: Callable, start: date, end: date, from_: int, *,
     if q is not None:
         params["q"] = _phrase_q(q)
     for attempt in range(max_retries + 1):
+        if throttle is not None:
+            throttle("efts")
         if throttle_s > 0:
             time.sleep(throttle_s)
         status, payload = get(params)
@@ -122,18 +125,21 @@ def _page(get: Callable, start: date, end: date, from_: int, *,
 
 
 def _range(start: date, end: date, *, get: Callable, throttle_s: float,
-           max_retries: int, q: Optional[str] = None) -> Optional[list[dict]]:
-    first = _page(get, start, end, 0, throttle_s=throttle_s, max_retries=max_retries, q=q)
+           max_retries: int, q: Optional[str] = None,
+           throttle: Optional[Callable] = None) -> Optional[list[dict]]:
+    kw = {"get": get, "throttle_s": throttle_s, "max_retries": max_retries, "q": q,
+          "throttle": throttle}
+    first = _page(get, start, end, 0, throttle_s=throttle_s, max_retries=max_retries, q=q,
+                  throttle=throttle)
     if first is None:
         return None
     total = _total(first)
     if total >= _SPLIT_TOTAL and start < end:
         mid = start + timedelta(days=(end - start).days // 2)
-        left = _range(start, mid, get=get, throttle_s=throttle_s, max_retries=max_retries, q=q)
+        left = _range(start, mid, **kw)
         if left is None:
             return None
-        right = _range(mid + timedelta(days=1), end, get=get,
-                       throttle_s=throttle_s, max_retries=max_retries, q=q)
+        right = _range(mid + timedelta(days=1), end, **kw)
         if right is None:
             return None
         return left + right
@@ -144,7 +150,7 @@ def _range(start: date, end: date, *, get: Callable, throttle_s: float,
     from_ = _PAGE
     while from_ < total and from_ + _PAGE <= 10_000:
         page = _page(get, start, end, from_, throttle_s=throttle_s,
-                     max_retries=max_retries, q=q)
+                     max_retries=max_retries, q=q, throttle=throttle)
         if page is None:
             return None
         hs = _hits(page)
@@ -158,13 +164,16 @@ def _range(start: date, end: date, *, get: Callable, throttle_s: float,
 def fetch_eightk_range(start: date, end: date, *, identity: str,
                        throttle_s: float = THROTTLE_S, max_retries: int = _MAX_RETRIES,
                        timeout: float = 30.0, q: Optional[str] = None,
-                       _get=None) -> Optional[list[dict]]:
+                       _get=None, _throttle=None) -> Optional[list[dict]]:
     """All normalized 8-K-rooted rows filed in [start, end]. None = fetch failed (warned,
     redacted); [] = none. `_get(params) -> (status, payload|None)` is the test seam; the
-    default opens one httpx.Client for the whole range. `q` is an optional exact phrase."""
+    default opens one httpx.Client for the whole range and draws on `sec_throttle()`.
+    `q` is an optional exact phrase."""
     close = None
     get = _get
+    throttle = _throttle
     if get is None:
+        throttle = throttle or sec_throttle()
         import httpx
         client = httpx.Client(timeout=timeout, headers=_efts_headers(identity))
         close = client.close
@@ -179,7 +188,7 @@ def fetch_eightk_range(start: date, end: date, *, identity: str,
                 return 200, None
     try:
         return _range(start, end, get=get, throttle_s=throttle_s,
-                      max_retries=max_retries, q=q)
+                      max_retries=max_retries, q=q, throttle=throttle)
     except Exception as exc:  # noqa: BLE001 — the leaf never raises to a live scan
         warnings.warn(f"efts: range fetch failed for {start}:{end}: "
                       f"{redact_secrets(str(exc))}", stacklevel=2)

@@ -364,18 +364,21 @@ def test_no_company_metrics_and_no_peers_have_their_own_sentences():
 
 
 def test_a_stalled_fetch_is_abandoned_at_the_deadline_and_makes_no_further_call():
-    calls = []
+    import threading
+    calls, release = [], threading.Event()
 
-    def slow(request):
+    def stalled(request):
         calls.append(request)
-        time.sleep(0.6)
+        release.wait(5)
         return httpx.Response(200, json={"symbol": "ACME", "metric": _m(10_000)})
-    cfg = {"research": {"peers": {**CFG["research"]["peers"], "timeout": 0.3}}}
+    cfg = {"research": {"peers": {**CFG["research"]["peers"], "timeout": 0.1}}}
     t0 = time.monotonic()
     t = peers.fetch_section(SimpleNamespace(ticker="ACME"), cfg, now=NOW,
-                            transport=httpx.MockTransport(slow))
-    assert t.status == peers.UNAVAILABLE and time.monotonic() - t0 < 0.6
-    time.sleep(0.8)
+                            transport=httpx.MockTransport(stalled))
+    assert t.status == peers.UNAVAILABLE and time.monotonic() - t0 < 2
+    release.set()
+    for worker in [th for th in threading.enumerate() if th.name == "peers-fetch"]:
+        worker.join(5)
     assert len(calls) == 1
 
 

@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Any, Optional
 
 from .filings import log_abstain
+from .models import ELISION as _ELISION
 from .models import EightKText
 
 _DEFAULTS = {
@@ -35,10 +36,6 @@ _DEFAULTS = {
     "guidance_window_chars": 1500,
     "items": ["4.02", "1.05", "2.02", "2.01", "1.01", "5.02"],
 }
-
-# Marks the gap the guidance splice jumps. Safe by construction: a quote spanning
-# it fails the `_norm` substring check and is correctly marked unverified.
-_ELISION = " […] "
 
 # Outlook/guidance language; in some releases it sits far past any sane prefix.
 _GUIDANCE_RE = re.compile(r"outlook|guidance|we expect|expects? (?:to|revenue|full)", re.I)
@@ -247,15 +244,11 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
                   company_factory=None, today: Optional[date] = None) -> list[EightKText]:
     """Recent 8-K substance for `ticker`, best-first, within the total char budget.
 
-    NEVER RAISES — the contract `_prior_year_sections` already uses: a dead SEC
-    endpoint, a missing [edgar] extra or an unparseable exhibit degrades that
-    filing (or the whole ticker) to today's bare `filing_events` label, with a
-    stderr line so a systematic failure is not indistinguishable from "this name
-    filed nothing". Returns [] when disabled or when nothing qualifies.
-
-    The budget is walked in priority order — each filing takes
-    `min(max_chars_per_filing, remaining)` and the walk stops at exhaustion — so
-    the highest-priority filing is never squeezed by a rebalancing pass.
+    NEVER RAISES: a dead SEC endpoint, a missing [edgar] extra or an unparseable
+    exhibit degrades that filing (or the whole ticker) to the bare `filing_events`
+    label, with a stderr line so a systematic failure is not indistinguishable from
+    "this name filed nothing". Returns [] when disabled or when nothing qualifies.
+    The char budget is split by `_allocate`.
 
     `company_factory` exists ONLY so tests can inject a fake without patching
     `sys.modules`; production takes the lazy `edgar` import (the [edgar] extra is
@@ -274,8 +267,6 @@ def fetch_eightks(ticker: str, config: Optional[dict] = None,
         return []
 
     window = int(cfg["guidance_window_chars"])
-    # Extract first, then size budgets against what each filing holds, so `_allocate`
-    # can protect a short, material filing from a long routine one.
     raw: list[tuple[Any, list[str], list[str], str, list[str]]] = []
     for filing, codes, hits in selected:
         try:

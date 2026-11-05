@@ -31,6 +31,27 @@ class Source(ABC):
         pass
 
 
+class _LoadOnce:
+    """Runs ``_load_locked`` at most once per instance, however many tickers fetch
+    concurrently. Subclasses create ``self._load_lock = asyncio.Lock()`` and define
+    ``_is_loaded`` (True once a load succeeded or recorded its error)."""
+
+    _load_lock: asyncio.Lock
+
+    def _is_loaded(self) -> bool:
+        raise NotImplementedError
+
+    async def _load_locked(self) -> None:
+        raise NotImplementedError
+
+    async def _load(self) -> None:
+        if self._is_loaded():
+            return
+        async with self._load_lock:
+            if not self._is_loaded():   # another task may have loaded while we waited
+                await self._load_locked()
+
+
 class _KeyedHttpSource(Source):
     """Shared scaffolding for keyed JSON-over-HTTP sources (FMP, Finnhub): env-key
     resolution, a lazy httpx ``AsyncClient``, and a cache-delegating GET with optional

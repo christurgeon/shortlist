@@ -20,8 +20,6 @@ from .models import TickerSnapshot
 
 def _source_of(err: str, known: list[str]) -> str:
     head = err.split(":", 1)[0].strip()
-    # Sources prefix errors as "<source>: ...", "<source>-<phase>: ..." (edgar-financials),
-    # or "<source>.<section>: ..." (fmp.profile, finnhub.quote). Reduce to the base source.
     base = head.split("-", 1)[0].split(".", 1)[0]
     return base if base in known else head
 

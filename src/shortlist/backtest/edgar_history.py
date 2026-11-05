@@ -12,10 +12,11 @@ from __future__ import annotations
 import time
 import warnings
 from datetime import date
-from typing import Optional
+from typing import Callable, Optional
 
 from ..edgar.index import _dedup_by_accession
 from ..edgar.quality import is_13d_amendment, is_affiliate_filing, is_initial_13d, is_spac_or_shell
+from ..edgar.sec_throttle import sec_throttle
 from ..env import redact_secrets
 
 _FORMS = ("SCHEDULE 13D", "SC 13D")
@@ -62,8 +63,16 @@ def _parse_filing_date(f) -> Optional[date]:
     return fd if isinstance(fd, date) else None
 
 
+def _pace(throttle: Optional[Callable[[str], None]], throttle_s: float) -> None:
+    """One sec.gov slot (the shared budget when `throttle` is None), plus any extra spacing."""
+    (throttle or sec_throttle())("backtest_edgar_history")
+    if throttle_s > 0:
+        time.sleep(throttle_s)
+
+
 def fetch_activist_window(start: date, end: date, identity: str, *,
-                          throttle_s: float = 0.2, max_records: Optional[int] = None,
+                          throttle_s: float = 0.0, max_records: Optional[int] = None,
+                          throttle: Optional[Callable[[str], None]] = None,
                           _get_filings=None) -> Optional[list[dict]]:
     """All initial 13D records filed in [start, end]. None = index fetch failed; [] = none."""
     _get_filings = _resolve_get_filings(identity, _get_filings)
@@ -99,8 +108,7 @@ def fetch_activist_window(start: date, end: date, identity: str, *,
             acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
             cik = subject = activist = None
             try:
-                if throttle_s > 0:
-                    time.sleep(throttle_s)        # SEC fair-access: bound the header-fetch rate
+                _pace(throttle, throttle_s)
                 hdr = f.header
                 subs = getattr(hdr, "subject_companies", None)
                 if subs:
@@ -125,26 +133,21 @@ def fetch_activist_window(start: date, end: date, identity: str, *,
 
 
 def fetch_amendment_window(start: date, end: date, identity: str, *,
-                           throttle_s: float = 0.2, max_records: Optional[int] = None,
+                           throttle_s: float = 0.0, max_records: Optional[int] = None,
+                           throttle: Optional[Callable[[str], None]] = None,
                            _get_filings=None, _stake_fn=None) -> Optional[list[dict]]:
     """Both initial SCHEDULE 13D and SCHEDULE 13D/A amendment records filed in [start, end]
-    (a backfill walker) -- initials seed the pair baseline a
-    future assembler would diff amendments against. That assembler was never built (no
-    production or test code in this repo pairs initial + amendment records today), so this
-    walker is currently an orphaned building block -- kept for the backfill it was
-    designed for. Each kept row carries a doc-fetched `stake_pct` (percent-of-class off the
-    cover page) and the FILER's CIK (`filer_cik`, distinct from the SUBJECT `cik` -- any
-    future pairing step needs both, since a header failure keeps the record with
-    cik=None/filer_cik=None rather than dropping the row). None = index fetch failed;
-    [] = none.
+    (a backfill walker); initials are the baseline a pairing step diffs amendments against.
+    Each kept row carries a doc-fetched `stake_pct` (percent-of-class off the cover page)
+    and the FILER's CIK (`filer_cik`, distinct from the SUBJECT `cik`); a header failure
+    keeps the record with cik=None/filer_cik=None rather than dropping it.
+    None = index fetch failed; [] = none.
 
     Mirrors fetch_activist_window's poisoned-row guard and header-failure semantics.
 
-    Controller-resolution guard: the per-row stake DOC-fetch is
-    SKIPPED (stake_pct stays None) for rows a future assembler would exclude anyway --
-    is_spac_or_shell(subject_name) or is_affiliate_filing(activist, subject_name) -- so a
-    multi-year walk never burns an SEC document fetch on a filing that could never be
-    selected. Filter-before-fetch.
+    Filter-before-fetch: the per-row stake DOC-fetch is SKIPPED (stake_pct stays None) for
+    rows a pairing step would exclude anyway -- is_spac_or_shell(subject_name) or
+    is_affiliate_filing(activist, subject_name).
 
     `_stake_fn(filing) -> float | None` is the test seam (default
     `edgar.stake_pct.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per
@@ -185,8 +188,7 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
             acc = getattr(f, "accession_no", None) or getattr(f, "accession_number", None)
             cik = subject = activist = filer_cik = None
             try:
-                if throttle_s > 0:
-                    time.sleep(throttle_s)        # SEC fair-access: bound the header-fetch rate
+                _pace(throttle, throttle_s)
                 hdr = f.header
                 subs = getattr(hdr, "subject_companies", None)
                 if subs:
@@ -205,8 +207,7 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
                     is_affiliate_filing(activist or "", subject or "")):
                 n_docs += 1
                 try:
-                    if throttle_s > 0:
-                        time.sleep(throttle_s)    # a second, separate SEC fetch (the doc body)
+                    _pace(throttle, throttle_s)
                     stake_pct = _stake_fn(f)
                 except Exception:  # noqa: BLE001 — one bad doc must not wedge the walk
                     stake_pct = None

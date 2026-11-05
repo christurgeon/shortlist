@@ -1,14 +1,13 @@
 """`validity.min_composite_components` — a composite must rest on a real sub-score.
 
-The defect this pins (live, 2026-08-10): BRVE ranked #1 in the scout report at composite
-100.0 with six of seven components null and confidence 0.0. `scored` did not catch it
-because the bucket-gated line reads `True if bucket == "unknown" else ...`, and `unknown`
-is the majority bucket — so the weight redistributed onto the risk tilt alone, which read
-100 because the issuer reports no debt.
+The regression this pins: a name with every component null except the risk tilt ranked
+first at composite 100.0 with confidence 0.0. `scored` is always True in the `unknown`
+bucket, so the weight redistributed onto the risk tilt alone.
 
-The rule is a COUNT, not a weight threshold. A momentum-only name sits at confidence ~0.08
-and is pinned as scored by test_scoring_abstention.py, while BRVE sits at 0.0 — too narrow a
-band to threshold. Both cases are re-pinned here so the distinction cannot silently invert.
+The rule is a COUNT, not a weight threshold. A momentum-only name has a very low but
+non-zero confidence and is legitimately scored (test_scoring_abstention.py); an empty card
+sits at 0.0 — too narrow a band to threshold. Both cases are pinned here so the distinction
+cannot silently invert.
 """
 from pathlib import Path
 

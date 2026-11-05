@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from ..edgar.sec_throttle import sec_throttle
+
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 
@@ -63,6 +65,23 @@ def _write_facts_cache(cp: Path, cache_dir: str, payload: dict) -> None:
         pass  # cache write failure is non-fatal
 
 
+_MISS = object()
+
+
+def _cached_facts(cp: Path):
+    """The cached payload, None for the no-us-gaap marker, or _MISS when the file is
+    absent or corrupt."""
+    try:
+        if cp.exists():
+            cached = json.loads(cp.read_text())
+            if isinstance(cached, dict) and cached.get("_shortlist_no_us_gaap"):
+                return None
+            return cached
+    except (ValueError, OSError):
+        pass
+    return _MISS
+
+
 def read_companyfacts_cache(cik: Optional[str], *, cache_dir: str,
                             month: str) -> Optional[dict]:
     """Disk-only read of a month-cached companyfacts payload (no network) — the
@@ -71,16 +90,8 @@ def read_companyfacts_cache(cik: Optional[str], *, cache_dir: str,
     a missing/corrupt file, or a None cik."""
     if not cik:
         return None
-    cp = _facts_cache_path(cache_dir, cik, month)
-    try:
-        if cp.exists():
-            cached = json.loads(cp.read_text())
-            if isinstance(cached, dict) and cached.get("_shortlist_no_us_gaap"):
-                return None
-            return cached
-    except (ValueError, OSError):
-        pass  # corrupt cache -> treat as miss
-    return None
+    cached = _cached_facts(_facts_cache_path(cache_dir, cik, month))
+    return None if cached is _MISS else cached
 
 
 async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
@@ -90,14 +101,10 @@ async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
     is cached too (negative marker) so the next run within the month doesn't refetch.
     A true 404 raises from raise_for_status() and is handled by the caller."""
     cp = _facts_cache_path(cache_dir, cik, month)
-    try:
-        if cp.exists():
-            cached = json.loads(cp.read_text())
-            if isinstance(cached, dict) and cached.get("_shortlist_no_us_gaap"):
-                return None                    # cached "no us-gaap" miss
-            return cached
-    except (ValueError, OSError):
-        pass  # corrupt cache -> refetch
+    cached = _cached_facts(cp)
+    if cached is not _MISS:
+        return cached
+    sec_throttle()("backtest_companyfacts")
     resp = await client.get(_FACTS_URL.format(cik=cik))
     resp.raise_for_status()
     raw = resp.json()

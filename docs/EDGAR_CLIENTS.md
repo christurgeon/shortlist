@@ -36,8 +36,12 @@ requests/second fair-access limit. Every sec.gov client here passes a consumer l
   in the run (`docs/audits/2026-08-05-discovery-funnel-audit.md` §4).
 - **Concurrency buys nothing.** One serial worker already exceeds the rate limit, so the
   limit, not I/O wait, is the whole constraint.
-- **Not routed through it:** the harness `EdgarSource` (its own semaphore) and `data/efts.py`
-  (its own throttle; a different host, `efts.sec.gov`).
+- **`data/efts.py`** draws on it too (label `efts`) and keeps its own `THROTTLE_S` sleep as
+  extra spacing for `efts.sec.gov` on top of the shared budget.
+- **The harness `EdgarSource`** bounds its edgartools calls with its own semaphore; its direct
+  data.sec.gov companyconcept requests take the shared throttle (label `edgar_concept`).
+- **The backtest's** companyfacts fetch (`backtest_companyfacts`) and 13D header walk
+  (`backtest_edgar_history`) take it too.
 
 `cik_tickers.load_raw_company_tickers` retries transient failures, then falls back to a
 cached ticker map up to 7 days old. The built map is memoised per day

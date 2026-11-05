@@ -1,10 +1,8 @@
 """A backtest must refuse to run on a universe carrying dead symbols.
 
-Measured 2026-08-15: 8 of 238 tickers in the committed universes no longer resolved
-(4 renamed their symbol, 4 stopped filing). A stale symbol is not inert — it errors
-and contributes nothing, so the cross-section silently shrinks against the ~30-name
-IC trust floor, and nobody notices for a year. The cost lands on the measurement, so
-the check belongs at the moment of measurement.
+A stale symbol is not inert — it errors and contributes nothing, so the cross-section
+silently shrinks against the IC trust floor. The cost lands on the measurement, so the
+check belongs at the moment of measurement.
 
 Known limitation, deliberate: this catches symbols that VANISH from SEC's map. It
 cannot catch a symbol REASSIGNED to a different issuer (ticker `B` -> Barrick Mining),
@@ -15,6 +13,38 @@ import pytest
 from shortlist.backtest.universe import stale_tickers
 
 KNOWN = {"AAPL": "0000320193", "MSFT": "0000789019", "MRSH": "0000062709"}
+
+
+def test_the_sec_map_is_fetched_with_the_sec_identity_and_the_xbrl_cache(monkeypatch):
+    """SEC refuses a User-Agent with no contact email, and a refusal makes the guard
+    abstain silently, so the identity must be sent when it is set."""
+    from shortlist.backtest import cli, xbrl
+    seen = {}
+
+    async def fake_raw(client, *, cache_dir, month):
+        seen["ua"], seen["cache_dir"] = client.headers["User-Agent"], cache_dir
+        return {"0": {"ticker": "AAPL", "cik_str": 320193}}
+
+    monkeypatch.setattr(xbrl, "fetch_company_tickers_raw", fake_raw)
+    monkeypatch.setenv("SEC_IDENTITY", "me@example.com")
+    assert cli._known_symbols("some/dir") == {"AAPL": "0000320193"}
+    assert seen == {"ua": "me@example.com", "cache_dir": "some/dir"}
+
+    dirs = []
+
+    def known(cache_dir):
+        dirs.append(cache_dir)
+        return KNOWN
+
+    def stop(*a, **k):
+        raise SystemExit(99)
+
+    monkeypatch.setattr(cli, "_known_symbols", known)
+    monkeypatch.setattr(cli, "load_universe", lambda spec: ["AAPL"])
+    monkeypatch.setattr(cli, "_load_histories", stop)
+    with pytest.raises(SystemExit):
+        cli.main(["--universe", "largecap", "--horizons", "12", "--xbrl-cache-dir", "x/sec"])
+    assert dirs == ["x/sec"]
 
 
 def test_flags_only_symbols_absent_from_secs_map():

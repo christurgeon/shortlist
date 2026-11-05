@@ -1,6 +1,6 @@
 """Signal sources for the backtest. Every source emits Observations whose values
 are 0-100 sub-scores produced by the REAL scoring functions, so IC is comparable
-across heterogeneous sources and a future XBRL source slots in unchanged.
+across heterogeneous sources.
 """
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ class Observation:
     """A point-in-time signal reading.
 
     as_of: the first date this value was PUBLICLY KNOWABLE. For price-reconstructed
-    signals that is the price date; for a future XBRL source it must be the filing
-    acceptance date, NOT the fiscal-period end (or look-ahead leaks).
+    signals that is the price date; for filing-based signals it must be on or after the
+    filing date, NOT the fiscal-period end (or look-ahead leaks).
     """
     as_of: date
     ticker: str
@@ -39,9 +39,7 @@ class SignalSource(Protocol):
 
 def _score_axes(m, thresholds: dict, axes: tuple[str, ...]) -> dict[str, float]:
     """{axis: score} for every `axis` in `axes` whose `scoring.<axis>_score(m,
-    thresholds)` is not None (dropped, never zeroed). Shared by
-    MomentumSignalSource and XbrlSignalSource, which each score a tuple of axis
-    names via the same `getattr(scoring, f"{axis}_score")` convention."""
+    thresholds)` is not None (dropped, never zeroed)."""
     sig: dict[str, float] = {}
     for axis in axes:
         v = getattr(scoring, f"{axis}_score")(m, thresholds)
@@ -56,6 +54,8 @@ class MomentumSignalSource:
     -> scoring.momentum_score on closes truncated at `as_of`. No reimplementation.
     """
     name = "momentum"
+    _AXES = ("residual_momentum", "pct_to_52w_high", "max_daily_return",
+             "vol_scaled_momentum", "price_vs_200dma", "rel_strength_6m")
 
     def __init__(self, histories: dict[str, PriceHistory], spy: PriceHistory,
                  thresholds: dict, min_history: int = 200):
@@ -79,17 +79,9 @@ class MomentumSignalSource:
         if score is None:
             return None
         sig: dict[str, float] = {"momentum": score}
-        # Standalone residual-momentum axis (Blitz-Huij-Martens 2011). Price-reconstructable,
-        # so it rides the live-price path. Dropped when the window is flat or thin.
-        rm = scoring.residual_momentum_score(m, self.thresholds)
-        if rm is not None:
-            sig["residual_momentum"] = rm
-        # Price-refinement measurement axes (George-Hwang 52wk-high, Bali MAX-effect,
-        # Barroso-Santa-Clara vol-scaled momentum) plus the two leg-reference axes for
-        # collinearity checks. Backtest-only: no production leg reads them.
-        sig.update(_score_axes(m, self.thresholds,
-                                ("pct_to_52w_high", "max_daily_return", "vol_scaled_momentum",
-                                 "price_vs_200dma", "rel_strength_6m")))
+        # Standalone measurement axes: residual momentum, the price refinements and the
+        # two production legs on their own (for collinearity checks).
+        sig.update(_score_axes(m, self.thresholds, self._AXES))
         return Observation(as_of, ticker.upper(), sig)
 
 
@@ -97,13 +89,11 @@ class SnapshotSignalSource:
     """Re-scores stored point-in-time TickerSnapshots via the real scoring engine,
     emitting composite + every sub-score. Valid ONLY for organically-accumulated
     daily captures (never backfilled/restated data). Produces nothing until the
-    store has history; the CLI guards activation (see fit/cli).
+    store has history; the CLI guards activation.
 
-    CAVEAT (latent): stored snapshots for CMCSA/CVX/GOOGL/HON/LMT/MO/MRK/PG have an
-    empty `diluted_shares` before the EDGAR companyconcept fallback shipped and a
-    populated one after. Nothing here reads `diluted_shares` today. Before adding a
-    `share_count` axis, date-gate or exclude those tickers, deriving the break date
-    from the store (docs/design/PLAN_EDGAR_ROOT_CAUSE_B.md).
+    TRAP: early stored snapshots of some tickers have an empty `diluted_shares` that
+    later captures fill. Before adding a `share_count` axis here, date-gate or exclude
+    those tickers, deriving the break date from the store.
     """
     name = "composite"
 
@@ -204,7 +194,8 @@ class XbrlSignalSource:
         panel = extract_panel(cf, as_of)
         if not panel.revenue:                 # nothing knowable yet -> drop, never zero
             return None
-        m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,  # SIC not in companyfacts; sector masking is a score()-level concern
+        # companyfacts carries no SIC; sector masking is a score()-level concern.
+        m = panel_to_metrics(panel, ticker=ticker.upper(), sic=None,
                              price=price, price_at=price_at)
         sig = _score_axes(m, self.thresholds, self._AXES)
         if not sig:

@@ -266,7 +266,7 @@ class Earnings:
     last_report_date: Optional[str] = None  # APPROX last-announcement date (ISO); see _earnings
     # True when last_report_date is the quarter-end proxy, not a real print date. The bridge
     # then refines the SUE decay anchor with the EDGAR 10-Q/10-K filed date. Defaults True
-    # so persisted snapshots that predate the field get the refinement on replay.
+    # so a persisted snapshot without the field gets the refinement on replay.
     last_report_date_estimated: bool = True
 
 
@@ -336,27 +336,25 @@ class TickerSnapshot:
     analyst: Optional[Analyst] = None
     insider: Optional[Insider] = None
     price: Optional[Price] = None
-    short_interest: Optional["ShortInterest"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
-    events: Optional[Events] = None    # auxiliary — NOT a KEY_OBJECT (see _AUX_DEFAULTS)
-    social: Optional["SocialSentiment"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
-    gov_contracts: Optional["GovContracts"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
-    lobbying: Optional["Lobbying"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
-    news: Optional["NewsFlow"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
-    earnings: Optional["Earnings"] = None   # auxiliary — NOT a KEY_OBJECT (sparse signal)
+    # Auxiliary sections: merged, but not KEY_OBJECTS, so they never move coverage.
+    short_interest: Optional[ShortInterest] = None
+    events: Optional[Events] = None
+    social: Optional[SocialSentiment] = None
+    gov_contracts: Optional[GovContracts] = None
+    lobbying: Optional[Lobbying] = None
+    news: Optional[NewsFlow] = None
+    earnings: Optional[Earnings] = None
 
     raw: dict[str, dict[str, Any]] = field(default_factory=dict)        # source -> section -> payload
     provenance: dict[str, list[str]] = field(default_factory=dict)     # object -> [sources]
     errors: list[str] = field(default_factory=list)
 
     def coverage(self) -> float:
-        """Fraction of populated *fields* across the key objects (0..1).
-        This is the harness's honest answer to 'do we have what we need?'."""
+        """Fraction of populated signal fields across the key objects (0..1)."""
         total = filled = 0
         for name in KEY_OBJECTS:
             obj = getattr(self, name)
             if obj is None:
-                # Count only signal fields as all-missing (consistent with the present
-                # branch below) so non-signal plumbing fields never move coverage.
                 total += len(_signal_fields(_DEFAULTS[name]))
                 continue
             for f in _signal_fields(obj):
@@ -397,6 +395,11 @@ class TickerSnapshot:
             names = {f.name for f in fields(klass)}
             return klass(**{k: v for k, v in payload.items() if k in names})
 
+        def _build_list(klass, payloads):
+            if not isinstance(payloads, list):
+                return []
+            return [x for x in (_build(klass, p) for p in payloads) if x is not None]
+
         snap = cls(ticker=d.get("ticker", "?"))
         snap.as_of = d.get("as_of", snap.as_of)
         for name, klass in _DEFAULTS.items():
@@ -404,11 +407,11 @@ class TickerSnapshot:
         for name, klass in _AUX_DEFAULTS.items():
             setattr(snap, name, _build(klass, d.get(name)))
         ins = d.get("insider")
-        if snap.insider is not None and ins and ins.get("recent"):
-            snap.insider.recent = [_build(InsiderTxn, t) for t in ins["recent"]]
+        if snap.insider is not None and ins.get("recent"):
+            snap.insider.recent = _build_list(InsiderTxn, ins["recent"])
         ev = d.get("events")
-        if snap.events is not None and ev and ev.get("recent"):
-            snap.events.recent = [_build(FilingEvent, e) for e in ev["recent"]]
+        if snap.events is not None and ev.get("recent"):
+            snap.events.recent = _build_list(FilingEvent, ev["recent"])
         snap.raw = d.get("raw", {}) or {}
         snap.provenance = d.get("provenance", {}) or {}
         snap.errors = d.get("errors", []) or []
@@ -421,8 +424,6 @@ _DEFAULTS: dict[str, type] = {
 }
 
 
-# Auxiliary sections are merged but stay out of KEY_OBJECTS so they never move
-# coverage()/missing().
 _AUX_DEFAULTS: dict[str, type] = {
     "short_interest": ShortInterest, "events": Events,
     "social": SocialSentiment, "gov_contracts": GovContracts,
@@ -450,7 +451,8 @@ T = TypeVar("T")
 
 def _merge_flat(instances: list[tuple[str, T]]) -> tuple[Optional[T], list[str]]:
     """Field-level merge of flat dataclasses in priority order: each field takes
-    the first source that has a non-None value. Returns (merged, contributing_sources)."""
+    the first source with a present value (`_is_present`). Returns (merged,
+    contributing_sources)."""
     present = [(s, o) for s, o in instances if o is not None]
     if not present:
         return None, []
@@ -542,9 +544,9 @@ def _merge_statements(
     if not present:
         return None, []
     spine_src, spine = present[0]
-    merged = dataclasses.replace(spine)      # copy: never alias SourceResult.partial
-    # replace() is a shallow copy: unset lists alias the source's SourceResult.partial.
-    # Safe only because Statements series are rebound wholesale, never mutated in place.
+    # Shallow copy: series still alias the source's SourceResult.partial. Safe only
+    # because Statements series are rebound wholesale, never mutated in place.
+    merged = dataclasses.replace(spine)
     contributors = [spine_src]
 
     spine_years = _usable_years(spine)

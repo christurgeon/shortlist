@@ -82,10 +82,9 @@ def _sample_zip(tmp_path: Path) -> Path:
 def test_load_index_round_trips_through_its_json_cache(tmp_path, monkeypatch):
     """Second call must hit the cache and skip re-parsing the ZIP (the expensive step).
 
-    `ensure_quarters` is still called every time (cheap -- it's a filesystem existence
-    check per quarter, no network for an already-downloaded ZIP; C-1's fix needs it to
-    learn which quarters currently contribute before it can pick the right cache key), but
-    `_index_from_zip` -- the actual TSV parse -- must NOT run twice."""
+    `ensure_quarters` is still called every time (a cheap existence check per quarter that
+    picks the cache key), but `_index_from_zip` -- the actual TSV parse -- must NOT run
+    twice."""
     zip_path = _sample_zip(tmp_path)
     parse_calls = []
     real_index_from_zip = dera._index_from_zip
@@ -112,10 +111,9 @@ def test_load_index_round_trips_through_its_json_cache(tmp_path, monkeypatch):
 
 
 def test_load_index_never_caches_a_partial_result_and_retries_next_call(tmp_path, monkeypatch):
-    """C-1 regression: when fewer quarters contribute than requested (a download blip, or a
-    quarter simply not yet published), the index must NOT be persisted -- a permanently
-    poisoned {} (or partial) cache with zero retries is exactly the bug this guards against.
-    """
+    """When fewer quarters contribute than requested (a download blip, or a quarter not yet
+    published), the thinner index must not be served under the full key, or a partial
+    cache would never be retried."""
     calls = []
 
     def fake_ensure_quarters(quarters, cache_dir, identity="x"):
@@ -136,7 +134,7 @@ def test_load_index_never_caches_a_partial_result_and_retries_next_call(tmp_path
 
 
 def test_load_index_unlinks_a_corrupt_cache_and_rebuilds(tmp_path, monkeypatch):
-    """I-3: a truncated/corrupt cache file must not be re-served forever -- a decode failure
+    """A truncated/corrupt cache file must not be re-served forever -- a decode failure
     unlinks it and falls through to a normal rebuild."""
     import json as _json
 
@@ -186,8 +184,8 @@ def test_partial_success_caches_under_the_contributed_quarters(tmp_path, monkeyp
 
 
 def test_total_failure_never_caches_and_retries(tmp_path, monkeypatch):
-    """Guards the previously-fixed Critical: an empty index persisted once would be served
-    forever, silently classifying every insider UNCLASSIFIED."""
+    """An empty index persisted once would be served forever, silently classifying every
+    insider UNCLASSIFIED."""
     from shortlist.edgar import dera
     calls = []
     monkeypatch.setattr(dera, "ensure_quarters",

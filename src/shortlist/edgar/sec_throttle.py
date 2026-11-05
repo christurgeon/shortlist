@@ -9,15 +9,15 @@ from __future__ import annotations
 import threading
 import time
 
-# SEC fair access is ~10 req/s. This runs at ~6 (0.167 s), 60% of the ceiling, because
-# this IP has a history of 429s. The headroom also covers the harness EdgarSource, which
-# fetches on its own semaphore outside this budget. `screen.py:main` starts the research
-# phase (the metered consumers) only after run_harness returns, so the two do not overlap
-# in practice, but nothing enforces that.
+# SEC fair access is ~10 req/s. This runs at ~6 (0.167 s), well under the ceiling. The
+# headroom also covers EdgarSource's edgartools calls, which pace on their own semaphore
+# outside this budget (its direct companyconcept GETs do draw on it). `screen.py:main`
+# starts the research phase only after run_harness returns, so the two do not overlap in
+# practice, but nothing enforces that.
 #
 # Request latency is so low that an unthrottled serial loop far exceeds the ceiling, and
-# a thread pool would buy nothing: the interval is the whole constraint. See
-# `docs/audits/2026-08-05-discovery-funnel-audit.md` §4/§9.
+# a thread pool would buy nothing: the interval is the whole constraint
+# (`docs/audits/2026-08-05-discovery-funnel-audit.md`).
 DEFAULT_MIN_INTERVAL_S = 0.167
 
 

@@ -7,9 +7,9 @@ otherwise (honest degradation — never a wrong attribution). No I/O.
 """
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 from typing import Iterable, Optional
 
+from . import entity_match
 from .entity_match import normalize_name
 
 # SEC ticker -> phrases (in normalize_name() form) naming subsidiaries whose
@@ -51,4 +51,4 @@ def match_confidence(sec_name: str, recipient_name: str,
     for tk in (alias_for or ()):
         if any(f" {phrase} " in padded for phrase in _ALIAS_SEED.get(tk.upper(), ())):
             return 1.0
-    return SequenceMatcher(None, a, b).ratio()
+    return entity_match.match_confidence(sec_name, recipient_name)

@@ -39,18 +39,23 @@ def builder():
 
 
 @pytest.fixture(scope="module")
-def firms(probe):
-    return probe.load_firms()
+def records(probe):
+    return list(iter_compacted(probe.COMPACT))
+
+
+@pytest.fixture(scope="module")
+def firms(probe, records):
+    # `load_firms` reads the same committed file; hand it the parsed records so the module
+    # decompresses it once. `build_firm` does not mutate a record.
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(probe, "iter_compacted",
+                   lambda path: iter(records) if path == probe.COMPACT else iter_compacted(path))
+        return probe.load_firms()
 
 
 @pytest.fixture(scope="module")
 def table():
     return durability_profile.load_table()
-
-
-@pytest.fixture(scope="module")
-def records(probe):
-    return list(iter_compacted(probe.COMPACT))
 
 
 def test_the_refactor_moved_no_row_of_the_study(probe, firms):

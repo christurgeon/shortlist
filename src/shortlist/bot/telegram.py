@@ -7,6 +7,7 @@ a single worker thread runs the existing run_harness -> build_report -> deliver 
 from __future__ import annotations
 
 import argparse
+import math
 import queue
 import re
 import signal
@@ -21,7 +22,7 @@ import httpx
 from ..config import ConfigError, load_config
 from ..env import load_env, redact_secrets
 from ..validation import no_data, partition_format, valid_format
-from ._caption import _caption  # noqa: F401  (light leaf; re-exported, tests import bot._caption)
+from ._caption import _caption
 
 _KNOWN = {"screen", "deep", "portfolio", "help", "start", "explain",
           "add", "thesis", "hold", "remove", "sold"}
@@ -30,7 +31,7 @@ _SPLIT = re.compile(r"[,\s]+")
 
 @dataclass(frozen=True)
 class Command:
-    name: str                  # "screen" | "deep" | "portfolio" | "help" | "start" | "explain" | "unknown"
+    name: str                  # one of _KNOWN, or "unknown"
     tickers: tuple[str, ...]
     raw: str
 
@@ -54,17 +55,16 @@ def parse_command(text: str) -> Command:
     return Command(name, _tickers(rest), text)
 
 
-def explain_term(raw: str) -> str:
-    """The /explain argument, verbatim (terms are case- and space-bearing;
-    Command.tickers uppercases + dedups, so re-derive from raw)."""
-    parts = raw.strip().split(maxsplit=1)
-    return parts[1].strip() if len(parts) > 1 else ""
-
-
 def _strip_cmd(raw: str) -> str:
-    """Everything after the leading /command token (mirrors explain_term's split)."""
+    """Everything after the leading /command token, case and spacing kept."""
     parts = raw.strip().split(maxsplit=1)
     return parts[1].strip() if len(parts) > 1 else ""
+
+
+def explain_term(raw: str) -> str:
+    """The /explain argument, verbatim: `Command.tickers` upper-cases and dedups, and a
+    glossary term is case- and space-bearing."""
+    return _strip_cmd(raw)
 
 
 def parse_add(raw: str) -> tuple[list[str], float | None, str | None]:
@@ -96,6 +96,8 @@ def parse_add(raw: str) -> tuple[list[str], float | None, str | None]:
     try:
         shares = float(toks[1])
     except ValueError:
+        shares = math.nan
+    if not math.isfinite(shares):
         return [], None, ("Usage: /add NVDA [shares]. Set a thesis separately with "
                           "/thesis NVDA <why you own it>.")
     return [ticker], shares, None
@@ -246,8 +248,7 @@ class TelegramBot:
         from ..research.phase import research_phase
         return research_phase
 
-    # --- shared handler scaffolding (screen/deep/portfolio each: fetch macro, screen,
-    # split present/no-data) ---
+    # --- shared handler scaffolding ---
     @staticmethod
     def _fetch_macro(config):
         from ..data.macro import fetch_macro
@@ -488,9 +489,8 @@ class TelegramBot:
             self.notifier.send_message(f"⚠️ command failed: {redact_secrets(str(e))}")
 
     def _worker(self) -> None:
-        # Drains to the None sentinel ONLY — never short-circuits on _stop. That keeps
-        # already-queued commands from being silently dropped on shutdown AND makes the
-        # backlog test deterministic (run() enqueues None after the live command, FIFO).
+        # Drains to the None sentinel ONLY, never short-circuiting on _stop, so commands
+        # already queued at shutdown still run (run() enqueues None last, FIFO).
         while True:
             try:
                 cmd = self._queue.get(timeout=0.5)

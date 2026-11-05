@@ -86,9 +86,8 @@ def test_earnings_empty_inputs():
 
 def test_normalize_finnhub_populates_earnings():
     # `_normalize_finnhub` has no `ref` seam (unlike `_earnings` above) -- it reads
-    # date.today() -- so the unreported calendar entry must be future-dated RELATIVE TO NOW.
-    # A hardcoded date rots: this test went red on 2026-07-30 when the calendar passed the
-    # literal "2026-07-29" it used to pin.
+    # date.today() -- so the unreported calendar entry must be future-dated RELATIVE TO NOW;
+    # a hardcoded date rots.
     future = (date.today() + timedelta(days=30)).isoformat()
     raw = {"earnings": _rows(1.0, 2.0), "earnings_calendar": _cal((future, None))}
     snap = _normalize_finnhub("AAPL", raw)
@@ -193,7 +192,7 @@ def test_bridge_sue_anchor_keeps_true_announcement_date():
 def test_bridge_sue_anchor_max_keeps_later_quarter_end():
     # Post-announce, pre-10-Q window: the latest filed 10-Q is the PRIOR quarter's and
     # predates the newest quarter-end -> max() keeps the quarter-end (never worse than
-    # the pre-fix fallback).
+    # the quarter-end proxy alone).
     s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
     s.earnings = Earnings(as_of="2026-07-09", recent_surprise_pcts=[2.0, 4.0, 0.0],
                           quarters=3, last_surprise_pct=2.0,
@@ -204,8 +203,8 @@ def test_bridge_sue_anchor_max_keeps_later_quarter_end():
 
 
 def test_earnings_estimated_flag_survives_roundtrip_and_defaults_true():
-    # Old persisted snapshots lack the flag -> from_dict defaults to True (the honest
-    # prior on the free tier), so replay of pre-fix accumulated data gets the anchor.
+    # A persisted snapshot without the flag -> from_dict defaults to True (the honest
+    # prior on the free tier), so its replay still gets the anchor refinement.
     s = TickerSnapshot(ticker="AAPL", as_of="2026-07-09")
     s.earnings = Earnings(as_of="2026-07-09", last_report_date="2026-05-10",
                           last_report_date_estimated=False)

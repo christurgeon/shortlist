@@ -252,9 +252,7 @@ def test_assessment_added_risks_tolerates_malformed_items():
     assert len(a.added_risks) == 1 and a.added_risks[0].claim == "real"
 
 
-def test_segments_label_each_document_and_haystack_is_their_join():
-    """haystack() is the join of segments(), so every existing
-    caller is unchanged and adding a segment cannot change what verifies."""
+def test_segments_label_each_section_and_haystack_is_their_join():
     from shortlist.research.models import EightKText, FilingBundle, FilingText
     tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
     e = EightKText(accession="a1", filed="2026-07-30", items="2.02,9.01",
@@ -262,7 +260,7 @@ def test_segments_label_each_document_and_haystack_is_their_join():
     b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                      filing_date="2026-01-01", tenq_mda="q", added_risks_text="new",
                      eightks=[e])
-    assert b.segments() == [("10-K", "b\n\nm\n\nr"), ("10-Q MD&A", "q"),
+    assert b.segments() == [("10-K", "b"), ("10-K", "m"), ("10-K", "r"), ("10-Q MD&A", "q"),
                             ("newly disclosed risks", "new"),
                             ("8-K 2026-07-30 (Item 2.02, EX-99.1)", "revenue rose")]
     assert b.haystack() == "\n\n".join(t for _, t in b.segments())
@@ -270,11 +268,11 @@ def test_segments_label_each_document_and_haystack_is_their_join():
 
 def test_segments_drops_empty_documents_so_no_label_matches_the_empty_string():
     from shortlist.research.models import FilingBundle, FilingText
-    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="m", risk_factors="r")
+    tenk = FilingText("A", "acc", "2026-01-01", business="b", mda="", risk_factors="r")
     b = FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
                      filing_date="2026-01-01")
-    assert b.segments() == [("10-K", "b\n\nm\n\nr")]
-    assert b.haystack() == "b\n\nm\n\nr"        # unchanged with no 8-K, no 10-Q
+    assert b.segments() == [("10-K", "b"), ("10-K", "r")]
+    assert b.haystack() == "b\n\nr"
 
 
 # ---- stub 10-K sections ----
@@ -310,3 +308,45 @@ def test_stub_sections_note_names_every_section_and_is_empty_when_none():
     note = stub_sections_note(["Item 7 (MD&A)", "Item 1A (Risk factors)"])
     assert "Item 7 (MD&A), Item 1A (Risk factors)" in note
     assert "not" in note.lower()
+
+
+def _capped_payload():
+    item = {"claim": "c", "evidence": "e"}
+    return {"business_model_summary": "x",
+            "moat": {"summary": "m", "sources": [item, item]},
+            "risks": [item, item], "red_flags": [item, item],
+            "management_capital_allocation": "y", "management_findings": [item, item],
+            "added_risks": [item, item],
+            "exposures": [{**item, "kind": "customer"}] * 2,
+            "reconciliation": [{"signal": "value", "tension": "t", "verdict": "silent"}] * 2,
+            "thesis": {"what_would_change_my_mind": ["a", "b"]}}
+
+
+def test_a_zero_ceiling_keeps_no_item_of_any_list():
+    from shortlist.research.models import assessment_from_payload
+    a = assessment_from_payload(
+        _capped_payload(), ticker="A", as_of="t", accession="acc", filing_date="d",
+        model="m", cost_usd=None, stop_reason=None, max_conflicts=0, max_falsifiers=0,
+        max_risks=0, max_red_flags=0, max_added_risks=0, max_moat_sources=0,
+        max_management_findings=0, max_exposures=0)
+    assert (a.risks, a.red_flags, a.added_risks, a.exposures, a.reconciliation,
+            a.moat.sources, a.management_findings,
+            a.thesis.what_would_change_my_mind) == ([], [], [], [], [], [], [], [])
+
+
+def test_a_null_quote_is_an_empty_quote_not_the_text_none():
+    """A model declaring an inference with `"evidence": null` must not be scored as a
+    fabricated quote reading "None"."""
+    from shortlist.research.assess import _verify_grounding
+    from shortlist.research.models import FilingBundle, FilingText, assessment_from_payload
+    p = _capped_payload()
+    p["moat"]["sources"] = [{"claim": "brand", "evidence": None}]
+    p["management_findings"] = []
+    p["risks"] = [{"claim": None, "evidence": None}]
+    a = assessment_from_payload(p, ticker="A", as_of="t", accession="acc", filing_date="d",
+                                model="m", cost_usd=None, stop_reason=None)
+    assert a.moat.sources[0].evidence == "" and a.risks[0].claim == ""
+    tenk = FilingText("A", "acc", "d", business="b", mda="m", risk_factors="r")
+    _verify_grounding(a, FilingBundle(tenk=tenk, primary_accession="acc", cache_key="acc",
+                                      filing_date="d"))
+    assert a.inference_count == 1

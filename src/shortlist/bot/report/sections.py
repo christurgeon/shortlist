@@ -125,9 +125,7 @@ class _Leaderboard:
         return strip + gloss
 
     def render_text(self, vm, detail):
-        # The leaderboard is deliberately full at both detail levels — the ranked
-        # table is the report's spine, so GLANCE does not terse it (unlike
-        # _Fundamentals). `detail` is therefore intentionally unused here.
+        # Full at both detail levels: the ranked table is the report's spine.
         out = []
         for i, ld in enumerate(vm.leaders, 1):
             gate = f"  ⚠️ {', '.join(ld.gates)}" if ld.gates else ""
@@ -229,6 +227,14 @@ def _implied_growth_text(mvm: MetricsVM) -> "str | None":
     return txt
 
 
+def _conditional_metrics(mvm: MetricsVM) -> list[tuple[str, str]]:
+    """(label, text) for the metrics shown only when present, in display order."""
+    rows = [("Short interest", _short_interest_text(mvm)), ("Piotroski", _piotroski_text(mvm)),
+            ("Revision", _revision_text(mvm)), ("Earnings", _earnings_text(mvm)),
+            ("Implied growth", _implied_growth_text(mvm))]
+    return [(label, text) for label, text in rows if text]
+
+
 class _Fundamentals:
     id, title = "fundamentals", "Fundamentals"
 
@@ -271,21 +277,8 @@ class _Fundamentals:
             analysts = (f"{ld.metrics.rating_buy or 0}B / {ld.metrics.rating_hold or 0}H / "
                         f"{ld.metrics.rating_sell or 0}S")
             cells.append(self._metric(h, "Analysts", analysts, False))
-            si = _short_interest_text(ld.metrics)   # conditional — only crowded names
-            if si:
-                cells.append(self._metric(h, "Short interest", si, False))
-            pio = _piotroski_text(ld.metrics)   # conditional (None on lean/masked stacks)
-            if pio:
-                cells.append(self._metric(h, "Piotroski", pio, False))
-            rev = _revision_text(ld.metrics)    # conditional (None unless ratings moved)
-            if rev:
-                cells.append(self._metric(h, "Revision", rev, False))
-            ern = _earnings_text(ld.metrics)    # conditional (None without earnings history)
-            if ern:
-                cells.append(self._metric(h, "Earnings", ern, False))
-            ig = _implied_growth_text(ld.metrics)
-            if ig:
-                cells.append(self._metric(h, "Implied growth", ig, False, wide=True))
+            cells += [self._metric(h, label, text, False, wide=label == "Implied growth")
+                      for label, text in _conditional_metrics(ld.metrics)]
             heading = (h.raw("span", h.esc(ld.ticker), _class="tk") +
                        (h.raw("span", h.esc(ld.name), _class="nm") if ld.name else "") +
                        h.raw("span", h.esc(f"{ld.composite:.0f}"), _class="sc"))
@@ -304,21 +297,7 @@ class _Fundamentals:
             out.append(f"-- {ld.ticker} metrics --")
             out += [f"   {label}: {_fmt(getattr(ld.metrics, attr), **opt)}"
                     for label, attr, opt in _FUND_ROWS]
-            si = _short_interest_text(ld.metrics)
-            if si:
-                out.append(f"   Short interest: {si}")
-            pio = _piotroski_text(ld.metrics)
-            if pio:
-                out.append(f"   Piotroski: {pio}")
-            rev = _revision_text(ld.metrics)
-            if rev:
-                out.append(f"   Revision: {rev}")
-            ern = _earnings_text(ld.metrics)
-            if ern:
-                out.append(f"   Earnings: {ern}")
-            ig = _implied_growth_text(ld.metrics)
-            if ig:
-                out.append(f"   Implied growth: {ig}")
+            out += [f"   {label}: {text}" for label, text in _conditional_metrics(ld.metrics)]
         return out
 
 
@@ -691,8 +670,6 @@ class _MacroHeader:
         return " · ".join(bits)
 
     def render_html(self, vm, h):
-        # h.tag escapes the text internally (see html.py) — the idiom _Footer uses
-        # for plain-text content.
         return h.tag("div", self._line(vm.macro), _class="macro")
 
     def render_text(self, vm, detail):
@@ -716,7 +693,6 @@ class _Portfolio:
             c.append("not scored")
         return c
 
-    # Display-string helpers shared by both renderers so the scaling math lives once.
     @staticmethod
     def _pos_weight(pos):
         return "·" if pos.weight is None else f"{pos.weight*100:.0f}%"
@@ -756,8 +732,6 @@ class _Portfolio:
             parts.append(h.tag("div", "Sectors: " + self._sector_line(p.sector_weights), _class="pf-sectors"))
         if p.total_value is not None:
             parts.append(h.tag("div", self._book_line(p), _class="pf-tot"))
-        # NOTE: pf/pf-alerts/pf-sectors/pf-tot are unstyled in v1 (html._CSS) — content
-        # renders readably on base table/div rules; theming is deferred.
         return "".join(parts)
 
     def render_text(self, vm, detail):
@@ -861,10 +835,6 @@ class _Glossary:
 _DEEP_PER_LINE = 3
 
 
-def _pct(v) -> str:
-    return "—" if v is None else f"{v * 100:+.0f}%"
-
-
 # ---- /deep handoff block ----
 class _DeepBlock:
     """Copy-paste /deep commands for the non-gated, scored leaders — the 'stocks worth
@@ -875,8 +845,7 @@ class _DeepBlock:
         return bool(vm.deep_block)
 
     def _lines(self, vm) -> list[str]:
-        t = list(vm.deep_block or [])   # None-tolerant: applies() gates render, but a
-        # directly-constructed ReportVM (tests) may pass None rather than the [] default.
+        t = list(vm.deep_block or [])
         return [", ".join(t[i:i + _DEEP_PER_LINE]) for i in range(0, len(t), _DEEP_PER_LINE)]
 
     def render_html(self, vm, h) -> str:
@@ -911,5 +880,5 @@ def render_text(vm: ReportVM, detail: Detail) -> str:
     lines = [f"📊 Shortlist — session {vm.session.isoformat()}", ""]
     for s in SECTIONS:
         if s.applies(vm):
-            lines += s.render_text(vm, detail)   # every Section.render_text -> list[str]
+            lines += s.render_text(vm, detail)
     return "\n".join(lines)
