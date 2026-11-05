@@ -188,5 +188,5 @@ class _NameIndexedSource(_LoadOnce, Source):
             return None, None
         try:
             return cached, (model(**cached[key]) if cached.get("matched") else None)
-        except Exception:
+        except (TypeError, KeyError):
             return None, None

@@ -86,7 +86,7 @@ def fetch_wsb_mentions(
     if cached is not None:
         try:
             return parse_wsb(cached.get("payload"), cached.get("as_of", as_of)), None
-        except Exception:
+        except AttributeError:
             pass  # corrupt cache payload -> refetch
     try:
         import httpx  # lazy: only needed for live runs

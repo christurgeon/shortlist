@@ -345,7 +345,7 @@ class EdgarSource(Source):
         else:
             try:
                 tag = r.json().get("tag")
-            except Exception:
+            except (ValueError, AttributeError):
                 verdict = "200 with an unreadable body"
             else:
                 verdict = "" if tag == DILUTED_SHARES_TAG else f"200 with tag {str(tag)[:80]!r}"
