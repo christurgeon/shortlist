@@ -1,5 +1,8 @@
-import yaml
+import copy
+import dataclasses
 from pathlib import Path
+
+import yaml
 
 from shortlist.backtest.prize_bound import composite_with, to_rank_scores
 from shortlist.providers.mock import MockProvider, _SAMPLE
@@ -28,6 +31,18 @@ def test_composite_with_moves_when_momentum_swapped():
     floored = composite_with(card, 0.0, w, CONFIG)
     assert floored <= base <= bumped
     assert bumped != floored   # momentum has SOME leverage on this name
+
+
+def test_composite_with_honours_the_value_knobs_the_real_scorer_reads():
+    # A non-default value block (upside_to_target off, shareholder_yield on) must still
+    # reproduce the real composite: the value sub-score is recomputed with the config.
+    cfg = copy.deepcopy(CONFIG)
+    cfg["value"] = {"upside_to_target": False, "shareholder_yield": {"enabled": True}}
+    cfg["thresholds"]["shareholder_yield"] = [-0.02, 0.10]
+    for t in _SAMPLE:
+        m = dataclasses.replace(MockProvider().fetch(t), shareholder_yield=0.08)
+        card = score(m, cfg)
+        assert composite_with(card, card.momentum, cfg["weights"], cfg) == card.composite, t
 
 
 def test_to_rank_scores_maps_to_percentile_0_100():
