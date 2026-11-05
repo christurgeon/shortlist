@@ -77,6 +77,16 @@ class Form4Summary:
     planned_sell_value: float = 0.0
 
 
+def _missing(v: Any) -> bool:
+    """True for None and NaN-like values (NaN != NaN; pandas NA raises on bool)."""
+    if v is None:
+        return True
+    try:
+        return bool(v != v)
+    except (TypeError, ValueError):
+        return True
+
+
 def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4Summary:
     """Aggregate open-market (P/S) transactions. Each row is
     (shares, price, code, date, name, role, planned); non-P/S codes are ignored.
@@ -89,8 +99,8 @@ def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4
         classification = classify_code(str(code or ""))
         if classification == "other":
             continue
-        shares = shares or 0
-        price = price or 0
+        shares = 0 if _missing(shares) else shares
+        price = 0 if _missing(price) else price
         value = shares * price
         is_buy = classification == "buy"
         s.found = True
@@ -126,16 +136,6 @@ def summarize(rows: Iterable[tuple], conviction: Optional[dict] = None) -> Form4
 
 _TRADE_KEY_FIELDS = ("Security", "Date", "Code", "Shares", "Price",
                      "DirectIndirect", "NatureOfOwnership", "Remaining")
-
-
-def _missing(v: Any) -> bool:
-    """True for None and NaN-like values (NaN != NaN; pandas NA raises on bool)."""
-    if v is None:
-        return True
-    try:
-        return bool(v != v)
-    except (TypeError, ValueError):
-        return True
 
 
 def _trade_key(r: Any) -> Optional[tuple]:
