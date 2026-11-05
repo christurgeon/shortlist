@@ -13,77 +13,26 @@ from __future__ import annotations
 import random as _random
 from typing import Optional
 
-# Composite components in weight order; risk is added separately when present.
-_COMPONENTS = ("quality", "moat", "growth", "value", "momentum", "insider")
+from ..scoring import _COMPONENTS, _blend, _subscores
+from ..sectors import resolve_bucket
 
 
 def composite_with(card, momentum: Optional[float], weights: dict, config: Optional[dict] = None) -> float:
-    """Recompute a card's composite with its momentum sub-score replaced by `momentum`.
+    """A card's composite with its momentum sub-score replaced by `momentum`, blended
+    exactly as scoring.score() blends it.
 
-    Faithful replica of scoring.score()'s composite: a normalized weighted average over
-    present (non-None) components plus the risk tilt when present, rounded to 1 decimal.
-    When `momentum == card.momentum` this reproduces card.composite exactly (pinned by
-    test), which is the guarantee that swapped values are trustworthy.
-
-    If `config` is provided and the card has metrics, recomputes subscores from the metrics
-    to avoid rounding errors (uses raw subscore values like the real scorer does).
-    Otherwise, uses the card's rounded subscore values (less precise but works with minimal data)."""
+    With `config` and card metrics, the other sub-scores are recomputed unrounded from the
+    metrics, so `momentum == card.momentum` reproduces card.composite exactly. Otherwise
+    the card's rounded sub-scores are used."""
     if config is not None and card.metrics is not None:
-        from shortlist.scoring import (
-            _eval_subscore,
-            _growth_legs,
-            _moat_legs,
-            _momentum_legs,
-            _quality_legs,
-            _value_legs,
-            insider_score,
-            resolve_bucket,
-            risk_score,
-        )
-
         m = card.metrics
-        bucket = resolve_bucket(m.sic, config)
-        t = config["thresholds"]
-        w = weights
-
-        def sub(name, legs) -> Optional[float]:
-            s, _ = _eval_subscore(name, bucket, legs, t, config)
-            return s
-
-        q = sub("quality", _quality_legs(m, config))
-        mo = sub("moat", _moat_legs(m))
-        gr = sub("growth", _growth_legs(m, config))
-        mom = sub("momentum", _momentum_legs(m))
-        val = sub("value", _value_legs(m))
-        ins = insider_score(m, t, config)
-
-        mom = momentum
-
-        parts = [(s, w[name]) for name, s in [
-            ("quality", q), ("moat", mo), ("growth", gr),
-            ("momentum", mom), ("value", val), ("insider", ins)
-        ] if s is not None]
-
-        risk_on = ("risk" in w) and ("realized_vol" in t) and ("max_drawdown" in t)
-        ri = risk_score(m, t) if risk_on else None
-        if ri is not None:
-            parts.append((ri, w["risk"]))
-
-        den = sum(weight for _, weight in parts)
-        if not den:
-            return 0.0
-        return round(sum(s * weight for s, weight in parts) / den, 1)
-
-    subs = {k: getattr(card, k, None) for k in _COMPONENTS}
+        subs, _ = _subscores(m, config, resolve_bucket(m.sic, config))
+    else:
+        subs = {k: getattr(card, k, None) for k in (*_COMPONENTS, "risk")}
     subs["momentum"] = momentum
-    parts = [(s, weights[k]) for k, s in subs.items() if s is not None]
-    risk = getattr(card, "risk", None)
-    if risk is not None:
-        parts.append((risk, weights["risk"]))
-    den = sum(w for _, w in parts)
-    if not den:
-        return 0.0
-    return round(sum(s * w for s, w in parts) / den, 1)
+    if "risk" not in weights:
+        subs["risk"] = None
+    return _blend(subs, weights)
 
 
 def to_rank_scores(values: list[float]) -> list[float]:

@@ -1,14 +1,12 @@
-"""Portfolio-awareness leaf: load a hand-maintained holdings file and, given the
-ScoreCards the harness already produced, compute exposure + monitoring alerts.
+"""Portfolio-awareness leaf: given holdings and the ScoreCards the harness already
+produced, compute exposure + monitoring alerts.
 
-Pure and dependency-light: stdlib, the ScoreCard type and the no_data predicate.
-Only I/O is reading the holdings file. Safe on the always-on bot path.
+Pure and dependency-light (the ScoreCard type and the no_data predicate); no I/O. Safe on
+the always-on bot path. Holdings come from the bot's position store (positions.py).
 """
 from __future__ import annotations
 
-import csv
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from .models import ScoreCard
@@ -19,52 +17,6 @@ from .validation import no_data as _no_data
 class Holding:
     ticker: str
     shares: Optional[float]
-
-
-def load_holdings(path) -> tuple[list[Holding], list[str]]:
-    """Parse `ticker,shares` rows leniently. Returns (holdings, warnings).
-
-    - A header row (first column "TICKER", any case) is skipped silently.
-      Any other row with non-numeric shares is skipped with a warning.
-    - Negative shares (shorts) are accepted.
-    - Blank lines and `#` lines are skipped silently. Extra columns are ignored.
-    - Tickers are upper-cased and stripped. Duplicates are summed with a warning.
-    - Missing or unreadable file -> ([], [warning]); never raises.
-    """
-    p = Path(path)
-    if not p.exists():
-        return [], [f"Portfolio file not found: {p}"]
-    warnings: list[str] = []
-    totals: dict[str, float] = {}
-    order: list[str] = []
-    try:
-        rows = list(csv.reader(p.read_text(encoding="utf-8-sig").splitlines()))
-    except OSError as e:
-        return [], [f"Could not read {p}: {e}"]
-    for raw in rows:
-        if not raw or not "".join(raw).strip():
-            continue
-        if raw[0].lstrip().startswith("#"):
-            continue                          # annotations in a hand-kept file
-        ticker = raw[0].strip().upper()
-        shares_s = (raw[1] if len(raw) > 1 else "").strip()
-        if not ticker or len(raw) < 2:
-            warnings.append(f"Skipped row (missing ticker/shares): {raw}")
-            continue
-        try:
-            shares = float(shares_s)
-        except ValueError:
-            if ticker == "TICKER":
-                continue
-            warnings.append(f"Skipped row (shares not a number): {raw}")
-            continue
-        if ticker not in totals:
-            order.append(ticker)
-            totals[ticker] = shares
-        else:
-            totals[ticker] += shares
-            warnings.append(f"Duplicate ticker {ticker} (row folded into earlier entry; shares summed).")
-    return [Holding(t, totals[t]) for t in order], warnings
 
 
 @dataclass(frozen=True)

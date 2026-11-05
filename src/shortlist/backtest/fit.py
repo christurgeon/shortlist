@@ -1,8 +1,7 @@
 """Walk-forward composite-weight fitting with shrinkage toward a prior.
 
-GUARDED: refuses to fit below period/breadth floors (no fitting the fundamental-axis
-weights from a handful of observations). Phase-2 path — activated only when point-in-time
-multi-axis history accumulates. Deterministic (no RNG).
+GUARDED: refuses to fit below a period floor (no fitting the fundamental-axis weights
+from a handful of observations). Deterministic (no RNG).
 """
 from __future__ import annotations
 
@@ -84,14 +83,11 @@ def fit_weights(rows: list[FitRow], prior: dict[str, float], *, min_periods: int
     """rows: list of (period_id, {axis: subscore}, fwd_return). Walk-forward over
     contiguous period folds; fit on train, score OOS; shrink final toward prior.
 
-    Per fold we score the prior, the un-shrunk fit, and the SHIPPED shrunk fit on the
-    SAME held-out rows, kept paired (a fold counts only if all three ICs exist), so the
-    report can show a paired fitted-vs-prior OOS comparison of the weights that actually
-    ship. NOTE: oos_ic/prior_oos_ic/shrunk_oos_ic are all aggregated over the SAME paired
-    folds (a fold contributing to one contributes to all three) — oos_ic is no longer the
-    independently-None-filtered series the original computed. min_period_gap_days (opt-in;
-    requires date period_ids) raises if periods are spaced closer than the gap — a guard
-    against an accidentally-dense, overlapping grid."""
+    Per fold the prior, the un-shrunk fit and the SHIPPED shrunk fit are scored on the
+    SAME held-out rows, and a fold counts only if all three ICs exist, so oos_ic,
+    prior_oos_ic and shrunk_oos_ic aggregate the same paired folds.
+    min_period_gap_days (opt-in; requires date period_ids) raises if periods are spaced
+    closer than the gap — a guard against an accidentally-dense, overlapping grid."""
     periods = sorted({p for p, _, _ in rows})
     if len(periods) < min_periods:
         raise FitGuardError(
