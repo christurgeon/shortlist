@@ -28,9 +28,14 @@ _SUE_SIGMA_FLOOR = 1.0
 _SUE_MIN_QUARTERS = 3
 
 
+def _present(value: Optional[float]) -> bool:
+    """False for None and NaN. NaN has no direction, and `min`/`max` would clamp it to 100."""
+    return value is not None and value == value
+
+
 def _norm(value: Optional[float], lo: float, hi: float) -> Optional[float]:
-    """Linearly map value into 0..100 over [lo, hi], clamped. None passes through."""
-    if value is None:
+    """Linearly map value into 0..100 over [lo, hi], clamped. None and NaN map to None."""
+    if not _present(value):
         return None
     if hi == lo:
         return 50.0
@@ -52,13 +57,24 @@ def _avg(components: list[Optional[float]]) -> Optional[float]:
     return mean(present) if present else None
 
 
+def _enabled(block: Optional[dict]) -> bool:
+    """A config block is on when present and non-empty, unless it says `enabled: false`."""
+    return bool(block) and bool(block.get("enabled", True))
+
+
+def _block_on(config: Optional[dict], section: str, key: str) -> bool:
+    """True when the opt-in block `config[section][key]` is on (see _enabled)."""
+    return _enabled(((config or {}).get(section) or {}).get(key))
+
+
+def _has_band(config: Optional[dict], key: str) -> bool:
+    return key in ((config or {}).get("thresholds") or {})
+
+
 def _flag_block(flags_cfg: Optional[dict], name: str) -> Optional[dict]:
-    """The named flag config block, or None when absent, falsy or `enabled: false`.
-    A present block defaults to enabled."""
+    """The named flag config block, or None when it is off (see _enabled)."""
     block = flags_cfg.get(name) if flags_cfg else None
-    if not block:
-        return None
-    return block if block.get("enabled", True) else None
+    return block if _enabled(block) else None
 
 
 def quality_score(m: StockMetrics, t: dict) -> Optional[float]:
@@ -95,27 +111,31 @@ def momentum_score(m: StockMetrics, t: dict) -> Optional[float]:
     ])
 
 
-def value_score(m: StockMetrics, t: dict) -> Optional[float]:
-    return _avg([
+def _value_components(m: StockMetrics, t: dict) -> list[Optional[float]]:
+    return [
         _norm(m.upside_to_target(), *t["upside_to_target"]),
         _norm(m.fcf_yield, *t["fcf_yield"]),
         _norm(m.pe_vs_history(), *t["pe_vs_history"]),
         _norm(_scorable_peg(m), *t["peg"]),
-    ])
+    ]
+
+
+def value_score(m: StockMetrics, t: dict) -> Optional[float]:
+    return _avg(_value_components(m, t))
 
 
 def insider_score(m: StockMetrics, t: dict, config: Optional[dict] = None) -> Optional[float]:
-    # Penalizes net selling. With the conviction block present, also folds in cluster
-    # and role-weighted buy pressure and forgives detected 10b5-1 planned sells.
-    cv = ((config or {}).get("insider") or {}).get("conviction")
-    on = bool(cv) and cv.get("enabled", True)
+    # Penalizes net selling. With the conviction block on, also folds in cluster and
+    # role-weighted buy pressure and forgives detected 10b5-1 planned sells.
+    on = _block_on(config, "insider", "conviction")
 
     sentiment = _norm(m.insider_sentiment, *t["insider_sentiment"])
 
     flow = None
     if m.insider_net_6m is not None and m.market_cap:
         net_dollar = m.insider_net_6m
-        if on and getattr(m, "insider_planned_sell_value", None):
+        if on and m.insider_planned_sell_value:
+            cv = config["insider"]["conviction"]
             net_dollar += cv["planned_sell_discount"] * m.insider_planned_sell_value
         flow = _norm(net_dollar / m.market_cap, *t["insider_net_ratio"])
 
@@ -126,9 +146,9 @@ def insider_score(m: StockMetrics, t: dict, config: Optional[dict] = None) -> Op
     # Conviction may only RAISE the score: absence of cluster buys is the baseline, and
     # averaging a near-zero "no-buys" leg into the base would punish the common case.
     cluster = role_press = None
-    if getattr(m, "insider_distinct_buyers", None) is not None:
+    if m.insider_distinct_buyers is not None:
         cluster = _norm(float(m.insider_distinct_buyers), *t["insider_cluster"])
-    if getattr(m, "insider_role_weighted_buy_value", None) is not None and m.market_cap:
+    if m.insider_role_weighted_buy_value is not None and m.market_cap:
         role_press = _norm(m.insider_role_weighted_buy_value / m.market_cap,
                            *t["insider_role_buy_ratio"])
     conviction = _avg([cluster, role_press])
@@ -272,15 +292,7 @@ def value_pe_vs_history_score(m: StockMetrics, t: dict) -> Optional[float]:
 def value_plus_evebit_score(m: StockMetrics, t: dict) -> Optional[float]:
     """Backtest-only: value_score plus the EBIT/EV leg, to test whether that leg is
     additive to the average. Equals value_score when the leg or its band is absent."""
-    legs = [
-        _norm(m.upside_to_target(), *t["upside_to_target"]),
-        _norm(m.fcf_yield, *t["fcf_yield"]),
-        _norm(m.pe_vs_history(), *t["pe_vs_history"]),
-        _norm(_scorable_peg(m), *t["peg"]),
-    ]
-    if "ebit_ev_yield" in t and m.ebit_ev_yield is not None:
-        legs.append(_norm(m.ebit_ev_yield, *t["ebit_ev_yield"]))
-    return _avg(legs)
+    return _avg(_value_components(m, t) + [_band_axis(m.ebit_ev_yield, "ebit_ev_yield", t)])
 
 
 # --- Sector-aware abstention -------------------------------------------------
@@ -322,7 +334,7 @@ def _eval_subscore(name: str, bucket: str, legs: list[_Leg], t: dict,
         abst.append({"field": name, "reason": "inapplicable", "scope": "subscore"})
         return None, abst
 
-    present = [lg for lg in applicable if lg.value is not None]
+    present = [lg for lg in applicable if _present(lg.value)]
     # Per-leg MISSING is deliberately not recorded: coverage.py owns it.
 
     v = _validity(config)
@@ -337,30 +349,12 @@ def _eval_subscore(name: str, bucket: str, legs: list[_Leg], t: dict,
     return mean(_norm(lg.value, *t[lg.tkey]) for lg in present), abst
 
 
-def _dilution_on(config: dict) -> bool:
-    """True when the opt-in quality.dilution block is present and enabled."""
-    d = ((config or {}).get("quality") or {}).get("dilution")
-    return bool(d) and d.get("enabled", True)
-
-
-def _earnings_quality_on(config: dict) -> bool:
-    """True when quality.earnings_quality is present and enabled."""
-    d = ((config or {}).get("quality") or {}).get("earnings_quality")
-    return bool(d) and d.get("enabled", True)
-
-
-def _sue_on(config: dict) -> bool:
-    """True when the opt-in momentum.sue block is present and enabled."""
-    d = ((config or {}).get("momentum") or {}).get("sue")
-    return bool(d) and d.get("enabled", True)
-
-
 def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
     """The SUE leg, or None when off or the `sue` band is absent. Uses the same guarded
     math as the backtest sue_score."""
-    if not _sue_on(config) or "sue" not in ((config or {}).get("thresholds") or {}):
+    if not _block_on(config, "momentum", "sue") or not _has_band(config, "sue"):
         return None
-    blk = ((config or {}).get("momentum") or {}).get("sue") or {}
+    blk = config["momentum"]["sue"]
     v = _sue_value(
         m,
         sigma_floor=blk.get("sigma_floor", _SUE_SIGMA_FLOOR),
@@ -368,19 +362,6 @@ def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
         min_quarters=blk.get("min_quarters", _SUE_MIN_QUARTERS))
     # A None value is still emitted; _eval_subscore drops it from `present`.
     return _Leg("sue", v, "sue")
-
-
-def _residual_momentum_on(config: dict) -> bool:
-    """True when momentum.residual is present and enabled. Ships enabled, unlike the
-    other opt-in blocks (see config.yaml)."""
-    d = ((config or {}).get("momentum") or {}).get("residual")
-    return bool(d) and d.get("enabled", True)
-
-
-def _shareholder_yield_on(config: dict) -> bool:
-    """True when the opt-in value.shareholder_yield block is present and enabled."""
-    d = ((config or {}).get("value") or {}).get("shareholder_yield")
-    return bool(d) and d.get("enabled", True)
 
 
 def _upside_to_target_on(config: dict) -> bool:
@@ -404,15 +385,14 @@ def _quality_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
         _Leg("debt_to_equity", m.debt_to_equity, "debt_to_equity"),
     ]
     # Opt-in legs below require their threshold band to be present.
-    if _dilution_on(config) and "share_count_cagr" in ((config or {}).get("thresholds") or {}):
+    if _block_on(config, "quality", "dilution") and _has_band(config, "share_count_cagr"):
         legs.append(_Leg("share_count_cagr", m.share_count_cagr, "share_count_cagr"))
     # Per-leg switches under quality.earnings_quality default to True when absent.
-    if _earnings_quality_on(config):
-        thresholds = (config or {}).get("thresholds") or {}
-        eq = ((config or {}).get("quality") or {}).get("earnings_quality") or {}
-        if eq.get("asset_growth", True) and "asset_growth" in thresholds:
+    if _block_on(config, "quality", "earnings_quality"):
+        eq = config["quality"]["earnings_quality"]
+        if eq.get("asset_growth", True) and _has_band(config, "asset_growth"):
             legs.append(_Leg("asset_growth", m.asset_growth, "asset_growth"))
-        if eq.get("accruals", True) and "accruals" in thresholds:
+        if eq.get("accruals", True) and _has_band(config, "accruals"):
             legs.append(_Leg("accruals", m.accruals, "accruals"))
     return legs
 
@@ -428,7 +408,7 @@ def _moat_legs(m: StockMetrics) -> list[_Leg]:
 def _growth_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     # With dilution on, use per-share EPS CAGR when available, else the net-income proxy.
     eps = m.eps_cagr
-    if _dilution_on(config) and m.eps_cagr_ps is not None:
+    if _block_on(config, "quality", "dilution") and m.eps_cagr_ps is not None:
         eps = m.eps_cagr_ps
     return [
         _Leg("revenue_cagr", m.revenue_cagr, "revenue_cagr"),
@@ -448,7 +428,7 @@ def _momentum_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]
     sue_leg = _sue_leg(m, config)
     if sue_leg is not None:
         legs.append(sue_leg)
-    if _residual_momentum_on(config) and "residual_momentum" in ((config or {}).get("thresholds") or {}):
+    if _block_on(config, "momentum", "residual") and _has_band(config, "residual_momentum"):
         legs.append(_Leg("residual_momentum", m.residual_momentum, "residual_momentum"))
     return legs
 
@@ -462,7 +442,7 @@ def _value_legs(m: StockMetrics, config: Optional[dict] = None) -> list[_Leg]:
     # Opt-out (see _upside_to_target_on). Inserted first to keep the reported leg order.
     if _upside_to_target_on(config):
         legs.insert(0, _Leg("upside_to_target", m.upside_to_target(), "upside_to_target"))
-    if _shareholder_yield_on(config) and "shareholder_yield" in ((config or {}).get("thresholds") or {}):
+    if _block_on(config, "value", "shareholder_yield") and _has_band(config, "shareholder_yield"):
         legs.append(_Leg("shareholder_yield", m.shareholder_yield, "shareholder_yield"))
     return legs
 
@@ -504,9 +484,8 @@ def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
     """Hard filters; returns the tripped gate names."""
     tripped: list[str] = []
     fc = g.get("fcf")
-    fcf_gate_on = bool(fc) and fc.get("enabled", True)
     if (m.fcf_positive is False and gate_applicable(bucket, "negative_fcf", config)
-            and (not fcf_gate_on or not _fcf_excused(m, fc))):
+            and (not _enabled(fc) or not _fcf_excused(m, fc))):
         tripped.append("negative_fcf")
     # Every gate fails OPEN on a missing input (a null market_cap does not trip this
     # one): a hard filter must not disqualify a name for a data gap. coverage.py marks
@@ -515,9 +494,8 @@ def check_gates(m: StockMetrics, g: dict, bucket: str = "unknown",
             and gate_applicable(bucket, "below_min_mktcap", config):
         tripped.append("below_min_mktcap")
     lv = g.get("leverage")
-    leverage_on = bool(lv) and lv.get("enabled", True)
     if gate_applicable(bucket, "over_leveraged", config):
-        if not leverage_on:
+        if not _enabled(lv):
             if m.debt_to_equity is not None and m.debt_to_equity > g["max_debt_to_equity"]:
                 tripped.append("over_leveraged")
         elif _over_leveraged(m, g, lv):
@@ -588,11 +566,16 @@ def check_flags(m: StockMetrics, f: dict) -> list[str]:
     return out
 
 
-def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
-    t = config["thresholds"]
-    w = config["weights"]
-    bucket = resolve_bucket(m.sic, config)
+# Composite components, in summation order. Risk is a composite-only tilt kept out of
+# this tuple so it never affects confidence/scored/passed.
+_COMPONENTS = ("quality", "moat", "growth", "momentum", "value", "insider")
 
+
+def _subscores(m: StockMetrics, config: dict,
+               bucket: str) -> tuple[dict[str, Optional[float]], list[dict[str, str]]]:
+    """({component or "risk": unrounded sub-score or None}, abstentions) as score() sees
+    them. `risk` is None unless both its bands and a `risk` weight are configured."""
+    t = config["thresholds"]
     abst: list[dict[str, str]] = []
 
     def sub(name: str, legs: list[_Leg]) -> Optional[float]:
@@ -600,51 +583,47 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
         abst.extend(a)
         return s
 
-    q = sub("quality", _quality_legs(m, config))
-    mo = sub("moat", _moat_legs(m))
-    gr = sub("growth", _growth_legs(m, config))
-    mom = sub("momentum", _momentum_legs(m, config))
-    val = sub("value", _value_legs(m, config))
+    subs: dict[str, Optional[float]] = {
+        "quality": sub("quality", _quality_legs(m, config)),
+        "moat": sub("moat", _moat_legs(m)),
+        "growth": sub("growth", _growth_legs(m, config)),
+        "momentum": sub("momentum", _momentum_legs(m, config)),
+        "value": sub("value", _value_legs(m, config)),
+        "insider": insider_score(m, t, config),   # sector-neutral; never masked
+    }
+    risk_on = "risk" in config["weights"] and "realized_vol" in t and "max_drawdown" in t
+    subs["risk"] = risk_score(m, t) if risk_on else None
+    return subs, abst
+
+
+def _blend(subs: dict[str, Optional[float]], w: dict) -> float:
+    """Weighted average over the present sub-scores, rounded to 1dp: a missing component's
+    weight is redistributed, never zeroed. 0.0 when nothing is weighted, which includes a
+    risk-only card while `weights.risk` is 0.0."""
+    parts = [(subs[k], w[k]) for k in _COMPONENTS if subs.get(k) is not None]
+    if subs.get("risk") is not None:
+        parts.append((subs["risk"], w["risk"]))
+    num = sum(s * weight for s, weight in parts)
+    den = sum(weight for _, weight in parts)
+    return round(num / den, 1) if den else 0.0
+
+
+def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
+    w = config["weights"]
+    bucket = resolve_bucket(m.sic, config)
+    subs, abst = _subscores(m, config, bucket)
+    q, gr, mom, val = subs["quality"], subs["growth"], subs["momentum"], subs["value"]
     # `opp` is display only; value and momentum are weighted independently.
     pres = [x for x in (mom, val) if x is not None]
     opp = max(pres) if pres else None
-    ins = insider_score(m, t, config)  # sector-neutral; never masked
+    composite = _blend(subs, w)
 
-    # A component is inapplicable iff its sub-score abstained as 'inapplicable' at
-    # subscore scope.
+    # Confidence is over APPLICABLE components (a sub-score that abstained as
+    # 'inapplicable'); the weight floor is bucket-gated.
     inapplicable = {a["field"] for a in abst
                     if a["scope"] == "subscore" and a["reason"] == "inapplicable"}
-
-    def applic(*subs: str) -> bool:
-        return any(s not in inapplicable for s in subs)
-
-    components = [
-        ("quality", q, w["quality"], ("quality",)),
-        ("moat", mo, w["moat"], ("moat",)),
-        ("growth", gr, w["growth"], ("growth",)),
-        ("momentum", mom, w["momentum"], ("momentum",)),
-        ("value", val, w["value"], ("value",)),
-        ("insider", ins, w["insider"], ("insider",)),
-    ]
-
-    # Risk is a composite-only tilt, deliberately kept out of `components` so it never
-    # affects confidence/scored/passed. Ships at weight 0.0, so a risk-only card has
-    # den == 0 and posts 0.0 (docs/audits/2026-09-25-risk-tilt-disable.md).
-    risk_on = ("risk" in w) and ("realized_vol" in t) and ("max_drawdown" in t)
-    ri = risk_score(m, t) if risk_on else None
-
-    # Weighted average over present parts: missing weight is redistributed.
-    parts = [(s, weight) for _, s, weight, _ in components if s is not None]
-    if ri is not None:
-        parts.append((ri, w["risk"]))
-    num = sum(s * weight for s, weight in parts)
-    den = sum(weight for _, weight in parts)
-    composite = round(num / den, 1) if den else 0.0
-
-    # Confidence is over APPLICABLE components; the weight floor is bucket-gated.
-    appl_w = sum(weight for _, _, weight, subs in components if applic(*subs))
-    pres_w = sum(weight for _, s, weight, subs in components
-                 if applic(*subs) and s is not None)
+    appl_w = sum(w[k] for k in _COMPONENTS if k not in inapplicable)
+    pres_w = sum(w[k] for k in _COMPONENTS if k not in inapplicable and subs[k] is not None)
     confidence = round(pres_w / appl_w, 3) if appl_w else 0.0
     _v = _validity(config)
     scored = True if bucket == "unknown" else confidence >= _v["min_scored_weight"]
@@ -654,7 +633,7 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     # for any weight threshold to separate it from an empty card.
     _min_components = _v.get("min_composite_components")
     if _min_components is not None:
-        n_components = sum(1 for _, s, _, _ in components if s is not None)
+        n_components = sum(1 for k in _COMPONENTS if subs[k] is not None)
         scored = scored and n_components >= _min_components
     thin_below = (config.get("ranking") or {}).get("thin_below")
     thin = thin_below is not None and confidence < thin_below
@@ -687,8 +666,8 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
         leveraged = (
             (m.net_debt_to_ebitda is not None
              and m.net_debt_to_ebitda > ro["max_net_debt_ebitda"])
-            or (m.debt_to_equity is not None
-                and 0 < m.debt_to_equity > ro["max_debt_to_equity"]
+            or (m.debt_to_equity is not None and m.debt_to_equity > 0
+                and m.debt_to_equity > ro["max_debt_to_equity"]
                 and (dte_ceil is None or m.debt_to_equity <= dte_ceil)))
         cyclical = bucket in ro.get("cyclical_buckets", [])
         if leveraged or cyclical:
@@ -697,13 +676,14 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
     return ScoreCard(
         ticker=m.ticker,
         composite=composite,
-        quality=_round(q), moat=_round(mo), growth=_round(gr), momentum=_round(mom),
-        value=_round(val), opportunity=_round(opp), insider=_round(ins),
+        quality=_round(q), moat=_round(subs["moat"]), growth=_round(gr),
+        momentum=_round(mom), value=_round(val), opportunity=_round(opp),
+        insider=_round(subs["insider"]),
         gates=check_gates(m, config["gates"], bucket, config),
         flags=flags,
         metrics=m,
         sic_bucket=bucket, confidence=confidence, scored=scored, abstentions=abst,
-        risk=_round(ri),
+        risk=_round(subs["risk"]),
         thin=thin,
         piotroski_f=m.piotroski_f, piotroski_f_legs=m.piotroski_f_legs,
         share_count_cagr=m.share_count_cagr,

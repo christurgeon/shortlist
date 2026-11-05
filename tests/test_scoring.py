@@ -9,7 +9,7 @@ import yaml
 from shortlist.models import StockMetrics
 from shortlist.providers.mock import MockProvider
 from shortlist.scoring import (
-    _avg, _norm, _residual_momentum_on, accruals_score, asset_growth_score, check_flags,
+    _avg, _norm, _block_on, accruals_score, asset_growth_score, check_flags,
     ebit_ev_yield_score, growth_score, insider_score, moat_score, momentum_score,
     piotroski_score, quality_score, residual_momentum_score, score, shareholder_yield_score,
     sue_score, value_fcf_yield_score, value_pe_vs_history_score, value_plus_evebit_score,
@@ -85,6 +85,20 @@ def test_norm_endpoints_midpoint_and_clamp():
 def test_norm_none_passthrough_and_degenerate_band():
     assert _norm(None, 0.0, 1.0) is None
     assert _norm(5.0, 2.0, 2.0) == 50.0    # hi == lo -> neutral 50
+
+
+def test_nan_is_a_missing_leg_not_a_top_score():
+    # min/max clamp NaN to the top of the band; it must abstain like None instead.
+    nan = float("nan")
+    assert _norm(nan, 0.0, 1.0) is None
+    assert _norm(nan, 2.0, 0.0) is None
+    m = dataclasses.replace(metrics_all_50(), roe=nan, fcf_yield=nan, insider_sentiment=nan)
+    absent = dataclasses.replace(metrics_all_50(), roe=None, fcf_yield=None,
+                                 insider_sentiment=None)
+    got, want = score(m, CONFIG), score(absent, CONFIG)
+    assert (got.quality, got.value, got.insider, got.composite, got.confidence) == \
+        (want.quality, want.value, want.insider, want.composite, want.confidence)
+    assert quality_score(m, CONFIG["thresholds"]) == 50.0
 
 
 def test_norm_inverted_band_rewards_lower_values():
@@ -1469,7 +1483,7 @@ def test_shipped_config_enables_residual_momentum_leg():
     # (validated: 1-month XS rank-IC +0.023, t=2.6). Confirm the block is on AND that,
     # with the signal present, the momentum sub-score reflects the leg (no longer a no-op).
     cfg = yaml.safe_load((Path(__file__).parents[1] / "config.yaml").read_text())
-    assert _residual_momentum_on(cfg) is True
+    assert _block_on(cfg, "momentum", "residual") is True
     assert "residual_momentum" in cfg["thresholds"]
     # A residual value that scores DIFFERENTLY from the other legs so the average shifts:
     # band is residual_momentum [-1, 1], so 0.0 -> 50 (vs all_50's other legs at their own
