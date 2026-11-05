@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from ..edgar.sec_throttle import sec_throttle
+
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _FACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
 
@@ -102,6 +104,7 @@ async def fetch_companyfacts(cik: str, client, *, cache_dir: str,
     cached = _cached_facts(cp)
     if cached is not _MISS:
         return cached
+    sec_throttle()("backtest_companyfacts")
     resp = await client.get(_FACTS_URL.format(cik=cik))
     resp.raise_for_status()
     raw = resp.json()

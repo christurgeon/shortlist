@@ -82,3 +82,13 @@ def test_fetch_cik_index_shares_the_raw_tickers_cache(tmp_path):
     assert idx1["AAPL"] == "0000320193" and idx2 == idx1
     assert client.calls == 1
     assert (tmp_path / "company_tickers-2026-06.json").exists()
+
+
+def test_fetch_companyfacts_draws_on_the_shared_sec_throttle_only_on_a_miss(tmp_path, monkeypatch):
+    import shortlist.backtest.xbrl as xbrl
+    labels = []
+    monkeypatch.setattr(xbrl, "sec_throttle", lambda: labels.append)
+    client = _FakeClient({"cik": 1, "facts": {"us-gaap": {}}})
+    for _ in range(2):
+        asyncio.run(fetch_companyfacts("0000000001", client, cache_dir=str(tmp_path), month="2026-06"))
+    assert labels == ["backtest_companyfacts"]
