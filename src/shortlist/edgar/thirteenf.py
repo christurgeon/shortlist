@@ -9,17 +9,12 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from typing import Callable, Optional
 
-from ..edgar._ticker_rules import junk_suffix
+from ._ticker_rules import junk_suffix
 from .models import Emission
 from .sec_throttle import SecThrottle, sec_throttle  # noqa: F401 — SecThrottle re-exported
 
 SIGNAL = "edgar:13f_new_position"
 SIGNAL_MATERIAL_ADD = "edgar:13f_material_add"
-
-# Emission strength = within-book conviction, capped at 1.0:
-# a 5%-of-book new position is a full-conviction bet. Below the 13D/Form-4 marquee tier
-# only via the smaller default weight the signal ships at (the information is up to 45
-# days stale).
 
 
 # --- submissions -> latest/prior 13F-HR selection --------------------------------------
@@ -121,8 +116,7 @@ def aggregate_positions(rows: list[dict]) -> dict[str, dict]:
     read. On the prior side that understates prior shares and inflates the add ratio, which
     fabricates an add instead of abstaining. Summing shares from value-less rows would break
     value/shares coherence, so this is not defended against
-    (`docs/audits/2026-08-09-13f-material-adds-design.md` §6a). Revisit if the abstain
-    counter is ever nonzero.
+    (`docs/audits/2026-08-09-13f-material-adds-design.md`).
 
     Never raises."""
     agg: dict[str, dict] = {}
@@ -154,10 +148,9 @@ def new_position_diff(latest: dict[str, dict], prior: dict[str, dict], *,
                       full_strength_pct: float = 0.05) -> list[dict]:
     """New positions (CUSIP in `latest`, absent in `prior`) that clear `min_position_pct` of
     the latest book, sorted by within-book weight descending. Each carries `weight` and a
-    `strength` = min(1.0, weight / full_strength_pct) (see module header — a
-    `full_strength_pct` position is full conviction). Material ADDS to existing positions are out of scope
-    (v1: new positions are the sharpest best-idea event). An empty/zero-total latest book
-    yields [] (no division by zero)."""
+    `strength` = min(1.0, weight / full_strength_pct): a `full_strength_pct` position is
+    full conviction. Adds to existing positions are `material_add_diff`'s. An
+    empty/zero-total latest book yields [] (no division by zero)."""
     total = sum(p["value"] for p in latest.values() if p.get("value"))
     if total <= 0:
         return []
@@ -257,12 +250,10 @@ def thirteenf_emissions(new_positions: list[dict], *, resolve_fn: Callable,
     identity + filing accession ride `meta` (`fund_cik`/`fund_name`/`adsh`) as firehose join
     keys for per-fund attribution, matching the 8-K/13D/buyback emissions.
 
-    `kind` defaults to the NEW-POSITION behaviour, so every pre-existing call site is
-    unchanged. Pass `kind="material_add"` for `material_add_diff` output: that switches the
-    evidence wording, adds the share-ratio fields to `meta`, and selects the emission signal
-    string. The signal string is DERIVED from `kind` rather than passed alongside it — the two
-    were separate parameters once, which let `kind="material_add"` be emitted under the
-    new-position signal string, contaminating the firehose cohort with nothing to catch it.
+    Pass `kind="material_add"` for `material_add_diff` output: that switches the evidence
+    wording, adds the share-ratio fields to `meta`, and selects the signal string. The
+    signal is derived from `kind`, never passed separately, so an add cannot be emitted
+    under the new-position signal.
 
     `meta["kind"]` is the firehose join key that keeps the two cohorts separable, so a later
     measurement can never pool an add with a fresh best idea.
@@ -329,20 +320,24 @@ def _acc_nodash(accession: str) -> str:
     return accession.replace("-", "")
 
 
+def _sec_get(url: str, identity: str, timeout: float, throttle: Callable | None):
+    """One throttled sec.gov GET; ``throttle`` defaults to the process-wide budget."""
+    import httpx
+    (throttle or sec_throttle())("thirteenf")
+    with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
+        r = c.get(url)
+        r.raise_for_status()
+        return r
+
+
 def fetch_submissions(cik: str | int, identity: str, *, timeout: float = 30.0,
-                      throttle: Callable[[], None] | None = None,
+                      throttle: Callable | None = None,
                       _http_json: Callable | None = None) -> dict:
     """GET data.sec.gov/submissions/CIK{cik10}.json. One request/fund/session."""
-    cik10 = f"{int(cik):010d}"
+    url = _SUBMISSIONS_URL.format(cik10=f"{int(cik):010d}")
     if _http_json is not None:
-        return _http_json(_SUBMISSIONS_URL.format(cik10=cik10), identity, timeout)
-    import httpx
-    if throttle is not None:
-        throttle("thirteenf")
-    with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
-        r = c.get(_SUBMISSIONS_URL.format(cik10=cik10))
-        r.raise_for_status()
-        return r.json()
+        return _http_json(url, identity, timeout)
+    return _sec_get(url, identity, timeout, throttle).json()
 
 
 def _find_infotable_name(index_json: dict) -> Optional[str]:
@@ -353,41 +348,31 @@ def _find_infotable_name(index_json: dict) -> Optional[str]:
     for it in items:
         name = it.get("name") or ""
         low = name.lower()
-        if low.endswith(".xml") and low != "primary_doc.xml" and "primary_doc" not in low \
+        if low.endswith(".xml") and "primary_doc" not in low \
                 and not low.startswith("xslform13f"):
             return name
     return None
 
 
 def fetch_infotable_rows(cik: str | int, accession: str, identity: str, *,
-                         timeout: float = 30.0, throttle: Callable[[], None] | None = None,
+                         timeout: float = 30.0, throttle: Callable | None = None,
                          _http_json: Callable | None = None,
                          _http_bytes: Callable | None = None) -> list[dict]:
     """Fetch a filing's index.json, locate the information-table XML, fetch + parse it.
     Two SEC requests. Returns [] when the infotable can't be located/parsed."""
     cik_i = int(cik)
     acc = _acc_nodash(accession)
+    index_url = _ARCHIVE_INDEX_URL.format(cik=cik_i, acc=acc)
     if _http_json is not None:
-        index_json = _http_json(_ARCHIVE_INDEX_URL.format(cik=cik_i, acc=acc), identity, timeout)
+        index_json = _http_json(index_url, identity, timeout)
     else:
-        import httpx
-        if throttle is not None:
-            throttle("thirteenf")
-        with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
-            r = c.get(_ARCHIVE_INDEX_URL.format(cik=cik_i, acc=acc))
-            r.raise_for_status()
-            index_json = r.json()
+        index_json = _sec_get(index_url, identity, timeout, throttle).json()
     name = _find_infotable_name(index_json)
     if not name:
         return []
+    file_url = _ARCHIVE_FILE_URL.format(cik=cik_i, acc=acc, name=name)
     if _http_bytes is not None:
-        raw = _http_bytes(_ARCHIVE_FILE_URL.format(cik=cik_i, acc=acc, name=name), identity, timeout)
+        raw = _http_bytes(file_url, identity, timeout)
     else:
-        import httpx
-        if throttle is not None:
-            throttle("thirteenf")
-        with httpx.Client(timeout=timeout, headers={"User-Agent": identity}) as c:
-            r = c.get(_ARCHIVE_FILE_URL.format(cik=cik_i, acc=acc, name=name))
-            r.raise_for_status()
-            raw = r.content
+        raw = _sec_get(file_url, identity, timeout, throttle).content
     return parse_infotable(raw)

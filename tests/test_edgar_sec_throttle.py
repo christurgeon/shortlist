@@ -1,8 +1,5 @@
-"""The shared sec.gov throttle (docs/audits/2026-08-05-discovery-funnel-audit.md §4).
-
-Every scout SEC consumer must share ONE rate budget: `edgar_index` alone fetches up to
-`edgar_index_daily_cap` (2500) filings per session, and when that sweep is unthrottled it
-429s the SEC for the rest of the run — which is how the 13D originator lost two sessions.
+"""The shared sec.gov throttle: every SEC consumer must share ONE rate budget, or one
+unthrottled sweep 429s every other caller (docs/audits/2026-08-05-discovery-funnel-audit.md).
 """
 import time
 
@@ -25,8 +22,6 @@ def test_the_first_call_is_not_delayed():
 
 
 def test_the_process_wide_throttle_is_one_shared_instance():
-    """A per-signal throttle cannot bound the process's SEC request rate — the Form 4 sweep
-    starving 13D/DERA in the same run is exactly that failure."""
     assert sec_throttle() is sec_throttle()
 
 
@@ -38,11 +33,6 @@ def test_thirteenf_still_exports_SecThrottle_for_back_compat():
     assert thirteenf.SecThrottle is SecThrottle
 
 
-# --- request accounting (plan Phase 1.1) --------------------------------------------
-# The 2026-08-04 cascade (Form 4 sweep starving 13D/DERA) is still INFERRED from timing
-# correlation. Counting requests per consumer is what turns it into evidence, and it sizes
-# how much budget a new originator can safely take.
-
 def test_the_throttle_counts_acquisitions_per_consumer():
     t = SecThrottle(min_interval_s=0.0)
     for _ in range(3):
@@ -53,8 +43,7 @@ def test_the_throttle_counts_acquisitions_per_consumer():
 
 
 def test_an_unlabelled_call_is_counted_but_marked_unattributed():
-    """Back-compat: existing `throttle()` call sites must keep working, and their requests
-    must still appear in the budget rather than vanishing from it."""
+    """An unlabelled `throttle()` still appears in the budget."""
     t = SecThrottle(min_interval_s=0.0)
     t()
     assert t.total == 1
@@ -69,9 +58,6 @@ def test_counts_can_be_reset_per_run():
 
 
 def test_company_tickers_fetch_draws_on_the_shared_budget():
-    """cik_tickers hits www.sec.gov but bypassed the shared throttle entirely, so its
-    requests were neither paced nor counted — while a DERA 429 in the same run was the
-    evidence used to diagnose the cascade."""
     from datetime import date
 
     from shortlist.edgar import cik_tickers as ct
