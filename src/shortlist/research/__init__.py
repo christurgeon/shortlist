@@ -9,6 +9,7 @@ from ..env import redact_secrets
 from ..models import rank_key
 from . import cachekey, claude_cli, report
 from .assess import assess as _assess
+from .filings import cap_bundle
 from .filings import fetch_bundle as _fetch_bundle
 from .filings import log_abstain as _log_abstain
 from .filings import no_10k_reason as _no_10k_reason
@@ -71,13 +72,14 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         return ResearchResult(card.ticker, brief_path=str(bp), from_cache=True)
     # cap_bundle, assess and report.write can raise; isolate them too.
     try:
-        from .filings import cap_bundle
-        bundle = cap_bundle(bundle, config.get("research", {}).get("max_chars"))
-        pcfg = (config.get("research") or {}).get("peers")
+        rcfg = config.get("research") or {}
+        bundle = cap_bundle(bundle, rcfg.get("max_chars"))
+        pcfg = rcfg.get("peers")
         peers_on = isinstance(pcfg, dict) and pcfg.get("enabled", False)
         peer_table = None
-        if peers_on and pcfg.get("in_prompt", False):
+        if peers_on:
             from . import peers
+        if peers_on and pcfg.get("in_prompt", False):
             fetched = peers.fetch_section(card, config)
             peer_table = replace(
                 fetched, in_prompt=peers.context_line(fetched) != "")
@@ -91,12 +93,12 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
         assessment.cache_key = key
         # AFTER the model call: these sections are display-only and must not reach
         # the prompt. The peer table is the exception when `in_prompt` is on.
-        dcfg = (config.get("research") or {}).get("durability")
+        dcfg = rcfg.get("durability")
         if isinstance(dcfg, dict) and dcfg.get("enabled", False):
             from . import durability
             assessment.durability_line, assessment.durability_status = durability.fetch_section(
                 card, bundle, config)
-        ncfg = (config.get("research") or {}).get("news")
+        ncfg = rcfg.get("news")
         if isinstance(ncfg, dict) and ncfg.get("enabled", False):
             from . import news
             s = news.fetch_section(card, config)
@@ -104,7 +106,6 @@ def _enrich_card(card, config: dict, root: str, refresh: bool,
              assessment.news_from, assessment.news_truncated) = (
                 s.items, s.status, s.as_of, s.covers_from, s.truncated)
         if peers_on:
-            from . import peers
             assessment.peer_table = peer_table or peers.fetch_section(card, config)
         from . import capital_allocation
         bp = report.write(assessment, root, config,

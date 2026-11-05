@@ -98,7 +98,6 @@ class TelegramNotifier:
             return True
         if not self.configured():
             return False
-        # One client reused across all chunks of the message (not one per chunk).
         c = self._client or httpx.Client(timeout=30.0)
         try:
             ok = True

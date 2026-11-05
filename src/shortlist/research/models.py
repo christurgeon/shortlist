@@ -307,7 +307,7 @@ class Thesis:
     bull_case: str = ""
     bear_case: str = ""
     what_would_change_my_mind: list[str] = field(default_factory=list)
-    takeaway: str = ""             # the traveling TL;DR (replaces old `synthesis`)
+    takeaway: str = ""             # the one-line TL;DR; `synthesis` aliases it
 
 
 @dataclass
@@ -321,7 +321,7 @@ class ScreeningCall:
     conviction_capped: bool = False
     stance_clamped: bool = False
     clamp_note: str = ""                  # e.g. "tripped negative_fcf gate"
-    as_of_price: Optional[float] = None   # snapshot for future hit-rate
+    as_of_price: Optional[float] = None   # price at decision time, for a later hit-rate
     # ScoreCard.confidence at decision time; it drives two conviction guards, so a
     # retrospective can attribute a conviction (docs/audits/2026-08-04-deep-brief-assessment.md D4).
     confidence: Optional[float] = None
