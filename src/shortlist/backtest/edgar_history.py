@@ -128,23 +128,17 @@ def fetch_amendment_window(start: date, end: date, identity: str, *,
                            throttle_s: float = 0.2, max_records: Optional[int] = None,
                            _get_filings=None, _stake_fn=None) -> Optional[list[dict]]:
     """Both initial SCHEDULE 13D and SCHEDULE 13D/A amendment records filed in [start, end]
-    (a backfill walker) -- initials seed the pair baseline a
-    future assembler would diff amendments against. That assembler was never built (no
-    production or test code in this repo pairs initial + amendment records today), so this
-    walker is currently an orphaned building block -- kept for the backfill it was
-    designed for. Each kept row carries a doc-fetched `stake_pct` (percent-of-class off the
-    cover page) and the FILER's CIK (`filer_cik`, distinct from the SUBJECT `cik` -- any
-    future pairing step needs both, since a header failure keeps the record with
-    cik=None/filer_cik=None rather than dropping the row). None = index fetch failed;
-    [] = none.
+    (a backfill walker); initials are the baseline a pairing step diffs amendments against.
+    Each kept row carries a doc-fetched `stake_pct` (percent-of-class off the cover page)
+    and the FILER's CIK (`filer_cik`, distinct from the SUBJECT `cik`); a header failure
+    keeps the record with cik=None/filer_cik=None rather than dropping it.
+    None = index fetch failed; [] = none.
 
     Mirrors fetch_activist_window's poisoned-row guard and header-failure semantics.
 
-    Controller-resolution guard: the per-row stake DOC-fetch is
-    SKIPPED (stake_pct stays None) for rows a future assembler would exclude anyway --
-    is_spac_or_shell(subject_name) or is_affiliate_filing(activist, subject_name) -- so a
-    multi-year walk never burns an SEC document fetch on a filing that could never be
-    selected. Filter-before-fetch.
+    Filter-before-fetch: the per-row stake DOC-fetch is SKIPPED (stake_pct stays None) for
+    rows a pairing step would exclude anyway -- is_spac_or_shell(subject_name) or
+    is_affiliate_filing(activist, subject_name).
 
     `_stake_fn(filing) -> float | None` is the test seam (default
     `edgar.stake_pct.stake_pct_from_filing`). Emits one `warnings.warn` parse-rate line per

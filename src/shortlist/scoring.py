@@ -365,7 +365,7 @@ def _sue_leg(m: StockMetrics, config: Optional[dict]) -> Optional[_Leg]:
 
 
 def _upside_to_target_on(config: dict) -> bool:
-    """OPT-OUT, unlike every other gate here: an absent key keeps the leg ON.
+    """OPT-OUT, unlike every other leg switch here: an absent key keeps the leg ON.
 
     Accepts both `{enabled: false}` and a bare `false`; reading only the dict form would
     leave the leg on silently. Why it is in question: docs/ROADMAP.md."""
