@@ -33,7 +33,8 @@ def test_fetch_amendment_records_filters_to_amendments(monkeypatch):
             _Filing("SCHEDULE 13D/A", "a1")]          # doubled row -> dedup
     monkeypatch.setattr("shortlist.edgar.index._get_13d_index_rows",
                         lambda session, identity: rows)
-    recs = fetch_amendment_records(date(2026, 7, 10), 10, "id", lambda cik: "TGT")
+    recs = fetch_amendment_records(date(2026, 7, 10), 10, "id", lambda cik: "TGT",
+                                   _throttle=lambda c=None: None)
     assert [r["accession"] for r in recs] == ["a1"]
     r = recs[0]
     assert r["ticker"] == "TGT" and r["filer_cik"] == "0000000900" \
@@ -75,3 +76,14 @@ def test_stake_pct_from_filing_recovers_sibling_div_via_html_tier():
     f = _Filing("SC 13D/A", "a4", xml=None, text=stripped_text, html=raw_html)
     assert stake_pct_from_filing(f) == 3.1
 
+
+def test_fetch_amendment_records_throttles_every_header_fetch(monkeypatch):
+    rows = [_Filing("SCHEDULE 13D/A", "a1"), _Filing("SC 13D/A", "a2"),
+            _Filing("SCHEDULE 13D", "a3")]
+    monkeypatch.setattr("shortlist.edgar.index._get_13d_index_rows",
+                        lambda session, identity: rows)
+    calls = []
+    recs = fetch_amendment_records(date(2026, 7, 10), 10, "id", lambda cik: "TGT",
+                                   _throttle=lambda c=None: calls.append(c))
+    assert len(recs) == 2
+    assert calls == ["edgar_activist_13d_amendment"] * 2
