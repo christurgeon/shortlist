@@ -1,11 +1,10 @@
 """Year-over-year Item-1A risk-factor diff (pure, dependency-free leaf).
 
 Surfaces risk-factor blocks present in the current 10-K's Item 1A but NOT in the
-prior year's — a documented alpha signal. v1 splits each Item 1A into blocks on
-blank-line boundaries and compares a normalized prefix of each block (the lead
-clause/caption), so cosmetic numeric/date edits do not read as new and
-reordered-but-unchanged blocks are not flagged. (Dedicated bold-heading detection
-is deferred — the prefix key approximates it.) Used by the research layer only;
+prior year's — a documented alpha signal. Each Item 1A is split into blocks on
+blank-line boundaries and a normalized prefix of each block (the lead clause/caption,
+standing in for a bold heading) is compared, so cosmetic numeric/date edits do not read
+as new and reordered-but-unchanged blocks are not flagged. Used by the research layer only;
 the prior-year text is a diff INPUT and is never shown to the model whole."""
 from __future__ import annotations
 
@@ -51,6 +50,8 @@ def added_risk_blocks(current_1a: str, prior_1a: str, config: dict) -> str:
     threshold = cfg["similarity_threshold"]
     added: list[str] = []
     for block in cur_blocks:
+        if len(added) >= cfg["max_blocks"]:
+            break
         k = _key(block)
         if not k:
             continue
@@ -58,7 +59,5 @@ def added_risk_blocks(current_1a: str, prior_1a: str, config: dict) -> str:
                    default=0.0)
         if best < threshold:
             added.append(block)
-        if len(added) >= cfg["max_blocks"]:
-            break
     out = "\n\n".join(added)
     return out[: cfg["max_chars"]]

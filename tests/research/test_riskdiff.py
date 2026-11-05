@@ -1,3 +1,5 @@
+import pytest
+
 from shortlist.research.riskdiff import added_risk_blocks
 
 CFG = {"research": {"risk_diff": {"similarity_threshold": 0.5, "max_blocks": 4,
@@ -29,13 +31,14 @@ def test_reordered_blocks_are_not_flagged():
                  "Competition risk.\nWe face intense competition in our markets.\n")
     assert added_risk_blocks(reordered, PRIOR, CFG) == ""
 
-def test_max_blocks_cap_respected():
+@pytest.mark.parametrize("cap", [0, 2])
+def test_max_blocks_cap_respected(cap):
     extra = "".join(f"\n\nNovel risk {i}.\nUnique unprecedented exposure number {i}.\n"
                     for i in range(10))
-    cfg = {"research": {"risk_diff": {"similarity_threshold": 0.5, "max_blocks": 2,
+    cfg = {"research": {"risk_diff": {"similarity_threshold": 0.5, "max_blocks": cap,
                                       "max_chars": 12000}}}
     out = added_risk_blocks(PRIOR + extra, PRIOR, cfg)
-    assert out.count("Novel risk") == 2
+    assert out.count("Novel risk") == cap
 
 def test_max_chars_cap_respected():
     big = "\n\nHuge risk.\n" + ("x" * 50000)

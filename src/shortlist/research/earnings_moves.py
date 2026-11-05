@@ -60,6 +60,8 @@ def realized_moves(closes: list, announcements: list,
     px = dict(closes)
     out: list[tuple[str, float]] = []
     for announced in sorted(set(announcements), reverse=True):
+        if len(out) >= quarters:
+            break
         before = [d for d in dates if d <= announced]
         after = [d for d in dates if d > announced]
         if not before or not after:
@@ -68,8 +70,6 @@ def realized_moves(closes: list, announcements: list,
         if not prior:
             continue
         out.append((announced.isoformat(), round((px[after[0]] / prior - 1) * 100, 1)))
-        if len(out) >= quarters:
-            break
     return out
 
 
@@ -93,13 +93,13 @@ def announcement_dates(ticker: str, quarters: int = _DEFAULT_QUARTERS,
     require_identity(identity)
     found: list[datetime.date] = []
     for filing in Company(ticker).get_filings(form="8-K").head(_INDEX_SCAN):
+        if len(found) >= quarters:
+            break
         if not is_results_8k(getattr(filing, "items", None)):
             continue
         filed = _as_date(getattr(filing, "filing_date", None))
         if filed is not None:
             found.append(filed)
-        if len(found) >= quarters:
-            break
     return found
 
 
