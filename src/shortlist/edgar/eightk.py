@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from ..edgar._ticker_rules import junk_suffix as _junk_suffix  # noqa: F401 — re-exported
-from ..edgar._ticker_rules import normalize_items
+from ._ticker_rules import junk_suffix as _junk_suffix  # noqa: F401 — re-exported
+from ._ticker_rules import normalize_items
 from .models import Emission
 from .quality import is_spac_or_shell
 
@@ -26,7 +26,7 @@ NEGATIVE_ITEMS = frozenset({"1.03", "2.04", "2.05", "2.06", "3.01", "4.02", "5.0
 # rights). 2.01 is config-expressible but NOT in the default set.
 DEFAULT_ITEM_SETS: tuple[tuple[str, ...], ...] = (("1.01", "3.03"),)
 # Fixed emission strength: the pocket is binary (a filing matches or it doesn't) and the
-# prior is contested — below the 13D/Form-4 marquee strengths, like the FINRA precedent.
+# prior is contested, so it sits below the 13D/Form-4 marquee strengths.
 STRENGTH = 0.6
 _SPAC_SIC = "6770"
 

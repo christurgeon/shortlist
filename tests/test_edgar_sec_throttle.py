@@ -28,6 +28,8 @@ def test_the_process_wide_throttle_is_one_shared_instance():
 def test_the_shared_throttle_stays_under_the_sec_fair_access_ceiling():
     assert sec_throttle().min_interval_s > 0
     assert 1.0 / sec_throttle().min_interval_s <= 10.0     # SEC fair access ~10 req/s
+
+
 def test_thirteenf_still_exports_SecThrottle_for_back_compat():
     from shortlist.edgar import thirteenf
     assert thirteenf.SecThrottle is SecThrottle

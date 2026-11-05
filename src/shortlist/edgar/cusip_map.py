@@ -14,8 +14,7 @@
    abstain rather than guess.
 3. **Abstain** — return None; the signal counts abstentions in its coverage detail.
 
-Pure parse/aggregation is separated from the live fetch (the shared-leaf pattern) so tests
-run fully offline. The live FTD fetch is throttled by the caller's SEC min-interval helper.
+Pure parse/aggregation is separated from the live fetch so tests run fully offline.
 """
 from __future__ import annotations
 
@@ -27,7 +26,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ..data.diskcache import read_json_cache, write_json_cache
-from ..env import redact_secrets
+from .sec_throttle import sec_throttle
 
 _FTD_URL = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails{ym}{half}.zip"
 
@@ -82,10 +81,9 @@ def build_name_to_ticker(raw: dict) -> dict[str, str]:
             out[key] = tkr
             first_cik[key] = cik
         elif tkr != prev and not (cik and first_cik[key] and cik == first_cik[key]):
-            # Keep the first ticker ONLY on a genuine same-CIK dual-class collision (both ciks
-            # truthy AND equal). If EITHER row's cik is falsy/absent, two different issuers can
-            # collapse to cik "" == "" and the first ticker would be a wrong-ticker guess -> drop.
-            ambiguous.add(key)          # DIFFERENT (or unknown) issuer, same normalized name
+            # Same-CIK dual class needs both ciks truthy AND equal; an unknown cik is
+            # never "same", or two issuers with cik "" would keep a wrong-ticker guess.
+            ambiguous.add(key)
     for key in ambiguous:
         out.pop(key, None)
     return out
@@ -169,27 +167,27 @@ def _http_get_bytes(url: str, identity: str, timeout: float) -> Optional[bytes]:
 
 def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout: float = 30.0,
                     today: date | None = None, max_attempts: int = 6, want: int = 2,
-                    throttle: Callable[[], None] | None = None,
+                    throttle: Callable | None = None,
                     _http_get: Callable[[str, str, float], Optional[bytes]] | None = None,
                     ) -> list[list[dict]]:
     """Download + parse the `want` most-recent published FTD files, walking back from the
     current half-month (bounded at `max_attempts` — the current period may not be posted
     yet). Returns a list of per-file row lists (newest first). Never raises: a failure yields
     fewer files (fewer resolutions), the resolver then leans on the name fallback / abstains.
-    `throttle` is invoked before each network GET (SEC fair-access).
+    `throttle` is invoked before each GET; the live getter defaults to the process-wide one.
 
-    Cache envelope distinguishes real rows from an empty-marker so neither a legacy poisoned
-    cache nor a persistently-empty parse can wedge the walk-back:
+    Cache envelope distinguishes real rows from an empty-marker so a persistently-empty
+    parse cannot wedge the walk-back:
     - NON-EMPTY parsed rows -> cached FOREVER by filename as a plain list (a published FTD
       file is immutable). Read back and used unconditionally.
     - EMPTY parse (200-status truncated zip / HTML error body — `parse_ftd_zip` swallows all)
       -> write a marker `{"empty_on": "<today iso>"}` instead of rows. A fresh marker (< 7d)
-      SKIPS the file WITHOUT downloading (a bounded backoff — counts as a failed attempt, so
-      the walk-back continues); a stale marker (>= 7d) refetches (the file may have been
-      re-posted intact).
-    - A legacy `[]` cache (or any empty list) with NO marker is treated as a MISS -> refetch
-      once, which HEALS pre-fix poisoned files."""
+      SKIPS the file WITHOUT downloading (counts as a failed attempt, so the walk-back
+      continues); a stale marker (>= 7d) refetches (the file may have been re-posted).
+    - An empty list with NO marker is a MISS and is refetched."""
     getter = _http_get or _http_get_bytes
+    if _http_get is None and throttle is None:
+        throttle = sec_throttle()
     today_d = today or date.today()
     out: list[list[dict]] = []
     for url, key in _period_filenames(today_d, max_attempts):
@@ -207,8 +205,6 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
                 marked = None
             if marked is not None and (today_d - marked).days < 7:
                 continue                              # fresh empty-marker -> skip, no download
-            # stale marker (>= 7d) -> fall through and refetch (file may be re-posted intact)
-        # else: absent OR legacy-[] (no marker) -> a MISS; refetch (heals poisoned caches)
         try:
             if throttle is not None:
                 throttle("cusip_map")   # SEC fails-to-deliver zips -- www.sec.gov
@@ -219,9 +215,7 @@ def fetch_ftd_files(identity: str, *, cache_dir: str = ".cache/sec_ftd", timeout
             continue                                  # not published yet -> walk back
         rows = parse_ftd_zip(raw)
         if not rows:
-            # Empty parse: persist a dated marker (NOT the immutable rows key) so we don't
-            # re-download this multi-MB zip every run for 7 days, then retry. Counts as a
-            # failed attempt (no `out` append) -> the walk-back continues.
+            # A dated marker, not the immutable rows key: retry after 7 days, not every run.
             write_json_cache(cp, {"empty_on": today_d.isoformat()})
             continue
         write_json_cache(cp, rows)
@@ -250,7 +244,7 @@ class CusipResolver:
 def load_cusip_resolver(identity: str, *, resolver_cache_dir: str = ".cache/sec_tickers",
                         ftd_cache_dir: str = ".cache/sec_ftd", timeout: float = 30.0,
                         today: date | None = None,
-                        throttle: Callable[[], None] | None = None) -> CusipResolver:
+                        throttle: Callable | None = None) -> CusipResolver:
     """Build a live `CusipResolver` from the day-cached company_tickers.json (name fallback)
     + the two most-recent FTD files (CUSIP map). Never raises: any failure yields emptier
     indexes and the resolver simply abstains more."""
@@ -264,9 +258,6 @@ def load_cusip_resolver(identity: str, *, resolver_cache_dir: str = ".cache/sec_
         ftd = fetch_ftd_files(identity, cache_dir=ftd_cache_dir, timeout=timeout,
                               today=today, throttle=throttle)
         cusip_index = build_cusip_to_symbol(ftd)
-    except Exception as exc:  # noqa: BLE001 — never let resolver construction crash the scan
-        # Deliberate no-op: kept so anyone who later logs `exc` here reaches for the
-        # redacted form first — these are sec.gov URLs. Don't "clean up" as dead code.
-        _ = redact_secrets(str(exc))
+    except Exception:  # noqa: BLE001 — never let resolver construction crash the scan
         cusip_index = {}
     return CusipResolver(cusip_index, name_index)

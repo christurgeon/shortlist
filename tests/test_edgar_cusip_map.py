@@ -226,12 +226,12 @@ def test_fetch_ftd_fresh_empty_marker_suppresses_download_then_retries(tmp_path)
 
 
 def test_fetch_ftd_legacy_empty_list_cache_is_healed_by_refetch(tmp_path):
-    """A pre-fix poisoned cache (a bare `[]`, no marker) is treated as a MISS and refetched —
-    the legacy empty file can no longer freeze the half-month forever."""
+    """A bare `[]` cache with no marker is a MISS and is refetched, so it cannot freeze
+    the half-month forever."""
     import json
     url_b = "https://www.sec.gov/files/data/fails-deliver-data/cnsfails202606b.zip"
     cp = tmp_path / "cnsfails202606b.json"
-    cp.write_text(json.dumps([]))                        # legacy poisoned empty-list cache
+    cp.write_text(json.dumps([]))
     hits = []
 
     def fake_get(url, identity, timeout):
@@ -240,7 +240,7 @@ def test_fetch_ftd_legacy_empty_list_cache_is_healed_by_refetch(tmp_path):
 
     files = fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 20),
                             want=1, max_attempts=1, _http_get=fake_get)
-    assert url_b in hits                                 # legacy [] refetched (healed)
+    assert url_b in hits
     assert build_cusip_to_symbol(files)["02005N100"] == "ALLY"
 
 
@@ -256,3 +256,14 @@ def test_fetch_ftd_caches_forever_by_filename(tmp_path):
     n = len(hits)
     fetch_ftd_files("me@x.com", **kw)                    # second run: served from disk cache
     assert len(hits) == n                                # no additional network calls
+
+
+def test_live_ftd_fetch_defaults_to_the_shared_sec_throttle(tmp_path, monkeypatch):
+    from shortlist.edgar import cusip_map
+
+    calls = []
+    monkeypatch.setattr(cusip_map, "sec_throttle", lambda: lambda c=None: calls.append(c))
+    monkeypatch.setattr(cusip_map, "_http_get_bytes", lambda url, identity, timeout: None)
+    fetch_ftd_files("me@x.com", cache_dir=str(tmp_path), today=date(2026, 6, 20),
+                    max_attempts=2)
+    assert calls == ["cusip_map", "cusip_map"]
