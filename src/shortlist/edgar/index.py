@@ -16,26 +16,11 @@ from datetime import date, timedelta
 from typing import Callable
 
 from ..env import redact_secrets
+from ._ticker_rules import real_ticker as _is_real_ticker
 from .calendar import is_trading_day
 from .models import Emission
 from .quality import is_affiliate_filing, is_initial_13d, is_spac_or_shell, marquee_activist
 from .sec_throttle import sec_throttle
-
-# Tokens edgartools emits for an unresolved issuer ticker. Unfiltered, they bucket into a
-# phantom "NONE" issuer that looks like a multi-insider cluster buy.
-_NON_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
-
-
-def _is_real_ticker(raw: str | None) -> str:
-    """Normalize and validate an issuer ticker; return "" if it's a placeholder.
-
-    Rejects `str(None).upper() -> "NONE"`, punctuation-only forms and CIK-as-ticker.
-    A real symbol has at least one letter (BRK.B, AXIA3).
-    """
-    t = (raw or "").strip().upper()
-    if not t or t in _NON_TICKERS or not any(c.isalpha() for c in t):
-        return ""
-    return t
 
 
 def _walk_back_to_published(session: date, lookback: int,

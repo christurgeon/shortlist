@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 
-from ..edgar._ticker_rules import _TRUE, junk_suffix
+from ._ticker_rules import _TRUE, junk_suffix, real_ticker
 from .models import Emission
 
 
@@ -24,7 +24,6 @@ class InsiderTxn:
     plan_10b5_1: bool
     roles: frozenset[str]
     title: str | None = None
-    # Fields below are appended last for positional back-compat.
     # A joint filing (several <reportingOwner> blocks) has no per-owner attribution, so
     # the owner CIK is a guess. The parser does not guess; qualifies() drops it, so every
     # drop decision lives in one place. Joint filings are common among open-market purchases.
@@ -94,9 +93,8 @@ def parse_form4_xml(xml: str) -> list[InsiderTxn]:
             roles.add("tenpercent")
         t = rel.find("officerTitle")
         title = (t.text or "").strip() or None if t is not None else None
-    # Use _val, not raw .text: every other scalar in this parser nests under <value>, and a
-    # filer agent emitting <aff10b5One><value>1</value></aff10b5One> would otherwise read as
-    # False and silently disable the 10b5-1 exclusion entirely.
+    # _val, not raw .text: some filers nest it as <aff10b5One><value>1</value>, which raw
+    # .text would read as False, silently disabling the 10b5-1 exclusion.
     plan = _flag(_val(root, "aff10b5One"))
 
     out: list[InsiderTxn] = []
@@ -141,21 +139,14 @@ def classify_tier(owner_cik: str, index: dict, as_of: date,
 
     Two separate checks, deliberately NOT collapsed into one calendar window:
       1. "Enough history to judge at all" -- >= lookback_years DISTINCT trading years
-         anywhere in the record, with the most recent one no more than `lookback_years`
-         years before `as_of`. This uses the insider's FULL history: a trader who has
-         traded in `lookback_years` separate years, one of which sits just outside the
-         strict last-N-calendar-years window, still has enough signal to be judged (a gap
-         year should make them OPPORTUNISTIC, not bump them to UNCLASSIFIED for "missing"
-         a data point that was never required to sit inside a rigid window).
+         anywhere in the record, the most recent no more than `lookback_years` before
+         `as_of`. A gap year makes a trader OPPORTUNISTIC, not UNCLASSIFIED.
       2. "Is the pattern routine" -- checked ONLY over the strict last `lookback_years`
-         calendar years (`as_of.year - 1 .. as_of.year - lookback_years`). This is what
-         keeps an old, long-since-ended same-month streak from branding a trader routine
-         forever -- it can only be caught by check 1's staleness gate, or (as here) by
-         simply not being in the window this check inspects.
+         calendar years, so a long-ended same-month streak cannot brand a trader routine
+         forever.
 
-    `owner_cik` is zero-padded before the lookup -- see build_trade_month_index's docstring:
-    this is the join key against the DERA history index, and a silent zero-padding mismatch
-    would otherwise send every insider to UNCLASSIFIED without any error.
+    `owner_cik` is zero-padded before the lookup: it is the join key against the DERA
+    history index, and a padding mismatch would silently send every insider to UNCLASSIFIED.
     """
     months = index.get((owner_cik or "").strip().zfill(10))
     if not months:
@@ -205,20 +196,8 @@ def qualifies(txn: InsiderTxn, tier: str, cfg: dict) -> bool:
     return v is not None and v >= float(cfg.get("min_value", 100_000))
 
 
-# Tokens filers put in <issuerTradingSymbol> when there is no listed symbol. They are
-# truthy, so a bare `if not ticker` check passes them.
-#
-# Do not delete this guard. emissions_from_txns buckets by ticker, so placeholder rows
-# would merge into one emission across unrelated companies, summing dollars and pooling
-# owner counts at near-max strength.
-_PLACEHOLDER_TICKERS = {"", "NONE", "NA", "N/A", "NULL"}
-
-
 def is_real_ticker(raw: str | None) -> bool:
-    """True when `raw` is a usable symbol. Rejects the placeholder tokens above and any
-    string with no alphabetic character (which also catches a bare CIK like '1314152')."""
-    t = (raw or "").strip().upper()
-    return bool(t) and t not in _PLACEHOLDER_TICKERS and any(c.isalpha() for c in t)
+    return bool(real_ticker(raw))
 
 
 def emissions_from_txns(txns, index: dict, as_of: date, cfg: dict) -> list[Emission]:

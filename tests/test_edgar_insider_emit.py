@@ -122,14 +122,10 @@ def test_emission_carries_issuer_cik():
     assert ems[0].cik == "0001849056"
 
 
-# --- placeholder tickers must never form a phantom bucket (final review C-1) ----------
-# Regression for a bug observed in PRODUCTION and previously guarded by
-# edgar_index._is_real_ticker, whose Form 4 call sites were deleted with
-# cluster_buys_from_records. Verified against real SEC data: of 57,797 Form 4 filings in
-# 2025Q1, 459 (0.79%) carry a placeholder issuerTradingSymbol -- NONE x305, N/A x91,
-# "-" x42, NA x15, and a bare CIK x6. All are TRUTHY, so a `if not t.ticker` filter passes
-# them, and emissions_from_txns buckets by ticker -- merging unrelated companies into one
-# emission with summed dollars and pooled owner counts, at near-max strength.
+# --- placeholder tickers must never form a phantom bucket ----------------------------
+# Real Form 4s carry placeholder issuerTradingSymbols (NONE, N/A, "-", NA, a bare CIK).
+# They are truthy, and emissions_from_txns buckets by ticker, so unfiltered they merge
+# unrelated companies into one emission with summed dollars and pooled owner counts.
 
 def _pt(owner, ticker, issuer_cik, value=200_000):
     from datetime import date as _d
