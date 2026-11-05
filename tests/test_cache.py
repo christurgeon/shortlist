@@ -87,7 +87,7 @@ def test_bucket_map_covers_all_live_endpoints():
         assert pk in _BUCKET_BY_KEY, f"{pk} missing from bucket map"
 
 
-# --- Task 3: HttpCache sync store ------------------------------------------------
+# --- HttpCache sync store ------------------------------------------------------
 
 def test_caches_within_ttl(tmp_path):
     cache = HttpCache(str(tmp_path / "c.sqlite"))  # default quote TTL = 6h
@@ -188,7 +188,7 @@ def test_refresh_mode_bypasses_read_but_writes(tmp_path):
     after.close()
 
 
-# --- Task 4: async --------------------------------------------------------------
+# --- async ---------------------------------------------------------------------
 
 def test_aget_or_fetch_warm_concurrent_reads(tmp_path):
     """First await populates the cache; subsequent concurrent reads are all served
@@ -241,7 +241,7 @@ def test_aget_or_fetch_concurrent_miss_double_fetches(tmp_path):
     cache.close()
 
 
-# --- Task 5: NoOpCache, singleton, fallback -------------------------------------
+# --- NoOpCache, singleton, fallback ---------------------------------------------
 
 def test_noopcache_always_fetches():
     c = NoOpCache()

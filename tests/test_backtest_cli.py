@@ -78,7 +78,7 @@ def test_fit_prior_is_only_the_fit_axes():
     assert abs(s_f - 0.715) < 1e-9
 
 
-# --- CLI clean-exit guards (added 2026-06-14: bad/empty horizons, start>end, SPY fail) ---
+# --- CLI clean-exit guards: bad/empty horizons, start>end, SPY fail -----------
 
 def test_main_rejects_non_integer_horizons():
     from shortlist.backtest.cli import main
@@ -122,7 +122,7 @@ def test_main_clean_exit_when_price_fetch_fails(monkeypatch):
     assert cli.main(["--tickers", "AAPL", "--horizons", "6"]) == 1
 
 
-# --- FIX M2: collinearity gate is exercised for --source momentum -------------
+# --- the collinearity gate is exercised for --source momentum ------------------
 
 def test_main_collinearity_emitted_for_momentum_source(monkeypatch, capsys):
     """Run main(--source momentum) with synthetic deterministic histories and assert
@@ -163,7 +163,7 @@ def test_main_collinearity_emitted_for_momentum_source(monkeypatch, capsys):
     assert "Leg collinearity" in captured.err
 
 
-# --- guarded config / date / fit-horizon parsing (hardening round 1) -----------
+# --- guarded config / date / fit-horizon parsing -----------------------------
 
 def test_main_rejects_missing_config(tmp_path, capsys):
     from shortlist.backtest.cli import main
@@ -262,7 +262,7 @@ def test_degenerate_integer_flags_are_rejected_at_parse_time(argv, capsys):
     assert argv[0] in capsys.readouterr().err
 
 
-# --- snapshot-replay source: un-gated against real store history (2026-08-09) ---
+# --- snapshot-replay source, gated on real store history ----------------------
 
 def _seed_store(root, tickers=("AAA", "BBB"), n_days=30, start=date(2026, 6, 1)):
     """Write `n_days` of minimal point-in-time snapshots per ticker under `root`."""
