@@ -734,6 +734,73 @@ def test_extract_panel_sum_family_adds_common_and_preferred():
     assert p.debt_repayments == {"2022-12-31": 200.0}
 
 
+def _family_panel(members):
+    gaap = {}
+    for concept, val in members:
+        gaap.update(_annual(concept, [_row("2022-01-01", "2022-12-31", val, "2023-02-01")]))
+    return extract_panel({"facts": {"us-gaap": gaap}}, as_of=date(2024, 1, 1))
+
+
+def test_sum_family_counts_parent_and_child_reporting_one_amount_once():
+    # companyfacts carries note facts too: one payment tagged with a parent and a child
+    # concept, possibly rounded differently, must not be summed.
+    p = _family_panel([("PaymentsOfDividends", 898_600_000),
+                       ("PaymentsOfDividendsCommonStock", 898_557_000),
+                       ("RepaymentsOfDebt", 500),
+                       ("RepaymentsOfLongTermDebt", 500)])
+    assert p.dividends_paid == {"2022-12-31": 898_600_000.0}
+    assert p.debt_repayments == {"2022-12-31": 500.0}
+
+
+def test_sum_family_overlapping_totals_count_once():
+    # SCI shape: two totals that both include long-term debt, one amount.
+    p = _family_panel([("ProceedsFromIssuanceOfDebt", 1_451_100_000),
+                       ("ProceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet", 1_451_137_000)])
+    assert p.debt_issuance == {"2022-12-31": 1_451_137_000.0}
+
+
+def test_sum_family_parent_covers_its_footnoted_children():
+    # SCI 2023 / VZ shapes: a total plus the components a footnote breaks it into.
+    p = _family_panel([("RepaymentsOfDebt", 603_200),
+                       ("RepaymentsOfLongTermDebt", 22_230),
+                       ("RepaymentsOfOtherLongTermDebt", 580_970),
+                       ("ProceedsFromIssuanceOfLongTermDebt", 15_600),
+                       ("ProceedsFromIssuanceOfSecuredDebt", 12_422)])
+    assert p.debt_repayments == {"2022-12-31": 603_200.0}
+    assert p.debt_issuance == {"2022-12-31": 15_600.0}
+
+
+def test_sum_family_debt_parent_smaller_than_child_is_a_separate_line():
+    p = _family_panel([("RepaymentsOfDebt", 314), ("RepaymentsOfLongTermDebt", 1915)])
+    assert p.debt_repayments == {"2022-12-31": 2229.0}
+
+
+def test_sum_family_equity_chain_takes_the_largest_member():
+    # Same payment on a slightly different basis: never summed for dividends/repurchases.
+    p = _family_panel([("PaymentsOfOrdinaryDividends", 320),
+                       ("PaymentsOfDividendsCommonStock", 357),
+                       ("PaymentsForRepurchaseOfEquity", 1787),
+                       ("PaymentsForRepurchaseOfCommonStock", 1800)])
+    assert p.dividends_paid == {"2022-12-31": 357.0}
+    assert p.repurchases == {"2022-12-31": 1800.0}
+
+
+def test_sum_family_adds_unrelated_members_with_equal_amounts():
+    p = _family_panel([("ProceedsFromIssuanceOfSeniorLongTermDebt", 500),
+                       ("ProceedsFromIssuanceOfMediumTermNotes", 500)])
+    assert p.debt_issuance == {"2022-12-31": 1000.0}
+
+
+def test_sum_family_excludes_noncontrolling_dividends_and_reads_ordinary():
+    p = _family_panel([("PaymentsOfOrdinaryDividends", 12_381),
+                       ("PaymentsOfDividendsMinorityInterest", 30),
+                       ("ProceedsFromDebtMaturingInMoreThanThreeMonths", 11_105),
+                       ("RepaymentsOfDebtMaturingInMoreThanThreeMonths", 8_081)])
+    assert p.dividends_paid == {"2022-12-31": 12_381.0}
+    assert p.debt_issuance == {"2022-12-31": 11_105.0}
+    assert p.debt_repayments == {"2022-12-31": 8_081.0}
+
+
 def test_panel_to_metrics_derives_shareholder_yield():
     # shareholder_yield = (dividends + repurchases + (repayments - issuance)) / market_cap.
     # Raw companyfacts -> positive magnitudes; ADD dividends + repurchases; net the debt leg.

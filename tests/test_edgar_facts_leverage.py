@@ -244,3 +244,105 @@ def test_cash_falls_back_to_bucket_when_no_raw_cash_tag():
          {"2024": 158.1, "2023": 125.4}),
     ])
     assert _extract_balance(balance).cash_and_equivalents == [158.1, 125.4]
+
+
+def _cf_parent_df(rows):
+    """Like _cf_concept_df, plus the filer's calculation parent per row.
+    rows: (concept, value_2024, parent_concept)."""
+    cols = ["concept", "dimension", "parent_concept", "2024-12-31 (FY)", "2023-12-31 (FY)"]
+    data = [[c, False, p, v, None] for c, v, p in rows]
+    return pd.DataFrame(data, columns=cols)
+
+
+def _legs(cashflow):
+    income = _fy_df([("Revenue", {"2024": 1.0, "2023": 1.0})])
+    balance = _instant_df([("LongTermDebt", {"2024": 1.0, "2023": 1.0})])
+    return extract_financials(income, cashflow, balance, shares_diluted=None)
+
+
+_FIN = "us-gaap_NetCashProvidedByUsedInFinancingActivities"
+
+
+@pytest.mark.parametrize("concept, leg", [
+    ("us-gaap_ProceedsFromDebtMaturingInMoreThanThreeMonths", "debt_issuance"),     # CAT, DE
+    ("us-gaap_ProceedsFromIssuanceOfMediumTermNotes", "debt_issuance"),             # CRM
+    ("us-gaap_ProceedsFromIssuanceOfUnsecuredDebt", "debt_issuance"),               # INTU
+    ("us-gaap_ProceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet", "debt_issuance"),  # SCI
+    ("us-gaap_RepaymentsOfDebtAndCapitalLeaseObligations", "debt_repayments"),      # KO
+    ("us-gaap_RepaymentsOfLongTermLinesOfCredit", "debt_repayments"),
+    ("us-gaap_PaymentsOfOrdinaryDividends", "dividends_paid"),                      # JNJ
+])
+def test_shareholder_yield_reads_filer_tag_variants(concept, leg):
+    ef = _legs(_cf_parent_df([(concept, 70.0, _FIN)]))
+    assert getattr(ef, leg) == pytest.approx(70.0)
+
+
+def test_shareholder_yield_dividends_exclude_noncontrolling_interest():
+    # IPAR/XOM shape: distributions to noncontrolling interests are not paid to shareholders.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_PaymentsOfDividendsCommonStock", -100.0, _FIN),
+        ("us-gaap_PaymentsOfDividendsMinorityInterest", -25.0, _FIN),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-100.0)
+
+
+def test_shareholder_yield_separate_parent_and_child_lines_add():
+    # INTU shape: term-debt and revolver repayments are separate face lines, each under
+    # the financing total, though the taxonomy nests the revolver under long-term debt.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -4200.0, _FIN),
+        ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -25.0, _FIN),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-4225.0)
+
+
+def test_shareholder_yield_drops_rows_that_are_components_of_a_family_subtotal():
+    # The filer presents common + preferred under its own dividends subtotal.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_PaymentsOfDividends", -110.0, _FIN),
+        ("us-gaap_PaymentsOfDividendsCommonStock", -100.0, "us-gaap_PaymentsOfDividends"),
+        ("us-gaap_PaymentsOfDividendsPreferredStockAndPreferenceStock", -10.0,
+         "us-gaap_PaymentsOfDividends"),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-110.0)
+
+
+def test_shareholder_yield_face_lines_signed_against_the_rest_still_add():
+    # SCI shape: edgartools presents the early-repayment line with the opposite sign.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -21.0, _FIN),
+        ("us-gaap_EarlyRepaymentOfSeniorDebt", 805.0, _FIN),
+    ]))
+    assert abs(ef.debt_repayments) == pytest.approx(826.0)
+
+
+def test_shareholder_yield_subtotal_without_latest_value_keeps_its_components():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_PaymentsOfDividends", None, _FIN),
+        ("us-gaap_PaymentsOfDividendsCommonStock", -100.0, "us-gaap_PaymentsOfDividends"),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-100.0)
+
+
+def test_shareholder_yield_null_parent_concept_counts_one_amount_once():
+    # edgartools gives a null parent for a concept in no calc tree.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_PaymentsOfDividends", -110.0, None),
+        ("us-gaap_PaymentsOfDividendsCommonStock", -100.0, None),
+        ("us-gaap_PaymentsOfDividendsPreferredStockAndPreferenceStock", -10.0, None),
+        ("us-gaap_RepaymentsOfLongTermDebt", -50.0, _FIN),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-110.0)
+    assert ef.debt_repayments == pytest.approx(-50.0)
+
+
+def test_shareholder_yield_without_parent_concept_counts_one_amount_once():
+    # Older frames lack `parent_concept`; members then combine as overlapping facts.
+    ef = _legs(_cf_concept_df([
+        ("us-gaap_PaymentsOfDividends", {"2024": -8779.0}, False),
+        ("us-gaap_PaymentsOfOrdinaryDividends", {"2024": -8779.0}, False),
+        ("us-gaap_RepaymentsOfDebtAndCapitalLeaseObligations", {"2024": -4967.0}, False),
+        ("us-gaap_RepaymentsOfLongTermDebt", {"2024": -4967.0}, False),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-8779.0)
+    assert ef.debt_repayments == pytest.approx(-4967.0)
