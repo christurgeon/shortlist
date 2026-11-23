@@ -86,7 +86,8 @@ GLOSSARY: list[Entry] = [
           "The quarterly report — unaudited, thinner than the 10-K, but "
           "three months fresher. Watch quarter-over-quarter deterioration "
           "the annual numbers haven't caught yet. Here: the latest 10-Q's "
-          "MD&A rides the /deep research brief alongside the 10-K."),
+          "MD&A rides the /deep research brief alongside the 10-K when it "
+          "covers a quarter after the 10-K's year end."),
     Entry("DEF 14A", "SEC filings", ("proxy", "proxy statement"),
           "The annual proxy statement — executive pay, board structure, "
           "and who owns 5%+ blocks. Extreme pay-versus-performance "
