@@ -10,7 +10,9 @@ Fetched per deep dive, not on every screen: the heavy fetch stays out of the har
 """
 from __future__ import annotations
 
+import copy
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -141,9 +143,66 @@ def _extract_pvp(df) -> list[dict]:
     return dated + [r for r in out if r["fy"] is None]
 
 
-def _extract_holders(df) -> list[dict]:
+_BLOCK_TAGS = frozenset({"div", "p", "br", "li", "tr"})
+_TRAILING_FOOTNOTE = re.compile(r"(?:\s*(?:\((?:\d{1,2}|[a-z])\)|\*+))+$")
+_NON_ALNUM = re.compile(r"\W+")
+
+
+def _cell_lines(cell) -> list[str]:
+    """A table cell's text split at block boundaries (div/p/br/...), whitespace-collapsed,
+    empty lines dropped. lxml's `text_content()` joins those blocks with no separator."""
+    cell = copy.deepcopy(cell)
+    for el in cell.iter():
+        if el is not cell and el.tag in _BLOCK_TAGS:
+            el.text = "\n" + (el.text or "")
+            el.tail = "\n" + (el.tail or "")
+    return [s for s in (_str(x) for x in cell.text_content().split("\n")) if s]
+
+
+def _ownership_name_lines(tree) -> list[list[str]]:
+    """Line-split text of every multi-line cell in the table edgartools reads beneficial
+    ownership from. Uses edgartools' private table finder so both see the same table."""
+    from edgar.proxy.html_extractor import (
+        _OWNERSHIP_HEADING_ANCHORS,
+        _OWNERSHIP_HEADING_REJECTS,
+        _find_section_table,
+        _score_ownership_table,
+    )
+
+    table = _find_section_table(tree, _OWNERSHIP_HEADING_ANCHORS,
+                                _OWNERSHIP_HEADING_REJECTS, _score_ownership_table)
+    if table is None:
+        return []
+    cells = (c for c in table.iter("td", "th"))
+    return [lines for lines in map(_cell_lines, cells) if len(lines) > 1]
+
+
+def _holder_name(name: str, cell_lines: list[list[str]]) -> str:
+    """The holder's own name: the first line of the multi-line cell whose glued text
+    `name` is (longest match wins), minus a trailing footnote marker; `name` unchanged
+    when no cell matches. The cell's full text must contain `name` beyond its first
+    line, so a short first line elsewhere in the table cannot truncate a holder."""
+    key = _NON_ALNUM.sub("", name)
+    best = None
+    for lines in cell_lines:
+        first = lines[0]
+        if not name.startswith(first):
+            continue
+        if len(key) <= len(_NON_ALNUM.sub("", first)):
+            continue
+        if not _NON_ALNUM.sub("", "".join(lines)).startswith(key):
+            continue
+        if best is None or len(first) > len(best):
+            best = first
+    if best is None:
+        return name
+    return _TRAILING_FOOTNOTE.sub("", best).strip() or name
+
+
+def _extract_holders(df, cell_lines: Optional[list[list[str]]] = None) -> list[dict]:
     """5%+ beneficial holders only ({name, pct}), sentinel-cleaned. The
-    director_officer rows carry the `0.5` "<1%" sentinel and are dropped wholesale."""
+    director_officer rows carry the `0.5` "<1%" sentinel and are dropped wholesale.
+    `cell_lines` (from `_ownership_name_lines`) strips addresses glued onto names."""
     out = []
     for r in _records(df):
         if str(r.get("holder_type")) != "5pct_holder":
@@ -151,7 +210,7 @@ def _extract_holders(df) -> list[dict]:
         pct = _num(r.get("percent_of_class"))
         name = _str(r.get("holder_name"))
         if name and _is_real_pct(pct):
-            out.append({"name": name, "pct": pct})
+            out.append({"name": _holder_name(name, cell_lines or []), "pct": pct})
     return out
 
 
@@ -167,7 +226,8 @@ def _facts_from_proxy(ticker: str, accession: str, filing_date: str, proxy) -> P
     ratio = _safe(lambda: proxy.ceo_pay_ratio)
     f.ceo_pay_ratio = _num(getattr(ratio, "ratio", None)) if ratio is not None else None
     f.pvp = _extract_pvp(_safe(lambda: proxy.pay_vs_performance))
-    f.top_holders = _extract_holders(_safe(lambda: proxy.beneficial_ownership))
+    f.top_holders = _extract_holders(_safe(lambda: proxy.beneficial_ownership),
+                                     _safe(lambda: _ownership_name_lines(proxy._html_tree), []))
     f.insider_trading_policy = _opt_bool(_safe(lambda: proxy.insider_trading_policy_adopted))
     f.award_timing_concern = _safe(lambda: proxy.mnpi_disclosure_timed_for_comp_value) is True
     return f

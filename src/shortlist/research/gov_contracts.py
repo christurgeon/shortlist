@@ -7,6 +7,7 @@ quote-verification as a filing fact — the reverse_dcf discipline). Pure; no I/
 """
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 
@@ -14,27 +15,41 @@ def _money_b(x: float) -> str:
     return f"${x / 1e9:,.1f}B" if abs(x) >= 1e9 else f"${x / 1e6:,.0f}M"
 
 
+def _material(x: Optional[float]) -> bool:
+    """True when `x` is finite and does not render as "$0M" in magnitude."""
+    return x is not None and math.isfinite(x) and _money_b(abs(x)) != "$0M"
+
+
 def context_line(m, cfg: Optional[dict]) -> Optional[str]:
     """One self-disclosing brief line, or None to abstain (disabled / low
-    confidence / no material obligations)."""
+    confidence / a total that rounds to $0M)."""
     if not cfg or not cfg.get("enabled", False):
         return None
     ttm = getattr(m, "gov_contract_ttm_usd", None)
     conf = getattr(m, "gov_contract_match_confidence", None)
-    if not ttm:                                      # None or 0 -> abstain
+    if not _material(ttm):
         return None
     if conf is None or conf < float(cfg.get("min_confidence", 0.8)):
         return None
     n_recip = getattr(m, "gov_contract_recipient_count", None) or 1
     who = (f"primary recipient matched at {conf:.2f}" if n_recip == 1
            else f"summed across {n_recip} recipients (primary matched at {conf:.2f})")
-    parts = [f"~{_money_b(ttm)} federal contract obligations (trailing 12m, {who})"]
-    tr = getattr(m, "gov_contract_to_revenue", None)
-    if tr is not None:
-        parts.append(f"~{tr * 100:.0f}% of revenue")
-    yoy = getattr(m, "gov_contract_yoy_growth", None)
-    if yoy is not None:
-        parts.append(f"{yoy * 100:+.0f}% vs prior 12m")
+    prior = getattr(m, "gov_contract_prior_ttm_usd", None)
+    if ttm < 0:
+        # A share of revenue or a growth rate on a negative total reads as nonsense
+        # (e.g. -133% vs prior); state the de-obligation and the prior level instead.
+        parts = [f"~{_money_b(-ttm)} net de-obligation (trailing 12m, {who})"]
+        if _material(prior) and prior > 0:
+            parts.append(f"vs ~{_money_b(prior)} obligated in the prior 12m")
+    else:
+        parts = [f"~{_money_b(ttm)} federal contract obligations (trailing 12m, {who})"]
+        tr = getattr(m, "gov_contract_to_revenue", None)
+        if tr is not None:
+            parts.append(f"~{tr * 100:.0f}% of revenue")
+        yoy = getattr(m, "gov_contract_yoy_growth", None)
+        # A prior that rounds to $0M makes the growth rate a division blowup.
+        if yoy is not None and (prior is None or _material(prior)):
+            parts.append(f"{round(yoy * 100):+d}% vs prior 12m")
     body = "; ".join(parts)
     caveat = ""
     if getattr(m, "gov_contract_truncated", None):

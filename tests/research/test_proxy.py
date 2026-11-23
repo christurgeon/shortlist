@@ -1,6 +1,8 @@
 """Pure-function tests for the DEF 14A proxy reader (compensation & governance
 research context line). fetch_proxy (edgartools I/O) is covered by the live
 integration test; here we test ProxyFacts + the curated context_line renderer."""
+import pytest
+
 from shortlist.research.proxy import ProxyFacts, context_line, _is_real_pct
 
 CFG = {"enabled": True, "max_holders": 3, "control_pct": 30.0}
@@ -386,3 +388,65 @@ def test_system_addendum_and_line_absent_when_disabled(monkeypatch):
     cap = _run_assess_capture(monkeypatch, proxy_enabled=False)
     assert assess.PROXY_SYSTEM_ADDENDUM not in cap["system"]
     assert "Proxy (DEF 14A" not in cap["prompt"]
+
+
+# --- holder names: edgartools glues a cell's name and address lines together ---
+
+_OWNERSHIP_HTML = """<html><body>
+<p>Security Ownership of Certain Beneficial Owners and Management</p>
+<table>
+<tr><td>Name and Address of Beneficial Owner</td>
+    <td>Number of Shares</td><td>Percent of Class</td></tr>
+<tr><td><div><span>The Vanguard Group</span></div><div>100 Vanguard Boulevard</div>
+        <div>Malvern, PA 19355</div></td><td>240,000,000</td><td>10.1%</td></tr>
+<tr><td><div><span>BlackRock, Inc.</span><span>(2)</span></div>
+        <div>50 Hudson Yards, New York, New York 10001</div></td>
+    <td>210,000,000</td><td>8.9%</td></tr>
+<tr><td>State Street Corporation<br/>One Congress Street<br/>Boston, MA 02114</td>
+    <td>140,000,000</td><td>6.0%</td></tr>
+<tr><td>Berkshire Hathaway&#160;Inc.</td><td>400,000,000</td><td>9.3%</td></tr>
+<tr><td><div>A Director</div><div>Chief Executive Officer</div></td>
+    <td>1,000</td><td>*</td></tr>
+</table></body></html>"""
+
+
+def _real_ownership_proxy(html=_OWNERSHIP_HTML):
+    pytest.importorskip("edgar")
+    import lxml.html
+    from edgar.proxy.html_extractor import extract_beneficial_ownership
+
+    tree = lxml.html.fromstring(html)
+    owners = extract_beneficial_ownership(tree) or []
+    df = _DF([{"holder_name": o.name, "holder_type": o.holder_type, "shares": o.shares,
+               "percent_of_class": o.percent_of_class} for o in owners])
+    p = _Proxy(beneficial_ownership=df)
+    p._html_tree = tree
+    return p
+
+
+def test_holder_names_drop_glued_addresses():
+    f = _facts_from_proxy("X", "a", "d", _real_ownership_proxy())
+    assert [(h["name"], h["pct"]) for h in f.top_holders] == [
+        ("The Vanguard Group", 10.1),
+        ("BlackRock, Inc.", 8.9),
+        ("State Street Corporation", 6.0),
+        ("Berkshire Hathaway Inc.", 9.3),
+    ]
+
+
+def test_holder_names_kept_when_tree_unavailable():
+    p = _real_ownership_proxy()
+    p._html_tree = None
+    names = [h["name"] for h in _facts_from_proxy("X", "a", "d", p).top_holders]
+    assert names[0].startswith("The Vanguard Group100 Vanguard Boulevard")
+    assert len(names) == 4
+
+
+def test_holder_name_only_shortened_by_its_own_cell():
+    from shortlist.research.proxy import _holder_name
+    cells = [["BlackRock", "Footnote: shares held by subsidiaries"],
+             ["Capital Research (USA)", "333 South Hope Street"]]
+    assert _holder_name("BlackRock, Inc.", cells) == "BlackRock, Inc."
+    assert _holder_name("Capital Research (USA)333 South Hope Street",
+                        cells) == "Capital Research (USA)"
+    assert _holder_name("FMR LLC(3)", [["FMR LLC(3)"]]) == "FMR LLC(3)"
