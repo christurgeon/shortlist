@@ -33,3 +33,9 @@ DEBT_REPAYMENT_TAGS = ("RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
 DEBT_ISSUANCE_TAGS = ("ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
                       "ProceedsFromIssuanceOfSeniorLongTermDebt",
                       "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable")
+
+# Altman Z balance inputs (balance-sheet instants).
+CURRENT_ASSETS_TAG = "AssetsCurrent"
+CURRENT_LIABILITIES_TAG = "LiabilitiesCurrent"
+LIABILITIES_TAG = "Liabilities"
+RETAINED_EARNINGS_TAG = "RetainedEarningsAccumulatedDeficit"   # a deficit is negative

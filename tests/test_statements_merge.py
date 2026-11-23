@@ -93,6 +93,11 @@ def _edgar_st(newest: int = 2025) -> Statements:
         repurchases=80.0,
         debt_repayments=30.0,
         debt_issuance=10.0,
+        balance_sheet_end=f"{newest}-09-28",
+        current_assets=900.0,
+        current_liabilities=700.0,
+        total_liabilities=1800.0,
+        retained_earnings=-50.0,
     )
 
 
@@ -123,6 +128,9 @@ def test_latest_fy_scalars_copy_when_newest_years_agree():
     assert st.repurchases == 80.0
     assert st.debt_repayments == 30.0
     assert st.debt_issuance == 10.0
+    assert (st.balance_sheet_end, st.current_assets, st.current_liabilities,
+            st.total_liabilities, st.retained_earnings) == ("2025-09-28", 900.0, 700.0,
+                                                            1800.0, -50.0)
 
 
 def test_latest_fy_scalars_abstain_when_the_donor_vintage_is_older():
@@ -136,6 +144,7 @@ def test_latest_fy_scalars_abstain_when_the_donor_vintage_is_older():
     assert st.asset_growth is None
     assert st.accruals is None
     assert st.repurchases is None
+    assert st.balance_sheet_end is None and st.retained_earnings is None
     # ...but the LIST fields still backfill on their matching years.
     assert st.diluted_shares == [None, 1102.5, 1050.0, 1000.0, None]
 

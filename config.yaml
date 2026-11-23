@@ -120,7 +120,7 @@ sectors:
   # Masking is production-only: backtest axes stay unmasked for raw-IC comparability.
   # net_margin is deliberately NOT masked (defined, only miscalibrated). Exchanges,
   # advisers, funds, SPACs and real-estate operators are not bucketed.
-  masked_legs: [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals, shareholder_yield]
+  masked_legs: [gross_margin, gross_margin_stability, roic, fcf_yield, fcf_cagr, interest_coverage, debt_to_equity, piotroski_f, asset_growth, accruals, shareholder_yield, altman_z]
   masked_gates: [negative_fcf, over_leveraged]
 
 validity:
@@ -157,6 +157,10 @@ flags:
     #                       # suppression removes a risk flag, so it needs the F4-F6 trend legs.
     #   confirm_at:  0.40   # cheap + fraction <= this -> trap even if quality/growth are ok
     #   min_legs:    4      # abstain when fewer of the 6 tests are evaluable
+  # Altman (1968) Z below this. 1.81 is the top of Altman's distress zone; the model was
+  # fitted on manufacturers, so it misreads captive-finance arms and utilities.
+  altman_distress:
+    max_z: 1.81
   social_hype:                  # WSB via ApeWisdom
     min_mentions: 50            # retune by regime
     min_mention_delta_pct: 0.5  # skipped when there is no 24h baseline

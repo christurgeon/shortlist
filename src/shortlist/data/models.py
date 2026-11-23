@@ -89,6 +89,13 @@ class Statements:
     repurchases: Optional[float] = None
     debt_repayments: Optional[float] = None
     debt_issuance: Optional[float] = None
+    # Altman Z balance inputs at the `balance_sheet_end` instant, absolute USD; all set or
+    # all None. The bridge uses them only when that instant is `fiscal_period_end[0]`.
+    balance_sheet_end: Optional[str] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    retained_earnings: Optional[float] = None
 
     def gross_margins(self) -> list[float]:
         # FMP can carry revenue with a None gross profit, so guard both sides.
@@ -324,6 +331,9 @@ _NON_SIGNAL_FIELDS = ("recent", "diluted_eps", "diluted_shares", "fiscal_period_
                       "inventory",
                       # Shareholder-yield financing legs.
                       "dividends_paid", "repurchases", "debt_repayments", "debt_issuance",
+                      # Altman Z balance inputs.
+                      "balance_sheet_end", "current_assets", "current_liabilities",
+                      "total_liabilities", "retained_earnings",
                       # Backtest measurement axes.
                       "pct_to_52w_high", "max_daily_return", "vol_scaled_momentum")
 
@@ -528,6 +538,8 @@ def _reindex_by_year(donor_years: list[Optional[int]],
 _STATEMENTS_LATEST_FY_SCALARS = (
     "asset_growth", "accruals", "dividends_paid", "repurchases",
     "debt_repayments", "debt_issuance",
+    "balance_sheet_end", "current_assets", "current_liabilities",
+    "total_liabilities", "retained_earnings",
 )
 
 

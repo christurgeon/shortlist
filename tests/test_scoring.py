@@ -764,6 +764,51 @@ def test_value_trap_backcompat_no_piotroski_block():
     assert "value_trap" in fires.flags
 
 
+# --- altman_distress -----------------------------------------------------------
+
+AZ_CFG = {"altman_distress": {"max_z": 1.81}}
+_REIT_SECTORS = {"buckets": [{"name": "reit", "sic_ranges": [[6798, 6798]]}],
+                 "masked_legs": ["altman_z"]}
+
+
+def test_altman_distress_fires_below_max_z_not_at_it():
+    assert "altman_distress" in score(_m(altman_z=1.2), _with(flags=AZ_CFG)).flags
+    assert "altman_distress" not in score(_m(altman_z=1.81), _with(flags=AZ_CFG)).flags
+    assert "altman_distress" not in score(_m(altman_z=3.5), _with(flags=AZ_CFG)).flags
+
+
+@pytest.mark.parametrize("z", [None, float("nan")])
+def test_altman_distress_no_op_without_a_z(z):
+    assert "altman_distress" not in score(_m(altman_z=z), _with(flags=AZ_CFG)).flags
+
+
+def test_altman_distress_masked_bucket_abstains():
+    cfg = _with(flags=AZ_CFG, sectors=_REIT_SECTORS)
+    assert "altman_distress" not in score(_m(altman_z=0.5, sic="6798"), cfg).flags
+    assert "altman_distress" in score(_m(altman_z=0.5, sic="2800"), cfg).flags
+
+
+@pytest.mark.parametrize("cfg", [
+    CONFIG, _with(flags={"altman_distress": {"max_z": 1.81, "enabled": False}})])
+def test_altman_distress_off_without_an_enabled_block(cfg):
+    assert "altman_distress" not in score(_m(altman_z=0.5), cfg).flags
+
+
+def test_altman_distress_is_advisory_only():
+    base = score(_m(altman_z=0.5), CONFIG)
+    flagged = score(_m(altman_z=0.5), _with(flags=AZ_CFG))
+    assert "altman_distress" in flagged.flags
+    assert (flagged.passed, flagged.composite, flagged.scored, flagged.gates) == \
+        (base.passed, base.composite, base.scored, base.gates)
+
+
+def test_shipped_config_enables_altman_distress_and_masks_its_input():
+    cfg = _shipped()
+    assert cfg["flags"]["altman_distress"]["max_z"] == 1.81
+    assert "altman_z" in cfg["sectors"]["masked_legs"]
+    assert "altman_distress" in score(_m(altman_z=1.0), cfg).flags
+
+
 # --- risk sub-score -----------------------------------------------------------
 
 _RISK_T = {"realized_vol": [0.45, 0.15], "max_drawdown": [-0.50, -0.10]}

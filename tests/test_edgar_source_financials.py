@@ -72,6 +72,24 @@ def test_build_financials_snapshot_fills_statements():
     assert snap.statements.total_equity == [67_000_000_000.0, 57_000_000_000.0]
 
 
+def test_build_financials_snapshot_carries_altman_balance_inputs():
+    def row(concept, new, old, sc=None):
+        return {"concept": f"us-gaap_{concept}", "standard_concept": sc, "label": concept,
+                "2025-09-27": new, "2024-09-28": old}
+    bal = pd.concat([_bal(), pd.DataFrame([
+        row("Assets", 365e9, 344e9, sc="Assets"),
+        row("AssetsCurrent", 150e9, 140e9),
+        row("LiabilitiesCurrent", 160e9, 150e9),
+        row("Liabilities", 298e9, 287e9),
+        row("RetainedEarningsAccumulatedDeficit", -14e9, -19e9),
+    ])], ignore_index=True)
+    src = EdgarSource.__new__(EdgarSource); src.name = "edgar"
+    st = src._build_financials_snapshot("AAPL", _FakeFinancials(_inc(), _cf(), bal)).statements
+    assert (st.balance_sheet_end, st.current_assets, st.current_liabilities,
+            st.total_liabilities, st.retained_earnings) == ("2025-09-27", 150e9, 160e9,
+                                                            298e9, -14e9)
+
+
 def test_build_financials_snapshot_empty_on_no_data():
     src = EdgarSource.__new__(EdgarSource); src.name = "edgar"
     snap = src._build_financials_snapshot("ZZZ", _FakeFinancials(pd.DataFrame(), pd.DataFrame()))

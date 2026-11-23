@@ -79,6 +79,7 @@ both ON) and pinned by `tests/test_gate_backcompat.py`.
 | `crowded_short` | Elevated short interest (keyless FINRA source) |
 | `value_trap` | Cheap **and** weak on quality/growth; optional Piotroski-style refinement |
 | `cash_burn` | Any negative FCF, fired regardless of whether the gate was excused |
+| `altman_distress` | Altman (1968) Z below `flags.altman_distress.max_z` (1.81). EDGAR balance sheet, latest fiscal year, today's market cap. Abstains for banks, insurers and REITs (`altman_z` is a masked leg) and when the balance instant is not the latest fiscal-year end |
 | `dilution` | Persistent net share issuance |
 | `insider_cluster_buy` | Multiple insiders buying together. Needs `insider.conviction` |
 | `planned_sale` | Sales under a pre-arranged 10b5-1 plan |

@@ -39,7 +39,7 @@ def test_emitted_literals_are_declared():
 
 def test_declared_sets_are_complete_and_disjoint():
     assert len(scoring.KNOWN_GATES) == 4
-    assert len(scoring.KNOWN_FLAGS) == 20
+    assert len(scoring.KNOWN_FLAGS) == 21
     assert not scoring.KNOWN_GATES & scoring.KNOWN_FLAGS
     assert set(scoring._FILING_STREAM_FLAGS) <= scoring.KNOWN_FLAGS
 

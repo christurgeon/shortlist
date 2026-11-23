@@ -45,6 +45,8 @@ class StockMetrics:
     # (dividends + net buybacks + net debt reduction) / market_cap. Scored straight;
     # a net debt issuer can go negative.
     shareholder_yield: Optional[float] = None
+    # Altman (1968) Z on the latest fiscal year, with today's market cap. Lower = closer to distress.
+    altman_z: Optional[float] = None
 
     # Absolute USD. net_debt_to_ebitda is SIGNED (net cash < 0) and read raw by the
     # over_leveraged gate; any display floor is serializer-only.
