@@ -102,18 +102,20 @@ def _instant_columns(df: pd.DataFrame) -> list[tuple[str, str]]:
     return _matching_columns(df, _INSTANT_RE)
 
 
-def _sum_concepts(df: pd.DataFrame, concepts: list[str],
-                  cols: list[tuple[str, str]]) -> list[float]:
-    """Sum several standard_concept rows per column (e.g. total_debt = long-term +
-    current portion + short-term). Returns [] unless EVERY column has >=1 component
-    (don't half-fill, matching _series)."""
-    rows = [r for r in (_row_by_standard_concept(df, c) for c in concepts) if r is not None]
+def _value(row: pd.Series, col: str) -> Optional[float]:
+    v = row.get(col)
+    return None if v is None or pd.isna(v) else float(v)
+
+
+def _sum_rows(rows: list[Optional[pd.Series]], cols: list[tuple[str, str]]) -> list[float]:
+    """Per column, the sum of the `rows` that have a value. Returns [] when any column
+    has none (don't half-fill, matching _series)."""
+    rows = [r for r in rows if r is not None]
     if not rows or not cols:
         return []
     out = []
     for _, col in cols:
-        present = [float(r.get(col)) for r in rows
-                   if r.get(col) is not None and not pd.isna(r.get(col))]
+        present = [v for r in rows for v in [_value(r, col)] if v is not None]
         if not present:
             return []
         out.append(sum(present))
@@ -341,6 +343,46 @@ _EQUITY_CONCEPTS = (
 )
 
 
+_CASH_CONCEPTS = ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "us-gaap_Cash")
+
+# Company-extension tags (e.g. `de_LongTermDebtAndFinanceLeasesNoncurrent`,
+# `ufpt_PaymentsToAcquirePropertyAndEquipmentNet`) get no standard_concept, so the
+# bucket misses them. The patterns match the local name in any non-us-gaap namespace and
+# exclude names for adjustments (issuance costs, fair value) or capex accruals.
+_EXTENSION_LONG_TERM_DEBT = re.compile(
+    r"^(?!us-gaap_)[A-Za-z0-9-]+_"
+    r"(?!\w*(?:Unamortized|IssuanceCost|Discount|Premium|FairValue|RelatedPart))"
+    r"LongTermDebt\w*Noncurrent$")
+_EXTENSION_CAPEX = re.compile(
+    r"^(?!us-gaap_)[A-Za-z0-9-]+_"
+    r"(?!\w*(?:AccountsPayable|Accrued|Incurred|Unpaid|NotYetPaid))"
+    r"PaymentsToAcquireProperty(?:PlantAnd|And)Equipment\w*$")
+
+
+def _extension_rows(df: pd.DataFrame, extension: re.Pattern) -> pd.DataFrame:
+    """Non-dimensional, non-supplemental rows whose raw `concept` matches `extension`."""
+    if "concept" not in df.columns:
+        return df.iloc[0:0]
+    hit = df[df["concept"].astype(str).str.match(extension)]
+    if "dimension" in hit.columns:
+        hit = hit[hit["dimension"] != True]      # noqa: E712 — drop breakdowns
+    if "parent_abstract_concept" in hit.columns:
+        pac = hit["parent_abstract_concept"].astype(str).str.lower()
+        hit = hit[~pac.str.contains("noncash|disclosure|supplemental", regex=True)]
+    return hit
+
+
+def _row_by_bucket_or_extension(df: pd.DataFrame, bucket: str,
+                                extension: re.Pattern) -> Optional[pd.Series]:
+    """The `bucket` row; else the single `_extension_rows` match. None when the bucket
+    is absent and the extension match is not unique."""
+    row = _row_by_standard_concept(df, bucket)
+    if row is not None:
+        return row
+    hit = _extension_rows(df, extension)
+    return hit.iloc[0] if len(hit) == 1 else None
+
+
 def _total_equity_series(df: pd.DataFrame, cols: list[tuple[str, str]]) -> list[float]:
     """Total equity, newest-first, aligned to the balance sheet's instant columns.
 
@@ -382,7 +424,8 @@ def extract_financials(
     ocf_row = _row_by_concept_or_bucket(
         cashflow_df, _OPERATING_CASH_FLOW_CONCEPTS, "NetCashFromOperatingActivities", cf_fy)
     fin.operating_cash_flow = _series(ocf_row, cf_fy)
-    capex = _series(_row_by_standard_concept(cashflow_df, "CapitalExpenses"), cf_fy)
+    capex = _series(
+        _row_by_bucket_or_extension(cashflow_df, "CapitalExpenses", _EXTENSION_CAPEX), cf_fy)
     if fin.operating_cash_flow and capex and len(fin.operating_cash_flow) == len(capex):
         fin.free_cash_flow = [ocf + cx for ocf, cx in zip(fin.operating_cash_flow, capex, strict=True)]
 
@@ -414,14 +457,20 @@ def extract_financials(
                   for d in sorted(set(_oi_by) & set(_da_by), reverse=True)]
 
     bal_inst = _instant_columns(balance_df)
-    fin.total_debt = _sum_concepts(
-        balance_df, ["LongTermDebt", "CurrentPortionOfLongTermDebt", "ShortTermDebt"], bal_inst)
+    # A missing component counts as none: [] reads as zero debt downstream when FMP
+    # cannot backfill, so abstain only when several extension rows could be the
+    # long-term leg.
+    long_term = _row_by_bucket_or_extension(balance_df, "LongTermDebt", _EXTENSION_LONG_TERM_DEBT)
+    if long_term is not None or len(_extension_rows(balance_df, _EXTENSION_LONG_TERM_DEBT)) < 2:
+        fin.total_debt = _sum_rows(
+            [long_term, *(_row_by_standard_concept(balance_df, c)
+                          for c in ("CurrentPortionOfLongTermDebt", "ShortTermDebt"))],
+            bal_inst)
     fin.total_equity = _total_equity_series(balance_df, bal_inst)
-    # The `CashAndMarketableSecurities` bucket maps to the cash-only balance-sheet line
-    # (securities are a separate `ShortTermInvestments` row), comparable to FMP's
-    # `cashAndCashEquivalents`.
-    fin.cash_and_equivalents = _series(
-        _row_by_standard_concept(balance_df, "CashAndMarketableSecurities"), bal_inst)
+    # Cash only, comparable to FMP's `cashAndCashEquivalents`. The bucket also holds
+    # securities and cash-plus-investments subtotals, so it is the fallback only.
+    fin.cash_and_equivalents = _series(_row_by_concept_or_bucket(
+        balance_df, _CASH_CONCEPTS, "CashAndMarketableSecurities", bal_inst), bal_inst)
 
     # Match the raw concept, never standard_concept: some inventory rows have a NaN
     # bucket and edgartools buckets InventoryWriteDown as "RestructuringExpenseBenefit".
