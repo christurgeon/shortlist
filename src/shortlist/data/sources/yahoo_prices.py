@@ -157,10 +157,15 @@ def _dates_from_chart(raw: Any) -> list[date]:
 
 
 def _monthly_closes_from_chart(raw: Any) -> list[list]:
-    """Down-sample to the last valid close of each calendar month, oldest->newest as
-    [iso, close]. Returns [] if timestamps are absent or misaligned, or the payload is
-    malformed."""
-    ts, series = _chart_ts_and_series(raw)
+    """Down-sample `quote.close` to the last valid close of each calendar month,
+    oldest->newest as [iso, close]. Returns [] if timestamps or `quote.close` are absent
+    or misaligned, or the payload is malformed. Never falls back to `adjclose`: its
+    dividend adjustment biases the historical P/E low."""
+    try:
+        result = raw["chart"]["result"][0]
+        ts, series = result["timestamp"], result["indicators"]["quote"][0]["close"]
+    except (KeyError, IndexError, TypeError):
+        return []
     if not ts or not series or len(ts) != len(series):
         return []
     by_month: dict[str, list] = {}

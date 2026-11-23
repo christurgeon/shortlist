@@ -226,11 +226,52 @@ def test_yahoo_source_never_caches_a_429_waf_block(tmp_path, monkeypatch):
     asyncio.run(src.aclose())
 
 
-def _chart_payload_with_ts(closes, timestamps):
+def _chart_payload_with_ts(closes, timestamps, quote_closes=None):
     return {"chart": {"result": [{
         "timestamp": timestamps,
-        "indicators": {"adjclose": [{"adjclose": closes}]},
+        "indicators": {"adjclose": [{"adjclose": closes}],
+                       "quote": [{"close": closes if quote_closes is None else quote_closes}]},
     }]}}
+
+
+def test_monthly_closes_use_the_split_only_close_not_adjclose():
+    """Yahoo `adjclose` is also dividend-adjusted, which lowers old closes; paired with
+    as-reported EPS it biases the historical P/E low for every dividend payer. The P/E
+    pairing must read `quote.close` (split-adjusted only)."""
+    from shortlist.data.sources import _monthly_closes_from_chart
+    ts = [1_703_808_000, 1_735_603_200]              # 2023-12-29, 2024-12-31
+    raw = _chart_payload_with_ts([54.49, 59.32], ts, quote_closes=[58.93, 62.26])
+    assert _monthly_closes_from_chart(raw) == [["2023-12-29", 58.93], ["2024-12-31", 62.26]]
+
+
+def test_monthly_closes_abstain_without_a_quote_close_series():
+    """No silent fall back to adjclose: that would reintroduce the dividend bias."""
+    from shortlist.data.sources import _monthly_closes_from_chart
+    raw = {"chart": {"result": [{"timestamp": [1_703_808_000],
+                                 "indicators": {"adjclose": [{"adjclose": [54.49]}]}}]}}
+    assert _monthly_closes_from_chart(raw) == []
+
+
+def test_monthly_closes_abstain_on_a_misaligned_quote_close_series():
+    from shortlist.data.sources import _monthly_closes_from_chart
+    raw = _chart_payload_with_ts([54.49], [1_703_808_000], quote_closes=[58.93, 62.26])
+    assert _monthly_closes_from_chart(raw) == []
+
+
+def test_momentum_legs_keep_reading_adjclose(tmp_path, monkeypatch):
+    """Return legs are total-return: only the P/E pairing switches to `quote.close`."""
+    from shortlist.data.sources import YahooSource
+    src = YahooSource(cache_dir=str(tmp_path))
+    ts = [i * 86400 for i in range(300)]
+    adj = [100.0 + i for i in range(300)]
+
+    async def fake_get(symbol):
+        return _chart_payload_with_ts(adj, ts, quote_closes=[2 * c for c in adj])
+    monkeypatch.setattr(src, "_get_chart", fake_get)
+    res = asyncio.run(src.fetch("AAPL"))
+    assert res.partial.price.price == adj[-1]
+    assert res.partial.price.monthly_closes[-1][1] == 2 * adj[-1]
+    asyncio.run(src.aclose())
 
 
 def test_yahoo_emits_monthly_closes(tmp_path, monkeypatch):

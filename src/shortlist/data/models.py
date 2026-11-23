@@ -171,7 +171,9 @@ class Price:
     pct_to_52w_high: Optional[float] = None       # closes[-1]/max(last 252) in (0,1] (George-Hwang)
     max_daily_return: Optional[float] = None      # largest daily return, last ~21d (Bali MAX; negative pred.)
     vol_scaled_momentum: Optional[float] = None   # mom_12_1 / 6m realized vol (Barroso-Santa-Clara)
-    # ~Monthly (date, close) pairs, oldest->newest. The bridge aligns EDGAR fiscal-year-end dates to them.
+    # ~Monthly (date, close) pairs, oldest->newest, split-adjusted but NOT dividend-adjusted;
+    # the bridge pairs them with annual EPS for the historical P/E. Older stored snapshots
+    # carry dividend-adjusted values under this key and replay as captured.
     monthly_closes: list[list] = field(default_factory=list)
 
     def price_vs_200dma(self) -> Optional[float]:
