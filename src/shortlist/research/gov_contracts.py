@@ -36,19 +36,20 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
            else f"summed across {n_recip} recipients (primary matched at {conf:.2f})")
     prior = getattr(m, "gov_contract_prior_ttm_usd", None)
     if ttm < 0:
-        # A share of revenue or a growth rate on a negative total reads as nonsense
-        # (e.g. -133% vs prior); state the de-obligation and the prior level instead.
+        # A share of revenue or a growth rate on a negative total reads as nonsense;
+        # state the de-obligation and the prior level instead.
         parts = [f"~{_money_b(-ttm)} net de-obligation (trailing 12m, {who})"]
         if _material(prior) and prior > 0:
             parts.append(f"vs ~{_money_b(prior)} obligated in the prior 12m")
     else:
         parts = [f"~{_money_b(ttm)} federal contract obligations (trailing 12m, {who})"]
         tr = getattr(m, "gov_contract_to_revenue", None)
-        if tr is not None:
-            parts.append(f"~{tr * 100:.0f}% of revenue")
+        if tr is not None and math.isfinite(tr):
+            parts.append(f"~{round(tr * 100)}% of revenue")
         yoy = getattr(m, "gov_contract_yoy_growth", None)
         # A prior that rounds to $0M makes the growth rate a division blowup.
-        if yoy is not None and (prior is None or _material(prior)):
+        if (yoy is not None and math.isfinite(yoy)
+                and (prior is None or _material(prior))):
             parts.append(f"{round(yoy * 100):+d}% vs prior 12m")
     body = "; ".join(parts)
     caveat = ""

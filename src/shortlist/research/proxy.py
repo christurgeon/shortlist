@@ -144,8 +144,15 @@ def _extract_pvp(df) -> list[dict]:
 
 
 _BLOCK_TAGS = frozenset({"div", "p", "br", "li", "tr"})
+# Source-HTML newlines are ordinary whitespace, so blocks are split on a private-use
+# character instead (lxml rejects control characters in element text).
+_BLOCK_SEP = ""
 _TRAILING_FOOTNOTE = re.compile(r"(?:\s*(?:\((?:\d{1,2}|[a-z])\)|\*+))+$")
 _NON_ALNUM = re.compile(r"\W+")
+_NAME_CONTINUES = re.compile(r"(?:,|&|\band|\bof|\bthe)$", re.I)
+_CORP_SUFFIX_LINE = re.compile(
+    r"^\D*\b(?:Inc\.?|LLC|L\.?L\.?C\.?|L\.?P\.?|Ltd\.?|Co\.?|Company|Corp\.?|Corporation"
+    r"|Group|Trust|N\.A\.|plc|AG|S\.A\.)$", re.I)
 
 
 def _cell_lines(cell) -> list[str]:
@@ -154,9 +161,22 @@ def _cell_lines(cell) -> list[str]:
     cell = copy.deepcopy(cell)
     for el in cell.iter():
         if el is not cell and el.tag in _BLOCK_TAGS:
-            el.text = "\n" + (el.text or "")
-            el.tail = "\n" + (el.tail or "")
-    return [s for s in (_str(x) for x in cell.text_content().split("\n")) if s]
+            el.text = _BLOCK_SEP + (el.text or "")
+            el.tail = _BLOCK_SEP + (el.tail or "")
+    return [s for s in (_str(x) for x in cell.text_content().split(_BLOCK_SEP)) if s]
+
+
+def _name_from_lines(lines: list[str]) -> str:
+    """The leading lines that form the name: a name wrapped across blocks continues while
+    a line ends in a connector ("and", ",") or the next line is a bare corporate suffix
+    ("Insurance Company"); the first other line starts the address."""
+    parts = [_TRAILING_FOOTNOTE.sub("", lines[0]).strip()]
+    for nxt in lines[1:]:
+        nxt = _TRAILING_FOOTNOTE.sub("", nxt).strip()
+        if not (_NAME_CONTINUES.search(parts[-1]) or _CORP_SUFFIX_LINE.match(nxt)):
+            break
+        parts.append(nxt)
+    return " ".join(p for p in parts if p)
 
 
 def _ownership_name_lines(tree) -> list[list[str]]:
@@ -178,10 +198,9 @@ def _ownership_name_lines(tree) -> list[list[str]]:
 
 
 def _holder_name(name: str, cell_lines: list[list[str]]) -> str:
-    """The holder's own name: the first line of the multi-line cell whose glued text
-    `name` is (longest match wins), minus a trailing footnote marker; `name` unchanged
-    when no cell matches. The cell's full text must contain `name` beyond its first
-    line, so a short first line elsewhere in the table cannot truncate a holder."""
+    """The holder's own name, taken from the multi-line cell whose glued text `name` is
+    (longest first line wins); `name` unchanged when no cell matches. Matching needs the
+    cell's full text to contain `name`, so a line from another cell cannot truncate it."""
     key = _NON_ALNUM.sub("", name)
     best = None
     for lines in cell_lines:
@@ -192,11 +211,11 @@ def _holder_name(name: str, cell_lines: list[list[str]]) -> str:
             continue
         if not _NON_ALNUM.sub("", "".join(lines)).startswith(key):
             continue
-        if best is None or len(first) > len(best):
-            best = first
+        if best is None or len(first) > len(best[0]):
+            best = lines
     if best is None:
         return name
-    return _TRAILING_FOOTNOTE.sub("", best).strip() or name
+    return _name_from_lines(best) or name
 
 
 def _extract_holders(df, cell_lines: Optional[list[list[str]]] = None) -> list[dict]:

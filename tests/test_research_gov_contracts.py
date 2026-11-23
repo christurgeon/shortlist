@@ -123,3 +123,13 @@ def test_positive_total_line_is_unchanged():
         "primary recipient matched at 1.00); ~18% of revenue; +20% vs prior 12m. "
         "Attribution is fuzzy and may exclude subsidiaries booked under other names — "
         "reconcile against the business (a new award is a tailwind; a recompete loss a risk).")
+
+
+def test_non_finite_ratios_are_omitted_not_raised():
+    line = _line(gov_contract_ttm_usd=5e6, gov_contract_yoy_growth=float("inf"),
+                 gov_contract_to_revenue=float("nan"))
+    assert "vs prior 12m" not in line and "% of revenue" not in line
+
+
+def test_revenue_share_never_prints_negative_zero():
+    assert "-0" not in _line(gov_contract_ttm_usd=5e6, gov_contract_to_revenue=-0.004)

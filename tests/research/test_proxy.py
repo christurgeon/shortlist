@@ -450,3 +450,32 @@ def test_holder_name_only_shortened_by_its_own_cell():
     assert _holder_name("Capital Research (USA)333 South Hope Street",
                         cells) == "Capital Research (USA)"
     assert _holder_name("FMR LLC(3)", [["FMR LLC(3)"]]) == "FMR LLC(3)"
+
+
+def test_holder_name_ignores_source_newlines_and_keeps_wrapped_names():
+    pytest.importorskip("lxml")
+    import lxml.html
+    from shortlist.research.proxy import _cell_lines, _holder_name
+
+    def name_of(cell_html, glued):
+        lines = _cell_lines(lxml.html.fragment_fromstring(cell_html))
+        return _holder_name(glued, [lines])
+
+    assert name_of("<td><p>BlackRock,\n   Inc.  (2)</p><p>55 East 52nd St</p></td>",
+                   "BlackRock, Inc. (2)55 East 52nd St") == "BlackRock, Inc."
+    assert name_of("<td><div>Capital Research and</div><div>Management Company</div>"
+                   "<div>333 South Hope Street</div></td>",
+                   "Capital Research andManagement Company333 South Hope Street"
+                   ) == "Capital Research and Management Company"
+    assert name_of("<td>T. Rowe Price Associates,<br>Inc.<br>100 E. Pratt Street</td>",
+                   "T. Rowe Price Associates,Inc.100 E. Pratt Street"
+                   ) == "T. Rowe Price Associates, Inc."
+    assert name_of("<td><div>State Farm Mutual Automobile</div>"
+                   "<div>Insurance Company</div></td>",
+                   "State Farm Mutual AutomobileInsurance Company"
+                   ) == "State Farm Mutual Automobile Insurance Company"
+    assert name_of("<td><div>State Street Corporation</div>"
+                   "<div>State Street Financial Center</div><div>One Lincoln Street</div>"
+                   "<div>Boston, MA 02111</div></td>",
+                   "State Street CorporationState Street Financial CenterOne Lincoln "
+                   "StreetBoston, MA 02111") == "State Street Corporation"
