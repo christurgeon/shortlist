@@ -25,8 +25,8 @@ to help a human judge the name.
 - **A momentum/value divergence flag.** `opportunity = max(momentum, value)` hides the case
   where momentum is falling and value looks cheap, the falling-knife pattern. An advisory flag
   would ask the deep dive "value trap or mispricing?".
-- **Distress and manipulation flags.** Altman Z and Beneish M are both derivable from XBRL and
-  would be advisory flags. Accruals were measured and disabled
+- **A manipulation flag.** Beneish M is derivable from XBRL and would be an advisory flag
+  (Altman Z shipped as `altman_distress`). Accruals were measured and disabled
   (`audits/2026-07-12-accruals-leg-disable.md`); going-concern language could not be validated
   (0 of 228 names).
 - **The full Piotroski score.** `stats.piotroski_f` implements 6 of the 9 tests; the omitted

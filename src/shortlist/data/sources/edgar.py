@@ -312,6 +312,11 @@ class EdgarSource(Source):
                 repurchases=ef.repurchases,
                 debt_repayments=ef.debt_repayments,
                 debt_issuance=ef.debt_issuance,
+                balance_sheet_end=ef.balance_sheet_end,
+                current_assets=ef.current_assets,
+                current_liabilities=ef.current_liabilities,
+                total_liabilities=ef.total_liabilities,
+                retained_earnings=ef.retained_earnings,
             )
         # `gross_profit` is not in EdgarFinancials; _merge_statements year-joins it from
         # FMP (docs/design/STATEMENTS_MERGE.md). `total_equity` is extracted directly

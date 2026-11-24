@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date
 from statistics import mean, median, pstdev
 from typing import Optional
@@ -242,6 +243,25 @@ def accruals(net_income_by_end: dict[str, float], cfo_by_end: dict[str, float],
     if not avg_assets:
         return None
     return (ni - cfo) / avg_assets
+
+
+def altman_z(*, current_assets: Optional[float], current_liabilities: Optional[float],
+             retained_earnings: Optional[float], ebit: Optional[float],
+             market_cap: Optional[float], revenue: Optional[float],
+             total_assets: Optional[float], total_liabilities: Optional[float]) -> Optional[float]:
+    """Altman's original (1968) Z with market equity. None when any input is missing or
+    total assets, total liabilities or market cap is not positive, or the result is not finite."""
+    if None in (current_assets, current_liabilities, retained_earnings, ebit,
+                market_cap, revenue, total_assets, total_liabilities):
+        return None
+    if not (total_assets > 0 and total_liabilities > 0 and market_cap > 0):
+        return None
+    z = (1.2 * (current_assets - current_liabilities) / total_assets
+         + 1.4 * retained_earnings / total_assets
+         + 3.3 * ebit / total_assets
+         + 0.6 * market_cap / total_liabilities
+         + 1.0 * revenue / total_assets)
+    return z if math.isfinite(z) else None
 
 
 def shareholder_yield(dividends: Optional[float], repurchases: Optional[float],

@@ -222,6 +222,14 @@ GLOSSARY: list[Entry] = [
           "way down. A Piotroski refinement can suppress the flag on "
           "cheap-but-IMPROVING names and confirm it on deteriorating ones. "
           "Advisory only."),
+    Entry("altman_distress", "Gates & flags", ("altman z", "altman"),
+          "FLAG: Altman's 1968 Z-score is in his distress zone. Z weighs "
+          "working capital, retained earnings, operating income and sales "
+          "against total assets, plus market cap against total "
+          "liabilities. Low Z historically preceded bankruptcy. It was "
+          "built on manufacturers, so it is unreliable for a company with "
+          "a captive-finance arm and for utilities; the flag abstains for "
+          "banks, insurers and REITs. Advisory only."),
     Entry("dilution", "Gates & flags",
           ("share issuance", "share count cagr", "buybacks", "buyback"),
           "FLAG + concept: persistent net share issuance — the share count "

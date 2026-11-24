@@ -20,7 +20,7 @@ KNOWN_GATES = frozenset({
 KNOWN_FLAGS = frozenset({
     "crowded_short", "insider_cluster_buy", "planned_sale", "dilution",
     "cash_burn", "social_hype", "news_spike", "filing_text_change",
-    "value_trap", "risk_off_regime", *_FILING_STREAM_FLAGS})
+    "value_trap", "risk_off_regime", "altman_distress", *_FILING_STREAM_FLAGS})
 
 # SUE defaults: fallbacks for the momentum.sue knobs and the backtest-only sue_score.
 _SUE_DECAY_TRADING_DAYS = 60
@@ -657,6 +657,11 @@ def score(m: StockMetrics, config: dict, macro=None) -> ScoreCard:
             flags.append("value_trap")
         if pio and not leg_applicable(bucket, "piotroski_f", config):
             abst.append({"field": "piotroski_f", "reason": "inapplicable", "scope": "leg"})
+
+    az = _flag_block(config.get("flags") or {}, "altman_distress")
+    if (az and _present(m.altman_z) and m.altman_z < az["max_z"]
+            and leg_applicable(bucket, "altman_z", config)):
+        flags.append("altman_distress")
 
     # risk_off_regime: risk-off macro AND an exposed (leveraged or cyclical) name. Not
     # validatable by the XBRL backtest, which passes no macro/SIC.

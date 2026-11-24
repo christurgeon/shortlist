@@ -20,6 +20,7 @@ GATE_DESCRIPTIONS = {
 FLAG_DESCRIPTIONS = {
     "crowded_short":            "High short interest, rising and hard to cover — squeeze / short-thesis risk.",
     "value_trap":              "Looks cheap, but quality or growth is weak.",
+    "altman_distress":         "Altman Z-score in the distress zone.",
     "cash_burn":               "Free cash flow is negative (advisory, any magnitude).",
     "dilution":                "Persistent net share issuance (roughly +3%/yr or more).",
     "social_hype":             "Elevated and rising Reddit/WSB mention volume.",

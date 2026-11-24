@@ -274,6 +274,7 @@ def _card_dict(c: ScoreCard, research_paths: dict | None = None) -> dict:
         "asset_growth": _metric(c, "asset_growth", 4),
         "accruals": _metric(c, "accruals", 4),
         "shareholder_yield": _metric(c, "shareholder_yield", 4),
+        "altman_z": _metric(c, "altman_z", 2),
         # Backtest-only axes.
         "pct_to_52w_high": _metric(c, "pct_to_52w_high", 4),
         "max_daily_return": _metric(c, "max_daily_return", 4),

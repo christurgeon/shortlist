@@ -18,6 +18,14 @@ from typing import Callable, Optional
 import pandas as pd
 
 from ..stats import accruals, asset_growth
+from ._gaap_tags import (
+    CURRENT_ASSETS_TAG,
+    CURRENT_LIABILITIES_TAG,
+    DILUTED_SHARES_TAG,
+    INVENTORY_BALANCE_TAG,
+    LIABILITIES_TAG,
+    RETAINED_EARNINGS_TAG,
+)
 
 # Financing tag sets are single-sourced in _gaap_tags.py (shared with _xbrl_facts.py). Edit them there.
 from ._gaap_tags import (
@@ -25,10 +33,6 @@ from ._gaap_tags import (
 )
 from ._gaap_tags import (
     DEBT_REPAYMENT_TAGS as _DEBT_REPAYMENT_TAGS,
-)
-from ._gaap_tags import (
-    DILUTED_SHARES_TAG,
-    INVENTORY_BALANCE_TAG,
 )
 from ._gaap_tags import (
     DIVIDEND_TAGS as _DIVIDEND_TAGS,
@@ -72,6 +76,12 @@ class EdgarFinancials:
     repurchases: Optional[float] = None           # latest FY, outflow magnitude (common+preferred)
     debt_repayments: Optional[float] = None       # latest FY, outflow magnitude
     debt_issuance: Optional[float] = None          # latest FY, inflow magnitude
+    # Altman Z inputs (see Statements). When set, `total_assets[0]` is at `balance_sheet_end`.
+    balance_sheet_end: Optional[str] = None
+    current_assets: Optional[float] = None
+    current_liabilities: Optional[float] = None
+    total_liabilities: Optional[float] = None
+    retained_earnings: Optional[float] = None
 
 
 def _matching_columns(df: pd.DataFrame, pattern: re.Pattern) -> list[tuple[str, str]]:
@@ -403,6 +413,36 @@ def _total_equity_series(df: pd.DataFrame, cols: list[tuple[str, str]]) -> list[
     return []
 
 
+def _instant_value(df: pd.DataFrame, concept: str, col: str) -> Optional[float]:
+    """The value of raw `concept` in `col` across its non-dimensional min-level rows.
+    None when absent, or when those rows disagree."""
+    vals = {float(v) for r in _rows_by_concept(df, (concept,))
+            if (v := r.get(col)) is not None and not pd.isna(v)}
+    return vals.pop() if len(vals) == 1 else None
+
+
+def _altman_balance(df: pd.DataFrame, col: str,
+                    total_assets: Optional[float]) -> Optional[tuple[float, float, float, float]]:
+    """(current assets, current liabilities, total liabilities, retained earnings) at one
+    instant, or None if any is missing. When the filer presents no `Liabilities` row, total
+    liabilities is assets minus equity (NCI-inclusive first), which counts mezzanine equity
+    as a liability."""
+    ca = _instant_value(df, f"us-gaap_{CURRENT_ASSETS_TAG}", col)
+    cl = _instant_value(df, f"us-gaap_{CURRENT_LIABILITIES_TAG}", col)
+    re_ = _instant_value(df, f"us-gaap_{RETAINED_EARNINGS_TAG}", col)
+    tl_concept = f"us-gaap_{LIABILITIES_TAG}"
+    tl = _instant_value(df, tl_concept, col)
+    if tl is None and total_assets is not None and not _rows_by_concept(df, (tl_concept,)):
+        for concept in reversed(_EQUITY_CONCEPTS):
+            eq = _instant_value(df, concept, col)
+            if eq is not None:
+                tl = total_assets - eq
+                break
+    if total_assets is None or None in (ca, cl, tl, re_):
+        return None
+    return ca, cl, tl, re_
+
+
 def extract_financials(
     income_df: pd.DataFrame,
     cashflow_df: pd.DataFrame,
@@ -487,6 +527,13 @@ def extract_financials(
         cashflow_df, (_OCF_TOTAL,), "NetCashFromOperatingActivities", cf_fy), cf_fy)
     fin.total_assets = [assets_by_end[e] for e in sorted(assets_by_end, reverse=True)]
     fin.asset_growth = asset_growth(assets_by_end)
+    if bal_inst:
+        end, col = bal_inst[0]
+        altman = _altman_balance(balance_df, col, assets_by_end.get(end))
+        if altman is not None:
+            fin.balance_sheet_end = end
+            (fin.current_assets, fin.current_liabilities,
+             fin.total_liabilities, fin.retained_earnings) = altman
     fin.accruals = accruals(ni_by_end, cfo_by_end, assets_by_end)
 
     # Read from the raw `concept` column; standard_concept mislabels these rows.

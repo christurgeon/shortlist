@@ -6,6 +6,7 @@ from typing import Optional
 
 from ..models import StockMetrics
 from ..stats import (
+    altman_z,
     cagr,
     compute_ebit_ev_yield,
     gross_margin_stability,
@@ -282,6 +283,13 @@ def snapshot_to_metrics(snap: TickerSnapshot) -> StockMetrics:  # noqa: C901 —
             m.shareholder_yield = shareholder_yield(
                 st.dividends_paid, st.repurchases,
                 st.debt_repayments, st.debt_issuance, m.market_cap)
+        ends0 = st.fiscal_period_end[0] if st.fiscal_period_end else None
+        if st.balance_sheet_end is not None and st.balance_sheet_end == ends0:
+            m.altman_z = altman_z(
+                current_assets=st.current_assets, current_liabilities=st.current_liabilities,
+                retained_earnings=st.retained_earnings, ebit=oi0, market_cap=m.market_cap,
+                revenue=rev0, total_assets=st.total_assets[0] if st.total_assets else None,
+                total_liabilities=st.total_liabilities)
         # FMP-gating fallback. Both operands are absolute USD, so no scaling.
         if m.fcf_yield is None and fcf0 is not None and m.market_cap:
             m.fcf_yield = fcf0 / m.market_cap
