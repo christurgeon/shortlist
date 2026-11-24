@@ -149,7 +149,7 @@ and `SEC_IDENTITY`; without either the source is skipped, not fatal.
 
 When FMP has gated a symbol (402), `bridge.py` derives two value legs from free sources:
 `fcf_yield` (latest-annual EDGAR FCF over market cap) and `pe_vs_history` (annual EDGAR EPS
-against Yahoo's monthly-sampled historical closes). Both are approximate: history is ~3
+against Yahoo's monthly-sampled historical closes, split-adjusted but not dividend-adjusted). Both are approximate: history is ~3
 fiscal years rather than 5, closes are not exact fiscal-year-end prices, and `pe_ttm` uses the
 latest annual EPS as a TTM proxy. Both degrade to `None` without XBRL financials. PEG and
 analyst-target upside still require FMP.
