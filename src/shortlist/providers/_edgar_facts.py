@@ -181,6 +181,39 @@ def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
     return rows[0] if rows else None
 
 
+def _overlap_groups(facts: dict[str, float], face: list[tuple[str, float]]
+                   ) -> list[tuple[dict[str, float], list[float]]]:
+    """Connected groups of unparented facts and face lines, linked only through a fact
+    (`related`): ({tag: value} facts, [face values]). A face line no fact relates to is
+    its own group with no facts."""
+    tags = list(facts)
+    group = list(range(len(tags)))
+
+    def root(i: int) -> int:
+        while group[i] != i:
+            i = group[i]
+        return i
+
+    for i, a in enumerate(tags):
+        for j in range(i):
+            if related(a, tags[j]):
+                group[root(i)] = root(j)
+    hits = [[i for i, u in enumerate(tags) if related(t, u)] for t, _ in face]
+    for ix in hits:                                  # a face line joins every fact it touches
+        for i in ix[1:]:
+            group[root(i)] = root(ix[0])
+    out: dict[int, tuple[dict[str, float], list[float]]] = {}
+    for i, t in enumerate(tags):
+        out.setdefault(root(i), ({}, []))[0][t] = facts[t]
+    loose = []
+    for (_, v), ix in zip(face, hits, strict=True):
+        if ix:
+            out[root(ix[0])][1].append(v)
+        else:
+            loose.append(({}, [v]))
+    return [*out.values(), *loose]
+
+
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                            cols: list[tuple[str, str]]) -> Optional[float]:
     """Latest-FY value of a us-gaap concept family on the cash-flow statement. Matches
@@ -218,17 +251,15 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
     face = [(c.removeprefix("us-gaap_"), float(v)) for c, v in
             zip(hit.loc[~unparented, "concept"].astype(str), hit.loc[~unparented, latest_col],
                 strict=True)]
-    linked = {u for u in values if any(related(u, t) for t, _ in face)}
-    parts = [v for t, v in face if not any(related(t, u) for u in linked)]
-    free = combine_family({u: v for u, v in values.items() if u not in linked})
-    if free is not None:
-        parts.append(free)
-    if linked:
+    parts = []
+    for facts, lines in _overlap_groups(values, face):
+        if not facts:
+            parts.extend(lines)
+            continue
+        combined = combine_family(facts)
         # Face lines add to each other; unparented facts that overlap them may repeat or
         # aggregate them, so the group counts once, by the larger reading.
-        face_sum = magnitude_sum([v for t, v in face if any(related(t, u) for u in linked)])
-        facts = combine_family({u: values[u] for u in linked})
-        parts.append(max(face_sum, facts, key=abs))
+        parts.append(max(magnitude_sum(lines), combined, key=abs) if lines else combined)
     return magnitude_sum(parts)
 
 

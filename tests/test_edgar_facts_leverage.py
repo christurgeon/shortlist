@@ -410,3 +410,31 @@ def test_total_debt_ambiguous_extension_rows_with_a_duplicated_index():
     ])
     balance.index = [0, 1, 1]
     assert _extract_balance(balance).total_debt == [450.0, 440.0]
+
+
+@pytest.mark.parametrize("rows, expected", [
+    # An unparented total over a face line, with another unparented part of that total.
+    ([("us-gaap_RepaymentsOfLongTermLinesOfCredit", -300.0, _FIN),
+      ("us-gaap_RepaymentsOfLongTermDebt", -800.0, None),
+      ("us-gaap_RepaymentsOfSeniorDebt", -500.0, None)], -800.0),
+    ([("us-gaap_MaturitiesOfSeniorDebt", -100.0, _FIN),
+      ("us-gaap_RepaymentsOfSeniorDebt", -130.0, None),
+      ("us-gaap_EarlyRepaymentOfSeniorDebt", -30.0, None)], -130.0),
+    # Two independent overlap groups each count once, by their own larger reading.
+    ([("us-gaap_MaturitiesOfSeniorDebt", -100.0, _FIN),
+      ("us-gaap_RepaymentsOfSeniorDebt", -400.0, None),
+      ("us-gaap_RepaymentsOfSubordinatedDebt", -200.0, _FIN),
+      ("us-gaap_MaturitiesOfSubordinatedDebt", -50.0, None)], -600.0),
+])
+def test_shareholder_yield_overlap_groups_are_connected_components(rows, expected):
+    assert _legs(_cf_parent_df(rows)).debt_repayments == pytest.approx(expected)
+
+
+def test_shareholder_yield_face_line_bridging_two_fact_groups_merges_them():
+    # The face LTD line relates to both unparented facts, which are unrelated to each other.
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -1000.0, _FIN),
+        ("us-gaap_RepaymentsOfSeniorDebt", -600.0, None),
+        ("us-gaap_RepaymentsOfSubordinatedDebt", -300.0, None),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-1000.0)
