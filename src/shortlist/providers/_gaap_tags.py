@@ -120,6 +120,13 @@ def _descendants(tag: str) -> set[str]:
     return {t for t in FAMILY_PARENTS if tag in _ancestors(t)}
 
 
+def related(a: str, b: str) -> bool:
+    """Whether two family members can report overlapping amounts: the same tag, one
+    includes the other, or both include a common member."""
+    return (a == b or a in _ancestors(b) or b in _ancestors(a)
+            or bool(_descendants(a) & _descendants(b)))
+
+
 def combine_family(values: dict[str, float]) -> Optional[float]:
     """One period's family total from overlapping facts {tag: value}, or None when
     empty. Unrelated members add. Related members (one includes the other, or both

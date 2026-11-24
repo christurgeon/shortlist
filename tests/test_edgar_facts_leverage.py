@@ -177,13 +177,15 @@ def test_total_debt_without_a_long_term_line_is_current_debt():
     assert _extract_balance(balance).total_debt == [300.0, 250.0]
 
 
-def test_total_debt_abstains_when_extension_long_term_rows_are_ambiguous():
+def test_total_debt_takes_the_largest_of_ambiguous_extension_long_term_rows():
+    # The rows may be a total and its parts, so they are not added; an empty value would
+    # read as zero debt downstream.
     balance = _bal_concept_df([
         ("us-gaap_DebtCurrent", "ShortTermDebt", 4, {"2024": 50.0, "2023": 60.0}),
         ("abc_LongTermDebtSeniorNotesNoncurrent", None, 4, {"2024": 400.0, "2023": 380.0}),
-        ("abc_LongTermDebtTermLoanNoncurrent", None, 4, {"2024": 100.0, "2023": 90.0}),
+        ("abc_LongTermDebtTermLoanNoncurrent", None, 4, {"2024": 100.0, "2023": 390.0}),
     ])
-    assert _extract_balance(balance).total_debt == []
+    assert _extract_balance(balance).total_debt == [450.0, 440.0]
 
 
 def test_total_debt_extension_ignores_issuance_cost_and_related_party_rows():
@@ -346,3 +348,28 @@ def test_shareholder_yield_without_parent_concept_counts_one_amount_once():
     ]))
     assert ef.dividends_paid == pytest.approx(-8779.0)
     assert ef.debt_repayments == pytest.approx(-4967.0)
+
+
+def test_shareholder_yield_unparented_child_of_a_face_line_counts_once():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_PaymentsOfDividends", -110.0, _FIN),
+        ("us-gaap_PaymentsOfDividendsCommonStock", -100.0, None),
+    ]))
+    assert ef.dividends_paid == pytest.approx(-110.0)
+
+
+def test_shareholder_yield_unparented_total_over_a_face_child_counts_once():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -25.0, _FIN),
+        ("us-gaap_RepaymentsOfLongTermDebt", -4200.0, None),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-4200.0)
+
+
+def test_shareholder_yield_unrelated_unparented_line_still_adds():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -50.0, _FIN),
+        ("us-gaap_RepaymentsOfNotesPayable", -30.0, None),
+        ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -5.0, _FIN),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-85.0)
