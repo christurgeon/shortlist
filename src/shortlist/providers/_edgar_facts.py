@@ -199,7 +199,7 @@ def _overlap_groups(facts: dict[str, float], face: list[tuple[str, float]]
             if related(a, tags[j]):
                 group[root(i)] = root(j)
     hits = [[i for i, u in enumerate(tags) if related(t, u)] for t, _ in face]
-    for ix in hits:                                  # a face line joins every fact it touches
+    for ix in hits:
         for i in ix[1:]:
             group[root(i)] = root(ix[0])
     out: dict[int, tuple[dict[str, float], list[float]]] = {}
