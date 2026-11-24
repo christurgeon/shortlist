@@ -373,3 +373,40 @@ def test_shareholder_yield_unrelated_unparented_line_still_adds():
         ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -5.0, _FIN),
     ]))
     assert ef.debt_repayments == pytest.approx(-85.0)
+
+
+def test_shareholder_yield_unparented_fact_does_not_collapse_separate_face_lines():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -500.0, _FIN),
+        ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -300.0, _FIN),
+        ("us-gaap_RepaymentsOfSeniorDebt", -400.0, None),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-800.0)
+
+
+def test_shareholder_yield_unparented_duplicate_of_a_face_line_counts_once():
+    ef = _legs(_cf_parent_df([
+        ("us-gaap_RepaymentsOfLongTermDebt", -500.0, _FIN),
+        ("us-gaap_RepaymentsOfLongTermLinesOfCredit", -300.0, _FIN),
+        ("us-gaap_RepaymentsOfLongTermDebt", -500.0, None),
+    ]))
+    assert ef.debt_repayments == pytest.approx(-800.0)
+
+
+@pytest.mark.parametrize("order", [(0, 1, 2), (1, 0, 2)])
+def test_shareholder_yield_does_not_depend_on_row_order(order):
+    rows = [("us-gaap_RepaymentsOfDebt", -100.0, _FIN),
+            ("us-gaap_RepaymentsOfLongTermDebt", -50.0, _FIN),
+            ("us-gaap_RepaymentsOfNotesPayable", -30.0, None)]
+    ef = _legs(_cf_parent_df([rows[i] for i in order]))
+    assert ef.debt_repayments == pytest.approx(-150.0)
+
+
+def test_total_debt_ambiguous_extension_rows_with_a_duplicated_index():
+    balance = _bal_concept_df([
+        ("us-gaap_DebtCurrent", "ShortTermDebt", 4, {"2024": 50.0, "2023": 60.0}),
+        ("abc_LongTermDebtSeniorNotesNoncurrent", None, 4, {"2024": 400.0, "2023": 380.0}),
+        ("abc_LongTermDebtTermLoanNoncurrent", None, 4, {"2024": 100.0, "2023": 90.0}),
+    ])
+    balance.index = [0, 1, 1]
+    assert _extract_balance(balance).total_debt == [450.0, 440.0]

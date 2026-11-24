@@ -189,8 +189,8 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
     Dimensional rows are excluded, and so are rows whose `parent_concept` is another
     member with a value (components of the filer's own subtotal). Lines with a known
     calc parent add as magnitudes; rows without one (no `parent_concept` column, or a
-    null value) are combined by `combine_family` as possibly overlapping facts, together
-    with any parented line they could overlap.
+    null value) are combined by `combine_family` as possibly overlapping facts. Where
+    such facts overlap parented lines, that group counts once, by the larger of the two.
 
     Returns None when no member is tagged. The value is verbatim and signed as
     edgartools presents it (outflows negative)."""
@@ -215,17 +215,20 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                     strict=True):
         tag = c.removeprefix("us-gaap_")
         values[tag] = values.get(tag, 0.0) + float(v)
-    parts = []
-    for c, v in zip(hit.loc[~unparented, "concept"].astype(str), hit.loc[~unparented, latest_col],
-                    strict=True):
-        tag = c.removeprefix("us-gaap_")
-        if not any(related(tag, u) for u in values):
-            parts.append(float(v))
-        elif tag not in values or abs(float(v)) > abs(values[tag]):
-            values[tag] = float(v)
-    overlapping = combine_family(values)
-    if overlapping is not None:
-        parts.append(overlapping)
+    face = [(c.removeprefix("us-gaap_"), float(v)) for c, v in
+            zip(hit.loc[~unparented, "concept"].astype(str), hit.loc[~unparented, latest_col],
+                strict=True)]
+    linked = {u for u in values if any(related(u, t) for t, _ in face)}
+    parts = [v for t, v in face if not any(related(t, u) for u in linked)]
+    free = combine_family({u: v for u, v in values.items() if u not in linked})
+    if free is not None:
+        parts.append(free)
+    if linked:
+        # Face lines add to each other; unparented facts that overlap them may repeat or
+        # aggregate them, so the group counts once, by the larger reading.
+        face_sum = magnitude_sum([v for t, v in face if any(related(t, u) for u in linked)])
+        facts = combine_family({u: values[u] for u in linked})
+        parts.append(max(face_sum, facts, key=abs))
     return magnitude_sum(parts)
 
 
@@ -527,7 +530,7 @@ def extract_financials(
     if long_term is None and bal_inst:
         ext = _extension_rows(balance_df, _EXTENSION_LONG_TERM_DEBT)
         if len(ext) > 1:
-            long_term = ext.loc[ext[bal_inst[0][1]].abs().fillna(0.0).idxmax()]
+            long_term = ext.iloc[int(ext[bal_inst[0][1]].abs().fillna(0.0).to_numpy().argmax())]
     fin.total_debt = _sum_rows(
         [long_term, *(_row_by_standard_concept(balance_df, c)
                       for c in ("CurrentPortionOfLongTermDebt", "ShortTermDebt"))],
