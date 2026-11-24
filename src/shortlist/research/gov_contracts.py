@@ -56,8 +56,8 @@ def context_line(m, cfg: Optional[dict]) -> Optional[str]:
     if getattr(m, "gov_contract_truncated", None):
         total = getattr(m, "gov_contract_total_txns", None)
         of = f" of ~{total:,}" if total else ""
-        caveat = (f" [PARTIAL: top actions{of} by size only — figure is approximate "
-                  f"and omits smaller/negative (de-obligation) actions]")
+        omits = "" if ttm < 0 else " and omits smaller/negative (de-obligation) actions"
+        caveat = f" [PARTIAL: top actions{of} by size only — figure is approximate{omits}]"
     return (f"Government contracts: {body}.{caveat} Attribution is fuzzy and may exclude "
             f"subsidiaries booked under other names — reconcile against the "
             f"business (a new award is a tailwind; a recompete loss a risk).")

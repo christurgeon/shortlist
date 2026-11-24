@@ -479,3 +479,17 @@ def test_holder_name_ignores_source_newlines_and_keeps_wrapped_names():
                    "<div>Boston, MA 02111</div></td>",
                    "State Street CorporationState Street Financial CenterOne Lincoln "
                    "StreetBoston, MA 02111") == "State Street Corporation"
+
+
+@pytest.mark.parametrize("lines, name", [
+    (["The Vanguard Group,", "100 Vanguard Blvd.", "Malvern, PA 19355"], "The Vanguard Group"),
+    (["Acme Holdings,", "P.O. Box 1234", "Dover, DE 19901"], "Acme Holdings"),
+    (["Acme Holdings,", "Wilmington, DE 19801"], "Acme Holdings"),
+    (["Wellington Management Group", "LLP", "280 Congress Street"],
+     "Wellington Management Group LLP"),
+    (["State Street Corporation and its", "affiliates", "One Congress Street"],
+     "State Street Corporation and its affiliates"),
+])
+def test_wrapped_name_stops_at_the_address(lines, name):
+    from shortlist.research.proxy import _name_from_lines
+    assert _name_from_lines(lines) == name

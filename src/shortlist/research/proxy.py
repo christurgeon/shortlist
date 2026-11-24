@@ -149,10 +149,12 @@ _BLOCK_TAGS = frozenset({"div", "p", "br", "li", "tr"})
 _BLOCK_SEP = ""
 _TRAILING_FOOTNOTE = re.compile(r"(?:\s*(?:\((?:\d{1,2}|[a-z])\)|\*+))+$")
 _NON_ALNUM = re.compile(r"\W+")
-_NAME_CONTINUES = re.compile(r"(?:,|&|\band|\bof|\bthe)$", re.I)
+_NAME_CONTINUES = re.compile(r"(?:,|&|\band|\bof|\bthe|\bits)$", re.I)
 _CORP_SUFFIX_LINE = re.compile(
-    r"^\D*\b(?:Inc\.?|LLC|L\.?L\.?C\.?|L\.?P\.?|Ltd\.?|Co\.?|Company|Corp\.?|Corporation"
-    r"|Group|Trust|N\.A\.|plc|AG|S\.A\.)$", re.I)
+    r"^\D*\b(?:Inc\.?|LLC|L\.?L\.?C\.?|LLP|L\.?L\.?P\.?|L\.?P\.?|Ltd\.?|Co\.?|Company"
+    r"|Corp\.?|Corporation|Group|Trust|N\.A\.|plc|AG|S\.A\.)$", re.I)
+# A street number, a P.O. box, or a "City, ST 12345" line starts the address.
+_ADDRESS_LINE = re.compile(r"^\d|^P\.?\s*O\.?\s*Box\b|,\s*[A-Z]{2}\s+\d{5}", re.I)
 
 
 def _cell_lines(cell) -> list[str]:
@@ -173,10 +175,11 @@ def _name_from_lines(lines: list[str]) -> str:
     parts = [_TRAILING_FOOTNOTE.sub("", lines[0]).strip()]
     for nxt in lines[1:]:
         nxt = _TRAILING_FOOTNOTE.sub("", nxt).strip()
-        if not (_NAME_CONTINUES.search(parts[-1]) or _CORP_SUFFIX_LINE.match(nxt)):
+        if _ADDRESS_LINE.search(nxt) or not (
+                _NAME_CONTINUES.search(parts[-1]) or _CORP_SUFFIX_LINE.match(nxt)):
             break
         parts.append(nxt)
-    return " ".join(p for p in parts if p)
+    return " ".join(p for p in parts if p).rstrip(",").strip()
 
 
 def _ownership_name_lines(tree) -> list[list[str]]:

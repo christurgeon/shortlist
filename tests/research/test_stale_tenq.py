@@ -114,13 +114,23 @@ def test_periods_beat_filing_dates(bundle_for):
                                _TenQFiling("2026-11-20", "2026-06-27")))
 
 
-@pytest.mark.parametrize("tenk_period,tenq_period", [("", "2026-06-27"),
-                                                     ("2026-09-26", ""),
-                                                     (None, None)])
-def test_a_missing_period_falls_back_to_an_earlier_filing_date(bundle_for, tenk_period,
-                                                               tenq_period):
-    _assert_no_tenq(bundle_for(_TenKFiling("2026-11-03", tenk_period),
-                               _TenQFiling("2026-07-31", tenq_period)))
+def test_a_10q_filed_by_the_10k_period_end_is_dropped_without_its_own_period(bundle_for):
+    _assert_no_tenq(bundle_for(_TenKFiling("2026-11-03", "2026-09-26"),
+                               _TenQFiling("2026-07-31", "")))
+
+
+@pytest.mark.parametrize("tenk_period,tenq_period", [("", "2026-06-27"), (None, None)])
+def test_a_missing_10k_period_keeps_the_10q(bundle_for, tenk_period, tenq_period):
+    bundle = bundle_for(_TenKFiling("2026-11-03", tenk_period),
+                        _TenQFiling("2026-07-31", tenq_period))
+    assert bundle.tenq_accession == TENQ_ACC
+
+
+def test_a_late_10k_keeps_a_newer_quarter_filed_before_it(bundle_for):
+    """A delinquent filer's FY 10-K can follow its next Q1 10-Q."""
+    bundle = bundle_for(_TenKFiling("2024-08-10", "2023-12-31"),
+                        _TenQFiling("2024-05-15", ""))
+    assert bundle.tenq_accession == TENQ_ACC
 
 
 def test_a_missing_period_and_a_same_day_filing_keeps_the_10q(bundle_for):
@@ -140,10 +150,10 @@ def test_no_10k_filing_row_keeps_the_10q(bundle_for):
 
 def test_date_typed_filing_dates_compare_on_the_fallback(bundle_for, capsys):
     """edgartools gives `filing_date` as a datetime.date, `report_date` as a str."""
-    _assert_no_tenq(bundle_for(_TenKFiling(date(2026, 11, 3), ""),
+    _assert_no_tenq(bundle_for(_TenKFiling(date(2026, 11, 3), "2026-09-26"),
                                _TenQFiling(date(2026, 7, 31), "")))
     err = capsys.readouterr().err
-    assert "2026-07-31" in err and "2026-11-03" in err and "no period of report" in err
+    assert "2026-07-31" in err and "2026-09-26" in err and "no period of report" in err
 
 
 def test_a_10q_amendment_is_not_bundled_and_not_reported_as_stale(bundle_for, capsys):

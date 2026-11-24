@@ -413,8 +413,10 @@ def _detect_controls(filing: Any, tenk_obj: Any, accession: str, ticker: str,
 
 def _superseded_by_10k(tenq: Any, tenk: Any) -> Optional[str]:
     """Why the 10-K supersedes the 10-Q, or None to keep it. Periods of report compare
-    on-or-before; without both, filing dates compare strictly before. Reads the index's
-    `report_date`: `period_of_report` on a Filing downloads the SGML."""
+    on-or-before. Without the 10-Q's period, a 10-Q filed by the 10-K's period end must
+    cover an earlier quarter; filing order alone proves nothing, since a late 10-K can
+    follow the next quarter's 10-Q. Reads the index's `report_date`: `period_of_report`
+    on a Filing downloads the SGML."""
     if tenk is None:
         return None
     q_period = str(getattr(tenq, "report_date", "") or "")
@@ -424,9 +426,8 @@ def _superseded_by_10k(tenq: Any, tenk: Any) -> Optional[str]:
             return f"10-Q period {q_period} is covered by the 10-K period {k_period}"
         return None
     q_filed = str(getattr(tenq, "filing_date", "") or "")
-    k_filed = str(getattr(tenk, "filing_date", "") or "")
-    if q_filed and k_filed and q_filed < k_filed:
-        return f"10-Q filed {q_filed} before the 10-K filed {k_filed} (no period of report)"
+    if q_filed and k_period and q_filed <= k_period:
+        return f"10-Q filed {q_filed}, by the 10-K period end {k_period} (no period of report)"
     return None
 
 
