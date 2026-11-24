@@ -40,6 +40,12 @@ The bundle sent to the model is the latest **10-K** (business, MD&A, risk factor
 three recent **8-Ks** (`research/eightk.py`), and two families of **statement notes**
 (`research/notes.py`): debt & liquidity, and exposure.
 
+The 10-Q is left out when its period of report is on or before the 10-K's: in the weeks
+after a 10-K is filed, the newest 10-Q covers a quarter the annual report supersedes. The
+brief then has no 10-Q at all (no MD&A, Part II Item 1A or debt notes), as for a filer with
+no 10-Q, and stderr says so. Without both periods, it falls back to filing dates; in that
+case a 10-Q filed the same day as the 10-K is kept.
+
 The debt notes feed one prompt instruction: `SYSTEM_PROMPT` asks the model to compute
 **refinancing coverage** — debt maturing within twelve months against cash plus operating
 cash flow — and the maturity ladder is usually disclosed in a statement note. Notes come from

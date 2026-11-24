@@ -411,12 +411,31 @@ def _detect_controls(filing: Any, tenk_obj: Any, accession: str, ticker: str,
         return None
 
 
+def _superseded_by_10k(tenq: Any, tenk: Any) -> Optional[str]:
+    """Why the 10-K supersedes the 10-Q, or None to keep it. Periods of report compare
+    on-or-before; without both, filing dates compare strictly before. Reads the index's
+    `report_date`: `period_of_report` on a Filing downloads the SGML."""
+    if tenk is None:
+        return None
+    q_period = str(getattr(tenq, "report_date", "") or "")
+    k_period = str(getattr(tenk, "report_date", "") or "")
+    if q_period and k_period:
+        if q_period <= k_period:
+            return f"10-Q period {q_period} is covered by the 10-K period {k_period}"
+        return None
+    q_filed = str(getattr(tenq, "filing_date", "") or "")
+    k_filed = str(getattr(tenk, "filing_date", "") or "")
+    if q_filed and k_filed and q_filed < k_filed:
+        return f"10-Q filed {q_filed} before the 10-K filed {k_filed} (no period of report)"
+    return None
+
+
 def fetch_bundle(ticker: str, identity: Optional[str] = None,
                  config: Optional[dict] = None) -> Optional[FilingBundle]:
     """Fetch the documents for one research brief: the current 10-K (required), the
-    latest 10-Q MD&A, and the YoY added-risk diff. Returns None ONLY when the
-    current 10-K is unusable (matches fetch_10k's contract); the 10-Q and diff
-    degrade to "" on any failure (failure isolation)."""
+    latest 10-Q MD&A unless the 10-K supersedes it, and the YoY added-risk diff.
+    Returns None ONLY when the current 10-K is unusable (matches fetch_10k's contract);
+    the 10-Q and diff degrade to "" on any failure (failure isolation)."""
     from edgar import Company  # lazy: optional [edgar] extra
 
     # Sets identity; raises if SEC_IDENTITY is unset. Keeps the parsed object for the notes.
@@ -436,7 +455,12 @@ def fetch_bundle(ticker: str, identity: Optional[str] = None,
     tenq_mda, tenq_acc, tenq_added = "", "", ""
     try:
         latest_q = Company(ticker).get_filings(form="10-Q").latest(1)
-        if latest_q is not None and str(getattr(latest_q, "form", "")) == "10-Q":
+        if latest_q is not None and str(getattr(latest_q, "form", "")) != "10-Q":
+            latest_q = None
+        stale = _superseded_by_10k(latest_q, tenk_filing) if latest_q is not None else None
+        if stale is not None:
+            print(f"research: latest 10-Q omitted for {ticker}: {stale}", file=sys.stderr)
+        elif latest_q is not None:
             # ONE parse feeds Part I Item 2, Part II Item 1A and the debt notes.
             qobj = latest_q.obj()
             tenq_mda = _tenq_mda(qobj, ticker)
