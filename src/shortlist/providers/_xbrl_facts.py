@@ -41,6 +41,7 @@ from ._gaap_tags import (
     DILUTED_SHARES_TAG,
     DIVIDEND_TAGS,
     REPURCHASE_TAGS,
+    combine_family,
 )
 
 _ANNUAL_FORMS = {"10-K", "10-K/A", "20-F", "20-F/A"}
@@ -180,7 +181,7 @@ WTD_DIL_SHARES = [DILUTED_SHARES_TAG]  # us-gaap, unit="shares"
 ASSETS = ["Assets"]   # us-gaap, instant balance-sheet total
 # Financing families: annual flows, positive magnitudes (companyfacts reports
 # PaymentsOf* / RepaymentsOf* as positive outflows). Tag sets are single-sourced in
-# _gaap_tags.py. Unlike the aliases above, these are summed per fiscal end via
+# _gaap_tags.py. Unlike the aliases above, these are combined per fiscal end via
 # sum_family, since a filer may tag several members in one year.
 DIVIDENDS_PAID = list(DIVIDEND_TAGS)
 REPURCHASES = list(REPURCHASE_TAGS)
@@ -203,14 +204,14 @@ def sum_aligned(a: dict, b: dict) -> dict:
 
 
 def sum_family(facts: dict, concepts: list[str], as_of: date) -> dict:
-    """{fiscal_end: sum} over a us-gaap concept family. Unlike annual_series, every
-    member reporting an end is added (for example common + preferred repurchases),
-    not overridden."""
-    out: dict[str, float] = {}
+    """{fiscal_end: total} over a us-gaap concept family. Unlike annual_series, every
+    member reporting an end contributes (for example common + preferred repurchases),
+    combined per end by `combine_family`."""
+    by_end: dict[str, dict[str, float]] = {}
     for concept in concepts:
         for end, val in annual_series(facts, [concept], as_of).items():
-            out[end] = out.get(end, 0.0) + val
-    return out
+            by_end.setdefault(end, {})[concept] = val
+    return {end: combine_family(vals) for end, vals in by_end.items()}
 
 
 def ratio_latest(num: dict, den: dict, *, positive_den: bool = False) -> Optional[float]:

@@ -25,6 +25,8 @@ from ._gaap_tags import (
     INVENTORY_BALANCE_TAG,
     LIABILITIES_TAG,
     RETAINED_EARNINGS_TAG,
+    combine_family,
+    magnitude_sum,
 )
 
 # Financing tag sets are single-sourced in _gaap_tags.py (shared with _xbrl_facts.py). Edit them there.
@@ -180,13 +182,13 @@ def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
 
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                            cols: list[tuple[str, str]]) -> Optional[float]:
-    """Latest-FY value of a us-gaap concept family on the cash-flow statement, summed
-    across the distinct member tags present. Matches the raw `concept` column, not
-    `standard_concept`, which mislabels financing rows.
+    """Latest-FY value of a us-gaap concept family on the cash-flow statement. Matches
+    the raw `concept` column, not `standard_concept`, which mislabels financing rows.
 
-    A family because filers tag the same line differently (for example
-    `PaymentsOfDividends` vs `PaymentsOfDividendsCommonStock`). Dimensional rows
-    (`dimension=True`) are excluded so sub-rows do not double-count the total.
+    Dimensional rows are excluded, and so are rows whose `parent_concept` is another
+    member with a value (components of the filer's own subtotal). Lines with a known
+    calc parent add as magnitudes; rows without one (no `parent_concept` column, or a
+    null value) are combined by `combine_family` as possibly overlapping facts.
 
     Returns None when no member is tagged. The value is verbatim and signed as
     edgartools presents it (outflows negative)."""
@@ -195,15 +197,27 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
     rows = df.copy()
     if "dimension" in rows.columns:
         rows = rows[rows["dimension"] != True]      # noqa: E712 — drop dimensional breakdowns
-    concept = rows["concept"].astype(str)
-    mask = concept.str.startswith("us-gaap_") & concept.apply(
-        lambda c: any(c == f"us-gaap_{s}" for s in suffixes))
-    hit = rows[mask]
+    _, latest_col = cols[0]                          # cols are newest-first
+    members = {f"us-gaap_{s}" for s in suffixes}
+    hit = rows[rows["concept"].astype(str).isin(members) & rows[latest_col].notna()]
     if hit.empty:
         return None
-    _, latest_col = cols[0]                          # cols are newest-first
-    vals = [float(v) for v in hit[latest_col] if v is not None and not pd.isna(v)]
-    return sum(vals) if vals else None
+    if "parent_concept" in hit.columns:
+        present = set(hit["concept"].astype(str))
+        hit = hit[~hit["parent_concept"].astype(str).isin(present)]
+        unparented = hit["parent_concept"].isna()
+    else:
+        unparented = pd.Series(True, index=hit.index)
+    values: dict[str, float] = {}
+    for c, v in zip(hit.loc[unparented, "concept"].astype(str), hit.loc[unparented, latest_col],
+                    strict=True):
+        tag = c.removeprefix("us-gaap_")
+        values[tag] = values.get(tag, 0.0) + float(v)
+    parts = [float(v) for v in hit.loc[~unparented, latest_col]]
+    overlapping = combine_family(values)
+    if overlapping is not None:
+        parts.append(overlapping)
+    return magnitude_sum(parts)
 
 
 def _row_diluted_eps(df: pd.DataFrame) -> Optional[pd.Series]:

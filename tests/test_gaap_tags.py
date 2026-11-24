@@ -83,9 +83,9 @@ def test_fy_span_window_single_sourced_in_stats():
 def test_family_values_pinned():
     # The exact live-verified tag sets (regression pin — values, not just identity).
     assert g.DIVIDEND_TAGS == (
-        "PaymentsOfDividends", "PaymentsOfDividendsCommonStock",
-        "PaymentsOfDividendsPreferredStockAndPreferenceStock",
-        "PaymentsOfDividendsMinorityInterest")
+        "PaymentsOfDividends", "PaymentsOfOrdinaryDividends",
+        "PaymentsOfDividendsCommonStock",
+        "PaymentsOfDividendsPreferredStockAndPreferenceStock")
     assert g.REPURCHASE_TAGS == (
         "PaymentsForRepurchaseOfCommonStock",
         "PaymentsForRepurchaseOfEquity",
@@ -95,8 +95,50 @@ def test_family_values_pinned():
         "RepaymentsOfLongTermDebt", "RepaymentsOfDebt",
         "RepaymentsOfDebtMaturingInMoreThanThreeMonths",
         "RepaymentsOfLongTermDebtAndCapitalSecurities",
-        "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable")
+        "RepaymentsOfSeniorDebt", "RepaymentsOfNotesPayable",
+        "RepaymentsOfDebtAndCapitalLeaseObligations",
+        "RepaymentsOfMediumTermNotes", "RepaymentsOfLongTermLinesOfCredit",
+        "RepaymentsOfConvertibleDebt", "RepaymentsOfSecuredDebt",
+        "RepaymentsOfUnsecuredDebt", "RepaymentsOfSubordinatedDebt",
+        "RepaymentsOfOtherLongTermDebt",
+        "EarlyRepaymentOfSeniorDebt", "MaturitiesOfSeniorDebt",
+        "EarlyRepaymentOfSubordinatedDebt", "MaturitiesOfSubordinatedDebt")
     assert g.DEBT_ISSUANCE_TAGS == (
         "ProceedsFromIssuanceOfLongTermDebt", "ProceedsFromIssuanceOfDebt",
         "ProceedsFromIssuanceOfSeniorLongTermDebt",
-        "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable")
+        "ProceedsFromLongTermLinesOfCredit", "ProceedsFromNotesPayable",
+        "ProceedsFromDebtMaturingInMoreThanThreeMonths",
+        "ProceedsFromIssuanceOfLongTermDebtAndCapitalSecuritiesNet",
+        "ProceedsFromIssuanceOfMediumTermNotes", "ProceedsFromConvertibleDebt",
+        "ProceedsFromIssuanceOfSecuredDebt", "ProceedsFromIssuanceOfUnsecuredDebt",
+        "ProceedsFromIssuanceOfSubordinatedLongTermDebt",
+        "ProceedsFromIssuanceOfOtherLongTermDebt")
+
+
+def test_family_parents_stay_within_their_family():
+    families = (g.DIVIDEND_TAGS, g.REPURCHASE_TAGS, g.DEBT_REPAYMENT_TAGS, g.DEBT_ISSUANCE_TAGS)
+    for child, parents in g.FAMILY_PARENTS.items():
+        fam = next(f for f in families if child in f)
+        assert set(parents) <= set(fam), child
+
+
+def test_family_parents_have_no_cycles():
+    for tag in g.FAMILY_PARENTS:
+        assert tag not in g._ancestors(tag)
+
+
+def test_combine_family():
+    # Common -> Ordinary -> Dividends, all one amount: counted once, transitively.
+    assert g.combine_family({"PaymentsOfDividends": 10.0, "PaymentsOfOrdinaryDividends": 10.0,
+                             "PaymentsOfDividendsCommonStock": 10.0}) == 10.0
+    # Siblings with no reported parent add; so do unrelated debt members.
+    assert g.combine_family({"PaymentsOfDividendsCommonStock": -100.0,
+                             "PaymentsOfDividendsPreferredStockAndPreferenceStock": -10.0}) == -110.0
+    assert g.combine_family({"RepaymentsOfLongTermDebt": 50.0,
+                             "RepaymentsOfNotesPayable": 20.0}) == 70.0
+    # A debt child just above its parent is the same amount, not a separate line.
+    assert g.combine_family({"RepaymentsOfLongTermDebt": 100.0,
+                             "RepaymentsOfSeniorDebt": 100.3}) == 100.3
+    assert g.combine_family({"RepaymentsOfLongTermDebt": 0.0,
+                             "RepaymentsOfLongTermLinesOfCredit": 230.0}) == 230.0
+    assert g.combine_family({}) is None
