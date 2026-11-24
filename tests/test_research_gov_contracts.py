@@ -133,3 +133,11 @@ def test_non_finite_ratios_are_omitted_not_raised():
 
 def test_revenue_share_never_prints_negative_zero():
     assert "-0" not in _line(gov_contract_ttm_usd=5e6, gov_contract_to_revenue=-0.004)
+
+
+def test_truncated_de_obligation_says_it_is_a_lower_bound():
+    # Actions come largest first, so truncation drops the most negative ones.
+    line = context_line(_m(gov_contract_ttm_usd=-4.0e7, gov_contract_match_confidence=1.0,
+                           gov_contract_truncated=True, gov_contract_total_txns=900), CFG)
+    assert "net de-obligation" in line and "PARTIAL" in line
+    assert "at least this large" in line
