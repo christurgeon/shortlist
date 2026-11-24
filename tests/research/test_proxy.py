@@ -489,6 +489,11 @@ def test_holder_name_ignores_source_newlines_and_keeps_wrapped_names():
      "Wellington Management Group LLP"),
     (["State Street Corporation and its", "affiliates", "One Congress Street"],
      "State Street Corporation and its affiliates"),
+    (["Jane Doe, as trustee of the", "2012 Doe Family Trust", "1 Main St"],
+     "Jane Doe, as trustee of the 2012 Doe Family Trust"),
+    (["Berkshire Hathaway Inc. and", "3G Capital Partners L.P.", "Omaha, NE 68131"],
+     "Berkshire Hathaway Inc. and 3G Capital Partners L.P."),
+    (["Acme Holdings (1),", "100 Main St."], "Acme Holdings"),
 ])
 def test_wrapped_name_stops_at_the_address(lines, name):
     from shortlist.research.proxy import _name_from_lines

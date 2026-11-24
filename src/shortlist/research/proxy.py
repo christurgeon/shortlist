@@ -153,8 +153,11 @@ _NAME_CONTINUES = re.compile(r"(?:,|&|\band|\bof|\bthe|\bits)$", re.I)
 _CORP_SUFFIX_LINE = re.compile(
     r"^\D*\b(?:Inc\.?|LLC|L\.?L\.?C\.?|LLP|L\.?L\.?P\.?|L\.?P\.?|Ltd\.?|Co\.?|Company"
     r"|Corp\.?|Corporation|Group|Trust|N\.A\.|plc|AG|S\.A\.)$", re.I)
-# A street number, a P.O. box, or a "City, ST 12345" line starts the address.
-_ADDRESS_LINE = re.compile(r"^\d|^P\.?\s*O\.?\s*Box\b|,\s*[A-Z]{2}\s+\d{5}", re.I)
+_WORD_CONNECTOR = re.compile(r"(?:&|\band|\bof|\bthe|\bits)$", re.I)
+# A P.O. box or a "City, ST 12345" line always starts the address; a leading street
+# number does unless the name ends in a word connector ("trustee of the" / "2012 Trust").
+_ADDRESS_LINE = re.compile(r"^P\.?\s*O\.?\s*Box\b|,\s*[A-Z]{2}\s+\d{5}", re.I)
+_STREET_NUMBER = re.compile(r"^\d")
 
 
 def _cell_lines(cell) -> list[str]:
@@ -169,17 +172,22 @@ def _cell_lines(cell) -> list[str]:
 
 
 def _name_from_lines(lines: list[str]) -> str:
-    """The leading lines that form the name: a name wrapped across blocks continues while
-    a line ends in a connector ("and", ",") or the next line is a bare corporate suffix
-    ("Insurance Company"); the first other line starts the address."""
+    """The leading lines that form the name, without a trailing comma or footnote marker.
+    A name wrapped across blocks continues while a line ends in a connector ("and", ",")
+    or the next line is a bare corporate suffix ("Insurance Company"). An address-like
+    line (`_ADDRESS_LINE`, or `_STREET_NUMBER` after anything but a word connector)
+    ends it, as does any other line."""
     parts = [_TRAILING_FOOTNOTE.sub("", lines[0]).strip()]
     for nxt in lines[1:]:
         nxt = _TRAILING_FOOTNOTE.sub("", nxt).strip()
-        if _ADDRESS_LINE.search(nxt) or not (
-                _NAME_CONTINUES.search(parts[-1]) or _CORP_SUFFIX_LINE.match(nxt)):
+        if _ADDRESS_LINE.search(nxt) or (
+                _STREET_NUMBER.match(nxt) and not _WORD_CONNECTOR.search(parts[-1])):
+            break
+        if not (_NAME_CONTINUES.search(parts[-1]) or _CORP_SUFFIX_LINE.match(nxt)):
             break
         parts.append(nxt)
-    return " ".join(p for p in parts if p).rstrip(",").strip()
+    name = " ".join(p for p in parts if p).rstrip(",")
+    return _TRAILING_FOOTNOTE.sub("", name).strip()
 
 
 def _ownership_name_lines(tree) -> list[list[str]]:
