@@ -144,3 +144,103 @@ def test_shareholder_yield_legs_none_when_no_financing_rows():
     assert ef.repurchases is None
     assert ef.debt_repayments is None
     assert ef.debt_issuance is None
+
+
+# --- Balance-sheet rows shaped like edgartools to_dataframe() ----------
+
+def _bal_concept_df(rows):
+    """rows: (concept, standard_concept or None, level, {2024, 2023})."""
+    cols = ["concept", "standard_concept", "level", "dimension", "2024-12-31", "2023-12-31"]
+    data = [[c, sc, lvl, False, v.get("2024"), v.get("2023")] for c, sc, lvl, v in rows]
+    return pd.DataFrame(data, columns=cols)
+
+
+def _extract_balance(balance):
+    income = _fy_df([("Revenue", {"2024": 1.0, "2023": 1.0})])
+    cashflow = _fy_df([("NetCashFromOperatingActivities", {"2024": 1.0, "2023": 1.0})])
+    return extract_financials(income, cashflow, balance, shares_diluted=None)
+
+
+def test_total_debt_reads_custom_noncurrent_long_term_debt_row():
+    # Deere shape: long-term debt carries a company-extension tag with no bucket.
+    balance = _bal_concept_df([
+        ("us-gaap_DebtCurrent", "ShortTermDebt", 6, {"2024": 13796.0, "2023": 13533.0}),
+        ("de_LongTermDebtAndFinanceLeasesNoncurrent", None, 6, {"2024": 43544.0, "2023": 43229.0}),
+    ])
+    assert _extract_balance(balance).total_debt == [57340.0, 56762.0]
+
+
+def test_total_debt_without_a_long_term_line_is_current_debt():
+    balance = _bal_concept_df([
+        ("us-gaap_ShortTermBorrowings", "ShortTermDebt", 4, {"2024": 300.0, "2023": 250.0}),
+    ])
+    assert _extract_balance(balance).total_debt == [300.0, 250.0]
+
+
+def test_total_debt_abstains_when_extension_long_term_rows_are_ambiguous():
+    balance = _bal_concept_df([
+        ("us-gaap_DebtCurrent", "ShortTermDebt", 4, {"2024": 50.0, "2023": 60.0}),
+        ("abc_LongTermDebtSeniorNotesNoncurrent", None, 4, {"2024": 400.0, "2023": 380.0}),
+        ("abc_LongTermDebtTermLoanNoncurrent", None, 4, {"2024": 100.0, "2023": 90.0}),
+    ])
+    assert _extract_balance(balance).total_debt == []
+
+
+def test_total_debt_extension_ignores_issuance_cost_and_related_party_rows():
+    balance = _bal_concept_df([
+        ("us-gaap_DebtCurrent", "ShortTermDebt", 4, {"2024": 100.0, "2023": 90.0}),
+        ("abc_LongTermDebtUnamortizedIssuanceCostsNoncurrent", None, 4,
+         {"2024": -12.0, "2023": -14.0}),
+        ("abc_LongTermDebtRelatedPartyNoncurrent", None, 4, {"2024": 5.0, "2023": 5.0}),
+    ])
+    assert _extract_balance(balance).total_debt == [100.0, 90.0]
+
+
+def test_total_debt_bucket_row_wins_over_extension_row():
+    balance = _bal_concept_df([
+        ("us-gaap_LongTermDebtNoncurrent", "LongTermDebt", 3, {"2024": 400.0, "2023": 380.0}),
+        ("abc_LongTermDebtAndFinanceLeasesNoncurrent", None, 3, {"2024": 999.0, "2023": 999.0}),
+    ])
+    assert _extract_balance(balance).total_debt == [400.0, 380.0]
+
+
+def test_total_debt_extension_ignores_dimensional_rows():
+    balance = _bal_concept_df([
+        ("us-gaap_DebtCurrent", "ShortTermDebt", 4, {"2024": 50.0, "2023": 60.0}),
+        ("abc_LongTermDebtNoncurrent", None, 4, {"2024": 400.0, "2023": 380.0}),
+    ])
+    balance.loc[1, "dimension"] = True
+    assert _extract_balance(balance).total_debt == [50.0, 60.0]
+
+
+def test_cash_prefers_raw_cash_and_equivalents_over_bucket_subtotal():
+    # Coca-Cola shape: four rows share the bucket and the shallowest is cash + investments.
+    balance = _bal_concept_df([
+        ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "CashAndMarketableSecurities", 6,
+         {"2024": 10270.0, "2023": 10828.0}),
+        ("us-gaap_OtherShortTermInvestments", "CashAndMarketableSecurities", 6,
+         {"2024": 3602.0, "2023": 2020.0}),
+        ("us-gaap_CashCashEquivalentsAndShortTermInvestments", "CashAndMarketableSecurities", 5,
+         {"2024": 13872.0, "2023": 12848.0}),
+        ("us-gaap_MarketableSecurities", "CashAndMarketableSecurities", 5,
+         {"2024": 1934.0, "2023": 1723.0}),
+    ])
+    assert _extract_balance(balance).cash_and_equivalents == [10270.0, 10828.0]
+
+
+def test_cash_reads_raw_cash_tag_over_bucket_subtotal():
+    balance = _bal_concept_df([
+        ("us-gaap_Cash", "CashAndMarketableSecurities", 6, {"2024": 72.0, "2023": 44.4}),
+        ("us-gaap_CashCashEquivalentsAndShortTermInvestments", "CashAndMarketableSecurities", 5,
+         {"2024": 90.0, "2023": 60.0}),
+    ])
+    assert _extract_balance(balance).cash_and_equivalents == [72.0, 44.4]
+
+
+def test_cash_falls_back_to_bucket_when_no_raw_cash_tag():
+    # Interparfums tags its cash line CashEquivalentsAtCarryingValue.
+    balance = _bal_concept_df([
+        ("us-gaap_CashEquivalentsAtCarryingValue", "CashAndMarketableSecurities", 4,
+         {"2024": 158.1, "2023": 125.4}),
+    ])
+    assert _extract_balance(balance).cash_and_equivalents == [158.1, 125.4]

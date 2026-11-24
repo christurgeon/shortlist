@@ -205,6 +205,51 @@ def test_capex_ignores_noncash_supplemental_disclosure_row():
     assert fin.free_cash_flow == [pytest.approx(73_266_000_000.0)]  # 164.713B - 91.447B, never > OCF
 
 
+def _ufpt_cashflow_df(capex_concept="ufpt_PaymentsToAcquirePropertyAndEquipmentNet"):
+    # UFP Technologies shape: capex carries a company-extension tag with no bucket.
+    return pd.DataFrame([
+        {"concept": "us-gaap_NetCashProvidedByUsedInOperatingActivities", "label": "Net cash from operations",
+         "standard_concept": "NetCashFromOperatingActivities", "level": 2, "abstract": False,
+         "dimension": False, "parent_abstract_concept": "us-gaap_CashFlowAbstract",
+         "2025-12-31 (FY)": 91_900_000.0, "2024-12-31 (FY)": 66_600_000.0},
+        {"concept": capex_concept, "label": "Additions to property, plant & equipment",
+         "standard_concept": float("nan"), "level": 3, "abstract": False, "dimension": False,
+         "parent_abstract_concept": "us-gaap_NetCashProvidedByUsedInInvestingActivitiesAbstract",
+         "2025-12-31 (FY)": -12_930_000.0, "2024-12-31 (FY)": -9_656_000.0},
+    ])
+
+
+def test_capex_reads_extension_tag_when_bucket_absent():
+    fin = extract_financials(_income_df(), _ufpt_cashflow_df(), pd.DataFrame(), shares_diluted=None)
+    assert fin.free_cash_flow == [pytest.approx(78_970_000.0), pytest.approx(56_944_000.0)]
+
+
+@pytest.mark.parametrize("concept", [
+    "xyz_PaymentsToAcquireEquipmentOnLease",
+    "xyz_PaymentsToAcquirePropertyPlantAndEquipmentInAccountsPayable",
+    "xyz_PaymentsToAcquirePropertyAndEquipmentIncurredButNotYetPaid",
+])
+def test_capex_ignores_extension_tag_outside_the_capex_family(concept):
+    fin = extract_financials(_income_df(), _ufpt_cashflow_df(concept), pd.DataFrame(),
+                             shares_diluted=None)
+    assert fin.free_cash_flow == []
+
+
+def test_capex_extension_ignores_supplemental_rows():
+    cashflow = _ufpt_cashflow_df()
+    cashflow.loc[1, "parent_abstract_concept"] = "us-gaap_SupplementalCashFlowInformationAbstract"
+    fin = extract_financials(_income_df(), cashflow, pd.DataFrame(), shares_diluted=None)
+    assert fin.free_cash_flow == []
+
+
+def test_capex_extension_abstains_when_ambiguous():
+    cashflow = pd.concat([_ufpt_cashflow_df(),
+                          _ufpt_cashflow_df("ufpt_PaymentsToAcquirePropertyPlantAndEquipmentOther").iloc[[1]]],
+                         ignore_index=True)
+    fin = extract_financials(_income_df(), cashflow, pd.DataFrame(), shares_diluted=None)
+    assert fin.free_cash_flow == []
+
+
 def test_fy_columns_detected_by_suffix_and_sorted_desc():
     df = pd.DataFrame([{"standard_concept": "Revenue", "label": "r", "concept": "x", "level": 0, "abstract": False,
                         "2023-09-30 (FY)": 1.0, "2025-09-27 (FY)": 3.0, "2024-09-28 (FY)": 2.0}])
