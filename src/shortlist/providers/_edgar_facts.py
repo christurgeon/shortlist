@@ -27,6 +27,7 @@ from ._gaap_tags import (
     RETAINED_EARNINGS_TAG,
     combine_family,
     magnitude_sum,
+    related,
 )
 
 # Financing tag sets are single-sourced in _gaap_tags.py (shared with _xbrl_facts.py). Edit them there.
@@ -180,6 +181,39 @@ def _row_net_income(df: pd.DataFrame) -> Optional[pd.Series]:
     return rows[0] if rows else None
 
 
+def _overlap_groups(facts: dict[str, float], face: list[tuple[str, float]]
+                   ) -> list[tuple[dict[str, float], list[float]]]:
+    """Connected groups of unparented facts and face lines, linked only through a fact
+    (`related`): ({tag: value} facts, [face values]). A face line no fact relates to is
+    its own group with no facts."""
+    tags = list(facts)
+    group = list(range(len(tags)))
+
+    def root(i: int) -> int:
+        while group[i] != i:
+            i = group[i]
+        return i
+
+    for i, a in enumerate(tags):
+        for j in range(i):
+            if related(a, tags[j]):
+                group[root(i)] = root(j)
+    hits = [[i for i, u in enumerate(tags) if related(t, u)] for t, _ in face]
+    for ix in hits:
+        for i in ix[1:]:
+            group[root(i)] = root(ix[0])
+    out: dict[int, tuple[dict[str, float], list[float]]] = {}
+    for i, t in enumerate(tags):
+        out.setdefault(root(i), ({}, []))[0][t] = facts[t]
+    loose = []
+    for (_, v), ix in zip(face, hits, strict=True):
+        if ix:
+            out[root(ix[0])][1].append(v)
+        else:
+            loose.append(({}, [v]))
+    return [*out.values(), *loose]
+
+
 def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                            cols: list[tuple[str, str]]) -> Optional[float]:
     """Latest-FY value of a us-gaap concept family on the cash-flow statement. Matches
@@ -188,7 +222,8 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
     Dimensional rows are excluded, and so are rows whose `parent_concept` is another
     member with a value (components of the filer's own subtotal). Lines with a known
     calc parent add as magnitudes; rows without one (no `parent_concept` column, or a
-    null value) are combined by `combine_family` as possibly overlapping facts.
+    null value) are combined by `combine_family` as possibly overlapping facts. Where
+    such facts overlap parented lines, that group counts once, by the larger of the two.
 
     Returns None when no member is tagged. The value is verbatim and signed as
     edgartools presents it (outflows negative)."""
@@ -213,10 +248,18 @@ def _concept_family_latest(df: pd.DataFrame, suffixes: tuple[str, ...],
                     strict=True):
         tag = c.removeprefix("us-gaap_")
         values[tag] = values.get(tag, 0.0) + float(v)
-    parts = [float(v) for v in hit.loc[~unparented, latest_col]]
-    overlapping = combine_family(values)
-    if overlapping is not None:
-        parts.append(overlapping)
+    face = [(c.removeprefix("us-gaap_"), float(v)) for c, v in
+            zip(hit.loc[~unparented, "concept"].astype(str), hit.loc[~unparented, latest_col],
+                strict=True)]
+    parts = []
+    for facts, lines in _overlap_groups(values, face):
+        if not facts:
+            parts.extend(lines)
+            continue
+        combined = combine_family(facts)
+        # Face lines add to each other; unparented facts that overlap them may repeat or
+        # aggregate them, so the group counts once, by the larger reading.
+        parts.append(max(magnitude_sum(lines), combined, key=abs) if lines else combined)
     return magnitude_sum(parts)
 
 
@@ -511,15 +554,18 @@ def extract_financials(
                   for d in sorted(set(_oi_by) & set(_da_by), reverse=True)]
 
     bal_inst = _instant_columns(balance_df)
-    # A missing component counts as none: [] reads as zero debt downstream when FMP
-    # cannot backfill, so abstain only when several extension rows could be the
-    # long-term leg.
+    # A missing component counts as none, because [] reads as zero debt downstream when
+    # FMP cannot backfill. Several extension rows may be a total and its parts, so the
+    # largest is taken rather than their sum: a lower bound.
     long_term = _row_by_bucket_or_extension(balance_df, "LongTermDebt", _EXTENSION_LONG_TERM_DEBT)
-    if long_term is not None or len(_extension_rows(balance_df, _EXTENSION_LONG_TERM_DEBT)) < 2:
-        fin.total_debt = _sum_rows(
-            [long_term, *(_row_by_standard_concept(balance_df, c)
-                          for c in ("CurrentPortionOfLongTermDebt", "ShortTermDebt"))],
-            bal_inst)
+    if long_term is None and bal_inst:
+        ext = _extension_rows(balance_df, _EXTENSION_LONG_TERM_DEBT)
+        if len(ext) > 1:
+            long_term = ext.iloc[int(ext[bal_inst[0][1]].abs().fillna(0.0).to_numpy().argmax())]
+    fin.total_debt = _sum_rows(
+        [long_term, *(_row_by_standard_concept(balance_df, c)
+                      for c in ("CurrentPortionOfLongTermDebt", "ShortTermDebt"))],
+        bal_inst)
     fin.total_equity = _total_equity_series(balance_df, bal_inst)
     # Cash only, comparable to FMP's `cashAndCashEquivalents`. The bucket also holds
     # securities and cash-plus-investments subtotals, so it is the fallback only.
