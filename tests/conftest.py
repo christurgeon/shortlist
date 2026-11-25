@@ -1,6 +1,18 @@
+import tempfile
+
 import pytest
 
 from shortlist import cache as cache_mod
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _contain_mkdtemp(tmp_path_factory):
+    """Point bare `tempfile.mkdtemp()` calls into pytest's basetemp, which pytest prunes,
+    so tests that never clean up do not accumulate directories in /tmp."""
+    old = tempfile.tempdir
+    tempfile.tempdir = str(tmp_path_factory.mktemp("mkdtemp"))
+    yield
+    tempfile.tempdir = old
 
 
 @pytest.fixture(autouse=True)
