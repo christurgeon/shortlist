@@ -217,3 +217,12 @@ Tracked in git, Claude Code workflows, **not** part of the Python package.
 - **`/prospect`** — web-only weekly discovery; returns a 5–8 name brief plus a copy-paste
   `/deep` block. `.claude/skills/prospect/SKILL.md`. **This is the only discovery surface**
   — the package has no universe scan (`--tickers` or `--demo` only).
+
+## Writing style
+
+Write all responses in ASD-STE100 Simplified Technical English (STE). This applies to chat responses, code comments, commit messages, and documentation.
+
+- Keep instructions to 20 words or fewer. Keep descriptive sentences to 25 words or fewer.
+- Use the active voice, simple verb tenses, and one meaning for each word.
+- Use the same term for the same concept.
+- Do not change code, commands, file paths, error messages, or quoted text to follow these rules.
