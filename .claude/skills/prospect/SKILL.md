@@ -58,12 +58,34 @@ momentum-chasing.
 | **Breakout** (catalyst) | bases breaking out on rising volume · post-earnings drift (big beat + raised guidance) · catalyst-driven (new product, contract win, regulatory/FDA) · short-squeeze + *improving* fundamentals · analyst upgrade / estimate-revision clusters |
 | **+ rotating theme** | the single theme chosen in Phase 0 |
 
+**Run every lens in the table.** Do at least two searches per lens, with different
+query wording. If a lens returns nothing usable, name it under **Gaps**. Do not skip
+it without saying so. Aim for 20–30 raw hits before Phase 2.
+
+**Prefer thesis sources over ranked lists.** "Top stocks to buy" lists and
+"S&P 500 at 52-week lows" lists return the same famous mega-caps every week. Use
+them only to read the regime. Find names where a person wrote a reasoned case:
+
+| Source | What it gives |
+|---|---|
+| Value-fund quarterly investor letters | Names a manager bought, with the reason |
+| Value Investors Club write-ups (public after a 45-day delay) | Full long theses, with the valuation work |
+| Spinoff and post-restructuring trackers | Forced selling, which is not a judgment on value |
+| Earnings-call transcripts and 8-K guidance raises at small and mid caps | Fundamental change before analysts revise |
+| Substack and Seeking Alpha deep dives | Lightly covered names, with a thesis (verify the facts) |
+
 For each hit, capture: ticker, the lens it came from, a one-line "why it
 surfaced," the catalyst, and a source URL.
 
 **Phase 2 — Verify & dedupe.** Confirm each ticker is real and **US-listed
 (NYSE/Nasdaq), roughly ≥ $300M market cap, and not a thin foreign (20-F) ADR**
-(those come back empty in `/deep`). Drop everything else. Dedupe. **Star
+(those come back empty in `/deep`). Drop everything else. Dedupe.
+
+**Market-cap band:** aim for roughly **$1B–$30B**. Keep **at most one name above
+$200B** in the final brief. The user's alternative to a stock pick is an index fund,
+and mega-caps are already large index weights. A pick adds value only when it
+differs from the index. Prefer names with few covering analysts when two
+candidates are otherwise equal. **Star
 confluence names** — those that appear in *both* a value and a breakout lens.
 Cheap *and* waking up is the highest-conviction setup there is.
 
@@ -85,10 +107,11 @@ Each survivor must have **≥ 2 independent corroborating points** and a stated
 strength × catalyst proximity × data-coverage confidence, plus a confluence bonus.
 Bucket into Undervalued vs Breakout. Emit the brief in the Output Contract below.
 
-**Phase 5 — Freshness (best-effort).** Save the brief to
-`prospect/<YYYY-MM-DD>.md`. On the next run, read the latest `prospect/*.md` and
+**Phase 5 — Freshness.** If the filesystem is writable, create `prospect/` if it
+is missing and save the brief to `prospect/<YYYY-MM-DD>.md`. Do not skip this step
+when you can write files. On the next run, read the latest `prospect/*.md` and
 skip names already surfaced recently unless their thesis materially changed.
-Degrade silently if the filesystem doesn't persist between runs.
+If the filesystem does not persist between runs, say so under **Gaps**.
 
 ## Output Contract
 
@@ -99,7 +122,7 @@ the whole point of the handoff — never omit them.
 # Prospect — week of <date>
 **Regime:** <one line: index trend · rates · risk-on/off>
 **This week's theme:** <the rotating theme>
-**Lenses run:** <which families/lenses ran>  ·  **Gaps:** <any lens or source that
+**Lenses run:** <every lens, with its hit count>  ·  **Gaps:** <any lens or source that
 failed — name it; a shrunken funnel is fine, a faked one is not>
 
 ## Undervalued
@@ -144,6 +167,8 @@ run any single name on its own with `/deep TICKER`)
 - **Mislabeling momentum as value** — a name that already rebounded 35% is not
   "undervalued." Distinguish *still cheap* from *already ran* and down-weight the
   latter.
+- **Building the brief from ranked lists.** If most names are mega-caps from a
+  "stocks to buy" or "52-week lows" list, the lenses did not run. Go back to Phase 1.
 - **Dropping the `/deep` block or conviction tags** — that handoff is the entire
   reason this skill exists.
 - **Wasting the `/deep` rate budget** (FMP free ≈ 19 tickers/day) on gate-trippers
